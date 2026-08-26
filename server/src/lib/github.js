@@ -100,33 +100,43 @@ export async function pushFiles(token, repoFullName, files, commitMessage) {
   const parentCommit = await ghJson(commitRes);
   const baseTreeSha = parentCommit.tree?.sha;
 
-  // Create blobs for all files
-  const treeItems = [];
-  for (const file of files) {
-    const blobRes = await fetch(`${GH_API}/repos/${repoFullName}/git/blobs`, {
-      method: 'POST', headers: h,
-      body: JSON.stringify({ content: file.content, encoding: 'utf-8' }),
-    });
-    if (!blobRes.ok) throw new Error(`Failed to create blob for ${file.path}`);
-    const blob = await ghJson(blobRes);
-    treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
-  }
+// Build tree items with file content inline — the tree-creation endpoint
+// auto-creates the underlying blobs for us in the same call. We used to
+// create one blob per file first (a loop of individual git/blobs POSTs)
+// and then reference those shas here, but that two-step dance is prone
+// to a transient GitHub-side "GitRPC::BadObjectState" error: right after
+// a brand-new repo is created (auto_init) and a batch of blobs is
+// written, GitHub's backend is not always immediately consistent enough
+// for a base_tree tree call to see every blob yet. Passing content
+// directly avoids the race — GitHub creates the blobs atomically as
+// part of the same tree-creation call. (Same technique already proven
+// reliable for pushing this repo's own source by hand — see
+// claude/BROWSER-GIT-PUSH-WORKAROUND.md.)
+const treeItems = files.map((file) => ({
+path: file.path,
+mode: '100644',
+type: 'blob',
+content: file.content,
+}));
 
-  // Create a new tree with all files (base_tree preserves existing files like README)
-  // Retry on 404 — GitHub sometimes isn't ready right after repo creation
-  let tree = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const treeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees`, {
-      method: 'POST', headers: h,
-      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
-    });
-    if (treeRes.ok) { tree = await ghJson(treeRes); break; }
-    const treeErr = await ghJson(treeRes);
-    console.log(`Tree attempt ${attempt + 1}: status=${treeRes.status}, repo=${repoFullName}, baseTree=${baseTreeSha}, items=${treeItems.length}, error=${JSON.stringify(treeErr)}`);
-    if (treeRes.status !== 404) throw new Error('Failed to create tree: ' + (treeErr.message || JSON.stringify(treeErr)));
-    await new Promise(r => setTimeout(r, 2000));
-  }
-  if (!tree) throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, baseTree=${baseTreeSha}, items=${treeItems.length})`);
+// Create a new tree with all files (base_tree preserves existing files like README)
+// Retry on ANY failure (not just 404) with backoff — GitHub sometimes is
+// not fully consistent right after repo creation, and errors like
+// "GitRPC::BadObjectState" come back as HTTP 422, not 404, so the old
+// 404-only retry never actually retried on this failure mode.
+let tree = null;
+let lastTreeErr = null;
+for (let attempt = 0; attempt < 5; attempt++) {
+const treeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees`, {
+method: 'POST', headers: h,
+body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+});
+if (treeRes.ok) { tree = await ghJson(treeRes); break; }
+lastTreeErr = await ghJson(treeRes);
+console.log(`Tree attempt ${attempt + 1}: status=${treeRes.status}, repo=${repoFullName}, baseTree=${baseTreeSha}, items=${treeItems.length}, error=${JSON.stringify(lastTreeErr)}`);
+await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+}
+if (!tree) throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, baseTree=${baseTreeSha}, items=${treeItems.length}): ${lastTreeErr && lastTreeErr.message ? lastTreeErr.message : JSON.stringify(lastTreeErr)}`);
 
   // Create a commit pointing to the new tree
   const newCommitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits`, {
