@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, ExternalLink } from 'lucide-react';
 import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -23,6 +23,20 @@ const MODEL_OPTIONS = [
   { value: 'claude_opus_4_8', label: 'Claude Opus 4.8 — highest think (highest cost)', tier: 'high' },
   { value: 'kimi-k3', label: 'Kimi K3 (Moonshot) — 1M context, agentic coding (high cost)', tier: 'high' },
 ];
+
+const AI_PROVIDER_LINKS = [
+  { name: 'Google AI Studio (Gemini)', note: 'Free Gemini Flash, generous limits', keyUrl: 'https://aistudio.google.com/apikey', keyLabel: 'Get key', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
+  { name: 'Groq', note: 'Free fast inference (Llama, Mixtral)', keyUrl: 'https://console.groq.com/keys', keyLabel: 'Get key', baseUrl: 'https://api.groq.com/openai/v1' },
+  { name: 'OpenRouter', note: 'Some free models available', keyUrl: 'https://openrouter.ai/settings/keys', keyLabel: 'Get key', baseUrl: 'https://openrouter.ai/api/v1' },
+  { name: 'Ollama', note: 'Local, no API key, zero cost (needs GPU)', keyUrl: 'https://ollama.com/download', keyLabel: 'Download', baseUrl: 'http://localhost:11434/v1' },
+  { name: 'Moonshot AI (Kimi K3)', note: '1M context, agentic coding. Not free — $1 min top-up, then pay-as-you-go.', keyUrl: 'https://platform.kimi.ai/console/api-keys', keyLabel: 'Get key', baseUrl: 'https://api.moonshot.ai/v1' },
+  { name: 'OpenAI', note: 'The default paid provider — GPT 4o and friends', keyUrl: 'https://platform.openai.com/api-keys', keyLabel: 'Get key', baseUrl: 'https://api.openai.com/v1' },
+];
+
+const TTS_PROVIDER_LINKS = {
+  elevenlabs: { name: 'ElevenLabs', keyUrl: 'https://elevenlabs.io/app/settings/api-keys' },
+  openai: { name: 'OpenAI', keyUrl: 'https://platform.openai.com/api-keys' },
+};
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -156,14 +170,35 @@ export default function Settings() {
                     <p className="text-xs text-[#00ff41]/65 mt-1">
                       // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1 · https://api.moonshot.ai/v1 (Kimi K3)
                     </p>
-                    <div className="mt-2 border border-[#00ff41]/20 bg-[#00ff41]/5 p-2.5 text-xs text-[#00ff41]/50 space-y-1">
-                      <p className="text-[#00ff41]/70 font-bold uppercase tracking-wider text-[10px]">Free-tier providers:</p>
-                      <p>// Google AI Studio — free Gemini Flash, generous limits</p>
-                      <p>// Groq — free fast inference (Llama, Mixtral)</p>
-                      <p>// OpenRouter — some free models available</p>
-                      <p>// Ollama — local, no API key, zero cost (needs GPU)</p>
-                      <p className="pt-0.5">// Moonshot AI (Kimi K3) — 1M context, strong at agentic coding. Not free — $1 min top-up required, then pay-as-you-go.</p>
-                      <p className="text-yellow-500/60 pt-0.5">// Free tiers have rate limits — heavy autonomous builds may hit them. Use platform default for reliability.</p>
+                    <div className="mt-2 border border-[#00ff41]/20 bg-[#00ff41]/5 p-2.5 text-xs text-[#00ff41]/50 space-y-2">
+                      <p className="text-[#00ff41]/70 font-bold uppercase tracking-wider text-[10px]">Providers — get a key, then paste it above:</p>
+                      {AI_PROVIDER_LINKS.map(p => (
+                        <div key={p.name} className="flex items-center justify-between gap-2 flex-wrap py-0.5">
+                          <span>
+                            <span className="text-[#00ff41]/80">{p.name}</span>
+                            <span className="text-[#00ff41]/45"> — {p.note}</span>
+                          </span>
+                          <span className="flex items-center gap-3 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setAiBaseUrl(p.baseUrl)}
+                              className="text-[#00ff41]/70 hover:text-[#00ff41] underline decoration-dotted"
+                              title={`Fill Base URL with ${p.baseUrl}`}
+                            >
+                              Use URL
+                            </button>
+                            <a
+                              href={p.keyUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[#00ff41]/80 hover:text-[#00ff41] underline"
+                            >
+                              {p.keyLabel} <ExternalLink size={10} />
+                            </a>
+                          </span>
+                        </div>
+                      ))}
+                      <p className="text-yellow-500/60 pt-1">// Free tiers have rate limits — heavy autonomous builds may hit them. Use platform default for reliability.</p>
                     </div>
                   </div>
                   <div>
@@ -314,6 +349,18 @@ export default function Settings() {
                       ]}
                       triggerClassName="w-full"
                     />
+                    {TTS_PROVIDER_LINKS[ttsEngine] && (
+                      <p className="text-xs text-[#00ff41]/65 mt-1">
+                        <a
+                          href={TTS_PROVIDER_LINKS[ttsEngine].keyUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 w-fit text-[#00ff41]/80 hover:text-[#00ff41] underline"
+                        >
+                          Get {TTS_PROVIDER_LINKS[ttsEngine].name} API key <ExternalLink size={10} />
+                        </a>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">API Key</label>
