@@ -5,6 +5,15 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
+# Alpine's node image ships OpenSSL 3.x with no libssl.so.1.1, but without
+# openssl present at all during `prisma generate`, Prisma can't detect the
+# libssl version and silently defaults to the wrong musl engine target —
+# it builds fine, then crash-loops at runtime with "Error loading shared
+# library libssl.so.1.1: No such file or directory" (seen on first deploy,
+# 2026-08-26). Installing openssl before `prisma generate` fixes detection
+# for both the build and runtime environment (same base image, single stage).
+RUN apk add --no-cache openssl
+
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund
 
