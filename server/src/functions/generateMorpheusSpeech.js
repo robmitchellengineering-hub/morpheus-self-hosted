@@ -12,6 +12,8 @@ import { prisma } from '../db.js';
 import { decrypt } from '../crypto.js';
 import { logUsage } from '../lib/projectUtils.js';
 
+const TTS_REQUEST_TIMEOUT_MS = 90 * 1000; // bounds a TTS provider call that would otherwise hang indefinitely
+
 function bytesToBase64(bytes) {
   let bin = '';
   const chunk = 0x8000;
@@ -44,7 +46,9 @@ export default async function handler({ user, body }) {
 
   if (ttsEngine === 'elevenlabs') {
     const voiceId = ttsVoiceId || 'onJ4XMQ5sm1S2pQW5bK2';
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    let res;
+    try {
+      res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
       headers: { 'xi-api-key': ttsApiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
       body: JSON.stringify({
@@ -52,7 +56,15 @@ export default async function handler({ user, body }) {
         model_id: 'eleven_multilingual_v2',
         voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true },
       }),
+    
+      signal: AbortSignal.timeout(TTS_REQUEST_TIMEOUT_MS),
     });
+    } catch (err) {
+      if (err?.name === 'TimeoutError' || err?.cause?.code === 'UND_ERR_HEADERS_TIMEOUT') {
+        throw new Error(`Text-to-speech request timed out after ${TTS_REQUEST_TIMEOUT_MS / 1000}s. Try shorter text, a different engine, or check your API key.`);
+      }
+      throw err;
+    }
     if (!res.ok) {
       const err = await res.text();
       throw Object.assign(new Error(`ElevenLabs error: ${err.slice(0, 300)}`), { status: 502 });
@@ -61,11 +73,21 @@ export default async function handler({ user, body }) {
     audioUrl = `data:audio/mpeg;base64,${bytesToBase64(bytes)}`;
   } else if (ttsEngine === 'openai') {
     const voice = ttsVoiceId || 'onyx';
-    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+    let res;
+    try {
+      res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: { Authorization: `Bearer ${ttsApiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'tts-1', input: truncated, voice, response_format: 'mp3' }),
+    
+      signal: AbortSignal.timeout(TTS_REQUEST_TIMEOUT_MS),
     });
+    } catch (err) {
+      if (err?.name === 'TimeoutError' || err?.cause?.code === 'UND_ERR_HEADERS_TIMEOUT') {
+        throw new Error(`Text-to-speech request timed out after ${TTS_REQUEST_TIMEOUT_MS / 1000}s. Try shorter text, a different engine, or check your API key.`);
+      }
+      throw err;
+    }
     if (!res.ok) {
       const err = await res.text();
       throw Object.assign(new Error(`OpenAI TTS error: ${err.slice(0, 300)}`), { status: 502 });
@@ -74,11 +96,21 @@ export default async function handler({ user, body }) {
     audioUrl = `data:audio/mpeg;base64,${bytesToBase64(bytes)}`;
   } else {
     if (!ttsEndpoint) throw Object.assign(new Error('Custom TTS endpoint not configured'), { status: 400 });
-    const res = await fetch(ttsEndpoint, {
+    let res;
+    try {
+      res = await fetch(ttsEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(ttsApiKey ? { Authorization: `Bearer ${ttsApiKey}` } : {}) },
       body: JSON.stringify({ text: truncated, voice: ttsVoiceId || 'morpheus' }),
+    
+      signal: AbortSignal.timeout(TTS_REQUEST_TIMEOUT_MS),
     });
+    } catch (err) {
+      if (err?.name === 'TimeoutError' || err?.cause?.code === 'UND_ERR_HEADERS_TIMEOUT') {
+        throw new Error(`Text-to-speech request timed out after ${TTS_REQUEST_TIMEOUT_MS / 1000}s. Try shorter text, a different engine, or check your API key.`);
+      }
+      throw err;
+    }
     if (!res.ok) {
       const err = await res.text();
       throw Object.assign(new Error(`Custom TTS error: ${err.slice(0, 300)}`), { status: 502 });
