@@ -2,16 +2,18 @@
 //
 // Base44's original had two paths: the platform's own InvokeLLM gateway
 // (billed via Base44 credits), or the operator's custom OpenAI-compatible
-// endpoint. Self-hosted, there is no platform gateway — every call goes to
+// endpoint. Self-hosted, there is no platform gateway â every call goes to
 // an OpenAI-compatible endpoint. What's preserved is the *shape*: a
 // server-wide default (env vars, this deployment's "house" key) that any
-// user can override per-role in their own UserSettings — same UX, same
+// user can override per-role in their own UserSettings â same UX, same
 // role-override semantics (planner/coder/reviewer/diagnosis), same
-// truncation handling — just one fewer branch.
+// truncation handling â just one fewer branch.
 import { prisma } from './db.js';
 import { decrypt } from './crypto.js';
 import { aiGatewayDefault } from './config/hostedDefaults.js';
 import { discoverLatestModel } from './freshness.js';
+
+const AI_REQUEST_TIMEOUT_MS = 4 * 60 * 1000; // bounds a provider call that would otherwise hang indefinitely
 
 export async function getUserSettings(userId) {
   if (!userId) return null;
@@ -23,16 +25,16 @@ export async function getUserSettings(userId) {
 }
 
 // Leaving LLM_MODEL (or a per-role override, or a user's custom ai_model in
-// Settings) blank, "auto", or "latest" means "no opinion — keep this on the
+// Settings) blank, "auto", or "latest" means "no opinion â keep this on the
 // newest model automatically". resolveModel below is what actually does
 // that: same discovery logic freshness.js uses for the admin freshness
 // report, reused here so there's exactly one place that knows how to find
-// "the newest model" per provider — for Gemini that's Google's own
+// "the newest model" per provider â for Gemini that's Google's own
 // `gemini-flash-latest` alias (they hot-swap it server-side, 2-week email
-// notice first — zero-maintenance); for any other OpenAI-compatible
+// notice first â zero-maintenance); for any other OpenAI-compatible
 // endpoint it's the newest chat model from that endpoint's own `/models`
 // list. A pinned, literal model id always wins and is passed through
-// untouched — this only ever fires when nobody asked for a specific model.
+// untouched â this only ever fires when nobody asked for a specific model.
 async function resolveModel(raw, baseUrl, apiKey) {
   const v = String(raw || '').trim().toLowerCase();
   if (v && v !== 'auto' && v !== 'latest') return raw;
@@ -60,7 +62,7 @@ async function resolveEndpoint(settings, role) {
     const baseUrl = settings.ai_base_url;
     const apiKey = decrypt(settings.ai_api_key);
     return {
-      provider: 'custom', // tier 1: the account's own key, set in Settings → AI Provider
+      provider: 'custom', // tier 1: the account's own key, set in Settings â AI Provider
       baseUrl,
       apiKey,
       model: roleModelSetting[role] || (await resolveModel(settings.ai_model, baseUrl, apiKey)),
@@ -78,7 +80,7 @@ async function resolveEndpoint(settings, role) {
     };
   }
 
-  // Tier 3: no account key, no operator key — fall back to the Morpheus
+  // Tier 3: no account key, no operator key â fall back to the Morpheus
   // Cloud default gateway (see config/hostedDefaults.js), if configured.
   const hosted = aiGatewayDefault();
   if (hosted?.apiKey) {
@@ -90,7 +92,7 @@ async function resolveEndpoint(settings, role) {
     };
   }
 
-  // Tier 4: nothing configured at all — no apiKey to discover a model with,
+  // Tier 4: nothing configured at all â no apiKey to discover a model with,
   // invokeAI() throws before this model value would ever be used.
   const baseUrl = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
   return {
@@ -105,7 +107,7 @@ async function resolveEndpoint(settings, role) {
  * @param {object} opts
  * @param {string} opts.userId
  * @param {string} opts.prompt
- * @param {object} [opts.schema] JSON schema — when set, forces a structured JSON response
+ * @param {object} [opts.schema] JSON schema â when set, forces a structured JSON response
  * @param {string[]} [opts.fileUrls] reference file URLs (images sent as vision content parts)
  * @param {'planner'|'coder'|'reviewer'|'diagnosis'} [opts.role]
  * @returns {Promise<{result: any, provider: string, model: string, usage?: object}>}
@@ -118,7 +120,7 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
     throw new Error(
       'No AI endpoint configured. Set LLM_API_KEY (+ LLM_BASE_URL/LLM_MODEL) in the server .env for a house default, ' +
       'set MORPHEUS_BROKER_URL/MORPHEUS_AI_GATEWAY_TOKEN to use the Morpheus Cloud default gateway, ' +
-      'or have the user set a custom endpoint in Settings → AI Provider.'
+      'or have the user set a custom endpoint in Settings â AI Provider.'
     );
   }
 
@@ -139,7 +141,7 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
     messages = [{ role: 'user', content: effectivePrompt }];
   }
 
-  const body = { model, messages, temperature: 0.7 }; // no max_tokens cap — "max think power" default
+  const body = { model, messages, temperature: 0.7 }; // no max_tokens cap â "max think power" default
 
   if (schema) {
     body.response_format = { type: 'json_object' };
@@ -148,11 +150,26 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
     else messages[0].content += jsonInstruction;
   }
 
-  const res = await fetch(`${String(baseUrl).replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-  });
+    if (/generativelanguage\.googleapis\.com/.test(baseUrl)) {
+    // Gemini's "thinking" models default to an unbounded reasoning budget; capping it
+    // keeps a request from hanging for minutes before headers even arrive.
+    body.reasoning_effort = 'low';
+  }
+
+  let res;
+  try {
+    res = await fetch(`${String(baseUrl).replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err?.name === 'TimeoutError' || err?.cause?.code === 'UND_ERR_HEADERS_TIMEOUT') {
+      throw new Error(`AI endpoint timed out after ${AI_REQUEST_TIMEOUT_MS / 1000}s waiting for a response. Try a shorter prompt or a faster model.`);
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -168,7 +185,7 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
 
   // When `model` was an alias (e.g. Gemini's self-updating "gemini-flash-latest"),
   // the response's own `model` field reports which concrete model actually
-  // served the request — surface that instead of the alias so logs/UI show
+  // served the request â surface that instead of the alias so logs/UI show
   // real version info even as it changes underneath.
   const resolvedModel = data?.model || model;
 
