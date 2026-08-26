@@ -1,0 +1,298 @@
+// Morpheus — self-hosted Postgres schema (Prisma)
+//
+// Field names deliberately mirror the original Base44 entity schemas
+// (base44/entities/*.jsonc in the project source) — snake_case, same
+// property names — so the 34 ported function handlers and the existing
+// React frontend (which already reads fields like `project.compile_target`,
+// `file.project_id`, `msg.role`) needed no field-name translation layer.
+//
+// Every entity carries id / created_by_id / created_date / updated_date,
+// matching Base44's implicit row metadata and its row-level-security model
+// (RLS keyed on created_by_id, replicated in src/entities.js).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── USERS & SETTINGS ─────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  full_name     String?
+  role          String   @default("user") // user | admin
+  google_id     String?  @unique
+  email_verified Boolean @default(false)
+  otp_code      String?
+  otp_expires   DateTime?
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  projects        Project[]
+  project_files   ProjectFile[]
+  chat_messages   ChatMessage[]
+  file_snapshots  FileSnapshot[]
+  usage_records   UsageRecord[]
+  templates       Template[]
+  purchases       Purchase[]
+  settings        UserSettings?
+  backend_configs BackendConfig[]
+  rebuild_docs    RebuildDoc[]
+  github_connection GithubConnection?
+
+  @@map("users")
+}
+
+model UserSettings {
+  id             String   @id @default(uuid())
+  created_by_id  String   @unique
+  user           User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  ai_mode        String   @default("default") // default | custom
+  ai_base_url    String?
+  ai_api_key     String?  // encrypted at rest (src/crypto.js)
+  ai_model       String?
+  planner_model  String?
+  coder_model    String?
+  reviewer_model String?
+  diagnosis_model String?
+
+  connections    String?  // JSON string: hosting platform credentials, encrypted at rest
+
+  tts_mode       String   @default("default")
+  tts_engine     String   @default("elevenlabs")
+  tts_api_key    String?  // encrypted at rest
+  tts_voice_id   String?
+  tts_endpoint   String?
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+model GithubConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  login         String
+  access_token  String   // encrypted at rest
+  scope         String?
+  created_date  DateTime @default(now())
+
+  @@map("github_connections")
+}
+
+// ── PROJECTS ──────────────────────────────────────────────────────
+
+model Project {
+  id             String   @id @default(uuid())
+  created_by_id  String
+  owner          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  name           String
+  description    String?
+  status         String   @default("init")       // init | building | ready
+  compile_target String   @default("source")      // source|windows-exe|mac-app|linux-binary|android-apk|ios-app|python-package|web-app|rpi-distro|linux-distro|arduino-firmware
+  project_type   String   @default("frontend")    // frontend | backend
+  polish_ui      Boolean  @default(false)
+
+  // Rolling "critical logic" memory for long-lived projects — see
+  // lib/contextSummary.js. Chat history sent to the AI is bounded to the
+  // last 20/10 messages (matches the original app; see the 2026-08-26
+  // audit for why unbounded history was reverted), so this periodically-
+  // updated, compressed summary of everything older than that window is
+  // what keeps requirements/decisions from a project's early messages from
+  // being silently forgotten once it runs long. context_summary_message_count
+  // tracks how many messages have been folded in so far, so the next
+  // update knows where to resume.
+  context_summary               String? @db.Text
+  context_summary_message_count Int     @default(0)
+
+  files          ProjectFile[]
+  chat_messages  ChatMessage[]
+  snapshots      FileSnapshot[]
+  usage_records  UsageRecord[]
+  templates      Template[]
+  backend_config BackendConfig?
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model ProjectFile {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  path          String
+  content       String   @db.Text
+  file_url      String?  // storage URL for large/binary files; content holds a text preview only
+  language      String   @default("text")
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([project_id, path])
+  @@map("project_files")
+}
+
+model ChatMessage {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  role          String   // user | morpheus
+  content       String   @db.Text
+
+  created_date  DateTime @default(now())
+
+  @@map("chat_messages")
+}
+
+model FileSnapshot {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  label         String?
+  files         String?  @db.Text // inline JSON preview; full snapshot offloaded to file_url when large
+  file_url      String?
+
+  created_date  DateTime @default(now())
+
+  @@map("file_snapshots")
+}
+
+// ── USAGE ─────────────────────────────────────────────────────────
+
+model UsageRecord {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  action_type   String   // chat_build | chat_simple | autonomous_step | compile | diagnosis | ...
+  credits       Int      @default(1)
+  project_id    String?
+  project       Project? @relation(fields: [project_id], references: [id], onDelete: SetNull)
+  project_name  String?
+  metadata      String?  @db.Text
+
+  created_date  DateTime @default(now())
+
+  @@map("usage_records")
+}
+
+// ── MARKETPLACE ───────────────────────────────────────────────────
+
+model Template {
+  id                String     @id @default(uuid())
+  created_by_id     String
+  author            User       @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id        String?
+  project           Project?   @relation(fields: [project_id], references: [id], onDelete: SetNull)
+
+  name              String
+  description       String?
+  long_description  String?    @db.Text
+  author_name       String?
+  author_id         String?
+  files             String     @db.Text // full project files JSON at publish time
+  icon              String?
+  screenshots       String?    @db.Text // JSON array of URLs
+  compile_target    String     @default("source")
+  tags              String?    // comma-separated
+  category          String     @default("general")
+  install_count     Int        @default(0)
+  file_count        Int        @default(0)
+  price             Float      @default(0) // dollars (e.g. 9.99), same convention as
+                                            // the original Base44 Template entity; 0 = free
+  stripe_product_id String?
+  stripe_price_id   String?
+
+  purchases         Purchase[]
+
+  created_date      DateTime   @default(now())
+  updated_date      DateTime   @updatedAt
+
+  @@map("templates")
+}
+
+model Purchase {
+  id                 String   @id @default(uuid())
+  created_by_id      String
+  buyer              User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  // Nullable + SetNull (not Cascade): matches the original's behavior of a
+  // seller deleting their account removing their Templates but leaving
+  // buyers' own Purchase/receipt records intact (just orphaned from the
+  // template row) rather than destroying other customers' purchase history.
+  template_id        String?
+  template            Template? @relation(fields: [template_id], references: [id], onDelete: SetNull)
+  template_name      String?
+  buyer_id           String
+  buyer_email        String?
+  seller_id          String
+  amount             Float    @default(0) // dollars, same convention as the original
+  platform_cut       Float    @default(0)
+  seller_cut         Float    @default(0)
+  stripe_session_id  String   @unique
+  status             String   @default("paid") // paid | refunded
+
+  created_date       DateTime @default(now())
+
+  @@map("purchases")
+}
+
+// ── BACKEND ARCHITECT ────────────────────────────────────────────
+
+model BackendConfig {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String   @unique
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  custom_domain String?
+  api_keys      String?  @db.Text // JSON array, encrypted at rest
+  deploy_platform String?
+  deploy_url    String?
+  deploy_status String?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("backend_configs")
+}
+
+// ── DOCS ──────────────────────────────────────────────────────────
+
+model RebuildDoc {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  version         String
+  content         String   @db.Text // truncated preview
+  content_size    Int      @default(0)
+  file_url        String?
+
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@map("rebuild_docs")
+}

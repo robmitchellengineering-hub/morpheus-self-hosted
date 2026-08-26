@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glowStrong" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="rainFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00ff41" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#00ff41" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Black background with rounded corners (maskable safe area) -->
+  <rect width="512" height="512" rx="96" fill="#000000"/>
+
+  <!-- Matrix digital rain background streams -->
+  <g font-family="'Share Tech Mono', monospace" font-size="22" fill="url(#rainFade)" opacity="0.35">
+    <text x="48" y="70">ﾊ</text>
+    <text x="48" y="96">0</text>
+    <text x="48" y="122">ﾐ</text>
+    <text x="48" y="148">1</text>
+    <text x="48" y="174">ﾜ</text>
+    <text x="48" y="200">0</text>
+    <text x="48" y="226">1</text>
+    <text x="48" y="252">ﾐ</text>
+
+    <text x="92" y="60">1</text>
+    <text x="92" y="86">ﾐ</text>
+    <text x="92" y="112">0</text>
+    <text x="92" y="138">ﾊ</text>
+    <text x="92" y="164">1</text>
+    <text x="92" y="190">ﾜ</text>
+    <text x="92" y="216">0</text>
+
+    <text x="136" y="80">0</text>
+    <text x="136" y="106">ﾜ</text>
+    <text x="136" y="132">1</text>
+    <text x="136" y="158">ﾊ</text>
+    <text x="136" y="184">0</text>
+
+    <text x="372" y="60">1</text>
+    <text x="372" y="86">ﾐ</text>
+    <text x="372" y="112">0</text>
+    <text x="372" y="138">ﾜ</text>
+    <text x="372" y="164">1</text>
+    <text x="372" y="190">0</text>
+    <text x="372" y="216">ﾊ</text>
+
+    <text x="416" y="70">0</text>
+    <text x="416" y="96">ﾊ</text>
+    <text x="416" y="122">1</text>
+    <text x="416" y="148">ﾐ</text>
+    <text x="416" y="174">0</text>
+    <text x="416" y="200">ﾜ</text>
+    <text x="416" y="226">1</text>
+
+    <text x="460" y="90">1</text>
+    <text x="460" y="116">ﾜ</text>
+    <text x="460" y="142">0</text>
+    <text x="460" y="168">ﾊ</text>
+    <text x="460" y="194">1</text>
+  </g>
+
+  <!-- Bright leading rain characters -->
+  <g font-family="'Share Tech Mono', monospace" font-size="22" fill="#00ff41" filter="url(#glow)" opacity="0.7">
+    <text x="48" y="44">ﾐ</text>
+    <text x="92" y="34">0</text>
+    <text x="136" y="54">1</text>
+    <text x="372" y="34">0</text>
+    <text x="416" y="44">1</text>
+    <text x="460" y="64">0</text>
+  </g>
+
+  <!-- Central terminal cursor: >_ -->
+  <g filter="url(#glowStrong)">
+    <!-- Greater-than bracket -->
+    <path d="M 168 200 L 120 256 L 168 312" stroke="#00ff41" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <!-- Underscore cursor -->
+    <rect x="200" y="296" width="120" height="20" rx="4" fill="#00ff41"/>
+  </g>
+
+  <!-- Subtle inner border glow -->
+  <rect x="8" y="8" width="496" height="496" rx="88" fill="none" stroke="#00ff41" stroke-width="2" opacity="0.2"/>
+</svg>
