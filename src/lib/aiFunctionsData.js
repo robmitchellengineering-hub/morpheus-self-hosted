@@ -32,6 +32,7 @@ export const AI_SETTINGS = {
     { value: 'claude_opus_4_6', label: 'Claude Opus 4.6 — highest think (highest cost)', tier: 'high' },
     { value: 'claude_opus_4_7', label: 'Claude Opus 4.7 — highest think (highest cost)', tier: 'high' },
     { value: 'claude_opus_4_8', label: 'Claude Opus 4.8 — highest think (highest cost)', tier: 'high' },
+    { value: 'kimi-k3', label: 'Kimi K3 (Moonshot) — 1M context, agentic coding (high cost)', tier: 'high' },
   ],
   invokeParams: {
     platform: 'base44.asServiceRole.integrations.Core.InvokeLLM({ prompt, response_json_schema?, model?, file_urls? })',

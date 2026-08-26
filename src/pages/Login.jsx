@@ -36,6 +36,13 @@ export default function Login() {
     base44.auth.loginWithProvider("google", returnTo);
   };
 
+  // Google Sign-In can be turned off deployment-wide (e.g. while the OAuth
+  // redirect URI can't yet be registered with Google — see AGENTS.md /
+  // README for the *.code.run "top private domain" issue) by setting
+  // VITE_GOOGLE_AUTH_ENABLED=false at build time. Defaults to on so existing
+  // deployments with working Google OAuth are unaffected.
+  const googleAuthEnabled = import.meta.env.VITE_GOOGLE_AUTH_ENABLED !== "false";
+
   return (
     <AuthLayout
       icon={LogIn}
@@ -53,23 +60,27 @@ export default function Login() {
         </>
       }
     >
-      <Button
-        variant="outline"
-        className="w-full h-12 text-sm font-medium mb-6"
-        onClick={handleGoogle}
-      >
-        <GoogleIcon className="w-5 h-5 mr-2" />
-        Continue with Google
-      </Button>
+      {googleAuthEnabled && (
+        <>
+          <Button
+            variant="outline"
+            className="w-full h-12 text-sm font-medium mb-6"
+            onClick={handleGoogle}
+          >
+            <GoogleIcon className="w-5 h-5 mr-2" />
+            Continue with Google
+          </Button>
 
-      <div className="relative mb-6">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-3 text-muted-foreground">or</span>
-        </div>
-      </div>
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-3 text-muted-foreground">or</span>
+            </div>
+          </div>
+        </>
+      )}
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">

@@ -21,6 +21,7 @@ const MODEL_OPTIONS = [
   { value: 'claude_opus_4_6', label: 'Claude Opus 4.6 — highest think (highest cost)', tier: 'high' },
   { value: 'claude_opus_4_7', label: 'Claude Opus 4.7 — highest think (highest cost)', tier: 'high' },
   { value: 'claude_opus_4_8', label: 'Claude Opus 4.8 — highest think (highest cost)', tier: 'high' },
+  { value: 'kimi-k3', label: 'Kimi K3 (Moonshot) — 1M context, agentic coding (high cost)', tier: 'high' },
 ];
 
 export default function Settings() {
@@ -153,7 +154,7 @@ export default function Settings() {
                       className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
                     />
                     <p className="text-xs text-[#00ff41]/65 mt-1">
-                      // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1
+                      // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1 · https://api.moonshot.ai/v1 (Kimi K3)
                     </p>
                     <div className="mt-2 border border-[#00ff41]/20 bg-[#00ff41]/5 p-2.5 text-xs text-[#00ff41]/50 space-y-1">
                       <p className="text-[#00ff41]/70 font-bold uppercase tracking-wider text-[10px]">Free-tier providers:</p>
@@ -161,6 +162,7 @@ export default function Settings() {
                       <p>// Groq — free fast inference (Llama, Mixtral)</p>
                       <p>// OpenRouter — some free models available</p>
                       <p>// Ollama — local, no API key, zero cost (needs GPU)</p>
+                      <p className="pt-0.5">// Moonshot AI (Kimi K3) — 1M context, strong at agentic coding. Not free — $1 min top-up required, then pay-as-you-go.</p>
                       <p className="text-yellow-500/60 pt-0.5">// Free tiers have rate limits — heavy autonomous builds may hit them. Use platform default for reliability.</p>
                     </div>
                   </div>

@@ -21,6 +21,7 @@ export const MODEL_PRICING = {
   claude_opus_4_7: { input: 15.00, output: 75.00 },
   claude_opus_4_8: { input: 15.00, output: 75.00 },
   'claude-sonnet-5': { input: 3.00, output: 15.00 },
+  'kimi-k3': { input: 2.55, output: 12.75 },
 };
 
 // Fallback for custom-endpoint models we don't recognize (e.g. local Ollama,
