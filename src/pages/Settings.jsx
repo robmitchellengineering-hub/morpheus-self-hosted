@@ -22,6 +22,7 @@ const MODEL_OPTIONS = [
   { value: 'claude_opus_4_7', label: 'Claude Opus 4.7 — highest think (highest cost)', tier: 'high' },
   { value: 'claude_opus_4_8', label: 'Claude Opus 4.8 — highest think (highest cost)', tier: 'high' },
   { value: 'kimi-k3', label: 'Kimi K3 (Moonshot) — 1M context, agentic coding (high cost)', tier: 'high' },
+  { value: 'glm-5.2', label: 'GLM 5.2 (Zhipu / Z.ai) — 1M context, agentic coding (high cost)', tier: 'high' },
 ];
 
 const AI_PROVIDER_LINKS = [
@@ -30,6 +31,7 @@ const AI_PROVIDER_LINKS = [
   { name: 'OpenRouter', note: 'Some free models available', keyUrl: 'https://openrouter.ai/settings/keys', keyLabel: 'Get key', baseUrl: 'https://openrouter.ai/api/v1' },
   { name: 'Ollama', note: 'Local, no API key, zero cost (needs GPU)', keyUrl: 'https://ollama.com/download', keyLabel: 'Download', baseUrl: 'http://localhost:11434/v1' },
   { name: 'Moonshot AI (Kimi K3)', note: '1M context, agentic coding. Not free — $1 min top-up, then pay-as-you-go.', keyUrl: 'https://platform.kimi.ai/console/api-keys', keyLabel: 'Get key', baseUrl: 'https://api.moonshot.ai/v1' },
+  { name: 'Z.ai (GLM 5.2)', note: '1M context, strong agentic coding. Paid — no free tier.', keyUrl: 'https://z.ai/model-api', keyLabel: 'Get key', baseUrl: 'https://api.z.ai/api/paas/v4' },
   { name: 'OpenAI', note: 'The default paid provider — GPT 4o and friends', keyUrl: 'https://platform.openai.com/api-keys', keyLabel: 'Get key', baseUrl: 'https://api.openai.com/v1' },
 ];
 
