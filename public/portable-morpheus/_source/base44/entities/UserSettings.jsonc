@@ -1,0 +1,57 @@
+{
+  "name": "UserSettings",
+  "type": "object",
+  "properties": {
+    "ai_mode": {
+      "type": "string",
+      "enum": [
+        "default",
+        "custom"
+      ],
+      "default": "default"
+    },
+    "ai_base_url": {
+      "type": "string"
+    },
+    "ai_api_key": {
+      "type": "string"
+    },
+    "ai_model": {
+      "type": "string"
+    },
+    "planner_model": {
+      "type": "string",
+      "description": "Model override for the autonomous planning/reasoning agent (high think power). Empty = automatic."
+    },
+    "coder_model": {
+      "type": "string",
+      "description": "Model override for the autonomous coding agent (fast lightweight). Empty = automatic."
+    },
+    "reviewer_model": {
+      "type": "string",
+      "description": "Model override for the review agent that checks code before commit. Empty = automatic."
+    },
+    "diagnosis_model": {
+      "type": "string",
+      "description": "Model override for the diagnosis agent that analyzes and auto-fixes errors. Empty = automatic."
+    },
+    "connections": {
+      "type": "string",
+      "description": "JSON string storing hosting platform credentials (Cloudflare, Supabase, Vercel, Netlify, Railway, Render, Fly.io, Custom)."
+    }
+  },
+  "required": [
+    "ai_mode"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "BackendConfig",
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "description": "The project this backend config belongs to"
+    },
+    "custom_domain": {
+      "type": "string",
+      "description": "Custom domain for the deployed backend, e.g. api.myapp.com"
+    },
+    "api_keys": {
+      "type": "string",
+      "description": "JSON array of API keys: [{id, name, keyHash, prefix, created_date, active}]"
+    }
+  },
+  "required": [
+    "project_id"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

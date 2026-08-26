@@ -1,0 +1,24 @@
+{
+  "name": "portable-architect",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Framework-agnostic backend architect. Plan, generate, and deploy backends to free-tier hosting or self-hosted targets from any app's frontend config and connections.",
+  "main": "server/index.js",
+  "exports": {
+    ".": "./server/architect.js",
+    "./server": "./server/index.js",
+    "./client": "./client/api.js"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "jszip": "^3.10.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

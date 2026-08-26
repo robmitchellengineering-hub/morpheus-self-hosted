@@ -1,0 +1,154 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 130 100% 50%;
+    --card: 0 0% 3%;
+    --card-foreground: 130 100% 50%;
+    --popover: 0 0% 3%;
+    --popover-foreground: 130 100% 50%;
+    --primary: 130 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 130 60% 10%;
+    --secondary-foreground: 130 100% 60%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 130 50% 40%;
+    --accent: 130 100% 45%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 130 50% 15%;
+    --input: 130 50% 15%;
+    --ring: 130 100% 50%;
+    --chart-1: 130 100% 50%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.25rem;
+    --font-heading: 'Share Tech Mono', ui-monospace, monospace;
+    --font-body: 'JetBrains Mono', ui-monospace, monospace;
+    --font-display: 'Share Tech Mono', ui-monospace, monospace;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 130 100% 50%;
+    --sidebar-primary: 130 100% 50%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 130 60% 10%;
+    --sidebar-accent-foreground: 130 100% 60%;
+    --sidebar-border: 130 50% 15%;
+    --sidebar-ring: 130 100% 50%;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 130 100% 50%;
+    --card: 0 0% 3%;
+    --card-foreground: 130 100% 50%;
+    --popover: 0 0% 3%;
+    --popover-foreground: 130 100% 50%;
+    --primary: 130 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 130 60% 10%;
+    --secondary-foreground: 130 100% 60%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 130 50% 40%;
+    --accent: 130 100% 45%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 130 50% 15%;
+    --input: 130 50% 15%;
+    --ring: 130 100% 50%;
+    --chart-1: 130 100% 50%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 130 100% 50%;
+    --sidebar-primary: 130 100% 50%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 130 60% 10%;
+    --sidebar-accent-foreground: 130 100% 60%;
+    --sidebar-border: 130 50% 15%;
+    --sidebar-ring: 130 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+    overscroll-behavior: none;
+  }
+
+  /* Block text-selection highlight menus on UI controls (Android WebView);
+     keep inputs and text areas editable/selectable */
+  button, a, select, .no-select {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable] {
+    -webkit-touch-callout: none;
+    user-select: text;
+  }
+}
+
+@layer utilities {
+  /* Route fade-in. A plain CSS animation (not framer-motion) so the layer is
+     only composited during the 0.18s transition and released once opacity
+     reaches 1 — a persistent composited layer on this fixed scroll container
+     is what reverses typed text in the Android WebView IME. */
+  @keyframes route-fade-in { from { opacity: 0 } to { opacity: 1 } }
+  .route-fade { animation: route-fade-in 0.18s ease-out; }
+
+  @keyframes review-flash {
+    0%, 100% { border-color: rgba(239,68,68,0.4); box-shadow: 0 0 0 rgba(239,68,68,0); }
+    50% { border-color: rgba(239,68,68,1); box-shadow: 0 0 14px rgba(239,68,68,0.55); }
+  }
+  .review-flash { animation: review-flash 1s ease-in-out infinite; }
+
+  @keyframes enter-pulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(0,255,65,0.35), inset 0 0 4px rgba(0,255,65,0.2); border-color: rgba(0,255,65,0.6); }
+    50% { box-shadow: 0 0 22px rgba(0,255,65,0.85), inset 0 0 10px rgba(0,255,65,0.5); border-color: rgba(0,255,65,1); }
+  }
+  .enter-pulse { animation: enter-pulse 2.4s ease-in-out infinite; }
+
+  .neon-glow {
+    text-shadow: 0 0 5px currentColor, 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+  .neon-border {
+    box-shadow: 0 0 5px hsl(var(--primary)), inset 0 0 5px hsl(var(--primary));
+  }
+  .scrollbar-matrix::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-matrix::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-matrix::-webkit-scrollbar-thumb { background: hsl(var(--primary) / 0.3); }
+  .scrollbar-matrix::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.5); }
+
+  /* Safe area insets for notched/cutout devices (Android WebView / iOS) */
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-left { padding-left: env(safe-area-inset-left); }
+  .safe-right { padding-right: env(safe-area-inset-right); }
+  .safe-px { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+}
+
+/* Mobile workspace height: uses dvh (dynamic viewport height) so the chat bar
+   stays in the visible viewport even when the browser address bar shows/hides.
+   Falls back to vh for older browsers. Desktop uses the full static viewport. */
+.h-workspace-mobile { height: calc(100vh - 3.75rem); height: calc(100dvh - 3.75rem); height: calc(100svh - 3.75rem); }
+@media (min-width: 768px) { .h-workspace-mobile { height: 100vh; } }
+
+/* Dynamic viewport min-height — prevents the page from being taller than the
+   visible viewport on mobile (100vh includes the address bar area). */
+.min-h-dvh { min-height: 100vh; min-height: 100dvh; }

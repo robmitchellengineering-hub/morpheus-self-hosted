@@ -1,0 +1,28 @@
+{
+  "name": "ProjectFile",
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "Storage URL for large uploaded files. When present, content holds a text preview only."
+    },
+    "language": {
+      "type": "string",
+      "default": "text"
+    }
+  },
+  "required": [
+    "project_id",
+    "path",
+    "content"
+  ]
+}

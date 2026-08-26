@@ -1,0 +1,6 @@
+# Vite/React SPA: send every path that isn't a real static asset to
+# index.html so client-side routing (react-router) handles it. Without
+# this, a direct load or refresh of any route other than "/" (e.g.
+# /login) 404s on Netlify because there's no server-side file at that
+# path -- only the SPA's JS router knows how to render it.
+/*  /index.html  200

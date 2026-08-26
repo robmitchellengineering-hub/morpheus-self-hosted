@@ -1,0 +1,75 @@
+{
+  "name": "Template",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "long_description": {
+      "type": "string",
+      "description": "Markdown content shown on the public store detail page"
+    },
+    "author_name": {
+      "type": "string"
+    },
+    "author_id": {
+      "type": "string"
+    },
+    "files": {
+      "type": "string"
+    },
+    "icon": {
+      "type": "string",
+      "description": "URL for the app icon / cover image shown in the store"
+    },
+    "screenshots": {
+      "type": "string",
+      "description": "JSON array of screenshot image URLs"
+    },
+    "compile_target": {
+      "type": "string",
+      "enum": [
+        "source",
+        "windows-exe",
+        "mac-app",
+        "linux-binary",
+        "android-apk",
+        "ios-app",
+        "python-package",
+        "web-app",
+        "rpi-distro",
+        "arduino-firmware"
+      ],
+      "default": "source"
+    },
+    "tags": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "default": "general"
+    },
+    "install_count": {
+      "type": "number",
+      "default": 0
+    },
+    "file_count": {
+      "type": "number",
+      "default": 0
+    },
+    "price": {
+      "type": "number",
+      "default": 0
+    },
+    "stripe_price_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "files"
+  ]
+}

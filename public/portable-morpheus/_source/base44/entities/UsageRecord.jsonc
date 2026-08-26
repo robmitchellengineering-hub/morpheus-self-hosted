@@ -1,0 +1,42 @@
+{
+  "name": "UsageRecord",
+  "type": "object",
+  "properties": {
+    "action_type": {
+      "type": "string",
+      "enum": [
+        "chat_build",
+        "chat_simple",
+        "autonomous_step",
+        "test_generation",
+        "github_upload",
+        "github_import",
+        "email_export",
+        "voice_generation",
+        "zip_export",
+        "template_publish",
+        "template_install",
+        "compile",
+        "native_prototype",
+        "diagnosis"
+      ]
+    },
+    "credits": {
+      "type": "number",
+      "default": 1
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "project_name": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action_type",
+    "credits"
+  ]
+}
