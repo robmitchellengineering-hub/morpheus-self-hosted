@@ -93,7 +93,7 @@ function makeEntity(name) {
 
 const ENTITY_NAMES = [
   'Project', 'ProjectFile', 'ChatMessage', 'FileSnapshot', 'UsageRecord',
-  'Template', 'Purchase', 'UserSettings', 'BackendConfig', 'RebuildDoc', 'UpdatesPlan', 'GithubConnection',
+  'Template', 'Purchase', 'UserSettings', 'BackendConfig', 'RebuildDoc', 'UpdatesPlan', 'CostSnapshot', 'GithubConnection',
 ];
 
 const entities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, makeEntity(name)]));
