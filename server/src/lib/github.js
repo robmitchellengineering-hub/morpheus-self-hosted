@@ -67,15 +67,24 @@ export async function getGhUser(token) {
   return ghJson(res);
 }
 
-// Create a single blob, with retry-with-backoff on GitHub's secondary rate
-// limit. compileProject pushes ~dozens of files in a tight loop right after
-// creating a brand-new repo — that burst of back-to-back POSTs is exactly
-// the shape GitHub's abuse-detection rate limiter targets, and with zero
-// retries here a single hit failed the whole compile with a bare "Failed to
-// create blob for <path>" and no indication why (seen live on package.json).
+// Create a single blob, with retry-with-backoff on:
+//  - GitHub's secondary rate limit (403/429/5xx) — compileProject pushes
+//    dozens of files in a tight loop, which is exactly the shape GitHub's
+//    abuse-detection rate limiter targets.
+//  - HTTP 409 "Git Repository is empty" — confirmed live on a fresh
+//    autoInit:false repo: repo creation on GitHub's side is itself
+//    asynchronous, so the git/blobs endpoint can 409 for a brief window
+//    right after createRepo returns 201, before the repo's storage backend
+//    has finished provisioning. This is a different race than the
+//    GitRPC::BadObjectState one (that was reading back auto_init's commit;
+//    this is writing to a repo whose backend isn't ready yet), but the same
+//    shape — retry through the window instead of failing on the first hit.
+// With zero retries here, a single hit of either failed the whole compile
+// with a bare "Failed to create blob for <path>" and no indication why
+// (seen live on package.json, twice, for two different underlying reasons).
 async function createBlob(token, repoFullName, file) {
   const h = ghHeaders(token);
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     const blobRes = await fetch(`${GH_API}/repos/${repoFullName}/git/blobs`, {
       method: 'POST', headers: h,
       body: JSON.stringify({ content: file.content ?? '', encoding: 'utf-8' }),
@@ -83,9 +92,9 @@ async function createBlob(token, repoFullName, file) {
     if (blobRes.ok) return ghJson(blobRes);
 
     const err = await ghJson(blobRes);
-    console.log(`Blob creation attempt ${attempt + 1}/4 failed for ${file.path}: status=${blobRes.status}, contentType=${typeof file.content}, contentLen=${file.content?.length ?? 'n/a'}, error=${JSON.stringify(err)}`);
-    const retryable = blobRes.status === 403 || blobRes.status === 429 || blobRes.status >= 500;
-    if (!retryable || attempt === 3) {
+    console.log(`Blob creation attempt ${attempt + 1}/6 failed for ${file.path}: status=${blobRes.status}, contentType=${typeof file.content}, contentLen=${file.content?.length ?? 'n/a'}, error=${JSON.stringify(err)}`);
+    const retryable = blobRes.status === 409 || blobRes.status === 403 || blobRes.status === 429 || blobRes.status >= 500;
+    if (!retryable || attempt === 5) {
       throw new Error(`Failed to create blob for ${file.path} (HTTP ${blobRes.status}): ${err.message || JSON.stringify(err)}`);
     }
     const retryAfterHeader = Number(blobRes.headers.get('retry-after'));
@@ -149,6 +158,13 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
     const repoRes = await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h });
     const repoData = await ghJson(repoRes);
     const branch = repoData.default_branch || 'main';
+
+    // Brief settle delay before the very first write — confirmed live that
+    // GitHub can still return 409 "Git Repository is empty" from git/blobs
+    // for a moment right after repo creation, even with auto_init off. This
+    // doesn't replace the retry in createBlob (that window can still be
+    // longer than this), it just avoids burning a retry on the common case.
+    await new Promise((r) => setTimeout(r, 1500));
 
     const treeItems = [];
     for (const file of files) {
