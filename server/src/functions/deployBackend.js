@@ -13,10 +13,17 @@
 //
 // Credential note: the original also fell back to Base44 platform-wide
 // secrets (`secrets.get('CLOUDFLARE_API_TOKEN')` etc.) when a per-user
-// connection wasn't set. This self-hosted port has no equivalent
-// platform-secrets store, so those fallbacks are dropped — every credential
-// comes from this user's UserSettings.connections, matching the
-// user-supplied-credentials architecture described in the porting task.
+// connection wasn't set — but ONLY for Cloudflare (api_token, account_id)
+// and Supabase (project_ref, access_token); the original never had a
+// platform-secret fallback for Render/Vercel/Netlify/Railway/Fly here. A
+// prior pass here dropped ALL platform-secret fallbacks, including the
+// Cloudflare/Supabase ones the original genuinely had — leaving this file
+// out of sync with getBackendLogs.js, which correctly ported those same
+// `secrets.get(X)` calls to `process.env.X` (the self-hosted equivalent of
+// Base44's house-wide secret store). Restored below so an operator who sets
+// CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID/SUPABASE_PROJECT_REF/
+// SUPABASE_ACCESS_TOKEN as server env vars gets the same deploy-time
+// fallback that getBackendLogs.js already gives them at log-fetch time.
 //
 // Bug fix vs. original: the original referenced `userConnections` inside the
 // `dryRun` branch before it was declared later in the function (a genuine
@@ -668,8 +675,9 @@ async function deployNetlify(project, backendFiles, userConnections) {
 }
 
 async function deployCloudflare(project, backendFiles, userConnections) {
-  const apiToken = userConnections.cloudflare?.api_token;
-  const accountId = userConnections.cloudflare?.account_id;
+  // process.env fallback restored — see credential note at top of file.
+  const apiToken = userConnections.cloudflare?.api_token || process.env.CLOUDFLARE_API_TOKEN;
+  const accountId = userConnections.cloudflare?.account_id || process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!apiToken || !accountId) {
     return {
       status: 'error',
@@ -758,8 +766,9 @@ async function applyBackendConfig(result, customDomain, activeKeyHashes, userCon
 
   // --- Cloudflare Workers ---
   if (service === 'cloudflare-workers') {
-    const apiToken = userConnections.cloudflare?.api_token;
-    const accountId = userConnections.cloudflare?.account_id;
+    // process.env fallback restored — see credential note at top of file.
+    const apiToken = userConnections.cloudflare?.api_token || process.env.CLOUDFLARE_API_TOKEN;
+    const accountId = userConnections.cloudflare?.account_id || process.env.CLOUDFLARE_ACCOUNT_ID;
     const scriptName = result.scriptName;
     if (!apiToken || !accountId || !scriptName) return {};
 
@@ -908,8 +917,9 @@ function getManualConfigInstructions(service, customDomain, hasDomain, keyList, 
 }
 
 async function deploySupabaseDb(fullSql, sqlFiles, userConnections) {
-  const projectRef = userConnections.supabase?.project_ref;
-  const accessToken = userConnections.supabase?.access_token;
+  // process.env fallback restored — see credential note at top of file.
+  const projectRef = userConnections.supabase?.project_ref || process.env.SUPABASE_PROJECT_REF;
+  const accessToken = userConnections.supabase?.access_token || process.env.SUPABASE_ACCESS_TOKEN;
 
   if (!projectRef) {
     return {

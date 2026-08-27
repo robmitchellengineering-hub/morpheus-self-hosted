@@ -139,9 +139,15 @@ export default async function handler({ req, res }) {
             status: 'paid',
           },
         });
-        // Bump the template's install_count, matching downloadTemplate's
-        // non-critical increment on the same event (paid purchase).
-        await prisma.template.updateMany({ where: { id: templateId }, data: { install_count: { increment: 1 } } });
+        // NOTE: intentionally NOT bumping install_count here. An earlier
+        // pass added an increment on this same event, believing it matched
+        // downloadTemplate's own increment — but that made it additive, not
+        // duplicative-in-a-good-way: a single paid purchase (webhook fires,
+        // then the buyer's success page calls downloadTemplate to fetch the
+        // zip) was counting as 2 installs. The original base44 webhook never
+        // touched Template.install_count at all — downloadTemplate was
+        // always the sole source of truth for that counter — so this keeps
+        // it that way rather than double-counting every paid sale.
         console.log(`Purchase recorded: template=${templateId} buyer=${buyerId} amount=${amount} platform=${platformCut} seller=${sellerCut}`);
       } catch (e) {
         console.error('stripeWebhook: Purchase create failed:', e.message);

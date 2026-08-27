@@ -93,10 +93,14 @@ Respond as JSON: { "files": [{ "path": "string", "content": "string" }], "summar
     generatedFiles = reviewed.fileOps.map((op) => ({ path: op.path, content: op.content }));
   }
 
-  // Delete existing backend code files (keep .plan.json)
+  // Delete existing backend code files (keep .plan.json). No .catch() here
+  // — the original base44 version had no local error handling on this
+  // delete either, so a failure propagates and aborts the request instead
+  // of silently leaving stale old backend files mixed in with the newly
+  // generated set (an earlier pass here added a swallowing `.catch(() => {})`).
   const existingBackend = files.filter((f) => f.path.startsWith('backend/') && f.path !== 'backend/.plan.json');
   for (const f of existingBackend) {
-    await prisma.projectFile.delete({ where: { id: f.id } }).catch(() => {});
+    await prisma.projectFile.delete({ where: { id: f.id } });
   }
 
   // Save new backend files (dedup by normalized path — the retry path in
