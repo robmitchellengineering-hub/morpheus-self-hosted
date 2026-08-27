@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck } from 'lucide-react';
+import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck, Sparkles } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import DonateWidget from '@/components/matrix/DonateWidget';
@@ -162,6 +162,9 @@ export default function Landing() {
             </Link>
             <Link to="/ai-docs" className="inline-flex items-center gap-1.5 text-xs text-[#00ff41]/50 hover:text-[#00ff41] font-mono tracking-wider border border-[#00ff41]/20 hover:border-[#00ff41]/50 px-4 py-2 transition-colors">
               <Cpu size={12} /> AI DOCS
+            </Link>
+            <Link to="/updates-plan" className="inline-flex items-center gap-1.5 text-xs text-[#00ff41]/50 hover:text-[#00ff41] font-mono tracking-wider border border-[#00ff41]/20 hover:border-[#00ff41]/50 px-4 py-2 transition-colors">
+              <Sparkles size={12} /> UPDATES PLAN
             </Link>
           </>}
         </div>}
