@@ -33,6 +33,7 @@ const FlowDiagram = lazy(() => import('@/pages/FlowDiagram'));
 const AIDocs = lazy(() => import('@/pages/AIDocs'));
 const UpdatesPlan = lazy(() => import('@/pages/UpdatesPlan'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 
 
 const AuthenticatedApp = () => {
@@ -81,7 +82,7 @@ function AnimatedRoutes() {
       key={location.pathname}
       className={`min-h-dvh pb-[3.75rem] md:pb-0 overflow-x-hidden ${firstRender.current ? '' : 'route-fade'}`}
     >
-      <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center"><div className="w-8 h-8 border-4 border-[#00ff41]/30 border-t-[#00ff41] rounded-full animate-spin" /></div>}>
+      <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
         <Routes location={location}>
           {/* Add your page Route elements here */}
           <Route path="/" element={<Landing />} />
@@ -132,17 +133,19 @@ function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <HelpModeProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <ScrollToTop />
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-      </QueryClientProvider>
-      </HelpModeProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <HelpModeProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <ScrollToTop />
+            <AuthenticatedApp />
+          </Router>
+          <Toaster />
+        </QueryClientProvider>
+        </HelpModeProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
 

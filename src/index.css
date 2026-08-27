@@ -5,47 +5,103 @@
 @tailwind utilities;
 
 @layer base {
+  /* CLEAR (default) theme — same black/green Matrix identity, but with a
+     brighter, less-saturated primary green (better contrast at every opacity
+     level used across the app for captions/labels), a visible border/panel
+     tone instead of a near-invisible one, and real hue variety for status
+     indicators (amber/blue/red) instead of everything being a shade of green.
+     See [data-theme="classic"] below for the original all-green look. */
   :root {
     --background: 0 0% 0%;
-    --foreground: 130 100% 50%;
+    --foreground: 142 90% 58%;
     --card: 0 0% 3%;
-    --card-foreground: 130 100% 50%;
+    --card-foreground: 142 90% 58%;
     --popover: 0 0% 3%;
-    --popover-foreground: 130 100% 50%;
-    --primary: 130 100% 50%;
+    --popover-foreground: 142 90% 58%;
+    --primary: 142 90% 58%;
     --primary-foreground: 0 0% 0%;
-    --secondary: 130 60% 10%;
-    --secondary-foreground: 130 100% 60%;
+    --secondary: 142 45% 12%;
+    --secondary-foreground: 142 70% 68%;
     --muted: 0 0% 8%;
-    --muted-foreground: 130 50% 40%;
-    --accent: 130 100% 45%;
+    --muted-foreground: 150 22% 66%;
+    --accent: 190 85% 55%;
     --accent-foreground: 0 0% 0%;
-    --destructive: 0 100% 50%;
+    --destructive: 0 78% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 130 50% 15%;
-    --input: 130 50% 15%;
-    --ring: 130 100% 50%;
-    --chart-1: 130 100% 50%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --border: 150 28% 22%;
+    --input: 150 28% 22%;
+    --ring: 142 90% 58%;
+    --chart-1: 142 90% 58%;
+    --chart-2: 190 85% 55%;
+    --chart-3: 38 92% 58%;
+    --chart-4: 320 70% 60%;
+    --chart-5: 0 78% 58%;
+    /* Semantic status tones — used for status dots/pills (connected, needs
+       setup, informational, error) so those read at a glance instead of
+       everything being the same green. */
+    --status-success: 142 80% 55%;
+    --status-warning: 38 92% 58%;
+    --status-info: 199 89% 60%;
+    --status-danger: 0 78% 58%;
     --radius: 0.25rem;
     --font-heading: 'Share Tech Mono', ui-monospace, monospace;
     --font-body: 'JetBrains Mono', ui-monospace, monospace;
     --font-display: 'Share Tech Mono', ui-monospace, monospace;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
     --sidebar-background: 0 0% 0%;
-    --sidebar-foreground: 130 100% 50%;
-    --sidebar-primary: 130 100% 50%;
+    --sidebar-foreground: 142 90% 58%;
+    --sidebar-primary: 142 90% 58%;
     --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 130 60% 10%;
-    --sidebar-accent-foreground: 130 100% 60%;
-    --sidebar-border: 130 50% 15%;
-    --sidebar-ring: 130 100% 50%;
+    --sidebar-accent: 142 45% 12%;
+    --sidebar-accent-foreground: 142 70% 68%;
+    --sidebar-border: 150 28% 22%;
+    --sidebar-ring: 142 90% 58%;
   }
 
   .dark {
+    --background: 0 0% 0%;
+    --foreground: 142 90% 58%;
+    --card: 0 0% 3%;
+    --card-foreground: 142 90% 58%;
+    --popover: 0 0% 3%;
+    --popover-foreground: 142 90% 58%;
+    --primary: 142 90% 58%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 142 45% 12%;
+    --secondary-foreground: 142 70% 68%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 150 22% 66%;
+    --accent: 190 85% 55%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 78% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 28% 22%;
+    --input: 150 28% 22%;
+    --ring: 142 90% 58%;
+    --chart-1: 142 90% 58%;
+    --chart-2: 190 85% 55%;
+    --chart-3: 38 92% 58%;
+    --chart-4: 320 70% 60%;
+    --chart-5: 0 78% 58%;
+    --status-success: 142 80% 55%;
+    --status-warning: 38 92% 58%;
+    --status-info: 199 89% 60%;
+    --status-danger: 0 78% 58%;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 142 90% 58%;
+    --sidebar-primary: 142 90% 58%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 142 45% 12%;
+    --sidebar-accent-foreground: 142 70% 68%;
+    --sidebar-border: 150 28% 22%;
+    --sidebar-ring: 142 90% 58%;
+  }
+
+  /* CLASSIC MATRIX theme — the original pure #00ff41-on-black look, kept
+     pixel-for-pixel identical to before this change. Selectable in
+     Settings → Appearance. Placed after .dark so it always wins the
+     cascade when active, regardless of the OS dark-mode class. */
+  [data-theme="classic"] {
     --background: 0 0% 0%;
     --foreground: 130 100% 50%;
     --card: 0 0% 3%;
@@ -70,6 +126,10 @@
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
+    --status-success: 130 100% 50%;
+    --status-warning: 45 100% 51%;
+    --status-info: 130 100% 45%;
+    --status-danger: 0 100% 50%;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 130 100% 50%;
     --sidebar-primary: 130 100% 50%;
