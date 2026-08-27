@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Image } from '@/components/ui/image';
-import { ArrowLeft, Loader2, Download, DollarSign, CheckCircle2, Tag, FileCode, Calendar, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Loader2, Download, DollarSign, CheckCircle2, Tag, FileCode, Calendar, TrendingUp, Package } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import JSZip from 'jszip';
 import VerifiedBadge from '@/components/matrix/VerifiedBadge';
@@ -67,10 +67,24 @@ export default function StoreItem() {
     }
   };
 
-  const buildZip = async (filesJson, name) => {
+  const buildZip = async (filesJson, name, artifacts) => {
     const files = JSON.parse(filesJson);
     const zip = new JSZip();
     files.forEach(f => zip.file(f.path, f.content));
+    // Compiled build files, if the seller attached any — fetched as binary
+    // and bundled alongside the source under _compiled/, same layout the
+    // in-app compile pipeline uses for a project's own saved artifacts.
+    if (artifacts?.length > 0) {
+      for (const a of artifacts) {
+        if (!a?.file_url || !a?.name) continue;
+        try {
+          const res = await fetch(a.file_url);
+          if (res.ok) zip.file(`_compiled/${a.name}`, await res.arrayBuffer());
+        } catch {
+          // Non-fatal — buyer still gets the source even if a binary fetch fails
+        }
+      }
+    }
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -86,7 +100,7 @@ export default function StoreItem() {
     if (!template?.files) return;
     setDownloading(true);
     try {
-      await buildZip(template.files, template.name);
+      await buildZip(template.files, template.name, template.artifacts);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -99,8 +113,23 @@ export default function StoreItem() {
     setDownloading(true);
     setError(null);
     try {
+      // downloadTemplate.js streams back a pre-built ZIP (application/zip,
+      // including any compiled artifacts the seller attached) rather than
+      // raw JSON — apiFetch resolves a non-JSON response to a Blob, so save
+      // it directly instead of re-zipping client-side.
       const res = await base44.functions.invoke('downloadTemplate', { sessionId: purchaseSessionId, templateId });
-      if (res.data?.files) {
+      const blob = res.data instanceof Blob ? res.data : null;
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(template.name || 'template').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (res.data?.files) {
+        // Defensive fallback in case a future change reverts to a JSON contract
         await buildZip(res.data.files, res.data.name || template.name);
       }
     } catch (e) {
@@ -200,6 +229,11 @@ export default function StoreItem() {
               <span className="text-xs text-primary/50 border border-primary/20 px-2 py-0.5 uppercase">
                 {template.compile_target?.replace('-', ' ')}
               </span>
+              {template.has_artifacts && (
+                <span className="flex items-center gap-1 text-xs text-info border border-info/40 px-2 py-0.5 uppercase">
+                  <Package size={11} /> compiled build included
+                </span>
+              )}
               {template.category && template.category !== 'general' && (
                 <span className="text-xs text-primary/50 border border-primary/20 px-2 py-0.5 uppercase">
                   {template.category}
