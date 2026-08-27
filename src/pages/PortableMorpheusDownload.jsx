@@ -62,14 +62,14 @@ export default function PortableMorpheusDownload() {
   useEffect(() => { download(); }, []);
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-black text-[#00ff41] font-mono p-6">
+    <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-black text-primary font-mono p-6">
       <div className="text-center">
         <div className="text-lg tracking-wider neon-glow mb-2">◇ PORTABLE MORPHEUS</div>
-        <div className="text-xs text-[#00ff41]/60">{FILES.length} files · {status}</div>
+        <div className="text-xs text-primary/60">{FILES.length} files · {status}</div>
       </div>
       {err && <div className="text-red-500 text-xs max-w-xs text-center">Error: {err}</div>}
-      {status === 'done' && <div className="text-xs text-[#00ff41]/80">✓ Download started. Check your downloads.</div>}
-      <button onClick={download} className="mt-2 px-4 py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black text-xs font-bold tracking-wider">
+      {status === 'done' && <div className="text-xs text-primary/80">✓ Download started. Check your downloads.</div>}
+      <button onClick={download} className="mt-2 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black text-xs font-bold tracking-wider">
         DOWNLOAD AGAIN
       </button>
     </div>

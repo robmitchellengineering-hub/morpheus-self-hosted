@@ -106,7 +106,7 @@ export default function Workspace() {
 
   if (!ws.currentProject) {
     return (
-      <div ref={listRef} className="relative min-h-screen bg-black text-[#00ff41] font-mono">
+      <div ref={listRef} className="relative min-h-screen bg-black text-primary font-mono">
         <MatrixRain opacity={0.05} />
         <div className="pointer-events-none fixed inset-0 opacity-[0.05]" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--primary) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--primary) / 0.5) 1px, transparent 1px)', backgroundSize: '44px 44px' }} />
         <div className="relative z-10"><PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} /></div>
@@ -116,57 +116,57 @@ export default function Workspace() {
             <div className="flex items-center gap-2 shrink-0">
               <BuildStamp />
               <HelpToggle />
-              <Button asChild variant="outline" size="sm" className="rounded-none border-[#00ff41]/40 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] hover:bg-[#00ff41]/10 shrink-0">
+              <Button asChild variant="outline" size="sm" className="rounded-none border-primary/40 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/10 shrink-0">
                 <Link to="/"><HomeIcon size={14} /> <span className="hidden sm:inline">HOME</span></Link>
               </Button>
-              <Button asChild variant="outline" size="sm" className="rounded-none border-[#00ff41]/40 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] hover:bg-[#00ff41]/10 shrink-0">
+              <Button asChild variant="outline" size="sm" className="rounded-none border-primary/40 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/10 shrink-0">
                 <Link to="/settings"><SettingsIcon size={14} /> <span className="hidden sm:inline">SETTINGS</span></Link>
               </Button>
             </div>
           </div>
-          <p className="text-[#00ff41]/60 mb-3 text-sm">// Choose an existing project or jack into a new one</p>
-          <p className="text-[#00ff41]/60 mb-4 text-sm">// Set your connections and check capabilities to make sure Morpheus can publish</p>
+          <p className="text-primary/60 mb-3 text-sm">// Choose an existing project or jack into a new one</p>
+          <p className="text-primary/60 mb-4 text-sm">// Set your connections and check capabilities to make sure Morpheus can publish</p>
           <div className="flex flex-col sm:flex-row gap-3 mb-8">
             <HelpHint id="connections" title="Connections" body="Set up and review your integrations — GitHub, hosting platforms (Cloudflare, Vercel, Supabase, etc.), and databases. Shows what's connected and a live Morpheus capability matrix of what you can do end-to-end.">
-              <button onClick={() => setShowConnections(true)} className="flex flex-col items-start gap-0.5 px-6 py-3 border border-[#00ff41]/50 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] hover:bg-[#00ff41]/5 transition-colors">
+              <button onClick={() => setShowConnections(true)} className="flex flex-col items-start gap-0.5 px-6 py-3 border border-primary/50 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
                 <span className="flex items-center gap-2"><Plug size={18} /> CONNECTIONS</span>
-                <span className="text-[10px] text-[#00ff41]/75 tracking-wider">// set up integrations</span>
+                <span className="text-[10px] text-primary/75 tracking-wider">// set up integrations</span>
               </button>
             </HelpHint>
             <HelpHint id="new-construct" title="New Construct" body="Start a new project from scratch. Morpheus builds it with you through the chat. Pick a compile target (Android APK, Windows .exe, etc.) or leave it on 'source' for plain code.">
-              <button onClick={() => setShowNew(true)} className="flex flex-col items-start gap-0.5 px-6 py-3 bg-[#00ff41] text-black hover:bg-[#00ff41]/90 transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)]">
+              <button onClick={() => setShowNew(true)} className="flex flex-col items-start gap-0.5 px-6 py-3 bg-primary text-black hover:bg-primary/90 transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)]">
                 <span className="flex items-center gap-2 font-bold"><Plus size={18} /> NEW CONSTRUCT</span>
                 <span className="text-[10px] text-black/70 tracking-wider">// frontend development</span>
               </button>
             </HelpHint>
-            <Link to="/architect" className="flex flex-col items-start gap-0.5 px-6 py-3 border border-[#00ff41]/50 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] hover:bg-[#00ff41]/5 transition-colors">
+            <Link to="/architect" className="flex flex-col items-start gap-0.5 px-6 py-3 border border-primary/50 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
               <span className="flex items-center gap-2"><Boxes size={18} /> ARCHITECT</span>
-              <span className="text-[10px] text-[#00ff41]/75 tracking-wider">// backend development</span>
+              <span className="text-[10px] text-primary/75 tracking-wider">// backend development</span>
             </Link>
             <HelpHint id="import-github" title="Import from GitHub" body="Pull an existing GitHub repo into Morpheus. You'll need your GitHub account connected first (see the CONNECT GITHUB link). Morpheus imports the files so you can iterate on them here.">
-              <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-6 py-3 border border-[#00ff41]/50 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] hover:bg-[#00ff41]/5 transition-colors">
+              <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-6 py-3 border border-primary/50 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
                 <Github size={18} /> IMPORT FROM GITHUB
               </button>
             </HelpHint>
           </div>
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-[10px] text-[#00ff41]/50 tracking-[0.2em] font-display">// EXISTING CONSTRUCTS</span>
-            <div className="flex-1 h-px bg-gradient-to-r from-[#00ff41]/20 to-transparent" />
+            <span className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// EXISTING CONSTRUCTS</span>
+            <div className="flex-1 h-px bg-gradient-to-r from-primary/20 to-transparent" />
           </div>
           <div className="flex gap-2 mb-3">
-            <div className="flex-1 flex items-center gap-2 border border-[#00ff41]/30 px-3 py-2">
-              <Search size={14} className="text-[#00ff41]/50 shrink-0" />
+            <div className="flex-1 flex items-center gap-2 border border-primary/30 px-3 py-2">
+              <Search size={14} className="text-primary/50 shrink-0" />
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search constructs..."
-                className="flex-1 bg-transparent text-[#00ff41] text-sm outline-none placeholder:text-[#00ff41]/30 min-w-0"
+                className="flex-1 bg-transparent text-primary text-sm outline-none placeholder:text-primary/30 min-w-0"
               />
-              {search && <button onClick={() => setSearch('')} className="text-[#00ff41]/50 hover:text-[#00ff41] shrink-0"><X size={14} /></button>}
+              {search && <button onClick={() => setSearch('')} className="text-primary/50 hover:text-primary shrink-0"><X size={14} /></button>}
             </div>
             <button
               onClick={() => setSortBy(s => s === 'time' ? 'name' : 'time')}
-              className="flex items-center gap-1.5 px-3 py-2 border border-[#00ff41]/30 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] text-sm whitespace-nowrap transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-primary/30 text-primary/70 hover:border-primary hover:text-primary text-sm whitespace-nowrap transition-colors"
               title={sortBy === 'time' ? 'Sort by newest first' : 'Sort by name A-Z'}
             >
               {sortBy === 'time' ? <Clock size={14} /> : <ArrowDownAZ size={14} />}
@@ -175,32 +175,32 @@ export default function Workspace() {
           </div>
           <div className="space-y-3 mb-10">
             {visibleProjects.length === 0 && (
-              <div className="border border-dashed border-[#00ff41]/20 px-4 py-8 text-center">
-                <p className="text-[#00ff41]/60 italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty. Create your first.'}</p>
+              <div className="border border-dashed border-primary/20 px-4 py-8 text-center">
+                <p className="text-primary/60 italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty. Create your first.'}</p>
               </div>
             )}
             {visibleProjects.map(p => (
-              <Card key={p.id} className="group relative rounded-none border-[#00ff41]/30 bg-card hover:border-[#00ff41] hover:bg-[#00ff41]/5 hover:shadow-[0_0_24px_-4px_rgba(0,255,65,0.2)] transition-colors">
+              <Card key={p.id} className="group relative rounded-none border-primary/30 bg-card hover:border-primary hover:bg-primary/5 hover:shadow-[0_0_24px_-4px_rgba(0,255,65,0.2)] transition-colors">
                 <button onClick={() => navigate('/workspace/' + p.id)} className="w-full text-left p-4 pr-12">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[#00ff41] group-hover:neon-glow">{p.name}</span>
-                    <Badge variant="outline" className="rounded-none border-[#00ff41]/40 bg-transparent text-[#00ff41]/70 font-mono text-[10px] uppercase tracking-wider">{p.status}</Badge>
+                    <span className="text-primary group-hover:neon-glow">{p.name}</span>
+                    <Badge variant="outline" className="rounded-none border-primary/40 bg-transparent text-primary/70 font-mono text-[10px] uppercase tracking-wider">{p.status}</Badge>
                   </div>
-                  {p.description && <p className="text-[#00ff41]/50 text-sm mt-1.5">{p.description}</p>}
+                  {p.description && <p className="text-primary/50 text-sm mt-1.5">{p.description}</p>}
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} className="absolute top-3 right-3 text-[#00ff41]/60 hover:text-red-500 transition-colors p-1" title="Delete construct">
+                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} className="absolute top-3 right-3 text-primary/60 hover:text-red-500 transition-colors p-1" title="Delete construct">
                   <Trash2 size={16} />
                 </button>
               </Card>
             ))}
           </div>
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-[10px] text-[#00ff41]/50 tracking-[0.2em] font-display">// MARKETPLACE</span>
-            <div className="flex-1 h-px bg-gradient-to-r from-[#00ff41]/20 to-transparent" />
+            <span className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// MARKETPLACE</span>
+            <div className="flex-1 h-px bg-gradient-to-r from-primary/20 to-transparent" />
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
             <HelpHint id="browse-market" title="Browse Market" body="Browse community templates. Install free ones or buy premium templates with Stripe checkout. Installed templates become projects you can modify and compile.">
-              <button onClick={() => setShowMarket(true)} className="flex items-center gap-2 px-6 py-3 border border-[#00ff41]/50 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] hover:bg-[#00ff41]/5 transition-colors">
+              <button onClick={() => setShowMarket(true)} className="flex items-center gap-2 px-6 py-3 border border-primary/50 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
                 <Store size={18} /> BROWSE MARKET
               </button>
             </HelpHint>
@@ -216,12 +216,12 @@ export default function Workspace() {
   }
 
   return (
-    <div className="relative h-workspace-mobile bg-black text-[#00ff41] font-mono flex flex-col overflow-hidden safe-top">
+    <div className="relative h-workspace-mobile bg-black text-primary font-mono flex flex-col overflow-hidden safe-top">
       <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
-      <div className="md:hidden flex border-b border-[#00ff41]/20 shrink-0 overscroll-none">
-        <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-[#00ff41]/15 text-[#00ff41] neon-glow border-b-2 border-[#00ff41]' : 'text-[#00ff41] hover:text-[#39ff14]'}`}>CHAT</button>
-        <button onClick={() => setMobileTab('files')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'files' ? 'bg-[#00ff41]/15 text-[#00ff41] neon-glow border-b-2 border-[#00ff41]' : 'text-[#00ff41] hover:text-[#39ff14]'}`}>FILES</button>
-        <button onClick={() => setMobileTab('preview')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'preview' ? 'bg-[#00ff41]/15 text-[#00ff41] neon-glow border-b-2 border-[#00ff41]' : 'text-[#00ff41] hover:text-[#39ff14]'}`}>PREVIEW</button>
+      <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
+        <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>CHAT</button>
+        <button onClick={() => setMobileTab('files')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'files' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>FILES</button>
+        <button onClick={() => setMobileTab('preview')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'preview' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>PREVIEW</button>
       </div>
       {isMobile ? (
         <div className="flex-1 flex overflow-hidden overscroll-none min-h-0">
@@ -241,8 +241,8 @@ export default function Workspace() {
           <Panel defaultSize={33} minSize={15} className="min-w-0 overflow-hidden">
             <ChatPanel messages={ws.messages} loading={ws.loading} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} onAutonomous={() => setShowAutonomous(true)} />
           </Panel>
-          <PanelResizeHandle className="relative w-2 bg-[#00ff41]/10 hover:bg-[#00ff41]/30 transition-colors cursor-col-resize shrink-0 group">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-[#00ff41]/30 group-hover:bg-[#00ff41] rounded-full transition-colors" />
+          <PanelResizeHandle className="relative w-2 bg-primary/10 hover:bg-primary/30 transition-colors cursor-col-resize shrink-0 group">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-primary/30 group-hover:bg-primary rounded-full transition-colors" />
           </PanelResizeHandle>
           <Panel defaultSize={34} minSize={15} className="min-w-0 overflow-hidden">
             <div className="h-full flex flex-col">
@@ -250,8 +250,8 @@ export default function Workspace() {
               <FileViewer file={ws.selectedFile} />
             </div>
           </Panel>
-          <PanelResizeHandle className="relative w-2 bg-[#00ff41]/10 hover:bg-[#00ff41]/30 transition-colors cursor-col-resize shrink-0 group">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-[#00ff41]/30 group-hover:bg-[#00ff41] rounded-full transition-colors" />
+          <PanelResizeHandle className="relative w-2 bg-primary/10 hover:bg-primary/30 transition-colors cursor-col-resize shrink-0 group">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-primary/30 group-hover:bg-primary rounded-full transition-colors" />
           </PanelResizeHandle>
           <Panel defaultSize={33} minSize={15} className="min-w-0 overflow-hidden">
             <PreviewPanel files={ws.files} projectId={ws.currentProject.id} compileTarget={ws.currentProject.compile_target} />

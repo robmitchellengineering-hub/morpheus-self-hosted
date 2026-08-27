@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette } from 'lucide-react';
 import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import ConnectionsSection from '@/components/matrix/ConnectionsSection';
 import CapabilityStatus from '@/components/matrix/CapabilityStatus';
 import SheetSelect from '@/components/matrix/SheetSelect';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Automatic (platform default — lowest credit cost)' },
@@ -22,26 +23,11 @@ const MODEL_OPTIONS = [
   { value: 'claude_opus_4_7', label: 'Claude Opus 4.7 — highest think (highest cost)', tier: 'high' },
   { value: 'claude_opus_4_8', label: 'Claude Opus 4.8 — highest think (highest cost)', tier: 'high' },
   { value: 'kimi-k3', label: 'Kimi K3 (Moonshot) — 1M context, agentic coding (high cost)', tier: 'high' },
-  { value: 'glm-5.2', label: 'GLM 5.2 (Zhipu / Z.ai) — 1M context, agentic coding (high cost)', tier: 'high' },
 ];
-
-const AI_PROVIDER_LINKS = [
-  { name: 'Google AI Studio (Gemini)', note: 'Free Gemini Flash, generous limits', keyUrl: 'https://aistudio.google.com/apikey', keyLabel: 'Get key', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
-  { name: 'Groq', note: 'Free fast inference (Llama, Mixtral)', keyUrl: 'https://console.groq.com/keys', keyLabel: 'Get key', baseUrl: 'https://api.groq.com/openai/v1' },
-  { name: 'OpenRouter', note: 'Some free models available', keyUrl: 'https://openrouter.ai/settings/keys', keyLabel: 'Get key', baseUrl: 'https://openrouter.ai/api/v1' },
-  { name: 'Ollama', note: 'Local, no API key, zero cost (needs GPU)', keyUrl: 'https://ollama.com/download', keyLabel: 'Download', baseUrl: 'http://localhost:11434/v1' },
-  { name: 'Moonshot AI (Kimi K3)', note: '1M context, agentic coding. Not free — $1 min top-up, then pay-as-you-go.', keyUrl: 'https://platform.kimi.ai/console/api-keys', keyLabel: 'Get key', baseUrl: 'https://api.moonshot.ai/v1' },
-  { name: 'Z.ai (GLM 5.2)', note: '1M context, strong agentic coding. Paid — no free tier.', keyUrl: 'https://z.ai/model-api', keyLabel: 'Get key', baseUrl: 'https://api.z.ai/api/paas/v4' },
-  { name: 'OpenAI', note: 'The default paid provider — GPT 4o and friends', keyUrl: 'https://platform.openai.com/api-keys', keyLabel: 'Get key', baseUrl: 'https://api.openai.com/v1' },
-];
-
-const TTS_PROVIDER_LINKS = {
-  elevenlabs: { name: 'ElevenLabs', keyUrl: 'https://elevenlabs.io/app/settings/api-keys' },
-  openai: { name: 'OpenAI', keyUrl: 'https://platform.openai.com/api-keys' },
-};
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState(null);
   const [aiMode, setAiMode] = useState('default');
   const [aiBaseUrl, setAiBaseUrl] = useState('');
@@ -127,30 +113,72 @@ export default function Settings() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-[#00ff41] font-mono">
+    <div className="relative min-h-screen bg-black text-primary font-mono">
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-10 safe-top">
         <div className="flex items-center gap-3 mb-8">
-          <button onClick={() => navigate('/workspace')} className="text-[#00ff41]/60 hover:text-[#00ff41]">
+          <button onClick={() => navigate('/workspace')} className="text-primary/60 hover:text-primary">
             <ArrowLeft size={18} />
           </button>
-          <Cpu size={20} className="text-[#00ff41]" />
+          <Cpu size={20} className="text-primary" />
           <h1 className="text-2xl font-display tracking-widest neon-glow">SETTINGS</h1>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-12">
-            <Loader2 size={24} className="animate-spin text-[#00ff41]/60" />
+            <Loader2 size={24} className="animate-spin text-primary/60" />
           </div>
         ) : (
           <>
-            <section className="mb-8 border border-[#00ff41]/30 p-5">
-              <h2 className="text-sm font-display tracking-wider mb-1 text-[#00ff41]">AI PROVIDER</h2>
-              <p className="text-xs text-[#00ff41]/50 mb-4">
+            <section className="mb-8 border border-primary/30 p-5">
+              <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
+                <Palette size={14} /> APPEARANCE
+              </h2>
+              <p className="text-xs text-primary/50 mb-4">
+                // Clear is the default look — brighter text and visible panel borders so small print reads easily, plus color-coded status dots. Classic Matrix is the original all-green terminal look.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => setTheme('clear')}
+                  className={`text-left border p-3 transition-colors ${theme === 'clear' ? 'border-primary bg-primary/10' : 'border-primary/20 hover:border-primary/40'}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-display tracking-wider text-primary">CLEAR (RECOMMENDED)</span>
+                    {theme === 'clear' && <Check size={14} className="text-primary" />}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(142 90% 58%)' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(199 89% 60%)' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(38 92% 58%)' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(0 78% 58%)' }} />
+                    <span className="text-[10px] text-primary/50 ml-1">higher contrast + color-coded status</span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setTheme('classic')}
+                  className={`text-left border p-3 transition-colors ${theme === 'classic' ? 'border-primary bg-primary/10' : 'border-primary/20 hover:border-primary/40'}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-display tracking-wider text-primary">CLASSIC MATRIX</span>
+                    {theme === 'classic' && <Check size={14} className="text-primary" />}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
+                    <span className="text-[10px] text-primary/50 ml-1">original all-green terminal look</span>
+                  </div>
+                </button>
+              </div>
+            </section>
+
+            <section className="mb-8 border border-primary/30 p-5">
+              <h2 className="text-sm font-display tracking-wider mb-1 text-primary">AI PROVIDER</h2>
+              <p className="text-xs text-primary/50 mb-4">
                 // Point Morpheus at any OpenAI-compatible endpoint. Default uses the platform brain — no config needed.
               </p>
 
-              <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">Mode</label>
+              <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Mode</label>
               <SheetSelect
                 value={aiMode}
                 onChange={setAiMode}
@@ -162,60 +190,39 @@ export default function Settings() {
               {aiMode === 'custom' ? (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">Base URL</label>
+                    <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Base URL</label>
                     <input
                       value={aiBaseUrl}
                       onChange={e => setAiBaseUrl(e.target.value)}
                       placeholder="https://api.openai.com/v1"
-                      className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
+                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
-                    <p className="text-xs text-[#00ff41]/65 mt-1">
+                    <p className="text-xs text-primary/65 mt-1">
                       // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1 · https://api.moonshot.ai/v1 (Kimi K3)
                     </p>
-                    <div className="mt-2 border border-[#00ff41]/20 bg-[#00ff41]/5 p-2.5 text-xs text-[#00ff41]/50 space-y-2">
-                      <p className="text-[#00ff41]/70 font-bold uppercase tracking-wider text-[10px]">Providers — get a key, then paste it above:</p>
-                      {AI_PROVIDER_LINKS.map(p => (
-                        <div key={p.name} className="flex items-center justify-between gap-2 flex-wrap py-0.5">
-                          <span>
-                            <span className="text-[#00ff41]/80">{p.name}</span>
-                            <span className="text-[#00ff41]/45"> — {p.note}</span>
-                          </span>
-                          <span className="flex items-center gap-3 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => setAiBaseUrl(p.baseUrl)}
-                              className="text-[#00ff41]/70 hover:text-[#00ff41] underline decoration-dotted"
-                              title={`Fill Base URL with ${p.baseUrl}`}
-                            >
-                              Use URL
-                            </button>
-                            <a
-                              href={p.keyUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-[#00ff41]/80 hover:text-[#00ff41] underline"
-                            >
-                              {p.keyLabel} <ExternalLink size={10} />
-                            </a>
-                          </span>
-                        </div>
-                      ))}
-                      <p className="text-yellow-500/60 pt-1">// Free tiers have rate limits — heavy autonomous builds may hit them. Use platform default for reliability.</p>
+                    <div className="mt-2 border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary/50 space-y-1">
+                      <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Free-tier providers:</p>
+                      <p>// Google AI Studio — free Gemini Flash, generous limits</p>
+                      <p>// Groq — free fast inference (Llama, Mixtral)</p>
+                      <p>// OpenRouter — some free models available</p>
+                      <p>// Ollama — local, no API key, zero cost (needs GPU)</p>
+                      <p className="pt-0.5">// Moonshot AI (Kimi K3) — 1M context, strong at agentic coding. Not free — $1 min top-up required, then pay-as-you-go.</p>
+                      <p className="text-yellow-500/60 pt-0.5">// Free tiers have rate limits — heavy autonomous builds may hit them. Use platform default for reliability.</p>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">API Key</label>
+                    <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">API Key</label>
                     <div className="flex gap-2">
                       <input
                         type={showKey ? 'text' : 'password'}
                         value={aiApiKey}
                         onChange={e => setAiApiKey(e.target.value)}
                         placeholder="sk-..."
-                        className="flex-1 bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
+                        className="flex-1 bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                       />
                       <button
                         onClick={() => setShowKey(!showKey)}
-                        className="px-3 border border-[#00ff41]/30 text-[#00ff41]/60 hover:text-[#00ff41]"
+                        className="px-3 border border-primary/30 text-primary/60 hover:text-primary"
                         title={showKey ? 'Hide key' : 'Show key'}
                       >
                         {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -223,29 +230,29 @@ export default function Settings() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">Model</label>
+                    <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Model</label>
                     <input
                       value={aiModel}
                       onChange={e => setAiModel(e.target.value)}
                       placeholder="gpt-4o"
-                      className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
+                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-[#00ff41]/75">// Using the platform default. No configuration required.</p>
+                <p className="text-xs text-primary/75">// Using the platform default. No configuration required.</p>
               )}
             </section>
 
-            <section className="mb-8 border border-[#00ff41]/30 p-5">
-              <h2 className="text-sm font-display tracking-wider mb-1 text-[#00ff41] flex items-center gap-2">
+            <section className="mb-8 border border-primary/30 p-5">
+              <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
                 <Brain size={14} /> AGENT MODELS
               </h2>
-              <p className="text-xs text-[#00ff41]/50 mb-4">
+              <p className="text-xs text-primary/50 mb-4">
                 // Every agent in the pipeline is individually addressable. All default to automatic — override only when you want a specific model for a specific role. Max think power is enabled (no output token cap).
               </p>
-              <div className="mb-4 border border-[#00ff41]/20 bg-[#00ff41]/5 p-2.5 text-xs text-[#00ff41]/50 space-y-1">
-                <p className="text-[#00ff41]/70 font-bold uppercase tracking-wider text-[10px]">Free-tier optimisation:</p>
+              <div className="mb-4 border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary/50 space-y-1">
+                <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Free-tier optimisation:</p>
                 <p>// Best free-tier setup: leave all on Automatic (lowest credit cost)</p>
                 <p>// Or set Planner → Gemini 3 Flash, Coder → GPT 5 Mini (lowest cost overrides)</p>
                 <p>// Reviewer &amp; Diagnosis can stay Automatic — they run less frequently</p>
@@ -254,7 +261,7 @@ export default function Settings() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                     <Brain size={12} /> Planner / Reasoning Model
                   </label>
                   <SheetSelect
@@ -264,13 +271,13 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-[#00ff41]/65 mt-1">
+                  <p className="text-xs text-primary/65 mt-1">
                     // Used for design reasoning, architecture, aesthetics, and planning. Higher think power = better reliability and UX decisions.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                     <Zap size={12} /> Coder / Implementation Model
                   </label>
                   <SheetSelect
@@ -280,13 +287,13 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-[#00ff41]/65 mt-1">
+                  <p className="text-xs text-primary/65 mt-1">
                     // Used for writing clean, efficient code from the planner's blueprint. Fast lightweight models minimise errors and speed up mobile builds.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                     <ShieldCheck size={12} /> Reviewer Model
                   </label>
                   <SheetSelect
@@ -296,13 +303,13 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-[#00ff41]/65 mt-1">
+                  <p className="text-xs text-primary/65 mt-1">
                     // Reviews code before commit — checks correctness, security, and performance. Defaults to automatic.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                     <Stethoscope size={12} /> Diagnosis Model
                   </label>
                   <SheetSelect
@@ -312,22 +319,22 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-[#00ff41]/65 mt-1">
+                  <p className="text-xs text-primary/65 mt-1">
                     // Diagnoses build, compile, and deploy errors — analyzes failures and regenerates broken files. Defaults to automatic.
                   </p>
                 </div>
               </div>
             </section>
 
-            <section className="mb-8 border border-[#00ff41]/30 p-5">
-              <h2 className="text-sm font-display tracking-wider mb-1 text-[#00ff41] flex items-center gap-2">
+            <section className="mb-8 border border-primary/30 p-5">
+              <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
                 <Volume2 size={14} /> MORPHEUS VOICE
               </h2>
-              <p className="text-xs text-[#00ff41]/50 mb-4">
+              <p className="text-xs text-primary/50 mb-4">
                 // Default uses the deepest built-in voice ("storm"). Point it at a custom TTS engine to make him actually sound like Morpheus.
               </p>
 
-              <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">Mode</label>
+              <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Mode</label>
               <SheetSelect
                 value={ttsMode}
                 onChange={setTtsMode}
@@ -339,7 +346,7 @@ export default function Settings() {
               {ttsMode === 'custom' ? (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">Engine</label>
+                    <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Engine</label>
                     <SheetSelect
                       value={ttsEngine}
                       onChange={setTtsEngine}
@@ -351,56 +358,44 @@ export default function Settings() {
                       ]}
                       triggerClassName="w-full"
                     />
-                    {TTS_PROVIDER_LINKS[ttsEngine] && (
-                      <p className="text-xs text-[#00ff41]/65 mt-1">
-                        <a
-                          href={TTS_PROVIDER_LINKS[ttsEngine].keyUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 w-fit text-[#00ff41]/80 hover:text-[#00ff41] underline"
-                        >
-                          Get {TTS_PROVIDER_LINKS[ttsEngine].name} API key <ExternalLink size={10} />
-                        </a>
-                      </p>
-                    )}
                   </div>
                   <div>
-                    <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">API Key</label>
+                    <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">API Key</label>
                     <input
                       value={ttsApiKey}
                       onChange={e => setTtsApiKey(e.target.value)}
                       type="password"
                       placeholder={ttsEngine === 'elevenlabs' ? 'xi-...' : 'sk-...'}
-                      className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
+                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">{ttsEngine === 'custom' ? 'Voice label' : 'Voice ID / name'}</label>
+                    <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">{ttsEngine === 'custom' ? 'Voice label' : 'Voice ID / name'}</label>
                     <input
                       value={ttsVoiceId}
                       onChange={e => setTtsVoiceId(e.target.value)}
                       placeholder={ttsEngine === 'elevenlabs' ? 'Cloned Morpheus voice ID' : ttsEngine === 'openai' ? 'onyx (deepest)' : 'morpheus'}
-                      className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
+                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
-                    <p className="text-xs text-[#00ff41]/65 mt-1">
+                    <p className="text-xs text-primary/65 mt-1">
                       {ttsEngine === 'elevenlabs' ? '// Create a cloned voice in ElevenLabs, paste its voice ID here.' : ttsEngine === 'openai' ? '// OpenAI voices: onyx (deepest), nova, shimmer, alloy, echo, fable.' : '// Passed as the "voice" field to your custom endpoint.'}
                     </p>
                   </div>
                   {ttsEngine === 'custom' && (
                     <div>
-                      <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">Endpoint URL</label>
+                      <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Endpoint URL</label>
                       <input
                         value={ttsEndpoint}
                         onChange={e => setTtsEndpoint(e.target.value)}
                         placeholder="https://your-tts.example.com/synthesize"
-                        className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
+                        className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                       />
-                      <p className="text-xs text-[#00ff41]/65 mt-1">// POST {`{ text, voice }`} → audio bytes or {`{ audioUrl }`}. Bearer API key sent if provided.</p>
+                      <p className="text-xs text-primary/65 mt-1">// POST {`{ text, voice }`} → audio bytes or {`{ audioUrl }`}. Bearer API key sent if provided.</p>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-xs text-[#00ff41]/75">// Using "storm" — the deepest, most authoritative built-in voice. No configuration required.</p>
+                <p className="text-xs text-primary/75">// Using "storm" — the deepest, most authoritative built-in voice. No configuration required.</p>
               )}
             </section>
 
@@ -413,7 +408,7 @@ export default function Settings() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-2 px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors disabled:opacity-30"
+              className="flex items-center gap-2 px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border border-primary text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-30"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
               {saving ? 'SAVING' : saved ? 'SAVED' : 'SAVE SETTINGS'}

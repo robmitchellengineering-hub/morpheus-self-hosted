@@ -60,23 +60,23 @@ export default function UpdatesPlan() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-[#00ff41] font-mono">
+    <div className="relative min-h-screen bg-black text-primary font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-3xl mx-auto px-6 py-12 safe-top">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-[#00ff41]/60 hover:text-[#00ff41] text-sm mb-6 transition-colors">
+        <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
           <ArrowLeft size={14} /> BACK
         </Link>
 
         <div className="flex items-center gap-3 mb-2">
-          <Sparkles size={24} className="text-[#00ff41] neon-glow" />
+          <Sparkles size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow">MORPHEUS UPDATES PLAN</h1>
         </div>
-        <p className="text-[#00ff41]/60 text-sm mb-8">
+        <p className="text-primary/60 text-sm mb-8">
           // Synthesizes every user-submitted issue and feature request into a single prioritized, actionable plan — ranked by criticality, alignment with build strategy and model ethos, and revenue potential.
         </p>
 
         {loading && (
-          <div className="flex items-center gap-2 text-[#00ff41]/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading plan...
           </div>
         )}
@@ -87,27 +87,27 @@ export default function UpdatesPlan() {
 
         {!loading && plan && (
           <div className="space-y-4 mb-6">
-            <div className="flex items-center gap-2 text-xs text-[#00ff41]/60">
-              <CheckCircle size={14} className="text-[#00ff41]" />
-              Last synthesized: <span className="text-[#00ff41]">{new Date(plan.updated_date || plan.created_date).toLocaleString()}</span>
-              <span className="text-[#00ff41]/65">|</span>
+            <div className="flex items-center gap-2 text-xs text-primary/60">
+              <CheckCircle size={14} className="text-primary" />
+              Last synthesized: <span className="text-primary">{new Date(plan.updated_date || plan.created_date).toLocaleString()}</span>
+              <span className="text-primary/65">|</span>
               {plan.feedback_count ?? 0} feedback item{plan.feedback_count === 1 ? '' : 's'}
             </div>
-            <div className="border border-[#00ff41]/20 bg-[#00ff41]/5 p-4 max-h-[32rem] overflow-y-auto scrollbar-matrix text-xs text-[#00ff41]/70 font-mono whitespace-pre-wrap">
+            <div className="border border-primary/20 bg-primary/5 p-4 max-h-[32rem] overflow-y-auto scrollbar-matrix text-xs text-primary/70 font-mono whitespace-pre-wrap">
               {plan.content}
             </div>
           </div>
         )}
 
         {!loading && !plan && !error && (
-          <p className="text-[#00ff41]/75 text-sm italic text-center py-12">No plan synthesized yet. Press SYNTHESIZE PLAN to generate one from submitted feedback.</p>
+          <p className="text-primary/75 text-sm italic text-center py-12">No plan synthesized yet. Press SYNTHESIZE PLAN to generate one from submitted feedback.</p>
         )}
 
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={synthesize}
             disabled={synthesizing}
-            className="flex items-center gap-2 px-5 py-2.5 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors font-bold text-sm disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-bold text-sm disabled:opacity-50"
           >
             {synthesizing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             {plan ? 'RE-SYNTHESIZE PLAN' : 'SYNTHESIZE PLAN'}
@@ -115,7 +115,7 @@ export default function UpdatesPlan() {
           <button
             onClick={downloadMd}
             disabled={!plan}
-            className="flex items-center gap-2 px-5 py-2.5 border border-[#00ff41]/50 text-[#00ff41]/80 hover:border-[#00ff41] hover:text-[#00ff41] transition-colors text-sm disabled:opacity-30"
+            className="flex items-center gap-2 px-5 py-2.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary transition-colors text-sm disabled:opacity-30"
           >
             <Download size={14} /> DOWNLOAD .MD
           </button>

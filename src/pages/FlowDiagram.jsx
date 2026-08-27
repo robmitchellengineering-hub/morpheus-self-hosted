@@ -222,39 +222,39 @@ export default function FlowDiagram() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-[#00ff41] font-mono overflow-hidden">
+    <div className="relative min-h-screen bg-black text-primary font-mono overflow-hidden">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-16 safe-top flex flex-col items-center justify-center min-h-screen text-center">
-        <Link to="/" className="absolute top-4 left-4 flex items-center gap-1.5 text-xs text-[#00ff41]/50 hover:text-[#00ff41] font-mono tracking-wider">
+        <Link to="/" className="absolute top-4 left-4 flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider">
           <ArrowLeft size={14} /> BACK
         </Link>
-        <Network size={48} className="text-[#00ff41] mb-4 neon-glow" />
+        <Network size={48} className="text-primary mb-4 neon-glow" />
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2">FLOW DIAGRAM</h1>
-        <p className="text-[#00ff41]/60 text-sm mb-8">// Complete call graph of every Morpheus operation — what's called, how it's used, and the data flow between them. Generated live from the source code model.</p>
+        <p className="text-primary/60 text-sm mb-8">// Complete call graph of every Morpheus operation — what's called, how it's used, and the data flow between them. Generated live from the source code model.</p>
         {generating && (
           <div className="w-full max-w-xs mb-6">
-            <div className="flex items-center justify-between text-xs text-[#00ff41]/70 mb-2">
+            <div className="flex items-center justify-between text-xs text-primary/70 mb-2">
               <span className="truncate">{status}</span>
               <span className="shrink-0 ml-2">{progress}%</span>
             </div>
-            <div className="h-1 bg-[#00ff41]/20 overflow-hidden">
-              <div className="h-full bg-[#00ff41] transition-all duration-300" style={{ width: `${progress}%` }} />
+            <div className="h-1 bg-primary/20 overflow-hidden">
+              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
           </div>
         )}
         <button
           onClick={handleGenerate}
           disabled={generating}
-          className="flex items-center gap-2 px-6 py-3 bg-[#00ff41] text-black hover:bg-[#39ff14] font-bold transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)] disabled:opacity-50"
+          className="flex items-center gap-2 px-6 py-3 bg-primary text-black hover:bg-[#39ff14] font-bold transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)] disabled:opacity-50"
         >
           {generating ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
           {generating ? 'GENERATING...' : 'GENERATE FLOW DIAGRAM PDF'}
         </button>
-        {!generating && status && <p className="text-[#00ff41]/40 text-xs mt-4">{status}</p>}
-        {!generating && !status && <p className="text-[#00ff41]/40 text-xs mt-4">// Click to generate the complete operations flow diagram as PDF</p>}
+        {!generating && status && <p className="text-primary/40 text-xs mt-4">{status}</p>}
+        {!generating && !status && <p className="text-primary/40 text-xs mt-4">// Click to generate the complete operations flow diagram as PDF</p>}
         {pdfUrl && !generating && (
           <a href={pdfUrl} download="morpheus-flow-diagram.pdf" target="_blank" rel="noopener noreferrer"
-            className="mt-4 flex items-center gap-2 px-6 py-3 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black font-bold transition-colors">
+            className="mt-4 flex items-center gap-2 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-black font-bold transition-colors">
             <Download size={18} /> DOWNLOAD PDF
           </a>
         )}

@@ -119,28 +119,28 @@ export default function BackendDocs() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-[#00ff41] font-mono overflow-hidden">
+    <div className="relative min-h-screen bg-black text-primary font-mono overflow-hidden">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-16 safe-top flex flex-col items-center justify-center min-h-screen text-center">
-        <FileText size={48} className="text-[#00ff41] mb-4 neon-glow" />
+        <FileText size={48} className="text-primary mb-4 neon-glow" />
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2">BACKEND FUNCTIONS REFERENCE</h1>
-        <p className="text-[#00ff41]/60 text-sm mb-8">// Complete documentation of all 35 backend functions — logic, inputs, outputs, and internal flows.</p>
+        <p className="text-primary/60 text-sm mb-8">// Complete documentation of all 35 backend functions — logic, inputs, outputs, and internal flows.</p>
         {loading ? (
-          <div className="flex items-center gap-2 text-[#00ff41]/60">
+          <div className="flex items-center gap-2 text-primary/60">
             <Loader2 size={16} className="animate-spin" /> loading document...
           </div>
         ) : (
           <button
             onClick={handleDownload}
             disabled={generating}
-            className="flex items-center gap-2 px-6 py-3 bg-[#00ff41] text-black hover:bg-[#39ff14] font-bold transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)] disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-3 bg-primary text-black hover:bg-[#39ff14] font-bold transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)] disabled:opacity-50"
           >
             {generating ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
             {generating ? 'GENERATING PDF...' : 'DOWNLOAD PDF'}
           </button>
         )}
         {!loading && !generating && (
-          <p className="text-[#00ff41]/40 text-xs mt-4">~{Math.round(content.length / 1000)}KB · 35 functions · 15 shared modules</p>
+          <p className="text-primary/40 text-xs mt-4">~{Math.round(content.length / 1000)}KB · 35 functions · 15 shared modules</p>
         )}
       </div>
     </div>

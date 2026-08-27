@@ -157,23 +157,23 @@ export default function RebuildBlueprint() {
   const sizeKb = doc?.content_size ? (doc.content_size / 1024).toFixed(1) : '0';
 
   return (
-    <div className="relative min-h-screen bg-black text-[#00ff41] font-mono">
+    <div className="relative min-h-screen bg-black text-primary font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-3xl mx-auto px-6 py-12 safe-top">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-[#00ff41]/60 hover:text-[#00ff41] text-sm mb-6 transition-colors">
+        <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
           <ArrowLeft size={14} /> BACK
         </Link>
 
         <div className="flex items-center gap-3 mb-2">
-          <FileText size={24} className="text-[#00ff41] neon-glow" />
+          <FileText size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow">REBUILD BLUEPRINT</h1>
         </div>
-        <p className="text-[#00ff41]/60 text-sm mb-8">
+        <p className="text-primary/60 text-sm mb-8">
           // The complete standalone reconstruction blueprint for Morpheus itself. Drop this + the published APK into any AI agent to rebuild the full stack without Base44.
         </p>
 
         {loading && (
-          <div className="flex items-center gap-2 text-[#00ff41]/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading blueprint...
           </div>
         )}
@@ -184,27 +184,27 @@ export default function RebuildBlueprint() {
 
         {!loading && doc && (
           <div className="space-y-4 mb-6">
-            <div className="flex items-center gap-2 text-xs text-[#00ff41]/60">
-              <CheckCircle size={14} className="text-[#00ff41]" />
-              Version: <span className="text-[#00ff41]">{new Date(doc.version).toLocaleString()}</span>
-              <span className="text-[#00ff41]/65">|</span>
+            <div className="flex items-center gap-2 text-xs text-primary/60">
+              <CheckCircle size={14} className="text-primary" />
+              Version: <span className="text-primary">{new Date(doc.version).toLocaleString()}</span>
+              <span className="text-primary/65">|</span>
               {sizeKb} KB
             </div>
-            <div className="border border-[#00ff41]/20 bg-[#00ff41]/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-[#00ff41]/70 font-mono whitespace-pre-wrap">
+            <div className="border border-primary/20 bg-primary/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-primary/70 font-mono whitespace-pre-wrap">
               {doc.content?.substring(0, 3000)}{doc.content?.length > 3000 ? '\n\n... (truncated — download for full document)' : ''}
             </div>
           </div>
         )}
 
         {!loading && !doc && !error && (
-          <p className="text-[#00ff41]/75 text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
+          <p className="text-primary/75 text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
         )}
 
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={generate}
             disabled={generating}
-            className="flex items-center gap-2 px-5 py-2.5 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors font-bold text-sm disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-bold text-sm disabled:opacity-50"
           >
             {generating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             {doc ? 'REGENERATE' : 'GENERATE'}
@@ -212,14 +212,14 @@ export default function RebuildBlueprint() {
           <button
             onClick={downloadPdf}
             disabled={!doc || pdfLoading}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#00ff41] text-black hover:bg-[#39ff14] transition-colors font-bold text-sm disabled:opacity-30"
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-black hover:bg-[#39ff14] transition-colors font-bold text-sm disabled:opacity-30"
           >
             {pdfLoading ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />} DOWNLOAD PDF
           </button>
           <button
             onClick={downloadMd}
             disabled={!doc}
-            className="flex items-center gap-2 px-5 py-2.5 border border-[#00ff41]/50 text-[#00ff41]/80 hover:border-[#00ff41] hover:text-[#00ff41] transition-colors text-sm disabled:opacity-30"
+            className="flex items-center gap-2 px-5 py-2.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary transition-colors text-sm disabled:opacity-30"
           >
             <Download size={14} /> DOWNLOAD .MD
           </button>

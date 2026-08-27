@@ -118,7 +118,7 @@ export default function StoreItem() {
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <Loader2 className="animate-spin text-[#00ff41]/50" size={24} />
+        <Loader2 className="animate-spin text-primary/50" size={24} />
       </div>
     );
   }
@@ -127,7 +127,7 @@ export default function StoreItem() {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-3 px-4">
         <p className="text-red-500 text-sm">// {error}</p>
-        <Link to="/market" className="text-[#00ff41]/60 hover:text-[#00ff41] text-sm flex items-center gap-1">
+        <Link to="/market" className="text-primary/60 hover:text-primary text-sm flex items-center gap-1">
           <ArrowLeft size={12} /> Back to Market
         </Link>
       </div>
@@ -139,32 +139,32 @@ export default function StoreItem() {
   const purchaseCancelled = searchParams.get('purchase') === 'cancelled';
 
   return (
-    <div className="min-h-screen bg-black text-[#00ff41]">
+    <div className="min-h-screen bg-black text-primary">
       {/* Header */}
-      <header className="border-b border-[#00ff41]/20 sticky top-0 z-10 bg-black/95 backdrop-blur-sm safe-top">
+      <header className="border-b border-primary/20 sticky top-0 z-10 bg-black/95 backdrop-blur-sm safe-top">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/market" className="text-xs text-[#00ff41]/60 hover:text-[#00ff41] flex items-center gap-1">
+          <Link to="/market" className="text-xs text-primary/60 hover:text-primary flex items-center gap-1">
             <ArrowLeft size={12} /> MARKET
           </Link>
-          <Link to="/" className="text-xs text-[#00ff41]/60 hover:text-[#00ff41]">APP</Link>
+          <Link to="/" className="text-xs text-primary/60 hover:text-primary">APP</Link>
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Purchase success banner */}
         {purchaseSessionId && (
-          <div className="border border-[#00ff41]/40 bg-[#00ff41]/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="border border-primary/40 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-start gap-3 flex-1">
-              <CheckCircle2 size={20} className="text-[#00ff41] shrink-0 mt-0.5" />
+              <CheckCircle2 size={20} className="text-primary shrink-0 mt-0.5" />
               <div>
-                <p className="text-[#00ff41] font-bold text-sm">PAYMENT SUCCESSFUL</p>
-                <p className="text-[#00ff41]/60 text-xs mt-1">Your purchase is confirmed. Download your software below.</p>
+                <p className="text-primary font-bold text-sm">PAYMENT SUCCESSFUL</p>
+                <p className="text-primary/60 text-xs mt-1">Your purchase is confirmed. Download your software below.</p>
               </div>
             </div>
             <button
               onClick={downloadPaid}
               disabled={downloading}
-              className="flex items-center justify-center gap-2 text-sm text-black bg-[#00ff41] hover:bg-[#39ff14] px-6 py-2.5 disabled:opacity-50 font-bold sm:w-auto w-full"
+              className="flex items-center justify-center gap-2 text-sm text-black bg-primary hover:bg-[#39ff14] px-6 py-2.5 disabled:opacity-50 font-bold sm:w-auto w-full"
             >
               {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} DOWNLOAD
             </button>
@@ -180,11 +180,11 @@ export default function StoreItem() {
 
         {/* Hero section */}
         <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
-          <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 border border-[#00ff41]/20 bg-black overflow-hidden flex items-center justify-center">
+          <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 border border-primary/20 bg-black overflow-hidden flex items-center justify-center">
             {template.icon ? (
               <Image src={template.icon} className="w-full h-full" fittingType="fill" />
             ) : (
-              <span className="text-4xl font-display text-[#00ff41]/65">
+              <span className="text-4xl font-display text-primary/65">
                 {template.name?.charAt(0)?.toUpperCase() || '?'}
               </span>
             )}
@@ -193,15 +193,15 @@ export default function StoreItem() {
           <div className="flex-1 min-w-0 flex flex-col justify-center">
             <h1 className="text-xl sm:text-2xl font-display tracking-wide neon-glow break-words">{template.name}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <p className="text-[#00ff41]/60 text-sm">by {template.author_name}</p>
+              <p className="text-primary/60 text-sm">by {template.author_name}</p>
               <VerifiedBadge />
             </div>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <span className="text-xs text-[#00ff41]/50 border border-[#00ff41]/20 px-2 py-0.5 uppercase">
+              <span className="text-xs text-primary/50 border border-primary/20 px-2 py-0.5 uppercase">
                 {template.compile_target?.replace('-', ' ')}
               </span>
               {template.category && template.category !== 'general' && (
-                <span className="text-xs text-[#00ff41]/50 border border-[#00ff41]/20 px-2 py-0.5 uppercase">
+                <span className="text-xs text-primary/50 border border-primary/20 px-2 py-0.5 uppercase">
                   {template.category}
                 </span>
               )}
@@ -210,19 +210,19 @@ export default function StoreItem() {
 
           <div className="flex-col items-stretch sm:items-end gap-4 shrink-0 w-full sm:w-auto">
             <div className="flex items-center justify-between sm:justify-end gap-3">
-              <span className={`text-lg font-bold ${isFree ? 'text-[#00ff41]/60' : 'text-[#00ff41]'}`}>
+              <span className={`text-lg font-bold ${isFree ? 'text-primary/60' : 'text-primary'}`}>
                 {fmtPrice(template.price)}
               </span>
               {purchaseSessionId ? (
-                <button onClick={downloadPaid} disabled={downloading} className="flex items-center gap-2 text-sm text-black bg-[#00ff41] hover:bg-[#39ff14] px-10 py-2.5 disabled:opacity-50 font-bold">
+                <button onClick={downloadPaid} disabled={downloading} className="flex items-center gap-2 text-sm text-black bg-primary hover:bg-[#39ff14] px-10 py-2.5 disabled:opacity-50 font-bold">
                   {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} DOWNLOAD
                 </button>
               ) : isFree ? (
-                <button onClick={downloadFree} disabled={downloading} className="flex items-center gap-2 text-sm text-black bg-[#00ff41] hover:bg-[#39ff14] px-10 py-2.5 disabled:opacity-50 font-bold">
+                <button onClick={downloadFree} disabled={downloading} className="flex items-center gap-2 text-sm text-black bg-primary hover:bg-[#39ff14] px-10 py-2.5 disabled:opacity-50 font-bold">
                   {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} GET
                 </button>
               ) : (
-                <button onClick={buy} disabled={buying} className="flex items-center gap-2 text-sm text-black bg-[#00ff41] hover:bg-[#39ff14] px-10 py-2.5 disabled:opacity-50 font-bold">
+                <button onClick={buy} disabled={buying} className="flex items-center gap-2 text-sm text-black bg-primary hover:bg-[#39ff14] px-10 py-2.5 disabled:opacity-50 font-bold">
                   {buying ? <Loader2 size={14} className="animate-spin" /> : <DollarSign size={14} />} BUY
                 </button>
               )}
@@ -236,10 +236,10 @@ export default function StoreItem() {
         {/* Screenshots */}
         {template.screenshots?.length > 0 && (
           <div>
-            <h2 className="text-xs text-[#00ff41]/75 uppercase mb-3 tracking-wider">// Screenshots</h2>
+            <h2 className="text-xs text-primary/75 uppercase mb-3 tracking-wider">// Screenshots</h2>
             <div className="flex gap-3 overflow-x-auto scrollbar-matrix pb-2 overscroll-none">
               {template.screenshots.map((url, i) => (
-                <div key={i} className="shrink-0 w-64 h-40 border border-[#00ff41]/20 bg-black overflow-hidden">
+                <div key={i} className="shrink-0 w-64 h-40 border border-primary/20 bg-black overflow-hidden">
                   <Image src={url} className="w-full h-full" fittingType="fill" />
                 </div>
               ))}
@@ -250,16 +250,16 @@ export default function StoreItem() {
         {/* Description */}
         {template.description && (
           <div>
-            <h2 className="text-xs text-[#00ff41]/75 uppercase mb-2 tracking-wider">// About</h2>
-            <p className="text-[#00ff41]/80 text-sm leading-relaxed">{template.description}</p>
+            <h2 className="text-xs text-primary/75 uppercase mb-2 tracking-wider">// About</h2>
+            <p className="text-primary/80 text-sm leading-relaxed">{template.description}</p>
           </div>
         )}
 
         {/* Long description */}
         {template.long_description && (
           <div>
-            <h2 className="text-xs text-[#00ff41]/75 uppercase mb-2 tracking-wider">// Details</h2>
-            <div className="text-[#00ff41]/70 text-sm leading-relaxed [&_a]:text-[#00ff41] [&_a]:underline [&_code]:text-[#00ff41] [&_code]:bg-[#00ff41]/10 [&_code]:px-1 [&_h1]:text-[#00ff41] [&_h2]:text-[#00ff41] [&_h3]:text-[#00ff41] [&_li]:text-[#00ff41]/70 [&_strong]:text-[#00ff41]">
+            <h2 className="text-xs text-primary/75 uppercase mb-2 tracking-wider">// Details</h2>
+            <div className="text-primary/70 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:px-1 [&_h1]:text-primary [&_h2]:text-primary [&_h3]:text-primary [&_li]:text-primary/70 [&_strong]:text-primary">
               <ReactMarkdown>{template.long_description}</ReactMarkdown>
             </div>
           </div>
@@ -267,29 +267,29 @@ export default function StoreItem() {
 
         {/* Info grid */}
         <div>
-          <h2 className="text-xs text-[#00ff41]/75 uppercase mb-3 tracking-wider">// Information</h2>
+          <h2 className="text-xs text-primary/75 uppercase mb-3 tracking-wider">// Information</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="border border-[#00ff41]/20 p-3">
-              <FileCode size={14} className="text-[#00ff41]/50 mb-1" />
-              <div className="text-xs text-[#00ff41]/75">Files</div>
-              <div className="text-sm text-[#00ff41]">{template.file_count || 0}</div>
+            <div className="border border-primary/20 p-3">
+              <FileCode size={14} className="text-primary/50 mb-1" />
+              <div className="text-xs text-primary/75">Files</div>
+              <div className="text-sm text-primary">{template.file_count || 0}</div>
             </div>
-            <div className="border border-[#00ff41]/20 p-3">
-              <TrendingUp size={14} className="text-[#00ff41]/50 mb-1" />
-              <div className="text-xs text-[#00ff41]/75">Installs</div>
-              <div className="text-sm text-[#00ff41]">{template.install_count || 0}</div>
+            <div className="border border-primary/20 p-3">
+              <TrendingUp size={14} className="text-primary/50 mb-1" />
+              <div className="text-xs text-primary/75">Installs</div>
+              <div className="text-sm text-primary">{template.install_count || 0}</div>
             </div>
-            <div className="border border-[#00ff41]/20 p-3">
-              <Calendar size={14} className="text-[#00ff41]/50 mb-1" />
-              <div className="text-xs text-[#00ff41]/75">Published</div>
-              <div className="text-sm text-[#00ff41]">
+            <div className="border border-primary/20 p-3">
+              <Calendar size={14} className="text-primary/50 mb-1" />
+              <div className="text-xs text-primary/75">Published</div>
+              <div className="text-sm text-primary">
                 {template.created_date ? new Date(template.created_date).toLocaleDateString() : 'N/A'}
               </div>
             </div>
-            <div className="border border-[#00ff41]/20 p-3">
-              <Tag size={14} className="text-[#00ff41]/50 mb-1" />
-              <div className="text-xs text-[#00ff41]/75">Platform</div>
-              <div className="text-sm text-[#00ff41] uppercase">{template.compile_target?.replace('-', ' ') || 'source'}</div>
+            <div className="border border-primary/20 p-3">
+              <Tag size={14} className="text-primary/50 mb-1" />
+              <div className="text-xs text-primary/75">Platform</div>
+              <div className="text-sm text-primary uppercase">{template.compile_target?.replace('-', ' ') || 'source'}</div>
             </div>
           </div>
         </div>
@@ -298,7 +298,7 @@ export default function StoreItem() {
         {template.tags && (
           <div className="flex items-center gap-2 flex-wrap">
             {template.tags.split(',').filter(t => t.trim()).map((tag, i) => (
-              <span key={i} className="text-xs text-[#00ff41]/50 border border-[#00ff41]/20 px-2 py-1">
+              <span key={i} className="text-xs text-primary/50 border border-primary/20 px-2 py-1">
                 {tag.trim()}
               </span>
             ))}

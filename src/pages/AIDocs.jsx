@@ -299,78 +299,78 @@ export default function AIDocs() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-[#00ff41] font-mono overflow-hidden">
+    <div className="relative min-h-screen bg-black text-primary font-mono overflow-hidden">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-16 safe-top flex flex-col items-center justify-center min-h-screen text-center">
-        <Link to="/" className="absolute top-4 left-4 flex items-center gap-1.5 text-xs text-[#00ff41]/50 hover:text-[#00ff41] font-mono tracking-wider">
+        <Link to="/" className="absolute top-4 left-4 flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider">
           <ArrowLeft size={14} /> BACK
         </Link>
         <div className="flex items-center gap-3 mb-4">
-          <Cpu size={48} className="text-[#00ff41] neon-glow" />
+          <Cpu size={48} className="text-primary neon-glow" />
         </div>
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2">AI FUNCTIONS &amp; SETTINGS</h1>
-        <p className="text-[#00ff41]/60 text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
+        <p className="text-primary/60 text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
 
         {/* On-screen summary */}
         <div className="w-full max-w-md text-left mb-8 space-y-3">
-          <div className="border border-[#00ff41]/30 bg-black/60 p-3">
-            <p className="text-[10px] text-[#00ff41]/50 tracking-[0.2em] font-display mb-2">// PIPELINE PHASES</p>
+          <div className="border border-primary/30 bg-black/60 p-3">
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// PIPELINE PHASES</p>
             <div className="grid grid-cols-2 gap-2">
               {AI_PIPELINE_SUMMARY.phases.map(p => {
                 const Icon = ROLE_ICONS[p.role] || Brain;
                 return (
                   <div key={p.name} className="flex items-center gap-1.5 text-xs">
-                    <Icon size={12} className="text-[#00ff41]" />
-                    <span className="text-[#00ff41]">{p.name}</span>
-                    <span className="text-[#00ff41]/40">({p.role})</span>
+                    <Icon size={12} className="text-primary" />
+                    <span className="text-primary">{p.name}</span>
+                    <span className="text-primary/40">({p.role})</span>
                   </div>
                 );
               })}
             </div>
           </div>
-          <div className="border border-[#00ff41]/30 bg-black/60 p-3">
-            <p className="text-[10px] text-[#00ff41]/50 tracking-[0.2em] font-display mb-2">// FUNCTIONS BY CATEGORY</p>
+          <div className="border border-primary/30 bg-black/60 p-3">
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// FUNCTIONS BY CATEGORY</p>
             {[...new Set(AI_FUNCTIONS.map(f => f.category))].map(cat => (
               <div key={cat} className="text-xs mb-1">
-                <span className="text-[#00ff41]/70">{cat}:</span>{' '}
-                <span className="text-[#00ff41]/50">{AI_FUNCTIONS.filter(f => f.category === cat).map(f => f.name).join(', ')}</span>
+                <span className="text-primary/70">{cat}:</span>{' '}
+                <span className="text-primary/50">{AI_FUNCTIONS.filter(f => f.category === cat).map(f => f.name).join(', ')}</span>
               </div>
             ))}
           </div>
-          <div className="border border-[#00ff41]/30 bg-black/60 p-3">
-            <p className="text-[10px] text-[#00ff41]/50 tracking-[0.2em] font-display mb-2">// MODEL TIERS</p>
+          <div className="border border-primary/30 bg-black/60 p-3">
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// MODEL TIERS</p>
             <div className="text-xs space-y-1">
-              <div><span className="text-[#00ff41]">fast</span> <span className="text-[#00ff41]/50">— GPT 5 Mini, Gemini Flash (coder)</span></div>
-              <div><span className="text-[#00ff41]">balanced</span> <span className="text-[#00ff41]/50">— GPT 5.4/5.6, Sonnet (reviewer)</span></div>
-              <div><span className="text-[#00ff41]">high</span> <span className="text-[#00ff41]/50">— Opus, Gemini Pro (planner, diagnosis)</span></div>
+              <div><span className="text-primary">fast</span> <span className="text-primary/50">— GPT 5 Mini, Gemini Flash (coder)</span></div>
+              <div><span className="text-primary">balanced</span> <span className="text-primary/50">— GPT 5.4/5.6, Sonnet (reviewer)</span></div>
+              <div><span className="text-primary">high</span> <span className="text-primary/50">— Opus, Gemini Pro (planner, diagnosis)</span></div>
             </div>
           </div>
         </div>
 
         {generating && (
           <div className="w-full max-w-xs mb-6">
-            <div className="flex items-center justify-between text-xs text-[#00ff41]/70 mb-2">
+            <div className="flex items-center justify-between text-xs text-primary/70 mb-2">
               <span className="truncate">{status || 'Generating...'}</span>
               <span className="shrink-0 ml-2">{progress}%</span>
             </div>
-            <div className="h-1 bg-[#00ff41]/20 overflow-hidden">
-              <div className="h-full bg-[#00ff41] transition-all duration-300" style={{ width: `${progress}%` }} />
+            <div className="h-1 bg-primary/20 overflow-hidden">
+              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
           </div>
         )}
         <button
           onClick={handleGenerate}
           disabled={generating}
-          className="flex items-center gap-2 px-6 py-3 bg-[#00ff41] text-black hover:bg-[#39ff14] font-bold transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)] disabled:opacity-50"
+          className="flex items-center gap-2 px-6 py-3 bg-primary text-black hover:bg-[#39ff14] font-bold transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)] disabled:opacity-50"
         >
           {generating ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
           {generating ? 'GENERATING...' : 'GENERATE AI DOCS PDF'}
         </button>
-        {!generating && status && <p className="text-[#00ff41]/40 text-xs mt-4">{status}</p>}
-        {!generating && !status && <p className="text-[#00ff41]/40 text-xs mt-4">// Click to generate the complete AI functions & settings reference as PDF</p>}
+        {!generating && status && <p className="text-primary/40 text-xs mt-4">{status}</p>}
+        {!generating && !status && <p className="text-primary/40 text-xs mt-4">// Click to generate the complete AI functions & settings reference as PDF</p>}
         {pdfUrl && !generating && (
           <a href={pdfUrl} download="morpheus-ai-functions.pdf" target="_blank" rel="noopener noreferrer"
-            className="mt-4 flex items-center gap-2 px-6 py-3 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black font-bold transition-colors">
+            className="mt-4 flex items-center gap-2 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-black font-bold transition-colors">
             <Download size={18} /> DOWNLOAD PDF
           </a>
         )}
