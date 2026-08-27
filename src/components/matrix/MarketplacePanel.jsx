@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Search, Store, Upload, Download, Tag, Loader2, DollarSign, CheckCircle2, Image as ImageIcon, Link2, Copy } from 'lucide-react';
+import { X, Search, Store, Upload, Download, Tag, Loader2, DollarSign, CheckCircle2, Image as ImageIcon, Link2, Copy, Package } from 'lucide-react';
 import SheetSelect from './SheetSelect';
 
 export default function MarketplacePanel({ open, onClose, currentProject, onInstalled }) {
@@ -19,6 +19,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
   const [publishIcon, setPublishIcon] = useState('');
   const [publishScreenshots, setPublishScreenshots] = useState([]);
   const [publishLongDesc, setPublishLongDesc] = useState('');
+  const [publishIncludeArtifacts, setPublishIncludeArtifacts] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [uploadingShot, setUploadingShot] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -159,15 +160,23 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
         price: Number(publishPrice) || 0,
         icon: publishIcon,
         screenshots: publishScreenshots,
-        long_description: publishLongDesc
+        long_description: publishLongDesc,
+        includeCompiledArtifacts: publishIncludeArtifacts
       });
-      setPublishMsg(`Published "${res.data.name}" with ${res.data.fileCount} files${res.data.price > 0 ? ` for $${res.data.price}` : ' (free)'}.`);
+      let msg = `Published "${res.data.name}" with ${res.data.fileCount} files${res.data.price > 0 ? ` for $${res.data.price}` : ' (free)'}.`;
+      if (res.data.requestedArtifacts) {
+        msg += res.data.artifactCount > 0
+          ? ` Attached ${res.data.artifactCount} compiled build file(s).`
+          : ' No compiled build found on this project yet — listing published as source-only. Run COMPILE + save the build first, then republish to attach it.';
+      }
+      setPublishMsg(msg);
       setShareUrl(`${window.location.origin}/store/${res.data.templateId}`);
       setPublishTags('');
       setPublishPrice('0');
       setPublishIcon('');
       setPublishScreenshots([]);
       setPublishLongDesc('');
+      setPublishIncludeArtifacts(false);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -229,6 +238,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                           <span className="text-primary font-bold">{t.name}</span>
                           {t.mine && <span className="text-[10px] text-primary/50 border border-primary/30 px-1">YOURS</span>}
                           {isPaid && <span className={`text-[10px] px-1.5 py-0.5 border ${t.purchased ? 'text-primary border-primary/50' : 'text-black bg-primary border-primary'}`}>{t.purchased ? 'OWNED' : 'PAID'}</span>}
+                          {t.has_artifacts && <span className="flex items-center gap-0.5 text-[10px] text-info border border-info/40 px-1"><Package size={9} /> BUILD INCLUDED</span>}
                         </div>
                         {t.description && <p className="text-primary/60 text-sm mt-1">{t.description}</p>}
                         <div className="flex items-center gap-3 mt-2 text-xs text-primary/40 flex-wrap">
@@ -333,6 +343,13 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
               <label className="text-xs text-primary/50 block mb-1">TAGS (comma separated)</label>
               <input value={publishTags} onChange={e => setPublishTags(e.target.value)} placeholder="cli, tool, demo" className="w-full bg-black text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
             </div>
+            <label className="flex items-start gap-2 text-xs text-primary/60 cursor-pointer">
+              <input type="checkbox" checked={publishIncludeArtifacts} onChange={e => setPublishIncludeArtifacts(e.target.checked)} className="mt-0.5" />
+              <span className="flex items-center gap-1 flex-wrap">
+                <Package size={12} className="text-primary/50 shrink-0" />
+                Attach compiled build (if you've already run COMPILE and saved the result to this project) — the full source above is always included either way.
+              </span>
+            </label>
             <button onClick={publish} disabled={publishing} className="flex items-center gap-2 text-xs text-black bg-primary hover:bg-[#39ff14] px-4 py-2 disabled:opacity-50">
               {publishing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} PUBLISH CONSTRUCT
             </button>
