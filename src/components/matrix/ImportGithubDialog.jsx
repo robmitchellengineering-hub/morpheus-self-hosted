@@ -27,29 +27,29 @@ export default function ImportGithubDialog({ open, onClose, onImport }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
-      <div className="w-full max-w-md border border-[#00ff41]/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md border border-primary/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-[#00ff41] font-display tracking-wider flex items-center gap-2">
+          <h2 className="text-primary font-display tracking-wider flex items-center gap-2">
             <Github size={18} /> IMPORT CONSTRUCT
           </h2>
-          <button onClick={onClose} className="text-[#00ff41]/50 hover:text-[#00ff41]"><X size={18} /></button>
+          <button onClick={onClose} className="text-primary/50 hover:text-primary"><X size={18} /></button>
         </div>
         <GithubGate note="Connect your GitHub account to import a repo into the Matrix.">
           <div className="space-y-4">
             <div>
-              <label className="text-xs text-[#00ff41]/50 uppercase tracking-wider">Repository</label>
+              <label className="text-xs text-primary/50 uppercase tracking-wider">Repository</label>
               <input
                 value={repoInput}
                 onChange={e => setRepoInput(e.target.value)}
                 placeholder="owner/repo or https://github.com/owner/repo"
-                className="w-full mt-1 bg-transparent border border-[#00ff41]/30 text-[#00ff41] px-3 py-2 outline-none focus:border-[#00ff41] text-sm"
+                className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm"
                 autoFocus
                 onKeyDown={e => e.key === 'Enter' && handleImport()}
               />
-              <p className="text-xs text-[#00ff41]/65 mt-1">// Pull an existing repo into the Matrix</p>
+              <p className="text-xs text-primary/65 mt-1">// Pull an existing repo into the Matrix</p>
             </div>
             <div>
-              <label className="text-xs text-[#00ff41]/50 uppercase tracking-wider">Compile Target</label>
+              <label className="text-xs text-primary/50 uppercase tracking-wider">Compile Target</label>
               <SheetSelect
                 value={target}
                 onChange={setTarget}
@@ -73,7 +73,7 @@ export default function ImportGithubDialog({ open, onClose, onImport }) {
             <button
               onClick={handleImport}
               disabled={!repoInput.trim() || loading}
-              className="w-full py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2"
+              className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2"
             >
               {loading ? <><Loader2 size={16} className="animate-spin" /> JACKING IN...</> : <><Github size={16} /> IMPORT</>}
             </button>

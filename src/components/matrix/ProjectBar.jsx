@@ -6,20 +6,20 @@ import HelpToggle from './HelpToggle';
 import HelpHint from './HelpHint';
 import SheetSelect from './SheetSelect';
 
-const btnBase = "flex items-center gap-1 text-xs text-[#00ff41]/70 hover:text-[#00ff41] px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-[#00ff41]/30 hover:border-[#00ff41]/60 hover:bg-[#00ff41]/5 transition-colors";
+const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
 export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
   return (
-    <div className="flex flex-col border-b border-[#00ff41]/20 bg-black shrink-0">
+    <div className="flex flex-col border-b border-primary/20 bg-black shrink-0">
       {/* Row 1: project identity + primary action */}
       <div className="flex items-center justify-between gap-3 px-4 py-2.5">
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={onBack} className="text-[#00ff41]/60 hover:text-[#00ff41] shrink-0 flex items-center justify-center p-2 md:p-0 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0">
+          <button onClick={onBack} className="text-primary/60 hover:text-primary shrink-0 flex items-center justify-center p-2 md:p-0 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0">
             <ArrowLeft size={18} />
           </button>
-          <Terminal size={18} className="text-[#00ff41] shrink-0" />
-          <span className="text-[#00ff41] font-display tracking-wider truncate neon-glow">{project.name}</span>
-          <span className="text-xs text-[#00ff41]/75 uppercase border border-[#00ff41]/30 px-2 py-0.5 shrink-0">{project.status}</span>
+          <Terminal size={18} className="text-primary shrink-0" />
+          <span className="text-primary font-display tracking-wider truncate neon-glow">{project.name}</span>
+          <span className="text-xs text-primary/75 uppercase border border-primary/30 px-2 py-0.5 shrink-0">{project.status}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <SheetSelect
@@ -43,20 +43,20 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           />
           {project.compile_target && project.compile_target !== 'source' && (
             <HelpHint id="github-compile-prominent" title="Compile Binary" body={`Build a real downloadable ${project.compile_target} binary via GitHub Actions. Morpheus pushes your code to a repo, triggers the build, and publishes the artifact as a GitHub Release.`}>
-              <button onClick={onCompile} className="flex items-center gap-1 text-xs text-black bg-[#00ff41] hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border animate-pulse">
+              <button onClick={onCompile} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border animate-pulse">
                 <Hammer size={14} /> COMPILE
               </button>
             </HelpHint>
           )}
           <HelpHint id="zip-export" title="Download ZIP" body="Download your entire project as a ZIP — all source files, package.json, and README. Ready to run locally with zero platform dependency.">
-            <button onClick={onExport} className="flex items-center gap-1 text-xs text-black bg-[#00ff41] hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border">
+            <button onClick={onExport} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border">
               <Download size={14} /> ZIP
             </button>
           </HelpHint>
         </div>
       </div>
       {/* Row 2: action buttons */}
-      <div className="flex items-center gap-1.5 px-4 py-2 border-t border-[#00ff41]/10 overflow-x-auto scrollbar-matrix overscroll-none">
+      <div className="flex items-center gap-1.5 px-4 py-2 border-t border-primary/10 overflow-x-auto scrollbar-matrix overscroll-none">
         <HelpHint id="new-construct" title="New Construct" body="Create a brand new project. You'll choose a name, description, and compile target — then start building from scratch.">
           <button onClick={onNew} className={btnBase}>
             <Plus size={14} /> NEW
@@ -100,7 +100,7 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           </button>
         </HelpHint>
         <HelpHint id="polish-ui" title="UI Polish Mode" body="When ON, every chat build runs an extra pass that refines ONLY styling files — spacing, shadows, transitions, responsive breakpoints, empty/loading/error states. It never touches logic. Turn it on when the GUI matters; leave it off for fast simple builds.">
-          <button onClick={onTogglePolish} className={`${btnBase} ${project.polish_ui ? 'bg-[#00ff41]/15 text-[#00ff41] border-[#00ff41]/60' : ''}`}>
+          <button onClick={onTogglePolish} className={`${btnBase} ${project.polish_ui ? 'bg-primary/15 text-primary border-primary/60' : ''}`}>
             <Sparkles size={14} /> POLISH {project.polish_ui ? 'ON' : 'OFF'}
           </button>
         </HelpHint>

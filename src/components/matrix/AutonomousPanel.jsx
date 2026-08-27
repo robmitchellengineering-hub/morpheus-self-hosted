@@ -196,20 +196,20 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => !running && onClose()}>
-      <div className="bg-black border border-[#00ff41]/40 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#00ff41]/20 shrink-0">
+      <div className="bg-black border border-primary/40 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 shrink-0">
           <div className="flex items-center gap-2">
-            <Bot size={18} className="text-[#00ff41]" />
-            <span className="text-[#00ff41] font-display tracking-wider text-sm">AUTONOMOUS MODE</span>
-            {complete && <span className="text-xs text-[#00ff41] border border-[#00ff41]/40 px-2 py-0.5 neon-glow">COMPLETE</span>}
+            <Bot size={18} className="text-primary" />
+            <span className="text-primary font-display tracking-wider text-sm">AUTONOMOUS MODE</span>
+            {complete && <span className="text-xs text-primary border border-primary/40 px-2 py-0.5 neon-glow">COMPLETE</span>}
             {running && (
-              <div className="flex items-center gap-2 text-[#00ff41] font-mono text-xs ml-2">
+              <div className="flex items-center gap-2 text-primary font-mono text-xs ml-2">
                 <span className="flex items-center gap-1"><Timer size={12} /> {timerStr}</span>
-                {etaStr && <span className="text-[#00ff41]/50">ETA {etaStr}</span>}
+                {etaStr && <span className="text-primary/50">ETA {etaStr}</span>}
               </div>
             )}
           </div>
-          <button onClick={() => !running && onClose()} disabled={running} className="text-[#00ff41]/60 hover:text-[#00ff41] disabled:opacity-30">
+          <button onClick={() => !running && onClose()} disabled={running} className="text-primary/60 hover:text-primary disabled:opacity-30">
             <X size={18} />
           </button>
         </div>
@@ -217,38 +217,38 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-3">
           {steps.length === 0 ? (
             <div>
-              <p className="text-[#00ff41]/60 text-sm mb-3">// Jack out. Let Morpheus build autonomously. Provide a spec or let him assess and complete the current construct.</p>
+              <p className="text-primary/60 text-sm mb-3">// Jack out. Let Morpheus build autonomously. Provide a spec or let him assess and complete the current construct.</p>
               <textarea
                 value={spec}
                 onChange={e => setSpec(e.target.value)}
                 placeholder="Describe what to build, or leave blank to let Morpheus assess and complete the current state..."
-                className="w-full h-32 bg-black border border-[#00ff41]/30 text-[#00ff41] p-3 text-sm outline-none focus:border-[#00ff41]/60 resize-none scrollbar-matrix"
+                className="w-full h-32 bg-black border border-primary/30 text-primary p-3 text-sm outline-none focus:border-primary/60 resize-none scrollbar-matrix"
                 disabled={running}
               />
             </div>
           ) : (
             steps.map((s, i) => (
-              <div key={i} className="border border-[#00ff41]/20 p-3">
+              <div key={i} className="border border-primary/20 p-3">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="text-xs text-[#00ff41]/50">STEP {s.step}</span>
-                  {s.status === 'running' && <span className="text-xs text-[#00ff41] animate-pulse">BUILDING...</span>}
-                  {s.status === 'done' && <span className="text-xs text-[#00ff41]/70">{s.fileOps} files modified</span>}
+                  <span className="text-xs text-primary/50">STEP {s.step}</span>
+                  {s.status === 'running' && <span className="text-xs text-primary animate-pulse">BUILDING...</span>}
+                  {s.status === 'done' && <span className="text-xs text-primary/70">{s.fileOps} files modified</span>}
                   {s.outputMetrics?.coder?.totalTokens > 0 && (
-                    <span className="text-xs text-[#00ff41]/75">~{s.outputMetrics.coder.totalTokens} tok out</span>
+                    <span className="text-xs text-primary/75">~{s.outputMetrics.coder.totalTokens} tok out</span>
                   )}
                   {s.outputMetrics?.coder?.usage?.completion_tokens && (
-                    <span className="text-xs text-[#00ff41]/75">{s.outputMetrics.coder.usage.completion_tokens} tok actual</span>
+                    <span className="text-xs text-primary/75">{s.outputMetrics.coder.usage.completion_tokens} tok actual</span>
                   )}
-                  {s.status === 'done' && s.reviewApproved && <span className="text-xs text-[#00ff41] flex items-center gap-0.5"><CheckCircle size={10} /> REVIEW PASSED</span>}
+                  {s.status === 'done' && s.reviewApproved && <span className="text-xs text-primary flex items-center gap-0.5"><CheckCircle size={10} /> REVIEW PASSED</span>}
                   {s.status === 'done' && s.reviewApproved === false && <span className="text-xs text-yellow-500 flex items-center gap-0.5"><AlertTriangle size={10} /> REVIEW FAILED — AUTO-FIXING</span>}
                   {s.truncated && <span className="text-xs text-yellow-500 flex items-center gap-0.5"><AlertTriangle size={10} /> OUTPUT TRUNCATED — REDUCING BATCH</span>}
-                  {s.sentToChat && <span className="text-xs text-[#00ff41] flex items-center gap-0.5"><MessageSquare size={10} /> SENT TO CHAT</span>}
+                  {s.sentToChat && <span className="text-xs text-primary flex items-center gap-0.5"><MessageSquare size={10} /> SENT TO CHAT</span>}
                   {s.status === 'error' && <span className="text-xs text-red-500">ERROR</span>}
                   {s.status === 'stopped' && <span className="text-xs text-yellow-500">STOPPED</span>}
                   {s.autoFixing && <span className="text-xs text-yellow-500 animate-pulse flex items-center gap-0.5"><Wrench size={10} /> AUTO-DIAGNOSING...</span>}
-                  {s.isComplete && s.reviewApproved && <span className="text-xs text-[#00ff41] neon-glow">CONSTRUCT COMPLETE</span>}
+                  {s.isComplete && s.reviewApproved && <span className="text-xs text-primary neon-glow">CONSTRUCT COMPLETE</span>}
                 </div>
-                <p className="text-[#00ff41]/70 text-sm whitespace-pre-wrap">{s.reply}</p>
+                <p className="text-primary/70 text-sm whitespace-pre-wrap">{s.reply}</p>
                 {s.reviewIssues?.length > 0 && s.reviewApproved === false && (
                   <div className="mt-2 border border-yellow-500/30 bg-yellow-500/5 p-2 space-y-1">
                     {s.reviewIssues.filter(iss => iss.severity === 'critical').map((iss, j) => (
@@ -261,7 +261,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
                 )}
                 {s.status === 'error' && (
                   <div className="mt-2 space-y-2">
-                    <button onClick={() => diagnoseAndRestart(s.reply, s.step)} disabled={diagnosing} className="flex items-center gap-1 text-xs text-[#00ff41] hover:text-[#00ff41] px-2 py-1 border border-[#00ff41]/50 hover:border-[#00ff41] disabled:opacity-30">
+                    <button onClick={() => diagnoseAndRestart(s.reply, s.step)} disabled={diagnosing} className="flex items-center gap-1 text-xs text-primary hover:text-primary px-2 py-1 border border-primary/50 hover:border-primary disabled:opacity-30">
                       {diagnosing ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} AI DIAGNOSE & FIX
                     </button>
                     {diagnosing && <DiagnosisLoading label="AI AGENT ANALYZING BUILD STEP..." />}
@@ -273,13 +273,13 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
           )}
         </div>
 
-        <div className="px-4 py-3 border-t border-[#00ff41]/20 flex justify-end gap-2 shrink-0">
+        <div className="px-4 py-3 border-t border-primary/20 flex justify-end gap-2 shrink-0">
           {running ? (
             <button onClick={handleStop} className="flex items-center gap-1 text-xs text-black bg-red-500 hover:bg-red-400 px-4 py-2 font-bold">
               <Square size={14} /> HARD STOP
             </button>
           ) : (
-            <button onClick={() => handleStart()} className="flex items-center gap-1 text-xs text-black bg-[#00ff41] hover:bg-[#39ff14] px-4 py-2 font-bold">
+            <button onClick={() => handleStart()} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-4 py-2 font-bold">
               <Play size={14} /> {steps.length > 0 ? 'RESTART' : 'JACK OUT'}
             </button>
           )}

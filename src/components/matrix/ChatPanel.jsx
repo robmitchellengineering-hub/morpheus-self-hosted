@@ -101,20 +101,20 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
     <div className="flex flex-col h-full w-full">
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-matrix">
         {messages.length === 0 && !loading && (
-          <div className="text-[#00ff41]/75 italic text-sm space-y-1">
+          <div className="text-primary/75 italic text-sm space-y-1">
             <p>&gt; Morpheus is here.</p>
             <p>&gt; Tell me what you want to build. I can only show you the door.</p>
           </div>
         )}
         {messages.map((m, idx) => (
           <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-            <div className={`max-w-[85%] ${m.role === 'user' ? 'text-[#39ff14]/80' : 'text-[#00ff41]'}`}>
+            <div className={`max-w-[85%] ${m.role === 'user' ? 'text-[#39ff14]/80' : 'text-primary'}`}>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-[#00ff41]/75">{m.role === 'user' ? 'operator@matrix:~$' : 'morpheus@construct:~$'}</span>
+                <span className="text-xs text-primary/75">{m.role === 'user' ? 'operator@matrix:~$' : 'morpheus@construct:~$'}</span>
                 {m.role === 'morpheus' && !m.content.startsWith('// SYSTEM') && (
                   <button
                     onClick={() => speak(m)}
-                    className="text-[#00ff41]/75 hover:text-[#00ff41] transition-colors"
+                    className="text-primary/75 hover:text-primary transition-colors"
                     title="Play voice"
                   >
                     {loadingId === m.id ? <Loader2 size={12} className="animate-spin" /> :
@@ -137,7 +137,7 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
                     <button
                       onClick={() => setRevertConfirm(true)}
                       disabled={reverting}
-                      className="flex items-center gap-1 text-[10px] text-[#00ff41]/60 hover:text-[#00ff41] border border-[#00ff41]/30 hover:border-[#00ff41]/60 px-2 py-0.5 transition-colors disabled:opacity-40"
+                      className="flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 px-2 py-0.5 transition-colors disabled:opacity-40"
                       title="Revert to before this prompt"
                     >
                       <Undo2 size={11} /> REVERT
@@ -156,7 +156,7 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
                       <button
                         onClick={() => setRevertConfirm(false)}
                         disabled={reverting}
-                        className="text-[10px] text-[#00ff41]/70 hover:text-[#00ff41] px-1.5 py-0.5 border border-[#00ff41]/30 disabled:opacity-50"
+                        className="text-[10px] text-primary/70 hover:text-primary px-1.5 py-0.5 border border-primary/30 disabled:opacity-50"
                       >
                         NO
                       </button>
@@ -169,20 +169,20 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="text-[#00ff41]/60 text-sm">
-              <span className="text-[#00ff41]/75 mr-2">morpheus@construct:~$</span>
+            <div className="text-primary/60 text-sm">
+              <span className="text-primary/75 mr-2">morpheus@construct:~$</span>
               <span className="animate-pulse">decoding reality</span><span className="animate-pulse">_</span>
             </div>
           </div>
         )}
       </div>
       {attachments.length > 0 && (
-        <div className="border-t border-[#00ff41]/20 px-3 pt-2 flex flex-wrap gap-2">
+        <div className="border-t border-primary/20 px-3 pt-2 flex flex-wrap gap-2">
           {attachments.map((a, i) => (
-            <div key={i} className="flex items-center gap-1.5 border border-[#00ff41]/40 bg-[#00ff41]/5 px-2 py-1 text-xs">
-              <Paperclip size={10} className="text-[#00ff41]/60 shrink-0" />
-              <span className="text-[#00ff41]/80 truncate max-w-[120px]">{a.name}</span>
-              <button onClick={() => removeAttachment(i)} className="text-[#00ff41]/75 hover:text-red-500 shrink-0">
+            <div key={i} className="flex items-center gap-1.5 border border-primary/40 bg-primary/5 px-2 py-1 text-xs">
+              <Paperclip size={10} className="text-primary/60 shrink-0" />
+              <span className="text-primary/80 truncate max-w-[120px]">{a.name}</span>
+              <button onClick={() => removeAttachment(i)} className="text-primary/75 hover:text-red-500 shrink-0">
                 <X size={12} />
               </button>
             </div>
@@ -191,30 +191,30 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
       )}
       <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" accept="image/*,.pdf,.txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.html,.xml,.py,.java,.kt,.swift,.go,.rs,.c,.cpp,.h,.yml,.yaml,.toml,.csv" />
       {messages.length > 0 && !loading && (
-        <div className="border-t border-[#00ff41]/20 px-3 pt-2 flex gap-2 flex-wrap">
+        <div className="border-t border-primary/20 px-3 pt-2 flex gap-2 flex-wrap">
           <button
             onClick={() => { setFixDismissed(true); onSend("Address the issues from the review. Look at the critical issues flagged in the last review, fix every one of them in the affected files, and re-output the corrected code. Don't stop until all review issues are resolved and the code is clean.", []); }}
-            className={`flex items-center gap-1.5 text-xs border px-2.5 py-1 transition-colors ${reviewIsRed && !fixDismissed ? 'review-flash text-[#00ff41] border-red-500' : 'text-[#00ff41]/70 hover:text-[#00ff41] border-[#00ff41]/30 hover:border-[#00ff41]/60 hover:bg-[#00ff41]/5'}`}
+            className={`flex items-center gap-1.5 text-xs border px-2.5 py-1 transition-colors ${reviewIsRed && !fixDismissed ? 'review-flash text-primary border-red-500' : 'text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5'}`}
           >
             <Wrench size={12} /> Fix review issues
           </button>
         </div>
       )}
-      <div className="border-t border-[#00ff41]/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-2 items-center shadow-[0_-6px_24px_-6px_rgba(0,255,65,0.35)]">
-        <button onClick={toggleVoice} className="text-[#00ff41]/60 hover:text-[#00ff41] shrink-0" title={voiceEnabled ? 'Mute Morpheus' : 'Unmute Morpheus'}>
+      <div className="border-t border-primary/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-2 items-center shadow-[0_-6px_24px_-6px_rgba(0,255,65,0.35)]">
+        <button onClick={toggleVoice} className="text-primary/60 hover:text-primary shrink-0" title={voiceEnabled ? 'Mute Morpheus' : 'Unmute Morpheus'}>
           {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
         </button>
-        <button onClick={() => fileInputRef.current?.click()} disabled={loading || uploading} className="text-[#00ff41]/80 hover:text-[#00ff41] shrink-0 disabled:opacity-30 p-1 border border-[#00ff41]/30 hover:border-[#00ff41]/60 transition-colors" title="Attach reference file">
+        <button onClick={() => fileInputRef.current?.click()} disabled={loading || uploading} className="text-primary/80 hover:text-primary shrink-0 disabled:opacity-30 p-1 border border-primary/30 hover:border-primary/60 transition-colors" title="Attach reference file">
           {uploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
         </button>
-        <span className="text-[#00ff41]/60">{'>'}</span>
+        <span className="text-primary/60">{'>'}</span>
         <textarea
           ref={inputRef}
           defaultValue=""
           rows={1}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           placeholder={listening ? 'listening...' : 'speak...'}
-          className="flex-1 min-w-0 resize-none bg-transparent text-[#00ff41] placeholder:text-[#00ff41]/65 outline-none text-sm leading-5 py-0.5 max-h-24"
+          className="flex-1 min-w-0 resize-none bg-transparent text-primary placeholder:text-primary/65 outline-none text-sm leading-5 py-0.5 max-h-24"
           disabled={loading}
           autoComplete="off"
           autoCapitalize="off"
@@ -223,18 +223,18 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
         />
         {onAutonomous && (
           <HelpHint id="chat-auto" title="Autonomous Build" body="Give Morpheus a spec and it runs a multi-step build loop — planning, coding, reviewing — until the project is complete. Watch the log in real time. Uses more AI credits.">
-            <button onClick={onAutonomous} disabled={loading} className="shrink-0 p-1.5 border border-[#00ff41]/40 hover:border-[#00ff41] hover:bg-[#00ff41]/10 text-[#00ff41] transition-colors disabled:opacity-30" title="Autonomous build">
+            <button onClick={onAutonomous} disabled={loading} className="shrink-0 p-1.5 border border-primary/40 hover:border-primary hover:bg-primary/10 text-primary transition-colors disabled:opacity-30" title="Autonomous build">
               <Bot size={16} />
             </button>
           </HelpHint>
         )}
         {micSupported && (
-          <button onClick={handleMicClick} className={`shrink-0 p-1.5 border transition-colors ${listening ? 'text-black bg-[#00ff41] border-[#00ff41] animate-pulse' : 'text-[#00ff41] border-[#00ff41]/40 hover:border-[#00ff41]'}`} title="Voice input">
+          <button onClick={handleMicClick} className={`shrink-0 p-1.5 border transition-colors ${listening ? 'text-black bg-primary border-primary animate-pulse' : 'text-primary border-primary/40 hover:border-primary'}`} title="Voice input">
             {listening ? <MicOff size={16} /> : <Mic size={16} />}
           </button>
         )}
         <HelpHint id="chat-send" title="Build with Morpheus" body="Tell Morpheus what to build or change. He plans the architecture, writes production-ready code, and reviews it before saving. Attach reference files with the paperclip, or use voice input with the mic. Press Enter to send.">
-          <button onClick={handleSend} disabled={loading} className="text-[#00ff41] hover:text-black hover:bg-[#00ff41] px-3 py-1 border border-[#00ff41]/40 disabled:opacity-30 transition-colors">
+          <button onClick={handleSend} disabled={loading} className="text-primary hover:text-black hover:bg-primary px-3 py-1 border border-primary/40 disabled:opacity-30 transition-colors">
             <Send size={16} />
           </button>
         </HelpHint>

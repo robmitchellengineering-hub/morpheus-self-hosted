@@ -49,10 +49,10 @@ export default function DonateWidget() {
   };
 
   return (
-    <div className="mt-6 mx-auto max-w-lg text-left border border-[#00ff41]/30">
+    <div className="mt-6 mx-auto max-w-lg text-left border border-primary/30">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-[#00ff41]/80 hover:text-[#00ff41] transition-colors"
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-primary/80 hover:text-primary transition-colors"
       >
         <span className="flex items-center gap-2 text-xs font-display tracking-[0.15em]">
           <Heart size={14} /> // KEEP MORPHEUS ALIVE
@@ -61,8 +61,8 @@ export default function DonateWidget() {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 border-t border-[#00ff41]/20 pt-3">
-          <p className="text-xs text-[#00ff41]/60 mb-3 leading-relaxed">
+        <div className="px-4 pb-4 border-t border-primary/20 pt-3">
+          <p className="text-xs text-primary/60 mb-3 leading-relaxed">
             Donations keep Morpheus alive — and free for everyone who follows the white rabbit. Every credit fuels the Construct.
           </p>
 
@@ -72,19 +72,19 @@ export default function DonateWidget() {
                 key={tier.id}
                 onClick={() => setSelected(tier.id)}
                 className={`w-full flex items-center justify-between gap-3 border px-3 py-2.5 text-left transition-colors ${
-                  selected === tier.id ? 'border-[#00ff41] bg-[#00ff41]/5' : 'border-[#00ff41]/20 hover:border-[#00ff41]/50'
+                  selected === tier.id ? 'border-primary bg-primary/5' : 'border-primary/20 hover:border-primary/50'
                 }`}
               >
                 <div className="min-w-0">
-                  <div className="text-xs text-[#00ff41] font-bold">{tier.label}</div>
-                  <div className="text-[10px] text-[#00ff41]/55 mt-0.5">{tier.body}</div>
+                  <div className="text-xs text-primary font-bold">{tier.label}</div>
+                  <div className="text-[10px] text-primary/55 mt-0.5">{tier.body}</div>
                 </div>
-                {selected === tier.id && <span className="text-[#00ff41] shrink-0">✓</span>}
+                {selected === tier.id && <span className="text-primary shrink-0">✓</span>}
               </button>
             ))}
             {selected === 'keymaker' && (
-              <div className="flex items-center gap-2 border border-[#00ff41]/30 px-3 py-2">
-                <span className="text-[#00ff41]/60 text-sm">$</span>
+              <div className="flex items-center gap-2 border border-primary/30 px-3 py-2">
+                <span className="text-primary/60 text-sm">$</span>
                 <input
                   type="number"
                   min="1"
@@ -92,7 +92,7 @@ export default function DonateWidget() {
                   value={customAmount}
                   onChange={(e) => setCustomAmount(e.target.value)}
                   placeholder="Amount"
-                  className="bg-transparent text-[#00ff41] text-sm outline-none w-full"
+                  className="bg-transparent text-primary text-sm outline-none w-full"
                   autoFocus
                 />
               </div>
@@ -104,11 +104,11 @@ export default function DonateWidget() {
           <button
             onClick={donate}
             disabled={loading || !canDonate}
-            className="w-full mt-4 flex items-center justify-center gap-2 text-sm text-black bg-[#00ff41] hover:bg-[#39ff14] px-4 py-2.5 disabled:opacity-40 font-bold tracking-wider"
+            className="w-full mt-4 flex items-center justify-center gap-2 text-sm text-black bg-primary hover:bg-[#39ff14] px-4 py-2.5 disabled:opacity-40 font-bold tracking-wider"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Heart size={14} />} DONATE NOW
           </button>
-          <p className="text-[10px] text-[#00ff41]/45 mt-2 text-center">
+          <p className="text-[10px] text-primary/45 mt-2 text-center">
             // Secure checkout via Stripe. Your contribution keeps the Construct running.
           </p>
         </div>

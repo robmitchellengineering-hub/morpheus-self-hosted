@@ -36,7 +36,7 @@ export default function MobileTabBar() {
 
   if (['/', '/login', '/register', '/forgot-password', '/reset-password'].includes(pathname)) return null;
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden border-t border-[#00ff41]/30 bg-black/95 backdrop-blur-sm flex pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden border-t border-primary/30 bg-black/95 backdrop-blur-sm flex pb-[env(safe-area-inset-bottom)]">
       {TABS.map((t) => {
         const Icon = t.icon;
         return (
@@ -63,7 +63,7 @@ export default function MobileTabBar() {
               }
             }}
             className={({ isActive }) =>
-              `flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${isActive ? 'text-[#00ff41] neon-glow' : 'text-[#00ff41]/75'}`
+              `flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${isActive ? 'text-primary neon-glow' : 'text-primary/75'}`
             }
           >
             <Icon size={18} />

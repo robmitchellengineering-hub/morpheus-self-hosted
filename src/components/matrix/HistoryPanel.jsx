@@ -5,9 +5,9 @@ import JSZip from 'jszip';
 import ChatHistoryTab from '@/components/matrix/ChatHistoryTab';
 
 const TYPE_META = {
-  chat: { icon: MessageSquare, color: '#22d3ee', label: 'CHAT' },
-  snapshot: { icon: Camera, color: '#eab308', label: 'SNAPSHOT' },
-  tool: { icon: Wrench, color: '#00ff41', label: 'TOOL' },
+  chat: { icon: MessageSquare, color: 'hsl(var(--status-info))', label: 'CHAT' },
+  snapshot: { icon: Camera, color: 'hsl(var(--status-warning))', label: 'SNAPSHOT' },
+  tool: { icon: Wrench, color: 'hsl(var(--primary))', label: 'TOOL' },
   diagnosis: { icon: Bot, color: '#a855f7', label: 'DIAGNOSIS' },
 };
 
@@ -141,69 +141,69 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/80" onClick={onClose}>
-      <div className="bg-black border-l border-[#00ff41]/40 w-full max-w-lg h-full flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#00ff41]/20 shrink-0">
+      <div className="bg-black border-l border-primary/40 w-full max-w-lg h-full flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 shrink-0">
           <div className="flex items-center gap-2">
-            <History size={18} className="text-[#00ff41]" />
-            <span className="text-[#00ff41] font-display tracking-wider text-sm">PROJECT HISTORY</span>
+            <History size={18} className="text-primary" />
+            <span className="text-primary font-display tracking-wider text-sm">PROJECT HISTORY</span>
           </div>
-          <button onClick={onClose} className="text-[#00ff41]/60 hover:text-[#00ff41]">
+          <button onClick={onClose} className="text-primary/60 hover:text-primary">
             <X size={18} />
           </button>
         </div>
 
-        <div className="flex border-b border-[#00ff41]/20 shrink-0">
-          <button onClick={() => setTab('logs')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'logs' ? 'text-[#00ff41] border-b-2 border-[#00ff41] bg-[#00ff41]/5' : 'text-[#00ff41]/75 hover:text-[#00ff41]/70'}`}>
+        <div className="flex border-b border-primary/20 shrink-0">
+          <button onClick={() => setTab('logs')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'logs' ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-primary/75 hover:text-primary/70'}`}>
             <ScrollText size={14} /> BUILD LOGS
           </button>
-          <button onClick={() => setTab('snapshots')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'snapshots' ? 'text-[#00ff41] border-b-2 border-[#00ff41] bg-[#00ff41]/5' : 'text-[#00ff41]/75 hover:text-[#00ff41]/70'}`}>
+          <button onClick={() => setTab('snapshots')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'snapshots' ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-primary/75 hover:text-primary/70'}`}>
             <Camera size={14} /> SNAPSHOTS ({snapshots.length})
           </button>
-          <button onClick={() => setTab('chat')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'chat' ? 'text-[#00ff41] border-b-2 border-[#00ff41] bg-[#00ff41]/5' : 'text-[#00ff41]/75 hover:text-[#00ff41]/70'}`}>
+          <button onClick={() => setTab('chat')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'chat' ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-primary/75 hover:text-primary/70'}`}>
             <Search size={14} /> CHAT
           </button>
         </div>
 
         {tab === 'logs' ? (
           <>
-            <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#00ff41]/10 shrink-0">
+            <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-primary/10 shrink-0">
               <div className="flex items-center gap-1">
                 {['all', 'chat', 'tool', 'diagnosis', 'snapshot'].map(f => (
-                  <button key={f} onClick={() => setFilter(f)} className={`text-xs px-2 py-1 transition-colors ${filter === f ? 'text-black bg-[#00ff41]' : 'text-[#00ff41]/50 hover:text-[#00ff41] border border-[#00ff41]/20'}`}>
+                  <button key={f} onClick={() => setFilter(f)} className={`text-xs px-2 py-1 transition-colors ${filter === f ? 'text-black bg-primary' : 'text-primary/50 hover:text-primary border border-primary/20'}`}>
                     {f.toUpperCase()} ({counts[f] || 0})
                   </button>
                 ))}
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={copyAllLogs} className="text-[#00ff41]/60 hover:text-[#00ff41] p-1.5 border border-[#00ff41]/20 hover:border-[#00ff41]/40 transition-colors" title="Copy all logs">
-                  {copiedId === 'all' ? <Check size={14} className="text-[#00ff41]" /> : <Copy size={14} />}
+                <button onClick={copyAllLogs} className="text-primary/60 hover:text-primary p-1.5 border border-primary/20 hover:border-primary/40 transition-colors" title="Copy all logs">
+                  {copiedId === 'all' ? <Check size={14} className="text-primary" /> : <Copy size={14} />}
                 </button>
-                <button onClick={downloadLogsZip} className="flex items-center gap-1 text-xs text-[#00ff41] px-2 py-1.5 border border-[#00ff41]/40 hover:border-[#00ff41] hover:bg-[#00ff41]/10 transition-colors" title="Download logs as ZIP">
+                <button onClick={downloadLogsZip} className="flex items-center gap-1 text-xs text-primary px-2 py-1.5 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors" title="Download logs as ZIP">
                   <Download size={14} /> ZIP
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-[#00ff41]/10 shrink-0">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-primary/10 shrink-0">
               <div className="relative flex-1">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#00ff41]/50" />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary/50" />
                 <input
                   value={logSearch}
                   onChange={e => setLogSearch(e.target.value)}
                   placeholder="search build logs…"
-                  className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-[#00ff41]/30"
+                  className="w-full bg-black text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
                 />
                 {logSearch && (
-                  <button onClick={() => setLogSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00ff41]/50 hover:text-[#00ff41]">
+                  <button onClick={() => setLogSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/50 hover:text-primary">
                     <X size={14} />
                   </button>
                 )}
               </div>
-              <span className="text-xs text-[#00ff41]/50 shrink-0 tabular-nums">
+              <span className="text-xs text-primary/50 shrink-0 tabular-nums">
                 {logQuery ? `${filteredLogs.length}/${logs.length}` : `${logs.length} events`}
               </span>
             </div>
@@ -211,12 +211,12 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
             <div className="flex-1 overflow-y-auto scrollbar-matrix">
               {loadingLogs ? (
                 <div className="flex items-center justify-center h-full">
-                  <Loader2 size={20} className="animate-spin text-[#00ff41]/60" />
+                  <Loader2 size={20} className="animate-spin text-primary/60" />
                 </div>
               ) : filteredLogs.length === 0 ? (
-                <p className="text-[#00ff41]/75 italic text-sm p-4">No build events recorded yet. Start building to generate logs.</p>
+                <p className="text-primary/75 italic text-sm p-4">No build events recorded yet. Start building to generate logs.</p>
               ) : (
-                <div className="divide-y divide-[#00ff41]/10">
+                <div className="divide-y divide-primary/10">
                   {filteredLogs.map((log, idx) => {
                     const meta = TYPE_META[log.type] || TYPE_META.tool;
                     const Icon = meta.icon;
@@ -224,38 +224,38 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                     const isExpanded = expandedId === idx;
                     const isLong = log.details.length > 200;
                     return (
-                      <div key={idx} className="p-3 hover:bg-[#00ff41]/5 transition-colors group">
+                      <div key={idx} className="p-3 hover:bg-primary/5 transition-colors group">
                         <div className="flex items-start gap-2">
                           <Icon size={14} style={{ color: meta.color }} className="mt-0.5 shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="text-xs font-bold tracking-wider" style={{ color: meta.color }}>{meta.label}</span>
-                                <span className="text-[#00ff41]/70 text-xs truncate">{toolLabel}</span>
+                                <span className="text-primary/70 text-xs truncate">{toolLabel}</span>
                               </div>
-                              <button onClick={() => copyLog(log, idx)} className="text-[#00ff41]/65 hover:text-[#00ff41] opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Copy this log entry">
-                                {copiedId === idx ? <Check size={12} className="text-[#00ff41]" /> : <Copy size={12} />}
+                              <button onClick={() => copyLog(log, idx)} className="text-primary/65 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Copy this log entry">
+                                {copiedId === idx ? <Check size={12} className="text-primary" /> : <Copy size={12} />}
                               </button>
                             </div>
-                            <p className="text-[#00ff41]/75 text-xs mt-0.5">{new Date(log.timestamp).toLocaleString()}</p>
+                            <p className="text-primary/75 text-xs mt-0.5">{new Date(log.timestamp).toLocaleString()}</p>
                             {log.credits > 0 && <span className="text-yellow-500/60 text-xs">⚡ {log.credits} credits</span>}
-                            <p className={`text-[#00ff41]/70 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'max-h-16 overflow-hidden' : ''}`}>{log.details}</p>
+                            <p className={`text-primary/70 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'max-h-16 overflow-hidden' : ''}`}>{log.details}</p>
                             {log.toolchain && (
                               <div className="mt-1.5 flex flex-wrap gap-1">
-                                <span className="text-[#00ff41]/75 text-xs border border-[#00ff41]/20 px-1.5 py-0.5">SDK {log.toolchain.sdk}</span>
-                                <span className="text-[#00ff41]/75 text-xs border border-[#00ff41]/20 px-1.5 py-0.5 uppercase">{log.toolchain.provider}</span>
+                                <span className="text-primary/75 text-xs border border-primary/20 px-1.5 py-0.5">SDK {log.toolchain.sdk}</span>
+                                <span className="text-primary/75 text-xs border border-primary/20 px-1.5 py-0.5 uppercase">{log.toolchain.provider}</span>
                                 {log.toolchain.planner_model && <span className="text-cyan-400/60 text-xs border border-cyan-400/20 px-1.5 py-0.5">planner: {log.toolchain.planner_model}</span>}
                                 {log.toolchain.coder_model && <span className="text-cyan-400/60 text-xs border border-cyan-400/20 px-1.5 py-0.5">coder: {log.toolchain.coder_model}</span>}
                                 {log.toolchain.reviewer_model && <span className="text-yellow-400/70 text-xs border border-yellow-400/20 px-1.5 py-0.5">reviewer: {log.toolchain.reviewer_model}</span>}
                                 {log.toolchain.client_tools && (
-                                  <span className="text-[#00ff41]/75 text-xs border border-[#00ff41]/20 px-1.5 py-0.5">
+                                  <span className="text-primary/75 text-xs border border-primary/20 px-1.5 py-0.5">
                                     client: {Object.entries(log.toolchain.client_tools).map(([k, v]) => `${k}@${v}`).join(', ')}
                                   </span>
                                 )}
                               </div>
                             )}
                             {isLong && (
-                              <button onClick={() => setExpandedId(isExpanded ? null : idx)} className="text-[#00ff41]/50 hover:text-[#00ff41] text-xs mt-1">
+                              <button onClick={() => setExpandedId(isExpanded ? null : idx)} className="text-primary/50 hover:text-primary text-xs mt-1">
                                 {isExpanded ? '← collapse' : 'expand →'}
                               </button>
                             )}
@@ -272,49 +272,49 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
           <ChatHistoryTab project={project} />
         ) : (
           <>
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#00ff41]/10 shrink-0">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-primary/10 shrink-0">
               <div className="relative flex-1">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#00ff41]/50" />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary/50" />
                 <input
                   value={snapSearch}
                   onChange={e => setSnapSearch(e.target.value)}
                   placeholder="search snapshots by label…"
-                  className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-[#00ff41]/30"
+                  className="w-full bg-black text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
                 />
                 {snapSearch && (
-                  <button onClick={() => setSnapSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00ff41]/50 hover:text-[#00ff41]">
+                  <button onClick={() => setSnapSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/50 hover:text-primary">
                     <X size={14} />
                   </button>
                 )}
               </div>
-              <span className="text-xs text-[#00ff41]/50 shrink-0 tabular-nums">
+              <span className="text-xs text-primary/50 shrink-0 tabular-nums">
                 {snapQuery ? `${filteredSnaps.length}/${snapshots.length}` : `${snapshots.length} snaps`}
               </span>
             </div>
             <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-2">
               {snapshots.length === 0 ? (
-                <p className="text-[#00ff41]/75 italic text-sm">No snapshots yet. Morpheus captures a snapshot before each build operation.</p>
+                <p className="text-primary/75 italic text-sm">No snapshots yet. Morpheus captures a snapshot before each build operation.</p>
               ) : filteredSnaps.length === 0 ? (
-                <p className="text-[#00ff41]/75 italic text-sm">No snapshots match "{snapSearch}".</p>
+                <p className="text-primary/75 italic text-sm">No snapshots match "{snapSearch}".</p>
               ) : (
                 filteredSnaps.map(s => (
-                  <div key={s.id} className="border border-[#00ff41]/20 p-3">
+                  <div key={s.id} className="border border-primary/20 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[#00ff41] text-sm truncate">{s.label}</p>
-                        <p className="text-[#00ff41]/75 text-xs mt-0.5">{new Date(s.created_date).toLocaleString()}</p>
+                        <p className="text-primary text-sm truncate">{s.label}</p>
+                        <p className="text-primary/75 text-xs mt-0.5">{new Date(s.created_date).toLocaleString()}</p>
                       </div>
                       {confirmId === s.id ? (
                         <div className="flex gap-1 shrink-0">
-                          <button onClick={() => handleRestore(s.id)} className="text-xs text-black bg-[#00ff41] px-2 py-1 font-bold">RESTORE</button>
-                          <button onClick={() => setConfirmId(null)} className="text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-2 py-1 border border-[#00ff41]/30">CANCEL</button>
+                          <button onClick={() => handleRestore(s.id)} className="text-xs text-black bg-primary px-2 py-1 font-bold">RESTORE</button>
+                          <button onClick={() => setConfirmId(null)} className="text-xs text-primary/60 hover:text-primary px-2 py-1 border border-primary/30">CANCEL</button>
                         </div>
                       ) : (
-                        <button onClick={() => setConfirmId(s.id)} className="text-[#00ff41]/60 hover:text-[#00ff41] shrink-0" title="Restore this version">
+                        <button onClick={() => setConfirmId(s.id)} className="text-primary/60 hover:text-primary shrink-0" title="Restore this version">
                           <RotateCcw size={14} />
                         </button>
                       )}

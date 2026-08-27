@@ -11,16 +11,16 @@ const STEPS = [
 export default function MarketHowItWorks() {
   return (
     <div className="mb-6">
-      <h2 className="text-[10px] text-[#00ff41]/50 tracking-[0.2em] font-display mb-3">// HOW IT WORKS</h2>
+      <h2 className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-3">// HOW IT WORKS</h2>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {STEPS.map(({ icon: Icon, n, title, body }) => (
           <div key={n} className="p-4 flex gap-3">
-            <div className="font-display text-2xl text-[#00ff41]/30 leading-none">{n}</div>
+            <div className="font-display text-2xl text-primary/30 leading-none">{n}</div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-[#00ff41] text-sm font-bold">
+              <div className="flex items-center gap-1.5 text-primary text-sm font-bold">
                 <Icon size={14} /> {title}
               </div>
-              <p className="text-[#00ff41]/60 text-xs mt-1 leading-relaxed">{body}</p>
+              <p className="text-primary/60 text-xs mt-1 leading-relaxed">{body}</p>
             </div>
           </div>
         ))}

@@ -25,10 +25,10 @@ export default function CapabilityStatus({ connections }) {
 
   const dotClass = (status) =>
     status === 'active' || status === 'connected'
-      ? 'bg-[#00ff41] shadow-[0_0_6px_#00ff41]'
+      ? 'bg-primary shadow-[0_0_6px_hsl(var(--primary))]'
       : status === 'checking'
-        ? 'bg-yellow-500/70 animate-pulse'
-        : 'bg-yellow-500/40';
+        ? 'bg-warning/70 animate-pulse'
+        : 'bg-warning/40';
 
   const labelFor = (status) =>
     status === 'active' ? 'READY'
@@ -37,24 +37,24 @@ export default function CapabilityStatus({ connections }) {
     : 'SETUP NEEDED';
 
   const labelClass = (status) =>
-    status === 'setup' ? 'text-yellow-500/70' : 'text-[#00ff41]/60';
+    status === 'setup' ? 'text-warning/70' : 'text-primary/60';
 
   return (
-    <section className="mb-8 border border-[#00ff41]/30 p-5">
-      <h2 className="text-sm font-display tracking-wider mb-1 text-[#00ff41] flex items-center gap-2">
+    <section className="mb-8 border border-primary/30 p-5">
+      <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
         <Activity size={14} /> CAPABILITIES
       </h2>
-      <p className="text-xs text-[#00ff41]/50 mb-4">
+      <p className="text-xs text-primary/50 mb-4">
         // Live status of every Morpheus capability. Green = ready, amber = needs a connection to activate.
       </p>
       <div className="grid grid-cols-1 gap-0">
         {MORPHEUS_CAPABILITIES.map(c => {
           const status = statusFor(c.title);
           return (
-            <div key={c.title} className="flex items-center gap-2.5 py-1.5 border-b border-[#00ff41]/10 last:border-0">
+            <div key={c.title} className="flex items-center gap-2.5 py-1.5 border-b border-primary/10 last:border-0">
               <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass(status)}`} />
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-[#00ff41] truncate">{c.title}</div>
+                <div className="text-xs text-primary truncate">{c.title}</div>
               </div>
               <span className={`text-[10px] tracking-wider shrink-0 font-display ${labelClass(status)}`}>
                 {labelFor(status)}

@@ -78,26 +78,26 @@ export default function ExternalSources({ projectId, externalFiles, onRefresh })
   };
 
   return (
-    <div className="border border-[#00ff41]/20 p-3">
+    <div className="border border-primary/20 p-3">
       <div className="flex items-center justify-between mb-2 gap-2">
-        <div className="text-xs text-[#00ff41]/75 uppercase shrink-0">// external sources ({externalFiles.length})</div>
+        <div className="text-xs text-primary/75 uppercase shrink-0">// external sources ({externalFiles.length})</div>
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-1 text-xs text-[#00ff41]/70 hover:text-[#00ff41] border border-[#00ff41]/30 hover:border-[#00ff41]/60 px-2 py-1 transition-colors disabled:opacity-30"
+            className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary border border-primary/30 hover:border-primary/60 px-2 py-1 transition-colors disabled:opacity-30"
           >
             {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} UPLOAD
           </button>
           <button
             onClick={() => setShowPaste(!showPaste)}
-            className="flex items-center gap-1 text-xs text-[#00ff41]/70 hover:text-[#00ff41] border border-[#00ff41]/30 hover:border-[#00ff41]/60 px-2 py-1 transition-colors"
+            className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary border border-primary/30 hover:border-primary/60 px-2 py-1 transition-colors"
           >
             <Plus size={12} /> PASTE
           </button>
         </div>
       </div>
-      <p className="text-xs text-[#00ff41]/65 mb-2">Add external apps, files, or programs to include in backend planning.</p>
+      <p className="text-xs text-primary/65 mb-2">Add external apps, files, or programs to include in backend planning.</p>
       <input
         ref={fileInputRef}
         type="file"
@@ -107,39 +107,39 @@ export default function ExternalSources({ projectId, externalFiles, onRefresh })
         accept=".js,.ts,.jsx,.tsx,.html,.css,.json,.py,.java,.go,.rs,.c,.cpp,.cs,.rb,.php,.swift,.kt,.sql,.sh,.yml,.yaml,.xml,.md,.txt,.env"
       />
       {showPaste && (
-        <div className="mb-3 space-y-2 border border-[#00ff41]/20 p-2">
+        <div className="mb-3 space-y-2 border border-primary/20 p-2">
           <input
             value={pasteName}
             onChange={e => setPasteName(e.target.value)}
             placeholder="filename.js"
-            className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-2 py-1.5 text-xs outline-none placeholder:text-[#00ff41]/20"
+            className="w-full bg-black text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20"
           />
           <textarea
             value={pasteContent}
             onChange={e => setPasteContent(e.target.value)}
             placeholder="// paste code here..."
             rows={5}
-            className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-2 py-1.5 text-xs outline-none placeholder:text-[#00ff41]/20 font-mono resize-y"
+            className="w-full bg-black text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20 font-mono resize-y"
           />
           <div className="flex items-center gap-2">
             <button
               onClick={handlePaste}
               disabled={saving || !pasteName.trim() || !pasteContent.trim()}
-              className="text-xs text-black bg-[#00ff41] hover:bg-[#39ff14] px-3 py-1 disabled:opacity-30 font-bold"
+              className="text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-1 disabled:opacity-30 font-bold"
             >
               ADD FILE
             </button>
-            <button onClick={() => setShowPaste(false)} className="text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-2 py-1">CANCEL</button>
+            <button onClick={() => setShowPaste(false)} className="text-xs text-primary/60 hover:text-primary px-2 py-1">CANCEL</button>
           </div>
         </div>
       )}
       {externalFiles.length > 0 && (
         <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-matrix">
           {externalFiles.map(f => (
-            <div key={f.id} className="flex items-center gap-2 text-xs border border-[#00ff41]/10 px-2 py-1.5">
-              <FileCode size={12} className="text-[#00ff41]/60 shrink-0" />
-              <span className="text-[#00ff41]/80 truncate flex-1">{f.path.replace('external/', '')}</span>
-              <button onClick={() => handleDelete(f)} className="text-[#00ff41]/65 hover:text-red-500 shrink-0">
+            <div key={f.id} className="flex items-center gap-2 text-xs border border-primary/10 px-2 py-1.5">
+              <FileCode size={12} className="text-primary/60 shrink-0" />
+              <span className="text-primary/80 truncate flex-1">{f.path.replace('external/', '')}</span>
+              <button onClick={() => handleDelete(f)} className="text-primary/65 hover:text-red-500 shrink-0">
                 <Trash2 size={12} />
               </button>
             </div>

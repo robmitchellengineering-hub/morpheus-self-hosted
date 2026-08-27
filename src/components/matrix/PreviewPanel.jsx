@@ -129,13 +129,13 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
 
   return (
     <div className="flex flex-col h-full bg-black">
-      <div className="flex items-center justify-between border-b border-[#00ff41]/20 px-3 py-2 shrink-0 gap-2">
+      <div className="flex items-center justify-between border-b border-primary/20 px-3 py-2 shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Eye size={14} className="text-[#00ff41] shrink-0" />
-          <span className="text-[#00ff41] font-display tracking-wider text-sm neon-glow whitespace-nowrap">
+          <Eye size={14} className="text-primary shrink-0" />
+          <span className="text-primary font-display tracking-wider text-sm neon-glow whitespace-nowrap">
             {isNative ? 'RAPID PROTOTYPE' : 'LIVE PREVIEW'}
           </span>
-          {building && <Loader2 size={12} className="animate-spin text-[#00ff41]/60 shrink-0" />}
+          {building && <Loader2 size={12} className="animate-spin text-primary/60 shrink-0" />}
           <CacheRefreshStamp />
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -145,7 +145,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
               onChange={setDeviceId}
               label="TARGET SCREEN SIZE"
               options={DEVICES.map(d => ({ value: d.id, label: d.label }))}
-              triggerClassName="text-xs px-1.5 py-1 max-w-[150px] sm:max-w-none border-[#00ff41]/40"
+              triggerClassName="text-xs px-1.5 py-1 max-w-[150px] sm:max-w-none border-primary/40"
             />
           </HelpHint>
           {deviceId === 'custom' && (
@@ -154,27 +154,27 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
                 type="number"
                 value={customW}
                 onChange={e => setCustomW(e.target.value)}
-                className="w-14 text-xs bg-black text-[#00ff41] border border-[#00ff41]/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-black text-primary border border-primary/40 px-1 py-1 outline-none"
                 title="Width (px)"
               />
-              <span className="text-[#00ff41]/50 text-xs">×</span>
+              <span className="text-primary/50 text-xs">×</span>
               <input
                 type="number"
                 value={customH}
                 onChange={e => setCustomH(e.target.value)}
-                className="w-14 text-xs bg-black text-[#00ff41] border border-[#00ff41]/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-black text-primary border border-primary/40 px-1 py-1 outline-none"
                 title="Height (px)"
               />
             </div>
           )}
-          <button onClick={rebuild} className="text-[#00ff41]/60 hover:text-[#00ff41] p-1" title="Refresh preview">
+          <button onClick={rebuild} className="text-primary/60 hover:text-primary p-1" title="Refresh preview">
             <RefreshCw size={14} />
           </button>
-          <button onClick={openInNewTab} className="text-[#00ff41]/60 hover:text-[#00ff41] p-1" title="Open in new tab">
+          <button onClick={openInNewTab} className="text-primary/60 hover:text-primary p-1" title="Open in new tab">
             <ExternalLink size={14} />
           </button>
           {onClose && (
-            <button onClick={onClose} className="text-[#00ff41]/60 hover:text-[#00ff41] p-1 md:hidden" title="Close preview">
+            <button onClick={onClose} className="text-primary/60 hover:text-primary p-1 md:hidden" title="Close preview">
               <X size={14} />
             </button>
           )}
@@ -191,8 +191,8 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
       <div ref={stageRef} className="flex-1 bg-[#0a0a0a] relative overflow-hidden">
         {building && !html ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black gap-2">
-            <Loader2 size={24} className="animate-spin text-[#00ff41]/60" />
-            <span className="text-[#00ff41]/60 text-xs font-mono">
+            <Loader2 size={24} className="animate-spin text-primary/60" />
+            <span className="text-primary/60 text-xs font-mono">
               {isNative ? 'Generating rapid prototype...' : 'Building preview...'}
             </span>
           </div>
@@ -233,19 +233,19 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
               />
             )}
             {building && (
-              <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/80 border border-[#00ff41]/30 px-2 py-1">
-                <Loader2 size={11} className="animate-spin text-[#00ff41]/70" />
-                <span className="text-[#00ff41]/70 text-[10px] font-mono">REGENERATING</span>
+              <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/80 border border-primary/30 px-2 py-1">
+                <Loader2 size={11} className="animate-spin text-primary/70" />
+                <span className="text-primary/70 text-[10px] font-mono">REGENERATING</span>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-[#00ff41]/75 text-sm font-mono">
+          <div className="flex items-center justify-center h-full text-primary/75 text-sm font-mono">
             No files to preview
           </div>
         )}
         {isFramed && !building && html && (
-          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[#00ff41]/50 text-[10px] font-mono bg-black/70 px-2 py-0.5 border border-[#00ff41]/20 pointer-events-none whitespace-nowrap">
+          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-primary/50 text-[10px] font-mono bg-black/70 px-2 py-0.5 border border-primary/20 pointer-events-none whitespace-nowrap">
             {dw}×{dh} · {Math.round(scale * 100)}%
           </div>
         )}

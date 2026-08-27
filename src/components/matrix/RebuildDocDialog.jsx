@@ -163,21 +163,21 @@ export default function RebuildDocDialog({ open, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-2xl border border-[#00ff41]/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between border-b border-[#00ff41]/20 px-4 py-3 shrink-0">
+      <div className="w-full max-w-2xl border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 shrink-0">
           <div className="flex items-center gap-2">
-            <FileText size={16} className="text-[#00ff41]" />
-            <span className="text-[#00ff41] font-display tracking-wider neon-glow">REBUILD BLUEPRINT</span>
+            <FileText size={16} className="text-primary" />
+            <span className="text-primary font-display tracking-wider neon-glow">REBUILD BLUEPRINT</span>
           </div>
-          <button onClick={onClose} className="text-[#00ff41]/60 hover:text-[#00ff41]"><X size={18} /></button>
+          <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="p-4 space-y-4 overflow-y-auto scrollbar-matrix">
-          <p className="text-xs text-[#00ff41]/50">
+          <p className="text-xs text-primary/50">
             // A living blueprint of Morpheus's full architecture. Drop this + the published APK into any AI agent to reconstruct the backend as a standalone self-hosted application.
           </p>
 
           {loading && (
-            <div className="flex items-center gap-2 text-[#00ff41]/60 text-sm py-8 justify-center">
+            <div className="flex items-center gap-2 text-primary/60 text-sm py-8 justify-center">
               <Loader2 size={16} className="animate-spin" /> Loading blueprint...
             </div>
           )}
@@ -188,27 +188,27 @@ export default function RebuildDocDialog({ open, onClose }) {
 
           {!loading && doc && (
             <>
-              <div className="flex items-center gap-2 text-xs text-[#00ff41]/60">
-                <CheckCircle size={14} className="text-[#00ff41]" />
-                Version: <span className="text-[#00ff41]">{new Date(doc.version).toLocaleString()}</span>
-                <span className="text-[#00ff41]/65">|</span>
+              <div className="flex items-center gap-2 text-xs text-primary/60">
+                <CheckCircle size={14} className="text-primary" />
+                Version: <span className="text-primary">{new Date(doc.version).toLocaleString()}</span>
+                <span className="text-primary/65">|</span>
                 {sizeKb} KB
               </div>
-              <div className="border border-[#00ff41]/20 bg-[#00ff41]/5 p-3 max-h-64 overflow-y-auto scrollbar-matrix text-xs text-[#00ff41]/70 font-mono whitespace-pre-wrap">
+              <div className="border border-primary/20 bg-primary/5 p-3 max-h-64 overflow-y-auto scrollbar-matrix text-xs text-primary/70 font-mono whitespace-pre-wrap">
                 {doc.content.substring(0, 2000)}{doc.content.length > 2000 ? '\n\n... (truncated — download for full document)' : ''}
               </div>
             </>
           )}
 
           {!loading && !doc && !error && (
-            <p className="text-[#00ff41]/75 text-sm italic text-center py-8">No blueprint generated yet. Press GENERATE to create one.</p>
+            <p className="text-primary/75 text-sm italic text-center py-8">No blueprint generated yet. Press GENERATE to create one.</p>
           )}
         </div>
-        <div className="flex items-center gap-2 border-t border-[#00ff41]/20 px-4 py-3 shrink-0">
+        <div className="flex items-center gap-2 border-t border-primary/20 px-4 py-3 shrink-0">
           <button
             onClick={generate}
             disabled={generating}
-            className="flex items-center gap-2 px-4 py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors font-bold text-sm disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-bold text-sm disabled:opacity-50"
           >
             {generating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             {doc ? 'REGENERATE' : 'GENERATE'}
@@ -216,14 +216,14 @@ export default function RebuildDocDialog({ open, onClose }) {
           <button
             onClick={download}
             disabled={!doc}
-            className="flex items-center gap-2 px-4 py-2 border border-[#00ff41]/50 text-[#00ff41]/80 hover:border-[#00ff41] hover:text-[#00ff41] transition-colors text-sm disabled:opacity-30"
+            className="flex items-center gap-2 px-4 py-2 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary transition-colors text-sm disabled:opacity-30"
           >
             <Download size={14} /> DOWNLOAD .MD
           </button>
           <button
             onClick={downloadPdf}
             disabled={!doc || pdfLoading}
-            className="flex items-center gap-2 px-4 py-2 border border-[#00ff41]/50 text-[#00ff41]/80 hover:border-[#00ff41] hover:text-[#00ff41] transition-colors text-sm disabled:opacity-30"
+            className="flex items-center gap-2 px-4 py-2 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary transition-colors text-sm disabled:opacity-30"
           >
             {pdfLoading ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />} DOWNLOAD PDF
           </button>

@@ -18,22 +18,22 @@ export default function NewProjectDialog({ open, onClose, onCreate }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
-      <div className="w-full max-w-md border border-[#00ff41]/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md border border-primary/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-[#00ff41] font-display tracking-wider">INITIALIZE CONSTRUCT</h2>
-          <button onClick={onClose} className="text-[#00ff41]/50 hover:text-[#00ff41]"><X size={18} /></button>
+          <h2 className="text-primary font-display tracking-wider">INITIALIZE CONSTRUCT</h2>
+          <button onClick={onClose} className="text-primary/50 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-[#00ff41]/50 uppercase tracking-wider">Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="my-construct" className="w-full mt-1 bg-transparent border border-[#00ff41]/30 text-[#00ff41] px-3 py-2 outline-none focus:border-[#00ff41] text-sm" autoFocus />
+            <label className="text-xs text-primary/50 uppercase tracking-wider">Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="my-construct" className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
           </div>
           <div>
-            <label className="text-xs text-[#00ff41]/50 uppercase tracking-wider">Description</label>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="This is the core vision of your app and helps Morpheus stay on track when coding" rows={3} className="w-full mt-1 bg-transparent border border-[#00ff41]/30 text-[#00ff41] px-3 py-2 outline-none focus:border-[#00ff41] text-sm resize-none" />
+            <label className="text-xs text-primary/50 uppercase tracking-wider">Description</label>
+            <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="This is the core vision of your app and helps Morpheus stay on track when coding" rows={3} className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm resize-none" />
           </div>
           <div>
-            <label className="text-xs text-[#00ff41]/50 uppercase tracking-wider">Compile Target</label>
+            <label className="text-xs text-primary/50 uppercase tracking-wider">Compile Target</label>
             <SheetSelect
               value={target}
               onChange={setTarget}
@@ -53,7 +53,7 @@ export default function NewProjectDialog({ open, onClose, onCreate }) {
               ]}
             />
           </div>
-          <button onClick={handleCreate} disabled={!name.trim()} className="w-full py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider">
+          <button onClick={handleCreate} disabled={!name.trim()} className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider">
             JACK IN
           </button>
         </div>

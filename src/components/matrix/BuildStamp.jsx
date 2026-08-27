@@ -41,23 +41,23 @@ export default function BuildStamp() {
   };
 
   return (
-    <div className="font-mono text-[#00ff41] select-none">
+    <div className="font-mono text-primary select-none">
       {open ? (
-        <div className="flex items-center gap-2 bg-black/90 border border-[#00ff41]/40 px-2 py-1 text-[10px]">
-          <CheckCircle2 size={11} className="text-[#00ff41]/70 shrink-0" />
+        <div className="flex items-center gap-2 bg-black/90 border border-primary/40 px-2 py-1 text-[10px]">
+          <CheckCircle2 size={11} className="text-primary/70 shrink-0" />
           <div className="flex flex-col leading-tight">
-            <span className="text-[#00ff41]/80">BUILD {new Date(buildTime).toLocaleTimeString()}</span>
-            <span className="text-[#00ff41]/75">{formatAgo(buildTime)} · {new Date(buildTime).toLocaleDateString()}</span>
+            <span className="text-primary/80">BUILD {new Date(buildTime).toLocaleTimeString()}</span>
+            <span className="text-primary/75">{formatAgo(buildTime)} · {new Date(buildTime).toLocaleDateString()}</span>
           </div>
-          <button onClick={handleRefresh} disabled={refreshing} className="ml-1 text-[#00ff41] hover:text-black hover:bg-[#00ff41] p-1 border border-[#00ff41]/40 hover:border-[#00ff41] transition-colors disabled:opacity-50" title="Hard refresh (cache-bust)">
+          <button onClick={handleRefresh} disabled={refreshing} className="ml-1 text-primary hover:text-black hover:bg-primary p-1 border border-primary/40 hover:border-primary transition-colors disabled:opacity-50" title="Hard refresh (cache-bust)">
             <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
           </button>
-          <button onClick={() => setOpen(false)} className="text-[#00ff41]/75 hover:text-[#00ff41] px-1 text-[10px]">×</button>
+          <button onClick={() => setOpen(false)} className="text-primary/75 hover:text-primary px-1 text-[10px]">×</button>
         </div>
       ) : (
-        <button onClick={() => setOpen(true)} className="flex items-center gap-1 text-xs text-[#00ff41]/70 hover:text-[#00ff41] px-2.5 py-1.5 border border-[#00ff41]/30 hover:border-[#00ff41]/60 hover:bg-[#00ff41]/5 transition-colors shrink-0" title="Build version — click for refresh">
+        <button onClick={() => setOpen(true)} className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-2.5 py-1.5 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors shrink-0" title="Build version — click for refresh">
           <RefreshCw size={14} />
-          <span className="w-1.5 h-1.5 rounded-full bg-[#00ff41] animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
           {formatAgo(buildTime)}
         </button>
       )}

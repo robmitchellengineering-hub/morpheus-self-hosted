@@ -10,11 +10,11 @@ export default function PullToRefreshIndicator({ pullDistance, refreshing, thres
   return (
     <div className={`flex items-center justify-center overflow-hidden ${className}`} style={{ height }}>
       {refreshing ? (
-        <Loader2 size={22} className="animate-spin text-[#00ff41]" />
+        <Loader2 size={22} className="animate-spin text-primary" />
       ) : (
         <RefreshCw
           size={22}
-          className={`text-[#00ff41] transition-transform duration-150 ${ready ? 'rotate-180' : ''}`}
+          className={`text-primary transition-transform duration-150 ${ready ? 'rotate-180' : ''}`}
         />
       )}
     </div>

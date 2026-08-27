@@ -19,15 +19,15 @@ export default function SheetSelect({ value, onChange, options, triggerClassName
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`flex items-center justify-between gap-2 bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none cursor-pointer hover:border-[#00ff41]/60 transition-colors ${triggerClassName}`}
+        className={`flex items-center justify-between gap-2 bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none cursor-pointer hover:border-primary/60 transition-colors ${triggerClassName}`}
       >
         <span className="truncate text-left">{current?.label ?? value ?? '—'}</span>
-        <ChevronDown size={14} className="text-[#00ff41]/50 shrink-0" />
+        <ChevronDown size={14} className="text-primary/50 shrink-0" />
       </button>
       <Drawer open={open} onOpenChange={setOpen}>
-        <DrawerContent className="bg-black border-[#00ff41]/40 text-[#00ff41] max-h-[75vh] sm:max-w-md sm:mx-auto">
+        <DrawerContent className="bg-black border-primary/40 text-primary max-h-[75vh] sm:max-w-md sm:mx-auto">
           <DrawerHeader className="text-left pb-2">
-            <DrawerTitle className="text-[#00ff41] font-display tracking-wider text-sm">{label}</DrawerTitle>
+            <DrawerTitle className="text-primary font-display tracking-wider text-sm">{label}</DrawerTitle>
           </DrawerHeader>
           <div className="px-2 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto scrollbar-matrix max-h-[60vh]">
             {options.map((o) => (
@@ -35,10 +35,10 @@ export default function SheetSelect({ value, onChange, options, triggerClassName
                 key={o.value}
                 type="button"
                 onClick={() => handleSelect(o.value)}
-                className={`w-full flex items-center justify-between gap-2 px-3 py-3 text-sm text-left border-b border-[#00ff41]/10 hover:bg-[#00ff41]/5 transition-colors ${o.value === value ? 'text-[#00ff41]' : 'text-[#00ff41]/60'}`}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-3 text-sm text-left border-b border-primary/10 hover:bg-primary/5 transition-colors ${o.value === value ? 'text-primary' : 'text-primary/60'}`}
               >
                 <span className="flex-1 min-w-0">{o.label}</span>
-                {o.value === value && <Check size={14} className="text-[#00ff41] shrink-0" />}
+                {o.value === value && <Check size={14} className="text-primary shrink-0" />}
               </button>
             ))}
           </div>

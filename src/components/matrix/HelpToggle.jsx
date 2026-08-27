@@ -11,7 +11,7 @@ export default function HelpToggle() {
       className={`flex items-center gap-1 text-xs px-2.5 py-1.5 border transition-colors shrink-0 ${
         helpMode
           ? 'border-yellow-400 text-yellow-400 bg-yellow-400/10 animate-pulse'
-          : 'border-[#00ff41]/30 text-[#00ff41]/60 hover:text-[#00ff41] hover:border-[#00ff41]/60'
+          : 'border-primary/30 text-primary/60 hover:text-primary hover:border-primary/60'
       }`}
       title={helpMode ? 'Turn off help mode' : 'Turn on help mode — tap any feature for instructions'}
     >

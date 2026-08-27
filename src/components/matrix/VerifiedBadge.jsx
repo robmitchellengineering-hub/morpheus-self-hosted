@@ -7,7 +7,7 @@ export default function VerifiedBadge({ size = 12, className = '' }) {
   return (
     <span
       title="Verified seller — published through Morpheus"
-      className={`inline-flex items-center gap-1 text-[10px] text-[#00ff41]/70 border border-[#00ff41]/30 px-1.5 py-0.5 ${className}`}
+      className={`inline-flex items-center gap-1 text-[10px] text-primary/70 border border-primary/30 px-1.5 py-0.5 ${className}`}
     >
       <BadgeCheck size={size} /> VERIFIED
     </span>

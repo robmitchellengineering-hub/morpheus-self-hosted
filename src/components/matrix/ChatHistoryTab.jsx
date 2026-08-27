@@ -19,7 +19,7 @@ function MatchText({ content, query }) {
   return (
     <span>
       {prefix}{content.slice(start, idx)}
-      <mark className="bg-[#00ff41]/30 text-[#00ff41] rounded-sm px-0.5">{content.slice(idx, idx + query.length)}</mark>
+      <mark className="bg-primary/30 text-primary rounded-sm px-0.5">{content.slice(idx, idx + query.length)}</mark>
       {content.slice(idx + query.length, end)}{suffix}
     </span>
   );
@@ -58,26 +58,26 @@ export default function ChatHistoryTab({ project }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#00ff41]/10 shrink-0">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-primary/10 shrink-0">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#00ff41]/50" />
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary/50" />
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="search all chat history…"
-            className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 pl-8 pr-8 py-2 text-sm outline-none placeholder:text-[#00ff41]/30"
+            className="w-full bg-black text-primary border border-primary/30 pl-8 pr-8 py-2 text-sm outline-none placeholder:text-primary/30"
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
           />
           {query && (
-            <button onClick={() => setQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00ff41]/50 hover:text-[#00ff41]">
+            <button onClick={() => setQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/50 hover:text-primary">
               <X size={14} />
             </button>
           )}
         </div>
-        <span className="text-xs text-[#00ff41]/50 shrink-0 tabular-nums">
+        <span className="text-xs text-primary/50 shrink-0 tabular-nums">
           {q ? `${filtered.length}/${all.length}` : `${all.length} msgs`}
         </span>
       </div>
@@ -85,42 +85,42 @@ export default function ChatHistoryTab({ project }) {
       <div className="flex-1 overflow-y-auto scrollbar-matrix">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 size={20} className="animate-spin text-[#00ff41]/60" />
+            <Loader2 size={20} className="animate-spin text-primary/60" />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-[#00ff41]/75 italic text-sm p-4">
+          <p className="text-primary/75 italic text-sm p-4">
             {q ? `No messages match "${query}".` : 'No chat history yet. Start building to populate the record.'}
           </p>
         ) : (
-          <div className="divide-y divide-[#00ff41]/10">
+          <div className="divide-y divide-primary/10">
             {filtered.map(m => {
               const isUser = m.role === 'user';
               const isExpanded = expandedId === m.id;
               const Icon = isUser ? UserIcon : Bot;
               return (
-                <div key={m.id} className="p-3 hover:bg-[#00ff41]/5 transition-colors group">
+                <div key={m.id} className="p-3 hover:bg-primary/5 transition-colors group">
                   <div className="flex items-start gap-2">
-                    <Icon size={14} className={`mt-0.5 shrink-0 ${isUser ? 'text-[#39ff14]/80' : 'text-[#00ff41]'}`} />
+                    <Icon size={14} className={`mt-0.5 shrink-0 ${isUser ? 'text-[#39ff14]/80' : 'text-primary'}`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className={`text-xs font-bold tracking-wider ${isUser ? 'text-[#39ff14]/80' : 'text-[#00ff41]'}`}>
+                          <span className={`text-xs font-bold tracking-wider ${isUser ? 'text-[#39ff14]/80' : 'text-primary'}`}>
                             {isUser ? 'OPERATOR' : 'MORPHEUS'}
                           </span>
-                          <span className="text-[#00ff41]/50 text-xs">{new Date(m.created_date).toLocaleString()}</span>
+                          <span className="text-primary/50 text-xs">{new Date(m.created_date).toLocaleString()}</span>
                         </div>
-                        <button onClick={() => copy(m)} className="text-[#00ff41]/65 hover:text-[#00ff41] opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Copy message">
-                          {copiedId === m.id ? <Check size={12} className="text-[#00ff41]" /> : <Copy size={12} />}
+                        <button onClick={() => copy(m)} className="text-primary/65 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Copy message">
+                          {copiedId === m.id ? <Check size={12} className="text-primary" /> : <Copy size={12} />}
                         </button>
                       </div>
                       <p
-                        className={`text-[#00ff41]/80 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && q ? 'max-h-20 overflow-hidden' : ''}`}
+                        className={`text-primary/80 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && q ? 'max-h-20 overflow-hidden' : ''}`}
                         onClick={() => q && setExpandedId(isExpanded ? null : m.id)}
                       >
                         <MatchText content={m.content} query={q} />
                       </p>
                       {q && m.content.length > 200 && (
-                        <button onClick={() => setExpandedId(isExpanded ? null : m.id)} className="text-[#00ff41]/50 hover:text-[#00ff41] text-xs mt-1">
+                        <button onClick={() => setExpandedId(isExpanded ? null : m.id)} className="text-primary/50 hover:text-primary text-xs mt-1">
                           {isExpanded ? '← collapse' : 'expand →'}
                         </button>
                       )}

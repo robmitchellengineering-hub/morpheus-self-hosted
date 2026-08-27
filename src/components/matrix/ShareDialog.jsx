@@ -49,23 +49,23 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={handleClose}>
-      <div className="w-full max-w-md border border-[#00ff41]/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md border border-primary/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-[#00ff41] font-display tracking-wider">TRANSMIT CONSTRUCT</h2>
-          <button onClick={handleClose} className="text-[#00ff41]/50 hover:text-[#00ff41]"><X size={18} /></button>
+          <h2 className="text-primary font-display tracking-wider">TRANSMIT CONSTRUCT</h2>
+          <button onClick={handleClose} className="text-primary/50 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <div className="flex border border-[#00ff41]/30 mb-4">
-          <button onClick={() => { setTab('github'); setSuccess(null); setError(null); }} className={`flex-1 py-2 text-xs tracking-wider flex items-center justify-center gap-1.5 ${tab === 'github' ? 'bg-[#00ff41]/10 text-[#00ff41]' : 'text-[#00ff41]/75'}`}>
+        <div className="flex border border-primary/30 mb-4">
+          <button onClick={() => { setTab('github'); setSuccess(null); setError(null); }} className={`flex-1 py-2 text-xs tracking-wider flex items-center justify-center gap-1.5 ${tab === 'github' ? 'bg-primary/10 text-primary' : 'text-primary/75'}`}>
             <Github size={14} /> GITHUB
           </button>
-          <button onClick={() => { setTab('email'); setSuccess(null); setError(null); }} className={`flex-1 py-2 text-xs tracking-wider flex items-center justify-center gap-1.5 ${tab === 'email' ? 'bg-[#00ff41]/10 text-[#00ff41]' : 'text-[#00ff41]/75'}`}>
+          <button onClick={() => { setTab('email'); setSuccess(null); setError(null); }} className={`flex-1 py-2 text-xs tracking-wider flex items-center justify-center gap-1.5 ${tab === 'email' ? 'bg-primary/10 text-primary' : 'text-primary/75'}`}>
             <Mail size={14} /> EMAIL
           </button>
         </div>
 
         {success && (
-          <div className="mb-4 p-3 border border-[#00ff41] bg-[#00ff41]/5 text-[#00ff41] text-sm flex items-center gap-2">
+          <div className="mb-4 p-3 border border-primary bg-primary/5 text-primary text-sm flex items-center gap-2">
             <CheckCircle size={16} className="shrink-0" />
             {tab === 'github' && typeof success === 'string' && success.startsWith('http') ? (
               <a href={success} target="_blank" rel="noreferrer" className="underline hover:neon-glow flex items-center gap-1 break-all">
@@ -83,7 +83,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
             </div>
             {tab === 'github' && (
               <div className="space-y-2">
-                <button onClick={() => diagnose({ type: 'github', projectId: project.id, errorContext: { error, repoName } })} disabled={diagnosing} className="flex items-center gap-1 text-xs text-[#00ff41] hover:text-[#00ff41] px-3 py-2 border border-[#00ff41]/50 hover:border-[#00ff41] disabled:opacity-30">
+                <button onClick={() => diagnose({ type: 'github', projectId: project.id, errorContext: { error, repoName } })} disabled={diagnosing} className="flex items-center gap-1 text-xs text-primary hover:text-primary px-3 py-2 border border-primary/50 hover:border-primary disabled:opacity-30">
                   {diagnosing ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} AI DIAGNOSE & FIX
                 </button>
                 {diagnosing && <DiagnosisLoading label="AI AGENT ANALYZING GITHUB ERROR..." />}
@@ -97,14 +97,14 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
           <GithubGate note="Connect your GitHub account to push this construct to your own repo.">
             <div className="space-y-4">
               <div>
-                <label className="text-xs text-[#00ff41]/50 uppercase tracking-wider">Repository Name</label>
-                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-[#00ff41]/30 text-[#00ff41] px-3 py-2 outline-none focus:border-[#00ff41] text-sm" autoFocus />
+                <label className="text-xs text-primary/50 uppercase tracking-wider">Repository Name</label>
+                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
               </div>
-              <label className="flex items-center gap-2 text-sm text-[#00ff41]/70 cursor-pointer">
-                <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} className="accent-[#00ff41]" />
+              <label className="flex items-center gap-2 text-sm text-primary/70 cursor-pointer">
+                <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} className="accent-primary" />
                 Private repository
               </label>
-              <button onClick={handleGithub} disabled={loading} className="w-full py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2">
+              <button onClick={handleGithub} disabled={loading} className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2">
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Github size={16} />} PUSH TO GITHUB
               </button>
             </div>
@@ -112,10 +112,10 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="text-xs text-[#00ff41]/50 uppercase tracking-wider">Email Address</label>
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="operator@matrix.net" type="email" className="w-full mt-1 bg-transparent border border-[#00ff41]/30 text-[#00ff41] px-3 py-2 outline-none focus:border-[#00ff41] text-sm" autoFocus />
+              <label className="text-xs text-primary/50 uppercase tracking-wider">Email Address</label>
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="operator@matrix.net" type="email" className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
             </div>
-            <button onClick={handleEmail} disabled={loading || !email.trim()} className="w-full py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2">
+            <button onClick={handleEmail} disabled={loading || !email.trim()} className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2">
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />} SEND FILES
             </button>
           </div>

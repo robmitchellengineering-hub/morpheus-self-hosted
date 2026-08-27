@@ -20,10 +20,15 @@ export default function MatrixRain({ opacity = 0.1 }) {
     resize();
     window.addEventListener('resize', resize);
 
+    // Read the current theme's primary color at draw-start so the rain
+    // matches whichever theme (Clear default or Classic Matrix) is active,
+    // and updates automatically if the user switches theme mid-session.
+    const rainColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+
     const draw = () => {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#00ff41';
+      ctx.fillStyle = rainColor ? `hsl(${rainColor})` : '#00ff41';
       ctx.font = fontSize + 'px monospace';
       for (let i = 0; i < drops.length; i++) {
         const text = CHARS[Math.floor(Math.random() * CHARS.length)];

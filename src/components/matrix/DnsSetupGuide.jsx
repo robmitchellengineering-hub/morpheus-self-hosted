@@ -133,39 +133,39 @@ export default function DnsSetupGuide({ service }) {
   if (!guide) return null;
 
   return (
-    <div className="border border-[#00ff41]/10">
+    <div className="border border-primary/10">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left hover:bg-[#00ff41]/5 transition-colors"
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left hover:bg-primary/5 transition-colors"
       >
-        {open ? <ChevronDown size={12} className="text-[#00ff41]/75" /> : <ChevronRight size={12} className="text-[#00ff41]/75" />}
-        <Globe size={12} className="text-[#00ff41]/75" />
-        <span className="text-[10px] text-[#00ff41]/50 uppercase tracking-wider">
+        {open ? <ChevronDown size={12} className="text-primary/75" /> : <ChevronRight size={12} className="text-primary/75" />}
+        <Globe size={12} className="text-primary/75" />
+        <span className="text-[10px] text-primary/50 uppercase tracking-wider">
           DNS setup guide — {guide.label}
         </span>
       </button>
       {open && (
-        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-[#00ff41]/10">
+        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-primary/10">
           {guide.dashboard && (
-            <a href={guide.dashboard} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] text-[#00ff41]/60 hover:text-[#00ff41] underline">
+            <a href={guide.dashboard} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary underline">
               <ExternalLink size={10} /> {guide.dashboard}
             </a>
           )}
 
           <div>
-            <div className="text-[10px] text-[#00ff41]/75 uppercase mb-1">API Key (env var)</div>
+            <div className="text-[10px] text-primary/75 uppercase mb-1">API Key (env var)</div>
             <div className="space-y-0.5">
               {guide.envSteps.map((step, i) => (
-                <div key={i} className="text-[10px] text-[#00ff41]/50 font-mono leading-relaxed">{step}</div>
+                <div key={i} className="text-[10px] text-primary/50 font-mono leading-relaxed">{step}</div>
               ))}
             </div>
           </div>
 
           <div>
-            <div className="text-[10px] text-[#00ff41]/75 uppercase mb-1">Custom Domain (DNS)</div>
+            <div className="text-[10px] text-primary/75 uppercase mb-1">Custom Domain (DNS)</div>
             <div className="space-y-0.5">
               {guide.domainSteps.map((step, i) => (
-                <div key={i} className="text-[10px] text-[#00ff41]/50 font-mono leading-relaxed">{step}</div>
+                <div key={i} className="text-[10px] text-primary/50 font-mono leading-relaxed">{step}</div>
               ))}
             </div>
           </div>

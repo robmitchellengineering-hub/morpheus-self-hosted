@@ -79,7 +79,7 @@ export default function DangerZone() {
             </button>
             <button
               onClick={() => { setConfirming(false); setTypedConfirm(''); setError(''); }}
-              className="flex items-center gap-2 px-4 py-2 border border-[#00ff41]/30 text-[#00ff41]/60 hover:text-[#00ff41] transition-colors text-sm"
+              className="flex items-center gap-2 px-4 py-2 border border-primary/30 text-primary/60 hover:text-primary transition-colors text-sm"
             >
               <X size={14} /> CANCEL
             </button>

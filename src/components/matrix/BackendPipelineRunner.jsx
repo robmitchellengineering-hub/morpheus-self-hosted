@@ -4,10 +4,10 @@ import { base44 } from '@/api/base44Client';
 import { useRunTimer } from '@/hooks/useRunTimer';
 
 const PHASES = {
-  deploying: { icon: Cloud, label: 'DEPLOYING', color: 'text-[#00ff41]' },
-  health: { icon: Heart, label: 'HEALTH CHECK', color: 'text-[#00ff41]' },
+  deploying: { icon: Cloud, label: 'DEPLOYING', color: 'text-primary' },
+  health: { icon: Heart, label: 'HEALTH CHECK', color: 'text-primary' },
   diagnosing: { icon: Wrench, label: 'AI FIXING', color: 'text-yellow-500' },
-  done: { icon: CheckCircle, label: 'LIVE', color: 'text-[#00ff41]' },
+  done: { icon: CheckCircle, label: 'LIVE', color: 'text-primary' },
   stuck: { icon: AlertTriangle, label: 'STUCK', color: 'text-red-500' },
   stopped: { icon: Square, label: 'STOPPED', color: 'text-yellow-500' },
 };
@@ -152,23 +152,23 @@ export default function BackendPipelineRunner({ project, selectedComponents, onC
   });
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 border border-[#00ff41]/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] safe-bottom">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#00ff41]/20">
+    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] safe-bottom">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20">
         <div className="flex items-center gap-2">
           <Icon size={16} className={`${info.color} ${running ? 'animate-pulse' : ''}`} />
           <span className={`font-display tracking-wider text-sm ${info.color}`}>{info.label}</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-[#00ff41] font-mono text-sm">
+          <div className="flex items-center gap-1 text-primary font-mono text-sm">
             <Timer size={14} /> {timerStr}
-            {etaStr && <span className="text-[#00ff41]/50 text-xs ml-1">/ ETA {etaStr}</span>}
+            {etaStr && <span className="text-primary/50 text-xs ml-1">/ ETA {etaStr}</span>}
           </div>
           {running ? (
             <button onClick={handleStop} className="flex items-center gap-1 text-xs text-black bg-red-500 hover:bg-red-400 px-3 py-1 font-bold">
               <Square size={12} /> STOP
             </button>
           ) : (
-            <button onClick={onClose} className="text-[#00ff41]/60 hover:text-[#00ff41]">
+            <button onClick={onClose} className="text-primary/60 hover:text-primary">
               <X size={16} />
             </button>
           )}
@@ -176,20 +176,20 @@ export default function BackendPipelineRunner({ project, selectedComponents, onC
       </div>
       <div className="max-h-32 overflow-y-auto scrollbar-matrix p-3 space-y-0.5">
         {logs.map((log, i) => (
-          <div key={i} className="text-xs text-[#00ff41]/60 font-mono">
-            <span className="text-[#00ff41]/65">{log.time} </span>
+          <div key={i} className="text-xs text-primary/60 font-mono">
+            <span className="text-primary/65">{log.time} </span>
             {log.msg}
           </div>
         ))}
-        {running && <div className="text-xs text-[#00ff41] animate-pulse">▊</div>}
+        {running && <div className="text-xs text-primary animate-pulse">▊</div>}
       </div>
       {phase === 'done' && finalResults && (
-        <div className="border-t border-[#00ff41]/20 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-[#00ff41] text-sm">
+        <div className="border-t border-primary/20 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-primary text-sm">
             <CheckCircle size={14} /> Backend live and healthy!
           </div>
           {finalResults.results?.filter(r => r.url).slice(0, 3).map((r, i) => (
-            <a key={i} href={r.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-1.5 px-3 border border-[#00ff41]/40 hover:border-[#00ff41] hover:bg-[#00ff41]/10 transition-colors text-sm">
+            <a key={i} href={r.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-1.5 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
               <Cloud size={14} /> {r.label || r.service}
             </a>
           ))}

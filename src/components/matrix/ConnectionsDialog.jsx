@@ -175,31 +175,31 @@ export default function ConnectionsDialog({ open, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col border border-[#00ff41]/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
+      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
         {/* header */}
-        <div className="flex items-center justify-between border-b border-[#00ff41]/20 px-4 py-3 shrink-0">
+        <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <Plug size={16} className="text-[#00ff41] shrink-0" />
-            <span className="text-[#00ff41] font-display tracking-wider neon-glow">CONNECTIONS</span>
-            <span className="text-xs text-[#00ff41]/60 ml-1 truncate">{connectedCount}/{totalCount} connected</span>
+            <Plug size={16} className="text-primary shrink-0" />
+            <span className="text-primary font-display tracking-wider neon-glow">CONNECTIONS</span>
+            <span className="text-xs text-primary/60 ml-1 truncate">{connectedCount}/{totalCount} connected</span>
           </div>
-          <button onClick={onClose} className="text-[#00ff41]/60 hover:text-[#00ff41] shrink-0"><X size={18} /></button>
+          <button onClick={onClose} className="text-primary/60 hover:text-primary shrink-0"><X size={18} /></button>
         </div>
 
         {/* body */}
         <div className="overflow-y-auto scrollbar-matrix p-4 space-y-5">
           {/* GitHub (OAuth) */}
-          <section className="border border-[#00ff41]/30 p-4">
+          <section className="border border-primary/30 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <Github size={16} className={gh.connected ? 'text-[#00ff41] shrink-0' : 'text-[#00ff41]/50 shrink-0'} />
-                <span className="text-sm text-[#00ff41]">GitHub</span>
+                <Github size={16} className={gh.connected ? 'text-primary shrink-0' : 'text-primary/50 shrink-0'} />
+                <span className="text-sm text-primary">GitHub</span>
                 {gh.connected ? (
-                  <span className="flex items-center gap-1 text-[10px] text-[#00ff41] border border-[#00ff41]/40 px-1.5 py-0.5 truncate">
+                  <span className="flex items-center gap-1 text-[10px] text-primary border border-primary/40 px-1.5 py-0.5 truncate">
                     <Check size={10} /> CONNECTED{gh.login ? ` · ${gh.login}` : ''}
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-[10px] text-[#00ff41]/50 border border-[#00ff41]/20 px-1.5 py-0.5">
+                  <span className="flex items-center gap-1 text-[10px] text-primary/50 border border-primary/20 px-1.5 py-0.5">
                     <XCircle size={10} /> DISCONNECTED
                   </span>
                 )}
@@ -207,51 +207,51 @@ export default function ConnectionsDialog({ open, onClose }) {
               {gh.connected ? (
                 <button onClick={gh.disconnect} className="text-xs text-red-500/80 hover:text-red-400 border border-red-500/30 px-2.5 py-1.5 min-h-[44px] shrink-0">DISCONNECT</button>
               ) : (
-                <button onClick={gh.connect} className="text-xs text-black bg-[#00ff41] hover:bg-[#39ff14] px-3 py-1.5 min-h-[44px] font-bold flex items-center gap-1 shrink-0">
+                <button onClick={gh.connect} className="text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-1.5 min-h-[44px] font-bold flex items-center gap-1 shrink-0">
                   <Github size={12} /> CONNECT
                 </button>
               )}
             </div>
-            <p className="text-[10px] text-[#00ff41]/50 mt-2">// Required to compile binaries, import repos, and push to GitHub. OAuth — no token pasting.</p>
+            <p className="text-[10px] text-primary/50 mt-2">// Required to compile binaries, import repos, and push to GitHub. OAuth — no token pasting.</p>
           </section>
 
           {/* Hosting / infra platforms (reuses the Settings connections UI) */}
           {loading ? (
-            <div className="flex items-center gap-2 text-[#00ff41]/60 text-sm py-6 justify-center"><Loader2 size={14} className="animate-spin" /> Loading connections...</div>
+            <div className="flex items-center gap-2 text-primary/60 text-sm py-6 justify-center"><Loader2 size={14} className="animate-spin" /> Loading connections...</div>
           ) : (
             <ConnectionsSection connections={connections} onChange={setConnections} />
           )}
 
           {/* Capability matrix */}
-          <section className="border border-[#00ff41]/30 p-4">
-            <h2 className="text-sm font-display tracking-wider mb-1 text-[#00ff41] flex items-center gap-2"><Zap size={14} /> MORPHEUS CAPABILITY</h2>
-            <p className="text-xs text-[#00ff41]/50 mb-3">// What Morpheus can do end-to-end right now, given your connections. Blocked items show exactly what to connect.</p>
+          <section className="border border-primary/30 p-4">
+            <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2"><Zap size={14} /> MORPHEUS CAPABILITY</h2>
+            <p className="text-xs text-primary/50 mb-3">// What Morpheus can do end-to-end right now, given your connections. Blocked items show exactly what to connect.</p>
             <div className="space-y-2">
               {CAPABILITIES.map(cap => {
                 const isReady = cap.requires.every(r => ready[r]);
                 return (
-                  <div key={cap.id} className={`border p-3 ${isReady ? 'border-[#00ff41]/40 bg-[#00ff41]/5' : 'border-[#00ff41]/15'}`}>
+                  <div key={cap.id} className={`border p-3 ${isReady ? 'border-primary/40 bg-primary/5' : 'border-primary/15'}`}>
                     <div className="flex items-start gap-2">
-                      {isReady ? <Check size={14} className="text-[#00ff41] shrink-0 mt-0.5" /> : <XCircle size={14} className="text-[#00ff41]/40 shrink-0 mt-0.5" />}
+                      {isReady ? <Check size={14} className="text-primary shrink-0 mt-0.5" /> : <XCircle size={14} className="text-primary/40 shrink-0 mt-0.5" />}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-sm ${isReady ? 'text-[#00ff41]' : 'text-[#00ff41]/70'}`}>{cap.label}</span>
-                          <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${isReady ? 'border-[#00ff41]/40 text-[#00ff41]' : 'border-[#00ff41]/20 text-[#00ff41]/50'}`}>
+                          <span className={`text-sm ${isReady ? 'text-primary' : 'text-primary/70'}`}>{cap.label}</span>
+                          <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${isReady ? 'border-primary/40 text-primary' : 'border-primary/20 text-primary/50'}`}>
                             {isReady ? 'READY' : 'BLOCKED'}
                           </span>
                         </div>
-                        <p className="text-[11px] text-[#00ff41]/55 mt-0.5">{cap.description}</p>
+                        <p className="text-[11px] text-primary/55 mt-0.5">{cap.description}</p>
                         {!isReady && (
-                          <div className="mt-2 text-[11px] text-[#00ff41]/65 space-y-1.5">
+                          <div className="mt-2 text-[11px] text-primary/65 space-y-1.5">
                             <p>// {cap.instructions}</p>
                             {cap.links.length > 0 && (
                               <div className="flex flex-wrap gap-x-3 gap-y-1">
                                 {cap.links.map(l => l.action === 'github' ? (
-                                  <button key={l.label} onClick={gh.connect} className="inline-flex items-center gap-1 text-[#00ff41] underline hover:text-[#39ff14]">
+                                  <button key={l.label} onClick={gh.connect} className="inline-flex items-center gap-1 text-primary underline hover:text-[#39ff14]">
                                     <Github size={10} /> {l.label} <ExternalLink size={9} />
                                   </button>
                                 ) : (
-                                  <a key={l.label} href={l.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#00ff41] underline hover:text-[#39ff14]">
+                                  <a key={l.label} href={l.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline hover:text-[#39ff14]">
                                     {l.label} <ExternalLink size={9} />
                                   </a>
                                 ))}
@@ -272,9 +272,9 @@ export default function ConnectionsDialog({ open, onClose }) {
           </div>
 
           {/* footer */}
-        <div className="border-t border-[#00ff41]/20 px-4 py-3 shrink-0 flex items-center justify-between gap-3">
-          <p className="text-[10px] text-[#00ff41]/50">// Hosting credentials save to your private settings. GitHub uses OAuth.</p>
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors text-xs font-bold disabled:opacity-40 min-h-[44px] shrink-0">
+        <div className="border-t border-primary/20 px-4 py-3 shrink-0 flex items-center justify-between gap-3">
+          <p className="text-[10px] text-primary/50">// Hosting credentials save to your private settings. GitHub uses OAuth.</p>
+          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-xs font-bold disabled:opacity-40 min-h-[44px] shrink-0">
             {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
             {saving ? 'SAVING' : saved ? 'SAVED' : 'SAVE CONNECTIONS'}
           </button>

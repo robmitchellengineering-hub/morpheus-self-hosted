@@ -340,14 +340,14 @@ export default function BackendPanel({ open, onClose, project }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 md:p-4">
-      <div className="w-full max-w-4xl h-[90vh] border border-[#00ff41]/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] flex flex-col">
+      <div className="w-full max-w-4xl h-[90vh] border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#00ff41]/20 px-4 py-3 shrink-0">
+        <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 shrink-0">
           <div className="flex items-center gap-2">
-            <Server size={16} className="text-[#00ff41]" />
-            <span className="text-[#00ff41] font-display tracking-wider neon-glow text-sm md:text-base">BACKEND DEVELOPMENT</span>
+            <Server size={16} className="text-primary" />
+            <span className="text-primary font-display tracking-wider neon-glow text-sm md:text-base">BACKEND DEVELOPMENT</span>
           </div>
-          <button onClick={onClose} className="text-[#00ff41]/60 hover:text-[#00ff41]"><X size={18} /></button>
+          <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
         {/* Body */}
@@ -364,10 +364,10 @@ export default function BackendPanel({ open, onClose, project }) {
                 <AlertTriangle size={16} className="text-yellow-500 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-yellow-500 text-sm font-bold">CONNECTIONS REQUIRED</p>
-                  <p className="text-xs text-[#00ff41]/60 mt-0.5">
+                  <p className="text-xs text-primary/60 mt-0.5">
                     {missing.length} component{missing.length > 1 ? 's' : ''} need credentials before live deploy will work: {missing.map(m => getServiceOption(m.type, m.serviceId)?.label || m.serviceId).join(', ')}.
                   </p>
-                  <Link to="/settings" className="inline-flex items-center gap-1 text-xs text-[#00ff41] hover:underline border border-[#00ff41]/30 hover:border-[#00ff41]/60 px-2 py-1.5 mt-2">
+                  <Link to="/settings" className="inline-flex items-center gap-1 text-xs text-primary hover:underline border border-primary/30 hover:border-primary/60 px-2 py-1.5 mt-2">
                     <LinkIcon size={10} /> GO TO SETTINGS → CONNECTIONS
                   </Link>
                 </div>
@@ -378,17 +378,17 @@ export default function BackendPanel({ open, onClose, project }) {
           {/* Planning / Loading */}
           {(phase === 'planning' || phase === 'loading') && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 size={32} className="animate-spin text-[#00ff41]/60" />
-              <p className="text-[#00ff41]/60 text-sm font-mono text-center px-4">Morpheus is analyzing your project and planning the backend...</p>
+              <Loader2 size={32} className="animate-spin text-primary/60" />
+              <p className="text-primary/60 text-sm font-mono text-center px-4">Morpheus is analyzing your project and planning the backend...</p>
             </div>
           )}
 
           {/* Idle — upload external sources before planning (standalone backend) */}
           {phase === 'idle' && (
             <div className="space-y-3">
-              <div className="border border-[#00ff41]/20 p-3">
-                <p className="text-[#00ff41]/60 text-sm mb-1">Upload your existing app or files, and Morpheus will analyze them to plan the backend.</p>
-                <p className="text-[#00ff41]/75 text-xs">You can upload frontend source files, API specs, database schemas, or any reference code. When ready, hit PLAN BACKEND.</p>
+              <div className="border border-primary/20 p-3">
+                <p className="text-primary/60 text-sm mb-1">Upload your existing app or files, and Morpheus will analyze them to plan the backend.</p>
+                <p className="text-primary/75 text-xs">You can upload frontend source files, API specs, database schemas, or any reference code. When ready, hit PLAN BACKEND.</p>
               </div>
               <ExternalSources projectId={project.id} externalFiles={externalFiles} onRefresh={refreshExternal} />
             </div>
@@ -396,27 +396,27 @@ export default function BackendPanel({ open, onClose, project }) {
 
           {/* Plan display */}
           {plan && phase !== 'planning' && phase !== 'loading' && (
-            <div className="border border-[#00ff41]/20 p-3">
-              <div className="text-xs text-[#00ff41]/75 uppercase mb-2">// architecture plan</div>
-              <p className="text-[#00ff41] text-sm mb-3">{plan.summary}</p>
+            <div className="border border-primary/20 p-3">
+              <div className="text-xs text-primary/75 uppercase mb-2">// architecture plan</div>
+              <p className="text-primary text-sm mb-3">{plan.summary}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {plan.database?.tables?.length > 0 && (
-                  <div><span className="text-[#00ff41]/50">DB Tables: </span><span className="text-[#00ff41]/80">{plan.database.tables.map(t => t.name).join(', ')}</span></div>
+                  <div><span className="text-primary/50">DB Tables: </span><span className="text-primary/80">{plan.database.tables.map(t => t.name).join(', ')}</span></div>
                 )}
                 {plan.api?.routes?.length > 0 && (
-                  <div><span className="text-[#00ff41]/50">API Routes: </span><span className="text-[#00ff41]/80">{plan.api.routes.length} endpoints</span></div>
+                  <div><span className="text-primary/50">API Routes: </span><span className="text-primary/80">{plan.api.routes.length} endpoints</span></div>
                 )}
-                <div><span className="text-[#00ff41]/50">Auth: </span><span className="text-[#00ff41]/80">{plan.auth?.strategy || 'none'}</span></div>
-                <div><span className="text-[#00ff41]/50">Storage: </span><span className="text-[#00ff41]/80">{plan.storage?.type || 'none'}</span></div>
+                <div><span className="text-primary/50">Auth: </span><span className="text-primary/80">{plan.auth?.strategy || 'none'}</span></div>
+                <div><span className="text-primary/50">Storage: </span><span className="text-primary/80">{plan.storage?.type || 'none'}</span></div>
               </div>
-              {plan.recommendations && <p className="text-xs text-[#00ff41]/75 italic mt-2">{plan.recommendations}</p>}
+              {plan.recommendations && <p className="text-xs text-primary/75 italic mt-2">{plan.recommendations}</p>}
             </div>
           )}
 
           {/* Infrastructure component selection */}
           {(phase === 'plan-ready' || phase === 'generated') && (
             <div>
-              <div className="text-xs text-[#00ff41]/75 uppercase mb-2">// infrastructure connections — auto-suggested, change as needed</div>
+              <div className="text-xs text-primary/75 uppercase mb-2">// infrastructure connections — auto-suggested, change as needed</div>
               <div className="space-y-2">
                 {COMPONENTS.map(comp => {
                   const Icon = COMPONENT_ICONS[comp.type] || Server;
@@ -425,18 +425,18 @@ export default function BackendPanel({ open, onClose, project }) {
                   const planSuggestion = plan?.components?.find(c => c.type === comp.type);
                   const isAutoSelected = planSuggestion && planSuggestion.suggested === selectedId;
                   return (
-                    <div key={comp.type} className="border border-[#00ff41]/20 p-2.5">
+                    <div key={comp.type} className="border border-primary/20 p-2.5">
                       <div className="flex items-start gap-2">
-                        <Icon size={16} className="text-[#00ff41] shrink-0 mt-0.5" />
+                        <Icon size={16} className="text-primary shrink-0 mt-0.5" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[#00ff41] text-sm">{comp.label}</span>
-                            {isAutoSelected && <span className="text-[9px] text-[#00ff41]/75 border border-[#00ff41]/30 px-1 uppercase">auto</span>}
-                            {!comp.required && <span className="text-[9px] text-[#00ff41]/65 uppercase">optional</span>}
+                            <span className="text-primary text-sm">{comp.label}</span>
+                            {isAutoSelected && <span className="text-[9px] text-primary/75 border border-primary/30 px-1 uppercase">auto</span>}
+                            {!comp.required && <span className="text-[9px] text-primary/65 uppercase">optional</span>}
                           </div>
-                          <div className="text-[#00ff41]/50 text-xs">{comp.description}</div>
-                          {selectedService && <div className="text-[#00ff41]/75 text-xs mt-0.5">Free: {selectedService.freeTier}</div>}
-                          {planSuggestion?.reason && <div className="text-[#00ff41]/65 text-xs italic mt-0.5">{planSuggestion.reason}</div>}
+                          <div className="text-primary/50 text-xs">{comp.description}</div>
+                          {selectedService && <div className="text-primary/75 text-xs mt-0.5">Free: {selectedService.freeTier}</div>}
+                          {planSuggestion?.reason && <div className="text-primary/65 text-xs italic mt-0.5">{planSuggestion.reason}</div>}
                         </div>
                         <SheetSelect
                           value={selectedId}
@@ -460,7 +460,7 @@ export default function BackendPanel({ open, onClose, project }) {
 
           {/* Generating */}
           {phase === 'generating' && (
-            <div className="flex items-center gap-2 text-[#00ff41]/60 text-sm"><Loader2 size={16} className="animate-spin" /> Generating backend code for selected infrastructure...</div>
+            <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={16} className="animate-spin" /> Generating backend code for selected infrastructure...</div>
           )}
 
           {/* Pre-deploy readiness check */}
@@ -472,9 +472,9 @@ export default function BackendPanel({ open, onClose, project }) {
             const needsCreds = readiness.filter(r => r.type === 'needs-creds');
             const hasLive = readiness.some(r => r.type === 'live');
             return (
-              <div className={`border p-3 ${needsCreds.length > 0 ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-[#00ff41]/20'}`}>
-                <div className="text-xs text-[#00ff41]/75 uppercase mb-2 flex items-center gap-1.5">
-                  {needsCreds.length > 0 ? <AlertTriangle size={12} className="text-yellow-500" /> : <CheckCircle size={12} className="text-[#00ff41]" />}
+              <div className={`border p-3 ${needsCreds.length > 0 ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-primary/20'}`}>
+                <div className="text-xs text-primary/75 uppercase mb-2 flex items-center gap-1.5">
+                  {needsCreds.length > 0 ? <AlertTriangle size={12} className="text-yellow-500" /> : <CheckCircle size={12} className="text-primary" />}
                   // deploy readiness
                 </div>
                 {needsCreds.length > 0 ? (
@@ -488,26 +488,26 @@ export default function BackendPanel({ open, onClose, project }) {
                         return (
                           <div key={r.type} className="flex items-center gap-2 text-xs">
                             <AlertTriangle size={10} className="text-yellow-500 shrink-0" />
-                            <span className="text-[#00ff41]/70">{service?.label || r.serviceId}</span>
+                            <span className="text-primary/70">{service?.label || r.serviceId}</span>
                             <span className="text-yellow-500/60">— {r.label}</span>
                           </div>
                         );
                       })}
                     </div>
-                    <Link to="/settings" className="inline-flex items-center gap-1 text-xs text-[#00ff41] hover:underline border border-[#00ff41]/30 hover:border-[#00ff41]/60 px-2 py-1.5 mt-1">
+                    <Link to="/settings" className="inline-flex items-center gap-1 text-xs text-primary hover:underline border border-primary/30 hover:border-primary/60 px-2 py-1.5 mt-1">
                       <LinkIcon size={10} /> GO TO SETTINGS → CONNECTIONS
                     </Link>
-                    <p className="text-[10px] text-[#00ff41]/65 mt-1">
+                    <p className="text-[10px] text-primary/65 mt-1">
                       // Or click DEPLOY anyway to get ZIP download + manual instructions for each component.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <p className="text-xs text-[#00ff41]/60">
+                    <p className="text-xs text-primary/60">
                       {hasLive ? 'All live-deploy components have credentials. Deploy will push code live.' : 'Components are ready. Deploy will generate ZIP packages and SQL migrations for manual deployment.'}
                     </p>
                     {readiness.filter(r => r.type === 'zip').length > 0 && (
-                      <p className="text-[10px] text-[#00ff41]/65">
+                      <p className="text-[10px] text-primary/65">
                         // {readiness.filter(r => r.type === 'zip').map(r => getServiceOption(r.type, r.serviceId)?.label).join(', ')} — ZIP deploy only (manual upload to platform).
                       </p>
                     )}
@@ -525,11 +525,11 @@ export default function BackendPanel({ open, onClose, project }) {
           {/* Backend files */}
           {phase === 'generated' && backendFiles.length > 0 && (
             <div>
-              <div className="text-xs text-[#00ff41]/75 uppercase mb-2">// backend files ({backendFiles.length})</div>
+              <div className="text-xs text-primary/75 uppercase mb-2">// backend files ({backendFiles.length})</div>
 
               {/* Mobile: stacked layout with select dropdown */}
-              <div className="md:hidden border border-[#00ff41]/20">
-                <div className="border-b border-[#00ff41]/20 p-2">
+              <div className="md:hidden border border-primary/20">
+                <div className="border-b border-primary/20 p-2">
                   <SheetSelect
                     value={selectedFile?.id || ''}
                     onChange={(v) => setSelectedFile(backendFiles.find(f => f.id === v))}
@@ -539,28 +539,28 @@ export default function BackendPanel({ open, onClose, project }) {
                   />
                 </div>
                 <div className="overflow-y-auto scrollbar-matrix max-h-64">
-                  {selectedFile ? <pre className="text-xs text-[#00ff41]/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-[#00ff41]/65 text-xs">Select a file</div>}
+                  {selectedFile ? <pre className="text-xs text-primary/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-primary/65 text-xs">Select a file</div>}
                 </div>
               </div>
 
               {/* Desktop: side-by-side layout */}
-              <div className="hidden md:flex border border-[#00ff41]/20 max-h-64">
-                <div className="w-1/3 border-r border-[#00ff41]/20 overflow-y-auto scrollbar-matrix">
+              <div className="hidden md:flex border border-primary/20 max-h-64">
+                <div className="w-1/3 border-r border-primary/20 overflow-y-auto scrollbar-matrix">
                   {sortedFiles.map(f => (
-                    <button key={f.id} onClick={() => setSelectedFile(f)} className={`w-full text-left flex items-center gap-1 px-2 py-1.5 text-xs ${selectedFile?.id === f.id ? 'bg-[#00ff41]/10 text-[#00ff41]' : 'text-[#00ff41]/60 hover:text-[#00ff41]'}`}>
+                    <button key={f.id} onClick={() => setSelectedFile(f)} className={`w-full text-left flex items-center gap-1 px-2 py-1.5 text-xs ${selectedFile?.id === f.id ? 'bg-primary/10 text-primary' : 'text-primary/60 hover:text-primary'}`}>
                       <FileCode size={12} className="shrink-0" /><span className="truncate">{f.path.replace('backend/', '')}</span>
                     </button>
                   ))}
                 </div>
                 <div className="flex-1 overflow-y-auto scrollbar-matrix">
-                  {selectedFile ? <pre className="text-xs text-[#00ff41]/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-[#00ff41]/65 text-xs">Select a file</div>}
+                  {selectedFile ? <pre className="text-xs text-primary/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-primary/65 text-xs">Select a file</div>}
                 </div>
               </div>
             </div>
           )}
 
           {/* Deploying */}
-          {phase === 'deploying' && <div className="flex items-center gap-2 text-[#00ff41]/60 text-sm"><Loader2 size={16} className="animate-spin" /> Deploying all components to their platforms...</div>}
+          {phase === 'deploying' && <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={16} className="animate-spin" /> Deploying all components to their platforms...</div>}
 
           {/* Deployed — per-component results */}
           {phase === 'deployed' && deployResults.length > 0 && (() => {
@@ -572,46 +572,46 @@ export default function BackendPanel({ open, onClose, project }) {
               {liveCount === 0 && errorCount > 0 && (
                 <div className="border border-yellow-500/40 bg-yellow-500/5 p-3">
                   <div className="flex items-center gap-2 text-yellow-500 text-sm mb-1"><AlertTriangle size={16} /> No components deployed live.</div>
-                  <p className="text-xs text-[#00ff41]/60">
-                    {errorCount} component{errorCount > 1 ? 's need' : ' needs'} credentials, {manualCount} are ZIP/manual/code-level. To go live: add credentials in <Link to="/settings" className="text-[#00ff41] hover:underline">Settings → Connections</Link>, then click DEPLOY again. Or download the ZIP for manual deployment.
+                  <p className="text-xs text-primary/60">
+                    {errorCount} component{errorCount > 1 ? 's need' : ' needs'} credentials, {manualCount} are ZIP/manual/code-level. To go live: add credentials in <Link to="/settings" className="text-primary hover:underline">Settings → Connections</Link>, then click DEPLOY again. Or download the ZIP for manual deployment.
                   </p>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-[#00ff41] text-sm"><CheckCircle size={16} /> Deployment complete — review each component:</div>
+              <div className="flex items-center gap-2 text-primary text-sm"><CheckCircle size={16} /> Deployment complete — review each component:</div>
               {deployResults.map((r, i) => (
-                <div key={i} className={`border p-3 ${r.status === 'deployed' ? 'border-[#00ff41]/40 bg-[#00ff41]/5' : r.status === 'error' ? 'border-red-500/40 bg-red-500/5' : 'border-[#00ff41]/20'}`}>
+                <div key={i} className={`border p-3 ${r.status === 'deployed' ? 'border-primary/40 bg-primary/5' : r.status === 'error' ? 'border-red-500/40 bg-red-500/5' : 'border-primary/20'}`}>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2">
-                      {r.status === 'deployed' ? <CheckCircle size={14} className="text-[#00ff41]" /> : r.status === 'error' ? <XCircle size={14} className="text-red-500" /> : <FileCode size={14} className="text-[#00ff41]/60" />}
-                      <span className="text-[#00ff41] text-sm font-bold uppercase">{r.component}</span>
-                      {r.label && <span className="text-[#00ff41]/50 text-xs">— {r.label}</span>}
+                      {r.status === 'deployed' ? <CheckCircle size={14} className="text-primary" /> : r.status === 'error' ? <XCircle size={14} className="text-red-500" /> : <FileCode size={14} className="text-primary/60" />}
+                      <span className="text-primary text-sm font-bold uppercase">{r.component}</span>
+                      {r.label && <span className="text-primary/50 text-xs">— {r.label}</span>}
                     </div>
                     <div className="flex items-center gap-2">
                       {r.healthStatus && (
                         <span className={`text-[10px] uppercase px-1.5 py-0.5 border ${
-                          r.healthStatus === 'healthy' ? 'text-[#00ff41] border-[#00ff41]/40' :
+                          r.healthStatus === 'healthy' ? 'text-primary border-primary/40' :
                           r.healthStatus === 'building' ? 'text-yellow-500 border-yellow-500/40' :
                           'text-red-500 border-red-500/40'
                         }`}>
                           {r.healthStatus === 'healthy' ? '● HEALTHY' : r.healthStatus === 'building' ? '◐ BUILDING' : '○ UNHEALTHY'}
                         </span>
                       )}
-                      <span className={`text-xs uppercase ${r.status === 'deployed' ? 'text-[#00ff41]' : r.status === 'error' ? 'text-red-500' : 'text-[#00ff41]/50'}`}>{r.status}</span>
+                      <span className={`text-xs uppercase ${r.status === 'deployed' ? 'text-primary' : r.status === 'error' ? 'text-red-500' : 'text-primary/50'}`}>{r.status}</span>
                     </div>
                   </div>
-                  {r.message && <p className="text-xs text-[#00ff41]/60 mb-1">{r.message}</p>}
+                  {r.message && <p className="text-xs text-primary/60 mb-1">{r.message}</p>}
                   {r.url && (
-                    <a href={r.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-[#00ff41] hover:underline mb-1">
+                    <a href={r.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline mb-1">
                       <ExternalLink size={12} /> {r.url.length > 60 ? r.url.substring(0, 60) + '...' : r.url}
                     </a>
                   )}
                   {r.customDomain && (
-                    <div className="flex items-center gap-1 text-xs text-[#00ff41]/70 mb-1">
-                      <Globe size={12} /> Custom domain: <span className="text-[#00ff41]">{r.customDomain}</span>
+                    <div className="flex items-center gap-1 text-xs text-primary/70 mb-1">
+                      <Globe size={12} /> Custom domain: <span className="text-primary">{r.customDomain}</span>
                     </div>
                   )}
                   {r.apiKeysInjected && (
-                    <div className="flex items-center gap-1 text-xs text-[#00ff41]/70 mb-1">
+                    <div className="flex items-center gap-1 text-xs text-primary/70 mb-1">
                       <Key size={12} /> API keys injected as env var
                     </div>
                   )}
@@ -621,18 +621,18 @@ export default function BackendPanel({ open, onClose, project }) {
                         <AlertTriangle size={10} /> Manual setup required
                       </div>
                       {r.configMessage.replace(/^Manual:\s*/, '').split(' | ').map((step, i) => (
-                        <div key={i} className="text-[10px] text-[#00ff41]/60 font-mono leading-relaxed">{step}</div>
+                        <div key={i} className="text-[10px] text-primary/60 font-mono leading-relaxed">{step}</div>
                       ))}
                     </div>
                   )}
                   {r.sql && (
                     <details className="mt-1">
-                      <summary className="text-xs text-[#00ff41]/50 cursor-pointer hover:text-[#00ff41]">View SQL migration</summary>
-                      <pre className="text-xs text-[#00ff41]/60 whitespace-pre-wrap mt-1 max-h-32 overflow-y-auto scrollbar-matrix border border-[#00ff41]/10 p-2">{r.sql}</pre>
+                      <summary className="text-xs text-primary/50 cursor-pointer hover:text-primary">View SQL migration</summary>
+                      <pre className="text-xs text-primary/60 whitespace-pre-wrap mt-1 max-h-32 overflow-y-auto scrollbar-matrix border border-primary/10 p-2">{r.sql}</pre>
                     </details>
                   )}
                   {r.status === 'deployed' && (r.service === 'cloudflare-workers' || r.service === 'supabase-pg' || r.service === 'render' || r.service === 'vercel' || r.service === 'netlify') && (
-                    <button onClick={() => fetchLogs(r.service)} disabled={fetchingLogs} className="flex items-center gap-1 text-xs text-[#00ff41]/70 hover:text-[#00ff41] border border-[#00ff41]/30 hover:border-[#00ff41]/60 px-2 py-1 mt-2 transition-colors disabled:opacity-30">
+                    <button onClick={() => fetchLogs(r.service)} disabled={fetchingLogs} className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary border border-primary/30 hover:border-primary/60 px-2 py-1 mt-2 transition-colors disabled:opacity-30">
                       {fetchingLogs ? <Loader2 size={12} className="animate-spin" /> : <FileCode size={12} />} VIEW LOGS
                     </button>
                   )}
@@ -640,13 +640,13 @@ export default function BackendPanel({ open, onClose, project }) {
               ))}
               {/* Platform logs display */}
               {platformLogs && (
-                <div className="border border-[#00ff41]/20 p-2 bg-[#00ff41]/5">
+                <div className="border border-primary/20 p-2 bg-primary/5">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-[#00ff41]/75 uppercase">// logs: {platformLogs.platform}</span>
-                    {platformLogs.dashboardUrl && <a href={platformLogs.dashboardUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-[#00ff41] hover:underline"><ExternalLink size={10} /> dashboard</a>}
+                    <span className="text-xs text-primary/75 uppercase">// logs: {platformLogs.platform}</span>
+                    {platformLogs.dashboardUrl && <a href={platformLogs.dashboardUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline"><ExternalLink size={10} /> dashboard</a>}
                   </div>
                   <div className="max-h-48 overflow-y-auto scrollbar-matrix">
-                    {(platformLogs.logs || []).map((l, i) => <div key={i} className="text-xs text-[#00ff41]/60 font-mono whitespace-pre-wrap">{l}</div>)}
+                    {(platformLogs.logs || []).map((l, i) => <div key={i} className="text-xs text-primary/60 font-mono whitespace-pre-wrap">{l}</div>)}
                   </div>
                 </div>
               )}
@@ -656,33 +656,33 @@ export default function BackendPanel({ open, onClose, project }) {
 
           {/* Frontend ↔ Backend Auto-Wire Result */}
           {wireResult && !wiring && (
-            <div className={`border p-3 ${wireResult.error ? 'border-red-500/40 bg-red-500/5' : 'border-[#00ff41]/40 bg-[#00ff41]/5'}`}>
+            <div className={`border p-3 ${wireResult.error ? 'border-red-500/40 bg-red-500/5' : 'border-primary/40 bg-primary/5'}`}>
               <div className="flex items-center gap-2 mb-1">
-                <Zap size={14} className={wireResult.error ? 'text-red-500' : 'text-[#00ff41]'} />
-                <span className={`text-sm font-bold uppercase ${wireResult.error ? 'text-red-500' : 'text-[#00ff41]'}`}>FRONTEND WIRE</span>
+                <Zap size={14} className={wireResult.error ? 'text-red-500' : 'text-primary'} />
+                <span className={`text-sm font-bold uppercase ${wireResult.error ? 'text-red-500' : 'text-primary'}`}>FRONTEND WIRE</span>
               </div>
               {wireResult.error ? (
                 <p className="text-xs text-red-500/80">{wireResult.error}</p>
               ) : (
                 <div className="space-y-1.5">
-                  <p className="text-xs text-[#00ff41]/80">{wireResult.message}</p>
+                  <p className="text-xs text-primary/80">{wireResult.message}</p>
                   {wireResult.apiUrl && (
-                    <a href={wireResult.apiUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-[#00ff41] hover:underline">
+                    <a href={wireResult.apiUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline">
                       <ExternalLink size={10} /> {wireResult.apiUrl}
                     </a>
                   )}
                   {wireResult.changes?.length > 0 && (
                     <div className="space-y-0.5 mt-1">
-                      <div className="text-[10px] text-[#00ff41]/75 uppercase">// updated files</div>
+                      <div className="text-[10px] text-primary/75 uppercase">// updated files</div>
                       {wireResult.changes.map((c, i) => (
-                        <div key={i} className="text-xs text-[#00ff41]/60 font-mono">
+                        <div key={i} className="text-xs text-primary/60 font-mono">
                           {c.path} — {c.replacements} replacement{c.replacements > 1 ? 's' : ''}
                         </div>
                       ))}
                     </div>
                   )}
                   {wireResult.configPath && (
-                    <div className="text-[10px] text-[#00ff41]/75 mt-1">
+                    <div className="text-[10px] text-primary/75 mt-1">
                       // config: {wireResult.configPath} — import {'{ API_BASE_URL }'} from this file
                     </div>
                   )}
@@ -702,63 +702,63 @@ export default function BackendPanel({ open, onClose, project }) {
 
           {/* Log */}
           {log.length > 0 && (
-            <div className="border border-[#00ff41]/10 p-2 bg-[#00ff41]/5">
-              <div className="text-xs text-[#00ff41]/65 uppercase mb-1">// log</div>
-              {log.map((l, i) => <div key={i} className="text-xs text-[#00ff41]/50 font-mono">{l}</div>)}
+            <div className="border border-primary/10 p-2 bg-primary/5">
+              <div className="text-xs text-primary/65 uppercase mb-1">// log</div>
+              {log.map((l, i) => <div key={i} className="text-xs text-primary/50 font-mono">{l}</div>)}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="border-t border-[#00ff41]/20 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center justify-between gap-2 shrink-0">
-          <div className="text-xs text-[#00ff41]/75 capitalize">{phase}</div>
+        <div className="border-t border-primary/20 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center justify-between gap-2 shrink-0">
+          <div className="text-xs text-primary/75 capitalize">{phase}</div>
           <div className="flex items-center gap-2">
             {phase === 'idle' && (
-              <button onClick={startPlanning} disabled={phase === 'planning'} className="flex items-center gap-1 px-4 py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors text-sm font-bold">
+              <button onClick={startPlanning} disabled={phase === 'planning'} className="flex items-center gap-1 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold">
                 <Server size={14} /> PLAN BACKEND
               </button>
             )}
             {phase === 'plan-ready' && (
               <>
-                <button onClick={startPlanning} className="flex items-center gap-1 text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-3 py-2"><RefreshCw size={12} /> RE-ARCHITECT</button>
+                <button onClick={startPlanning} className="flex items-center gap-1 text-xs text-primary/60 hover:text-primary px-3 py-2"><RefreshCw size={12} /> RE-ARCHITECT</button>
                 <HelpHint id="backend-generate" title="Generate Backend" body="Generates production-ready backend code for all selected infrastructure components. Morpheus writes the server, database schema, API routes, auth, storage, and config files — all connected to your chosen free-tier services.">
-                  <button onClick={generateBackend} className="flex items-center gap-1 px-4 py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors text-sm font-bold">GENERATE BACKEND</button>
+                  <button onClick={generateBackend} className="flex items-center gap-1 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold">GENERATE BACKEND</button>
                 </HelpHint>
               </>
             )}
             {phase === 'generated' && (
               <>
                 <HelpHint id="backend-deploy" title="Deploy Backend" body="Deploys all components: executes database migrations on Supabase, live-deploys API to Cloudflare Workers, and returns dashboard links for every platform so you can verify execution.">
-                  <button onClick={deployBackend} className="flex items-center gap-1 px-4 py-2 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors text-sm font-bold"><Cloud size={14} /> DEPLOY</button>
+                  <button onClick={deployBackend} className="flex items-center gap-1 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold"><Cloud size={14} /> DEPLOY</button>
                 </HelpHint>
                 <HelpHint id="backend-auto-deploy" title="Auto-Deploy Pipeline" body="Fully automated loop: deploy → health check → if unhealthy, AI diagnose and auto-fix → redeploy. Runs up to 8 iterations with a live timer and stop button.">
-                  <button onClick={() => setPipelineRunning(true)} className="flex items-center gap-1 px-3 py-2 border border-[#00ff41]/60 text-[#00ff41]/80 hover:border-[#00ff41] hover:text-[#00ff41] hover:bg-[#00ff41]/10 transition-colors text-sm font-bold"><ZapIcon size={14} /> AUTO</button>
+                  <button onClick={() => setPipelineRunning(true)} className="flex items-center gap-1 px-3 py-2 border border-primary/60 text-primary/80 hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors text-sm font-bold"><ZapIcon size={14} /> AUTO</button>
                 </HelpHint>
                 <HelpHint id="backend-download" title="Download ZIP" body="Downloads all project files (frontend + backend) as a ZIP. For Docker: run docker-compose up. For Standalone: run npm install && npm start.">
-                  <button onClick={downloadZip} className="flex items-center gap-1 text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-3 py-2"><Download size={14} /> ZIP</button>
+                  <button onClick={downloadZip} className="flex items-center gap-1 text-xs text-primary/60 hover:text-primary px-3 py-2"><Download size={14} /> ZIP</button>
                 </HelpHint>
-                <button onClick={() => setPhase('plan-ready')} className="flex items-center gap-1 text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-3 py-2"><RefreshCw size={12} /> REGENERATE</button>
-                <button onClick={startPlanning} className="flex items-center gap-1 text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-3 py-2"><RefreshCw size={12} /> RE-ARCHITECT</button>
+                <button onClick={() => setPhase('plan-ready')} className="flex items-center gap-1 text-xs text-primary/60 hover:text-primary px-3 py-2"><RefreshCw size={12} /> REGENERATE</button>
+                <button onClick={startPlanning} className="flex items-center gap-1 text-xs text-primary/60 hover:text-primary px-3 py-2"><RefreshCw size={12} /> RE-ARCHITECT</button>
               </>
             )}
             {phase === 'deployed' && (
               <>
-                <button onClick={checkHealth} disabled={healthChecking} className="flex items-center gap-1 text-xs text-[#00ff41] hover:text-black hover:bg-[#00ff41] px-3 py-2 border border-[#00ff41] disabled:opacity-30 transition-colors font-bold">
+                <button onClick={checkHealth} disabled={healthChecking} className="flex items-center gap-1 text-xs text-primary hover:text-black hover:bg-primary px-3 py-2 border border-primary disabled:opacity-30 transition-colors font-bold">
                   {healthChecking ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />} CHECK HEALTH
                 </button>
-                <button onClick={wireFrontend} disabled={wiring} className="flex items-center gap-1 text-xs text-[#00ff41] hover:text-black hover:bg-[#00ff41] px-3 py-2 border border-[#00ff41] disabled:opacity-30 transition-colors font-bold">
+                <button onClick={wireFrontend} disabled={wiring} className="flex items-center gap-1 text-xs text-primary hover:text-black hover:bg-primary px-3 py-2 border border-primary disabled:opacity-30 transition-colors font-bold">
                   {wiring ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} WIRE TO FRONTEND
                 </button>
-                <button onClick={diagnoseAndFix} disabled={diagnosing} className="flex items-center gap-1 text-xs text-[#00ff41] hover:text-[#00ff41] px-3 py-2 border border-[#00ff41]/50 hover:border-[#00ff41] disabled:opacity-30">
+                <button onClick={diagnoseAndFix} disabled={diagnosing} className="flex items-center gap-1 text-xs text-primary hover:text-primary px-3 py-2 border border-primary/50 hover:border-primary disabled:opacity-30">
                   {diagnosing ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} AI DIAGNOSE & FIX
                 </button>
-                <button onClick={deployBackend} className="flex items-center gap-1 text-xs text-[#00ff41] hover:text-[#00ff41] px-3 py-2 border border-[#00ff41]/30 hover:border-[#00ff41]/60">
+                <button onClick={deployBackend} className="flex items-center gap-1 text-xs text-primary hover:text-primary px-3 py-2 border border-primary/30 hover:border-primary/60">
                   <RefreshCw size={12} /> REDEPLOY
                 </button>
-                <button onClick={() => fetchLogs(selectedComponents.api_host)} disabled={fetchingLogs} className="flex items-center gap-1 text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-3 py-2 disabled:opacity-30">
+                <button onClick={() => fetchLogs(selectedComponents.api_host)} disabled={fetchingLogs} className="flex items-center gap-1 text-xs text-primary/60 hover:text-primary px-3 py-2 disabled:opacity-30">
                   {fetchingLogs ? <Loader2 size={12} className="animate-spin" /> : <FileCode size={12} />} VIEW LOGS
                 </button>
-                <button onClick={onClose} className="text-xs text-[#00ff41]/60 hover:text-[#00ff41] px-3 py-2">CLOSE</button>
+                <button onClick={onClose} className="text-xs text-primary/60 hover:text-primary px-3 py-2">CLOSE</button>
               </>
             )}
           </div>

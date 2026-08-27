@@ -197,11 +197,11 @@ export default function ConnectionsSection({ connections, onChange }) {
   };
 
   return (
-    <section className="mb-8 border border-[#00ff41]/30 p-5">
-      <h2 className="text-sm font-display tracking-wider mb-1 text-[#00ff41] flex items-center gap-2">
+    <section className="mb-8 border border-primary/30 p-5">
+      <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
         <Globe size={14} /> CONNECTIONS
       </h2>
-      <p className="text-xs text-[#00ff41]/50 mb-4">
+      <p className="text-xs text-primary/50 mb-4">
         // Link your hosting and infrastructure accounts. Cloudflare + Supabase enable live deploy with log pulling. All credentials are used by generated backend code and deploy pipelines.
       </p>
       <div className="space-y-4">
@@ -212,28 +212,28 @@ export default function ConnectionsSection({ connections, onChange }) {
           }, {})
         ).map(([category, platforms]) => (
           <div key={category}>
-            <div className="text-[10px] text-[#00ff41]/65 uppercase tracking-widest mb-1.5 px-1">{category}</div>
+            <div className="text-[10px] text-primary/65 uppercase tracking-widest mb-1.5 px-1">{category}</div>
             <div className="space-y-2">
               {platforms.map(p => {
                 const Icon = p.icon;
                 const isExpanded = expanded === p.id;
                 const isConnected = connections[p.id] && Object.values(connections[p.id]).some(v => v && v.trim());
                 return (
-                  <div key={p.id} className={`border transition-colors ${isExpanded ? 'border-[#00ff41]/50' : 'border-[#00ff41]/20'}`}>
+                  <div key={p.id} className={`border transition-colors ${isExpanded ? 'border-primary/50' : 'border-primary/20'}`}>
                     <button
                       onClick={() => setExpanded(isExpanded ? null : p.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-[#00ff41]/5 transition-colors"
+                      className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-primary/5 transition-colors"
                     >
-                      <Icon size={14} className={isConnected ? 'text-[#00ff41] shrink-0' : 'text-[#00ff41]/50 shrink-0'} />
-                      <span className={`text-sm flex-1 ${isConnected ? 'text-[#00ff41]' : 'text-[#00ff41]/70'}`}>{p.label}</span>
-                      {isConnected && <Check size={12} className="text-[#00ff41] shrink-0" />}
-                      {isExpanded ? <ChevronDown size={14} className="text-[#00ff41]/75 shrink-0" /> : <ChevronRight size={14} className="text-[#00ff41]/75 shrink-0" />}
+                      <Icon size={14} className={isConnected ? 'text-primary shrink-0' : 'text-primary/50 shrink-0'} />
+                      <span className={`text-sm flex-1 ${isConnected ? 'text-primary' : 'text-primary/70'}`}>{p.label}</span>
+                      {isConnected && <Check size={12} className="text-primary shrink-0" />}
+                      {isExpanded ? <ChevronDown size={14} className="text-primary/75 shrink-0" /> : <ChevronRight size={14} className="text-primary/75 shrink-0" />}
                     </button>
                     {isExpanded && (
-                      <div className="px-3 pb-3 pt-1 space-y-3 border-t border-[#00ff41]/10">
-                        <p className="text-xs text-[#00ff41]/75">{p.description}</p>
+                      <div className="px-3 pb-3 pt-1 space-y-3 border-t border-primary/10">
+                        <p className="text-xs text-primary/75">{p.description}</p>
                         {p.setupUrl && (
-                          <a href={p.setupUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-[#00ff41]/60 hover:text-[#00ff41] underline">
+                          <a href={p.setupUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary/60 hover:text-primary underline">
                             <ExternalLink size={10} /> Get token / setup guide
                           </a>
                         )}
@@ -243,26 +243,26 @@ export default function ConnectionsSection({ connections, onChange }) {
                           const showThis = showSecrets[secretKey];
                           return (
                             <div key={f.key}>
-                              <label className="block text-xs text-[#00ff41]/60 uppercase tracking-wider mb-1">{f.label}</label>
+                              <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">{f.label}</label>
                               <div className="flex gap-2">
                                 <input
                                   type={isSecret && !showThis ? 'password' : 'text'}
                                   value={connections[p.id]?.[f.key] || ''}
                                   onChange={e => updateField(p.id, f.key, e.target.value)}
                                   placeholder={f.placeholder}
-                                  className="flex-1 bg-black text-[#00ff41] border border-[#00ff41]/30 px-3 py-2 text-sm outline-none placeholder:text-[#00ff41]/20"
+                                  className="flex-1 bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                                 />
                                 {isSecret && (
                                   <button
                                     onClick={() => toggleSecret(secretKey)}
-                                    className="px-3 border border-[#00ff41]/30 text-[#00ff41]/60 hover:text-[#00ff41]"
+                                    className="px-3 border border-primary/30 text-primary/60 hover:text-primary"
                                     title={showThis ? 'Hide' : 'Show'}
                                   >
                                     {showThis ? <EyeOff size={16} /> : <Eye size={16} />}
                                   </button>
                                 )}
                               </div>
-                              {f.hint && <p className="text-[10px] text-[#00ff41]/65 mt-1">{f.hint}</p>}
+                              {f.hint && <p className="text-[10px] text-primary/65 mt-1">{f.hint}</p>}
                             </div>
                           );
                         })}

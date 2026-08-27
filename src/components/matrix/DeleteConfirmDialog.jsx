@@ -78,11 +78,11 @@ export default function DeleteConfirmDialog({ open, onClose, onConfirm, projectN
         </div>
 
         <div className="p-5">
-          <p className="text-[#00ff41]/50 text-xs mb-1">// target: <span className="text-[#00ff41]">{projectName}</span></p>
+          <p className="text-primary/50 text-xs mb-1">// target: <span className="text-primary">{projectName}</span></p>
           <p className="text-red-400/90 text-sm leading-relaxed mb-5">{message}</p>
 
           <div className="flex gap-3">
-            <button onClick={onClose} disabled={loading} className="flex-1 px-4 py-2.5 border border-[#00ff41]/40 text-[#00ff41]/70 hover:border-[#00ff41] hover:text-[#00ff41] transition-colors text-sm tracking-wider disabled:opacity-50">
+            <button onClick={onClose} disabled={loading} className="flex-1 px-4 py-2.5 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-sm tracking-wider disabled:opacity-50">
               ABORT
             </button>
             <button onClick={onConfirm} disabled={loading} className="flex-1 px-4 py-2.5 border border-red-500 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-black transition-colors text-sm tracking-wider font-bold flex items-center justify-center gap-2 disabled:opacity-50">

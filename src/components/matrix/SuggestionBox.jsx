@@ -41,10 +41,10 @@ export default function SuggestionBox() {
   };
 
   return (
-    <div className="mt-4 mx-auto max-w-lg text-left border border-[#00ff41]/30">
+    <div className="mt-4 mx-auto max-w-lg text-left border border-primary/30">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-[#00ff41]/80 hover:text-[#00ff41] transition-colors"
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-primary/80 hover:text-primary transition-colors"
       >
         <span className="flex items-center gap-2 text-xs font-display tracking-[0.15em]">
           <Lightbulb size={14} /> // SUGGEST AN IMPROVEMENT
@@ -53,14 +53,14 @@ export default function SuggestionBox() {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 border-t border-[#00ff41]/20 pt-3">
+        <div className="px-4 pb-4 border-t border-primary/20 pt-3">
           {submitted ? (
-            <p className="text-xs text-[#00ff41]/80 flex items-center gap-2 py-2">
+            <p className="text-xs text-primary/80 flex items-center gap-2 py-2">
               <Check size={14} /> Got it — thanks for helping shape Morpheus.
             </p>
           ) : (
             <>
-              <p className="text-xs text-[#00ff41]/60 mb-3 leading-relaxed">
+              <p className="text-xs text-primary/60 mb-3 leading-relaxed">
                 Found a bug? Got an idea to make Morpheus better? Drop it here.
               </p>
 
@@ -70,7 +70,7 @@ export default function SuggestionBox() {
                     key={t.id}
                     onClick={() => setTab(t.id)}
                     className={`px-3 py-1.5 text-[10px] font-display tracking-wider border transition-colors ${
-                      tab === t.id ? 'border-[#00ff41] bg-[#00ff41]/5 text-[#00ff41]' : 'border-[#00ff41]/20 text-[#00ff41]/50 hover:border-[#00ff41]/50'
+                      tab === t.id ? 'border-primary bg-primary/5 text-primary' : 'border-primary/20 text-primary/50 hover:border-primary/50'
                     }`}
                   >
                     {t.label}
@@ -83,14 +83,14 @@ export default function SuggestionBox() {
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder={tab === 'bug' ? "What went wrong, and what did you expect instead?" : 'What should Morpheus do?'}
                 rows={3}
-                className="w-full bg-black/40 border border-[#00ff41]/30 text-[#00ff41] text-xs p-2.5 outline-none focus:border-[#00ff41]/60 placeholder:text-[#00ff41]/30 resize-none"
+                className="w-full bg-black/40 border border-primary/30 text-primary text-xs p-2.5 outline-none focus:border-primary/60 placeholder:text-primary/30 resize-none"
               />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email (optional — if you want a reply)"
-                className="w-full mt-2 bg-black/40 border border-[#00ff41]/30 text-[#00ff41] text-xs p-2.5 outline-none focus:border-[#00ff41]/60 placeholder:text-[#00ff41]/30"
+                className="w-full mt-2 bg-black/40 border border-primary/30 text-primary text-xs p-2.5 outline-none focus:border-primary/60 placeholder:text-primary/30"
               />
 
               {error && <p className="text-red-400 text-xs mt-3">// {error}</p>}
@@ -98,7 +98,7 @@ export default function SuggestionBox() {
               <button
                 onClick={submit}
                 disabled={loading}
-                className="w-full mt-3 flex items-center justify-center gap-2 text-sm text-black bg-[#00ff41] hover:bg-[#39ff14] px-4 py-2.5 disabled:opacity-40 font-bold tracking-wider"
+                className="w-full mt-3 flex items-center justify-center gap-2 text-sm text-black bg-primary hover:bg-[#39ff14] px-4 py-2.5 disabled:opacity-40 font-bold tracking-wider"
               >
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <Lightbulb size={14} />} SEND
               </button>

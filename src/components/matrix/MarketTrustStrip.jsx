@@ -15,10 +15,10 @@ export default function MarketTrustStrip() {
     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-5">
       {ITEMS.map(({ icon: Icon, label, sub }) => (
         <div key={label} className="p-3 flex items-start gap-2.5">
-          <Icon size={18} className="text-[#00ff41] shrink-0 mt-0.5" />
+          <Icon size={18} className="text-primary shrink-0 mt-0.5" />
           <div className="min-w-0">
-            <div className="text-xs text-[#00ff41] font-bold leading-tight">{label}</div>
-            <div className="text-[10px] text-[#00ff41]/55 leading-tight mt-0.5">{sub}</div>
+            <div className="text-xs text-primary font-bold leading-tight">{label}</div>
+            <div className="text-[10px] text-primary/55 leading-tight mt-0.5">{sub}</div>
           </div>
         </div>
       ))}

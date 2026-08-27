@@ -43,11 +43,11 @@ export default function CacheRefreshStamp() {
     <button
       onClick={handleRefresh}
       disabled={refreshing}
-      className="flex items-center gap-1.5 text-[10px] text-[#00ff41]/50 hover:text-[#00ff41] border border-[#00ff41]/20 hover:border-[#00ff41]/50 px-1.5 py-0.5 transition-colors disabled:opacity-50 shrink-0"
+      className="flex items-center gap-1.5 text-[10px] text-primary/50 hover:text-primary border border-primary/20 hover:border-primary/50 px-1.5 py-0.5 transition-colors disabled:opacity-50 shrink-0"
       title={`Built ${new Date(buildTime).toLocaleString()} — click to hard refresh (cache-bust)`}
     >
       <RefreshCw size={10} className={refreshing ? 'animate-spin' : ''} />
-      <span className="w-1 h-1 rounded-full bg-[#00ff41] animate-pulse" />
+      <span className="w-1 h-1 rounded-full bg-primary animate-pulse" />
       {formatAgo(buildTime)}
     </button>
   );

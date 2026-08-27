@@ -132,45 +132,45 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
   };
 
   const errClass = 'text-[10px] text-red-500 mt-1';
-  const inputClass = 'w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-2.5 py-2 text-sm outline-none placeholder:text-[#00ff41]/20';
+  const inputClass = 'w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20';
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-matrix border border-[#00ff41]/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
-        <div className="flex items-center justify-between border-b border-[#00ff41]/20 px-4 py-3 sticky top-0 bg-black">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-matrix border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
+        <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 sticky top-0 bg-black">
           <div className="flex items-center gap-2">
-            <Sliders size={16} className="text-[#00ff41]" />
-            <span className="text-[#00ff41] font-display tracking-wider neon-glow">DISTRO CONFIG</span>
+            <Sliders size={16} className="text-primary" />
+            <span className="text-primary font-display tracking-wider neon-glow">DISTRO CONFIG</span>
           </div>
-          <button onClick={onClose} className="text-[#00ff41]/60 hover:text-[#00ff41]"><X size={18} /></button>
+          <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="p-4 space-y-4">
-          <p className="text-xs text-[#00ff41]/60">
-            // Customise the bootable image. Settings are saved to <span className="text-[#00ff41]">morpheus-distro.json</span> in your
+          <p className="text-xs text-primary/60">
+            // Customise the bootable image. Settings are saved to <span className="text-primary">morpheus-distro.json</span> in your
             project and applied at build time — no manual pi-gen stage files needed.
           </p>
-          <p className="text-[10px] text-[#00ff41]/50 border border-[#00ff41]/20 bg-[#00ff41]/5 p-2">
-            // Default user: <span className="text-[#00ff41]">pi</span>. Set a password below; if you add an SSH key, password login is
+          <p className="text-[10px] text-primary/50 border border-primary/20 bg-primary/5 p-2">
+            // Default user: <span className="text-primary">pi</span>. Set a password below; if you add an SSH key, password login is
             automatically disabled for security (key-only).
           </p>
           {loading ? (
-            <div className="flex items-center gap-2 text-[#00ff41]/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading config...</div>
+            <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading config...</div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div className="col-span-2">
-                  <label className="block text-[10px] text-[#00ff41]/60 uppercase tracking-wider mb-1">Hostname</label>
+                  <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Hostname</label>
                   <input value={hostname} onChange={e => setHostname(e.target.value)} placeholder="morpheus" className={inputClass} />
                   {errors.hostname && <p className={errClass}>// {errors.hostname}</p>}
                 </div>
                 <div>
-                  <label className="block text-[10px] text-[#00ff41]/60 uppercase tracking-wider mb-1">Timezone</label>
+                  <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Timezone</label>
                   <input list="tz-list" value={timezone} onChange={e => setTimezone(e.target.value)} placeholder="Australia/Sydney" className={inputClass} />
                   <datalist id="tz-list">{COMMON_TIMEZONES.map(tz => <option key={tz} value={tz} />)}</datalist>
                   {errors.timezone && <p className={errClass}>// {errors.timezone}</p>}
                 </div>
                 <div>
-                  <label className="block text-[10px] text-[#00ff41]/60 uppercase tracking-wider mb-1">Locale</label>
+                  <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Locale</label>
                   <input list="locale-list" value={locale} onChange={e => setLocale(e.target.value)} placeholder="en_AU.UTF-8" className={inputClass} />
                   <datalist id="locale-list">{COMMON_LOCALES.map(l => <option key={l} value={l} />)}</datalist>
                   {errors.locale && <p className={errClass}>// {errors.locale}</p>}
@@ -178,45 +178,45 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
               </div>
 
               <div>
-                <label className="block text-[10px] text-[#00ff41]/60 uppercase tracking-wider mb-1">First user password (user: `pi`)</label>
+                <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">First user password (user: `pi`)</label>
                 <input value={firstUserPass} onChange={e => setFirstUserPass(e.target.value)} placeholder="morpheus" className={inputClass} />
                 {errors.firstUserPass && <p className={errClass}>// {errors.firstUserPass}</p>}
               </div>
 
               <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={sshEnabled} onChange={e => setSshEnabled(e.target.checked)} className="accent-[#00ff41] w-4 h-4" />
-                <span className="text-xs text-[#00ff41]">Enable SSH on first boot</span>
+                <input type="checkbox" checked={sshEnabled} onChange={e => setSshEnabled(e.target.checked)} className="accent-primary w-4 h-4" />
+                <span className="text-xs text-primary">Enable SSH on first boot</span>
               </label>
 
               <div>
-                <label className="block text-[10px] text-[#00ff41]/60 uppercase tracking-wider mb-1">SSH public key (injected into the `pi` user; disables password login)</label>
-                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-2.5 py-2 text-xs outline-none placeholder:text-[#00ff41]/20 resize-y" />
+                <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">SSH public key (injected into the `pi` user; disables password login)</label>
+                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y" />
                 {errors.sshPublicKey && <p className={errClass}>// {errors.sshPublicKey}</p>}
               </div>
 
-              <div className="border border-[#00ff41]/20 p-3 space-y-2">
-                <div className="text-[10px] text-[#00ff41]/70 uppercase tracking-wider">WiFi (headless first-boot networking)</div>
+              <div className="border border-primary/20 p-3 space-y-2">
+                <div className="text-[10px] text-primary/70 uppercase tracking-wider">WiFi (headless first-boot networking)</div>
                 <input value={wifiSsid} onChange={e => setWifiSsid(e.target.value)} placeholder="SSID (network name)" className={inputClass} />
                 <input value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} type="text" placeholder="PSK password (leave empty for open network)" className={inputClass} />
                 <input value={wifiCountry} onChange={e => setWifiCountry(e.target.value.toUpperCase())} placeholder="Country code (e.g. AU)" className={inputClass} />
                 {errors.wifiCountry && <p className={errClass}>// {errors.wifiCountry}</p>}
                 {errors.wifiPassword && <p className={errClass}>// {errors.wifiPassword}</p>}
-                <p className="text-[10px] text-[#00ff41]/50">// Bakes wpa_supplicant.conf into the boot partition so the Pi joins WiFi on first boot.</p>
+                <p className="text-[10px] text-primary/50">// Bakes wpa_supplicant.conf into the boot partition so the Pi joins WiFi on first boot.</p>
               </div>
 
               <div>
-                <label className="block text-[10px] text-[#00ff41]/60 uppercase tracking-wider mb-1">Extra apt packages (comma-separated)</label>
+                <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Extra apt packages (comma-separated)</label>
                 <input value={extraPackages} onChange={e => setExtraPackages(e.target.value)} placeholder="vim, git, htop, i2c-tools" className={inputClass} />
                 {errors.extraPackages && <p className={errClass}>// {errors.extraPackages}</p>}
               </div>
 
               <div>
-                <label className="block text-[10px] text-[#00ff41]/60 uppercase tracking-wider mb-1">Custom run commands (one per line, run inside the image at build time)</label>
-                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-black text-[#00ff41] border border-[#00ff41]/30 px-2.5 py-2 text-xs outline-none placeholder:text-[#00ff41]/20 resize-y font-mono" />
-                <p className="text-[10px] text-[#00ff41]/50 mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
+                <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Custom run commands (one per line, run inside the image at build time)</label>
+                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y font-mono" />
+                <p className="text-[10px] text-primary/50 mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
               </div>
 
-              <button onClick={handleSave} disabled={saving || hasErrors} className="flex items-center justify-center gap-2 w-full py-2.5 border border-[#00ff41] text-[#00ff41] hover:bg-[#00ff41] hover:text-black transition-colors text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+              <button onClick={handleSave} disabled={saving || hasErrors} className="flex items-center justify-center gap-2 w-full py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
                 {saving ? 'SAVING' : saved ? 'SAVED' : hasErrors ? 'FIX ERRORS TO SAVE' : 'SAVE DISTRO CONFIG'}
               </button>

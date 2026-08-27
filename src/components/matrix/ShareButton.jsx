@@ -27,7 +27,7 @@ export default function ShareButton({ templateId, label = 'SHARE', className = '
   return (
     <button
       onClick={share}
-      className={`flex items-center gap-1 text-[10px] text-[#00ff41]/60 hover:text-[#00ff41] border border-[#00ff41]/30 hover:border-[#00ff41]/60 px-2 py-1 transition-colors ${className}`}
+      className={`flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 px-2 py-1 transition-colors ${className}`}
     >
       {copied ? <><CheckCircle2 size={10} /> COPIED</> : <><Link2 size={10} /> {label}</>}
     </button>
