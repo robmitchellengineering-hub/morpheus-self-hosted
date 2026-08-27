@@ -44,6 +44,7 @@ model User {
   settings        UserSettings?
   backend_configs BackendConfig[]
   rebuild_docs    RebuildDoc[]
+  updates_plans   UpdatesPlan[]
   github_connection GithubConnection?
 
   @@map("users")
@@ -330,4 +331,26 @@ model RebuildDoc {
   updated_date    DateTime @updatedAt
 
   @@map("rebuild_docs")
+}
+
+// AI-synthesized "MORPHEUS UPDATES PLAN" — admin-only, ranks all Feedback
+// rows into a prioritized, actionable plan. base44's live version regens
+// this on demand via a "SYNTHESIZE PLAN" button; mirrors RebuildDoc's
+// single-row-per-admin upsert pattern above. Backend enforcement is via
+// requireAdmin in functions.routes.js's ADMIN_FUNCTIONS set — not just a
+// frontend route guard, unlike the older self-documentation functions
+// (generateRebuildDoc et al.), which are frontend-gated only (known,
+// flagged gap — see project notes).
+model UpdatesPlan {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  content         String   @db.Text // the synthesized plan, markdown
+  feedback_count  Int      @default(0) // how many Feedback rows fed this run
+
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@map("updates_plans")
 }

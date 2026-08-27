@@ -210,6 +210,17 @@ create table rebuild_docs (
   updated_date timestamp(3) not null default now()
 );
 
+-- Admin-only "MORPHEUS UPDATES PLAN" AI synthesis tool — reads the feedback
+-- table above, so create this after it.
+create table updates_plans (
+  id text primary key default gen_random_uuid()::text,
+  created_by_id text not null references users(id) on delete cascade,
+  content text not null,
+  feedback_count integer not null default 0,
+  created_date timestamp(3) not null default now(),
+  updated_date timestamp(3) not null default now()
+);
+
 -- Hot list/filter query paths (see SCALING.md Stage 2)
 create index idx_projects_owner on projects(created_by_id, created_date);
 create index idx_chat_messages_project on chat_messages(project_id, created_date);
