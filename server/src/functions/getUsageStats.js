@@ -41,6 +41,19 @@ export default async function handler({ user }) {
     totalActions++;
   }
 
+    // The original base44 UsagePanel's "recent activity" list reads a `recent`
+    // field (last 20 usage records) that this port never returned, so it had
+    // no data source. `records` is already ordered desc by created_date, so
+    // the first 20 are the most recent.
+    const recent = records.slice(0, 20).map((r) => ({
+          id: r.id,
+          action_type: r.action_type,
+          credits: r.credits || 0,
+          usd: Number(estimateActionCost(r.action_type, r.metadata || '').toFixed(4)),
+          created_date: r.created_date,
+          project_name: r.project_name || undefined,
+    }));
+
   return {
     byType,
     totalCredits,
@@ -48,5 +61,6 @@ export default async function handler({ user }) {
     totalUsd: Number(totalUsd.toFixed(4)),
     platformUsd: Number(platformUsd.toFixed(4)),
     customUsd: Number(customUsd.toFixed(4)),
+        recent,
   };
 }
