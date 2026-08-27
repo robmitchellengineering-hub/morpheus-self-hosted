@@ -1,0 +1,21 @@
+-- One-time migration for the already-provisioned morpheus2 Supabase project.
+--
+-- Adds optional compiled-binary distribution to marketplace Templates.
+-- Every template listing already stores and sells full source code
+-- (`templates.files`) — this column lets a seller ALSO attach the actual
+-- compiled build artifact(s) (apk/exe/etc.) from their project's own
+-- `_compiled/` files, for buyers who'd rather download a ready-to-run
+-- binary than rebuild it themselves. Null/empty = source-only listing,
+-- which remains the default and the vast majority of listings.
+--
+-- See server/src/functions/publishTemplate.js (writes this column),
+-- getPublicTemplate.js/browseTemplates.js (expose it to buyers),
+-- downloadTemplate.js (bundles the binaries into a paid buyer's ZIP),
+-- and installTemplate.js (copies them into an installer's new project).
+--
+-- Run once against the morpheus2 Supabase project (SQL Editor, or
+-- `psql "$DATABASE_URL" -f server/prisma/add-template-artifact-files-column.sql`).
+-- Skip this if you're initializing a brand-new database from scratch —
+-- manual-supabase-init.sql's templates table already includes this column.
+
+alter table templates add column if not exists artifact_files text;

@@ -225,6 +225,11 @@ model Template {
   author_name       String?
   author_id         String?
   files             String     @db.Text // full project files JSON at publish time
+  artifact_files    String?    @db.Text // optional JSON array of [{name, file_url}] —
+                                         // compiled binaries (apk/exe/etc.) a seller chose
+                                         // to attach alongside the source in `files`, pulled
+                                         // from the project's own `_compiled/` ProjectFile
+                                         // rows at publish time. Null/empty = source only.
   icon              String?
   screenshots       String?    @db.Text // JSON array of URLs
   compile_target    String     @default("source")

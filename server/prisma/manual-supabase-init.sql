@@ -134,6 +134,8 @@ create table templates (
   author_name text,
   author_id text,
   files text not null,
+  artifact_files text, -- optional JSON [{name, file_url}] — compiled binaries a seller
+                       -- chose to attach alongside the source; null = source-only
   icon text,
   screenshots text,
   compile_target text not null default 'source',
