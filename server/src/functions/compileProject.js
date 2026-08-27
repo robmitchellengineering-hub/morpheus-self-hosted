@@ -100,7 +100,13 @@ export default async function handler({ user, body, res }) {
   const slug = project.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 20) || 'construct';
   const prefix = process.env.COMPILE_BUILD_REPO_PREFIX || 'morpheus-build-';
   const repoName = `${prefix}${slug}-${Date.now()}`;
-  const repo = await createRepo(accessToken, repoName, true);
+  // autoInit:false — this repo name is always fresh (timestamped), so there's
+  // no existing content to preserve. Skipping auto_init means pushFiles can
+  // build the first commit directly instead of racing GitHub's eventual
+  // consistency to read back an auto-generated one (see pushFiles' isNewRepo
+  // path) — that race was the actual cause of "compile isn't writing to
+  // GitHub".
+  const repo = await createRepo(accessToken, repoName, true, { autoInit: false });
   if (!repo || !repo.full_name) {
     // Surface GitHub's actual reason (e.g. secondary rate limit from
     // repeated compiles, or a real permissions issue) instead of a bare
@@ -121,7 +127,7 @@ export default async function handler({ user, body, res }) {
     ...files.map((f) => ({ path: f.path, content: f.content })),
     { path: '.github/workflows/build.yml', content: workflow },
   ];
-  const { branch } = await pushFiles(accessToken, repo.full_name, allFiles, 'Upload from Morpheus for compilation');
+  const { branch } = await pushFiles(accessToken, repo.full_name, allFiles, 'Upload from Morpheus for compilation', { isNewRepo: repo._isNewRepo });
 
   // Wait for workflow registration, then find it
   let workflowId = null;

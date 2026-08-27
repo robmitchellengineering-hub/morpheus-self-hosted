@@ -243,7 +243,10 @@ async function pushBackendToGithub(userId, project, backendFiles, extraFiles) {
   const accessToken = await getGithubToken(userId);
   const slug = project.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 20) || 'morpheus-api';
   const repoName = `morpheus-deploy-${slug}-${Date.now()}`;
-  const repo = await createRepo(accessToken, repoName, true);
+  // autoInit:false — repoName is always fresh (timestamped) — see pushFiles'
+  // isNewRepo path for why this avoids the GitRPC::BadObjectState race that
+  // was causing compile pushes to silently fail.
+  const repo = await createRepo(accessToken, repoName, true, { autoInit: false });
   if (!repo?.full_name) throw new Error('Failed to create GitHub repo for deployment');
 
   const filesToPush = backendFiles
@@ -252,7 +255,7 @@ async function pushBackendToGithub(userId, project, backendFiles, extraFiles) {
 
   if (extraFiles) filesToPush.push(...extraFiles);
 
-  const { branch } = await pushFiles(accessToken, repo.full_name, filesToPush, 'Deploy from Morpheus');
+  const { branch } = await pushFiles(accessToken, repo.full_name, filesToPush, 'Deploy from Morpheus', { isNewRepo: repo._isNewRepo });
   return { repoFullName: repo.full_name, repoUrl: repo.html_url, branch };
 }
 

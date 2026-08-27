@@ -17,8 +17,12 @@ export default async function handler({ user, body }) {
   // user hasn't linked their account — matches the original's try/catch.
   const accessToken = await getGithubToken(user.id);
 
-  // Create repo (or use existing if name taken)
-  const repo = await createRepo(accessToken, repoName, !!isPrivate);
+  // Create repo (or use existing if name taken). autoInit:false so a truly
+  // new repo can take the isNewRepo fast path in pushFiles below (no
+  // read-after-write race against GitHub's auto-init commit); a name
+  // collision still safely falls back to merging onto whatever the existing
+  // repo already has, since createRepo flags which case this was.
+  const repo = await createRepo(accessToken, repoName, !!isPrivate, { autoInit: false });
   if (!repo || !repo.full_name) {
     throw Object.assign(new Error('Failed to create or access repository'), { status: 500 });
   }
@@ -40,7 +44,7 @@ export default async function handler({ user, body }) {
     ...files.map((f) => ({ path: f.path, content: f.content })),
     { path: 'BUILD_LOG.md', content: buildLogMd },
   ];
-  await pushFiles(accessToken, repo.full_name, allFiles, 'Upload from Morpheus');
+  await pushFiles(accessToken, repo.full_name, allFiles, 'Upload from Morpheus', { isNewRepo: repo._isNewRepo });
 
   await logUsage(user.id, 'github_upload', projectId, project.name, { repo: repo.full_name, fileCount: files.length + 1 });
   return { repoUrl: repo.html_url, fileCount: files.length };
