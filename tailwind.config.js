@@ -44,6 +44,7 @@ module.exports = {
   			warning: 'hsl(var(--status-warning))',
   			info: 'hsl(var(--status-info))',
   			danger: 'hsl(var(--status-danger))',
+  			heading: 'hsl(var(--heading))',
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
