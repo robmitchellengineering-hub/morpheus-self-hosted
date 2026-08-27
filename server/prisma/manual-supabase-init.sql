@@ -162,6 +162,19 @@ create table purchases (
   created_date timestamp(3) not null default now()
 );
 
+-- One-off "keep the lights on" donations from the landing page — no FK to
+-- users, since base44's donate widget works for anonymous, pre-login
+-- visitors too. Kept separate from `purchases` so donation totals never mix
+-- into marketplace sales/payout reporting.
+create table donations (
+  id text primary key default gen_random_uuid()::text,
+  amount double precision not null default 0,
+  donor_email text,
+  stripe_session_id text not null unique,
+  status text not null default 'paid',
+  created_date timestamp(3) not null default now()
+);
+
 create table backend_configs (
   id text primary key default gen_random_uuid()::text,
   created_by_id text not null references users(id) on delete cascade,

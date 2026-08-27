@@ -258,6 +258,23 @@ model Purchase {
   @@map("purchases")
 }
 
+// One-off "keep the lights on" donations from the landing page — deliberately
+// NOT tied to a User (base44's donate widget works for anonymous, pre-login
+// visitors, and this mirrors that). Recorded by stripeWebhook.js's
+// metadata.type === 'donation' branch, separately from Purchase so donation
+// totals never get mixed into marketplace sales/payout reporting.
+model Donation {
+  id                String   @id @default(uuid())
+  amount            Float    @default(0) // dollars
+  donor_email       String?
+  stripe_session_id String   @unique
+  status            String   @default("paid") // paid | refunded
+
+  created_date      DateTime @default(now())
+
+  @@map("donations")
+}
+
 // ── BACKEND ARCHITECT ────────────────────────────────────────────
 
 model BackendConfig {
