@@ -43,6 +43,7 @@ export default async function handler({ user, body }) {
     created_date: t.created_date,
     mine: user ? t.author_id === user.id : false,
     purchased: purchasedIds.has(t.id) || (user ? t.author_id === user.id : false),
+    has_artifacts: !!t.artifact_files && t.artifact_files !== '[]',
   }));
 
   const categories = Array.from(new Set(all.map((t) => t.category || 'general')));

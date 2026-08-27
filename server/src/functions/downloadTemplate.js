@@ -21,6 +21,7 @@
 import JSZip from 'jszip';
 import { prisma } from '../db.js';
 import { stripeFetch, computeSplit } from '../lib/stripe.js';
+import { downloadFile } from '../storage.js';
 
 export default async function handler({ user, body, res }) {
   const { sessionId, templateId } = body || {};
@@ -106,6 +107,28 @@ export default async function handler({ user, body, res }) {
     if (!f?.path) continue;
     zip.file(f.path, f.content || '');
   }
+
+  // If the seller attached compiled binaries at publish time, bundle them
+  // into the same ZIP under _compiled/ — reuses this function's existing
+  // purchase-verification above as the gate, rather than exposing a second,
+  // separately-gated download path for the binary.
+  let artifacts = [];
+  try {
+    artifacts = template.artifact_files ? JSON.parse(template.artifact_files) : [];
+  } catch {
+    artifacts = [];
+  }
+  for (const a of artifacts) {
+    if (!a?.file_url || !a?.name) continue;
+    try {
+      const buf = await downloadFile(a.file_url);
+      if (buf) zip.file(`_compiled/${a.name}`, buf);
+    } catch (e) {
+      console.error(`downloadTemplate: failed to bundle compiled artifact ${a.name}:`, e.message);
+      // Non-fatal — buyer still gets the source even if a binary fetch fails
+    }
+  }
+
   const buffer = await zip.generateAsync({ type: 'nodebuffer' });
 
   const safeName = (template.name || 'template').replace(/[^a-zA-Z0-9._-]/g, '_');

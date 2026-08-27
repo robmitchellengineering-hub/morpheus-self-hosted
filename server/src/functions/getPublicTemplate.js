@@ -22,6 +22,13 @@ export default async function handler({ body }) {
 
   const isFree = !template.price || template.price <= 0;
 
+  let artifacts = [];
+  try {
+    artifacts = template.artifact_files ? JSON.parse(template.artifact_files) : [];
+  } catch {
+    artifacts = [];
+  }
+
   return {
     id: template.id,
     name: template.name,
@@ -38,5 +45,11 @@ export default async function handler({ body }) {
     price: template.price || 0,
     created_date: template.created_date,
     files: isFree ? (template.files || '') : null,
+    // A compiled build is included alongside the source either way — this
+    // flag is safe to show before purchase (it doesn't leak the binary
+    // itself). The actual download links are withheld for paid templates
+    // until purchase is verified, same as `files` above.
+    has_artifacts: artifacts.length > 0,
+    artifacts: isFree ? artifacts : null,
   };
 }

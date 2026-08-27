@@ -56,6 +56,29 @@ export default async function handler({ user, body, res }) {
     });
   }
 
+  // If the seller attached compiled binaries, copy them into the new
+  // project's file tree too (same _compiled/ convention saveCompiledArtifacts.js
+  // uses), so an installer sees and can download the ready-to-run build
+  // alongside the source they just cloned, not just via the ZIP path.
+  let artifacts = [];
+  try {
+    artifacts = template.artifact_files ? JSON.parse(template.artifact_files) : [];
+  } catch {
+    artifacts = [];
+  }
+  if (artifacts.length > 0) {
+    await prisma.projectFile.createMany({
+      data: artifacts.filter((a) => a?.name && a?.file_url).map((a) => ({
+        created_by_id: user.id,
+        project_id: project.id,
+        path: `_compiled/${a.name}`,
+        content: `// COMPILED ARTIFACT\n// From marketplace template: ${template.name}\n// Download from the file viewer.`,
+        file_url: a.file_url,
+        language: 'binary',
+      })),
+    });
+  }
+
   // Increment install count (service-role — the installer isn't the template
   // author, so an owner-scoped update rule would block a user-context call)
   try {
