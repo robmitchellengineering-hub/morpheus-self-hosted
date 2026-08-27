@@ -79,7 +79,15 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
       (createdIds.has(op.path) ? { id: createdIds.get(op.path) } : null);
 
     if (op.action === 'delete') {
-      if (existing) await prisma.projectFile.delete({ where: { id: existing.id } }).catch(() => {});
+      // No .catch() here — matches how creates/updates below are handled
+      // (uncaught, propagates) and matches the original base44 version,
+      // which had no local error handling on this delete either. An
+      // earlier pass added `.catch(() => {})`, which silently swallowed a
+      // failed delete and still reported it to the caller as a successful
+      // 'delete' op — meaning the AI chat/build flow (and the user) could
+      // be told a file was removed when it actually still exists, with no
+      // trace of the real failure in the response or an error log.
+      if (existing) await prisma.projectFile.delete({ where: { id: existing.id } });
       appliedOps.push({ path: op.path, action: 'delete' });
       continue;
     }
