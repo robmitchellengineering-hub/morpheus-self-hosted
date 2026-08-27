@@ -71,6 +71,31 @@ export default async function handler({ req, res }) {
 
   const session = event.data?.object || {};
   const metadata = session.metadata || {};
+
+  // Donations (landing page's "KEEP MORPHEUS ALIVE" widget) have no
+  // template/buyer — branch off before the marketplace-purchase checks
+  // below, which require both. New addition, not part of the base44 port.
+  if (metadata.type === 'donation') {
+    const amount = (session.amount_total || 0) / 100;
+    const existingDonation = await prisma.donation.findFirst({ where: { stripe_session_id: session.id } });
+    if (!existingDonation) {
+      try {
+        await prisma.donation.create({
+          data: {
+            amount,
+            donor_email: session.customer_details?.email || session.customer_email || null,
+            stripe_session_id: session.id,
+            status: 'paid',
+          },
+        });
+        console.log(`Donation recorded: session=${session.id} amount=${amount}`);
+      } catch (e) {
+        console.error('stripeWebhook: Donation create failed:', e.message);
+      }
+    }
+    return { received: true };
+  }
+
   const templateId = metadata.template_id;
   const buyerId = metadata.buyer_id || session.client_reference_id;
   const sellerId = metadata.seller_id || '';
