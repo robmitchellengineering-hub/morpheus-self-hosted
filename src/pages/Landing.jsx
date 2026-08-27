@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Store, FileText, Camera, Network, Cpu } from 'lucide-react';
+import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import DonateWidget from '@/components/matrix/DonateWidget';
@@ -126,7 +126,25 @@ export default function Landing() {
           </ul>
         </div>}
         {showButtons && <p className="mt-6 text-xs text-[#00ff41]/65 font-mono max-w-md mx-auto">// Chat with Morpheus to build real, standalone, deployable software. You own the code. No lock-in. No illusions.</p>}
+
+        {/* PORTABLE MORPHEUS — mirrors base44's landing-page card. The
+            download itself (a ZIP of the standalone portable bundle) already
+            existed at /portable-morpheus (see PortableMorpheusDownload.jsx);
+            this section was the missing landing-page entry point to it,
+            found during the base44-vs-self-hosted audit. */}
+        {showButtons && <div className="mt-8 mx-auto max-w-lg border border-[#00ff41]/30 bg-black/60 p-4 text-left">
+          <p className="text-[10px] text-[#00ff41]/50 tracking-[0.2em] font-display mb-2 flex items-center gap-1.5">
+            <ShieldCheck size={12} /> // PORTABLE MORPHEUS
+          </p>
+          <p className="text-xs text-[#00ff41]/70 leading-relaxed">
+            Your data, kept private. Only accessible by you. VPN in for full-stack software development in your pocket — all private, all owned by you.
+          </p>
+        </div>}
+
         {showButtons && <div className="mt-6 flex flex-wrap gap-3 justify-center">
+          <Link to="/portable-morpheus" className="inline-flex items-center gap-1.5 text-xs text-[#00ff41]/50 hover:text-[#00ff41] font-mono tracking-wider border border-[#00ff41]/20 hover:border-[#00ff41]/50 px-4 py-2 transition-colors">
+            <Download size={12} /> DOWNLOAD THE DESKTOP APP
+          </Link>
           <Link to="/market" className="inline-flex items-center gap-1.5 text-xs text-[#00ff41]/50 hover:text-[#00ff41] font-mono tracking-wider border border-[#00ff41]/20 hover:border-[#00ff41]/50 px-4 py-2 transition-colors">
             <Store size={12} /> BROWSE THE MARKET
           </Link>
