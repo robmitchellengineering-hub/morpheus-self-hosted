@@ -14,7 +14,7 @@ import { Router } from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireAdmin } from '../auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FUNCTIONS_DIR = path.join(__dirname, '..', 'functions');
@@ -26,6 +26,12 @@ const router = Router();
 // each handler still re-checks ownership on the specific rows it touches.
 const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'stripeWebhook', 'checkDeployHealth', 'createDonationCheckout', 'submitFeedback']);
 
+// Functions that require the caller's User.role to be 'admin', enforced
+// server-side (not just a frontend route guard — see ProtectedRoute's
+// adminOnly prop, which some older self-documentation functions rely on
+// alone; a known, flagged gap, not repeated here for new functions).
+const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan']);
+
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;
   if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name)) return res.status(400).json({ error: 'Invalid function name' });
@@ -34,7 +40,12 @@ router.all('/:name', async (req, res, next) => {
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: `Unknown function: ${name}` });
 
   if (!PUBLIC_FUNCTIONS.has(name)) {
-    return requireAuth(req, res, () => runFunction(name, filePath, req, res, next));
+    return requireAuth(req, res, () => {
+      if (ADMIN_FUNCTIONS.has(name)) {
+        return requireAdmin(req, res, () => runFunction(name, filePath, req, res, next));
+      }
+      return runFunction(name, filePath, req, res, next);
+    });
   }
   return runFunction(name, filePath, req, res, next);
 });
