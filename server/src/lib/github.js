@@ -69,74 +69,112 @@ export async function getGhUser(token) {
 
 export async function createRepo(token, repoName, isPrivate) {
   const h = ghHeaders(token);
-  const res = await fetch(`${GH_API}/user/repos`, {
-    method: 'POST', headers: h,
-    body: JSON.stringify({ name: repoName, private: isPrivate, auto_init: true }),
-  });
-  if (res.status === 422) {
-    const ghUser = await getGhUser(token);
-    const existingRes = await fetch(`${GH_API}/repos/${ghUser.login}/${repoName}`, { headers: h });
-    return ghJson(existingRes);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`${GH_API}/user/repos`, {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ name: repoName, private: isPrivate, auto_init: true }),
+    });
+    if (res.status === 422) {
+      const ghUser = await getGhUser(token);
+      const existingRes = await fetch(`${GH_API}/repos/${ghUser.login}/${repoName}`, { headers: h });
+      return ghJson(existingRes);
+    }
+    if (res.ok) return ghJson(res);
+
+    const body = await ghJson(res);
+    // GitHub's secondary rate limit on rapid repo creation comes back as
+    // 403 (sometimes 429), often with a Retry-After header. Morpheus can
+    // create many repos in quick succession — one per compile attempt,
+    // including automatic AI fix-loop retries — so a single hit of this
+    // used to fail the whole compile with a bare "Failed to create
+    // repository" and no indication why. Back off and retry instead.
+    console.log(`createRepo attempt ${attempt + 1}/3 failed: status=${res.status}, name=${repoName}, error=${JSON.stringify(body)}`);
+    const retryable = res.status === 403 || res.status === 429 || res.status >= 500;
+    if (!retryable || attempt === 2) return body;
+    const retryAfterHeader = Number(res.headers.get('retry-after'));
+    const retryAfterSeconds = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader : 5 * (attempt + 1);
+    await new Promise((r) => setTimeout(r, retryAfterSeconds * 1000));
   }
-  return ghJson(res);
 }
 
 export async function pushFiles(token, repoFullName, files, commitMessage) {
   const h = ghHeaders(token);
+
+  // GitHub's Git Data API is eventually consistent right after a repo is
+  // created (auto_init:true creates the first commit asynchronously). In
+  // production this showed up not only as a 404 on the very next read, but
+  // — on the tree-creation call below — as a non-404 status with a body
+  // like { message: "GitRPC::BadObjectState" }. The old code only retried
+  // on exactly 404 and only around tree creation, so a chunk of every
+  // compile's pushes threw on the very first call right after repo
+  // creation, leaving behind a repo with nothing but the auto_init README
+  // ever pushed to it — which is what "compile isn't writing to GitHub"
+  // turned out to be. A short settle delay plus retrying every lookup in
+  // this window (not just the tree) fixes that.
+  await new Promise((r) => setTimeout(r, 1500));
 
   // Get the repo's default branch
   const repoRes = await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h });
   const repoData = await ghJson(repoRes);
   const branch = repoData.default_branch || 'main';
 
-  // Get the branch ref's latest commit
-  const refRes = await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, { headers: h });
-  const refData = await ghJson(refRes);
-  const parentSha = refData.object?.sha;
-  if (!parentSha) throw new Error('Could not find branch ref');
+  // Get the branch ref's latest commit — retry; same race as the tree step below.
+  let parentSha = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const refRes = await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, { headers: h });
+    const refData = await ghJson(refRes);
+    parentSha = refData.object?.sha;
+    if (parentSha) break;
+    console.log(`Ref lookup attempt ${attempt + 1}/5: status=${refRes.status}, repo=${repoFullName}, branch=${branch}, error=${JSON.stringify(refData)}`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (!parentSha) throw new Error(`Could not find branch ref for ${repoFullName}@${branch} after retries`);
 
-  // Get the parent commit's tree
-  const commitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits/${parentSha}`, { headers: h });
-  const parentCommit = await ghJson(commitRes);
-  const baseTreeSha = parentCommit.tree?.sha;
+  // Get the parent commit's tree — same retry treatment.
+  let baseTreeSha = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const commitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits/${parentSha}`, { headers: h });
+    const parentCommit = await ghJson(commitRes);
+    baseTreeSha = parentCommit.tree?.sha;
+    if (baseTreeSha) break;
+    console.log(`Parent commit lookup attempt ${attempt + 1}/5: status=${commitRes.status}, repo=${repoFullName}, sha=${parentSha}, error=${JSON.stringify(parentCommit)}`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (!baseTreeSha) throw new Error(`Could not find base tree for ${repoFullName}@${parentSha} after retries`);
 
-// Build tree items with file content inline — the tree-creation endpoint
-// auto-creates the underlying blobs for us in the same call. We used to
-// create one blob per file first (a loop of individual git/blobs POSTs)
-// and then reference those shas here, but that two-step dance is prone
-// to a transient GitHub-side "GitRPC::BadObjectState" error: right after
-// a brand-new repo is created (auto_init) and a batch of blobs is
-// written, GitHub's backend is not always immediately consistent enough
-// for a base_tree tree call to see every blob yet. Passing content
-// directly avoids the race — GitHub creates the blobs atomically as
-// part of the same tree-creation call. (Same technique already proven
-// reliable for pushing this repo's own source by hand — see
-// claude/BROWSER-GIT-PUSH-WORKAROUND.md.)
-const treeItems = files.map((file) => ({
-path: file.path,
-mode: '100644',
-type: 'blob',
-content: file.content,
-}));
+  // Create blobs for all files
+  const treeItems = [];
+  for (const file of files) {
+    const blobRes = await fetch(`${GH_API}/repos/${repoFullName}/git/blobs`, {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ content: file.content, encoding: 'utf-8' }),
+    });
+    if (!blobRes.ok) throw new Error(`Failed to create blob for ${file.path}`);
+    const blob = await ghJson(blobRes);
+    treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
+  }
 
-// Create a new tree with all files (base_tree preserves existing files like README)
-// Retry on ANY failure (not just 404) with backoff — GitHub sometimes is
-// not fully consistent right after repo creation, and errors like
-// "GitRPC::BadObjectState" come back as HTTP 422, not 404, so the old
-// 404-only retry never actually retried on this failure mode.
-let tree = null;
-let lastTreeErr = null;
-for (let attempt = 0; attempt < 5; attempt++) {
-const treeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees`, {
-method: 'POST', headers: h,
-body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
-});
-if (treeRes.ok) { tree = await ghJson(treeRes); break; }
-lastTreeErr = await ghJson(treeRes);
-console.log(`Tree attempt ${attempt + 1}: status=${treeRes.status}, repo=${repoFullName}, baseTree=${baseTreeSha}, items=${treeItems.length}, error=${JSON.stringify(lastTreeErr)}`);
-await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-}
-if (!tree) throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, baseTree=${baseTreeSha}, items=${treeItems.length}): ${lastTreeErr && lastTreeErr.message ? lastTreeErr.message : JSON.stringify(lastTreeErr)}`);
+  // Create a new tree with all files (base_tree preserves existing files like README).
+  // Retry on any failure here, not just 404 — GitHub has been observed
+  // returning a non-404 status with a "GitRPC::BadObjectState" body for
+  // this exact same "repo just created" race, which the old 404-only check
+  // treated as fatal on the very first attempt. 401/403 are real
+  // auth/permission failures, not races, so those still fail fast.
+  let tree = null;
+  let lastTreeErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const treeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees`, {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+    });
+    if (treeRes.ok) { tree = await ghJson(treeRes); break; }
+    const treeErr = await ghJson(treeRes);
+    lastTreeErr = treeErr.message || JSON.stringify(treeErr);
+    console.log(`Tree attempt ${attempt + 1}/5: status=${treeRes.status}, repo=${repoFullName}, baseTree=${baseTreeSha}, items=${treeItems.length}, error=${JSON.stringify(treeErr)}`);
+    if (treeRes.status === 401 || treeRes.status === 403) throw new Error('Failed to create tree: ' + lastTreeErr);
+    await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+  }
+  if (!tree) throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, baseTree=${baseTreeSha}, items=${treeItems.length}): ${lastTreeErr}`);
 
   // Create a commit pointing to the new tree
   const newCommitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits`, {
