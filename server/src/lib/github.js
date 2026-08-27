@@ -67,6 +67,33 @@ export async function getGhUser(token) {
   return ghJson(res);
 }
 
+// Create a single blob, with retry-with-backoff on GitHub's secondary rate
+// limit. compileProject pushes ~dozens of files in a tight loop right after
+// creating a brand-new repo — that burst of back-to-back POSTs is exactly
+// the shape GitHub's abuse-detection rate limiter targets, and with zero
+// retries here a single hit failed the whole compile with a bare "Failed to
+// create blob for <path>" and no indication why (seen live on package.json).
+async function createBlob(token, repoFullName, file) {
+  const h = ghHeaders(token);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const blobRes = await fetch(`${GH_API}/repos/${repoFullName}/git/blobs`, {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ content: file.content ?? '', encoding: 'utf-8' }),
+    });
+    if (blobRes.ok) return ghJson(blobRes);
+
+    const err = await ghJson(blobRes);
+    console.log(`Blob creation attempt ${attempt + 1}/4 failed for ${file.path}: status=${blobRes.status}, contentType=${typeof file.content}, contentLen=${file.content?.length ?? 'n/a'}, error=${JSON.stringify(err)}`);
+    const retryable = blobRes.status === 403 || blobRes.status === 429 || blobRes.status >= 500;
+    if (!retryable || attempt === 3) {
+      throw new Error(`Failed to create blob for ${file.path} (HTTP ${blobRes.status}): ${err.message || JSON.stringify(err)}`);
+    }
+    const retryAfterHeader = Number(blobRes.headers.get('retry-after'));
+    const retryAfterSeconds = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader : 2 * (attempt + 1);
+    await new Promise((r) => setTimeout(r, retryAfterSeconds * 1000));
+  }
+}
+
 export async function createRepo(token, repoName, isPrivate, { autoInit = true } = {}) {
   const h = ghHeaders(token);
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -125,12 +152,7 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
 
     const treeItems = [];
     for (const file of files) {
-      const blobRes = await fetch(`${GH_API}/repos/${repoFullName}/git/blobs`, {
-        method: 'POST', headers: h,
-        body: JSON.stringify({ content: file.content, encoding: 'utf-8' }),
-      });
-      if (!blobRes.ok) throw new Error(`Failed to create blob for ${file.path}`);
-      const blob = await ghJson(blobRes);
+      const blob = await createBlob(token, repoFullName, file);
       treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
     }
 
@@ -201,12 +223,7 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
   // Create blobs for all files
   const treeItems = [];
   for (const file of files) {
-    const blobRes = await fetch(`${GH_API}/repos/${repoFullName}/git/blobs`, {
-      method: 'POST', headers: h,
-      body: JSON.stringify({ content: file.content, encoding: 'utf-8' }),
-    });
-    if (!blobRes.ok) throw new Error(`Failed to create blob for ${file.path}`);
-    const blob = await ghJson(blobRes);
+    const blob = await createBlob(token, repoFullName, file);
     treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
   }
 
