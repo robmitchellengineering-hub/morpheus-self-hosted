@@ -27,10 +27,14 @@ const router = Router();
 const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'stripeWebhook', 'checkDeployHealth', 'createDonationCheckout', 'submitFeedback']);
 
 // Functions that require the caller's User.role to be 'admin', enforced
-// server-side (not just a frontend route guard — see ProtectedRoute's
-// adminOnly prop, which some older self-documentation functions rely on
-// alone; a known, flagged gap, not repeated here for new functions).
-const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan']);
+// server-side. generateRebuildDoc used to rely solely on the frontend's
+// ProtectedRoute adminOnly guard (a flagged gap from an earlier audit) — it
+// dumps the full architecture blueprint (every table's field list including
+// which fields hold encrypted secrets, every backend function's purpose/
+// input/output, deploy/integration internals) into a stored, downloadable
+// doc, which is meant to be admin-only per base44's own self-documentation
+// tools. Closed here the same way synthesizeUpdatesPlan already was.
+const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc']);
 
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;
