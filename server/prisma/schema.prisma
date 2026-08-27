@@ -86,6 +86,17 @@ model GithubConnection {
   login         String
   access_token  String   // encrypted at rest
   scope         String?
+
+  // Only populated when the GitHub OAuth App has its "Token expiration"
+  // optional feature turned on (8hr access tokens + refresh tokens). All
+  // three are null for a connection made while that feature is off, since
+  // GitHub's token exchange then returns a non-expiring access_token with
+  // no refresh_token at all. See lib/github.js's getGithubConnection for
+  // the silent-refresh logic that uses these.
+  refresh_token             String?  // encrypted at rest
+  expires_at                DateTime?
+  refresh_token_expires_at  DateTime?
+
   created_date  DateTime @default(now())
 
   @@map("github_connections")

@@ -58,6 +58,11 @@ create table github_connections (
   login text not null,
   access_token text not null,
   scope text,
+  -- Only populated when the GitHub OAuth App has "Token expiration" on —
+  -- see server/src/lib/github.js's silent-refresh logic.
+  refresh_token text,
+  expires_at timestamp(3),
+  refresh_token_expires_at timestamp(3),
   created_date timestamp(3) not null default now()
 );
 
