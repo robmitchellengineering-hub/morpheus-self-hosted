@@ -31,6 +31,7 @@ const RebuildBlueprint = lazy(() => import('@/pages/RebuildBlueprint'));
 const Screenshots = lazy(() => import('@/pages/Screenshots'));
 const FlowDiagram = lazy(() => import('@/pages/FlowDiagram'));
 const AIDocs = lazy(() => import('@/pages/AIDocs'));
+const UpdatesPlan = lazy(() => import('@/pages/UpdatesPlan'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 
 
@@ -107,6 +108,7 @@ function AnimatedRoutes() {
             <Route path="/screenshots" element={<Screenshots />} />
             <Route path="/flow-diagram" element={<FlowDiagram />} />
             <Route path="/ai-docs" element={<AIDocs />} />
+            <Route path="/updates-plan" element={<UpdatesPlan />} />
           </Route>
           <Route path="*" element={<PageNotFound />} />
         </Routes>
