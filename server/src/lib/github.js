@@ -144,64 +144,39 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
 
   if (isNewRepo) {
     // Brand-new, still-empty repo (created with auto_init:false — see
-    // createRepo call sites). Build the very first commit directly instead
-    // of reading back an auto-init'd branch/commit/tree we didn't create
-    // ourselves. That read-after-write dependency is exactly what kept
-    // failing in production: GitHub's Git Data API is briefly inconsistent
-    // right after auto_init creates the first commit asynchronously, and
-    // retrying through that window (5 attempts, growing backoff) turned out
-    // to not be enough — GitRPC::BadObjectState kept recurring on some
-    // pushes even after 30+ seconds of retries. With no prior commit to
-    // read back, there's nothing to race against: no ref lookup, no parent-
-    // commit lookup, no base_tree. Just create objects and point a new ref
-    // at them.
-    const repoRes = await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h });
-    const repoData = await ghJson(repoRes);
-    const branch = repoData.default_branch || 'main';
-
-    // Brief settle delay before the very first write — confirmed live that
-    // GitHub can still return 409 "Git Repository is empty" from git/blobs
-    // for a moment right after repo creation, even with auto_init off. This
-    // doesn't replace the retry in createBlob (that window can still be
-    // longer than this), it just avoids burning a retry on the common case.
-    await new Promise((r) => setTimeout(r, 1500));
-
-    const treeItems = [];
-    for (const file of files) {
-      const blob = await createBlob(token, repoFullName, file);
-      treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
-    }
-
-    const treeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees`, {
-      method: 'POST', headers: h,
-      body: JSON.stringify({ tree: treeItems }),
+    // createRepo call sites). Earlier attempt built the first commit
+    // directly via git/blobs + git/trees + git/commits with no ref lookup,
+    // to avoid re-reading an auto_init commit GitHub hadn't finished
+    // committing yet (that was GitRPC::BadObjectState, fixed separately).
+    // But live testing showed a *second*, unrelated restriction: GitHub's
+    // Git Data API rejects git/blobs entirely on a truly empty repo — HTTP
+    // 409 "Git Repository is empty" — and this is not a timing race, it
+    // persisted through 6 retries and ~30s of backoff. The Contents API
+    // (PUT .../contents/{path}) is the one GitHub endpoint documented to
+    // work against a completely empty repo: it creates the file, the first
+    // commit, and the default branch's ref in one atomic call. Use it once
+    // to get the repo out of the empty state, then hand off to the same
+    // battle-tested base_tree-merge path below (already retry-hardened for
+    // the eventual-consistency window right after a repo/commit is created)
+    // for the full file set — including re-pushing this same first file,
+    // which is harmless since it's identical content at the same path.
+    const initFile = files[0];
+    const initPath = initFile.path.split('/').map(encodeURIComponent).join('/');
+    const initRes = await fetch(`${GH_API}/repos/${repoFullName}/contents/${initPath}`, {
+      method: 'PUT', headers: h,
+      body: JSON.stringify({
+        message: commitMessage,
+        content: Buffer.from(initFile.content ?? '', 'utf-8').toString('base64'),
+      }),
     });
-    if (!treeRes.ok) {
-      const err = await ghJson(treeRes);
-      throw new Error('Failed to create tree: ' + (err.message || JSON.stringify(err)));
+    if (!initRes.ok) {
+      const err = await ghJson(initRes);
+      throw new Error(`Failed to initialize empty repo via ${initFile.path} (HTTP ${initRes.status}): ` + (err.message || JSON.stringify(err)));
     }
-    const tree = await ghJson(treeRes);
-
-    const commitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits`, {
-      method: 'POST', headers: h,
-      body: JSON.stringify({ message: commitMessage, tree: tree.sha, parents: [] }),
-    });
-    if (!commitRes.ok) throw new Error('Failed to create commit');
-    const commit = await ghJson(commitRes);
-
-    const refRes = await fetch(`${GH_API}/repos/${repoFullName}/git/refs`, {
-      method: 'POST', headers: h,
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
-    });
-    if (!refRes.ok) {
-      const err = await ghJson(refRes);
-      throw new Error('Failed to create branch ref: ' + (err.message || JSON.stringify(err)));
-    }
-
-    return { branch, commitSha: commit.sha };
   }
 
-  // Existing repo that may already have real content (e.g. a user re-pushing
+  // Existing repo, or a brand-new one just initialized above, that may
+  // already have real content (e.g. a user re-pushing
   // to a repo they picked a name for in uploadToGithub.js) — merge onto it
   // via base_tree so existing files are preserved, same as before. Still
   // retry-hardened for the same eventual-consistency window, in case this
