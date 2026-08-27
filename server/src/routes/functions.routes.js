@@ -24,7 +24,7 @@ const router = Router();
 // Public functions that must work for unauthenticated visitors (marketplace
 // browsing, Stripe webhooks). Everything else requires a logged-in user —
 // each handler still re-checks ownership on the specific rows it touches.
-const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'stripeWebhook', 'checkDeployHealth']);
+const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'stripeWebhook', 'checkDeployHealth', 'createDonationCheckout']);
 
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;
