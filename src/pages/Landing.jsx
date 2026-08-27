@@ -4,6 +4,7 @@ import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck } from 'lu
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import DonateWidget from '@/components/matrix/DonateWidget';
+import SuggestionBox from '@/components/matrix/SuggestionBox';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useAuth } from '@/lib/AuthContext';
 import { MORPHEUS_PRINCIPLE, MORPHEUS_CAPABILITIES } from '@/lib/morpheusCapabilities';
@@ -98,6 +99,7 @@ export default function Landing() {
           </div>
         )}
         {showButtons && <DonateWidget />}
+        {showButtons && <SuggestionBox />}
         {showButtons && canInstall && (
           <div className="mt-6">
             <button onClick={promptInstall} className="px-6 py-2 border border-[#00ff41]/50 text-[#00ff41]/80 hover:bg-[#00ff41] hover:text-black transition-colors font-display tracking-wider text-sm flex items-center gap-2 mx-auto">
