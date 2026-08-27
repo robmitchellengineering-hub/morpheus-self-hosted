@@ -263,7 +263,7 @@ export default function Screenshots() {
           <ArrowLeft size={14} /> BACK
         </Link>
         <Camera size={48} className="text-primary mb-4 neon-glow" />
-        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2">SCREENSHOTS</h1>
+        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">SCREENSHOTS</h1>
         <p className="text-primary/60 text-sm mb-8">// Live captures of every control UI screen. Generated on-demand from the running app — always current.</p>
         {generating && (
           <div className="w-full max-w-xs mb-6">

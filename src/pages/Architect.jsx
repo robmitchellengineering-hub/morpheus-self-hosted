@@ -81,7 +81,7 @@ export default function Architect() {
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-16 safe-top">
         <div className="flex items-center justify-between mb-2 gap-3">
-          <h1 className="text-3xl md:text-4xl font-display tracking-widest neon-glow">THE ARCHITECT</h1>
+          <h1 className="text-3xl md:text-4xl font-display tracking-widest neon-glow text-heading">THE ARCHITECT</h1>
           <div className="flex items-center gap-2 shrink-0">
             <HelpToggle />
             <BuildStamp />

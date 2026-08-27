@@ -112,7 +112,7 @@ export default function Workspace() {
         <div className="relative z-10"><PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} /></div>
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-16 safe-top">
           <div className="flex items-center justify-between mb-2 gap-3">
-            <h1 className="text-3xl md:text-4xl font-display tracking-widest neon-glow">SELECT YOUR CONSTRUCT</h1>
+            <h1 className="text-3xl md:text-4xl font-display tracking-widest neon-glow text-heading">SELECT YOUR CONSTRUCT</h1>
             <div className="flex items-center gap-2 shrink-0">
               <BuildStamp />
               <HelpToggle />

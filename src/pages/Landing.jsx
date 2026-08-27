@@ -86,7 +86,7 @@ export default function Landing() {
     <div className="relative min-h-screen bg-black overflow-hidden flex items-center justify-center safe-px">
       <MatrixRain opacity={0.22} />
       <div className="relative z-10 text-center px-6 max-w-2xl">
-        <h1 className="font-display text-5xl md:text-7xl text-primary tracking-[0.3em] neon-glow mb-8">MORPHEUS</h1>
+        <h1 className="font-display text-5xl md:text-7xl text-heading tracking-[0.3em] neon-glow mb-8">MORPHEUS</h1>
         <p className="font-mono text-primary/70 text-sm md:text-base min-h-[3rem]">{typed}<span className="animate-pulse">_</span></p>
         {showButtons && (
           <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">

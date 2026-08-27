@@ -121,7 +121,7 @@ export default function Settings() {
             <ArrowLeft size={18} />
           </button>
           <Cpu size={20} className="text-primary" />
-          <h1 className="text-2xl font-display tracking-widest neon-glow">SETTINGS</h1>
+          <h1 className="text-2xl font-display tracking-widest neon-glow text-heading">SETTINGS</h1>
         </div>
 
         {loading ? (

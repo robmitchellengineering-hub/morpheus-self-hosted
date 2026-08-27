@@ -191,7 +191,7 @@ export default function StoreItem() {
           </div>
 
           <div className="flex-1 min-w-0 flex flex-col justify-center">
-            <h1 className="text-xl sm:text-2xl font-display tracking-wide neon-glow break-words">{template.name}</h1>
+            <h1 className="text-xl sm:text-2xl font-display tracking-wide neon-glow break-words text-heading">{template.name}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <p className="text-primary/60 text-sm">by {template.author_name}</p>
               <VerifiedBadge />

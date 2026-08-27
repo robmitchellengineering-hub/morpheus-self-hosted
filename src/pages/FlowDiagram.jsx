@@ -229,7 +229,7 @@ export default function FlowDiagram() {
           <ArrowLeft size={14} /> BACK
         </Link>
         <Network size={48} className="text-primary mb-4 neon-glow" />
-        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2">FLOW DIAGRAM</h1>
+        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">FLOW DIAGRAM</h1>
         <p className="text-primary/60 text-sm mb-8">// Complete call graph of every Morpheus operation — what's called, how it's used, and the data flow between them. Generated live from the source code model.</p>
         {generating && (
           <div className="w-full max-w-xs mb-6">

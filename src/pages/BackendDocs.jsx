@@ -123,7 +123,7 @@ export default function BackendDocs() {
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-16 safe-top flex flex-col items-center justify-center min-h-screen text-center">
         <FileText size={48} className="text-primary mb-4 neon-glow" />
-        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2">BACKEND FUNCTIONS REFERENCE</h1>
+        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">BACKEND FUNCTIONS REFERENCE</h1>
         <p className="text-primary/60 text-sm mb-8">// Complete documentation of all 35 backend functions — logic, inputs, outputs, and internal flows.</p>
         {loading ? (
           <div className="flex items-center gap-2 text-primary/60">

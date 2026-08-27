@@ -166,7 +166,7 @@ export default function RebuildBlueprint() {
 
         <div className="flex items-center gap-3 mb-2">
           <FileText size={24} className="text-primary neon-glow" />
-          <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow">REBUILD BLUEPRINT</h1>
+          <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">REBUILD BLUEPRINT</h1>
         </div>
         <p className="text-primary/60 text-sm mb-8">
           // The complete standalone reconstruction blueprint for Morpheus itself. Drop this + the published APK into any AI agent to rebuild the full stack without Base44.

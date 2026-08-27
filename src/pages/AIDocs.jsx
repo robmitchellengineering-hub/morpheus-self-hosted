@@ -308,7 +308,7 @@ export default function AIDocs() {
         <div className="flex items-center gap-3 mb-4">
           <Cpu size={48} className="text-primary neon-glow" />
         </div>
-        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2">AI FUNCTIONS &amp; SETTINGS</h1>
+        <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">AI FUNCTIONS &amp; SETTINGS</h1>
         <p className="text-primary/60 text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
 
         {/* On-screen summary */}
