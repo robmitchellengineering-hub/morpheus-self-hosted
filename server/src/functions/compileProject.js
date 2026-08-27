@@ -102,7 +102,17 @@ export default async function handler({ user, body, res }) {
   const repoName = `${prefix}${slug}-${Date.now()}`;
   const repo = await createRepo(accessToken, repoName, true);
   if (!repo || !repo.full_name) {
-    res.status(500).json({ error: 'Failed to create repository', ghError: repo?.message });
+    // Surface GitHub's actual reason (e.g. secondary rate limit from
+    // repeated compiles, or a real permissions issue) instead of a bare
+    // "Failed to create repository" — that generic message with no detail
+    // was previously the only thing the user ever saw, making repeated
+    // silent compile failures impossible to self-diagnose.
+    const ghMsg = repo?.message || (repo?.errors ? JSON.stringify(repo.errors) : null);
+    console.error(`[compileProject] createRepo failed for ${repoName}:`, JSON.stringify(repo));
+    res.status(500).json({
+      error: ghMsg ? `Failed to create repository on GitHub: ${ghMsg}` : 'Failed to create repository on GitHub (no further detail returned)',
+      ghError: repo?.message,
+    });
     return;
   }
 
