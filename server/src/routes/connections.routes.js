@@ -101,10 +101,28 @@ router.get('/github/callback', async (req, res) => {
     });
     const profile = await profileRes.json();
 
+    // Present only when the OAuth App's "Token expiration" optional feature
+    // is on — see lib/github.js's getGithubConnection for how these are used
+    // to silently refresh instead of the token just dying in ~8 hours.
+    const expiresAt = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
+    const refreshTokenExpiresAt = tokenData.refresh_token_expires_in
+      ? new Date(Date.now() + tokenData.refresh_token_expires_in * 1000)
+      : null;
+
     await prisma.githubConnection.upsert({
       where: { created_by_id: uid },
-      create: { created_by_id: uid, login: profile.login, access_token: encrypt(tokenData.access_token), scope: tokenData.scope },
-      update: { login: profile.login, access_token: encrypt(tokenData.access_token), scope: tokenData.scope },
+      create: {
+        created_by_id: uid, login: profile.login, access_token: encrypt(tokenData.access_token), scope: tokenData.scope,
+        refresh_token: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
+        expires_at: expiresAt,
+        refresh_token_expires_at: refreshTokenExpiresAt,
+      },
+      update: {
+        login: profile.login, access_token: encrypt(tokenData.access_token), scope: tokenData.scope,
+        refresh_token: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
+        expires_at: expiresAt,
+        refresh_token_expires_at: refreshTokenExpiresAt,
+      },
     });
 
     const frontendUrl = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')[0];
