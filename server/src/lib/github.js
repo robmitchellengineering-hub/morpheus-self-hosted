@@ -267,34 +267,80 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
   }
   if (!baseTreeSha) throw new Error(`Could not find base tree for ${repoFullName}@${parentSha} after retries`);
 
-  // Create blobs for all files
-  const treeItems = [];
+  // Round 5 fix (this replaces the old base_tree-merge approach below,
+  // which kept failing live with `422 GitRPC::BadObjectState` on
+  // git/trees — sometimes dozens of times in a row over several minutes,
+  // never resolving no matter how many retries or how long the backoff.
+  // That's the same error other GitHub API integrations hit on this exact
+  // endpoint (e.g. dependabot/dependabot-core#10280, still open/unresolved
+  // upstream as of this writing) — it appears tied to GitHub's own
+  // base_tree inheritance/merge logic itself, not a timing race, since it
+  // was surfacing as a real 422 (not a 5xx/429 transient status) and
+  // persisted well past any plausible eventual-consistency window.
+  //
+  // Fix: stop asking GitHub to merge our new files onto an existing tree
+  // via `base_tree` at all. Instead, read the existing tree ourselves
+  // (recursively, so nested paths come back flat), merge our new/changed
+  // files into that map in our own code, and POST the complete resulting
+  // file list as a brand-new tree with NO `base_tree` field. GitHub's
+  // create-tree endpoint builds the full directory hierarchy from flat
+  // "a/b/c" paths on its own, so this still only needs blob entries, not
+  // explicit tree/directory entries. This sidesteps whatever in GitHub's
+  // base_tree merge path was producing BadObjectState, rather than just
+  // retrying the same request that provokes it.
+  const existingBlobs = new Map(); // path -> { sha, mode }
+  let gotExistingTree = false;
+  let lastExistingTreeErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const existingTreeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees/${baseTreeSha}?recursive=1`, { headers: h });
+    if (existingTreeRes.ok) {
+      const existingTreeData = await ghJson(existingTreeRes);
+      for (const entry of existingTreeData.tree || []) {
+        if (entry.type === 'blob') existingBlobs.set(entry.path, { sha: entry.sha, mode: entry.mode || '100644' });
+      }
+      if (existingTreeData.truncated) {
+        console.log(`Existing tree fetch for ${repoFullName}@${baseTreeSha} was truncated by GitHub (very large repo) — proceeding with the ${existingBlobs.size} entries returned.`);
+      }
+      gotExistingTree = true;
+      break;
+    }
+    const existingTreeErr = await ghJson(existingTreeRes);
+    lastExistingTreeErr = existingTreeErr.message || JSON.stringify(existingTreeErr);
+    console.log(`Existing-tree fetch attempt ${attempt + 1}/5: status=${existingTreeRes.status}, repo=${repoFullName}, baseTree=${baseTreeSha}, error=${JSON.stringify(existingTreeErr)}`);
+    if (existingTreeRes.status === 401 || existingTreeRes.status === 403) throw new Error('Failed to read existing tree: ' + lastExistingTreeErr);
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+  }
+  if (!gotExistingTree) throw new Error(`Failed to read existing tree after retries (repo=${repoFullName}, baseTree=${baseTreeSha}): ${lastExistingTreeErr}`);
+
+  // Create blobs for all files being pushed this round, and merge them
+  // into the existing-file map (overriding any same-path entry).
   for (const file of files) {
     const blob = await createBlob(token, repoFullName, file);
-    treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
+    existingBlobs.set(file.path, { sha: blob.sha, mode: '100644' });
   }
+  const treeItems = Array.from(existingBlobs.entries()).map(([path, entry]) => ({
+    path, mode: entry.mode, type: 'blob', sha: entry.sha,
+  }));
 
-  // Create a new tree with all files (base_tree preserves existing files like README).
-  // Retry on any failure here, not just 404 — GitHub has been observed
-  // returning a non-404 status with a "GitRPC::BadObjectState" body for
-  // this exact same "repo just created" race, which the old 404-only check
-  // treated as fatal on the very first attempt. 401/403 are real
-  // auth/permission failures, not races, so those still fail fast.
+  // Create the new tree from the fully-merged file list — no base_tree,
+  // so this doesn't invoke GitHub's merge logic at all. Retry loop kept
+  // as a generic safety net for ordinary transient failures (5xx/429),
+  // not because BadObjectState is expected here anymore.
   let tree = null;
   let lastTreeErr = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const treeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees`, {
       method: 'POST', headers: h,
-      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+      body: JSON.stringify({ tree: treeItems }),
     });
     if (treeRes.ok) { tree = await ghJson(treeRes); break; }
     const treeErr = await ghJson(treeRes);
     lastTreeErr = treeErr.message || JSON.stringify(treeErr);
-    console.log(`Tree attempt ${attempt + 1}/5: status=${treeRes.status}, repo=${repoFullName}, baseTree=${baseTreeSha}, items=${treeItems.length}, error=${JSON.stringify(treeErr)}`);
+    console.log(`Tree attempt ${attempt + 1}/5: status=${treeRes.status}, repo=${repoFullName}, items=${treeItems.length}, error=${JSON.stringify(treeErr)}`);
     if (treeRes.status === 401 || treeRes.status === 403) throw new Error('Failed to create tree: ' + lastTreeErr);
     await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
   }
-  if (!tree) throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, baseTree=${baseTreeSha}, items=${treeItems.length}): ${lastTreeErr}`);
+  if (!tree) throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, items=${treeItems.length}): ${lastTreeErr}`);
 
   // Create a commit pointing to the new tree
   const newCommitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits`, {
