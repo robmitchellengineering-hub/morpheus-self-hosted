@@ -11,7 +11,7 @@
 // push with retry, Actions-secret sealing) is ported verbatim below, using
 // Node 22's built-in fetch instead of Deno's.
 import { prisma } from '../db.js';
-import { decrypt } from '../crypto.js';
+import { decrypt, encrypt } from '../crypto.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -19,10 +19,66 @@ const GH_API = 'https://api.github.com';
 
 // Returns { login, token } for the given user's linked GitHub account, or
 // null if they haven't connected one. `token` is decrypted from storage.
+//
+// If this connection was made while the GitHub OAuth App's "Token
+// expiration" optional feature was on, `expires_at` is set and the access
+// token dies after ~8 hours. Rather than let every subsequent GitHub API
+// call fail with "Bad credentials" until the user manually disconnects and
+// reconnects, silently refresh it here first when it's expired or about to
+// expire. Connections made with that feature off have expires_at = null and
+// skip this entirely (their token never expires).
 export async function getGithubConnection(userId) {
   const row = await prisma.githubConnection.findUnique({ where: { created_by_id: userId } });
   if (!row) return null;
+
+  if (row.expires_at && row.expires_at.getTime() < Date.now() + 5 * 60 * 1000) {
+    const refreshed = await tryRefreshGithubToken(row);
+    if (refreshed) return refreshed;
+    // Refresh failed (refresh_token itself expired/revoked — GitHub's
+    // refresh tokens are valid ~6 months — or no client secret available
+    // locally, e.g. a broker-issued connection). Fall through and hand back
+    // the possibly-stale token; the caller's own GitHub API call will
+    // surface a clear error if it's actually dead, same as before this fix.
+  }
+
   return { login: row.login, token: decrypt(row.access_token) };
+}
+
+async function tryRefreshGithubToken(row) {
+  if (!row.refresh_token || !process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) return null;
+  try {
+    const res = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        grant_type: 'refresh_token',
+        refresh_token: decrypt(row.refresh_token),
+      }),
+    });
+    const data = await res.json();
+    if (!data.access_token) {
+      console.log(`GitHub token refresh failed for connection ${row.id}: ${data.error_description || data.error || 'no access_token in response'}`);
+      return null;
+    }
+    const updated = await prisma.githubConnection.update({
+      where: { id: row.id },
+      data: {
+        access_token: encrypt(data.access_token),
+        scope: data.scope ?? row.scope,
+        refresh_token: data.refresh_token ? encrypt(data.refresh_token) : row.refresh_token,
+        expires_at: data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null,
+        refresh_token_expires_at: data.refresh_token_expires_in
+          ? new Date(Date.now() + data.refresh_token_expires_in * 1000)
+          : row.refresh_token_expires_at,
+      },
+    });
+    return { login: updated.login, token: data.access_token };
+  } catch (err) {
+    console.log(`GitHub token refresh error for connection ${row.id}: ${err.message}`);
+    return null;
+  }
 }
 
 // Returns the current app user's GitHub access token, or throws a friendly
