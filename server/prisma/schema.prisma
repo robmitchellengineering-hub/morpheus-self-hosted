@@ -45,6 +45,7 @@ model User {
   backend_configs BackendConfig[]
   rebuild_docs    RebuildDoc[]
   updates_plans   UpdatesPlan[]
+  cost_snapshots  CostSnapshot[]
   github_connection GithubConnection?
 
   @@map("users")
@@ -353,4 +354,28 @@ model UpdatesPlan {
   updated_date    DateTime @updatedAt
 
   @@map("updates_plans")
+}
+
+// Admin-only "COST TRACKER" page (src/pages/CostTracker.jsx) — a running
+// tally of what it actually costs to host and run Morpheus, checked by hand
+// against each provider's billing dashboard (Netlify, domain registrar,
+// Northflank, Supabase, the LLM key, Stripe, etc.) since nothing in this
+// stack exposes a live billing API to poll. One row, upserted on save, same
+// single-row-per-admin pattern as UpdatesPlan/RebuildDoc above. Reachable
+// only via the ProtectedRoute adminOnly-guarded /cost-tracker route and the
+// generic entity CRUD engine's owner-scoping (server/src/entities.js) — a
+// non-admin visiting the route would only ever see/create their own empty
+// row, never another user's figures.
+model CostSnapshot {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  items         String   @db.Text // JSON array: [{service, category, monthly, annual, tier, flag, note}]
+  summary       String?  @db.Text // free-text notes (watch-list items, pending confirmations, etc.)
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("cost_snapshots")
 }

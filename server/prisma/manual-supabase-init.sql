@@ -221,6 +221,18 @@ create table updates_plans (
   updated_date timestamp(3) not null default now()
 );
 
+-- Admin-only "COST TRACKER" page — running tally of hosting/domain/AI-key
+-- costs, entered and edited by hand (no live billing-API polling anywhere
+-- in this stack).
+create table cost_snapshots (
+  id text primary key default gen_random_uuid()::text,
+  created_by_id text not null references users(id) on delete cascade,
+  items text not null,
+  summary text,
+  created_date timestamp(3) not null default now(),
+  updated_date timestamp(3) not null default now()
+);
+
 -- Hot list/filter query paths (see SCALING.md Stage 2)
 create index idx_projects_owner on projects(created_by_id, created_date);
 create index idx_chat_messages_project on chat_messages(project_id, created_date);
