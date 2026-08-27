@@ -175,6 +175,17 @@ create table donations (
   created_date timestamp(3) not null default now()
 );
 
+-- Landing page's public "SUGGEST AN IMPROVEMENT" box — no FK to users,
+-- same reasoning as donations (anonymous, pre-login visitors can submit).
+create table feedback (
+  id text primary key default gen_random_uuid()::text,
+  type text not null default 'feature',
+  message text not null,
+  email text,
+  status text not null default 'new',
+  created_date timestamp(3) not null default now()
+);
+
 create table backend_configs (
   id text primary key default gen_random_uuid()::text,
   created_by_id text not null references users(id) on delete cascade,

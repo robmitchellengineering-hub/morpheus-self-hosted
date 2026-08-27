@@ -275,6 +275,24 @@ model Donation {
   @@map("donations")
 }
 
+// Landing page's public "SUGGEST AN IMPROVEMENT" box — no login required,
+// same as base44's version. Deliberately not tied to a User for the same
+// reason Donation isn't: anonymous, pre-login visitors can submit these.
+// Feeds base44's admin-only "Morpheus Updates Plan" AI synthesis tool,
+// which isn't built yet on the self-hosted side — this table is the
+// prerequisite for it.
+model Feedback {
+  id           String   @id @default(uuid())
+  type         String   @default("feature") // feature | bug
+  message      String   @db.Text
+  email        String?
+  status       String   @default("new") // new | reviewed | actioned
+
+  created_date DateTime @default(now())
+
+  @@map("feedback")
+}
+
 // ── BACKEND ARCHITECT ────────────────────────────────────────────
 
 model BackendConfig {
