@@ -31,6 +31,7 @@ const ENTITY_MAP = {
   UpdatesPlan: 'updatesPlan',
   CostSnapshot: 'costSnapshot',
   GithubConnection: 'githubConnection',
+  ProjectDocument: 'projectDocument',
 };
 
 export function isKnownEntity(name) {
