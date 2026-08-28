@@ -395,3 +395,26 @@ model CostSnapshot {
 
   @@map("cost_snapshots")
 }
+
+// ── PROJECT FILES (Morpheus & operator reference docs, separate from source) ──
+// A second, parallel file tree per project: specs, build plans, uploaded
+// reference material. Never touched by GitHub push, compile, or marketplace
+// publish — those only ever read ProjectFile. Deliberately plain scalar
+// created_by_id/project_id (no Prisma @relation) so this ships without
+// touching the User/Project model blocks; referential integrity + cascade
+// delete are enforced at the DB level in the migration SQL instead.
+model ProjectDocument {
+id            String   @id @default(uuid())
+created_by_id String
+project_id    String
+path          String
+content       String?  @db.Text
+file_url      String?
+mime_type     String?
+size_bytes    Int?
+source        String   @default("user")
+created_date  DateTime @default(now())
+updated_date  DateTime @updatedAt
+@@unique([project_id, path])
+@@map("project_documents")
+}
