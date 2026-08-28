@@ -240,6 +240,24 @@ create table cost_snapshots (
   updated_date timestamp(3) not null default now()
 );
 
+-- Second, parallel file tree per project -- specs, build plans, and other
+-- Morpheus-uploaded/generated reference docs. Kept separate from
+-- `project_files` above, which holds the buildable source code.
+create table project_documents (
+    id text primary key default gen_random_uuid()::text,
+    created_by_id text not null references users(id) on delete cascade,
+    project_id text not null references projects(id) on delete cascade,
+    path text not null,
+    content text,
+    file_url text,
+    mime_type text,
+    size_bytes integer,
+    source text not null default 'user',
+    created_date timestamp not null default now(),
+    updated_date timestamp not null default now(),
+    unique (project_id, path)
+  );
+
 -- Hot list/filter query paths (see SCALING.md Stage 2)
 create index idx_projects_owner on projects(created_by_id, created_date);
 create index idx_chat_messages_project on chat_messages(project_id, created_date);
