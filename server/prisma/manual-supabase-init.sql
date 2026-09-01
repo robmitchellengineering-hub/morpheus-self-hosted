@@ -285,9 +285,39 @@ create table credit_transactions (
   created_date timestamp(3) not null default now()
 );
 
+-- Owner/Admin Control Panel (Feature Backlog #8): see schema.prisma's
+-- "OWNER/ADMIN CONTROL PANEL" section comment and
+-- add-admin-panel-tables.sql (this is that same migration, folded in here
+-- for fresh-database setup).
+create table platform_settings (
+  key           text primary key,
+  value         text not null,
+  updated_by_id text references users(id) on delete set null,
+  updated_date  timestamp(3) not null default now()
+);
+
+create table admin_audit_log (
+  id           text primary key default gen_random_uuid()::text,
+  admin_id     text references users(id) on delete set null,
+  action       text not null,
+  details      text,
+  created_date timestamp(3) not null default now()
+);
+
+create table maintenance_tasks (
+  id            text primary key default gen_random_uuid()::text,
+  created_by_id text not null references users(id) on delete cascade,
+  title         text not null,
+  done          boolean not null default false,
+  created_date  timestamp(3) not null default now(),
+  updated_date  timestamp(3) not null default now()
+);
+
 -- Hot list/filter query paths (see SCALING.md Stage 2)
 create index idx_projects_owner on projects(created_by_id, created_date);
 create index idx_chat_messages_project on chat_messages(project_id, created_date);
 create index idx_usage_records_owner on usage_records(created_by_id, created_date);
 create index idx_project_files_project on project_files(project_id);
 create index idx_usage_events_owner on usage_events(created_by_id, created_date);
+create index admin_audit_log_created_date_idx on admin_audit_log(created_date);
+create index maintenance_tasks_created_by_id_idx on maintenance_tasks(created_by_id);

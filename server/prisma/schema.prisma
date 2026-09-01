@@ -60,6 +60,11 @@ model User {
   cost_snapshots  CostSnapshot[]
   github_connection GithubConnection?
 
+  // Owner/Admin Control Panel (Feature Backlog #8)
+  platform_settings_updated PlatformSetting[]
+  admin_audit_logs          AdminAuditLog[]
+  maintenance_tasks         MaintenanceTask[]
+
   @@map("users")
 }
 
@@ -301,6 +306,76 @@ model CreditTransaction {
   created_date       DateTime @default(now())
 
   @@map("credit_transactions")
+}
+
+// ── OWNER/ADMIN CONTROL PANEL (Feature Backlog #8) ──────────────────
+// Access control decision (2026-09-01): role column, not a hardcoded email
+// -- reuses the User.role 'admin' value that already gates self-dev and
+// synthesizeUpdatesPlan (see auth.js's requireAdmin + functions.routes.js's
+// ADMIN_FUNCTIONS set), rather than introducing a separate 'owner' tier.
+// Auth hardening decision: role-gated only for v1 (same bar as the existing
+// admin surfaces) -- no additional step-up auth yet; revisit if this ever
+// needs to protect more than one admin account.
+
+// Generic admin-editable key/value store, read with a short in-memory cache
+// (see lib/platformSettings.js) so hot paths like invokeAI() never take a
+// DB round-trip on every call. Flagship use: default_<role>_model /
+// default_model keys let ai.js's resolveEndpoint() pick a platform-wide
+// default model without a code deploy -- see ai.js for exactly where this
+// sits in the existing env-var/per-user-setting priority chain (additive
+// only; an empty table changes nothing). Also the general-purpose home for
+// any future admin-editable flag ("General config/feature flags" in the
+// backlog) -- not every key written here necessarily has a live consumer
+// yet, same as an unused env var.
+model PlatformSetting {
+  key           String   @id
+  value         String
+  updated_by_id String?
+  updated_by    User?    @relation(fields: [updated_by_id], references: [id], onDelete: SetNull)
+  updated_date  DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+// Every change made through the admin panel (model routing swaps, model
+// catalog/pricing edits, other settings) gets one row here -- decided
+// 2026-09-01: log everything, since audit trail is cheap now and far more
+// valuable to have from day one than to bolt on later once there's
+// financial/model-routing history worth reconstructing. Deliberately not
+// exposed through the generic entity CRUD engine (server/src/entities.js)
+// -- an audit log that its own subject can edit or delete isn't much of an
+// audit log -- so this is written only from admin.routes.js's own handlers
+// and read via a dedicated GET endpoint.
+model AdminAuditLog {
+  id           String   @id @default(uuid())
+  admin_id     String?
+  admin        User?    @relation(fields: [admin_id], references: [id], onDelete: SetNull)
+  action       String   // e.g. 'update_setting', 'update_model_catalog'
+  details      String?  @db.Text // JSON-stringified {key, oldValue, newValue} or similar
+  created_date DateTime @default(now())
+
+  @@map("admin_audit_log")
+}
+
+// Lightweight ops checklist -- the "Maintenance punch-list" surface from the
+// backlog (rotating credentials, clearing stale GitHub PATs, pending
+// migrations, etc.) that's been happening ad hoc up to this session. Low-
+// stakes enough (ticking off a to-do) that it goes through the existing
+// generic entity CRUD engine like any other owner-scoped entity, rather
+// than bespoke admin.routes.js handlers -- entities.js's scope() already
+// gives admins unrestricted access with no owner filter.
+model MaintenanceTask {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  title         String
+  done          Boolean  @default(false)
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("maintenance_tasks")
 }
 
 // ── MARKETPLACE ───────────────────────────────────────────────────
