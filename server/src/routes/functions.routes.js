@@ -69,7 +69,17 @@ async function runFunction(name, filePath, req, res, next) {
     res.json(result ?? { ok: true });
   } catch (err) {
     console.error(`[functions/${name}]`, err);
-    res.status(err.status || 500).json({ error: err.message || 'Internal error' });
+    const body = { error: err.message || 'Internal error' };
+    // Forward a typed error's extra machine-readable fields generically
+    // (duck-typed, not imported here) so the frontend can react to specific
+    // failure kinds instead of just showing text — currently only
+    // InsufficientCreditsError (server/src/lib/billing.js) sets these, to
+    // drive the global out-of-credits popup, but any future typed error can
+    // do the same without this dispatcher needing to know about it.
+    if (err.code) body.code = err.code;
+    if (typeof err.needed === 'number') body.needed = err.needed;
+    if (typeof err.available === 'number') body.available = err.available;
+    res.status(err.status || 500).json(body);
   }
 }
 
