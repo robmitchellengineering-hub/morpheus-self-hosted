@@ -9,8 +9,10 @@
 // straight to that same real repo/branch (pushSelfDevToGithub) — which is
 // what Northflank/Netlify's existing git-based auto-deploy actually watches,
 // so this one push is what ships a change live, and (4) chat messages carry
-// the currently-open file's path as focusPaths so chatWithMorpheus.js can
-// scope its context instead of sending the whole repo every turn.
+// the pinned/open files' paths as focusPaths (contextPaths below — opening a
+// file pins it, and multiple files can be pinned at once via the FileTree
+// checkboxes) so chatWithMorpheus.js can scope its context instead of
+// sending the whole repo every turn.
 //
 // Nothing here ever pushes automatically — chatting and editing only ever
 // touches this project's local ProjectFile rows. Only the explicit PUSH
@@ -44,6 +46,30 @@ export default function SelfDev() {
   const [showHistory, setShowHistory] = useState(false);
   const [mobileTab, setMobileTab] = useState('chat');
   const didInit = useRef(false);
+
+  // AI context pinning (2026-09-02) — chatWithMorpheus.js's self-dev safety
+  // rule refuses to blindly "update" any file whose content it hasn't been
+  // shown (see focusPaths / buildSelfDevContext), which used to mean only
+  // ever the single currently-open file: any change touching two+ existing
+  // files (i.e. almost any real feature addition) required opening one file,
+  // asking, opening the next, asking again. Now the operator can pin several
+  // files at once (checkboxes in FileTree) and every message sends all of
+  // them as focusPaths, so the AI can see and safely edit all of them in one
+  // turn. Opening a file also pins it automatically, matching the old
+  // behavior as the default case.
+  const [contextPaths, setContextPaths] = useState(() => new Set());
+  const toggleContext = useCallback((path) => {
+    setContextPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+  const openFile = useCallback((f) => {
+    ws.setSelectedFile(f);
+    setContextPaths((prev) => (prev.has(f.path) ? prev : new Set(prev).add(f.path)));
+  }, [ws]);
 
   const syncFromGithub = useCallback(async () => {
     setSyncing(true);
@@ -96,7 +122,8 @@ export default function SelfDev() {
   };
 
   const handleSend = (text, fileUrls) => {
-    ws.sendMessage(text, fileUrls, false, ws.selectedFile ? [ws.selectedFile.path] : []);
+    const pinned = Array.from(contextPaths);
+    ws.sendMessage(text, fileUrls, false, pinned.length > 0 ? pinned : (ws.selectedFile ? [ws.selectedFile.path] : []));
   };
 
   if (initializing || !ws.currentProject) {
@@ -160,6 +187,20 @@ export default function SelfDev() {
             <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
           </div>
         )}
+        {contextPaths.size > 0 && (
+          <div className="flex items-start gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1.5 text-[11px] text-primary/70 flex-wrap">
+            <span className="uppercase tracking-wider text-primary/50 shrink-0 mt-0.5">AI context ({contextPaths.size}):</span>
+            {Array.from(contextPaths).map((p) => (
+              <span key={p} className="flex items-center gap-1 border border-primary/25 px-1.5 py-0.5">
+                <span className="truncate max-w-[220px]">{p}</span>
+                <button onClick={() => toggleContext(p)} className="text-primary/50 hover:text-red-400 shrink-0" aria-label={`Remove ${p} from context`}>
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+            <button onClick={() => setContextPaths(new Set())} className="text-primary/50 hover:text-primary underline ml-1 shrink-0">clear</button>
+          </div>
+        )}
       </div>
 
       <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
@@ -174,7 +215,7 @@ export default function SelfDev() {
             <ChatPanel messages={ws.messages} loading={ws.loading} onSend={handleSend} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} />
           </div>
           <div className={`${mobileTab === 'files' ? 'flex' : 'hidden'} flex-1 flex-col min-w-0 min-h-0`}>
-            <FileTree files={ws.files} selectedFile={ws.selectedFile} onSelect={ws.setSelectedFile} />
+            <FileTree files={ws.files} selectedFile={ws.selectedFile} onSelect={openFile} contextPaths={contextPaths} onToggleContext={toggleContext} />
             <FileViewer file={ws.selectedFile} />
           </div>
           <div className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} flex-1 flex-col min-w-0 min-h-0`}>
@@ -191,7 +232,7 @@ export default function SelfDev() {
           </PanelResizeHandle>
           <Panel defaultSize={34} minSize={15} className="min-w-0 overflow-hidden">
             <div className="h-full flex flex-col">
-              <FileTree files={ws.files} selectedFile={ws.selectedFile} onSelect={ws.setSelectedFile} />
+              <FileTree files={ws.files} selectedFile={ws.selectedFile} onSelect={openFile} contextPaths={contextPaths} onToggleContext={toggleContext} />
               <FileViewer file={ws.selectedFile} />
             </div>
           </Panel>
