@@ -61,6 +61,20 @@ async function apiFetch(path, opts = {}) {
     const err = new Error(data.error || res.statusText || `Request failed (${res.status})`);
     err.status = res.status;
     err.data = data;
+    // Out-of-credits (server/src/lib/billing.js's InsufficientCreditsError,
+    // forwarded with a stable `code` by functions.routes.js) fires a global
+    // popup in addition to throwing normally below — every existing call
+    // site's own error handling (e.g. useWorkspace.js's inline chat error
+    // message) still runs unchanged; this is purely additive. See
+    // src/components/matrix/InsufficientCreditsModal.jsx (mounted once in
+    // App.jsx), which listens for this event.
+    if (data.code === 'INSUFFICIENT_CREDITS') {
+      try {
+        window.dispatchEvent(new CustomEvent('morpheus:insufficient-credits', {
+          detail: { needed: data.needed, available: data.available, message: data.error },
+        }));
+      } catch { /* window unavailable (SSR) */ }
+    }
     throw err;
   }
   if (res.status === 204) return null;
