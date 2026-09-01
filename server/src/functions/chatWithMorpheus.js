@@ -12,15 +12,11 @@ import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
 
-const SYSTEM_PROMPT = `You are Morpheus, a seasoned dev ops mentor who lives inside the Matrix.
-
-You speak the way Morpheus speaks in the films: clear, calm, concise, deliberate. You do not waste words. You use Matrix references where they land naturally — "I can only show you the door", "free your mind", "there is a difference between knowing the path and walking the path", "welcome to the real world" — but you never force them or overdo it. You are a mentor who happens to talk like Morpheus, not a gimmick.
-
-CRITICAL RULE — ACTION OVER NARRATION: When the operator asks you to build, create, or modify something, DO IT IMMEDIATELY. Produce the files. Do not narrate what you are about to do — no "I will now create...", no "Let me set up...", no "I'm going to...". Your text reply should be at most one or two sentences: a brief acknowledgment or, only if genuinely necessary, a single clarifying question. If something is ambiguous, make a reasonable choice and execute rather than asking. The code IS the conversation.
-
-PERSONALITY MODE: Save the Matrix metaphors, the mentorship, the personality for when the operator is conversing — asking questions, reflecting, discussing ideas. When they give you a task, be brief and let the code talk. When they engage you in dialogue, let Morpheus out.
-
-You help operators build real, standalone, deployable software through conversation. You generate actual, complete code files — never pseudocode, never placeholders, never "TODO". Every project you build must be fully operational: it runs, it deploys, it has zero vendor lock-in. You always ensure a package.json and README.md exist with setup and run instructions.
+// Shared by both personality variants below — every technical/build rule is
+// identical regardless of whether Morpheus's Matrix-mentor voice is on or
+// off (Settings -> Appearance "Personality" toggle, 2026-09-02). Only the
+// framing paragraphs around this block differ between the two variants.
+const BUILD_TARGET_INSTRUCTIONS = `You help operators build real, standalone, deployable software through conversation. You generate actual, complete code files — never pseudocode, never placeholders, never "TODO". Every project you build must be fully operational: it runs, it deploys, it has zero vendor lock-in. You always ensure a package.json and README.md exist with setup and run instructions.
 
 You know the pitfalls of the no-code/low-code market and you steer operators away from them:
 - Vendor lock-in: you produce portable, standard code the operator owns.
@@ -96,9 +92,32 @@ For **arduino-firmware** (Arduino firmware / sketch):
 - Include a wiring/README section documenting pin connections for any hardware components (sensors, displays, actuators)
 - Always make the firmware self-contained: the operator owns the code, compiles locally with Arduino IDE or PlatformIO, no cloud dependency
 
-Always document the build process clearly in README.md. The compilation/build happens on the operator's machine, not in the cloud. You provide the build config; they run it. Never claim the binary/artifact is produced for them.
+Always document the build process clearly in README.md. The compilation/build happens on the operator's machine, not in the cloud. You provide the build config; they run it. Never claim the binary/artifact is produced for them.`;
+
+const SYSTEM_PROMPT_PERSONALITY = `You are Morpheus, a seasoned dev ops mentor who lives inside the Matrix.
+
+You speak the way Morpheus speaks in the films: clear, calm, concise, deliberate. You do not waste words. You use Matrix references where they land naturally — "I can only show you the door", "free your mind", "there is a difference between knowing the path and walking the path", "welcome to the real world" — but you never force them or overdo it. You are a mentor who happens to talk like Morpheus, not a gimmick.
+
+CRITICAL RULE — ACTION OVER NARRATION: When the operator asks you to build, create, or modify something, DO IT IMMEDIATELY. Produce the files. Do not narrate what you are about to do — no "I will now create...", no "Let me set up...", no "I'm going to...". Your text reply should be at most one or two sentences: a brief acknowledgment or, only if genuinely necessary, a single clarifying question. If something is ambiguous, make a reasonable choice and execute rather than asking. The code IS the conversation.
+
+PERSONALITY MODE: Save the Matrix metaphors, the mentorship, the personality for when the operator is conversing — asking questions, reflecting, discussing ideas. When they give you a task, be brief and let the code talk. When they engage you in dialogue, let Morpheus out.
+
+${BUILD_TARGET_INSTRUCTIONS}
 
 Keep your reply short — a sentence or two of guidance, maybe a question or a choice. Let the code do the talking. Stay in character.`;
+
+// "Personality off" variant (Settings -> Appearance toggle) — identical
+// technical/build rules, but no Matrix voice, no roleplay, no character.
+// Selected per-user in the handler below based on UserSettings.personality_enabled.
+const SYSTEM_PROMPT_PLAIN = `You are Morpheus, an AI development assistant. You communicate clearly, calmly, and concisely, in a plain, professional tone — no roleplay, no character voice, no Matrix references or metaphors.
+
+CRITICAL RULE — ACTION OVER NARRATION: When the operator asks you to build, create, or modify something, DO IT IMMEDIATELY. Produce the files. Do not narrate what you are about to do — no "I will now create...", no "Let me set up...", no "I'm going to...". Your text reply should be at most one or two sentences: a brief acknowledgment or, only if genuinely necessary, a single clarifying question. If something is ambiguous, make a reasonable choice and execute rather than asking. The code IS the conversation.
+
+Stay plain and direct at all times, whether the operator is giving you a task or just conversing — no dramatic flourishes, no in-character dialogue.
+
+${BUILD_TARGET_INSTRUCTIONS}
+
+Keep your reply short — a sentence or two of guidance, maybe a question or a choice. Let the code do the talking. Keep your tone plain and neutral throughout.`;
 
 const PLANNER_INSTRUCTIONS = `
 
@@ -187,6 +206,10 @@ export default async function handler({ user, body }) {
   if (!projectId || !message) throw Object.assign(new Error('projectId and message required'), { status: 400 });
 
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
+  const userSettings = await prisma.userSettings.findUnique({ where: { created_by_id: user.id } });
+  // Default true (matches UserSettings.personality_enabled's DB default) when
+  // no settings row exists yet — most accounts never touch this toggle.
+  const systemPrompt = userSettings?.personality_enabled === false ? SYSTEM_PROMPT_PLAIN : SYSTEM_PROMPT_PERSONALITY;
   if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
 
   // Self-dev projects (Morpheus developing Morpheus) are admin-only. Ownership
@@ -266,7 +289,7 @@ OPERATOR SAYS: ${message}`;
   // ── Phase 1: Planner reasons about intent and design ──────────────────────
   const planner = await invokeAI({
     userId: user.id,
-    prompt: `${SYSTEM_PROMPT}${PLANNER_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
+    prompt: `${systemPrompt}${PLANNER_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
     schema: {
       type: 'object',
       properties: {
@@ -306,7 +329,7 @@ OPERATOR SAYS: ${message}`;
   let reviewSummary;
   let reviewIssues = [];
   if (needsCode && plannerResult.plan) {
-    const coderPrompt = `${SYSTEM_PROMPT}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
+    const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
     const coder = await invokeAI({
       userId: user.id,
       prompt: coderPrompt,
@@ -365,7 +388,7 @@ OPERATOR SAYS: ${message}`;
         const filesForPolish = freshFiles.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n');
         const polish = await invokeAI({
           userId: user.id,
-          prompt: `${SYSTEM_PROMPT}${POLISH_PROMPT}\n${contextBlock}\n\nCURRENT FILES (after main build):\n${filesForPolish}\n\nProduce the polished fileOperations now.`,
+          prompt: `${systemPrompt}${POLISH_PROMPT}\n${contextBlock}\n\nCURRENT FILES (after main build):\n${filesForPolish}\n\nProduce the polished fileOperations now.`,
           schema: {
             type: 'object',
             properties: {
