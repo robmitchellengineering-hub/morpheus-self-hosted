@@ -5,6 +5,7 @@ import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import ConnectionsSection from '@/components/matrix/ConnectionsSection';
+import CreditBalance from '@/components/matrix/CreditBalance';
 import CapabilityStatus from '@/components/matrix/CapabilityStatus';
 import SheetSelect from '@/components/matrix/SheetSelect';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -130,6 +131,8 @@ export default function Settings() {
           </div>
         ) : (
           <>
+            <CreditBalance />
+
             <section className="mb-8 border border-primary/30 p-5">
               <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
                 <Palette size={14} /> APPEARANCE
