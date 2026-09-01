@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ShieldCheck, Loader2, ArrowLeft, Users, Activity, DollarSign,
   Settings2, ListChecks, ScrollText, Plus, Trash2, Check, RefreshCw,
+  AlertTriangle, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -113,7 +114,48 @@ function OverviewTab() {
         <Flag label="Stripe" ok={data.configFlags.stripeConfigured} />
         <Flag label="SMTP" ok={data.configFlags.smtpConfigured} />
       </Card>
+
+      {data.deepseekBalance?.deepseekPrimary && <DeepSeekBalanceCard status={data.deepseekBalance} />}
     </div>
+  );
+}
+
+// Token System Build Plan Step 6b — DeepSeek runs on a prepaid balance;
+// hitting zero fails every AI call platform-wide at once. This card is the
+// only UI for that safeguard (backend: server/src/lib/deepseekBalance.js,
+// a scheduled check + automatic failover to FALLBACK_LLM_*, never an
+// automated recharge — actually moving money stays a human action, done at
+// https://platform.deepseek.com/top_up). Only rendered when DeepSeek is
+// actually this deployment's primary provider.
+function DeepSeekBalanceCard({ status }) {
+  const level = status.level || 'unknown';
+  const cfg = {
+    ok: { icon: CheckCircle2, color: 'text-primary', label: 'HEALTHY' },
+    warning: { icon: AlertTriangle, color: 'text-yellow-500', label: 'LOW BALANCE' },
+    unavailable: { icon: XCircle, color: 'text-red-500', label: 'DEPLETED' },
+    unknown: { icon: AlertTriangle, color: 'text-primary/40', label: 'NOT YET CHECKED' },
+  }[level] || { icon: AlertTriangle, color: 'text-primary/40', label: level.toUpperCase() };
+  const Icon = cfg.icon;
+
+  return (
+    <Card>
+      <div className="text-xs text-primary/60 mb-2 tracking-wider">DEEPSEEK BALANCE (STEP 6B SAFEGUARD)</div>
+      <div className={`flex items-center gap-2 text-sm mb-2 ${cfg.color}`}>
+        <Icon size={16} />
+        <span className="font-display">{cfg.label}</span>
+        {status.totalUsd != null && <span className="text-primary/50">— ${Number(status.totalUsd).toFixed(2)}</span>}
+      </div>
+      {status.error && <div className="text-red-500/80 text-xs mb-2">Last check failed: {status.error}</div>}
+      <Flag label="Fallback provider configured (FALLBACK_LLM_*)" ok={status.fallbackConfigured} />
+      {level === 'unavailable' && !status.fallbackConfigured && (
+        <div className="text-red-500 text-xs mt-2 border border-red-500/30 px-2 py-1.5">
+          No fallback configured — AI calls are failing platform-wide right now. Top up at platform.deepseek.com/top_up, or set FALLBACK_LLM_API_KEY/FALLBACK_LLM_BASE_URL/FALLBACK_LLM_MODEL.
+        </div>
+      )}
+      <div className="text-primary/40 text-[11px] mt-2">
+        {status.checkedAt ? `Last checked ${new Date(status.checkedAt).toLocaleString()}` : 'Not checked yet.'} · Warning threshold editable in CONFIG (key: deepseek_balance_min_usd).
+      </div>
+    </Card>
   );
 }
 
