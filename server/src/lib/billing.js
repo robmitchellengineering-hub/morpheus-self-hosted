@@ -27,15 +27,23 @@ const CHARS_PER_TOKEN = 4; // rough, standard heuristic for a pre-call estimate 
 const ROLE_OUTPUT_ESTIMATE = { planner: 1500, coder: 3000, reviewer: 1500, diagnosis: 2000 };
 const DEFAULT_OUTPUT_ESTIMATE = 1500;
 
-// Token-block purchase denominations, decided 2026-09-01. Not wired to a
-// purchase route yet -- Step 6 (frontend + Stripe Checkout) still needs
-// building; this constant exists now so that step doesn't need to
-// re-derive the math. Stripe gross-up formula from Step 6:
-//   charge = (intended_net + 0.30) / (1 - 0.029)
+// Token-block purchase denominations. Revised 2026-09-02: round $2/$4/$8
+// blocks (was $1.87/$5/$10, a Step 3 placeholder) -- picked to sit close to
+// $8 retail per 1M tokens at the default 2.0x markup against DeepSeek's
+// real ~$4/M peak-time cost (Step 6b's provider). Credits = intendedNetUsd /
+// CREDIT_RATE_USD; stripeChargeUsd = computeGrossedUpCharge(intendedNetUsd),
+// both verified numerically (server/src/lib/billing.js's own formula run
+// through Python, not hand-computed) before shipping real Stripe prices:
+//   $2.00 -> 400 credits  -> $2.37 charged
+//   $4.00 -> 800 credits  -> $4.43 charged
+//   $8.00 -> 1600 credits -> $8.55 charged
+// src/components/matrix/CreditBalance.jsx mirrors this array for display —
+// keep both in sync; the array *index* is what the client sends to
+// createTokenCheckout.js, which looks the real price up here, server-side.
 export const TOKEN_BLOCKS = [
-  { intendedNetUsd: 1.87, credits: 374, stripeChargeUsd: 2.23 },
-  { intendedNetUsd: 5.00, credits: 1000, stripeChargeUsd: 5.46 },
-  { intendedNetUsd: 10.00, credits: 2000, stripeChargeUsd: 10.61 },
+  { intendedNetUsd: 2.00, credits: 400, stripeChargeUsd: 2.37 },
+  { intendedNetUsd: 4.00, credits: 800, stripeChargeUsd: 4.43 },
+  { intendedNetUsd: 8.00, credits: 1600, stripeChargeUsd: 8.55 },
 ];
 
 // Step 6 (2026-09-01, server/src/functions/createTokenCheckout.js) — the
@@ -51,8 +59,8 @@ export function computeGrossedUpCharge(intendedNetUsd) {
 // decided $5/1,000 rate (200 * $0.005). TOKEN-SYSTEM-BUILD-PLAN.md's Step 6
 // design recoups that giveaway on the buyer's FIRST real purchase only, by
 // adding it to the block's intended-net value before the fee gross-up —
-// e.g. the $5 block's first purchase becomes a $6.00-intended-net charge
-// ($6.49) instead of the standard $5.46. Every purchase after the first is
+// e.g. the $4 block's first purchase becomes a $5.00-intended-net charge
+// ($5.46) instead of the standard $4.43. Every purchase after the first is
 // standard pricing (TOKEN_BLOCKS.stripeChargeUsd, unchanged).
 export const FIRST_PURCHASE_RECOUP_USD = 1.00;
 

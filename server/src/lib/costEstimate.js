@@ -28,8 +28,29 @@ export const MODEL_PRICING = {
   // removed from that list. Admin-overridable via the Admin Panel's Models
   // & Routing tab (ModelCatalogEntry) once real spend data suggests a
   // correction; these are the static fallback used until an admin sets one.
-  'deepseek-v4-flash': { input: 0.14, output: 0.28 },
-  'deepseek-v4-pro': { input: 0.435, output: 0.87 },
+  //
+  // Revised 2026-09-02: DeepSeek actually runs a ~2x peak/off-peak price
+  // split (roughly 01:00-04:00 and 06:00-10:00 UTC weekdays = peak; the
+  // rest of the week, including full weekends, = off-peak at half price).
+  // Neither this table nor getModelRate()/computeCostUsd() (modelPricing.js
+  // — this is its fallback source when no ModelCatalogEntry override
+  // exists) is time-of-day aware, and this table is what actually feeds
+  // real billing (server/src/lib/billing.js's reconcileAgainstActualUsage),
+  // not just the Admin Panel's display estimate. The previous figures here
+  // (flash $0.14/$0.28, pro $0.435/$0.87) were below even DeepSeek's real
+  // OFF-peak rate, let alone peak — meaning every DeepSeek call was being
+  // metered (and, via the 2x markup, retail-charged) against a cost basis
+  // lower than what was actually being paid, worst during peak hours.
+  // Fixed by pinning this table to DeepSeek's PEAK rate always (the same
+  // "just always charge as if it's peak" approach used for the $8/M retail
+  // decision) — a conservative constant that's never an undercharge,
+  // whatever the real time-of-day rate turns out to be:
+  //   flash: peak $0.44 in / $1.32 out (real off-peak is exactly half)
+  //   pro:   peak $1.32 in / $3.96 out (real off-peak is exactly half)
+  // Source: DeepSeek's own pricing page, cross-checked against
+  // aipricing.guru and codersera.com (2026-09-02).
+  'deepseek-v4-flash': { input: 0.44, output: 1.32 },
+  'deepseek-v4-pro': { input: 1.32, output: 3.96 },
 };
 
 // Fallback for custom-endpoint models we don't recognize (e.g. local Ollama,
