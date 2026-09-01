@@ -11,11 +11,13 @@ import { base44 } from '@/api/base44Client';
 // Block list mirrors server/src/lib/billing.js's TOKEN_BLOCKS exactly, for
 // display only — the actual charge (including any first-purchase recoup
 // surcharge) is always computed server-side in createTokenCheckout.js. The
-// client only ever sends a block *index*, never a price.
+// client only ever sends a block *index*, never a price. Revised 2026-09-02
+// to round $2/$4/$8 blocks — see billing.js's TOKEN_BLOCKS comment for the
+// pricing derivation.
 const TOKEN_BLOCKS = [
-  { credits: 374, intendedNetUsd: 1.87 },
-  { credits: 1000, intendedNetUsd: 5.00 },
-  { credits: 2000, intendedNetUsd: 10.00 },
+  { credits: 400, intendedNetUsd: 2.00 },
+  { credits: 800, intendedNetUsd: 4.00 },
+  { credits: 1600, intendedNetUsd: 8.00 },
 ];
 
 // Webhook credit lands async after Stripe redirects back — poll the balance
