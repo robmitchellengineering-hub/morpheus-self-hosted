@@ -126,12 +126,68 @@ Apply all the build configuration rules from your system instructions — packag
 Return JSON with:
 - fileOperations: array of { path, content, action } where action is "create", "update", or "delete". For "delete", content can be empty.`;
 
+// Small, fixed set of files worth always showing in full for the self-dev
+// workspace even when the operator hasn't opened them — enough for the AI to
+// orient itself (what the app is, how the server is wired, the schema)
+// without re-sending the whole 150+-file repo on every turn.
+const SELF_DEV_ORIENTATION_FILES = ['AGENTS.md', 'CLAUDE.md', 'README.md', 'package.json', 'server/package.json', 'server/prisma/schema.prisma', 'src/App.jsx'];
+const SELF_DEV_MAX_CONTEXT_BYTES = 60000;
+
+// Self-dev is Morpheus editing its own live, already-working production
+// codebase — a fundamentally different risk profile than generating a fresh
+// project from nothing. chatWithMorpheus.js normally sends every file's full
+// content on every turn (see the note at the call site below); that doesn't
+// scale to Morpheus's own ~150+ file monorepo, so self-dev instead gets a
+// full path listing (so nothing is hidden — the operator can open anything)
+// plus full content only for whatever's actually open/relevant. Returns both
+// the assembled context string and the list of paths whose content was
+// actually shown, so the coder can be told in plain terms which files it's
+// allowed to blindly "update".
+function buildSelfDevContext(files, focusPaths) {
+  const tree = files.map((f) => f.path).sort().join('\n');
+  const wanted = new Set([...(Array.isArray(focusPaths) ? focusPaths : []), ...SELF_DEV_ORIENTATION_FILES]);
+  const shown = [];
+  let used = 0;
+  const sections = [];
+  for (const f of files) {
+    if (!wanted.has(f.path)) continue;
+    if (used > SELF_DEV_MAX_CONTEXT_BYTES) break;
+    sections.push(`--- ${f.path} ---\n${f.content}`);
+    shown.push(f.path);
+    used += f.content.length;
+  }
+  const contentBlock = sections.join('\n\n') || '(nothing open yet — ask the operator which file(s) to look at)';
+  return {
+    shown,
+    text: `FULL REPO FILE TREE (${files.length} files total — you can see every path exists, but only the files below have their CONTENT shown):\n${tree}\n\nOPEN / RELEVANT FILE CONTENTS:\n${contentBlock}`,
+  };
+}
+
+function selfDevSafetyNote(shownPaths) {
+  return `
+
+SELF-DEV SAFETY RULE — YOU ARE EDITING MORPHEUS'S OWN LIVE PRODUCTION CODEBASE, NOT A FRESH PROJECT:
+- You have full CONTENT only for these files: ${shownPaths.join(', ') || '(none)'}. Every other path in the file tree above exists in the real repo but you have NOT seen its content.
+- NEVER return a fileOperation with action "update" for a path whose content you have not seen above — you cannot know what you'd be overwriting, and a blind "update" would silently destroy real, working code. If a needed change touches a file that isn't shown, do not return fileOperations for it this turn — instead reply asking the operator to open that file (in the file tree) so you can see it first.
+- It's fine to "create" genuinely new files/paths that don't exist yet in the tree above.
+- Prefer small, targeted, reviewable changes over sweeping rewrites — the operator reviews every change in the file editor and live preview before pushing to production themselves.`;
+}
+
 export default async function handler({ user, body }) {
-  const { projectId, message, fileUrls } = body || {};
+  const { projectId, message, fileUrls, focusPaths } = body || {};
   if (!projectId || !message) throw Object.assign(new Error('projectId and message required'), { status: 400 });
 
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
   if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
+
+  // Self-dev projects (Morpheus developing Morpheus) are admin-only. Ownership
+  // above already scopes this to the caller's own projects, but project_type
+  // is a free field on the generic Project entity — a non-admin could in
+  // principle create their own row with project_type 'self_dev', so this is
+  // checked independently rather than relying on nothing else ever setting it.
+  if (project.project_type === 'self_dev' && user.role !== 'admin') {
+    throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
+  }
 
   const files = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
   // Bounded to the last 20 messages, matching the original
@@ -159,7 +215,19 @@ export default async function handler({ user, body }) {
 
   await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'user', content: message } });
 
-  const filesContext = files.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n') || '(no files yet)';
+  const isSelfDev = project.project_type === 'self_dev';
+  let filesContext;
+  let selfDevNote = '';
+  if (isSelfDev) {
+    const built = buildSelfDevContext(files, focusPaths);
+    filesContext = built.text;
+    selfDevNote = selfDevSafetyNote(built.shown);
+  } else {
+    // Unbounded, full-content context for ordinary (non-self-dev) projects —
+    // unchanged from before. Fine at normal project sizes; see
+    // buildSelfDevContext above for why self-dev needs different handling.
+    filesContext = files.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n') || '(no files yet)';
+  }
   const historyContext = history.map((h) => `${h.role === 'user' ? 'Operator' : 'Morpheus'}: ${h.content}`).join('\n') || '(conversation just started)';
   const summaryBlock = formatContextSummaryBlock(contextSummary);
 
@@ -169,7 +237,7 @@ export default async function handler({ user, body }) {
 
   // For web-app targets, append the shared design system so the planner
   // and coder build on a polished, consistent base instead of raw HTML.
-  const designBlock = (project.compile_target || 'source') === 'web-app' ? designSystemPromptBlock() : '';
+  const designBlock = (project.compile_target || 'source') === 'web-app' && !isSelfDev ? designSystemPromptBlock() : '';
 
   const contextBlock = `
 PROJECT: ${project.name}
@@ -179,6 +247,7 @@ ${summaryBlock}
 
 CURRENT FILES:
 ${filesContext}
+${selfDevNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
