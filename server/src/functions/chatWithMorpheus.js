@@ -206,10 +206,20 @@ export default async function handler({ user, body }) {
   if (!projectId || !message) throw Object.assign(new Error('projectId and message required'), { status: 400 });
 
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
-  const userSettings = await prisma.userSettings.findUnique({ where: { created_by_id: user.id } });
   // Default true (matches UserSettings.personality_enabled's DB default) when
   // no settings row exists yet — most accounts never touch this toggle.
-  const systemPrompt = userSettings?.personality_enabled === false ? SYSTEM_PROMPT_PLAIN : SYSTEM_PROMPT_PERSONALITY;
+  // Wrapped in try/catch: if the `personality_enabled` column hasn't been
+  // added yet in a given environment (see add-personality-toggle.sql — it's
+  // a manual one-time migration, not auto-applied), this lookup must not be
+  // allowed to take down chat entirely. Fail open to the personality-on
+  // default rather than 500ing every chat request.
+  let systemPrompt = SYSTEM_PROMPT_PERSONALITY;
+  try {
+    const userSettings = await prisma.userSettings.findUnique({ where: { created_by_id: user.id } });
+    if (userSettings?.personality_enabled === false) systemPrompt = SYSTEM_PROMPT_PLAIN;
+  } catch (err) {
+    console.error('[chatWithMorpheus] personality_enabled lookup failed, defaulting to personality on:', err.message);
+  }
   if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
 
   // Self-dev projects (Morpheus developing Morpheus) are admin-only. Ownership
