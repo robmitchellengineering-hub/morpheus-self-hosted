@@ -96,6 +96,52 @@ export default async function handler({ req, res }) {
     return { received: true };
   }
 
+  // Token-block purchases (Step 6, 2026-09-01) — also branch off before the
+  // marketplace-purchase checks below, which require template/buyer fields
+  // this flow doesn't have. Credits the buyer's account and records the
+  // ledger row in one transaction so a crash between the two can't leave
+  // credits granted without a matching CreditTransaction, or vice versa.
+  if (metadata.type === 'token_purchase') {
+    const userId = metadata.user_id || session.client_reference_id;
+    const credits = Number(metadata.credits);
+    const intendedNetUsd = Number(metadata.intended_net_usd) || 0;
+    const isFirstPurchase = metadata.is_first_purchase === 'true';
+    const amount = (session.amount_total || 0) / 100;
+
+    if (!userId || !Number.isFinite(credits) || credits <= 0) {
+      console.error('stripeWebhook: token_purchase missing/invalid metadata', metadata);
+      res.status(400).json({ error: 'Missing metadata' });
+      return;
+    }
+
+    const existingTxn = await prisma.creditTransaction.findFirst({ where: { stripe_session_id: session.id } });
+    if (!existingTxn) {
+      try {
+        await prisma.$transaction([
+          prisma.creditTransaction.create({
+            data: {
+              created_by_id: userId,
+              credits,
+              amount_usd: amount,
+              intended_net_usd: intendedNetUsd,
+              stripe_session_id: session.id,
+              status: 'paid',
+              is_first_purchase: isFirstPurchase,
+            },
+          }),
+          prisma.user.update({
+            where: { id: userId },
+            data: { credit_balance: { increment: credits } },
+          }),
+        ]);
+        console.log(`Token purchase recorded: user=${userId} credits=${credits} amount=${amount} firstPurchase=${isFirstPurchase}`);
+      } catch (e) {
+        console.error('stripeWebhook: CreditTransaction create failed:', e.message);
+      }
+    }
+    return { received: true };
+  }
+
   const templateId = metadata.template_id;
   const buyerId = metadata.buyer_id || session.client_reference_id;
   const sellerId = metadata.seller_id || '';
