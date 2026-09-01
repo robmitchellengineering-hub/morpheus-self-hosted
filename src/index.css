@@ -162,7 +162,7 @@
      call sites) rather than `text-foreground` (under 20). So --primary is
      set to the "dark grey text" color here — that's what actually renders
      as the visible text throughout the app — while --accent/--secondary/
-     --chart-*/--status-success carry the "dark green and pastel green"
+     --chart-N and --status-success carry the "dark green and pastel green"
      accent colors for the smaller set of elements that use them (badges,
      highlights, status dots, charts). --foreground/--card-foreground follow
      --primary for consistency in the few spots that do read them.
