@@ -147,60 +147,66 @@
     --sidebar-ring: 130 100% 50%;
   }
 
-  /* BORING theme (Feature Backlog Tier 4 item #7) — a plain light/corporate
-     look for users the Matrix-terminal aesthetic puts off (older users,
-     workplace settings where a green-on-black hacker screen reads as
-     unserious or hard to read). Deliberately limited customizability, per
-     the spec: swap the palette to white background / near-black text with
-     one calm blue accent, keep semantic status colors purposeful instead of
-     decorative, and round the corners so buttons/panels don't look like
-     terminal chrome. Fonts are left as the app's existing monospace stack —
-     not in the original spec's scope, and changing them app-wide is a
-     bigger, riskier change than this "cheap to build" backlog item called
-     for. --heading is overridden here (unlike Clear/Classic, where it's
-     pinned to Matrix green on purpose) because a neon-green hero heading on
-     a white background would defeat the entire point of this theme.
+  /* BORING theme (Feature Backlog Tier 4 item #7) — originally a plain
+     light/corporate look; recolored 2026-09-02 per Rob's request to a dark
+     palette instead: black background, dark grey body text, dark green +
+     pastel green accents. Rounded corners are kept (the one part of the
+     original "corporate, not terminal chrome" spec that's independent of
+     light-vs-dark). Semantic status colors stay purposeful, not decorative
+     (destructive/warning keep their own hues rather than being folded into
+     the green accent scheme).
+
+     Note on variable choice: this app's bespoke Matrix-styled markup (chat,
+     settings, landing, etc.) overwhelmingly uses `text-primary`/
+     `border-primary`/`bg-primary` for body text and UI chrome alike (1000+
+     call sites) rather than `text-foreground` (under 20). So --primary is
+     set to the "dark grey text" color here — that's what actually renders
+     as the visible text throughout the app — while --accent/--secondary/
+     --chart-*/--status-success carry the "dark green and pastel green"
+     accent colors for the smaller set of elements that use them (badges,
+     highlights, status dots, charts). --foreground/--card-foreground follow
+     --primary for consistency in the few spots that do read them.
      Selectable in Settings → Appearance. Placed after [data-theme="classic"]
      so it always wins the cascade when active. */
   [data-theme="boring"] {
-    --background: 0 0% 100%;
-    --foreground: 220 15% 15%;
-    --card: 210 20% 98%;
-    --card-foreground: 220 15% 15%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 15%;
-    --primary: 217 91% 45%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 20% 94%;
-    --secondary-foreground: 217 30% 22%;
-    --muted: 210 20% 95%;
-    --muted-foreground: 215 15% 42%;
-    --accent: 217 91% 45%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 45%;
+    --background: 0 0% 0%;
+    --foreground: 0 0% 65%;
+    --card: 0 0% 6%;
+    --card-foreground: 0 0% 65%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 0 0% 65%;
+    --primary: 0 0% 65%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 150 45% 12%;
+    --secondary-foreground: 140 45% 72%;
+    --muted: 0 0% 9%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 140 45% 65%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 72% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 18% 86%;
-    --input: 214 18% 86%;
-    --ring: 217 91% 45%;
-    --chart-1: 217 91% 45%;
-    --chart-2: 142 70% 38%;
-    --chart-3: 38 92% 45%;
-    --chart-4: 271 60% 55%;
-    --chart-5: 0 72% 45%;
-    --status-success: 142 70% 38%;
-    --status-warning: 38 92% 45%;
-    --status-info: 199 89% 45%;
-    --status-danger: 0 72% 45%;
-    --heading: 220 15% 15%;
+    --border: 150 18% 18%;
+    --input: 150 18% 18%;
+    --ring: 140 45% 65%;
+    --chart-1: 140 45% 65%;
+    --chart-2: 150 45% 30%;
+    --chart-3: 38 92% 55%;
+    --chart-4: 170 40% 45%;
+    --chart-5: 0 72% 50%;
+    --status-success: 140 55% 55%;
+    --status-warning: 38 92% 55%;
+    --status-info: 199 70% 50%;
+    --status-danger: 0 72% 50%;
+    --heading: 140 60% 60%;
     --radius: 0.6rem;
-    --sidebar-background: 210 20% 98%;
-    --sidebar-foreground: 220 15% 15%;
-    --sidebar-primary: 217 91% 45%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 20% 94%;
-    --sidebar-accent-foreground: 217 30% 22%;
-    --sidebar-border: 214 18% 86%;
-    --sidebar-ring: 217 91% 45%;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 0 0% 65%;
+    --sidebar-primary: 0 0% 65%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 150 45% 12%;
+    --sidebar-accent-foreground: 140 45% 72%;
+    --sidebar-border: 150 18% 18%;
+    --sidebar-ring: 140 45% 65%;
   }
 }
 
