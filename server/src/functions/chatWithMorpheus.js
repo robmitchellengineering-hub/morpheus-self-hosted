@@ -134,7 +134,13 @@ Return JSON with:
 // orient itself (what the app is, how the server is wired, the schema)
 // without re-sending the whole 150+-file repo on every turn.
 const SELF_DEV_ORIENTATION_FILES = ['AGENTS.md', 'CLAUDE.md', 'README.md', 'package.json', 'server/package.json', 'server/prisma/schema.prisma', 'src/App.jsx'];
-const SELF_DEV_MAX_CONTEXT_BYTES = 60000;
+// Raised 60,000 -> 150,000 (2026-09-02): the operator can now pin several
+// files at once in the self-dev workspace (SelfDev.jsx's contextPaths), not
+// just the single open file, specifically so multi-file changes are
+// possible in one turn — a tighter cap would silently start dropping pinned
+// files' content again, defeating that fix. Still well inside normal model
+// context windows.
+const SELF_DEV_MAX_CONTEXT_BYTES = 150000;
 
 // Self-dev is Morpheus editing its own live, already-working production
 // codebase — a fundamentally different risk profile than generating a fresh
@@ -171,7 +177,7 @@ function selfDevSafetyNote(shownPaths) {
 
 SELF-DEV SAFETY RULE — YOU ARE EDITING MORPHEUS'S OWN LIVE PRODUCTION CODEBASE, NOT A FRESH PROJECT:
 - You have full CONTENT only for these files: ${shownPaths.join(', ') || '(none)'}. Every other path in the file tree above exists in the real repo but you have NOT seen its content.
-- NEVER return a fileOperation with action "update" for a path whose content you have not seen above — you cannot know what you'd be overwriting, and a blind "update" would silently destroy real, working code. If a needed change touches a file that isn't shown, do not return fileOperations for it this turn — instead reply asking the operator to open that file (in the file tree) so you can see it first.
+- NEVER return a fileOperation with action "update" for a path whose content you have not seen above — you cannot know what you'd be overwriting, and a blind "update" would silently destroy real, working code. If a needed change touches a file that isn't shown, do not return fileOperations for it this turn — instead reply telling the operator exactly which additional file(s) to pin (checkbox in the file tree, or just open them) so you can see them too, then ask again in the same message which files those are.
 - It's fine to "create" genuinely new files/paths that don't exist yet in the tree above.
 - Prefer small, targeted, reviewable changes over sweeping rewrites — the operator reviews every change in the file editor and live preview before pushing to production themselves.`;
 }

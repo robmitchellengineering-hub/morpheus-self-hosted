@@ -26,6 +26,16 @@ function shouldSkip(path) {
   const lower = path.toLowerCase();
   if (lower.includes('node_modules/') || lower.includes('.git/')) return true;
   if (lower.includes('/dist/') || lower.includes('/.next/') || lower.includes('/coverage/')) return true;
+  // base44/ — confirmed dead weight, not the app itself: README.md says it's
+  // "the original app's entity/function definitions, kept for reference; not
+  // used at runtime by this stack." ~75 files (2026-09-02: about a fifth of
+  // the whole repo) that never need editing, sorting alphabetically ahead of
+  // src/ and server/ in the flat file list — made genuinely-relevant files
+  // (e.g. src/pages/Landing.jsx) hard to find by scrolling. Safe to exclude
+  // from import: pushSelfDevToGithub.js only ever overlays/creates files, it
+  // never deletes anything upstream that's missing locally, so base44/ stays
+  // exactly as-is in the real repo regardless of this exclusion.
+  if (/^base44\//.test(lower)) return true;
   // Lock files: huge, machine-generated, never something Rob or the AI needs
   // to read/edit in a chat context.
   if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(lower)) return true;
