@@ -15,6 +15,12 @@ function thisInstanceOrigin(req) {
   return process.env.BACKEND_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
 }
 
+// See auth.routes.js's frontendUrl() for why this is its own env var rather
+// than reading CORS_ORIGIN (an allow-list, not "the" canonical frontend).
+function frontendUrl() {
+  return process.env.FRONTEND_URL || 'https://morpheus.nz';
+}
+
 router.get('/github/start', requireAuth, (req, res) => {
   // Tier 1: this deployment has its own GitHub OAuth App — use it directly.
   if (process.env.GITHUB_CLIENT_ID) {
@@ -71,8 +77,7 @@ router.get('/github/broker-callback', async (req, res) => {
       update: { login: profile?.login, access_token: encrypt(access_token), scope: 'repo read:user workflow' },
     });
 
-    const frontendUrl = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')[0];
-    res.redirect(`${frontendUrl}/settings?github=connected`);
+    res.redirect(`${frontendUrl()}/settings?github=connected`);
   } catch (err) {
     res.status(500).send(`GitHub connection failed: ${err.message}`);
   }
@@ -125,8 +130,7 @@ router.get('/github/callback', async (req, res) => {
       },
     });
 
-    const frontendUrl = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')[0];
-    res.redirect(`${frontendUrl}/settings?github=connected`);
+    res.redirect(`${frontendUrl()}/settings?github=connected`);
   } catch (err) {
     res.status(500).send(`GitHub connection failed: ${err.message}`);
   }

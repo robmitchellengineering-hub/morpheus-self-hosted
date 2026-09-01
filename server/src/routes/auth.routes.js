@@ -8,8 +8,15 @@ import { brokerUrl } from '../config/hostedDefaults.js';
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
 
+// Deliberately a separate env var from CORS_ORIGIN. CORS_ORIGIN is an
+// allow-list (can be multiple comma-separated origins, e.g. a preview
+// domain alongside production) — picking [0] off it as "the" frontend to
+// redirect users back to after OAuth silently breaks the moment that list's
+// order changes or gains a second entry. FRONTEND_URL is the one canonical
+// place users should land; defaults to production so this works correctly
+// out of the box even before anyone sets the env var.
 function frontendUrl() {
-  return (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')[0];
+  return process.env.FRONTEND_URL || 'https://morpheus.nz';
 }
 
 function thisInstanceOrigin(req) {
