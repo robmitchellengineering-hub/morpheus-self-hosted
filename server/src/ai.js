@@ -14,6 +14,7 @@ import { aiGatewayDefault } from './config/hostedDefaults.js';
 import { discoverLatestModel } from './freshness.js';
 import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
 import { getPlatformSetting } from './lib/platformSettings.js';
+import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
 
 export async function getUserSettings(userId) {
   if (!userId) return null;
@@ -72,13 +73,31 @@ async function resolvePlatformDefaultModel(role) {
 // the actual AI response the user is waiting on. credits_charged stays 0 —
 // Step 3 (pre-call reserve/reconcile enforcement) is what will eventually
 // set it; this step only makes usage data honest.
-async function recordUsageEvent({ userId, role, provider, model, usage }) {
+// Step 3 addition: also reconciles the pre-call credit reservation (see
+// invokeAI's reserveCredits call below) against the real cost computed here,
+// and records the actual credits charged on the UsageEvent row. `isExempt`
+// accounts (admins) skip the reconcile/charge entirely but still get a
+// UsageEvent logged with credits_charged: 0 -- exempt means "don't charge,"
+// not "don't meter" (TOKEN-SYSTEM-BUILD-PLAN.md Step 3).
+async function recordUsageEvent({ userId, role, provider, model, usage, isExempt, reservedCredits }) {
   if (!userId || !usage) return; // no usage object = provider didn't report token counts
   try {
     const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
     const outputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0;
     const rate = await getModelRate(model);
     const costUsd = computeCostUsd(inputTokens, outputTokens, rate);
+
+    let creditsCharged = 0;
+    if (!isExempt) {
+      try {
+        creditsCharged = await reconcileAgainstActualUsage(userId, model, reservedCredits || 0, costUsd);
+      } catch {
+        // Reconciliation failing must never break metering itself -- the
+        // reservation already happened; worst case here is a stale balance
+        // that a later call's reservation will still enforce correctly.
+      }
+    }
+
     await prisma.usageEvent.create({
       data: {
         created_by_id: userId,
@@ -88,6 +107,7 @@ async function recordUsageEvent({ userId, role, provider, model, usage }) {
         input_tokens: inputTokens,
         output_tokens: outputTokens,
         cost_usd: costUsd,
+        credits_charged: creditsCharged,
       },
     });
   } catch {
@@ -178,6 +198,22 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
     );
   }
 
+  // Step 3 — pre-call billing enforcement (lib/billing.js). Admin accounts
+  // are billing-exempt (role column, not a hardcoded email — the Admin
+  // Control Panel decision) but still get metered below; a call with no
+  // userId at all (shouldn't normally happen) is treated the same as exempt
+  // rather than blocking on billing it has no account to bill.
+  let isExempt = true;
+  let reservedCredits = 0;
+  if (userId) {
+    const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } }).catch(() => null);
+    isExempt = !billingUser || billingUser.role === 'admin';
+    if (!isExempt) {
+      reservedCredits = await estimatePreCallCredits(prompt, role, model);
+      await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace
+    }
+  }
+
   const imageUrls = (fileUrls || []).filter((u) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(u));
   const otherUrls = (fileUrls || []).filter((u) => !imageUrls.includes(u));
 
@@ -204,23 +240,41 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
     else messages[0].content += jsonInstruction;
   }
 
-  const res = await fetch(`${String(baseUrl).replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-  });
+  // Everything from here through capturing `usage` is wrapped so a failure
+  // before the provider actually did billable work (network error, non-2xx
+  // response, no content returned) refunds the pre-call reservation in
+  // full — a failed call the user got no value from must never keep their
+  // credits. Once `usage` is known, real work happened and was really
+  // billed by the provider, so recordUsageEvent's normal reconcile (which
+  // can still be a partial refund or a small extra charge) takes over —
+  // see the OUTPUT_TRUNCATED checks below, which intentionally bill for
+  // real consumed tokens even though the response was cut off.
+  let data;
+  try {
+    const res = await fetch(`${String(baseUrl).replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`AI endpoint error (${res.status}): ${errText.slice(0, 300)}`);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`AI endpoint error (${res.status}): ${errText.slice(0, 300)}`);
+    }
+
+    data = await res.json();
+    if (data?.choices?.[0]?.message?.content == null) throw new Error('AI endpoint returned no content');
+  } catch (err) {
+    if (!isExempt && reservedCredits > 0) {
+      await reconcileCredits(userId, reservedCredits, 0).catch(() => {}); // full refund — call never happened
+    }
+    throw err;
   }
 
-  const data = await res.json();
   const usage = data?.usage;
   const choice = data?.choices?.[0];
   const content = choice?.message?.content;
   const finishReason = choice?.finish_reason;
-  if (content == null) throw new Error('AI endpoint returned no content');
 
   // When `model` was an alias (e.g. Gemini's self-updating "gemini-flash-latest"),
   // the response's own `model` field reports which concrete model actually
@@ -230,7 +284,7 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
 
   // Fire-and-forget: metering happens regardless of what follows (truncation
   // error, JSON-parse failure) since the provider already billed this call.
-  recordUsageEvent({ userId, role, provider, model: resolvedModel, usage }).catch(() => {});
+  recordUsageEvent({ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits }).catch(() => {});
 
   if (finishReason === 'length') {
     throw new Error('OUTPUT_TRUNCATED: The AI response was cut off by the token limit before it could finish. Reduce the number of files per step (2-3 max) and retry.');

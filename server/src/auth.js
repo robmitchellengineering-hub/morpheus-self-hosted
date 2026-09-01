@@ -65,5 +65,9 @@ export function requireAdmin(req, res, next) {
 export function publicUser(user) {
   if (!user) return null;
   const { password_hash, otp_code, ...rest } = user;
+  // credit_balance is a Prisma Decimal (server/src/lib/billing.js, Step 3) —
+  // its default JSON serialization is a string, not a number. Coerce here so
+  // every API response carries a proper JSON number regardless of call site.
+  if (rest.credit_balance != null) rest.credit_balance = Number(rest.credit_balance);
   return rest;
 }
