@@ -4,8 +4,14 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { base44 } from '@/api/base44Client';
 import HelpHint from '@/components/matrix/HelpHint';
+import MorpheusThinking from '@/components/matrix/MorpheusThinking';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+// How tall the chat input is allowed to grow as the operator types (px)
+// before it switches to scrolling internally instead of growing further —
+// generous enough that a long message stays fully visible/editable, capped
+// so it can't push the send row off-screen on a small viewport.
+const MAX_TEXTAREA_HEIGHT = 240;
 
 export default function ChatPanel({ messages, loading, onSend, onRevert, canRevert, onAutonomous }) {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -17,6 +23,18 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Auto-expand the chat textarea as the operator types (so a long message
+  // stays fully visible and editable before sending), then collapse it back
+  // to a single line once the message is sent. Kept as a plain DOM height
+  // mutation rather than tracked React state since the textarea itself stays
+  // uncontrolled (see inputRef usage below, including voice input).
+  const resizeTextarea = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT) + 'px';
+  };
 
   const lastUserIdx = messages.map(m => m.role).lastIndexOf('user');
 
@@ -38,7 +56,7 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
   const { speak, stop, speakingId, loadingId } = useMorpheusVoice();
 
   const { listening, start, stop: stopListening, supported: micSupported } = useSpeechRecognition({
-    onResult: (text) => { if (inputRef.current) { inputRef.current.value = text; } }
+    onResult: (text) => { if (inputRef.current) { inputRef.current.value = text; resizeTextarea(); } }
   });
 
   useEffect(() => {
@@ -52,6 +70,7 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
     const fileUrls = attachments.map(a => a.url);
     onSend(text, fileUrls);
     if (inputRef.current) inputRef.current.value = '';
+    resizeTextarea();
     setAttachments([]);
   };
 
@@ -171,7 +190,7 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
           <div className="flex justify-start">
             <div className="text-primary/60 text-sm">
               <span className="text-primary/75 mr-2">morpheus@construct:~$</span>
-              <span className="animate-pulse">decoding reality</span><span className="animate-pulse">_</span>
+              <MorpheusThinking />
             </div>
           </div>
         )}
@@ -213,8 +232,9 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
           defaultValue=""
           rows={1}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          onInput={resizeTextarea}
           placeholder={listening ? 'listening...' : 'speak...'}
-          className="flex-1 min-w-0 resize-none bg-transparent text-primary placeholder:text-primary/65 outline-none text-sm leading-5 py-0.5 max-h-24"
+          className="flex-1 min-w-0 resize-none bg-transparent text-primary placeholder:text-primary/65 outline-none text-sm leading-5 py-0.5 overflow-y-auto scrollbar-matrix"
           disabled={loading}
           autoComplete="off"
           autoCapitalize="off"
