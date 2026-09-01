@@ -14,6 +14,7 @@ import uploadsRoutes from './routes/uploads.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import { LOCAL_ROOT } from './storage.js';
 import { startFreshnessSchedule } from './freshnessSchedule.js';
+import { startDeepSeekBalanceSchedule } from './deepseekBalanceSchedule.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -61,4 +62,5 @@ const port = process.env.PORT || 4500;
 app.listen(port, () => {
   console.log(`[morpheus] server listening on :${port}`);
   startFreshnessSchedule();
+  startDeepSeekBalanceSchedule();
 });

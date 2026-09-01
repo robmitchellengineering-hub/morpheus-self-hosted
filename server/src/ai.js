@@ -15,6 +15,7 @@ import { discoverLatestModel } from './freshness.js';
 import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
 import { getPlatformSetting } from './lib/platformSettings.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
+import { shouldUseFallback } from './lib/deepseekBalance.js';
 
 export async function getUserSettings(userId) {
   if (!userId) return null;
@@ -144,13 +145,21 @@ async function resolveEndpoint(settings, role) {
   }
 
   if (process.env.LLM_API_KEY) {
-    const baseUrl = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
-    const apiKey = process.env.LLM_API_KEY;
+    // Step 6b safeguard: when this deployment's primary key is DeepSeek and
+    // its prepaid balance has run out, deepseekBalance.js's scheduled check
+    // will have already flipped shouldUseFallback() — swap to
+    // FALLBACK_LLM_* (if configured) rather than let every call in the app
+    // start failing at once. Cheap in-memory read, no extra latency on the
+    // hot path. See server/src/lib/deepseekBalance.js.
+    const useFallback = shouldUseFallback() && process.env.FALLBACK_LLM_API_KEY;
+    const baseUrl = useFallback ? process.env.FALLBACK_LLM_BASE_URL : (process.env.LLM_BASE_URL || 'https://api.openai.com/v1');
+    const apiKey = useFallback ? process.env.FALLBACK_LLM_API_KEY : process.env.LLM_API_KEY;
+    const rawModel = useFallback ? process.env.FALLBACK_LLM_MODEL : process.env.LLM_MODEL;
     return {
-      provider: 'platform', // tier 2: this deployment's own operator-configured key
+      provider: useFallback ? 'platform-fallback' : 'platform', // tier 2: this deployment's own operator-configured key (or its emergency fallback)
       baseUrl,
       apiKey,
-      model: roleModelEnv[role] || roleModelSetting[role] || (await resolvePlatformDefaultModel(role)) || (await resolveModel(process.env.LLM_MODEL, baseUrl, apiKey)),
+      model: roleModelEnv[role] || roleModelSetting[role] || (await resolvePlatformDefaultModel(role)) || (await resolveModel(rawModel, baseUrl, apiKey)),
     };
   }
 

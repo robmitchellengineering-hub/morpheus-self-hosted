@@ -9,6 +9,7 @@
 import 'dotenv/config';
 import { queueEnabled, getQueue, startWorker } from './queue.js';
 import { runFreshnessCheckAndNotify } from './freshness.js';
+import { checkBalanceAndAlert, isDeepSeekPrimary } from './lib/deepseekBalance.js';
 
 if (!queueEnabled()) {
   console.log('[morpheus-worker] REDIS_URL not set — nothing to do. This process is only needed once you offload work onto queue.js, or once REDIS_URL is set (single-instance self-hosts get the freshness check via freshnessSchedule.js in the API process instead).');
@@ -32,6 +33,24 @@ if (process.env.FRESHNESS_CHECK_ENABLED !== 'false') {
     console.log(summary.length ? `[freshness] ${summary.length} item(s) worth reviewing: ${summary.join('; ')}` : '[freshness] up to date, nothing to review.');
   }, 1);
   console.log(`[morpheus-worker] freshness-check registered — every ${Math.round(FRESHNESS_INTERVAL_MS / 3600000)}h.`);
+}
+
+// DeepSeek balance safeguard (Token System Build Plan Step 6b) — same
+// exactly-once-across-replicas reasoning as freshness-check above. No-op
+// when DeepSeek isn't this deployment's primary provider.
+if (isDeepSeekPrimary() && process.env.DEEPSEEK_BALANCE_CHECK_ENABLED !== 'false') {
+  const DEEPSEEK_INTERVAL_MS = Number(process.env.DEEPSEEK_BALANCE_CHECK_INTERVAL_MS) || 15 * 60 * 1000;
+  const deepseekQueue = getQueue('deepseek-balance-check');
+  await deepseekQueue.add(
+    'check',
+    {},
+    { repeat: { every: DEEPSEEK_INTERVAL_MS }, jobId: 'deepseek-balance-check-repeatable' },
+  );
+  startWorker('deepseek-balance-check', async () => {
+    const status = await checkBalanceAndAlert();
+    console.log(`[deepseek-balance] level=${status.level} balance=$${status.totalUsd ?? '?'}`);
+  }, 1);
+  console.log(`[morpheus-worker] deepseek-balance-check registered — every ${Math.round(DEEPSEEK_INTERVAL_MS / 60000)}m.`);
 }
 
 // Example of how another processor would be registered once a producer
