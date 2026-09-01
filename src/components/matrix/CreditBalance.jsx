@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Coins, Loader2, Check, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
+import { startTokenCheckout } from '@/lib/purchaseCredits';
 
 // Token System Build Plan Step 6 (2026-09-01) — credit balance display +
 // token-block purchase flow. Built as a standalone component (not inlined
@@ -8,17 +10,11 @@ import { base44 } from '@/api/base44Client';
 // UI surface Command Deck's own token meter will need" — so it can be
 // mounted wherever a balance/buy surface is needed, not just here.
 //
-// Block list mirrors server/src/lib/billing.js's TOKEN_BLOCKS exactly, for
-// display only — the actual charge (including any first-purchase recoup
-// surcharge) is always computed server-side in createTokenCheckout.js. The
-// client only ever sends a block *index*, never a price. Revised 2026-09-02
-// to round $2/$4/$8 blocks — see billing.js's TOKEN_BLOCKS comment for the
-// pricing derivation.
-const TOKEN_BLOCKS = [
-  { credits: 400, intendedNetUsd: 2.00 },
-  { credits: 800, intendedNetUsd: 4.00 },
-  { credits: 1600, intendedNetUsd: 8.00 },
-];
+// TOKEN_BLOCKS (display only — the actual charge, including any
+// first-purchase recoup surcharge, is always computed server-side in
+// createTokenCheckout.js from the block *index* the client sends) now lives
+// in src/lib/tokenBlocks.js, shared with InsufficientCreditsModal.jsx's
+// global out-of-credits popup (2026-09-02) — see that file's comment.
 
 // Webhook credit lands async after Stripe redirects back — poll the balance
 // a few times rather than trusting it's already updated on the first fetch.
@@ -74,19 +70,8 @@ export default function CreditBalance() {
     setError('');
     setBuyingIndex(blockIndex);
     try {
-      const origin = window.location.origin;
-      const path = window.location.pathname;
-      const res = await base44.functions.invoke('createTokenCheckout', {
-        blockIndex,
-        successUrl: `${origin}${path}?credits=success`,
-        cancelUrl: `${origin}${path}?credits=cancelled`,
-      });
-      if (res.data?.url) {
-        window.location.href = res.data.url;
-      } else {
-        setError('Could not start checkout');
-        setBuyingIndex(null);
-      }
+      await startTokenCheckout(blockIndex);
+      // Navigates away on success — nothing else to do here.
     } catch (e) {
       setError(e.message || 'Could not start checkout');
       setBuyingIndex(null);
