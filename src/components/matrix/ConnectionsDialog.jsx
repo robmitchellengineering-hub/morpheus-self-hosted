@@ -175,7 +175,7 @@ export default function ConnectionsDialog({ open, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
+      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col border border-primary/40 bg-background shadow-[0_0_20px_rgba(0,255,65,0.2)]">
         {/* header */}
         <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 shrink-0">
           <div className="flex items-center gap-2 min-w-0">

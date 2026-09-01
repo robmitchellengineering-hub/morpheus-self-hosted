@@ -49,7 +49,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={handleClose}>
-      <div className="w-full max-w-md border border-primary/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md border border-primary/40 bg-background p-6 neon-border" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-primary font-display tracking-wider">TRANSMIT CONSTRUCT</h2>
           <button onClick={handleClose} className="text-primary/50 hover:text-primary"><X size={18} /></button>

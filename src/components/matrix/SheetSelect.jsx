@@ -19,13 +19,13 @@ export default function SheetSelect({ value, onChange, options, triggerClassName
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`flex items-center justify-between gap-2 bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none cursor-pointer hover:border-primary/60 transition-colors ${triggerClassName}`}
+        className={`flex items-center justify-between gap-2 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none cursor-pointer hover:border-primary/60 transition-colors ${triggerClassName}`}
       >
         <span className="truncate text-left">{current?.label ?? value ?? '—'}</span>
         <ChevronDown size={14} className="text-primary/50 shrink-0" />
       </button>
       <Drawer open={open} onOpenChange={setOpen}>
-        <DrawerContent className="bg-black border-primary/40 text-primary max-h-[75vh] sm:max-w-md sm:mx-auto">
+        <DrawerContent className="bg-background border-primary/40 text-primary max-h-[75vh] sm:max-w-md sm:mx-auto">
           <DrawerHeader className="text-left pb-2">
             <DrawerTitle className="text-primary font-display tracking-wider text-sm">{label}</DrawerTitle>
           </DrawerHeader>

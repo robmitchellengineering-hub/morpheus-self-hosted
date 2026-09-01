@@ -105,7 +105,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             value={domainInput}
             onChange={e => setDomainInput(e.target.value)}
             placeholder="api.myapp.com"
-            className="flex-1 bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+            className="flex-1 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
           />
           <button
             onClick={saveDomain}
@@ -140,7 +140,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             value={newKeyName}
             onChange={e => setNewKeyName(e.target.value)}
             placeholder="Key name (e.g. Mobile App)"
-            className="flex-1 bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+            className="flex-1 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
           />
           <button
             onClick={generateKey}

@@ -84,7 +84,7 @@ export default function NetworkFlashDialog({ open, onClose, projectId, target })
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-lg border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
+      <div className="w-full max-w-lg border border-primary/40 bg-background shadow-[0_0_20px_rgba(0,255,65,0.2)]">
         <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3">
           <div className="flex items-center gap-2">
             <Wifi size={16} className="text-primary" />
@@ -108,19 +108,19 @@ export default function NetworkFlashDialog({ open, onClose, projectId, target })
           <div className="grid grid-cols-2 gap-2">
             <div className="col-span-2">
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Host / IP</label>
-              <input value={host} onChange={e => setHost(e.target.value)} placeholder="192.168.1.50" className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
+              <input value={host} onChange={e => setHost(e.target.value)} placeholder="192.168.1.50" className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
             </div>
             <div>
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">User</label>
-              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="pi" className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
+              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="pi" className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
             </div>
             <div>
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Port</label>
-              <input value={port} onChange={e => setPort(e.target.value)} placeholder="22" className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
+              <input value={port} onChange={e => setPort(e.target.value)} placeholder="22" className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
             </div>
             <div className="col-span-2">
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Target device on remote</label>
-              <input value={targetDevice} onChange={e => setTargetDevice(e.target.value)} placeholder="/dev/sda" className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
+              <input value={targetDevice} onChange={e => setTargetDevice(e.target.value)} placeholder="/dev/sda" className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20" />
               <p className="text-[10px] text-primary/50 mt-1">// The block device to overwrite on the Pi. The SSH user needs passwordless sudo (or connect as root).</p>
             </div>
           </div>

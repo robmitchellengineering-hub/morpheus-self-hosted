@@ -13,7 +13,7 @@ export default function FileTree({ files, selectedFile, onSelect }) {
   const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
   return (
     <div className="border-b border-primary/20 max-h-[40%] overflow-y-auto scrollbar-matrix">
-      <div className="px-3 py-2 text-xs text-primary/75 uppercase tracking-wider sticky top-0 bg-black">// files</div>
+      <div className="px-3 py-2 text-xs text-primary/75 uppercase tracking-wider sticky top-0 bg-background">// files</div>
       {sorted.length === 0 && <div className="px-3 py-2 text-primary/65 text-sm italic">No files yet. Ask Morpheus to build something.</div>}
       {sorted.map(f => {
         const Icon = fileIcon(f.path);

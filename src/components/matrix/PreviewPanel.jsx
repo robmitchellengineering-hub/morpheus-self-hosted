@@ -128,7 +128,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
   };
 
   return (
-    <div className="flex flex-col h-full bg-black">
+    <div className="flex flex-col h-full bg-background">
       <div className="flex items-center justify-between border-b border-primary/20 px-3 py-2 shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Eye size={14} className="text-primary shrink-0" />
@@ -154,7 +154,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
                 type="number"
                 value={customW}
                 onChange={e => setCustomW(e.target.value)}
-                className="w-14 text-xs bg-black text-primary border border-primary/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-background text-primary border border-primary/40 px-1 py-1 outline-none"
                 title="Width (px)"
               />
               <span className="text-primary/50 text-xs">×</span>
@@ -162,7 +162,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
                 type="number"
                 value={customH}
                 onChange={e => setCustomH(e.target.value)}
-                className="w-14 text-xs bg-black text-primary border border-primary/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-background text-primary border border-primary/40 px-1 py-1 outline-none"
                 title="Height (px)"
               />
             </div>
@@ -190,14 +190,14 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
       )}
       <div ref={stageRef} className="flex-1 bg-[#0a0a0a] relative overflow-hidden">
         {building && !html ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black gap-2">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background gap-2">
             <Loader2 size={24} className="animate-spin text-primary/60" />
             <span className="text-primary/60 text-xs font-mono">
               {isNative ? 'Generating rapid prototype...' : 'Building preview...'}
             </span>
           </div>
         ) : error ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-black p-4">
+          <div className="absolute inset-0 flex items-center justify-center bg-background p-4">
             <div className="text-red-500 text-xs font-mono text-center">// {error}</div>
           </div>
         ) : html ? (

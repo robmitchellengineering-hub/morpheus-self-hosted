@@ -152,7 +152,7 @@ export default function BackendPipelineRunner({ project, selectedComponents, onC
   });
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] safe-bottom">
+    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 border border-primary/40 bg-background shadow-[0_0_20px_rgba(0,255,65,0.2)] safe-bottom">
       <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20">
         <div className="flex items-center gap-2">
           <Icon size={16} className={`${info.color} ${running ? 'animate-pulse' : ''}`} />

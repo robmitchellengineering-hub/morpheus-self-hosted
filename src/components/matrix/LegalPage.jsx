@@ -7,7 +7,7 @@ import MarketFooter from '@/components/matrix/MarketFooter';
 // legal page is consistent and navigable.
 export default function LegalPage({ title, updated, children }) {
   return (
-    <div className="min-h-screen bg-black text-primary flex flex-col">
+    <div className="min-h-screen bg-background text-primary flex flex-col">
       <header className="border-b border-primary/20 sticky top-0 z-10 bg-black/95 backdrop-blur-sm safe-top">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <Link to="/market" className="text-xs text-primary/60 hover:text-primary flex items-center gap-1 shrink-0">

@@ -190,7 +190,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
-      <div className="w-full max-w-3xl h-[85vh] bg-black border border-primary/40 flex flex-col">
+      <div className="w-full max-w-3xl h-[85vh] bg-background border border-primary/40 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 shrink-0">
           <div className="flex items-center gap-2 text-primary font-display tracking-wider">
             <Store size={18} /> MARKETPLACE
@@ -281,7 +281,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                 <div className="flex items-center gap-2 text-primary text-sm font-bold"><CheckCircle2 size={14} /> {publishMsg}</div>
                 <div className="flex items-center gap-2">
                   <Link2 size={12} className="text-primary/50 shrink-0" />
-                  <input readOnly value={shareUrl} className="flex-1 bg-black text-primary text-xs border border-primary/30 px-2 py-1.5 outline-none" />
+                  <input readOnly value={shareUrl} className="flex-1 bg-background text-primary text-xs border border-primary/30 px-2 py-1.5 outline-none" />
                   <button onClick={copyShareLink} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-1.5 font-bold">
                     <Copy size={12} /> COPY
                   </button>
@@ -295,7 +295,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
             <div>
               <label className="text-xs text-primary/50 block mb-1">APP ICON / COVER IMAGE</label>
               <div className="flex items-center gap-3">
-                <div className="w-16 h-16 border border-primary/30 bg-black flex items-center justify-center overflow-hidden shrink-0">
+                <div className="w-16 h-16 border border-primary/30 bg-background flex items-center justify-center overflow-hidden shrink-0">
                   {publishIcon ? <img src={publishIcon} alt="icon" className="w-full h-full object-cover" /> : <ImageIcon size={20} className="text-primary/30" />}
                 </div>
                 <label className="flex items-center gap-1 text-xs text-primary border border-primary/30 hover:border-primary/60 px-3 py-1.5 cursor-pointer">
@@ -311,7 +311,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
               <label className="text-xs text-primary/50 block mb-1">SCREENSHOTS (shown on store page)</label>
               <div className="flex gap-2 flex-wrap mb-2">
                 {publishScreenshots.map((url, i) => (
-                  <div key={i} className="relative w-24 h-16 border border-primary/30 bg-black overflow-hidden group">
+                  <div key={i} className="relative w-24 h-16 border border-primary/30 bg-background overflow-hidden group">
                     <img src={url} alt={`screenshot ${i + 1}`} className="w-full h-full object-cover" />
                     <button onClick={() => setPublishScreenshots(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-0 right-0 bg-black/80 text-red-500 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <X size={10} />
@@ -328,20 +328,20 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
             {/* Long description */}
             <div>
               <label className="text-xs text-primary/50 block mb-1">STORE DESCRIPTION (markdown — optional)</label>
-              <textarea value={publishLongDesc} onChange={e => setPublishLongDesc(e.target.value)} placeholder="## Features&#10;Describe your app in detail...&#10;&#10;## Installation&#10;How to install and run..." rows={4} className="w-full bg-black text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none resize-y" />
+              <textarea value={publishLongDesc} onChange={e => setPublishLongDesc(e.target.value)} placeholder="## Features&#10;Describe your app in detail...&#10;&#10;## Installation&#10;How to install and run..." rows={4} className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none resize-y" />
             </div>
 
             <div>
               <label className="text-xs text-primary/50 block mb-1">PRICE (USD, 0 = free)</label>
-              <input type="number" min="0" step="0.01" value={publishPrice} onChange={e => setPublishPrice(e.target.value)} placeholder="0" className="w-full bg-black text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
+              <input type="number" min="0" step="0.01" value={publishPrice} onChange={e => setPublishPrice(e.target.value)} placeholder="0" className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
             </div>
             <div>
               <label className="text-xs text-primary/50 block mb-1">CATEGORY</label>
-              <input value={publishCategory} onChange={e => setPublishCategory(e.target.value)} placeholder="general" className="w-full bg-black text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
+              <input value={publishCategory} onChange={e => setPublishCategory(e.target.value)} placeholder="general" className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
             </div>
             <div>
               <label className="text-xs text-primary/50 block mb-1">TAGS (comma separated)</label>
-              <input value={publishTags} onChange={e => setPublishTags(e.target.value)} placeholder="cli, tool, demo" className="w-full bg-black text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
+              <input value={publishTags} onChange={e => setPublishTags(e.target.value)} placeholder="cli, tool, demo" className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
             </div>
             <label className="flex items-start gap-2 text-xs text-primary/60 cursor-pointer">
               <input type="checkbox" checked={publishIncludeArtifacts} onChange={e => setPublishIncludeArtifacts(e.target.checked)} className="mt-0.5" />

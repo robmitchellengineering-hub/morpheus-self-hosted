@@ -163,7 +163,7 @@ export default function RebuildDocDialog({ open, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-2xl border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)] flex flex-col max-h-[85vh]">
+      <div className="w-full max-w-2xl border border-primary/40 bg-background shadow-[0_0_20px_rgba(0,255,65,0.2)] flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 shrink-0">
           <div className="flex items-center gap-2">
             <FileText size={16} className="text-primary" />

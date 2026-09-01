@@ -141,7 +141,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/80" onClick={onClose}>
-      <div className="bg-black border-l border-primary/40 w-full max-w-lg h-full flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-background border-l border-primary/40 w-full max-w-lg h-full flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 shrink-0">
           <div className="flex items-center gap-2">
             <History size={18} className="text-primary" />
@@ -191,7 +191,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   value={logSearch}
                   onChange={e => setLogSearch(e.target.value)}
                   placeholder="search build logs…"
-                  className="w-full bg-black text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
+                  className="w-full bg-background text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -279,7 +279,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   value={snapSearch}
                   onChange={e => setSnapSearch(e.target.value)}
                   placeholder="search snapshots by label…"
-                  className="w-full bg-black text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
+                  className="w-full bg-background text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"

@@ -10,7 +10,7 @@ const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-prim
 
 export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
   return (
-    <div className="flex flex-col border-b border-primary/20 bg-black shrink-0">
+    <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
       {/* Row 1: project identity + primary action */}
       <div className="flex items-center justify-between gap-3 px-4 py-2.5">
         <div className="flex items-center gap-3 min-w-0">

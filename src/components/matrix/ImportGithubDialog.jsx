@@ -27,7 +27,7 @@ export default function ImportGithubDialog({ open, onClose, onImport }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
-      <div className="w-full max-w-md border border-primary/40 bg-black p-6 neon-border" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md border border-primary/40 bg-background p-6 neon-border" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-primary font-display tracking-wider flex items-center gap-2">
             <Github size={18} /> IMPORT CONSTRUCT

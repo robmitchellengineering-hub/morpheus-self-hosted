@@ -32,7 +32,7 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={handleClose}>
-      <div className="w-full max-w-2xl bg-black border border-primary neon-border max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-2xl bg-background border border-primary neon-border max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/30 shrink-0">
           <div className="flex items-center gap-2">
             <FlaskConical size={18} className="text-primary" />
@@ -50,7 +50,7 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
               value={spec}
               onChange={e => setSpec(e.target.value)}
               placeholder="// e.g. focus on the API layer, include edge cases for auth..."
-              className="w-full h-24 bg-black text-primary text-sm border border-primary/30 px-3 py-2 outline-none focus:border-primary/60 resize-none scrollbar-matrix"
+              className="w-full h-24 bg-background text-primary text-sm border border-primary/30 px-3 py-2 outline-none focus:border-primary/60 resize-none scrollbar-matrix"
               disabled={running}
             />
             <p className="text-xs text-primary/75 mt-1">// Morpheus will analyze all files and generate tests + CI pipeline</p>

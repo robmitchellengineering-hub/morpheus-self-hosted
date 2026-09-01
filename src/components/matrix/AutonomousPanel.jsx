@@ -196,7 +196,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => !running && onClose()}>
-      <div className="bg-black border border-primary/40 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-background border border-primary/40 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 shrink-0">
           <div className="flex items-center gap-2">
             <Bot size={18} className="text-primary" />
@@ -222,7 +222,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
                 value={spec}
                 onChange={e => setSpec(e.target.value)}
                 placeholder="Describe what to build, or leave blank to let Morpheus assess and complete the current state..."
-                className="w-full h-32 bg-black border border-primary/30 text-primary p-3 text-sm outline-none focus:border-primary/60 resize-none scrollbar-matrix"
+                className="w-full h-32 bg-background border border-primary/30 text-primary p-3 text-sm outline-none focus:border-primary/60 resize-none scrollbar-matrix"
                 disabled={running}
               />
             </div>

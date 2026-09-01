@@ -255,7 +255,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-lg border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
+      <div className="w-full max-w-lg border border-primary/40 bg-background shadow-[0_0_20px_rgba(0,255,65,0.2)]">
         <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3">
           <div className="flex items-center gap-2">
             <Hammer size={16} className="text-primary" />
@@ -301,7 +301,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                 <div className="text-xs text-red-500 border border-red-500/30 p-2">{preview.error}</div>
               )}
               {preview && !preview.error && (
-                <div className="space-y-2 border border-primary/20 bg-black p-3">
+                <div className="space-y-2 border border-primary/20 bg-background p-3">
                   <div className="text-xs text-primary/60">// BUILD PREVIEW — {preview.label} on {preview.runner}</div>
                   {preview.validation?.warnings?.length > 0 && (
                     <div className="text-[10px] text-yellow-500/80">
@@ -467,7 +467,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               )}
 
               {status?.logs?.length > 0 && (
-                <details className="border border-primary/20 bg-black">
+                <details className="border border-primary/20 bg-background">
                   <summary className="text-xs text-primary/60 cursor-pointer px-3 py-1.5 hover:text-primary">BUILD LOGS (click to expand)</summary>
                   <pre className="text-[10px] text-primary/50 overflow-x-auto max-h-48 p-3 scrollbar-matrix whitespace-pre-wrap">{status.logs.map(l => `=== ${l.job} ===\n${l.log}`).join('\n\n')}</pre>
                 </details>

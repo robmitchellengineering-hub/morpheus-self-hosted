@@ -138,12 +138,12 @@ export default function LinuxDistroConfigDialog({ open, onClose, projectId }) {
   };
 
   const errClass = 'text-[10px] text-red-500 mt-1';
-  const inputClass = 'w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20';
+  const inputClass = 'w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-primary/20';
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-matrix border border-primary/40 bg-black shadow-[0_0_20px_rgba(0,255,65,0.2)]">
-        <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 sticky top-0 bg-black">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-matrix border border-primary/40 bg-background shadow-[0_0_20px_rgba(0,255,65,0.2)]">
+        <div className="flex items-center justify-between border-b border-primary/20 px-4 py-3 sticky top-0 bg-background">
           <div className="flex items-center gap-2">
             <Sliders size={16} className="text-primary" />
             <span className="text-primary font-display tracking-wider neon-glow">LINUX DISTRO CONFIG</span>
@@ -209,7 +209,7 @@ export default function LinuxDistroConfigDialog({ open, onClose, projectId }) {
 
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">SSH public key (injected into the first user; disables password login)</label>
-                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y" />
+                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y" />
                 {errors.sshPublicKey && <p className={errClass}>// {errors.sshPublicKey}</p>}
               </div>
 
@@ -221,7 +221,7 @@ export default function LinuxDistroConfigDialog({ open, onClose, projectId }) {
 
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Custom run commands (one per line, run inside the image at build time)</label>
-                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-black text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y font-mono" />
+                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y font-mono" />
                 <p className="text-[10px] text-primary/50 mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
               </div>
 

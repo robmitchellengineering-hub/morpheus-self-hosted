@@ -84,7 +84,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={handleClose}>
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-matrix border border-primary/40 bg-black p-6" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-matrix border border-primary/40 bg-background p-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Server size={18} className="text-primary" />
@@ -99,7 +99,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="my-api"
-              className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+              className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
               autoFocus
             />
           </div>
@@ -110,7 +110,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
               onChange={e => setDescription(e.target.value)}
               placeholder="What does this backend do?"
               rows={3}
-              className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20 resize-y"
+              className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20 resize-y"
             />
           </div>
 
@@ -147,14 +147,14 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
                   value={pasteName}
                   onChange={e => setPasteName(e.target.value)}
                   placeholder="filename.js"
-                  className="w-full bg-black text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20"
+                  className="w-full bg-background text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20"
                 />
                 <textarea
                   value={pasteContent}
                   onChange={e => setPasteContent(e.target.value)}
                   placeholder="// paste code here..."
                   rows={4}
-                  className="w-full bg-black text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20 font-mono resize-y"
+                  className="w-full bg-background text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20 font-mono resize-y"
                 />
                 <div className="flex items-center gap-2">
                   <button

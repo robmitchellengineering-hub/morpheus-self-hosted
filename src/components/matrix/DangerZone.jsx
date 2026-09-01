@@ -64,7 +64,7 @@ export default function DangerZone() {
               value={typedConfirm}
               onChange={e => setTypedConfirm(e.target.value)}
               placeholder={CONFIRM_PHRASE}
-              className="w-full bg-black text-red-500 border border-red-500/40 px-3 py-2 text-sm outline-none placeholder:text-red-500/20"
+              className="w-full bg-background text-red-500 border border-red-500/40 px-3 py-2 text-sm outline-none placeholder:text-red-500/20"
             />
           </div>
           {error && <p className="text-xs text-red-500">// {error}</p>}

@@ -1,11 +1,24 @@
 import { useEffect, useRef } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const CHARS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎ0123456789ABCDEF';
 
 export default function MatrixRain({ opacity = 0.1 }) {
   const canvasRef = useRef(null);
+  const { theme } = useTheme();
+
+  // The rain effect paints its own black fade-trail on every frame
+  // (see draw() below), which fights the whole point of the Boring theme —
+  // a plain, non-terminal, light background. Rather than trying to recolor
+  // an animated hacker-rain effect into something "corporate", the Boring
+  // theme simply turns it off, matching the backlog spec's "deliberately
+  // limited customizability" / plain-look intent. Every page renders this
+  // component the same way, so gating it here (one file) covers all of
+  // them instead of needing a per-page check.
+  const disabled = theme === 'boring';
 
   useEffect(() => {
+    if (disabled) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     let animationId;
@@ -44,7 +57,12 @@ export default function MatrixRain({ opacity = 0.1 }) {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', resize);
     };
-  }, []);
+  }, [disabled]);
+
+  // Skip rendering the canvas entirely when disabled, rather than just
+  // skipping the draw loop — that also drops whatever black pixels were
+  // already painted onto it before the user switched themes mid-session.
+  if (disabled) return null;
 
   return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none" style={{ opacity, zIndex: 0 }} />;
 }

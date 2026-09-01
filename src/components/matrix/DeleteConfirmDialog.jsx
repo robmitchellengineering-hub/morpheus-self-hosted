@@ -66,7 +66,7 @@ export default function DeleteConfirmDialog({ open, onClose, onConfirm, projectN
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-black border border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.3)] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md bg-background border border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.3)] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-red-500/30 shrink-0">
           <div className="flex items-center gap-2">
             <AlertTriangle size={18} className="text-red-500" />

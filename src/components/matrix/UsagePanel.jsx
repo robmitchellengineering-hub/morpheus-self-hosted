@@ -31,7 +31,7 @@ export default function UsagePanel({ open, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl bg-black border border-primary neon-border max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-2xl bg-background border border-primary neon-border max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/30 shrink-0">
           <div className="flex items-center gap-2">
             <BarChart3 size={18} className="text-primary" />

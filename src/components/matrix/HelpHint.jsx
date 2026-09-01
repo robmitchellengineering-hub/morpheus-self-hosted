@@ -40,7 +40,7 @@ export default function HelpHint({ id, title, body, children }) {
       {enhanced}
       {show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80" onClick={handleClose}>
-          <div className="relative max-w-sm w-full border border-yellow-400/50 bg-black p-5 shadow-[0_0_24px_rgba(250,204,21,0.15)]" onClick={e => e.stopPropagation()}>
+          <div className="relative max-w-sm w-full border border-yellow-400/50 bg-background p-5 shadow-[0_0_24px_rgba(250,204,21,0.15)]" onClick={e => e.stopPropagation()}>
             <button onClick={handleClose} className="absolute top-2 right-2 text-yellow-400/50 hover:text-yellow-400">
               <X size={14} />
             </button>
