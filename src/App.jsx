@@ -7,6 +7,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
+import InsufficientCreditsModal from '@/components/matrix/InsufficientCreditsModal';
 // Add page imports here
 import ProtectedRoute from '@/components/ProtectedRoute';
 import MobileTabBar from '@/components/matrix/MobileTabBar';
@@ -148,6 +149,7 @@ function App() {
             <AuthenticatedApp />
           </Router>
           <Toaster />
+          <InsufficientCreditsModal />
         </QueryClientProvider>
         </HelpModeProvider>
       </AuthProvider>
