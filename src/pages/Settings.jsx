@@ -135,9 +135,9 @@ export default function Settings() {
                 <Palette size={14} /> APPEARANCE
               </h2>
               <p className="text-xs text-primary/50 mb-4">
-                // Clear is the default look — brighter text and visible panel borders so small print reads easily, plus color-coded status dots. Classic Matrix is the original all-green terminal look.
+                // Clear is the default look — brighter text and visible panel borders so small print reads easily, plus color-coded status dots. Classic Matrix is the original all-green terminal look. Boring is a plain light/corporate look for anyone the Matrix look isn't for.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   onClick={() => setTheme('clear')}
                   className={`text-left border p-3 transition-colors ${theme === 'clear' ? 'border-primary bg-primary/10' : 'border-primary/20 hover:border-primary/40'}`}
@@ -167,6 +167,21 @@ export default function Settings() {
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
                     <span className="text-[10px] text-primary/50 ml-1">original all-green terminal look</span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setTheme('boring')}
+                  className={`text-left border p-3 transition-colors ${theme === 'boring' ? 'border-primary bg-primary/10' : 'border-primary/20 hover:border-primary/40'}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-display tracking-wider text-primary">BORING</span>
+                    {theme === 'boring' && <Check size={14} className="text-primary" />}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#ffffff', border: '1px solid #d0d5dd' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(217 91% 45%)' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(220 15% 15%)' }} />
+                    <span className="text-[10px] text-primary/50 ml-1">plain light look, rounded corners</span>
                   </div>
                 </button>
               </div>
