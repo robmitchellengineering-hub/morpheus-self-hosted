@@ -101,7 +101,7 @@ export default function SelfDev() {
 
   if (initializing || !ws.currentProject) {
     return (
-      <div className="relative min-h-screen bg-black text-primary font-mono flex items-center justify-center">
+      <div className="relative min-h-screen bg-background text-primary font-mono flex items-center justify-center">
         <MatrixRain opacity={0.05} />
         <div className="relative z-10 flex flex-col items-center gap-3">
           <Loader2 size={28} className="animate-spin text-primary/60" />
@@ -113,8 +113,8 @@ export default function SelfDev() {
   }
 
   return (
-    <div className="relative h-workspace-mobile bg-black text-primary font-mono flex flex-col overflow-hidden safe-top">
-      <div className="flex flex-col border-b border-primary/20 bg-black shrink-0">
+    <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
+      <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
             <Cpu size={18} className="text-primary shrink-0" />
@@ -208,7 +208,7 @@ export default function SelfDev() {
 
       {showPushConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="bg-black border border-primary/40 max-w-md w-full p-5">
+          <div className="bg-background border border-primary/40 max-w-md w-full p-5">
             <div className="flex items-center gap-2 mb-3 text-yellow-500">
               <AlertTriangle size={18} />
               <span className="font-display tracking-wider">PUSH TO PRODUCTION</span>

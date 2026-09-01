@@ -77,7 +77,7 @@ export default function Architect() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-primary font-mono">
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-16 safe-top">
         <div className="flex items-center justify-between mb-2 gap-3">

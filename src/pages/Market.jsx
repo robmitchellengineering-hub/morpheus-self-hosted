@@ -50,7 +50,7 @@ export default function Market() {
   const fmtPrice = (p) => (p && p > 0 ? `$${Number(p).toFixed(2)}` : 'FREE');
 
   return (
-    <div ref={listRef} className="min-h-screen bg-black text-primary">
+    <div ref={listRef} className="min-h-screen bg-background text-primary">
       <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} />
       {/* Header */}
       <header className="border-b border-primary/20 sticky top-0 z-10 bg-black/95 backdrop-blur-sm safe-top">
@@ -125,7 +125,7 @@ export default function Market() {
                 to={`/store/${t.id}`}
                 className="border border-primary/20 hover:border-primary/60 bg-primary/5 hover:bg-primary/10 transition-all p-3 flex flex-col gap-2 group"
               >
-                <div className="aspect-square border border-primary/10 bg-black flex items-center justify-center overflow-hidden">
+                <div className="aspect-square border border-primary/10 bg-background flex items-center justify-center overflow-hidden">
                   {t.icon ? (
                     <img src={t.icon} alt={t.name} className="w-full h-full object-cover" />
                   ) : (

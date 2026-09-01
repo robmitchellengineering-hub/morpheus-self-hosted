@@ -106,7 +106,7 @@ export default function Workspace() {
 
   if (!ws.currentProject) {
     return (
-      <div ref={listRef} className="relative min-h-screen bg-black text-primary font-mono">
+      <div ref={listRef} className="relative min-h-screen bg-background text-primary font-mono">
         <MatrixRain opacity={0.05} />
         <div className="pointer-events-none fixed inset-0 opacity-[0.05]" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--primary) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--primary) / 0.5) 1px, transparent 1px)', backgroundSize: '44px 44px' }} />
         <div className="relative z-10"><PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} /></div>
@@ -216,7 +216,7 @@ export default function Workspace() {
   }
 
   return (
-    <div className="relative h-workspace-mobile bg-black text-primary font-mono flex flex-col overflow-hidden safe-top">
+    <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
       <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
       <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
         <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>CHAT</button>

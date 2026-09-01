@@ -113,7 +113,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-primary font-mono">
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-10 safe-top">
         <div className="flex items-center gap-3 mb-8">
@@ -210,7 +210,7 @@ export default function Settings() {
                       value={aiBaseUrl}
                       onChange={e => setAiBaseUrl(e.target.value)}
                       placeholder="https://api.openai.com/v1"
-                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                      className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
                     <p className="text-xs text-primary/65 mt-1">
                       // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1 · https://api.moonshot.ai/v1 (Kimi K3)
@@ -233,7 +233,7 @@ export default function Settings() {
                         value={aiApiKey}
                         onChange={e => setAiApiKey(e.target.value)}
                         placeholder="sk-..."
-                        className="flex-1 bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                        className="flex-1 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                       />
                       <button
                         onClick={() => setShowKey(!showKey)}
@@ -250,7 +250,7 @@ export default function Settings() {
                       value={aiModel}
                       onChange={e => setAiModel(e.target.value)}
                       placeholder="gpt-4o"
-                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                      className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
                   </div>
                 </div>
@@ -381,7 +381,7 @@ export default function Settings() {
                       onChange={e => setTtsApiKey(e.target.value)}
                       type="password"
                       placeholder={ttsEngine === 'elevenlabs' ? 'xi-...' : 'sk-...'}
-                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                      className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
                   </div>
                   <div>
@@ -390,7 +390,7 @@ export default function Settings() {
                       value={ttsVoiceId}
                       onChange={e => setTtsVoiceId(e.target.value)}
                       placeholder={ttsEngine === 'elevenlabs' ? 'Cloned Morpheus voice ID' : ttsEngine === 'openai' ? 'onyx (deepest)' : 'morpheus'}
-                      className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                      className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
                     <p className="text-xs text-primary/65 mt-1">
                       {ttsEngine === 'elevenlabs' ? '// Create a cloned voice in ElevenLabs, paste its voice ID here.' : ttsEngine === 'openai' ? '// OpenAI voices: onyx (deepest), nova, shimmer, alloy, echo, fable.' : '// Passed as the "voice" field to your custom endpoint.'}
@@ -403,7 +403,7 @@ export default function Settings() {
                         value={ttsEndpoint}
                         onChange={e => setTtsEndpoint(e.target.value)}
                         placeholder="https://your-tts.example.com/synthesize"
-                        className="w-full bg-black text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                        className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                       />
                       <p className="text-xs text-primary/65 mt-1">// POST {`{ text, voice }`} → audio bytes or {`{ audioUrl }`}. Bearer API key sent if provided.</p>
                     </div>

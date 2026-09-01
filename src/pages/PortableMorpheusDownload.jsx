@@ -62,7 +62,7 @@ export default function PortableMorpheusDownload() {
   useEffect(() => { download(); }, []);
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-black text-primary font-mono p-6">
+    <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background text-primary font-mono p-6">
       <div className="text-center">
         <div className="text-lg tracking-wider neon-glow mb-2">◇ PORTABLE MORPHEUS</div>
         <div className="text-xs text-primary/60">{FILES.length} files · {status}</div>

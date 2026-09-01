@@ -83,7 +83,7 @@ export default function Landing() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black overflow-hidden flex items-center justify-center safe-px">
+    <div className="relative min-h-screen bg-background overflow-hidden flex items-center justify-center safe-px">
       <MatrixRain opacity={0.22} />
       <div className="relative z-10 text-center px-6 max-w-2xl">
         <h1 className="font-display text-5xl md:text-7xl text-heading tracking-[0.3em] neon-glow mb-8">MORPHEUS</h1>

@@ -299,7 +299,7 @@ export default function AIDocs() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-primary font-mono overflow-hidden">
+    <div className="relative min-h-screen bg-background text-primary font-mono overflow-hidden">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-16 safe-top flex flex-col items-center justify-center min-h-screen text-center">
         <Link to="/" className="absolute top-4 left-4 flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider">

@@ -60,7 +60,7 @@ export default function UpdatesPlan() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-primary font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-3xl mx-auto px-6 py-12 safe-top">
         <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">

@@ -146,7 +146,7 @@ export default function StoreItem() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="animate-spin text-primary/50" size={24} />
       </div>
     );
@@ -154,7 +154,7 @@ export default function StoreItem() {
 
   if (error && !template) {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-3 px-4">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3 px-4">
         <p className="text-red-500 text-sm">// {error}</p>
         <Link to="/market" className="text-primary/60 hover:text-primary text-sm flex items-center gap-1">
           <ArrowLeft size={12} /> Back to Market
@@ -168,7 +168,7 @@ export default function StoreItem() {
   const purchaseCancelled = searchParams.get('purchase') === 'cancelled';
 
   return (
-    <div className="min-h-screen bg-black text-primary">
+    <div className="min-h-screen bg-background text-primary">
       {/* Header */}
       <header className="border-b border-primary/20 sticky top-0 z-10 bg-black/95 backdrop-blur-sm safe-top">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -209,7 +209,7 @@ export default function StoreItem() {
 
         {/* Hero section */}
         <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
-          <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 border border-primary/20 bg-black overflow-hidden flex items-center justify-center">
+          <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 border border-primary/20 bg-background overflow-hidden flex items-center justify-center">
             {template.icon ? (
               <Image src={template.icon} className="w-full h-full" fittingType="fill" />
             ) : (
@@ -273,7 +273,7 @@ export default function StoreItem() {
             <h2 className="text-xs text-primary/75 uppercase mb-3 tracking-wider">// Screenshots</h2>
             <div className="flex gap-3 overflow-x-auto scrollbar-matrix pb-2 overscroll-none">
               {template.screenshots.map((url, i) => (
-                <div key={i} className="shrink-0 w-64 h-40 border border-primary/20 bg-black overflow-hidden">
+                <div key={i} className="shrink-0 w-64 h-40 border border-primary/20 bg-background overflow-hidden">
                   <Image src={url} className="w-full h-full" fittingType="fill" />
                 </div>
               ))}
