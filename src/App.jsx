@@ -33,6 +33,7 @@ const FlowDiagram = lazy(() => import('@/pages/FlowDiagram'));
 const AIDocs = lazy(() => import('@/pages/AIDocs'));
 const UpdatesPlan = lazy(() => import('@/pages/UpdatesPlan'));
 const CostTracker = lazy(() => import('@/pages/CostTracker'));
+const SelfDev = lazy(() => import('@/pages/SelfDev'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 
@@ -112,6 +113,7 @@ function AnimatedRoutes() {
             <Route path="/ai-docs" element={<AIDocs />} />
             <Route path="/updates-plan" element={<UpdatesPlan />} />
             <Route path="/cost-tracker" element={<CostTracker />} />
+            <Route path="/self-dev" element={<SelfDev />} />
           </Route>
           <Route path="*" element={<PageNotFound />} />
         </Routes>
