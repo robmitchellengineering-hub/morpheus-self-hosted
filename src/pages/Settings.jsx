@@ -84,29 +84,43 @@ export default function Settings() {
     setSaving(true);
     setError('');
     setSaved(false);
-    try {
-      const payload = {
-        ai_mode: aiMode,
-        ai_base_url: aiBaseUrl.trim(),
-        ai_api_key: aiApiKey.trim(),
-        ai_model: aiModel.trim(),
-        planner_model: plannerModel,
-        coder_model: coderModel,
-        reviewer_model: reviewerModel,
-        diagnosis_model: diagnosisModel,
-        tts_mode: ttsMode,
-        tts_engine: ttsEngine,
-        tts_api_key: ttsApiKey.trim(),
-        tts_voice_id: ttsVoiceId.trim(),
-        tts_endpoint: ttsEndpoint.trim(),
-        personality_enabled: personalityEnabled,
-        connections: JSON.stringify(connections)
-      };
+    const payload = {
+      ai_mode: aiMode,
+      ai_base_url: aiBaseUrl.trim(),
+      ai_api_key: aiApiKey.trim(),
+      ai_model: aiModel.trim(),
+      planner_model: plannerModel,
+      coder_model: coderModel,
+      reviewer_model: reviewerModel,
+      diagnosis_model: diagnosisModel,
+      tts_mode: ttsMode,
+      tts_engine: ttsEngine,
+      tts_api_key: ttsApiKey.trim(),
+      tts_voice_id: ttsVoiceId.trim(),
+      tts_endpoint: ttsEndpoint.trim(),
+      personality_enabled: personalityEnabled,
+      connections: JSON.stringify(connections)
+    };
+    const persist = async (data) => {
       if (settings?.id) {
-        await base44.entities.UserSettings.update(settings.id, payload);
+        await base44.entities.UserSettings.update(settings.id, data);
       } else {
-        const created = await base44.entities.UserSettings.create(payload);
+        const created = await base44.entities.UserSettings.create(data);
         setSettings(created);
+      }
+    };
+    try {
+      try {
+        await persist(payload);
+      } catch (e) {
+        // `personality_enabled` is added by a manual one-time DB migration
+        // (server/prisma/add-personality-toggle.sql) that may not have run
+        // yet in this environment. Don't let that block the rest of the
+        // form from saving — retry once without it. The Personality toggle
+        // just won't persist until the migration runs.
+        if (!/personality_enabled/i.test(e.message || '')) throw e;
+        const { personality_enabled, ...rest } = payload;
+        await persist(rest);
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
