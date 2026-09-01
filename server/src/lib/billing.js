@@ -38,6 +38,35 @@ export const TOKEN_BLOCKS = [
   { intendedNetUsd: 10.00, credits: 2000, stripeChargeUsd: 10.61 },
 ];
 
+// Step 6 (2026-09-01, server/src/functions/createTokenCheckout.js) — the
+// Stripe fee gross-up formula itself, factored out so the first-purchase
+// surcharge below can apply it to a different intended-net value than the
+// ones baked into TOKEN_BLOCKS.stripeChargeUsd above. charge = (net + $0.30)
+// / (1 - 2.9%), Stripe's standard US card rate; rounded to the cent.
+export function computeGrossedUpCharge(intendedNetUsd) {
+  return Math.round(((intendedNetUsd + 0.30) / (1 - 0.029)) * 100) / 100;
+}
+
+// A new account's 200 free signup credits are worth $1.00 retail at the
+// decided $5/1,000 rate (200 * $0.005). TOKEN-SYSTEM-BUILD-PLAN.md's Step 6
+// design recoups that giveaway on the buyer's FIRST real purchase only, by
+// adding it to the block's intended-net value before the fee gross-up —
+// e.g. the $5 block's first purchase becomes a $6.00-intended-net charge
+// ($6.49) instead of the standard $5.46. Every purchase after the first is
+// standard pricing (TOKEN_BLOCKS.stripeChargeUsd, unchanged).
+export const FIRST_PURCHASE_RECOUP_USD = 1.00;
+
+// True if this account has never completed a paid token purchase before —
+// createTokenCheckout.js uses this to decide whether the recoup surcharge
+// above applies to the checkout session it's about to create.
+export async function isFirstTokenPurchase(userId) {
+  const prior = await prisma.creditTransaction.findFirst({
+    where: { created_by_id: userId, status: 'paid' },
+    select: { id: true },
+  });
+  return !prior;
+}
+
 export class InsufficientCreditsError extends Error {
   constructor(needed, available) {
     super(`Insufficient credits: this action needs ~${needed.toFixed(2)}, account has ${available.toFixed(2)}. Buy more credits in Settings.`);
