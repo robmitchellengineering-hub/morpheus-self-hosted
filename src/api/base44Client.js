@@ -94,6 +94,7 @@ function makeEntity(name) {
 const ENTITY_NAMES = [
   'Project', 'ProjectFile', 'ChatMessage', 'FileSnapshot', 'UsageRecord',
   'Template', 'Purchase', 'UserSettings', 'BackendConfig', 'RebuildDoc', 'UpdatesPlan', 'CostSnapshot', 'GithubConnection',
+  'MaintenanceTask',
 ];
 
 const entities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, makeEntity(name)]));
@@ -169,4 +170,17 @@ const auth = {
   },
 };
 
-export const base44 = { entities, functions, integrations, connectors, auth };
+// Owner/Admin Control Panel (Feature Backlog #8) — bespoke, audited routes
+// (server/src/routes/admin.routes.js), not the generic entity CRUD engine.
+// Every write here lands in AdminAuditLog server-side; nothing extra needed
+// on this side for that.
+const admin = {
+  getOverview: () => apiFetch('/admin/overview'),
+  getSettings: () => apiFetch('/admin/settings'),
+  setSetting: (key, value) => apiFetch('/admin/settings', { method: 'POST', body: { key, value } }),
+  getModelCatalog: () => apiFetch('/admin/model-catalog'),
+  upsertModelCatalogEntry: (entry) => apiFetch('/admin/model-catalog', { method: 'POST', body: entry }),
+  getAuditLog: (limit) => apiFetch(`/admin/audit-log${qs({ limit })}`),
+};
+
+export const base44 = { entities, functions, integrations, connectors, auth, admin };
