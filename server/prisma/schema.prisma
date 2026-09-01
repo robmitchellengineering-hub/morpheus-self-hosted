@@ -34,11 +34,23 @@ model User {
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 
+  // Token System Build Plan Step 1 (see TOKEN-SYSTEM-BUILD-PLAN.md): every
+  // new account starts with 200 free signup credits, usable on Default mode
+  // with zero setup. Nothing deducts from this yet -- Step 2 (this push)
+  // only meters real usage into UsageEvent; Step 3 (pre-call reserve +
+  // reconcile enforcement, not yet built) is what will actually spend it.
+  // Billing-exemption for admins reuses the existing `role` column above
+  // (role === 'admin'), per the "role column, not hardcoded email" decision
+  // -- no separate exemption flag needed.
+  credit_balance  Int      @default(200)
+
   projects        Project[]
   project_files   ProjectFile[]
   chat_messages   ChatMessage[]
   file_snapshots  FileSnapshot[]
   usage_records   UsageRecord[]
+  usage_events    UsageEvent[]
+  credit_transactions CreditTransaction[]
   templates       Template[]
   purchases       Purchase[]
   settings        UserSettings?
@@ -208,6 +220,87 @@ model UsageRecord {
   created_date  DateTime @default(now())
 
   @@map("usage_records")
+}
+
+// ── TOKEN SYSTEM / BILLING METERING ─────────────────────────────────
+// TOKEN-SYSTEM-BUILD-PLAN.md Step 1 (schema) + Step 2 (real metering).
+// UsageRecord above is the older, bucketed-*estimate* credit-cost log
+// (lib/costEstimate.js's static per-action-type token guesses) that already
+// drives the existing Cost Tracker page -- left in place, unchanged.
+// UsageEvent below is new: one row per actual AI call, with real token
+// counts from the provider's own response, logged directly inside
+// invokeAI() (server/src/ai.js) so every caller gets metering for free.
+// Deliberately NOT wired to any credit deduction yet -- credits_charged
+// stays 0 until Step 3 (pre-call reserve/reconcile enforcement) is built;
+// this step only makes usage data honest, it doesn't change what anyone
+// experiences.
+
+model UsageEvent {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  role            String?  // planner | coder | reviewer | diagnosis | null for role-less calls
+  provider        String   // platform | custom | morpheus-cloud | unconfigured
+  model_id        String   // the resolved model actually used (post alias-resolution)
+
+  input_tokens    Int      @default(0)
+  output_tokens   Int      @default(0)
+  cost_usd        Float    @default(0) // underlying provider cost, computed from real token counts
+  credits_charged Int      @default(0) // always 0 until Step 3 enforcement exists
+
+  project_id      String?  // best-effort correlation only, not a hard FK -- not every
+                            // invokeAI() call site has a project in scope (e.g. Architect)
+
+  created_date    DateTime @default(now())
+
+  @@index([created_by_id])
+  @@map("usage_events")
+}
+
+// Admin-editable per-model $/M-token pricing + markup multiplier. Genuinely
+// new -- TOKEN-SYSTEM-BUILD-PLAN.md describes a table like this as "already
+// exists, built for the self-updating model/pricing research system," but
+// no such table or system exists anywhere in this codebase (grepped clean);
+// most likely a stale assumption carried over from earlier planning. This
+// table is what Step 4's admin pricing UI (not yet built) will edit; until
+// populated, getModelRate() in lib/modelPricing.js falls back to the
+// existing static MODEL_PRICING table in lib/costEstimate.js.
+model ModelCatalogEntry {
+  id                 String   @id @default(uuid())
+  model_id           String   @unique
+  provider           String?  // openai | deepseek | gemini | anthropic | custom | ...
+  input_price_per_m  Float?   // $ per 1M input tokens; null = use costEstimate.js fallback
+  output_price_per_m Float?   // $ per 1M output tokens
+  markup_multiplier  Float    @default(2.0) // admin-editable; 2.0 = flat 2x, BUSINESS-STRATEGY.md default
+  active             Boolean  @default(true)
+
+  created_date       DateTime @default(now())
+  updated_date       DateTime @updatedAt
+
+  @@map("model_catalog_entries")
+}
+
+// Token-block purchases (one-off Stripe Checkout -- no subscriptions, per
+// the decided access model). Not wired to any purchase UI yet (Step 6, not
+// built) -- the table exists now so this migration doesn't need a follow-up
+// once that ships, and so the $1 signup-credit recoup gross-up (charged
+// into a user's first real purchase) has somewhere to record itself.
+model CreditTransaction {
+  id                 String   @id @default(uuid())
+  created_by_id      String
+  user               User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  credits            Int      // credits granted by this transaction
+  amount_usd         Float    @default(0) // what the customer was actually charged (post Stripe-fee gross-up)
+  intended_net_usd   Float    @default(0) // the block's face value before the fee gross-up
+  stripe_session_id  String?  @unique
+  status             String   @default("paid") // paid | refunded
+  is_first_purchase  Boolean  @default(false) // true if the signup-credit recoup gross-up applied
+
+  created_date       DateTime @default(now())
+
+  @@map("credit_transactions")
 }
 
 // ── MARKETPLACE ───────────────────────────────────────────────────
@@ -394,27 +487,4 @@ model CostSnapshot {
   updated_date  DateTime @updatedAt
 
   @@map("cost_snapshots")
-}
-
-// ── PROJECT FILES (Morpheus & operator reference docs, separate from source) ──
-// A second, parallel file tree per project: specs, build plans, uploaded
-// reference material. Never touched by GitHub push, compile, or marketplace
-// publish — those only ever read ProjectFile. Deliberately plain scalar
-// created_by_id/project_id (no Prisma @relation) so this ships without
-// touching the User/Project model blocks; referential integrity + cascade
-// delete are enforced at the DB level in the migration SQL instead.
-model ProjectDocument {
-id            String   @id @default(uuid())
-created_by_id String
-project_id    String
-path          String
-content       String?  @db.Text
-file_url      String?
-mime_type     String?
-size_bytes    Int?
-source        String   @default("user")
-created_date  DateTime @default(now())
-updated_date  DateTime @updatedAt
-@@unique([project_id, path])
-@@map("project_documents")
 }
