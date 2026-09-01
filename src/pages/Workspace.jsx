@@ -136,7 +136,7 @@ export default function Workspace() {
             <HelpHint id="new-construct" title="New Construct" body="Start a new project from scratch. Morpheus builds it with you through the chat. Pick a compile target (Android APK, Windows .exe, etc.) or leave it on 'source' for plain code.">
               <button onClick={() => setShowNew(true)} className="flex flex-col items-start gap-0.5 px-6 py-3 bg-primary text-black hover:bg-primary/90 transition-colors shadow-[0_0_24px_-6px_rgba(0,255,65,0.5)]">
                 <span className="flex items-center gap-2 font-bold"><Plus size={18} /> NEW CONSTRUCT</span>
-                <span className="text-[10px] text-black/70 tracking-wider">// frontend development</span>
+                <span className="text-[10px] text-black/70 tracking-wider">// chat to code</span>
               </button>
             </HelpHint>
             <Link to="/architect" className="flex flex-col items-start gap-0.5 px-6 py-3 border border-primary/50 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">

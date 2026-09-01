@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles } from 'lucide-react';
 import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -8,6 +8,7 @@ import ConnectionsSection from '@/components/matrix/ConnectionsSection';
 import CreditBalance from '@/components/matrix/CreditBalance';
 import CapabilityStatus from '@/components/matrix/CapabilityStatus';
 import SheetSelect from '@/components/matrix/SheetSelect';
+import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
 
 const MODEL_OPTIONS = [
@@ -43,6 +44,7 @@ export default function Settings() {
   const [ttsApiKey, setTtsApiKey] = useState('');
   const [ttsVoiceId, setTtsVoiceId] = useState('');
   const [ttsEndpoint, setTtsEndpoint] = useState('');
+  const [personalityEnabled, setPersonalityEnabled] = useState(true);
   const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,6 +70,7 @@ export default function Settings() {
           setTtsApiKey(rows[0].tts_api_key || '');
           setTtsVoiceId(rows[0].tts_voice_id || '');
           setTtsEndpoint(rows[0].tts_endpoint || '');
+          setPersonalityEnabled(rows[0].personality_enabled !== false);
           if (rows[0].connections) {
             try { setConnections(JSON.parse(rows[0].connections)); } catch {}
           }
@@ -96,6 +99,7 @@ export default function Settings() {
         tts_api_key: ttsApiKey.trim(),
         tts_voice_id: ttsVoiceId.trim(),
         tts_endpoint: ttsEndpoint.trim(),
+        personality_enabled: personalityEnabled,
         connections: JSON.stringify(connections)
       };
       if (settings?.id) {
@@ -138,7 +142,7 @@ export default function Settings() {
                 <Palette size={14} /> APPEARANCE
               </h2>
               <p className="text-xs text-primary/50 mb-4">
-                // Clear is the default look — brighter text and visible panel borders so small print reads easily, plus color-coded status dots. Classic Matrix is the original all-green terminal look. Boring is a plain light/corporate look for anyone the Matrix look isn't for.
+                // Clear is the default look — brighter text and visible panel borders so small print reads easily, plus color-coded status dots. Classic Matrix is the original all-green terminal look. Boring is a plain black-and-grey look with green accents for anyone the neon Matrix look isn't for.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
@@ -181,12 +185,31 @@ export default function Settings() {
                     {theme === 'boring' && <Check size={14} className="text-primary" />}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#ffffff', border: '1px solid #d0d5dd' }} />
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(217 91% 45%)' }} />
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(220 15% 15%)' }} />
-                    <span className="text-[10px] text-primary/50 ml-1">plain light look, rounded corners</span>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#000000', border: '1px solid #333' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(0 0% 65%)' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(150 45% 30%)' }} />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(140 45% 65%)' }} />
+                    <span className="text-[10px] text-primary/50 ml-1">black + grey, green accents, rounded corners</span>
                   </div>
                 </button>
+              </div>
+
+              <div className="mt-5 pt-5 border-t border-primary/20 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-2">
+                  <Sparkles size={14} className="text-primary/70 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-display tracking-wider text-primary">PERSONALITY</p>
+                    <p className="text-[10px] text-primary/50 mt-0.5 max-w-sm">
+                      // On: Morpheus talks like Morpheus — Matrix references, mentor voice, calm and deliberate. Off: plain, direct, professional responses with no roleplay or character voice. Build behavior is unaffected either way.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={personalityEnabled}
+                  onCheckedChange={setPersonalityEnabled}
+                  aria-label="Toggle Morpheus personality"
+                  className="shrink-0 mt-0.5"
+                />
               </div>
             </section>
 
