@@ -91,6 +91,13 @@ model UserSettings {
   tts_voice_id   String?
   tts_endpoint   String?
 
+  // Settings → Appearance "Personality" toggle (2026-09-02). When true
+  // (default), Morpheus's Matrix-mentor voice/metaphors are in the system
+  // prompt as usual. When false, chatWithMorpheus.js swaps in a plain,
+  // no-roleplay system prompt instead -- same technical rules and build
+  // instructions, just no character voice. See SYSTEM_PROMPT_PLAIN there.
+  personality_enabled Boolean @default(true)
+
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
 

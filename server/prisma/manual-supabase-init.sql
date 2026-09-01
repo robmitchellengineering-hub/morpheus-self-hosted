@@ -53,6 +53,9 @@ create table user_settings (
   tts_api_key text,
   tts_voice_id text,
   tts_endpoint text,
+  -- Settings -> Appearance "Personality" toggle (2026-09-02). See
+  -- add-personality-toggle.sql and schema.prisma's UserSettings comment.
+  personality_enabled boolean not null default true,
   created_date timestamp(3) not null default now(),
   updated_date timestamp(3) not null default now()
 );
