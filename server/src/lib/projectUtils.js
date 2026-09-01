@@ -62,6 +62,33 @@ export async function createSnapshot(userId, projectId, label) {
   });
 }
 
+// Known binary/compiled-artifact file types the AI cannot author as real
+// bytes -- it can only ever produce these as text content. If a fileOp
+// targets one of these paths with empty (or whitespace-only) content, the
+// LLM has generated a fake placeholder instead of real content. Persisting
+// that is worse than not writing the file at all: it looks complete in the
+// file tree / ZIP export right up until someone actually tries to use it
+// (e.g. the empty gradle-wrapper.jar incident found 2026-09-01 -- Morpheus's
+// own compile pipeline silently regenerates a real one, so the fake file
+// was invisible until a user opened the raw project). This is a defensive
+// backstop alongside the SYSTEM_PROMPT instruction telling the AI not to
+// generate these paths at all -- it still guards every project type even if
+// a future prompt change forgets to say so, or the model just doesn't obey.
+const BINARY_EXTENSIONS = new Set([
+  'jar', 'class', 'so', 'dll', 'dylib', 'exe', 'apk', 'aar', 'keystore', 'jks',
+  'png', 'jpg', 'jpeg', 'gif', 'ico', 'bmp', 'webp',
+  'ttf', 'otf', 'woff', 'woff2', 'eot',
+  'zip', 'gz', 'tar', '7z',
+  'wav', 'mp3', 'mp4', 'mov', 'avi',
+  'pdf',
+]);
+
+function isFakeBinaryPlaceholder(path, content) {
+  const ext = (path.split('.').pop() || '').toLowerCase();
+  if (!BINARY_EXTENSIONS.has(ext)) return false;
+  return !content || content.trim().length === 0;
+}
+
 // fileOps: [{ path, content, action: 'create'|'update'|'delete' }]
 // existingFiles: current ProjectFile rows (avoids an extra round-trip per op)
 export async function applyFileOperations(userId, projectId, fileOps, existingFiles) {
@@ -77,6 +104,14 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
     const existing =
       existingFiles.find((f) => f.path === op.path) ||
       (createdIds.has(op.path) ? { id: createdIds.get(op.path) } : null);
+
+    if (op.action !== 'delete' && isFakeBinaryPlaceholder(op.path, op.content)) {
+      // Don't create a fake empty binary, and don't clobber a real
+      // already-existing one with an empty stub either. Leave whatever is
+      // there (nothing, or a real file) untouched and just skip this op.
+      appliedOps.push({ path: op.path, action: 'skipped_fake_binary' });
+      continue;
+    }
 
     if (op.action === 'delete') {
       // No .catch() here — matches how creates/updates below are handled
