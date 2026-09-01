@@ -22,14 +22,30 @@ export const MODEL_PRICING = {
   claude_opus_4_8: { input: 15.00, output: 75.00 },
   'claude-sonnet-5': { input: 3.00, output: 15.00 },
   'kimi-k3': { input: 2.55, output: 12.75 },
+  // DeepSeek — the Token System Build Plan's recommended paid-tier default
+  // (server/.env.example's LLM_MODEL). Real per-model pricing, not a local
+  // model — see the LOCAL_MODEL_PATTERNS note below for why "deepseek" was
+  // removed from that list. Admin-overridable via the Admin Panel's Models
+  // & Routing tab (ModelCatalogEntry) once real spend data suggests a
+  // correction; these are the static fallback used until an admin sets one.
+  'deepseek-v4-flash': { input: 0.14, output: 0.28 },
+  'deepseek-v4-pro': { input: 0.435, output: 0.87 },
 };
 
 // Fallback for custom-endpoint models we don't recognize (e.g. local Ollama,
 // open-source models on Groq/Together). Local models = $0 API cost.
 export const DEFAULT_PRICING = { input: 1.00, output: 5.00 };
+// Deliberately does NOT include "deepseek": DeepSeek is a real hosted,
+// billed API (see MODEL_PRICING above), not a local/free inference
+// backend — including it here would make isLocalModel() treat every
+// DeepSeek call as $0 cost, silently zeroing out both the real cost_usd
+// metering (modelPricing.js) AND the Step 3 pre-call credit charge
+// (billing.js) for the platform's own paid default. Caught while wiring
+// DeepSeek in as that default (Token System Build Plan Step 6b) — worth
+// double-checking before adding any other real hosted provider here too.
 export const LOCAL_MODEL_PATTERNS = [
   'ollama', 'lm-studio', 'lmstudio', 'local', 'llama', 'mistral',
-  'qwen', 'deepseek', 'phi', 'gemma', 'codellama', 'starcoder',
+  'qwen', 'phi', 'gemma', 'codellama', 'starcoder',
 ];
 
 // Estimated token usage per action type (input + output). Non-LLM actions
