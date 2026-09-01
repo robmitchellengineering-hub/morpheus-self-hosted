@@ -34,6 +34,7 @@ const AIDocs = lazy(() => import('@/pages/AIDocs'));
 const UpdatesPlan = lazy(() => import('@/pages/UpdatesPlan'));
 const CostTracker = lazy(() => import('@/pages/CostTracker'));
 const SelfDev = lazy(() => import('@/pages/SelfDev'));
+const AdminPanel = lazy(() => import('@/pages/AdminPanel'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 
@@ -114,6 +115,7 @@ function AnimatedRoutes() {
             <Route path="/updates-plan" element={<UpdatesPlan />} />
             <Route path="/cost-tracker" element={<CostTracker />} />
             <Route path="/self-dev" element={<SelfDev />} />
+            <Route path="/admin" element={<AdminPanel />} />
           </Route>
           <Route path="*" element={<PageNotFound />} />
         </Routes>
