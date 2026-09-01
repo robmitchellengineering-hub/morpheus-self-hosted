@@ -29,7 +29,9 @@ create table users (
   otp_expires timestamp(3),
   -- Token System Build Plan Step 1: 200 free signup credits on every new
   -- account. See schema.prisma's "TOKEN SYSTEM / BILLING METERING" comment.
-  credit_balance integer not null default 200,
+  -- numeric(14,4), not integer, since Step 3 (server/src/lib/billing.js)
+  -- bills in fractional credits -- a cheap chat turn can cost less than 1.
+  credit_balance numeric(14,4) not null default 200,
   created_date timestamp(3) not null default now(),
   updated_date timestamp(3) not null default now()
 );
@@ -256,7 +258,7 @@ create table usage_events (
   input_tokens integer not null default 0,
   output_tokens integer not null default 0,
   cost_usd double precision not null default 0,
-  credits_charged integer not null default 0,
+  credits_charged numeric(14,4) not null default 0,
   project_id text,
   created_date timestamp(3) not null default now()
 );
@@ -276,7 +278,7 @@ create table model_catalog_entries (
 create table credit_transactions (
   id text primary key default gen_random_uuid()::text,
   created_by_id text not null references users(id) on delete cascade,
-  credits integer not null,
+  credits numeric(14,4) not null,
   amount_usd double precision not null default 0,
   intended_net_usd double precision not null default 0,
   stripe_session_id text unique,

@@ -34,15 +34,16 @@ model User {
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 
-  // Token System Build Plan Step 1 (see TOKEN-SYSTEM-BUILD-PLAN.md): every
-  // new account starts with 200 free signup credits, usable on Default mode
-  // with zero setup. Nothing deducts from this yet -- Step 2 (this push)
-  // only meters real usage into UsageEvent; Step 3 (pre-call reserve +
-  // reconcile enforcement, not yet built) is what will actually spend it.
-  // Billing-exemption for admins reuses the existing `role` column above
-  // (role === 'admin'), per the "role column, not hardcoded email" decision
-  // -- no separate exemption flag needed.
-  credit_balance  Int      @default(200)
+  // Token System Build Plan Step 1: every new account starts with 200 free
+  // signup credits, usable on Default mode with zero setup.
+  // Step 3 (2026-09-01, see lib/billing.js): pre-call reserve + reconcile
+  // enforcement now actually spends this. Decimal, not Int -- at $0.005/credit
+  // (the decided $5-per-1,000-credits rate) a single cheap chat turn can cost
+  // a fraction of a credit, and rounding that to 0 would silently undercharge.
+  // Scale 4 gives resolution far finer than any real per-call cost. Billing
+  // exemption for admins reuses the existing `role` column above (role ===
+  // 'admin') -- no separate exemption flag needed.
+  credit_balance  Decimal  @default(200) @db.Decimal(14, 4)
 
   projects        Project[]
   project_files   ProjectFile[]
@@ -252,7 +253,10 @@ model UsageEvent {
   input_tokens    Int      @default(0)
   output_tokens   Int      @default(0)
   cost_usd        Float    @default(0) // underlying provider cost, computed from real token counts
-  credits_charged Int      @default(0) // always 0 until Step 3 enforcement exists
+  // Retail credits actually deducted for this call (0 for exempt/admin
+  // accounts -- exempt means "don't charge," not "don't meter", see
+  // lib/billing.js). Decimal to match User.credit_balance's precision.
+  credits_charged Decimal  @default(0) @db.Decimal(14, 4)
 
   project_id      String?  // best-effort correlation only, not a hard FK -- not every
                             // invokeAI() call site has a project in scope (e.g. Architect)
@@ -291,12 +295,18 @@ model ModelCatalogEntry {
 // built) -- the table exists now so this migration doesn't need a follow-up
 // once that ships, and so the $1 signup-credit recoup gross-up (charged
 // into a user's first real purchase) has somewhere to record itself.
+//
+// Block denominations decided 2026-09-01 (see lib/billing.js's TOKEN_BLOCKS
+// for the full worked-out numbers): $1.87 / $5 / $10 intended net value ->
+// 374 / 1,000 / 2,000 credits at the $5-per-1,000 rate, Stripe-fee-grossed-up
+// to $2.23 / $5.46 / $10.61 actually charged. Not yet wired to a purchase
+// route -- Step 6 (frontend + Checkout) still needs building.
 model CreditTransaction {
   id                 String   @id @default(uuid())
   created_by_id      String
   user               User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
 
-  credits            Int      // credits granted by this transaction
+  credits            Decimal  @db.Decimal(14, 4) // credits granted by this transaction
   amount_usd         Float    @default(0) // what the customer was actually charged (post Stripe-fee gross-up)
   intended_net_usd   Float    @default(0) // the block's face value before the fee gross-up
   stripe_session_id  String?  @unique
