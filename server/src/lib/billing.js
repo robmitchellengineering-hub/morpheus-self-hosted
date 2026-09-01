@@ -80,6 +80,14 @@ export class InsufficientCreditsError extends Error {
     super(`Insufficient credits: this action needs ~${needed.toFixed(2)}, account has ${available.toFixed(2)}. Buy more credits in Settings.`);
     this.name = 'InsufficientCreditsError';
     this.status = 402;
+    // Stable machine-readable code (2026-09-02), forwarded by
+    // functions.routes.js's error handler alongside needed/available so the
+    // frontend can reliably detect "out of credits" and pop up the buy-more
+    // modal (src/components/matrix/InsufficientCreditsModal.jsx) instead of
+    // just showing error text — checking `code` rather than `status === 402`
+    // keeps this working even if some other error path ever reuses 402 for
+    // something unrelated.
+    this.code = 'INSUFFICIENT_CREDITS';
     this.needed = needed;
     this.available = available;
   }
