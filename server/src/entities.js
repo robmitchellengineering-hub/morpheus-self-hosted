@@ -31,7 +31,12 @@ const ENTITY_MAP = {
   UpdatesPlan: 'updatesPlan',
   CostSnapshot: 'costSnapshot',
   GithubConnection: 'githubConnection',
-  ProjectDocument: 'projectDocument',
+  // Owner/Admin Control Panel (Feature Backlog #8) — simple owner-scoped
+  // punch-list rows, admin bypasses scoping same as everything else here.
+  // PlatformSetting, AdminAuditLog and ModelCatalogEntry are deliberately
+  // NOT in this map — they're served by bespoke, audited routes in
+  // admin.routes.js instead (see schema.prisma's AdminAuditLog comment).
+  MaintenanceTask: 'maintenanceTask',
 };
 
 export function isKnownEntity(name) {

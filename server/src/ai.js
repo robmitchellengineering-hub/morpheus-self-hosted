@@ -13,6 +13,7 @@ import { decrypt } from './crypto.js';
 import { aiGatewayDefault } from './config/hostedDefaults.js';
 import { discoverLatestModel } from './freshness.js';
 import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
+import { getPlatformSetting } from './lib/platformSettings.js';
 
 export async function getUserSettings(userId) {
   if (!userId) return null;
@@ -39,6 +40,23 @@ async function resolveModel(raw, baseUrl, apiKey) {
   if (v && v !== 'auto' && v !== 'latest') return raw;
   const { model } = await discoverLatestModel(baseUrl, apiKey);
   return model || 'gpt-4o-mini';
+}
+
+// Owner/Admin Control Panel (Feature Backlog #8) — "change the default AI
+// model(s) Morpheus uses platform-wide ... without a code deploy." Checks
+// the admin-editable PlatformSetting store (role-specific key first, then
+// the platform-wide base key), falling back to null (= no override, exactly
+// today's behavior) if nothing's been set. Slotted into resolveEndpoint()
+// below AFTER the existing env-var/per-user-setting checks, so it only ever
+// fills in for users who were already going to get the "Automatic" /
+// auto-discovery behavior — it never overrides an operator's explicit
+// LLM_*_MODEL env pin or a user's own per-role Settings choice.
+async function resolvePlatformDefaultModel(role) {
+  return (
+    (role && (await getPlatformSetting(`default_${role}_model`))) ||
+    (await getPlatformSetting('default_model')) ||
+    null
+  );
 }
 
 // Token System Build Plan Step 2 — real per-call metering. Logs one
@@ -112,7 +130,7 @@ async function resolveEndpoint(settings, role) {
       provider: 'platform', // tier 2: this deployment's own operator-configured key
       baseUrl,
       apiKey,
-      model: roleModelEnv[role] || roleModelSetting[role] || (await resolveModel(process.env.LLM_MODEL, baseUrl, apiKey)),
+      model: roleModelEnv[role] || roleModelSetting[role] || (await resolvePlatformDefaultModel(role)) || (await resolveModel(process.env.LLM_MODEL, baseUrl, apiKey)),
     };
   }
 
@@ -124,7 +142,7 @@ async function resolveEndpoint(settings, role) {
       provider: 'morpheus-cloud',
       baseUrl: hosted.baseUrl,
       apiKey: hosted.apiKey,
-      model: roleModelEnv[role] || roleModelSetting[role] || (await resolveModel(process.env.LLM_MODEL, hosted.baseUrl, hosted.apiKey)),
+      model: roleModelEnv[role] || roleModelSetting[role] || (await resolvePlatformDefaultModel(role)) || (await resolveModel(process.env.LLM_MODEL, hosted.baseUrl, hosted.apiKey)),
     };
   }
 
