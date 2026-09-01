@@ -84,7 +84,7 @@ export function useWorkspace() {
     setCurrentProject(prev => ({ ...prev, polish_ui: next }));
   }, [currentProject]);
 
-  const sendMessage = useCallback(async (text, fileUrls, forceSend) => {
+  const sendMessage = useCallback(async (text, fileUrls, forceSend, focusPaths) => {
     if (!currentProject || !text.trim() || (loading && !forceSend)) return;
     const displayContent = fileUrls && fileUrls.length > 0
       ? `${text}\n\n[Attached: ${fileUrls.length} reference file(s)]`
@@ -93,7 +93,11 @@ export function useWorkspace() {
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
     try {
-      const res = await base44.functions.invoke('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [] });
+      // focusPaths: only meaningful for self-dev projects (which files' full
+      // content chatWithMorpheus should show the AI, on top of a whole-repo
+      // path listing) — see chatWithMorpheus.js. Harmless no-op for every
+      // other project type, which still gets full content for all files.
+      const res = await base44.functions.invoke('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [] });
       const morpheusMsg = { id: 'm-' + Date.now(), role: 'morpheus', content: res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
       if (res.data.fileOperations?.length > 0) {
