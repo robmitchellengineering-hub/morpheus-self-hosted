@@ -27,12 +27,11 @@ const COMPILE_TARGETS = [
 ];
 
 const REFERENCES = [
-  ['Morpheus Market', 'https://large-nebula-code-core.base44.app/market'],
+  ['Morpheus Market', 'https://morpheus.nz/market'],
   ['mkosi — OS image builder', 'https://github.com/systemd/mkosi'],
   ['pi-gen — Raspberry Pi OS', 'https://github.com/RPi-Distro/pi-gen'],
   ['GitHub Actions', 'https://docs.github.com/actions'],
   ['Stripe API', 'https://docs.stripe.com/api'],
-  ['Base44 docs', 'https://docs.base44.com'],
   ['Rufus (Windows flasher)', 'https://rufus.ie/'],
   ['balenaEtcher', 'https://etcher.balena.io/']
 ];
