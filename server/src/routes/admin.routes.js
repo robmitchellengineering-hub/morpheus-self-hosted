@@ -8,6 +8,9 @@ import { prisma } from '../db.js';
 import { getAllPlatformSettings, getPlatformSetting, setPlatformSetting } from '../lib/platformSettings.js';
 import { MODEL_PRICING } from '../lib/costEstimate.js';
 import { brokerConfigured } from '../config/hostedDefaults.js';
+import { getCachedStatus as getDeepSeekBalanceStatus, isDeepSeekPrimary, hasFallbackConfigured } from '../lib/deepseekBalance.js';
+import { getServiceStatus as getNorthflankServiceStatus, getServiceLogs, isNorthflankConfigured } from '../lib/northflank.js';
+import { stripeFetch } from '../lib/stripe.js';
 
 const router = express.Router();
 
@@ -71,6 +74,15 @@ router.get('/overview', async (req, res) => {
         morpheusCloudConfigured: brokerConfigured(),
         stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY),
         smtpConfigured: Boolean(process.env.SMTP_HOST),
+      },
+      // Token System Step 6b — outage-prevention safeguard, not billing UI.
+      // deepseekPrimary=false means this deployment isn't using DeepSeek as
+      // its house key, so the rest of this block is inert (status.level
+      // stays 'unknown', which is expected, not a problem to fix).
+      deepseekBalance: {
+        deepseekPrimary: isDeepSeekPrimary(),
+        fallbackConfigured: hasFallbackConfigured(),
+        ...getDeepSeekBalanceStatus(),
       },
     });
   } catch (err) {
@@ -233,6 +245,167 @@ router.post('/freshness/refresh', async (req, res) => {
     res.json({ ...report, summary, changedSinceLastRun });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── C. Ops Console (2026-09-02) ──────────────────────────────────────
+// Built after a live incident (2026-09-02, see MORPHEUS-STATUS docs) where
+// diagnosing "chat is broken" required an external engineer manually
+// switching between a Northflank logs tab, a Supabase table editor, and a
+// GitHub browser-upload workflow to ship the fix — none of which Rob could
+// do himself from inside Morpheus. This section gives the same three
+// capabilities a real in-app home:
+//   - Northflank status/logs: read-only (lib/northflank.js) — see that
+//     file's header for why write/deploy-trigger capability isn't exposed.
+//   - DB console: direct SQL against this deployment's own database.
+//     Decided scope (Rob, 2026-09-02): "read + guarded writes" — SELECT/WITH
+//     run immediately, INSERT/UPDATE/DELETE require an explicit confirm flag
+//     (the frontend's confirmation dialog sets it) and are capped to one
+//     statement each. Schema-level statements (DROP/ALTER/CREATE/TRUNCATE/
+//     GRANT/...) are rejected outright — nothing about the actual use case
+//     (inspecting/fixing bad rows, e.g. the default_model mixup that started
+//     this whole incident) needs them, and a quick console has no business
+//     running migrations. Every call is audit-logged whether it succeeds or
+//     fails, same bar as every other write in this file.
+//   - Billing health: reuses the existing lib/stripe.js fetch wrapper —
+//     nothing new to configure, just new visibility into it.
+// GitHub push deliberately gets nothing new here: SelfDev's PUSH TO
+// PRODUCTION (pushSelfDevToGithub.js) already pushes for real, per-user
+// OAuth token, no static PAT needed — that path was already working.
+
+function isNorthflankLogSearchSafe(value) {
+  // Not a security boundary (this is a read-only GET against Northflank,
+  // server-side textIncludes filter) — just a sane length cap so a runaway
+  // query string can't be built.
+  return typeof value === 'string' && value.length <= 200;
+}
+
+router.get('/ops/northflank/status', async (req, res) => {
+  if (!isNorthflankConfigured()) return res.json({ configured: false });
+  try {
+    res.json({ configured: true, service: await getNorthflankServiceStatus() });
+  } catch (err) {
+    res.status(502).json({ configured: true, error: err.message });
+  }
+});
+
+router.get('/ops/northflank/logs', async (req, res) => {
+  if (!isNorthflankConfigured()) return res.json({ configured: false, lines: [] });
+  try {
+    const { search, minutes, limit, type } = req.query;
+    if (search && !isNorthflankLogSearchSafe(search)) {
+      return res.status(400).json({ error: 'search too long' });
+    }
+    const lines = await getServiceLogs({
+      search: search || undefined,
+      minutesBack: minutes ? Number(minutes) : 60,
+      limit: limit ? Number(limit) : 200,
+      type: type === 'build' ? 'build' : 'runtime',
+    });
+    res.json({ configured: true, lines });
+  } catch (err) {
+    res.status(502).json({ configured: true, error: err.message });
+  }
+});
+
+// Prisma raw-query results can carry BigInt (e.g. count(*)) and Date values
+// that JSON.stringify/res.json() choke on or mangle — normalize both before
+// they ever reach a response or an audit-log JSON.stringify call.
+function sanitizeForJson(value) {
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(sanitizeForJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitizeForJson(v)]));
+  }
+  return value;
+}
+
+const READ_SQL = /^\s*(SELECT|WITH)\b/i;
+const WRITE_SQL = /^\s*(INSERT|UPDATE|DELETE)\b/i;
+
+function isSingleStatement(sql) {
+  // Strip one trailing semicolon, then reject if any semicolon remains —
+  // that's statement-stacking (e.g. "UPDATE ...; DROP TABLE ..."), which a
+  // regex-based read/write classifier on the *first* keyword alone wouldn't
+  // catch.
+  return !sql.trim().replace(/;\s*$/, '').includes(';');
+}
+
+router.post('/ops/db-query', async (req, res) => {
+  const sql = String(req.body?.sql || '').trim();
+  const confirm = req.body?.confirm === true;
+  if (!sql) return res.status(400).json({ error: 'sql required' });
+  if (!isSingleStatement(sql)) {
+    return res.status(400).json({ error: 'One statement at a time — remove the extra semicolon(s).' });
+  }
+
+  const isRead = READ_SQL.test(sql);
+  const isWrite = WRITE_SQL.test(sql);
+  if (!isRead && !isWrite) {
+    return res.status(400).json({
+      error: 'Only SELECT/WITH (read) and INSERT/UPDATE/DELETE (write, with confirm) are allowed here. Schema changes (DROP/ALTER/CREATE/TRUNCATE/GRANT/...) need a real migration, not this console.',
+    });
+  }
+  if (isWrite && !confirm) {
+    return res.status(400).json({ error: 'Write statement requires confirmation.' });
+  }
+
+  let result = null;
+  let error = null;
+  try {
+    if (isRead) {
+      const rows = sanitizeForJson(await prisma.$queryRawUnsafe(sql));
+      const rowCount = rows?.length || 0;
+      result = { rows: (rows || []).slice(0, 500), rowCount, truncated: rowCount > 500 };
+    } else {
+      const rowsAffected = await prisma.$executeRawUnsafe(sql);
+      result = { rowsAffected };
+    }
+  } catch (err) {
+    error = err.message;
+  }
+
+  // Logged regardless of outcome — a failed write attempt is still worth a
+  // trail, same reasoning as every other admin action in this file.
+  await prisma.adminAuditLog.create({
+    data: {
+      admin_id: req.user.id,
+      action: isWrite ? 'ops_db_write' : 'ops_db_read',
+      details: JSON.stringify({
+        sql: sql.slice(0, 2000),
+        ok: !error,
+        error,
+        ...(error ? {} : isWrite ? result : { rowCount: result.rowCount }),
+      }),
+    },
+  });
+
+  if (error) return res.status(400).json({ error });
+  res.json(result);
+});
+
+router.get('/ops/stripe-health', async (req, res) => {
+  if (!process.env.STRIPE_SECRET_KEY) return res.json({ configured: false });
+  try {
+    const [balance, events] = await Promise.all([
+      stripeFetch('/balance'),
+      stripeFetch('/events?limit=25'),
+    ]);
+    const recentEvents = (events?.data || []).map((e) => ({
+      id: e.id,
+      type: e.type,
+      created: e.created,
+      failed: /failed|dispute|declined/i.test(e.type),
+    }));
+    res.json({
+      configured: true,
+      balance: { available: balance?.available || [], pending: balance?.pending || [] },
+      recentEvents,
+      failedCount: recentEvents.filter((e) => e.failed).length,
+    });
+  } catch (err) {
+    res.status(502).json({ configured: true, error: err.message });
   }
 });
 
