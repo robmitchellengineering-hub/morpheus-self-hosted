@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles, Sun, Moon } from 'lucide-react';
 import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -29,7 +29,7 @@ const MODEL_OPTIONS = [
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, boringMode, setBoringMode } = useTheme();
   const [settings, setSettings] = useState(null);
   const [aiMode, setAiMode] = useState('default');
   const [aiBaseUrl, setAiBaseUrl] = useState('');
@@ -207,6 +207,36 @@ export default function Settings() {
                   </div>
                 </button>
               </div>
+
+              {/* Boring's own light/dark sub-toggle (2026-09-02, Rob's
+                  request) -- only meaningful (and only shown) while Boring
+                  is the active theme, since Clear/Classic don't have a
+                  light variant. Flips Boring's black background to white
+                  and grey text to near-black; see index.css's
+                  [data-theme="boring"][data-boring-mode="light"] block. */}
+              {theme === 'boring' && (
+                <div className="mt-4 pt-4 border-t border-primary/20">
+                  <p className="text-[10px] text-primary/50 tracking-[0.15em] font-display mb-2">// BORING MODE</p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setBoringMode('dark')}
+                      className={`flex items-center gap-2 border px-3 py-2 transition-colors ${boringMode === 'dark' ? 'border-primary bg-primary/10' : 'border-primary/20 hover:border-primary/40'}`}
+                    >
+                      <Moon size={13} className="text-primary" />
+                      <span className="text-xs font-display tracking-wider text-primary">DARK</span>
+                      {boringMode === 'dark' && <Check size={13} className="text-primary" />}
+                    </button>
+                    <button
+                      onClick={() => setBoringMode('light')}
+                      className={`flex items-center gap-2 border px-3 py-2 transition-colors ${boringMode === 'light' ? 'border-primary bg-primary/10' : 'border-primary/20 hover:border-primary/40'}`}
+                    >
+                      <Sun size={13} className="text-primary" />
+                      <span className="text-xs font-display tracking-wider text-primary">LIGHT</span>
+                      {boringMode === 'light' && <Check size={13} className="text-primary" />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-5 pt-5 border-t border-primary/20 flex items-start justify-between gap-4">
                 <div className="flex items-start gap-2">
