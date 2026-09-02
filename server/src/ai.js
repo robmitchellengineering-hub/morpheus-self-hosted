@@ -91,7 +91,15 @@ async function recordUsageEvent({ userId, role, provider, model, usage, isExempt
     let creditsCharged = 0;
     if (!isExempt) {
       try {
-        creditsCharged = await reconcileAgainstActualUsage(userId, model, reservedCredits || 0, costUsd);
+        // costUsd (above) is the REAL underlying cost from the model that
+        // actually served this call -- kept as-is on the UsageEvent row
+        // below for accurate margin/DeepSeek-balance tracking. What the
+        // user is actually CHARGED is a separate policy decision
+        // (billing.js's resolveBillingRate/resolveBillingMarkup): for any
+        // DeepSeek-served call that's always 2x DeepSeek Pro's peak-time
+        // rate on these same real token counts, regardless of whether
+        // Flash or Pro actually ran it (2026-09-02 pricing decision).
+        creditsCharged = await reconcileAgainstActualUsage(userId, model, reservedCredits || 0, inputTokens, outputTokens);
       } catch {
         // Reconciliation failing must never break metering itself -- the
         // reservation already happened; worst case here is a stale balance
