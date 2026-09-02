@@ -35,7 +35,11 @@ export default function DonateWidget() {
       const origin = window.location.origin;
       const res = await base44.functions.invoke('createDonationCheckout', {
         amount: activeAmount,
-        successUrl: `${origin}/?donated=success`,
+        // amount is carried through to the return URL purely so
+        // DonationThankYouModal.jsx can personalize its thank-you copy —
+        // it's the client-side value already known here, not re-verified
+        // against Stripe (same trust level as the ?credits=success flow).
+        successUrl: `${origin}/?donated=success&amount=${activeAmount}`,
         cancelUrl: `${origin}/?donated=cancelled`,
       });
       if (res.data?.url) {
