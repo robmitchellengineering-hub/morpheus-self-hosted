@@ -12,6 +12,56 @@ const KOTLIN_COMPOSE_MATRIX = [
   { kotlin: '1.8.10', compose: '1.4.2' },
 ];
 
+// Android VectorDrawable XML only supports <path pathData="..."> (plus <group>/
+// <clip-path>) inside a <vector> root — it has no <circle>/<rect>/<ellipse>/<line>
+// primitives, unlike SVG. The AI sometimes writes SVG-style shapes into these
+// files (most often app icons), which AAPT rejects with errors like "attribute
+// android:cx not found" — a resource-linking failure that looks nothing like a
+// normal Gradle/Kotlin error, so it's easy for an auto-diagnose pass to miss.
+// Defensively rewrite the common cases (circle, rect) into equivalent <path>
+// elements at scaffold time so a build never fails on this, regardless of what
+// the model generated.
+function fixInvalidVectorShapes(files) {
+  const warnings = [];
+  for (const f of files) {
+    if (!/\.xml$/.test(f.path) || !/res\/(drawable|mipmap)/.test(f.path)) continue;
+    if (!/<vector[\s>]/.test(f.content)) continue;
+
+    const getAttr = (attrs, name) => {
+      const m = attrs.match(new RegExp(`android:${name}\\s*=\\s*"([^"]+)"`));
+      return m ? parseFloat(m[1]) : null;
+    };
+    let changed = false;
+
+    // <circle android:fillColor="#f00" android:cx="54" android:cy="70" android:r="10" />
+    const newContent1 = f.content.replace(/<circle\b([^>]*?)\/?>(\s*<\/circle>)?/g, (match, attrs) => {
+      const cx = getAttr(attrs, 'cx'), cy = getAttr(attrs, 'cy'), r = getAttr(attrs, 'r');
+      if (cx == null || cy == null || r == null) return match; // can't safely convert — leave for the build to report
+      changed = true;
+      const rest = attrs.replace(/\s*android:(cx|cy|r)\s*=\s*"[^"]*"/g, '').trim();
+      const pathData = `M${cx - r},${cy} a${r},${r} 0 1,0 ${r * 2},0 a${r},${r} 0 1,0 ${-(r * 2)},0`;
+      return `<path ${rest} android:pathData="${pathData}" />`;
+    });
+    f.content = newContent1;
+
+    // <rect android:fillColor="#fff" android:x="24" android:y="86" android:width="60" android:height="10" />
+    f.content = f.content.replace(/<rect\b([^>]*?)\/?>(\s*<\/rect>)?/g, (match, attrs) => {
+      const x = getAttr(attrs, 'x') ?? 0, y = getAttr(attrs, 'y') ?? 0;
+      const w = getAttr(attrs, 'width'), h = getAttr(attrs, 'height');
+      if (w == null || h == null) return match;
+      changed = true;
+      const rest = attrs.replace(/\s*android:(x|y|width|height)\s*=\s*"[^"]*"/g, '').trim();
+      const pathData = `M${x},${y} h${w} v${h} h${-w} Z`;
+      return `<path ${rest} android:pathData="${pathData}" />`;
+    });
+
+    if (changed) {
+      warnings.push(`${f.path}: rewrote invalid SVG-style <circle>/<rect> shape elements as VectorDrawable <path pathData="..."> — Android's vector format doesn't support raw shape primitives, which was failing the AAPT resource-link step.`);
+    }
+  }
+  return warnings;
+}
+
 function detectUsesCompose(files) {
   return files.some(f =>
     f.path.endsWith('.kt') && (
@@ -53,6 +103,10 @@ export const androidApk = {
     const generated = [];
     const warnings = [];
     const augmented = cloneFiles(files);
+
+    // Fix any SVG-style shape primitives in vector drawables before anything
+    // else — see fixInvalidVectorShapes above.
+    warnings.push(...fixInvalidVectorShapes(augmented));
 
     // Inject settings.gradle if missing
     if (!hasFile(augmented, 'settings.gradle') && !hasFile(augmented, 'settings.gradle.kts')) {
