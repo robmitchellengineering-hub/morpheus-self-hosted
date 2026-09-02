@@ -2,6 +2,7 @@
 import { prisma } from '../db.js';
 import { logUsage, detectLanguage } from '../lib/projectUtils.js';
 import { stripeFetch, encodeForm } from '../lib/stripe.js';
+import { isMissingArtifactFilesColumn } from '../lib/templateCompat.js';
 
 // Stripe requires checkout totals to convert to at least 50¢ in the
 // account's settlement currency. Reject sub-minimum prices at publish time
@@ -46,26 +47,40 @@ export default async function handler({ user, body }) {
     artifactFiles = compiledRows.map((f) => ({ name: f.path.replace(/^_compiled\//, ''), file_url: f.file_url }));
   }
 
-  const template = await prisma.template.create({
-    data: {
-      created_by_id: user.id,
-      project_id: projectId,
-      name: project.name,
-      description: project.description || '',
-      author_name: user.full_name || user.email || 'anonymous',
-      author_id: user.id,
-      files: JSON.stringify(filesMap),
-      artifact_files: artifactFiles.length > 0 ? JSON.stringify(artifactFiles) : null,
-      compile_target: project.compile_target || 'source',
-      tags: (tags || '').toString().trim(),
-      category: (category || 'general').toString().trim() || 'general',
-      file_count: filesMap.length,
-      price: templatePrice,
-      screenshots: screenshots ? JSON.stringify(screenshots) : '',
-      icon: icon || '',
-      long_description: long_description || '',
-    },
-  });
+  const templateData = {
+    created_by_id: user.id,
+    project_id: projectId,
+    name: project.name,
+    description: project.description || '',
+    author_name: user.full_name || user.email || 'anonymous',
+    author_id: user.id,
+    files: JSON.stringify(filesMap),
+    artifact_files: artifactFiles.length > 0 ? JSON.stringify(artifactFiles) : null,
+    compile_target: project.compile_target || 'source',
+    tags: (tags || '').toString().trim(),
+    category: (category || 'general').toString().trim() || 'general',
+    file_count: filesMap.length,
+    price: templatePrice,
+    screenshots: screenshots ? JSON.stringify(screenshots) : '',
+    icon: icon || '',
+    long_description: long_description || '',
+  };
+
+  let template;
+  let artifactsDroppedByMigrationGap = false;
+  try {
+    template = await prisma.template.create({ data: templateData });
+  } catch (err) {
+    if (!isMissingArtifactFilesColumn(err)) throw err;
+    // See lib/templateCompat.js — artifact_files hasn't been migrated into
+    // this environment's DB yet. Rather than fail every publish (source-only
+    // listings included — create() always writes this field, even as null),
+    // drop it from the write and publish as source-only; the listing can be
+    // updated once the column exists, or the seller can just republish.
+    const { artifact_files, ...withoutArtifacts } = templateData;
+    template = await prisma.template.create({ data: withoutArtifacts });
+    artifactsDroppedByMigrationGap = artifactFiles.length > 0;
+  }
 
   let stripePriceId = '';
   if (templatePrice > 0) {
@@ -104,9 +119,15 @@ export default async function handler({ user, body }) {
     name: template.name,
     fileCount: filesMap.length,
     price: templatePrice,
-    artifactCount: artifactFiles.length,
+    artifactCount: artifactsDroppedByMigrationGap ? 0 : artifactFiles.length,
     // Lets the publish UI tell the seller "no compiled build found" when
     // they checked the box but the project has no `_compiled/*` files yet.
     requestedArtifacts: !!includeCompiledArtifacts,
+    // True only when a real compiled build WAS found and attached in
+    // memory, but couldn't be written because artifact_files hasn't been
+    // migrated into this environment's DB yet (see lib/templateCompat.js) —
+    // distinct from requestedArtifacts+artifactCount:0, which means no
+    // compiled build existed on the project at all.
+    artifactsDroppedByMigrationGap,
   };
 }

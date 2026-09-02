@@ -3,13 +3,28 @@
 // of the original's "fetch 500 recent, filter in memory" workaround (Base44
 // had no bulk-by-ids filter) — same output shape, cheaper query.
 import { prisma } from '../db.js';
+import { isMissingArtifactFilesColumn, TEMPLATE_SELECT_WITHOUT_ARTIFACTS } from '../lib/templateCompat.js';
 
 export default async function handler({ user }) {
-  const myTemplates = await prisma.template.findMany({
-    where: { created_by_id: user.id },
-    orderBy: { created_date: 'desc' },
-    take: 200,
-  });
+  let myTemplates;
+  try {
+    myTemplates = await prisma.template.findMany({
+      where: { created_by_id: user.id },
+      orderBy: { created_date: 'desc' },
+      take: 200,
+    });
+  } catch (err) {
+    if (!isMissingArtifactFilesColumn(err)) throw err;
+    // See lib/templateCompat.js — same pre-migration fallback as
+    // browseTemplates.js, so the EARN panel doesn't come back empty with
+    // no explanation while artifact_files is still missing in this env.
+    myTemplates = await prisma.template.findMany({
+      where: { created_by_id: user.id },
+      orderBy: { created_date: 'desc' },
+      take: 200,
+      select: TEMPLATE_SELECT_WITHOUT_ARTIFACTS,
+    });
+  }
   const templateIds = myTemplates.map((t) => t.id);
 
   const allPurchases = templateIds.length

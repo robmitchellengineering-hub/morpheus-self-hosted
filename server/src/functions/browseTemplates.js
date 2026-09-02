@@ -2,13 +2,23 @@
 // PUBLIC function (see PUBLIC_FUNCTIONS in routes/functions.routes.js) —
 // public listing/search across ALL users' Templates. `user` may be null.
 import { prisma } from '../db.js';
+import { isMissingArtifactFilesColumn, TEMPLATE_SELECT_WITHOUT_ARTIFACTS } from '../lib/templateCompat.js';
 
 export default async function handler({ user, body }) {
   const category = (body?.category || '').toString();
   const query = (body?.q || '').toString().toLowerCase().trim();
 
   // asServiceRole.entities.Template.list('-created_date', 200) — no owner filter.
-  const all = await prisma.template.findMany({ orderBy: { created_date: 'desc' }, take: 200 });
+  let all;
+  try {
+    all = await prisma.template.findMany({ orderBy: { created_date: 'desc' }, take: 200 });
+  } catch (err) {
+    if (!isMissingArtifactFilesColumn(err)) throw err;
+    // See lib/templateCompat.js — the artifact_files migration hasn't run
+    // yet in this environment. Serve listings anyway, just without
+    // compiled-artifact info (accurate: nothing could have one pre-migration).
+    all = await prisma.template.findMany({ orderBy: { created_date: 'desc' }, take: 200, select: TEMPLATE_SELECT_WITHOUT_ARTIFACTS });
+  }
 
   const purchases = user
     ? await prisma.purchase.findMany({ where: { buyer_id: user.id, status: 'paid' } })
