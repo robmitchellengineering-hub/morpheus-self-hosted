@@ -272,15 +272,35 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
   // real consumed tokens even though the response was cut off.
   let data;
   try {
-    const res = await fetch(`${String(baseUrl).replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(body),
-    });
+    const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
+    let res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`AI endpoint error (${res.status}): ${errText.slice(0, 300)}`);
+      let errText = await res.text().catch(() => '');
+      // Some providers/models (this deployment's default among them, at
+      // times) don't accept image input at all and reject any request
+      // whose messages include an image_url part with a 400. Rather than
+      // losing the whole chat turn over an attached image, retry once with
+      // the images stripped — the text prompt (schema instruction and all,
+      // since it was already appended into the text before this point)
+      // still goes through, so the message degrades gracefully instead of
+      // hard-failing. 2026-09-02: no static "which models support vision"
+      // list to maintain — this reacts to the provider's own rejection.
+      const isImageUnsupportedError = imageUrls.length > 0 &&
+        /does not support image|image.*not support|unsupported.*image|vision.*not support|multimodal/i.test(errText);
+      if (isImageUnsupportedError) {
+        const originalText = messages[0].content?.[0]?.text ?? messages[0].content;
+        const fallbackText = `${originalText}\n\n[Note: ${imageUrls.length} image(s) were attached to this message, but the current AI model does not accept image input, so this reply was generated from the text only. A vision-capable model can be set in Settings → AI Provider → Agent Models.]`;
+        const fallbackBody = { ...body, messages: [{ role: 'user', content: fallbackText }] };
+        res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(fallbackBody) });
+        if (!res.ok) {
+          errText = await res.text().catch(() => '');
+          throw new Error(`AI endpoint error (${res.status}): ${errText.slice(0, 300)}`);
+        }
+      } else {
+        throw new Error(`AI endpoint error (${res.status}): ${errText.slice(0, 300)}`);
+      }
     }
 
     data = await res.json();
