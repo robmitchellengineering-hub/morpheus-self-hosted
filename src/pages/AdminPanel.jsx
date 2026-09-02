@@ -221,8 +221,55 @@ function ModelsTab() {
   const catalogByModel = Object.fromEntries((catalog.entries || []).map((e) => [e.model_id, e]));
   const allModelIds = Array.from(new Set([...knownModels, ...Object.keys(catalogByModel)]));
 
+  // 2026-09-02: quick DeepSeek Flash/Pro switch, on top of the generic
+  // per-role override table below rather than replacing it — this just
+  // writes the same "default_model" PlatformSetting the "default" row
+  // already writes (see saveOverride), so both controls always agree.
+  // Rob's ask: an easy way to flip which DeepSeek model actually serves
+  // calls without hand-typing a model id. Retail already bills every
+  // DeepSeek call at 2.0x Pro's peak rate regardless of which one runs
+  // (server/src/lib/billing.js's resolveBillingRate) — Flash is far
+  // cheaper to actually run (bigger margin), Pro is the higher-quality,
+  // higher-cost option (margin compresses to the intended 2.0x).
+  const effectiveDefault = (settings.settings.default_model || settings.envDefaults.base || '').trim();
+  const DEEPSEEK_VARIANTS = [
+    { id: 'deepseek-v4-flash', label: 'FLASH' },
+    { id: 'deepseek-v4-pro', label: 'PRO' },
+  ];
+
   return (
     <div className="space-y-4">
+      <Card>
+        <div className="text-xs text-primary/60 mb-1 tracking-wider">DEEPSEEK — LIVE MODEL</div>
+        <p className="text-primary/50 text-xs mb-3">
+          Switches which DeepSeek model actually serves calls platform-wide, no deploy needed. Retail
+          already bills every DeepSeek call at 2.0&times; Pro's peak rate regardless of which one
+          serves it, so this only changes real cost and margin, not what users are charged — Flash is
+          far cheaper to run (bigger margin), Pro is the higher-quality / higher-cost option (margin
+          compresses toward the intended 2.0&times;).
+        </p>
+        <div className="flex items-center gap-2">
+          {DEEPSEEK_VARIANTS.map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => saveOverride('default', id)}
+              disabled={savingKey === 'default_model'}
+              className={`flex items-center gap-2 border px-3 py-2 text-xs font-display tracking-wider transition-colors disabled:opacity-40 ${
+                effectiveDefault === id ? 'border-primary bg-primary/10 text-primary' : 'border-primary/20 text-primary/60 hover:border-primary/40'
+              }`}
+            >
+              {label}
+              {effectiveDefault === id && <Check size={13} />}
+            </button>
+          ))}
+          {savingKey === 'default_model' && <Loader2 size={13} className="animate-spin text-primary/60" />}
+        </div>
+        <div className="text-primary/40 text-[11px] mt-2">
+          Effective now: <span className="text-primary/70 font-mono">{effectiveDefault || 'auto'}</span>
+          {!settings.settings.default_model && ' (from env LLM_MODEL — no admin override set yet)'}
+        </div>
+      </Card>
+
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">PLATFORM DEFAULT MODEL ROUTING</div>
         <p className="text-primary/50 text-xs mb-3">
