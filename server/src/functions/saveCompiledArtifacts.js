@@ -19,6 +19,27 @@ import { uploadFile } from '../storage.js';
 
 const GH_API = 'https://api.github.com';
 
+// Real content-types for the compile-target binaries we produce, keyed by
+// extension. Matters most for the S3 storage driver (stored as object
+// metadata, and some CDNs/browsers use it over the extension); the local
+// driver's express.static already infers Content-Type from the extension
+// itself, so this is a belt-and-suspenders match for both drivers.
+const CONTENT_TYPES = {
+  '.apk': 'application/vnd.android.package-archive',
+  '.exe': 'application/x-msdownload',
+  '.dmg': 'application/x-apple-diskimage',
+  '.zip': 'application/zip',
+  '.deb': 'application/vnd.debian.binary-package',
+  '.img': 'application/octet-stream',
+  '.iso': 'application/x-iso9660-image',
+  '.ipa': 'application/octet-stream',
+};
+
+function contentTypeFor(filename) {
+  const match = /\.[^.]+$/.exec(filename || '');
+  return (match && CONTENT_TYPES[match[0].toLowerCase()]) || 'application/octet-stream';
+}
+
 export default async function handler({ user, body, res }) {
   const { projectId, repoFullName, target } = body;
   if (!projectId || !repoFullName) {
@@ -88,13 +109,17 @@ export default async function handler({ user, body, res }) {
         continue;
       }
       const buffer = Buffer.from(await cdnRes.arrayBuffer());
-      // Upload with a .bin extension — the storage layer blocks certain
-      // binary extensions (.apk, .exe, etc.). The original filename is
-      // preserved in the ProjectFile path for display/download.
-      const safeName = asset.name.replace(/\.[^.]+$/, '.bin');
-
-      // Upload to Morpheus storage (object storage, not the DB)
-      const { file_url } = await uploadFile({ buffer, filename: safeName, contentType: 'application/octet-stream' });
+      // Upload keeping the real extension (app.apk, app.exe, ...) — nothing
+      // in storage.js or the upload route actually blocks these, and giving
+      // the *stored* file a real extension (not just the ProjectFile path
+      // shown in the file tree) matters because Android's package installer,
+      // and plenty of download managers, decide what to do with a file by
+      // the extension on the URL/saved filename itself, not by an HTML
+      // download="..." attribute a browser is free to ignore. A ".bin" here
+      // meant a straight download-and-tap on Android silently produced a
+      // file Android wouldn't offer to install without the user manually
+      // renaming it back to .apk first.
+      const { file_url } = await uploadFile({ buffer, filename: displayName, contentType: contentTypeFor(displayName) });
 
       const sizeMb = (asset.size / 1024 / 1024).toFixed(1);
       await prisma.projectFile.create({
