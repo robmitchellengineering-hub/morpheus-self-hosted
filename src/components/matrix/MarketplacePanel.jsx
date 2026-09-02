@@ -165,9 +165,13 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
       });
       let msg = `Published "${res.data.name}" with ${res.data.fileCount} files${res.data.price > 0 ? ` for $${res.data.price}` : ' (free)'}.`;
       if (res.data.requestedArtifacts) {
-        msg += res.data.artifactCount > 0
-          ? ` Attached ${res.data.artifactCount} compiled build file(s).`
-          : ' No compiled build found on this project yet — listing published as source-only. Run COMPILE + save the build first, then republish to attach it.';
+        if (res.data.artifactsDroppedByMigrationGap) {
+          msg += ' A compiled build was found but could not be attached yet (a pending database update needs to be applied) — listing published as source-only for now. Republish once that\'s done to attach it.';
+        } else {
+          msg += res.data.artifactCount > 0
+            ? ` Attached ${res.data.artifactCount} compiled build file(s).`
+            : ' No compiled build found on this project yet — listing published as source-only. Run COMPILE + save the build first, then republish to attach it.';
+        }
       }
       setPublishMsg(msg);
       setShareUrl(`${window.location.origin}/store/${res.data.templateId}`);
