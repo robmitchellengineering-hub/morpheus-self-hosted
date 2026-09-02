@@ -20,7 +20,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X } from 'lucide-react';
+import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
@@ -45,6 +45,7 @@ export default function SelfDev() {
   const [pushResult, setPushResult] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [mobileTab, setMobileTab] = useState('chat');
+  const [diagnosing, setDiagnosing] = useState(false);
   const didInit = useRef(false);
 
   // AI context pinning (2026-09-02) — chatWithMorpheus.js's self-dev safety
@@ -126,6 +127,42 @@ export default function SelfDev() {
     ws.sendMessage(text, fileUrls, false, pinned.length > 0 ? pinned : (ws.selectedFile ? [ws.selectedFile.path] : []));
   };
 
+  // Ops Console companion (2026-09-02) — pulls recent production error logs
+  // straight from Northflank (server/src/lib/northflank.js, via the Admin
+  // Panel's same Ops Console endpoints) and drops them into the self-dev
+  // chat as a normal message. Deliberately reuses the existing chat/edit/
+  // review flow rather than a separate "auto-fix" pipeline: the AI still
+  // only ever edits this local workspace, and PUSH TO PRODUCTION is still
+  // the one and only thing that ships anything — matches Rob's explicit
+  // call (2026-09-02) that diagnosed fixes always stop for review, never
+  // auto-push.
+  const diagnoseFromLogs = async () => {
+    setDiagnosing(true);
+    try {
+      const res = await base44.admin.getNorthflankLogs({ search: 'error', minutes: 60, limit: 60, type: 'runtime' });
+      if (res.configured === false) {
+        alert('Northflank not configured — set NORTHFLANK_API_TOKEN. See Admin Panel → Ops Console for setup instructions.');
+        return;
+      }
+      if (res.error) {
+        alert(`Couldn't pull logs: ${res.error}`);
+        return;
+      }
+      const lines = res.lines || [];
+      const logBlock = lines.length
+        ? lines.map((l) => `${l.ts || ''} ${l.log}`).join('\n')
+        : '(no log lines matching "error" in the last 60 minutes)';
+      handleSend(
+        `Production logs (Northflank, last 60 min, filtered for "error"):\n\n${logBlock}\n\nDiagnose the root cause and fix it in the code. Explain what was wrong before making the change.`,
+        []
+      );
+    } catch (e) {
+      alert(`Couldn't pull logs: ${e.message}`);
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
   if (initializing || !ws.currentProject) {
     return (
       <div className="relative min-h-screen bg-background text-primary font-mono flex items-center justify-center">
@@ -154,6 +191,9 @@ export default function SelfDev() {
             </button>
             <button onClick={syncFromGithub} disabled={syncing} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
               <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'SYNCING…' : 'SYNC FROM GITHUB'}
+            </button>
+            <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
+              <Stethoscope size={13} className={diagnosing ? 'animate-pulse' : ''} /> {diagnosing ? 'PULLING LOGS…' : 'DIAGNOSE FROM LOGS'}
             </button>
             <button onClick={() => setShowPushConfirm(true)} disabled={pushing} className={`${btnBase} text-black bg-primary hover:bg-primary/90 border-primary font-bold disabled:opacity-50`}>
               <Rocket size={13} /> PUSH TO PRODUCTION

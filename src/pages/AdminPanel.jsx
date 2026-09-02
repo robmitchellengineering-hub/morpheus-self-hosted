@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ShieldCheck, Loader2, ArrowLeft, Users, Activity, DollarSign,
   Settings2, ListChecks, ScrollText, Plus, Trash2, Check, RefreshCw,
-  AlertTriangle, CheckCircle2, XCircle,
+  AlertTriangle, CheckCircle2, XCircle, Terminal,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -18,6 +18,7 @@ const TABS = [
   { id: 'models', label: 'MODELS & ROUTING', icon: DollarSign },
   { id: 'settings', label: 'CONFIG', icon: Settings2 },
   { id: 'tasks', label: 'PUNCH LIST', icon: ListChecks },
+  { id: 'ops', label: 'OPS CONSOLE', icon: Terminal },
   { id: 'audit', label: 'AUDIT LOG', icon: ScrollText },
 ];
 
@@ -564,6 +565,295 @@ function TasksTab() {
   );
 }
 
+// Ops Console (2026-09-02) — see server/src/routes/admin.routes.js's
+// "C. Ops Console" section for the full reasoning. Three panels:
+// Northflank status/logs (read-only), a DB console (read + guarded writes,
+// per Rob's explicit choice 2026-09-02), and Stripe billing health.
+function OpsTab() {
+  return (
+    <div className="space-y-4">
+      <NorthflankCard />
+      <DbConsoleCard />
+      <StripeHealthCard />
+    </div>
+  );
+}
+
+function NorthflankCard() {
+  const [status, setStatus] = useState(null);
+  const [statusError, setStatusError] = useState(null);
+  const [logs, setLogs] = useState(null);
+  const [search, setSearch] = useState('error');
+  const [minutes, setMinutes] = useState(60);
+  const [loading, setLoading] = useState(false);
+  const [logsError, setLogsError] = useState(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      setStatus(await base44.admin.getNorthflankStatus());
+    } catch (e) {
+      setStatusError(e.message);
+    }
+  }, []);
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const loadLogs = async () => {
+    setLoading(true);
+    setLogsError(null);
+    try {
+      const res = await base44.admin.getNorthflankLogs({ search, minutes, limit: 150 });
+      if (res.configured === false) {
+        setLogsError('Not configured — set NORTHFLANK_API_TOKEN (see server/.env.example).');
+        setLogs([]);
+      } else if (res.error) {
+        setLogsError(res.error);
+        setLogs([]);
+      } else {
+        setLogs(res.lines || []);
+      }
+    } catch (e) {
+      setLogsError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buildStatus = status?.service?.status?.build?.status;
+
+  return (
+    <Card>
+      <div className="text-xs text-primary/60 mb-1 tracking-wider">PRODUCTION STATUS &amp; LOGS (NORTHFLANK)</div>
+      {status && !status.configured && (
+        <div className="text-yellow-500 text-xs border border-yellow-500/30 px-2 py-1.5 mb-3 leading-relaxed">
+          Not configured. Create a read-only API token in Northflank (Team Settings → API → Tokens, RBAC role
+          needs "View Services" + "View Observability" on this project only) and set it as
+          <code className="mx-1 text-yellow-400">NORTHFLANK_API_TOKEN</code> in the backend's environment.
+        </div>
+      )}
+      {statusError && <div className="text-red-500 text-xs mb-3">{statusError}</div>}
+      {status?.configured && status.error && <div className="text-red-500 text-xs mb-3">{status.error}</div>}
+      {status?.configured && status.service && (
+        <div className="text-xs text-primary/70 mb-3">
+          Build status: <span className="text-primary">{buildStatus || 'unknown'}</span>
+          {status.service?.name && <> — {status.service.name}</>}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="search text (e.g. error)"
+          className="flex-1 min-w-[10rem] bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+        />
+        <input
+          type="number"
+          value={minutes}
+          onChange={(e) => setMinutes(e.target.value)}
+          min={1}
+          max={1440}
+          className="w-20 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+        />
+        <span className="text-primary/40 text-xs">min</span>
+        <button
+          onClick={loadLogs}
+          disabled={loading}
+          className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30"
+        >
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} PULL LOGS
+        </button>
+      </div>
+      {logsError && <div className="text-red-500 text-xs mb-2">{logsError}</div>}
+      {logs && (
+        <div className="max-h-80 overflow-y-auto scrollbar-matrix bg-black/40 border border-primary/10 p-2 font-mono text-[11px] text-primary/70 space-y-0.5">
+          {logs.length === 0 && <div className="text-primary/40 italic">No matching log lines.</div>}
+          {logs.map((l, i) => (
+            <div key={i} className="whitespace-pre-wrap break-all">
+              <span className="text-primary/40">{l.ts ? new Date(l.ts).toLocaleTimeString() : ''}</span> {l.log}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function DbConsoleCard() {
+  const [sql, setSql] = useState('SELECT key, value FROM "PlatformSetting" ORDER BY key;');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const isWrite = /^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql);
+
+  const run = async (confirmed = false) => {
+    if (isWrite && !confirmed) {
+      setConfirmOpen(true);
+      return;
+    }
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await base44.admin.runDbQuery(sql, confirmed));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRunning(false);
+      setConfirmOpen(false);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="text-xs text-primary/60 mb-1 tracking-wider">DATABASE CONSOLE</div>
+      <p className="text-primary/50 text-xs mb-3 leading-relaxed">
+        Direct SQL against this deployment's own database. SELECT/WITH run immediately; INSERT/UPDATE/DELETE ask
+        for confirmation first and are logged to the audit trail either way. Schema changes (DROP/ALTER/CREATE/
+        TRUNCATE/...) aren't allowed here — that needs a real migration.
+      </p>
+      <textarea
+        value={sql}
+        onChange={(e) => setSql(e.target.value)}
+        rows={4}
+        spellCheck={false}
+        className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary font-mono focus:outline-none focus:border-primary/50 mb-2"
+      />
+      <div className="flex items-center gap-2 mb-3">
+        <button
+          onClick={() => run(false)}
+          disabled={running || !sql.trim()}
+          className={`flex items-center gap-1 px-3 py-1.5 border text-xs disabled:opacity-30 ${
+            isWrite
+              ? 'border-yellow-500/60 text-yellow-500 hover:bg-yellow-500/10'
+              : 'border-primary/50 text-primary/80 hover:border-primary hover:text-primary'
+          }`}
+        >
+          {running ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {isWrite ? 'RUN (WRITE)' : 'RUN'}
+        </button>
+      </div>
+      {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
+      {result?.rows && (
+        <div className="overflow-x-auto max-h-80 overflow-y-auto scrollbar-matrix border border-primary/10">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-primary/50 text-left border-b border-primary/10 sticky top-0 bg-background">
+                {result.rows[0]
+                  ? Object.keys(result.rows[0]).map((c) => <th key={c} className="py-1 px-2">{c}</th>)
+                  : <th className="py-1 px-2">(no columns)</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {result.rows.map((row, i) => (
+                <tr key={i} className="border-b border-primary/5 last:border-0">
+                  {Object.values(row).map((v, j) => (
+                    <td key={j} className="py-1 px-2 text-primary/70 whitespace-pre-wrap break-all">
+                      {v === null ? <span className="text-primary/30 italic">null</span> : String(v)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="text-primary/40 text-[11px] px-2 py-1">
+            {result.rowCount} row(s){result.truncated ? ' (truncated to 500)' : ''}
+          </div>
+        </div>
+      )}
+      {result?.rowsAffected !== undefined && (
+        <div className="text-primary text-xs">{result.rowsAffected} row(s) affected.</div>
+      )}
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="bg-background border border-yellow-500/40 max-w-lg w-full p-5">
+            <div className="flex items-center gap-2 mb-3 text-yellow-500">
+              <AlertTriangle size={18} />
+              <span className="font-display tracking-wider">CONFIRM WRITE</span>
+            </div>
+            <pre className="text-primary/80 text-xs bg-black/40 border border-primary/10 p-2 mb-4 overflow-x-auto whitespace-pre-wrap break-all">{sql}</pre>
+            <p className="text-primary/60 text-xs mb-4">This runs directly against production data and is logged to the audit trail. Are you sure?</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmOpen(false)} className="px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary text-xs">
+                CANCEL
+              </button>
+              <button
+                onClick={() => run(true)}
+                disabled={running}
+                className="flex items-center gap-1 px-3 py-1.5 border border-yellow-500 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 text-xs font-bold"
+              >
+                {running ? <Loader2 size={13} className="animate-spin" /> : null} RUN WRITE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function StripeHealthCard() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await base44.admin.getStripeHealth());
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) {
+    return (
+      <Card>
+        <div className="flex items-center gap-2 text-primary/60 text-xs py-4 justify-center">
+          <Loader2 size={14} className="animate-spin" /> Loading...
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-primary/60 tracking-wider">BILLING HEALTH (STRIPE)</div>
+        <button onClick={load} className="text-primary/50 hover:text-primary"><RefreshCw size={13} /></button>
+      </div>
+      {error && <div className="text-red-500 text-xs">{error}</div>}
+      {data?.configured === false && <div className="text-primary/40 text-xs italic">Stripe not configured.</div>}
+      {data?.configured && data.error && <div className="text-red-500 text-xs">{data.error}</div>}
+      {data?.configured && data.balance && (
+        <div className="text-xs text-primary/70 mb-2">
+          Available: {(data.balance.available || []).map((b) => `${(b.amount / 100).toFixed(2)} ${b.currency.toUpperCase()}`).join(', ') || '—'}
+        </div>
+      )}
+      {data?.configured && !data.error && (
+        <div className={`text-xs mb-2 ${data.failedCount > 0 ? 'text-red-400' : 'text-primary/70'}`}>
+          {data.failedCount} failed/disputed event(s) in the last 25.
+        </div>
+      )}
+      {data?.recentEvents?.length > 0 && (
+        <div className="max-h-40 overflow-y-auto scrollbar-matrix space-y-1">
+          {data.recentEvents.slice(0, 10).map((e) => (
+            <div key={e.id} className={`text-[11px] flex justify-between gap-2 ${e.failed ? 'text-red-400' : 'text-primary/50'}`}>
+              <span className="truncate">{e.type}</span>
+              <span className="shrink-0">{new Date(e.created * 1000).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function AuditLogTab() {
   const [entries, setEntries] = useState(null);
   const [error, setError] = useState(null);
@@ -647,6 +937,7 @@ export default function AdminPanel() {
         {tab === 'models' && <ModelsTab />}
         {tab === 'settings' && <SettingsTab />}
         {tab === 'tasks' && <TasksTab />}
+        {tab === 'ops' && <OpsTab />}
         {tab === 'audit' && <AuditLogTab />}
       </div>
     </div>
