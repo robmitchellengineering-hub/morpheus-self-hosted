@@ -214,6 +214,60 @@
     --sidebar-border: 150 20% 24%;
     --sidebar-ring: 140 50% 72%;
   }
+
+  /* BORING / LIGHT (2026-09-02, Rob's request) — a light/dark sub-toggle
+     within Boring itself, selectable in Settings → Appearance whenever
+     Boring is the active theme. Flips Boring's black background to white
+     and its grey text to near-black; every other variable is the same
+     color flipped/re-tuned for contrast against a white background instead
+     of black (dark green accents instead of pale ones, light borders
+     instead of dark ones, etc.) rather than a literal invert, so text and
+     accents stay readable. --destructive/--status-danger are left exactly
+     as the dark variant has them, same reasoning as above: alarm red
+     shouldn't change just because the rest of the palette did. Two
+     attribute selectors gives this more specificity than the plain
+     [data-theme="boring"] block above, so it wins the cascade whenever
+     both attributes are present -- no !important needed. */
+  [data-theme="boring"][data-boring-mode="light"] {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 12%;
+    --card: 0 0% 96%;
+    --card-foreground: 0 0% 12%;
+    --popover: 0 0% 96%;
+    --popover-foreground: 0 0% 12%;
+    --primary: 0 0% 12%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 150 45% 92%;
+    --secondary-foreground: 140 45% 25%;
+    --muted: 0 0% 90%;
+    --muted-foreground: 0 0% 38%;
+    --accent: 140 50% 32%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 20% 82%;
+    --input: 150 20% 82%;
+    --ring: 140 50% 32%;
+    --chart-1: 140 50% 32%;
+    --chart-2: 150 45% 34%;
+    --chart-3: 38 92% 42%;
+    --chart-4: 170 40% 36%;
+    --chart-5: 0 72% 50%;
+    --status-success: 140 55% 36%;
+    --status-warning: 38 92% 42%;
+    --status-info: 199 70% 40%;
+    --status-danger: 0 72% 50%;
+    --heading: 140 60% 28%;
+    --radius: 0.6rem;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 12%;
+    --sidebar-primary: 0 0% 12%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 150 45% 92%;
+    --sidebar-accent-foreground: 140 45% 25%;
+    --sidebar-border: 150 20% 82%;
+    --sidebar-ring: 140 50% 32%;
+  }
 }
 
 @layer base {
