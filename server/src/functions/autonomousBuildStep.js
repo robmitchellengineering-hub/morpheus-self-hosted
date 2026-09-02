@@ -96,7 +96,13 @@ export default async function handler({ user, body }) {
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
   if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
 
-  const files = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
+  // 2026-09-02 fix: ProjectFile's real uniqueness is [project_id, path]
+  // (schema.prisma), not per-user. Filtering by created_by_id: user.id here
+  // hid files with a different created_by_id from applyFileOperations()'s
+  // existence check below, causing a blind create() -> Prisma P2002 crash
+  // on an already-existing path. Project ownership is already enforced via
+  // the `project` lookup above, so scoping by project_id alone is safe.
+  const files = await prisma.projectFile.findMany({ where: { project_id: projectId } });
   // Bounded to the last 10 messages, matching the original
   // (base44/functions/autonomousBuildStep/entry.ts fetches `('created_date', 10)`).
   // See chatWithMorpheus.js for why "load everything" was reverted — same

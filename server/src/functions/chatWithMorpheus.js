@@ -231,7 +231,20 @@ export default async function handler({ user, body }) {
     throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
   }
 
-  const files = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
+  // 2026-09-02 fix: ProjectFile's real uniqueness is [project_id, path] (see
+  // schema.prisma) -- NOT scoped by who created the file. Filtering this
+  // query by created_by_id: user.id (the pre-existing code) meant any file
+  // in the project that happened to have a different created_by_id (e.g.
+  // seeded by self-dev import, or created under an earlier/different admin
+  // login) was invisible to both the AI's file-tree context AND to
+  // applyFileOperations()'s "does this path already exist" check below --
+  // the coder would then blindly attempt a `create()` on a path that
+  // already existed project-wide, throwing a Prisma P2002 unique-constraint
+  // crash and breaking chat entirely. Project-level access control is
+  // already fully enforced above (project.created_by_id === user.id), so
+  // scoping this by project_id alone is safe and matches the real
+  // constraint.
+  const files = await prisma.projectFile.findMany({ where: { project_id: projectId } });
   // Bounded to the last 20 messages, matching the original
   // (base44/functions/chatWithMorpheus/entry.ts fetches `('created_date', 20)`).
   // A 2026-08-26 audit found an earlier version of this file loaded the
@@ -394,7 +407,10 @@ OPERATOR SAYS: ${message}`;
     if (project.polish_ui && appliedOps.length > 0) {
       const hasWebFiles = appliedOps.some((op) => /\.(html|css|jsx|tsx|vue|svelte)$/i.test(op.path) || op.path === 'styles.css');
       if (hasWebFiles || (project.compile_target || 'source') === 'web-app') {
-        const freshFiles = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
+        // Same fix as the `files` query above -- ProjectFile uniqueness is
+        // project-wide, not per-user (see schema.prisma), and this feeds
+        // applyFileOperations() below.
+        const freshFiles = await prisma.projectFile.findMany({ where: { project_id: projectId } });
         const filesForPolish = freshFiles.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n');
         const polish = await invokeAI({
           userId: user.id,
