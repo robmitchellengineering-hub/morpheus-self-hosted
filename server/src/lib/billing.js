@@ -12,6 +12,45 @@
 import { prisma } from '../db.js';
 import { getModelRate, computeCostUsd } from './modelPricing.js';
 
+// Rob's pricing decision, 2026-09-02: for any DeepSeek-served call (this
+// platform's paid-tier default), retail bills at a fixed 2x DeepSeek Pro's
+// peak-time rate -- regardless of whether Flash or Pro actually served the
+// request. This extends the "always assume the worst case" approach already
+// used for peak/off-peak time (costEstimate.js's MODEL_PRICING is pinned to
+// DeepSeek's peak rate, never off-peak) one step further to the model
+// itself: rather than billing a Flash-served call at Flash's own (much
+// lower) real cost, every DeepSeek call is billed as if it ran on Pro at
+// peak time. Pro's real peak rate is exactly 3x Flash's real peak rate
+// (both keep the same 3:1 output:input ratio: $1.32/$0.44 = $3.96/$1.32 =
+// 3), so this simply triples the retail price of a Flash-served call versus
+// billing it at its own real cost; a call that genuinely runs on Pro at
+// peak time is billed exactly what it costs (2x, no extra margin) -- same
+// as before this change. Real cost tracking (UsageEvent.cost_usd, DeepSeek
+// balance depletion, Admin Panel margin visibility, all computed in
+// ai.js's recordUsageEvent from the model that actually served the call)
+// is untouched by this -- only the retail/credit-charging basis below
+// changed.
+function isDeepSeekModel(modelId) {
+  return /^deepseek(-|$)/i.test(String(modelId || ''));
+}
+
+// $/M-token rate RETAIL billing should use for a given served model --
+// DeepSeek Pro's peak rate (admin-overridable via its own ModelCatalogEntry
+// row, so there's still exactly one place to correct it) for any DeepSeek
+// model, or the served model's own real rate for everything else
+// (unchanged prior behavior -- this only touches DeepSeek billing).
+async function resolveBillingRate(model) {
+  if (isDeepSeekModel(model)) return getModelRate('deepseek-v4-pro');
+  return getModelRate(model);
+}
+
+// Markup RETAIL billing should use -- DeepSeek Pro's own markup setting for
+// any DeepSeek model (so Flash- and Pro-served calls always share one
+// billing policy), or the served model's own markup for everything else.
+async function resolveBillingMarkup(model) {
+  return getModelMarkup(isDeepSeekModel(model) ? 'deepseek-v4-pro' : model);
+}
+
 export const CREDIT_RATE_USD = 0.005; // $5 / 1,000 credits, decided 2026-09-01
 
 // Pre-call estimates are deliberately biased high: reconciliation should
@@ -113,12 +152,17 @@ async function getModelMarkup(modelId) {
 
 // Pre-call estimate, in *credits* (retail, markup already applied) -- what
 // reserveCredits() below will attempt to deduct before the AI call runs.
+// Uses the RETAIL rate/markup (resolveBillingRate/resolveBillingMarkup
+// above), not necessarily the served model's own real rate -- for a
+// DeepSeek call that's Pro's peak rate at 2x, always, so the reservation
+// lands close to what reconcileAgainstActualUsage will actually charge
+// instead of needing a large top-up at reconcile time.
 export async function estimatePreCallCredits(prompt, role, model) {
   const inputTokens = Math.ceil(String(prompt || '').length / CHARS_PER_TOKEN);
   const outputTokens = ROLE_OUTPUT_ESTIMATE[role] || DEFAULT_OUTPUT_ESTIMATE;
-  const rate = await getModelRate(model);
+  const rate = await resolveBillingRate(model);
   const estimatedUsd = computeCostUsd(inputTokens, outputTokens, rate) * ESTIMATE_SAFETY_MULTIPLIER;
-  const markup = await getModelMarkup(model);
+  const markup = await resolveBillingMarkup(model);
   return usdToCredits(estimatedUsd, markup);
 }
 
@@ -151,12 +195,21 @@ export async function reconcileCredits(userId, reservedCredits, actualCredits) {
   });
 }
 
-// Convenience wrapper combining the actual-cost -> credits conversion with
-// the reconcile step, so ai.js's recordUsageEvent() doesn't need to know
-// about markup lookups directly.
-export async function reconcileAgainstActualUsage(userId, model, reservedCredits, actualCostUsd) {
-  const markup = await getModelMarkup(model);
-  const actualCredits = usdToCredits(actualCostUsd, markup);
+// Convenience wrapper combining the actual-tokens -> retail-credits
+// conversion with the reconcile step, so ai.js's recordUsageEvent() doesn't
+// need to know about rate/markup lookups directly. Takes real token counts
+// (not a pre-computed cost_usd) because the RETAIL basis is no longer
+// necessarily the served model's own cost -- for a DeepSeek call this
+// re-prices the actual tokens at Pro's peak rate (resolveBillingRate above),
+// regardless of whether Flash or Pro actually served the request. The
+// model's own real cost is still computed and logged separately by the
+// caller (UsageEvent.cost_usd) for accurate margin/balance tracking; this
+// function only decides what the *user* is charged.
+export async function reconcileAgainstActualUsage(userId, model, reservedCredits, inputTokens, outputTokens) {
+  const rate = await resolveBillingRate(model);
+  const markup = await resolveBillingMarkup(model);
+  const billedCostUsd = computeCostUsd(inputTokens, outputTokens, rate);
+  const actualCredits = usdToCredits(billedCostUsd, markup);
   await reconcileCredits(userId, reservedCredits, actualCredits);
   return actualCredits;
 }
