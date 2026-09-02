@@ -217,14 +217,18 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
 
   // Step 3 — pre-call billing enforcement (lib/billing.js). Admin accounts
   // are billing-exempt (role column, not a hardcoded email — the Admin
-  // Control Panel decision) but still get metered below; a call with no
-  // userId at all (shouldn't normally happen) is treated the same as exempt
-  // rather than blocking on billing it has no account to bill.
+  // Control Panel decision, and applies to every account ever assigned the
+  // role, not just whichever one was promoted first) but still get metered
+  // below; a call with no userId at all (shouldn't normally happen) is
+  // treated the same as exempt rather than blocking on billing it has no
+  // account to bill. 2026-09-02: compare case-/whitespace-insensitively —
+  // 'Admin', ' admin', etc. should still exempt rather than silently falling
+  // through to billing just because of how the value was typed into the DB.
   let isExempt = true;
   let reservedCredits = 0;
   if (userId) {
     const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } }).catch(() => null);
-    isExempt = !billingUser || billingUser.role === 'admin';
+    isExempt = !billingUser || String(billingUser.role || '').trim().toLowerCase() === 'admin';
     if (!isExempt) {
       reservedCredits = await estimatePreCallCredits(prompt, role, model);
       await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace
