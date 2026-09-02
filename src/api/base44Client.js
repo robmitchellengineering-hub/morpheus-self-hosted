@@ -195,6 +195,14 @@ const admin = {
   getModelCatalog: () => apiFetch('/admin/model-catalog'),
   upsertModelCatalogEntry: (entry) => apiFetch('/admin/model-catalog', { method: 'POST', body: entry }),
   getAuditLog: (limit) => apiFetch(`/admin/audit-log${qs({ limit })}`),
+  // Ops Console (2026-09-02) — Northflank status/logs, a guarded DB console,
+  // and Stripe billing health. See server/src/routes/admin.routes.js's
+  // "C. Ops Console" section for the reasoning.
+  getNorthflankStatus: () => apiFetch('/admin/ops/northflank/status'),
+  getNorthflankLogs: ({ search, minutes, limit, type } = {}) =>
+    apiFetch(`/admin/ops/northflank/logs${qs({ search, minutes, limit, type })}`),
+  runDbQuery: (sql, confirm = false) => apiFetch('/admin/ops/db-query', { method: 'POST', body: { sql, confirm } }),
+  getStripeHealth: () => apiFetch('/admin/ops/stripe-health'),
 };
 
 export const base44 = { entities, functions, integrations, connectors, auth, admin };
