@@ -19,7 +19,15 @@ const NOISE_PATTERNS = /(Unzipping|Downloading|Installing|Extracting|Progress|^\
 // (they're more precise than the generic catch-all).
 function extractErrorContext(fullLog, errorPatterns) {
   const lines = fullLog.split('\n');
-  const patterns = (errorPatterns && errorPatterns.length > 0) ? errorPatterns : [DEFAULT_ERROR_PATTERNS];
+  // Adapter-declared patterns are meant to ADD precision for known failure
+  // modes (e.g. Kotlin IR lowering), not replace the generic safety net —
+  // using them exclusively means any error type the adapter's author didn't
+  // anticipate (e.g. an AAPT resource-linking failure with no Kotlin/Gradle
+  // keywords in it) never reaches the diagnosis AI at all, since the matching
+  // line — and the ±3-line window around it — is the only thing extracted.
+  const patterns = (errorPatterns && errorPatterns.length > 0)
+    ? [...errorPatterns, DEFAULT_ERROR_PATTERNS]
+    : [DEFAULT_ERROR_PATTERNS];
 
   const errorLineIdxs = [];
   for (let i = 0; i < lines.length; i++) {
