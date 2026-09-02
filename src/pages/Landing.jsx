@@ -4,6 +4,7 @@ import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck, Sparkles,
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import DonateWidget from '@/components/matrix/DonateWidget';
+import DonationThankYouModal from '@/components/matrix/DonationThankYouModal';
 import SuggestionBox from '@/components/matrix/SuggestionBox';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useAuth } from '@/lib/AuthContext';
@@ -84,6 +85,7 @@ export default function Landing() {
 
   return (
     <div className="relative min-h-screen bg-background overflow-hidden flex items-center justify-center safe-px">
+      <DonationThankYouModal />
       <MatrixRain opacity={0.22} />
       <div className="relative z-10 text-center px-6 max-w-2xl">
         <h1 className="font-display text-5xl md:text-7xl text-heading tracking-[0.3em] neon-glow mb-8">MORPHEUS</h1>
