@@ -133,15 +133,41 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
         data: { content: op.content || '', language: detectLanguage(op.path) },
       });
     } else {
-      const created = await prisma.projectFile.create({
-        data: {
-          created_by_id: userId,
-          project_id: projectId,
-          path: op.path,
-          content: op.content || '',
-          language: detectLanguage(op.path),
-        },
-      });
+      // 2026-09-02: defensive backstop. `existing` above is only as good as
+      // the `existingFiles` snapshot the caller passed in -- if that query
+      // was stale or (as chatWithMorpheus.js's now-fixed bug did) scoped too
+      // narrowly, a path that actually already exists project-wide would
+      // reach here and crash the whole call on a Prisma P2002
+      // unique-constraint violation ([project_id, path], see schema.prisma),
+      // taking down chat/build entirely instead of just this one file. Treat
+      // that race the same as an update: on P2002, look the row up for real
+      // and update it instead of failing.
+      let created;
+      try {
+        created = await prisma.projectFile.create({
+          data: {
+            created_by_id: userId,
+            project_id: projectId,
+            path: op.path,
+            content: op.content || '',
+            language: detectLanguage(op.path),
+          },
+        });
+      } catch (err) {
+        if (err.code === 'P2002') {
+          const real = await prisma.projectFile.findUnique({ where: { project_id_path: { project_id: projectId, path: op.path } } });
+          if (real) {
+            created = await prisma.projectFile.update({
+              where: { id: real.id },
+              data: { content: op.content || '', language: detectLanguage(op.path) },
+            });
+          } else {
+            throw err; // genuinely not found — rethrow the original error
+          }
+        } else {
+          throw err;
+        }
+      }
       createdIds.set(op.path, created.id);
     }
     appliedOps.push({ path: op.path, action: op.action || 'create' });
