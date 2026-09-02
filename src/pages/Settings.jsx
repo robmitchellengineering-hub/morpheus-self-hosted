@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles, Sun, Moon } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles, Sun, Moon, User, LogOut } from 'lucide-react';
 import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -10,6 +10,7 @@ import CapabilityStatus from '@/components/matrix/CapabilityStatus';
 import SheetSelect from '@/components/matrix/SheetSelect';
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/lib/AuthContext';
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Automatic (platform default — lowest credit cost)' },
@@ -29,6 +30,7 @@ const MODEL_OPTIONS = [
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const { theme, setTheme, boringMode, setBoringMode } = useTheme();
   const [settings, setSettings] = useState(null);
   const [aiMode, setAiMode] = useState('default');
@@ -149,6 +151,24 @@ export default function Settings() {
           </div>
         ) : (
           <>
+            <section className="mb-8 border border-primary/30 p-5">
+              <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
+                <User size={14} /> ACCOUNT
+              </h2>
+              <p className="text-xs text-primary/50 mb-4">
+                // Signed in as. Credits, projects, and connections below all belong to this account — sign out to switch.
+              </p>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <span className="text-sm text-primary/90 break-all">{user?.email || '—'}</span>
+                <button
+                  onClick={() => logout(true)}
+                  className="flex items-center gap-2 px-4 py-2 border border-primary/30 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs font-display tracking-wider shrink-0"
+                >
+                  <LogOut size={14} /> SIGN OUT
+                </button>
+              </div>
+            </section>
+
             <CreditBalance />
 
             <section className="mb-8 border border-primary/30 p-5">
