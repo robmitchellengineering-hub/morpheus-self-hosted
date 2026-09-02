@@ -125,6 +125,80 @@ async function recordUsageEvent({ userId, role, provider, model, usage, isExempt
   }
 }
 
+// 2026-09-02: "put images and files it can't read through a converter so
+// the text AI can understand them" (Rob) — using the CALLING USER'S OWN
+// custom AI connection (Settings → AI Provider), not a new deployment-wide
+// vision key. Deliberately reads ai_base_url/ai_api_key/ai_model directly
+// off the settings row rather than gating on ai_mode === 'custom': the
+// Settings form only *shows* those fields while "Custom" is selected, but
+// it never clears them when you switch back to "Default (platform)" — so a
+// user who once configured (e.g.) Gemini there, then flipped back to
+// Default as their driving mode, still has a usable connection sitting in
+// the row. That's exactly Rob's case and exactly the intent: "my existing
+// gemini connection would work for image ... conversions for the default
+// ai" — the connection assists the default pipeline, it doesn't replace it.
+function hasUserConnection(settings) {
+  return !!(settings?.ai_base_url && settings?.ai_api_key && settings?.ai_model);
+}
+
+// Asks the user's own connection to caption/transcribe image(s) into plain
+// text. Best-effort: any failure (bad/stale key, connection unreachable,
+// that endpoint also rejecting images) just returns null so the caller can
+// fall through to the older bare "can't see it" degradation note — this
+// must never be the reason a chat turn fails outright.
+async function describeImagesWithUserConnection(settings, imageUrls) {
+  try {
+    const baseUrl = settings.ai_base_url;
+    const apiKey = decrypt(settings.ai_api_key);
+    const model = await resolveModel(settings.ai_model, baseUrl, apiKey);
+    const content = [
+      {
+        type: 'text',
+        text:
+          'Describe what is shown in each of the following image(s) in thorough detail, ' +
+          'including any visible text, transcribed exactly. Another AI that cannot see ' +
+          'images will use only your description to respond, so be complete and literal. ' +
+          'Number your description per image if there is more than one.',
+      },
+    ];
+    imageUrls.forEach((u) => content.push({ type: 'image_url', image_url: { url: u } }));
+    const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content }], temperature: 0.2 }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const description = data?.choices?.[0]?.message?.content;
+    return typeof description === 'string' && description.trim() ? description.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Plain-text-ish files (code, config, data, notes) get their actual content
+// inlined into the prompt — no AI conversion needed, works for every user
+// regardless of what connections they have configured. Binary formats the
+// server can't decode as text (pdf, docx, images handled separately, etc.)
+// still fall back to being listed as a reference URL only.
+const TEXT_FILE_EXT = /\.(txt|md|markdown|csv|tsv|json|jsonl|log|js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs|java|c|cpp|h|hpp|cs|php|sh|bash|yaml|yml|toml|ini|env|xml|html?|css|scss|less|sql|graphql|proto|dockerfile)(\?|$)/i;
+const MAX_INLINED_FILE_CHARS = 8000;
+
+async function readTextFileContent(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    let text = await res.text();
+    if (text.length > MAX_INLINED_FILE_CHARS) {
+      text = text.slice(0, MAX_INLINED_FILE_CHARS) + `\n... [truncated, ${text.length} chars total]`;
+    }
+    return text;
+  } catch {
+    return null;
+  }
+}
+
 async function resolveEndpoint(settings, role) {
   const roleModelEnv = {
     planner: process.env.LLM_PLANNER_MODEL,
@@ -237,10 +311,23 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
 
   const imageUrls = (fileUrls || []).filter((u) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(u));
   const otherUrls = (fileUrls || []).filter((u) => !imageUrls.includes(u));
+  const textUrls = otherUrls.filter((u) => TEXT_FILE_EXT.test(u));
+  const opaqueUrls = otherUrls.filter((u) => !textUrls.includes(u));
 
   let effectivePrompt = prompt;
-  if (otherUrls.length > 0) {
-    effectivePrompt += `\n\nUPLOADED REFERENCE FILES (URLs):\n${otherUrls.map((u) => '- ' + u).join('\n')}`;
+  if (textUrls.length > 0) {
+    const readResults = await Promise.all(textUrls.map((u) => readTextFileContent(u)));
+    readResults.forEach((text, i) => {
+      const url = textUrls[i];
+      if (text != null) {
+        effectivePrompt += `\n\nCONTENT OF UPLOADED FILE (${url}):\n${text}`;
+      } else {
+        opaqueUrls.push(url); // couldn't be fetched/read — fall back to just linking it
+      }
+    });
+  }
+  if (opaqueUrls.length > 0) {
+    effectivePrompt += `\n\nUPLOADED REFERENCE FILES (URLs):\n${opaqueUrls.map((u) => '- ' + u).join('\n')}`;
   }
 
   let messages;
@@ -291,7 +378,19 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
         /does not support image|image.*not support|unsupported.*image|vision.*not support|multimodal/i.test(errText);
       if (isImageUnsupportedError) {
         const originalText = messages[0].content?.[0]?.text ?? messages[0].content;
-        const fallbackText = `${originalText}\n\n[Note: ${imageUrls.length} image(s) were attached to this message, but the current AI model does not accept image input, so this reply was generated from the text only. A vision-capable model can be set in Settings → AI Provider → Agent Models.]`;
+        // 2026-09-02: before giving up on the image(s) entirely, try the
+        // calling user's own custom connection (their Gemini connection, in
+        // Rob's case — see describeImagesWithUserConnection above) to turn
+        // them into a text description, and splice that into the prompt
+        // that goes to the default model instead of just dropping the
+        // image(s) silently. Only attempted for the user whose message this
+        // is — never a different account's connection.
+        const imageDescription = hasUserConnection(settings)
+          ? await describeImagesWithUserConnection(settings, imageUrls)
+          : null;
+        const fallbackText = imageDescription
+          ? `${originalText}\n\n[${imageUrls.length} image(s) were attached. The current AI model can't see images directly, so here is a description generated by your own connected AI (Settings → AI Provider):\n${imageDescription}]`
+          : `${originalText}\n\n[Note: ${imageUrls.length} image(s) were attached to this message, but the current AI model does not accept image input, so this reply was generated from the text only. A vision-capable model can be set in Settings → AI Provider → Agent Models.]`;
         const fallbackBody = { ...body, messages: [{ role: 'user', content: fallbackText }] };
         res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(fallbackBody) });
         if (!res.ok) {
