@@ -154,7 +154,13 @@
      original "corporate, not terminal chrome" spec that's independent of
      light-vs-dark). Semantic status colors stay purposeful, not decorative
      (destructive/warning keep their own hues rather than being folded into
-     the green accent scheme).
+     the green accent scheme). Brightened 2026-09-02 (same day, second pass)
+     per Rob's "take a bit brighter" — background stays pure black (the
+     theme's identity), but text/panel/border/accent lightness values are
+     all raised ~6-13 points so it doesn't read as muddy/low-contrast against
+     that black. --status-danger and the destructive pair are left alone on
+     purpose — an alarm red shouldn't get softer just because the rest of
+     the theme did.
 
      Note on variable choice: this app's bespoke Matrix-styled markup (chat,
      settings, landing, etc.) overwhelmingly uses `text-primary`/
@@ -170,43 +176,43 @@
      so it always wins the cascade when active. */
   [data-theme="boring"] {
     --background: 0 0% 0%;
-    --foreground: 0 0% 65%;
-    --card: 0 0% 6%;
-    --card-foreground: 0 0% 65%;
-    --popover: 0 0% 6%;
-    --popover-foreground: 0 0% 65%;
-    --primary: 0 0% 65%;
+    --foreground: 0 0% 78%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 78%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 78%;
+    --primary: 0 0% 78%;
     --primary-foreground: 0 0% 0%;
-    --secondary: 150 45% 12%;
-    --secondary-foreground: 140 45% 72%;
-    --muted: 0 0% 9%;
-    --muted-foreground: 0 0% 45%;
-    --accent: 140 45% 65%;
+    --secondary: 150 45% 16%;
+    --secondary-foreground: 140 45% 80%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 55%;
+    --accent: 140 50% 72%;
     --accent-foreground: 0 0% 0%;
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 150 18% 18%;
-    --input: 150 18% 18%;
-    --ring: 140 45% 65%;
-    --chart-1: 140 45% 65%;
-    --chart-2: 150 45% 30%;
-    --chart-3: 38 92% 55%;
-    --chart-4: 170 40% 45%;
+    --border: 150 20% 24%;
+    --input: 150 20% 24%;
+    --ring: 140 50% 72%;
+    --chart-1: 140 50% 72%;
+    --chart-2: 150 45% 38%;
+    --chart-3: 38 92% 60%;
+    --chart-4: 170 40% 52%;
     --chart-5: 0 72% 50%;
-    --status-success: 140 55% 55%;
-    --status-warning: 38 92% 55%;
-    --status-info: 199 70% 50%;
+    --status-success: 140 55% 62%;
+    --status-warning: 38 92% 60%;
+    --status-info: 199 70% 58%;
     --status-danger: 0 72% 50%;
-    --heading: 140 60% 60%;
+    --heading: 140 60% 68%;
     --radius: 0.6rem;
     --sidebar-background: 0 0% 0%;
-    --sidebar-foreground: 0 0% 65%;
-    --sidebar-primary: 0 0% 65%;
+    --sidebar-foreground: 0 0% 78%;
+    --sidebar-primary: 0 0% 78%;
     --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 150 45% 12%;
-    --sidebar-accent-foreground: 140 45% 72%;
-    --sidebar-border: 150 18% 18%;
-    --sidebar-ring: 140 45% 65%;
+    --sidebar-accent: 150 45% 16%;
+    --sidebar-accent-foreground: 140 45% 80%;
+    --sidebar-border: 150 20% 24%;
+    --sidebar-ring: 140 50% 72%;
   }
 }
 
