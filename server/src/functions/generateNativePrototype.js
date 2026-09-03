@@ -85,11 +85,19 @@ Generate the rapid prototype HTML now. Return ONLY a JSON object: { "html": "<!D
     },
     fileUrls: undefined,
     role: 'planner',
-    // 2026-09-03 audit: this had no maxTokens at all — its sibling,
-    // generateSelfDevPrototype.js, was already fixed with maxTokens: 5000
-    // for a scoped 1-12 file mockup; this one can see up to MAX_FILES (25)
-    // whole-project files, so it's given a bit more headroom.
-    maxTokens: 8000,
+    // 2026-09-03: first pass gave this 8000 (a bit more than
+    // generateSelfDevPrototype.js's 5000, since this one can see up to
+    // MAX_FILES=25 whole-project files) and it still truncated — the prompt
+    // explicitly asks for a "polished and real" mockup with platform chrome,
+    // matched colors/layout, AND simulated interactive JS, which for a real
+    // multi-file app is routinely more than 8000 tokens of HTML+CSS+JS.
+    // This is a single HTML document, not a file list, so it can't be
+    // chunked the way multi-file generators were (no clean way to merge two
+    // partial HTML documents) — the fix here is a genuinely generous single
+    // cap instead of another incremental guess. 24000 matches the ceiling
+    // already used for other big single-document outputs (see
+    // generateSelfDevManual.js's 20000).
+    maxTokens: 24000,
   });
 
   let html = response.result.html || '';
