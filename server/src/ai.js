@@ -290,14 +290,18 @@ async function resolveEndpoint(settings, role) {
  * @param {object} [opts.schema] JSON schema — when set, forces a structured JSON response
  * @param {string[]} [opts.fileUrls] reference file URLs (images sent as vision content parts)
  * @param {'planner'|'coder'|'reviewer'|'diagnosis'} [opts.role]
- * @param {number} [opts.maxTokens] optional output cap — default is uncapped ("max think power").
- *   Set this for calls whose output is naturally small and bounded (a single mockup document, a
- *   short structured answer): capping turns an open-ended generation into a bounded one, which is
- *   the single biggest lever on wall-clock latency for a non-streamed call, since the request
- *   blocks until the model stops emitting tokens either way. Only pass it when a too-short
- *   response degrades gracefully (invokeAI already throws OUTPUT_TRUNCATED on a JSON schema call
- *   that gets cut off mid-object, which callers can surface as a retryable error) — never for a
- *   call whose output length can't be reasonably estimated in advance.
+ * @param {number} [opts.maxTokens] optional output cap. For short, bounded output (a structured
+ *   verdict, a single mockup doc) pass a small value — that's the single biggest lever on
+ *   wall-clock latency for a non-streamed call, since the request blocks until the model stops
+ *   emitting tokens either way.
+ *   2026-09-03 correction: DO NOT omit this for large/unbounded output (e.g. the Coder role's full
+ *   file contents) expecting "uncapped" to mean unlimited — it doesn't. Leaving max_tokens out of
+ *   the request hands control to the PROVIDER's own server-side default, which for this
+ *   deployment's endpoint (DeepSeek) is well below what a real multi-file build needs and is not
+ *   reliably documented. Every call site must pass an explicit maxTokens; for Coder-role calls use
+ *   a large explicit value (64000 as of this deployment's model) rather than leaving it unset.
+ *   invokeAI already throws OUTPUT_TRUNCATED on a JSON schema call that gets cut off mid-object,
+ *   which callers can surface as a retryable error.
  * @returns {Promise<{result: any, provider: string, model: string, usage?: object}>}
  */
 export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxTokens }) {
