@@ -20,7 +20,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope } from 'lucide-react';
+import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
@@ -46,6 +46,7 @@ export default function SelfDev() {
   const [showHistory, setShowHistory] = useState(false);
   const [mobileTab, setMobileTab] = useState('chat');
   const [diagnosing, setDiagnosing] = useState(false);
+  const [deployStatus, setDeployStatus] = useState(null);
   const didInit = useRef(false);
 
   // AI context pinning (2026-09-02) — chatWithMorpheus.js's self-dev safety
@@ -114,11 +115,40 @@ export default function SelfDev() {
     try {
       const res = await base44.functions.invoke('pushSelfDevToGithub', { projectId: ws.currentProject.id });
       setPushResult({ ok: true, ...res.data });
+      setDeployStatus(null);
+      // This IS the actual deploy mechanism, in full: PUSH TO PRODUCTION just
+      // committed straight to robmitchellengineering-hub/morpheus-self-hosted
+      // @main (the real repo — see pushSelfDevToGithub.js). Nothing here
+      // calls a deploy API — Northflank (backend) and Netlify (frontend) both
+      // watch that branch and rebuild/redeploy automatically on every push,
+      // with no PR/review step. checkDeployStatus below just confirms
+      // Northflank actually picked the push up, since that's the one leg of
+      // it Morpheus can check from inside itself (Netlify has no equivalent
+      // read-only API wired up yet — Admin Ops Console is Northflank-only).
+      checkDeployStatus();
     } catch (e) {
       setPushResult({ ok: false, error: e.message });
     } finally {
       setPushing(false);
       setShowPushConfirm(false);
+    }
+  };
+
+  const checkDeployStatus = async () => {
+    setDeployStatus({ loading: true });
+    try {
+      const res = await base44.admin.getNorthflankStatus();
+      if (res.configured === false) {
+        setDeployStatus({ loading: false, notConfigured: true });
+        return;
+      }
+      if (res.error) {
+        setDeployStatus({ loading: false, error: res.error });
+        return;
+      }
+      setDeployStatus({ loading: false, buildStatus: res.service?.status?.build?.status || 'unknown', checkedAt: new Date().toISOString() });
+    } catch (e) {
+      setDeployStatus({ loading: false, error: e.message });
     }
   };
 
@@ -199,6 +229,9 @@ export default function SelfDev() {
               <Rocket size={13} /> PUSH TO PRODUCTION
             </button>
             <HelpToggle />
+            <Link to="/admin" title="Admin Control Panel — model routing, config, ops console (DB console, Northflank logs), audit log" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+              <ShieldCheck size={13} /> ADMIN
+            </Link>
             <Link to="/" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               <HomeIcon size={13} />
             </Link>
@@ -225,6 +258,24 @@ export default function SelfDev() {
                 : `Push failed: ${pushResult.error}`}
             </span>
             <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+          </div>
+        )}
+        {pushResult?.ok && deployStatus && (
+          <div className="flex items-center justify-between gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1.5 text-[11px] text-primary/60">
+            <span className="flex items-center gap-2">
+              {deployStatus.loading ? (
+                <><Loader2 size={11} className="animate-spin" /> Checking whether Northflank picked up the push...</>
+              ) : deployStatus.notConfigured ? (
+                <>Northflank status check not configured — see Admin Panel → Ops Console. Netlify/Northflank still auto-deploy from the push regardless.</>
+              ) : deployStatus.error ? (
+                <>Couldn't confirm deploy status: {deployStatus.error}</>
+              ) : (
+                <>Northflank build status: <span className="text-primary">{deployStatus.buildStatus}</span> — full detail in <Link to="/admin" className="underline hover:text-primary">Admin → Ops Console</Link></>
+              )}
+            </span>
+            {!deployStatus.loading && (
+              <button onClick={checkDeployStatus} className="text-primary/50 hover:text-primary shrink-0" title="Check again"><RefreshCw size={11} /></button>
+            )}
           </div>
         )}
         {contextPaths.size > 0 && (
@@ -259,7 +310,7 @@ export default function SelfDev() {
             <FileViewer file={ws.selectedFile} />
           </div>
           <div className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} flex-1 flex-col min-w-0 min-h-0`}>
-            <PreviewPanel files={ws.files} projectId={ws.currentProject.id} compileTarget={ws.currentProject.compile_target} />
+            <PreviewPanel files={ws.files} projectId={ws.currentProject.id} compileTarget={ws.currentProject.compile_target} selfDevTouched={ws.lastTouched} />
           </div>
         </div>
       ) : (
@@ -280,7 +331,7 @@ export default function SelfDev() {
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-primary/30 group-hover:bg-primary rounded-full transition-colors" />
           </PanelResizeHandle>
           <Panel defaultSize={33} minSize={15} className="min-w-0 overflow-hidden">
-            <PreviewPanel files={ws.files} projectId={ws.currentProject.id} compileTarget={ws.currentProject.compile_target} />
+            <PreviewPanel files={ws.files} projectId={ws.currentProject.id} compileTarget={ws.currentProject.compile_target} selfDevTouched={ws.lastTouched} />
           </Panel>
         </PanelGroup>
       )}

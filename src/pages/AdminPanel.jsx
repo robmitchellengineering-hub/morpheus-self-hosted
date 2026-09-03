@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ShieldCheck, Loader2, ArrowLeft, Users, Activity, DollarSign,
   Settings2, ListChecks, ScrollText, Plus, Trash2, Check, RefreshCw,
-  AlertTriangle, CheckCircle2, XCircle, Terminal,
+  AlertTriangle, CheckCircle2, XCircle, Terminal, Cpu,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -907,9 +907,14 @@ export default function AdminPanel() {
     <div className="relative min-h-screen bg-background text-primary font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 safe-top">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
-          <ArrowLeft size={14} /> BACK
-        </Link>
+        <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+          <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm transition-colors">
+            <ArrowLeft size={14} /> BACK
+          </Link>
+          <Link to="/self-dev" title="Self-Dev — chat with Morpheus to edit its own codebase, live preview, push to production" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm border border-primary/30 hover:border-primary/60 px-3 py-1.5 transition-colors">
+            <Cpu size={13} /> SELF-DEV
+          </Link>
+        </div>
 
         <div className="flex items-center gap-3 mb-2">
           <ShieldCheck size={24} className="text-primary neon-glow" />
