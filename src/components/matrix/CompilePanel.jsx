@@ -30,9 +30,24 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const startTimeRef = useRef(0);
   const errorCountRef = useRef(0);
   const autoLoopRef = useRef(0);
+  const dispatchRetryRef = useRef(0);
+  const [dispatchRetryAttempt, setDispatchRetryAttempt] = useState(0);
   const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — GitHub Actions builds can take a while
   const MAX_ERRORS = 5; // stop polling after 5 consecutive status-check failures
   const MAX_AUTO_LOOPS = 10; // cap unattended fix-loop iterations so it can't run forever
+  // 2026-09-04 (Rob: "can we automate it from compile with that error"):
+  // server/src/lib/github.js's pushFiles already retries GitRPC::BadObjectState
+  // hard for ~75s before giving up — this is the layer above that. If the
+  // whole dispatch still comes back with that error (or the "known
+  // GitHub-side timing issue" text the backend adds when it exhausts its own
+  // retries), it's still worth an automatic fresh attempt: each retry here
+  // dispatches against a brand-new, timestamped build repo (see
+  // compileProject.js's repoName), so it isn't repeating the exact same
+  // request, it's giving GitHub's object store another clean shot. Only
+  // fires for this specific, identified-transient error — anything else
+  // still surfaces immediately rather than silently retrying a real failure.
+  const MAX_DISPATCH_RETRIES = 3;
+  const TRANSIENT_GITHUB_TIMING_RE = /BadObjectState|known GitHub-side timing issue/i;
   const { diagnosis, diagnosing, diagnose, clearDiagnosis } = useDiagnosis();
   const notifiedRef = useRef(false);
 
@@ -77,6 +92,8 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     setPreviewing(false);
     errorCountRef.current = 0;
     autoLoopRef.current = 0;
+    dispatchRetryRef.current = 0;
+    setDispatchRetryAttempt(0);
     notifiedRef.current = false;
     stopRef.current = false;
     clearDiagnosis();
@@ -199,7 +216,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     }
   }, [onCheckStatus, stopPolling, onCompileSuccess, notifyComplete]);
 
-  const handleCompile = async (isAuto = false) => {
+  const handleCompile = async (isAuto = false, isDispatchRetry = false) => {
     if (isAuto) {
       autoLoopRef.current += 1;
       if (autoLoopRef.current > MAX_AUTO_LOOPS) {
@@ -208,8 +225,15 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
         notifyComplete('failed', `Auto-fix loop stopped after ${MAX_AUTO_LOOPS} attempts`);
         return;
       }
-    } else {
+    } else if (!isDispatchRetry) {
+      // A fresh manual/redeploy trigger — NOT an automatic dispatch-retry
+      // re-invocation of this same function (see below). Only a genuinely
+      // new attempt from the user (or the diagnosis "RECOMPILE" button)
+      // should reset the dispatch-retry budget; the retry's own recursive
+      // call must not reset the counter it's in the middle of spending.
       autoLoopRef.current = 0;
+      dispatchRetryRef.current = 0;
+      setDispatchRetryAttempt(0);
       notifiedRef.current = false;
     }
     stopRef.current = false;
@@ -221,11 +245,27 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     try {
       const res = await onCompile();
       if (res.error) {
+        // 2026-09-04 (Rob: "can we automate it from compile with that
+        // error", then hit the same error again live): dispatch-level
+        // failures matching the identified-transient GitHub object-store
+        // timing race get one more automatic attempt instead of surfacing
+        // straight to the user. Each retry dispatches against a brand-new,
+        // timestamped build repo (compileProject.js), so it's a genuinely
+        // fresh shot at GitHub's object store, not a repeat of the exact
+        // same request. Anything that doesn't match still fails immediately.
+        if (TRANSIENT_GITHUB_TIMING_RE.test(res.error) && dispatchRetryRef.current < MAX_DISPATCH_RETRIES) {
+          dispatchRetryRef.current += 1;
+          setDispatchRetryAttempt(dispatchRetryRef.current);
+          setTimeout(() => handleCompile(false, true), 4000);
+          return;
+        }
         setPhase('error');
         setError(res.error);
         notifyComplete('failed', `Compile dispatch failed: ${res.error}`);
         return;
       }
+      dispatchRetryRef.current = 0;
+      setDispatchRetryAttempt(0);
       setRepoFullName(res.repoFullName);
       setRepoUrl(res.repoUrl);
       setPhase('polling');
@@ -336,7 +376,10 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           {phase === 'compiling' && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-primary/60 text-sm">
-                <Loader2 size={16} className="animate-spin" /> {attempt > 1 ? 'Recompiling to test AI fix...' : 'Dispatching build to GitHub Actions...'}
+                <Loader2 size={16} className="animate-spin" />
+                {dispatchRetryAttempt > 0
+                  ? `GitHub is still catching up — retrying automatically (${dispatchRetryAttempt}/${MAX_DISPATCH_RETRIES})...`
+                  : (attempt > 1 ? 'Recompiling to test AI fix...' : 'Dispatching build to GitHub Actions...')}
               </div>
               {attempt > 1 && <span className="text-[10px] text-primary/50 font-display tracking-wider">ATTEMPT {attempt}</span>}
             </div>
