@@ -107,7 +107,7 @@ function makeEntity(name) {
 
 const ENTITY_NAMES = [
   'Project', 'ProjectFile', 'ChatMessage', 'FileSnapshot', 'UsageRecord',
-  'Template', 'Purchase', 'UserSettings', 'BackendConfig', 'RebuildDoc', 'UpdatesPlan', 'CostSnapshot', 'GithubConnection',
+  'Template', 'Purchase', 'UserSettings', 'BackendConfig', 'RebuildDoc', 'SelfDevManual', 'UpdatesPlan', 'CostSnapshot', 'GithubConnection',
   'MaintenanceTask',
 ];
 
