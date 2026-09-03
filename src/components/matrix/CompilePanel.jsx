@@ -242,23 +242,37 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     setPhase('compiling');
     setError(null);
     clearDiagnosis();
+
+    // 2026-09-04 (Rob: "can we automate it from compile with that error",
+    // then hit the same error again live even after this was first shipped
+    // — traced to a wiring bug, see below): dispatch-level failures matching
+    // the identified-transient GitHub object-store timing race get one more
+    // automatic attempt instead of surfacing straight to the user. Each
+    // retry dispatches against a brand-new, timestamped build repo
+    // (compileProject.js), so it's a genuinely fresh shot at GitHub's
+    // object store, not a repeat of the exact same request. Anything that
+    // doesn't match still fails immediately. Returns true if a retry was
+    // scheduled (caller should stop, not surface the error).
+    const maybeRetryDispatch = (message) => {
+      if (TRANSIENT_GITHUB_TIMING_RE.test(message) && dispatchRetryRef.current < MAX_DISPATCH_RETRIES) {
+        dispatchRetryRef.current += 1;
+        setDispatchRetryAttempt(dispatchRetryRef.current);
+        setTimeout(() => handleCompile(false, true), 4000);
+        return true;
+      }
+      return false;
+    };
+
     try {
       const res = await onCompile();
+      // Defensive: onCompile normally THROWS on failure (base44Client's
+      // apiFetch throws on any non-2xx response, and every compileProject.js
+      // error path returns non-2xx — see the catch block below, which is
+      // where this error class actually surfaces in practice). This branch
+      // only fires if some future handler ever resolves with an `{error}`
+      // payload on a 200 instead.
       if (res.error) {
-        // 2026-09-04 (Rob: "can we automate it from compile with that
-        // error", then hit the same error again live): dispatch-level
-        // failures matching the identified-transient GitHub object-store
-        // timing race get one more automatic attempt instead of surfacing
-        // straight to the user. Each retry dispatches against a brand-new,
-        // timestamped build repo (compileProject.js), so it's a genuinely
-        // fresh shot at GitHub's object store, not a repeat of the exact
-        // same request. Anything that doesn't match still fails immediately.
-        if (TRANSIENT_GITHUB_TIMING_RE.test(res.error) && dispatchRetryRef.current < MAX_DISPATCH_RETRIES) {
-          dispatchRetryRef.current += 1;
-          setDispatchRetryAttempt(dispatchRetryRef.current);
-          setTimeout(() => handleCompile(false, true), 4000);
-          return;
-        }
+        if (maybeRetryDispatch(res.error)) return;
         setPhase('error');
         setError(res.error);
         notifyComplete('failed', `Compile dispatch failed: ${res.error}`);
@@ -274,9 +288,15 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       setTimeout(() => poll(res.repoFullName), 3000);
       pollRef.current = setInterval(() => poll(res.repoFullName), 5000);
     } catch (e) {
+      // This is the real path for a compileProject dispatch failure —
+      // apiFetch throws on the non-2xx response instead of resolving with
+      // an `{error}` field, so BadObjectState (and everything else) lands
+      // here, not in the `res.error` branch above.
+      const message = e.message || String(e);
+      if (maybeRetryDispatch(message)) return;
       setPhase('error');
-      setError(e.message);
-      notifyComplete('failed', `Compile dispatch failed: ${e.message}`);
+      setError(message);
+      notifyComplete('failed', `Compile dispatch failed: ${message}`);
     }
   };
 
