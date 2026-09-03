@@ -156,9 +156,10 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
       schema: retrySchema,
       fileUrls: undefined,
       role: 'coder',
-      // Same reasoning as chatWithMorpheus.js's Coder calls — full file
-      // content, generous rather than tight cap.
-      maxTokens: 18000,
+      // 2026-09-03: reverted to uncapped, same as chatWithMorpheus.js's
+      // Coder/polish calls — 18000 truncated a real multi-file build the
+      // same day it shipped, and the earlier latency test this session
+      // already showed capping bought no meaningful speed on this pipeline.
     });
     onProgress?.({ stage: 'retry_coder', status: 'done' });
     const corrected = Array.isArray(retry.result.fileOperations) ? retry.result.fileOperations : [];
