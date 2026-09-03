@@ -5,6 +5,7 @@ import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { base44 } from '@/api/base44Client';
 import HelpHint from '@/components/matrix/HelpHint';
 import MorpheusThinking from '@/components/matrix/MorpheusThinking';
+import MorpheusPipelineStatus from '@/components/matrix/MorpheusPipelineStatus';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // How tall the chat input is allowed to grow as the operator types (px)
@@ -13,7 +14,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // so it can't push the send row off-screen on a small viewport.
 const MAX_TEXTAREA_HEIGHT = 240;
 
-export default function ChatPanel({ messages, loading, onSend, onRevert, canRevert, onAutonomous }) {
+export default function ChatPanel({ messages, loading, pipelineStages, onSend, onRevert, canRevert, onAutonomous }) {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -188,9 +189,18 @@ export default function ChatPanel({ messages, loading, onSend, onRevert, canReve
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="text-primary/60 text-sm">
-              <span className="text-primary/75 mr-2">morpheus@construct:~$</span>
-              <MorpheusThinking />
+            <div className="text-primary/60 text-sm max-w-[85%]">
+              {pipelineStages && pipelineStages.length > 0 ? (
+                <>
+                  <div className="text-primary/75 mb-1">morpheus@construct:~$</div>
+                  <MorpheusPipelineStatus stages={pipelineStages} />
+                </>
+              ) : (
+                <>
+                  <span className="text-primary/75 mr-2">morpheus@construct:~$</span>
+                  <MorpheusThinking />
+                </>
+              )}
             </div>
           </div>
         )}
