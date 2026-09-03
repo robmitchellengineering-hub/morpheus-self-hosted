@@ -10,6 +10,13 @@ export function useWorkspace() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [snapshots, setSnapshots] = useState([]);
+  // Self-dev's scoped preview needs to know which files the MOST RECENT turn
+  // actually touched (not every file in the project — see PreviewPanel's
+  // self-dev mode / generateSelfDevPrototype.js). `rev` increments on every
+  // turn so a re-edit of the exact same path(s) still re-triggers the
+  // preview effect (which keys off paths+rev, not just paths). Harmless,
+  // unused by every non-self-dev project.
+  const [lastTouched, setLastTouched] = useState({ paths: [], rev: 0 });
 
   const loadProjects = useCallback(async () => {
     const data = await base44.entities.Project.list('-created_date', 50);
@@ -36,6 +43,7 @@ export function useWorkspace() {
     setSelectedFile(null);
     setMessages([]);
     setFiles([]);
+    setLastTouched({ paths: [], rev: 0 });
     await Promise.all([loadFiles(project.id), loadMessages(project.id), loadSnapshots(project.id)]);
   }, [loadFiles, loadMessages]);
 
@@ -45,6 +53,7 @@ export function useWorkspace() {
     setSelectedFile(null);
     setMessages([]);
     setSnapshots([]);
+    setLastTouched({ paths: [], rev: 0 });
   }, []);
 
   const deleteProject = useCallback(async (project) => {
@@ -102,6 +111,7 @@ export function useWorkspace() {
       setMessages(prev => [...prev, morpheusMsg]);
       if (res.data.fileOperations?.length > 0) {
         await loadFiles(currentProject.id);
+        setLastTouched(prev => ({ paths: res.data.fileOperations.map(op => op.path).filter(Boolean), rev: prev.rev + 1 }));
       }
     } catch (e) {
       setMessages(prev => [...prev, { id: 'e-' + Date.now(), role: 'morpheus', content: '// SYSTEM FAILURE: ' + e.message, project_id: currentProject.id }]);
@@ -162,6 +172,7 @@ export function useWorkspace() {
     await base44.functions.invoke('restoreSnapshot', { snapshotId });
     await loadFiles(currentProject.id);
     await loadSnapshots(currentProject.id);
+    setLastTouched({ paths: [], rev: 0 });
   }, [currentProject, loadFiles, loadSnapshots]);
 
   // Undo the most recent prompt: restore the latest snapshot (state before
@@ -172,6 +183,7 @@ export function useWorkspace() {
     await base44.functions.invoke('restoreSnapshot', { snapshotId: latest.id });
     await loadFiles(currentProject.id);
     await loadSnapshots(currentProject.id);
+    setLastTouched({ paths: [], rev: 0 });
     const fresh = await base44.entities.ChatMessage.filter({ project_id: currentProject.id }, 'created_date', 200);
     const lastUserIdx = fresh.map(m => m.role).lastIndexOf('user');
     if (lastUserIdx >= 0) {
@@ -286,5 +298,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, snapshots, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
 }
