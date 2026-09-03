@@ -17,6 +17,7 @@ import { getPlatformSetting } from './lib/platformSettings.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
 import { shouldUseFallback } from './lib/deepseekBalance.js';
 import { recordCallDuration } from './lib/timingStats.js';
+import { jsonrepair } from 'jsonrepair';
 
 export async function getUserSettings(userId) {
   if (!userId) return null;
@@ -481,12 +482,34 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   if (schema) {
     try {
       return { result: JSON.parse(content), provider, model: resolvedModel, usage };
-    } catch {
+    } catch (parseErr) {
       const trimmed = content.trimEnd();
       if (!trimmed.endsWith('}') && !trimmed.endsWith(']')) {
         throw new Error('OUTPUT_TRUNCATED: The AI response was cut off mid-JSON before it could finish. Reduce the number of files per step (2-3 max) and retry.');
       }
-      throw new Error('AI endpoint did not return valid JSON');
+      // 2026-09-03 (Rob: "SYSTEM FAILURE: AI endpoint did not return valid
+      // JSON"): the response wasn't cut off (finishReason wasn't 'length'
+      // and it ends with a closing brace/bracket) -- it's genuinely
+      // malformed JSON. Very common with a code-generation model like this:
+      // fileOperations values embed real source (quotes, backticks, raw
+      // newlines, backslashes), and the model occasionally emits a literal
+      // control character or an unescaped quote inside a string instead of
+      // the escaped form, or wraps the object in stray markdown/prose that
+      // still happens to end on '}'/']'. Rather than hard-fail a whole
+      // build turn over one malformed character, try a best-effort repair
+      // (handles unescaped control chars, trailing commas, code fences,
+      // leading/trailing prose, single quotes, etc.) before giving up.
+      try {
+        return { result: JSON.parse(jsonrepair(content)), provider, model: resolvedModel, usage };
+      } catch {
+        // Repair failed too -- surface enough to actually debug this without
+        // a server-log dive (same lesson as the OUTPUT_TRUNCATED message
+        // above): which role, the parser's own complaint, and a content
+        // snippet so it's visible whether this was stray prose, truncated
+        // mid-string, or something else entirely.
+        const snippet = content.length > 300 ? content.slice(0, 300) + '…' : content;
+        throw new Error(`AI endpoint did not return valid JSON (role=${role || 'unknown'}): ${parseErr.message}. Response started with: ${snippet}`);
+      }
     }
   }
   return { result: content, provider, model: resolvedModel, usage };
