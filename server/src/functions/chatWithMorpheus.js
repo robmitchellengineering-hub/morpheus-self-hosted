@@ -190,11 +190,14 @@ CLARIFICATION RULE — Reason first, then decide. After your planning pass, judg
 
 For build requests where you are NOT asking clarification, your reply should be at most one or two sentences — brief acknowledgment. The code is the conversation. For conversations, let Morpheus out fully.
 
+PLANNED FILES — when needsCode is true, also return plannedFiles: an ordered array of every file path this build will create or modify (e.g. ["package.json", "README.md", "src/App.jsx", "src/index.css", ...]). List EVERY file the plan calls for, in a sensible implementation order (config/setup files first, then the files that depend on them). The coder agent implements this list a few files at a time in separate passes, so it must be complete and exact — a file missing from this list will not get written.
+
 Return JSON with:
 - reply: Your response to the operator (in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true)
 - needsCode: true if code needs to be written/modified, false for pure conversation
 - needsClarification: true ONLY if a genuine build-blocking ambiguity prevents you from building correctly — reply then contains just the clarifying questions
-- plan: detailed file-by-file build plan with implementation notes (only required when needsCode is true AND needsClarification is false)`;
+- plan: detailed file-by-file build plan with implementation notes (only required when needsCode is true AND needsClarification is false)
+- plannedFiles: ordered array of every file path the plan will touch (only required when needsCode is true AND needsClarification is false) — see PLANNED FILES above`;
 
 const CODER_INSTRUCTIONS = `
 
@@ -206,6 +209,21 @@ Apply all the build configuration rules from your system instructions — packag
 
 Return JSON with:
 - fileOperations: array of { path, content, action } where action is "create", "update", or "delete". For "delete", content can be empty.`;
+
+// 2026-09-03 (Rob, after two rounds of raising/removing the per-call token
+// cap still hit OUTPUT_TRUNCATED on a real build): the actual fix isn't a
+// bigger number — a single non-streamed completion has to hold an entire
+// multi-file build's worth of code before it can return at all, and a real
+// build's total output genuinely has no upper bound we can safely guess.
+// Instead of asking one Coder call to write every file at once, the Planner
+// now enumerates every file the build needs (plannedFiles, above) and the
+// Coder implements it a few files at a time across multiple smaller calls —
+// see the chunked loop below. This is exactly what the OUTPUT_TRUNCATED
+// error message itself has always suggested ("reduce the number of files
+// per step"); we're now actually doing that instead of just hoping a higher
+// max_tokens would avoid it.
+const MAX_FILES_PER_CODER_STEP = 3;
+const CODER_STEP_MAX_TOKENS = 24000; // generous for 1-3 files' full content; small enough to leave huge headroom under any plausible per-call ceiling
 
 // Small, fixed set of files worth always showing in full for the self-dev
 // workspace even when the operator hasn't opened them — enough for the AI to
@@ -399,7 +417,8 @@ OPERATOR SAYS: ${message}`;
           reply: { type: 'string', description: 'Morpheus response in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true' },
           needsCode: { type: 'boolean', description: 'true if code needs to be written/modified, false for pure conversation' },
           needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
-          plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false)' }
+          plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false)' },
+          plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' }
         }
       },
       fileUrls,
@@ -440,49 +459,79 @@ OPERATOR SAYS: ${message}`;
     let reviewSummary;
     let reviewIssues = [];
     if (needsCode && plannerResult.plan) {
+      // coderPrompt (the full-plan version, no per-step file scoping) is kept
+      // around for reviewAndRetry below — a critical-issue retry re-sends this
+      // same base prompt plus the specific files that need fixing, so it needs
+      // the complete, unscoped instructions rather than whichever chunk's
+      // narrowed prompt happened to run last.
       const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
-      stages.start('coder');
-      const coder = await invokeAI({
-        userId: user.id,
-        prompt: coderPrompt,
-        schema: {
-          type: 'object',
-          properties: {
-            fileOperations: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  path: { type: 'string' },
-                  content: { type: 'string' },
-                  action: { type: 'string', enum: ['create', 'update', 'delete'] }
-                }
+      const coderSchema = {
+        type: 'object',
+        properties: {
+          fileOperations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                path: { type: 'string' },
+                content: { type: 'string' },
+                action: { type: 'string', enum: ['create', 'update', 'delete'] }
               }
             }
           }
-        },
-        fileUrls,
-        role: 'coder',
-        // 2026-09-03 correction: going uncapped (previous fix) did NOT
-        // resolve the OUTPUT_TRUNCATED failure — Rob hit it again on the
-        // very next build. Root cause: this deployment's provider
-        // (LLM_BASE_URL=api.deepseek.com, LLM_MODEL=deepseek-v4-pro) applies
-        // its OWN server-side default completion cap whenever max_tokens is
-        // omitted from the request — DeepSeek's docs confirm the standard
-        // endpoint defaults max_tokens well below what a real multi-file
-        // build needs when left unset. "Uncapped" was never actually
-        // uncapped; it silently fell back to a smaller ceiling than even the
-        // old 18000 cap did. Fixed by explicitly requesting a large cap
-        // instead of omitting the param — deepseek-v4-pro's real ceiling is
-        // 384K output tokens, so 64000 leaves huge headroom over any
-        // realistic build step while no longer gambling on an undocumented
-        // provider default.
-        maxTokens: 64000,
-      });
-      stages.done('coder');
+        }
+      };
 
-      coderModel = coder.model;
-      let fileOps = Array.isArray(coder.result.fileOperations) ? coder.result.fileOperations : [];
+      const plannedFiles = Array.isArray(plannerResult.plannedFiles)
+        ? plannerResult.plannedFiles.filter((p) => typeof p === 'string' && p)
+        : [];
+
+      let fileOps = [];
+      let coderModelLast;
+      stages.start('coder');
+
+      if (plannedFiles.length > 0) {
+        // Chunked path — see MAX_FILES_PER_CODER_STEP's comment above. Each
+        // call only has to hold a few files' worth of code, so no single
+        // completion can overflow regardless of how big the overall build is.
+        const chunks = [];
+        for (let i = 0; i < plannedFiles.length; i += MAX_FILES_PER_CODER_STEP) {
+          chunks.push(plannedFiles.slice(i, i + MAX_FILES_PER_CODER_STEP));
+        }
+        for (const chunk of chunks) {
+          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. Full content for each, never partial.`;
+          const chunkCoder = await invokeAI({
+            userId: user.id,
+            prompt: chunkPrompt,
+            schema: coderSchema,
+            fileUrls,
+            role: 'coder',
+            maxTokens: CODER_STEP_MAX_TOKENS,
+          });
+          coderModelLast = chunkCoder.model;
+          const chunkOps = Array.isArray(chunkCoder.result.fileOperations) ? chunkCoder.result.fileOperations : [];
+          fileOps.push(...chunkOps);
+        }
+      } else {
+        // Fallback: the Planner didn't enumerate plannedFiles (shouldn't
+        // normally happen now that PLANNER_INSTRUCTIONS asks for it, but a
+        // model can still omit an optional field) — single-shot call, same
+        // as the pre-chunking behavior, still with an explicit generous cap
+        // rather than omitting max_tokens (see ai.js's maxTokens doc).
+        const coder = await invokeAI({
+          userId: user.id,
+          prompt: coderPrompt,
+          schema: coderSchema,
+          fileUrls,
+          role: 'coder',
+          maxTokens: 64000,
+        });
+        coderModelLast = coder.model;
+        fileOps = Array.isArray(coder.result.fileOperations) ? coder.result.fileOperations : [];
+      }
+
+      stages.done('coder');
+      coderModel = coderModelLast;
 
       // Guarantee a polished styles.css exists for web-app builds. If the
       // coder shipped its own, trust it; otherwise inject the design system
