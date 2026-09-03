@@ -64,11 +64,16 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
     },
     fileUrls: undefined,
     role: 'reviewer',
-    // 2026-09-03: the reviewer only ever returns an issues array plus a
-    // one-sentence summary — never file content — so this is as safe to cap
-    // tightly as the planner, and it runs twice on a retried build (once
-    // before, once after) so it's a meaningful chunk of end-to-end latency.
-    maxTokens: 3000,
+    // 2026-09-03 correction: the same "this is short output, cap it tight"
+    // reasoning was just proven wrong for the Planner's identical 3000 cap
+    // (it was the actual cause of Rob's OUTPUT_TRUNCATED failures, not the
+    // Coder — see chatWithMorpheus.js's planner call). The reviewer here
+    // reviews ALL of a build's accumulated fileOps in one call (every
+    // chunk from the Coder's per-file-group passes, merged) — with enough
+    // files and enough flagged issues, one line per issue can add up past
+    // 3000 too. Raised to 6000 as a preventive match, before this becomes
+    // the next hidden truncation point instead of waiting to hit it.
+    maxTokens: 6000,
   });
   onProgress?.({ stage: stageName, status: 'done' });
 
