@@ -17,6 +17,16 @@ export function useWorkspace() {
   // preview effect (which keys off paths+rev, not just paths). Harmless,
   // unused by every non-self-dev project.
   const [lastTouched, setLastTouched] = useState({ paths: [], rev: 0 });
+  // 2026-09-03 (Rob: stream progress + an ETA in the chat window) — the
+  // ordered list of pipeline stages for the in-flight chat turn, fed by
+  // base44.functions.invokeStream's onStage callback in sendMessage below.
+  // Each entry: { stage, label, status: 'active'|'done', etaSeconds,
+  // elapsedSeconds, startedAt } — startedAt is a client-side Date.now(),
+  // used only to tick a live "~Ns remaining" countdown while status is
+  // 'active' (see MorpheusPipelineStatus.jsx). Empty whenever no chat turn
+  // is in flight, or during the brief moment before the first real stage
+  // event arrives (ChatPanel falls back to the old decorative spinner then).
+  const [pipelineStages, setPipelineStages] = useState([]);
 
   const loadProjects = useCallback(async () => {
     const data = await base44.entities.Project.list('-created_date', 50);
@@ -101,12 +111,30 @@ export function useWorkspace() {
     const userMsg = { id: 'temp-' + Date.now(), role: 'user', content: displayContent, project_id: currentProject.id };
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
+    setPipelineStages([]);
     try {
       // focusPaths: only meaningful for self-dev projects (which files' full
       // content chatWithMorpheus should show the AI, on top of a whole-repo
       // path listing) — see chatWithMorpheus.js. Harmless no-op for every
       // other project type, which still gets full content for all files.
-      const res = await base44.functions.invoke('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [] });
+      //
+      // invokeStream (not invoke) — chatWithMorpheus.js streams real
+      // {type:'stage',...} progress events for each pipeline phase as they
+      // actually happen, which onStage below turns into pipelineStages for
+      // ChatPanel/MorpheusPipelineStatus to render as a step list with a
+      // live ETA. See base44Client.js's invokeStream for the wire format.
+      const onStage = (evt) => {
+        setPipelineStages(prev => {
+          if (evt.status === 'start') {
+            return [...prev, { stage: evt.stage, label: evt.label, status: 'active', etaSeconds: evt.etaSeconds, startedAt: Date.now() }];
+          }
+          // 'done' — flip the matching active entry; leave completed ones as-is.
+          return prev.map(s => (s.stage === evt.stage && s.status === 'active')
+            ? { ...s, status: 'done', elapsedSeconds: evt.elapsedSeconds }
+            : s);
+        });
+      };
+      const res = await base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [] }, onStage);
       const morpheusMsg = { id: 'm-' + Date.now(), role: 'morpheus', content: res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
       if (res.data.fileOperations?.length > 0) {
@@ -117,6 +145,7 @@ export function useWorkspace() {
       setMessages(prev => [...prev, { id: 'e-' + Date.now(), role: 'morpheus', content: '// SYSTEM FAILURE: ' + e.message, project_id: currentProject.id }]);
     } finally {
       setLoading(false);
+      setPipelineStages([]);
     }
   }, [currentProject, loading, loadFiles]);
 
@@ -298,5 +327,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
 }
