@@ -59,6 +59,7 @@ model User {
   rebuild_docs    RebuildDoc[]
   updates_plans   UpdatesPlan[]
   cost_snapshots  CostSnapshot[]
+  self_dev_manuals SelfDevManual[]
   github_connection GithubConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
@@ -533,6 +534,41 @@ model RebuildDoc {
   updated_date    DateTime @updatedAt
 
   @@map("rebuild_docs")
+}
+
+// "SELF-DEV & ADMIN MANUAL" — an AI-written operator's guide to running
+// Morpheus through the Self-Dev workspace and Admin Control Panel (Rob,
+// 2026-09-03: "give me a manual... that gets updated when anything to do
+// with self dev or admin get updated"). Unlike RebuildDoc above (a static,
+// hand-authored architecture dump), generateSelfDevManual.js reads the
+// ACTUAL CURRENT SOURCE of the self-dev/admin-relevant files and has an LLM
+// write the manual from them each time — so "updated when the code changes"
+// is true by construction rather than something a human has to remember to
+// edit. version/content/content_size/file_url mirror RebuildDoc's
+// single-row-per-admin upsert pattern exactly (see generateRebuildDoc.js).
+// trigger records why the last regeneration happened ('manual' — the admin
+// clicked REGENERATE, or 'auto:push' — pushSelfDevToGithub.js detected the
+// push touched one of the source files this doc is built from and
+// regenerated automatically, with no button click needed). source_hash is a
+// hash of the concatenated source files at generation time, kept so the UI
+// can show whether the current doc still matches the latest self-dev
+// push without re-running the (costly) LLM call just to check.
+model SelfDevManual {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  version         String
+  content         String   @db.Text // truncated preview
+  content_size    Int      @default(0)
+  file_url        String?
+  trigger         String?  // 'manual' | 'auto:push'
+  source_hash     String?
+
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@map("self_dev_manuals")
 }
 
 // AI-synthesized "MORPHEUS UPDATES PLAN" — admin-only, ranks all Feedback

@@ -225,6 +225,23 @@ create table rebuild_docs (
   updated_date timestamp(3) not null default now()
 );
 
+-- Admin-only "SELF-DEV & ADMIN MANUAL" — AI-written operator's guide,
+-- regenerated from the current self-dev/admin source each time (by the
+-- admin, or automatically by pushSelfDevToGithub.js). See schema.prisma's
+-- SelfDevManual model comment.
+create table self_dev_manuals (
+  id text primary key default gen_random_uuid()::text,
+  created_by_id text not null references users(id) on delete cascade,
+  version text not null,
+  content text not null,
+  content_size integer not null default 0,
+  file_url text,
+  trigger text,
+  source_hash text,
+  created_date timestamp(3) not null default now(),
+  updated_date timestamp(3) not null default now()
+);
+
 -- Admin-only "MORPHEUS UPDATES PLAN" AI synthesis tool — reads the feedback
 -- table above, so create this after it.
 create table updates_plans (
