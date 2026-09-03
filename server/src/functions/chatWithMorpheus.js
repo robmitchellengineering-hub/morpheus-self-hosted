@@ -463,14 +463,15 @@ OPERATOR SAYS: ${message}`;
         },
         fileUrls,
         role: 'coder',
-        // 2026-09-03: unlike the Planner, the Coder MUST return full,
-        // unabridged content for every changed file (never partial — see its
-        // own instructions above), so this cap is deliberately generous rather
-        // than tight: enough headroom for a normal multi-file build step, just
-        // a backstop against genuinely runaway generation. A build that's
-        // large enough to hit this already gets told (via OUTPUT_TRUNCATED) to
-        // split into smaller steps — the same guidance the app already gives.
-        maxTokens: 18000,
+        // 2026-09-03: originally capped at 18000 as part of the same
+        // latency pass as the Planner/Reviewer caps above. Rob hit a real
+        // OUTPUT_TRUNCATED failure on a normal multi-file build the same
+        // day — 18000 wasn't actually generous enough for the Coder's full,
+        // unabridged, every-changed-file output, and the earlier latency
+        // test this session already showed capping bought no meaningful
+        // speed here anyway (the bottleneck is round-trip count, not
+        // generation time). Reverted to uncapped ("max think power") —
+        // matches the tool's original, previously-working design.
       });
       stages.done('coder');
 
@@ -534,9 +535,8 @@ OPERATOR SAYS: ${message}`;
             },
             fileUrls: undefined,
             role: 'coder',
-            // Same reasoning as the main Coder call above — full file content,
-            // generous rather than tight cap.
-            maxTokens: 18000,
+            // Same reasoning as the main Coder call above — reverted to
+            // uncapped, see the comment there.
           });
           stages.done('polish');
           const polishOps = Array.isArray(polish.result.fileOperations) ? polish.result.fileOperations : [];
