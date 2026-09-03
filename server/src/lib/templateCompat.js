@@ -23,8 +23,17 @@
 // migration degrades to "no attached artifacts yet" instead of a hard
 // crash — here and for any future field added to Template the same way.
 export function isMissingArtifactFilesColumn(err) {
+  // Two different error shapes can reach here for the exact same underlying
+  // problem, and this regex used to only catch one of them:
+  //   - a raw Postgres error, table-qualified: `column templates.artifact_files does not exist`
+  //   - Prisma's own P2022 error, NOT table-qualified: "The column `artifact_files` does not exist in the current database."
+  // Requiring the `templates.` prefix meant Prisma's own (more common) error
+  // shape never matched, so this compat layer silently did nothing and
+  // every affected call (including publishTemplate.js's create()) crashed
+  // instead of degrading gracefully — see the 2026-09-03 incident where
+  // publishing to the marketplace threw this exact P2022 message.
   return !!err && typeof err.message === 'string' &&
-    /column\s+.*templates\.artifact_files.*does not exist/i.test(err.message);
+    /column\s+.*artifact_files.*does not exist/i.test(err.message);
 }
 
 // Every real Template column except artifact_files — used to retry a
