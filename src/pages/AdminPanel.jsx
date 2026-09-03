@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import {
   ShieldCheck, Loader2, ArrowLeft, Users, Activity, DollarSign,
   Settings2, ListChecks, ScrollText, Plus, Trash2, Check, RefreshCw,
-  AlertTriangle, CheckCircle2, XCircle, Terminal, Cpu,
+  AlertTriangle, CheckCircle2, XCircle, Terminal, Cpu, FileText, Download, FileDown,
 } from 'lucide-react';
+import jsPDF from 'jspdf';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 
@@ -572,10 +573,210 @@ function TasksTab() {
 function OpsTab() {
   return (
     <div className="space-y-4">
+      <SelfDevManualCard />
       <NorthflankCard />
       <DbConsoleCard />
       <StripeHealthCard />
     </div>
+  );
+}
+
+// "SELF-DEV & ADMIN MANUAL" (Rob, 2026-09-03) — an AI-written operator's
+// guide to running Morpheus through Self-Dev and this Admin panel, generated
+// from the ACTUAL CURRENT source of those two surfaces (server/src/functions/
+// generateSelfDevManual.js), not hand-maintained prose. Regenerates two
+// ways: the admin clicks REGENERATE here, or automatically right after any
+// self-dev push that touches one of the files the manual is built from (see
+// pushSelfDevToGithub.js) — either way `doc.trigger` records which happened,
+// so "is this the latest?" is always visible without re-running the LLM call
+// just to check. Same single-row-per-admin storage + PDF-rendering pattern
+// as RebuildDocDialog.jsx (that dialog documents Morpheus's architecture for
+// a rebuild; this one documents how to operate it day to day).
+function SelfDevManualCard() {
+  const [doc, setDoc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await base44.entities.SelfDevManual.list('-created_date', 1);
+      setDoc(list.length > 0 ? list[0] : null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const generate = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      await base44.functions.invoke('generateSelfDevManual', {});
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const downloadMd = () => {
+    if (!doc) return;
+    if (doc.file_url) {
+      const a = document.createElement('a');
+      a.href = doc.file_url;
+      a.download = `morpheus-self-dev-admin-manual-${doc.version || 'doc'}.md`;
+      a.target = '_blank';
+      a.click();
+      return;
+    }
+    if (!doc.content) return;
+    const blob = new Blob([doc.content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `morpheus-self-dev-admin-manual-${doc.version || 'doc'}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadPdf = async () => {
+    if (!doc) return;
+    setPdfLoading(true);
+    setError(null);
+    try {
+      let md = doc.content || '';
+      if (doc.file_url) {
+        const res = await fetch(doc.file_url);
+        md = await res.text();
+      }
+
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 40;
+      const maxW = pageW - margin * 2;
+      let y = margin;
+
+      const ensureSpace = (h) => {
+        if (y + h > pageH - margin) { pdf.addPage(); y = margin; }
+      };
+
+      for (const rawLine of md.split('\n')) {
+        const line = rawLine.trimEnd();
+
+        if (line.startsWith('# ')) {
+          ensureSpace(28);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(18);
+          pdf.setTextColor(0, 180, 80);
+          const wrapped = pdf.splitTextToSize(line.replace(/^# /, ''), maxW);
+          for (const w of wrapped) { ensureSpace(22); pdf.text(w, margin, y); y += 22; }
+          y += 6;
+        } else if (line.startsWith('## ')) {
+          ensureSpace(24);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(14);
+          pdf.setTextColor(0, 140, 60);
+          const wrapped = pdf.splitTextToSize(line.replace(/^## /, ''), maxW);
+          for (const w of wrapped) { ensureSpace(18); pdf.text(w, margin, y); y += 18; }
+          y += 4;
+        } else if (line.startsWith('### ')) {
+          ensureSpace(20);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(11);
+          pdf.setTextColor(0, 120, 50);
+          const wrapped = pdf.splitTextToSize(line.replace(/^### /, ''), maxW);
+          for (const w of wrapped) { ensureSpace(15); pdf.text(w, margin, y); y += 15; }
+          y += 2;
+        } else if (line.startsWith('- ') || line.startsWith('* ')) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          pdf.setTextColor(30, 30, 30);
+          const wrapped = pdf.splitTextToSize('•  ' + line.replace(/^[-*]\s+/, ''), maxW - 10);
+          for (const w of wrapped) { ensureSpace(13); pdf.text(w, margin + 10, y); y += 13; }
+        } else if (line.trim() === '') {
+          y += 6;
+        } else {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          pdf.setTextColor(30, 30, 30);
+          const wrapped = pdf.splitTextToSize(line, maxW);
+          for (const w of wrapped) { ensureSpace(13); pdf.text(w, margin, y); y += 13; }
+        }
+      }
+
+      pdf.save(`morpheus-self-dev-admin-manual-${(doc.version || 'manual').replace(/[:.]/g, '-')}.pdf`);
+    } catch (e) {
+      setError('PDF generation failed: ' + e.message);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const sizeKb = doc?.content_size ? (doc.content_size / 1024).toFixed(1) : '0';
+  const triggerLabel = doc?.trigger === 'auto:push' ? 'auto-updated after push' : doc?.trigger === 'manual' ? 'generated by hand' : null;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-xs text-primary/60 mb-1 tracking-wider">
+        <FileText size={13} /> SELF-DEV &amp; ADMIN MANUAL
+      </div>
+      <p className="text-primary/50 text-xs mb-3 leading-relaxed">
+        How to actually run Morpheus through Self-Dev and this Admin panel — written by AI directly from the current source of both, so it reflects what the code does right now. Re-generates automatically whenever a self-dev push changes one of the files it's built from; REGENERATE forces a fresh copy any time.
+      </p>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-primary/60 text-xs py-4 justify-center">
+          <Loader2 size={14} className="animate-spin" /> Loading...
+        </div>
+      )}
+
+      {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
+
+      {!loading && doc && (
+        <div className="flex items-center gap-2 text-xs text-primary/60 mb-3 flex-wrap">
+          <CheckCircle2 size={14} className="text-primary" />
+          <span className="text-primary">{new Date(doc.version).toLocaleString()}</span>
+          <span className="text-primary/30">|</span>
+          {sizeKb} KB
+          {triggerLabel && (<><span className="text-primary/30">|</span><span>{triggerLabel}</span></>)}
+        </div>
+      )}
+
+      {!loading && !doc && <div className="text-primary/40 text-xs italic mb-3">No manual generated yet. Press GENERATE to create one.</div>}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={generate}
+          disabled={generating}
+          className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30"
+        >
+          {generating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {doc ? 'REGENERATE' : 'GENERATE'}
+        </button>
+        <button
+          onClick={downloadMd}
+          disabled={!doc}
+          className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30"
+        >
+          <Download size={13} /> DOWNLOAD .MD
+        </button>
+        <button
+          onClick={downloadPdf}
+          disabled={!doc || pdfLoading}
+          className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30"
+        >
+          {pdfLoading ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} DOWNLOAD PDF
+        </button>
+      </div>
+    </Card>
   );
 }
 
