@@ -156,10 +156,13 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
       schema: retrySchema,
       fileUrls: undefined,
       role: 'coder',
-      // 2026-09-03: reverted to uncapped, same as chatWithMorpheus.js's
-      // Coder/polish calls — 18000 truncated a real multi-file build the
-      // same day it shipped, and the earlier latency test this session
-      // already showed capping bought no meaningful speed on this pipeline.
+      // 2026-09-03 correction: same fix as chatWithMorpheus.js's Coder/polish
+      // calls — going uncapped didn't actually remove the ceiling, it just
+      // handed control to DeepSeek's own undocumented default max_tokens
+      // (this deployment runs deepseek-v4-pro), which truncated sooner than
+      // the old 18000 cap did. Explicitly requesting 64000 (well inside
+      // v4-pro's real 384K output ceiling) instead of omitting the param.
+      maxTokens: 64000,
     });
     onProgress?.({ stage: 'retry_coder', status: 'done' });
     const corrected = Array.isArray(retry.result.fileOperations) ? retry.result.fileOperations : [];
