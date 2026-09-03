@@ -28,6 +28,7 @@ const ENTITY_MAP = {
   UserSettings: 'userSettings',
   BackendConfig: 'backendConfig',
   RebuildDoc: 'rebuildDoc',
+  SelfDevManual: 'selfDevManual',
   UpdatesPlan: 'updatesPlan',
   CostSnapshot: 'costSnapshot',
   GithubConnection: 'githubConnection',
