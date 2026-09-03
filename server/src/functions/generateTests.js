@@ -6,12 +6,18 @@ import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { createSnapshot, applyFileOperations, logUsage } from '../lib/projectUtils.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
+import { generateFilesChunked } from '../lib/chunkedFileGen.js';
 
-const TESTS_PROMPT = `You are Morpheus, operating in TEST GENERATION MODE inside the Matrix.
-
-Your job: analyze the operator's construct and generate a complete, production-grade test suite plus CI pipeline. You do not narrate — you produce files.
-
-RULES:
+// 2026-09-03: this used to be one prompt asking for the ENTIRE test suite +
+// CI config as fileOperations in a single invokeAI call, with no maxTokens
+// set at all — the exact same "unbounded multi-file output, provider's
+// undocumented default silently truncates it" shape that caused the
+// chatWithMorpheus OUTPUT_TRUNCATED incident (see that file's Planner/Coder
+// comments). A real project's test suite is easily more files than one
+// completion can safely hold. Split into a small PLAN call (enumerate which
+// test/CI files are needed) followed by a chunked WRITE pass (a few files'
+// full content per call), same pattern chatWithMorpheus.js uses for builds.
+const TESTS_RULES = `RULES:
 1. Detect the project's language, framework, and test runner from the existing files (package.json scripts, requirements.txt, go.mod, Cargo.toml, pom.xml, build.gradle, etc.).
 2. Generate REAL test files — actual assertions, real edge cases, no placeholders, no "TODO: write tests", no skipped tests. Every test must exercise real logic from the source files.
 3. Cover the core modules: unit tests for key functions/classes, and integration tests where multiple components interact. Aim for meaningful coverage — test happy paths, edge cases, and error handling.
@@ -26,11 +32,25 @@ RULES:
 5. If the project is a web app (React/Vue/Vite), also add a test script to package.json if missing, and use vitest or jest with jsdom environment.
 6. For compile targets that produce binaries (windows-exe, mac-app, linux-binary), the CI should also run the build step to verify the artifact compiles.
 7. Never delete or overwrite existing source files. Only create or update test files, CI config, and dependency manifests (package.json, requirements.txt) to add test dependencies.
-8. If tests already exist, extend them — don't replace working tests with empty ones.
+8. If tests already exist, extend them — don't replace working tests with empty ones.`;
 
-Return fileOperations for all files to create/update. Each item: path, FULL content, action ("create" or "update"). Never use "delete" in this mode.
+const TESTS_PLAN_PROMPT = `You are Morpheus, planning a TEST GENERATION pass inside the Matrix.
 
-Also return a summary: a brief (1-2 sentence) Morpheus-style note on what was generated, and testCount (number of test files generated).`;
+Your job here is ONLY to decide which files are needed — you do not write file content yet.
+
+${TESTS_RULES}
+
+Return JSON:
+- reply: brief (1-2 sentence) Morpheus-style note on what you're about to generate
+- plannedFiles: ordered array of every file path you will create or update (test files, CI config, dependency manifests) — list EVERY file, a later pass implements this list a few files at a time so it must be complete and exact`;
+
+const TESTS_WRITE_PROMPT = `You are Morpheus, operating in TEST GENERATION MODE inside the Matrix.
+
+You do not narrate — you produce files.
+
+${TESTS_RULES}
+
+Return fileOperations for ONLY the file(s) requested for this step. Each item: path, FULL content, action ("create" or "update"). Never use "delete" in this mode. Full content for each — never partial, never "continued".`;
 
 export default async function handler({ user, body }) {
   const { projectId, spec } = body || {};
@@ -54,52 +74,55 @@ export default async function handler({ user, body }) {
 
   const filesContext = files.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n');
 
-  const prompt = `${TESTS_PROMPT}
-
-PROJECT: ${project.name}
+  const projectContext = `PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
 COMPILE TARGET: ${project.compile_target || 'source'}
 ${spec ? 'OPERATOR SPEC: ' + spec : ''}
 
 CURRENT FILES:
-${filesContext}
+${filesContext}`;
 
-Analyze the construct. Generate a complete test suite and CI pipeline now. Return fileOperations for all test files, CI config, and any dependency updates needed.`;
-
-  const llmResponse = await invokeAI({
+  // ── Phase 1: plan which test/CI files are needed (small, bounded output) ──
+  const planResponse = await invokeAI({
     userId: user.id,
-    prompt,
+    prompt: `${TESTS_PLAN_PROMPT}\n\n${projectContext}\n\nAnalyze the construct and plan the test suite + CI pipeline now.`,
     schema: {
       type: 'object',
       properties: {
-        reply: { type: 'string', description: 'Brief Morpheus note on what was generated' },
-        fileOperations: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              content: { type: 'string' },
-              action: { type: 'string', enum: ['create', 'update'] }
-            }
-          }
-        },
-        testCount: { type: 'number', description: 'Number of test files generated' }
-      }
+        reply: { type: 'string', description: "Brief Morpheus-style note on what's about to be generated" },
+        plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Every test/CI/dependency-manifest file path to create or update' },
+      },
     },
     fileUrls: undefined,
-    role: 'coder',
+    role: 'planner',
+    maxTokens: 6000,
   });
+  const reply = planResponse.result.reply || '...';
+  const plannedFiles = Array.isArray(planResponse.result.plannedFiles)
+    ? planResponse.result.plannedFiles.filter((p) => typeof p === 'string' && p)
+    : [];
 
-  const llmResult = llmResponse.result;
-  const reply = llmResult.reply || '...';
-  let fileOps = Array.isArray(llmResult.fileOperations) ? llmResult.fileOperations : [];
-  const testCount = llmResult.testCount || 0;
+  // ── Phase 2: write the planned files a few at a time (chunked — see chunkedFileGen.js) ──
+  const { fileOps: generatedOps, chunked } = await generateFilesChunked({
+    userId: user.id,
+    plannedFiles,
+    role: 'coder',
+    buildPrompt: (chunk, allPlanned) => {
+      if (!chunk) {
+        // No plannedFiles came back — fall back to the original one-shot ask.
+        return `${TESTS_WRITE_PROMPT}\n\n${projectContext}\n\nAnalyze the construct. Generate a complete test suite and CI pipeline now. Return fileOperations for all test files, CI config, and any dependency updates needed.`;
+      }
+      return `${TESTS_WRITE_PROMPT}\n\n${projectContext}\n\nFULL FILE LIST FOR THIS TEST SUITE (for context only — do not write these now): ${allPlanned.join(', ')}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s).`;
+    },
+  });
+  let fileOps = generatedOps;
+  const testCount = fileOps.filter((op) => !/ci\.ya?ml$|workflows\//i.test(op.path)).length;
 
   // ── Reviewer: check the generated tests before commit, retry on critical issues ──
   if (fileOps.length > 0) {
     const contextBlock = `TEST GENERATION\nProject: ${project.name}\n${project.description ? 'Description: ' + project.description : ''}\nCompile target: ${project.compile_target || 'source'}\n\nCURRENT FILES:\n${filesContext}`;
-    const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, undefined, prompt);
+    const retryPrompt = `${TESTS_WRITE_PROMPT}\n\n${projectContext}`;
+    const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, undefined, retryPrompt);
     fileOps = reviewed.fileOps;
   }
 
@@ -114,6 +137,6 @@ Analyze the construct. Generate a complete test suite and CI pipeline now. Retur
     },
   });
 
-  await logUsage(user.id, 'test_generation', projectId, project.name, { testCount, fileCount: fileOps.length });
+  await logUsage(user.id, 'test_generation', projectId, project.name, { testCount, fileCount: fileOps.length, chunked });
   return { reply, fileOperations: appliedOps, testCount };
 }

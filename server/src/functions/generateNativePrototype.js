@@ -85,6 +85,11 @@ Generate the rapid prototype HTML now. Return ONLY a JSON object: { "html": "<!D
     },
     fileUrls: undefined,
     role: 'planner',
+    // 2026-09-03 audit: this had no maxTokens at all — its sibling,
+    // generateSelfDevPrototype.js, was already fixed with maxTokens: 5000
+    // for a scoped 1-12 file mockup; this one can see up to MAX_FILES (25)
+    // whole-project files, so it's given a bit more headroom.
+    maxTokens: 8000,
   });
 
   let html = response.result.html || '';

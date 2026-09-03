@@ -152,6 +152,14 @@ ${historyContext}`;
     },
     fileUrls: undefined,
     role: 'planner',
+    // 2026-09-03 audit (see chatWithMorpheus.js's OUTPUT_TRUNCATED postmortem
+    // and chunkedFileGen.js): this call had NO maxTokens at all, same as the
+    // Planner call that turned out to be the real cause of that incident —
+    // omitting it doesn't mean "uncapped", it hands control to the
+    // provider's own undocumented default. This plan is assessment text +
+    // a build plan, smaller than chatWithMorpheus's (no plannedFiles array),
+    // so 8000 is generous headroom without being wasteful.
+    maxTokens: 8000,
   });
 
   const plannerResult = planner.result;
@@ -200,6 +208,13 @@ ${historyContext}`;
       },
       fileUrls: undefined,
       role: 'coder',
+      // 2026-09-03 audit: same fix as the planner call above — this was also
+      // uncapped. The prompt already budgets this step to 4-5 files (see
+      // PLANNER_PROMPT's OUTPUT BUDGETING section), so 32000 is generous
+      // headroom for that many files' full content without going as high as
+      // chatWithMorpheus's single-shot fallback (64000), since this call is
+      // intentionally scoped smaller per step.
+      maxTokens: 32000,
     });
     coderResult = coder.result;
     coderInfo = { provider: coder.provider, model: coder.model, usage: coder.usage };

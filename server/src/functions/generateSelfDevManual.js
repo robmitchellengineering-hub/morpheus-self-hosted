@@ -109,6 +109,12 @@ Write the manual now, as Markdown only.`;
     schema: { type: 'object', properties: { markdown: { type: 'string', description: 'The complete manual, as a single Markdown document' } } },
     fileUrls: undefined,
     role: 'planner',
+    // 2026-09-03 audit: a full admin/self-dev manual generated from source
+    // is a single, potentially long document with no cap set at all. Not a
+    // multi-file case (chunking doesn't apply to one document), so this
+    // just needs a generous explicit ceiling instead of the provider's
+    // undocumented default.
+    maxTokens: 20000,
   });
 
   let content = response.result.markdown || '';

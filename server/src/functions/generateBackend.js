@@ -9,6 +9,7 @@ import { invokeAI } from '../ai.js';
 import { buildCodegenPrompt, buildEnvVars } from '../lib/infrastructureComponents.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
+import { generateFilesChunked } from '../lib/chunkedFileGen.js';
 
 function detectLanguage(path) {
   const ext = (path.split('.').pop() || '').toLowerCase();
@@ -46,7 +47,7 @@ export default async function handler({ user, body }) {
     ? `Reference files (for API contract reference — match the fetch/axios calls the frontend makes):\n${fileSummary}`
     : (isStandalone ? 'No reference files provided — generate the backend based on the plan and project description.' : 'No frontend files available.');
 
-  const prompt = `You are Morpheus, a backend code generator. Generate production-ready backend code.
+  const backendBrief = `You are Morpheus, a backend code generator. Generate production-ready backend code.
 
 Infrastructure components (generate code that connects ALL of these):
 ${codegenHint}
@@ -56,30 +57,56 @@ Required environment variables: ${envVars.join(', ')}
 Backend Plan:
 ${JSON.stringify(plan, null, 2)}
 
-${refSection}
+${refSection}`;
 
-Generate ALL backend files needed. Each file has a path (relative, WITHOUT "backend/" prefix) and full content. Include:
+  // 2026-09-03: this used to be a single "generate ALL backend files" call
+  // with NO maxTokens set — the same unbounded-multi-file-output shape that
+  // caused the chatWithMorpheus OUTPUT_TRUNCATED incident (see that file's
+  // comments, and chunkedFileGen.js). Split into a small file-list PLAN call
+  // followed by a chunked WRITE pass, same pattern as chatWithMorpheus.js
+  // and generateTests.js.
+  const planPrompt = `${backendBrief}
+
+Decide which backend files are needed. You do not write file content yet. Include:
 - Server entry point and all route handlers
 - Database schema / migrations
 - Auth middleware
 - Config files (package.json, wrangler.toml, docker-compose.yml, Dockerfile, .env.example, etc.)
 - README with setup instructions
 
-Keep code concise but complete — no placeholders, no TODOs, no "// implement this". Every file must be fully functional.
+Respond as JSON: { "plannedFiles": ["string" (path, relative, WITHOUT "backend/" prefix), ...], "summary": "string" }`;
 
-Respond as JSON: { "files": [{ "path": "string", "content": "string" }], "summary": "string" }`;
-
-  const genSchema = {
+  const planSchema = {
     type: 'object',
     properties: {
-      files: { type: 'array', items: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
+      plannedFiles: { type: 'array', items: { type: 'string' } },
       summary: { type: 'string' },
     },
-    required: ['files', 'summary'],
+    required: ['plannedFiles', 'summary'],
   };
 
-  const { result } = await invokeAI({ userId: user.id, prompt, schema: genSchema, role: 'coder' });
-  let generatedFiles = result.files || [];
+  const { result: filePlan } = await invokeAI({ userId: user.id, prompt: planPrompt, schema: planSchema, role: 'planner', maxTokens: 6000 });
+  const plannedFiles = Array.isArray(filePlan.plannedFiles) ? filePlan.plannedFiles.filter((p) => typeof p === 'string' && p) : [];
+  const summary = filePlan.summary || 'Backend generated.';
+
+  const writePrompt = `You are Morpheus, a backend code generator. Write full, production-ready file content for the requested file(s) only.
+
+${backendBrief}
+
+Keep code concise but complete — no placeholders, no TODOs, no "// implement this". Every file must be fully functional. Return fileOperations with path (relative, WITHOUT "backend/" prefix), FULL content, and action "create".`;
+
+  const { fileOps: rawFileOps } = await generateFilesChunked({
+    userId: user.id,
+    plannedFiles,
+    role: 'coder',
+    buildPrompt: (chunk, allPlanned) => {
+      if (!chunk) {
+        return `${writePrompt}\n\nGenerate ALL backend files needed now — the full set listed above.`;
+      }
+      return `${writePrompt}\n\nFULL FILE LIST FOR THIS BACKEND (for context only — do not write these now): ${allPlanned.join(', ')}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s).`;
+    },
+  });
+  let generatedFiles = rawFileOps.map((f) => ({ path: f.path, content: f.content }));
 
   // ── Reviewer: check the generated backend code before commit, retry on critical issues ──
   if (generatedFiles.length > 0) {
@@ -89,7 +116,7 @@ Respond as JSON: { "files": [{ "path": "string", "content": "string" }], "summar
       action: 'create',
     }));
     const contextBlock = `BACKEND CODE GENERATION\nProject: ${project.name}\n${project.description ? 'Description: ' + project.description : ''}\nCompile target: ${project.compile_target || 'source'}\nComponents: ${JSON.stringify(components)}\n\nBACKEND PLAN:\n${JSON.stringify(plan, null, 2)}`;
-    const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, JSON.stringify(plan, null, 2), prompt);
+    const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, JSON.stringify(plan, null, 2), writePrompt);
     generatedFiles = reviewed.fileOps.map((op) => ({ path: op.path, content: op.content }));
   }
 
@@ -124,5 +151,5 @@ Respond as JSON: { "files": [{ "path": "string", "content": "string" }], "summar
 
   await logUsage(user.id, 'autonomous_step', projectId, project.name, { phase: 'backend_generate', components, fileCount: records.length });
 
-  return { fileCount: records.length, summary: result.summary, status: 'generated' };
+  return { fileCount: records.length, summary, status: 'generated' };
 }

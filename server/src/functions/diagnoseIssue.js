@@ -285,7 +285,13 @@ Return ONLY the files that need to be updated (the fixed versions). Each file mu
 
 Respond as JSON: { "fixes": [{ "component": "string", "issue": "string", "fix": "string", "files": [{ "path": "string", "content": "string" }] }], "summary": "string" }`;
 
-  const { result } = await invokeAI({ userId, prompt, schema: fixResponseSchema, fileUrls: undefined, role: 'diagnosis' });
+  // 2026-09-03 audit (see chatWithMorpheus.js's OUTPUT_TRUNCATED postmortem):
+  // this call regenerates FULL content for every broken file in one shot and
+  // had no maxTokens set — same unbounded-output shape. Errors are usually
+  // limited to a handful of files, so this doesn't need full chunking like
+  // generateTests/generateBackend, but it does need an explicit cap rather
+  // than relying on the provider's undocumented default.
+  const { result } = await invokeAI({ userId, prompt, schema: fixResponseSchema, fileUrls: undefined, role: 'diagnosis', maxTokens: 32000 });
   let fixes = result.fixes || [];
 
   // ── Reviewer: check the regenerated fix files before applying, retry on critical issues ──

@@ -127,7 +127,12 @@ Respond as JSON with this exact structure:
     required: ['summary', 'database', 'api', 'auth', 'storage', 'envVars', 'recommendations', 'components'],
   };
 
-  const { result: plan } = await invokeAI({ userId: user.id, prompt, schema: planSchema, role: 'planner' });
+  // 2026-09-03 audit: this structured-plan call (tables/routes/auth/storage/
+  // components) had no maxTokens — the same shape as the chatWithMorpheus
+  // Planner call that turned out to be the actual cause of that incident
+  // (see its comments). Capped explicitly rather than left to the
+  // provider's undocumented default.
+  const { result: plan } = await invokeAI({ userId: user.id, prompt, schema: planSchema, role: 'planner', maxTokens: 12000 });
 
   // Validate AI-suggested component IDs against the known COMPONENTS list.
   // If the AI hallucinated a service ID, fall back to the default for that

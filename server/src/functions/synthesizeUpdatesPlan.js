@@ -83,7 +83,11 @@ Group near-duplicate submissions together, then rank the resulting list by: (1) 
 Feedback submissions:
 ${feedbackList}`;
 
-  const { result } = await invokeAI({ userId: user.id, prompt, schema: planSchema, role: 'diagnosis' });
+  // 2026-09-03 audit: up to MAX_FEEDBACK_ITEMS (300) items get grouped/ranked
+  // into this response with a rationale per group — no maxTokens was set,
+  // same undocumented-provider-default exposure as every other call site
+  // audited this pass.
+  const { result } = await invokeAI({ userId: user.id, prompt, schema: planSchema, role: 'diagnosis', maxTokens: 12000 });
   const content = toMarkdown(result, feedback.length);
 
   const existing = await prisma.updatesPlan.findFirst({ where: { created_by_id: user.id }, orderBy: { created_date: 'desc' } });
