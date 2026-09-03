@@ -463,15 +463,21 @@ OPERATOR SAYS: ${message}`;
         },
         fileUrls,
         role: 'coder',
-        // 2026-09-03: originally capped at 18000 as part of the same
-        // latency pass as the Planner/Reviewer caps above. Rob hit a real
-        // OUTPUT_TRUNCATED failure on a normal multi-file build the same
-        // day — 18000 wasn't actually generous enough for the Coder's full,
-        // unabridged, every-changed-file output, and the earlier latency
-        // test this session already showed capping bought no meaningful
-        // speed here anyway (the bottleneck is round-trip count, not
-        // generation time). Reverted to uncapped ("max think power") —
-        // matches the tool's original, previously-working design.
+        // 2026-09-03 correction: going uncapped (previous fix) did NOT
+        // resolve the OUTPUT_TRUNCATED failure — Rob hit it again on the
+        // very next build. Root cause: this deployment's provider
+        // (LLM_BASE_URL=api.deepseek.com, LLM_MODEL=deepseek-v4-pro) applies
+        // its OWN server-side default completion cap whenever max_tokens is
+        // omitted from the request — DeepSeek's docs confirm the standard
+        // endpoint defaults max_tokens well below what a real multi-file
+        // build needs when left unset. "Uncapped" was never actually
+        // uncapped; it silently fell back to a smaller ceiling than even the
+        // old 18000 cap did. Fixed by explicitly requesting a large cap
+        // instead of omitting the param — deepseek-v4-pro's real ceiling is
+        // 384K output tokens, so 64000 leaves huge headroom over any
+        // realistic build step while no longer gambling on an undocumented
+        // provider default.
+        maxTokens: 64000,
       });
       stages.done('coder');
 
@@ -535,8 +541,8 @@ OPERATOR SAYS: ${message}`;
             },
             fileUrls: undefined,
             role: 'coder',
-            // Same reasoning as the main Coder call above — reverted to
-            // uncapped, see the comment there.
+            // Same fix as the main Coder call above — see the comment there.
+            maxTokens: 64000,
           });
           stages.done('polish');
           const polishOps = Array.isArray(polish.result.fileOperations) ? polish.result.fileOperations : [];
