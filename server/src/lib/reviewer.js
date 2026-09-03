@@ -55,6 +55,11 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan) 
     },
     fileUrls: undefined,
     role: 'reviewer',
+    // 2026-09-03: the reviewer only ever returns an issues array plus a
+    // one-sentence summary — never file content — so this is as safe to cap
+    // tightly as the planner, and it runs twice on a retried build (once
+    // before, once after) so it's a meaningful chunk of end-to-end latency.
+    maxTokens: 3000,
   });
 
   const result = review.result;
@@ -135,6 +140,9 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
       schema: retrySchema,
       fileUrls: undefined,
       role: 'coder',
+      // Same reasoning as chatWithMorpheus.js's Coder calls — full file
+      // content, generous rather than tight cap.
+      maxTokens: 18000,
     });
     const corrected = Array.isArray(retry.result.fileOperations) ? retry.result.fileOperations : [];
     for (const c of corrected) {
