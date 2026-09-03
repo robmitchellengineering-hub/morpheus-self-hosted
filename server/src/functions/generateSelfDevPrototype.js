@@ -37,7 +37,8 @@ RULES:
 5. Stub anything external (API calls, other components not shown, database access) with obvious mock data or a fake async delay — never claim to hit a real endpoint.
 6. Keep it honest: if the given file(s) don't have enough for a sensible mockup (pure config, a type definition, a one-line constant), say so plainly in the HTML instead of inventing unrelated UI.
 7. Must run standalone inside an iframe sandbox with allow-scripts.
-8. Return ONLY a JSON object with a single "html" key containing the complete HTML document as a string. No markdown fences, no extra text.`;
+8. Keep it concise — this is a quick scoped mockup, not a polished final product. Skip explanatory comments, don't pad the CSS with unused rules, and don't over-build beyond what's needed to see the piece working. Shorter output means a faster preview.
+9. Return ONLY a JSON object with a single "html" key containing the complete HTML document as a string. No markdown fences, no extra text.`;
 
 export default async function handler({ user, body }) {
   if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
@@ -87,6 +88,17 @@ Generate the scoped rapid prototype HTML now. Return ONLY a JSON object: { "html
     },
     fileUrls: undefined,
     role: 'planner',
+    // 2026-09-03 (Rob: "the rapid preview is anything but rapid"): this call
+    // was previously uncapped ("max think power" default in ai.js), so a
+    // single non-streamed generation could run to however many tokens the
+    // model felt like producing before the request resolved — the single
+    // biggest lever on how long the operator stares at a spinner. A scoped
+    // mockup of 1-12 small files never legitimately needs more than a few
+    // thousand tokens of HTML/CSS/JS, so bounding it turns an open-ended
+    // generation into a fast, predictable one. If a mockup is genuinely
+    // complex enough to hit this, invokeAI throws OUTPUT_TRUNCATED, which
+    // PreviewPanel already surfaces as a retryable error banner.
+    maxTokens: 5000,
   });
 
   let html = response.result.html || '';
