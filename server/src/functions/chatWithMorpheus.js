@@ -325,6 +325,12 @@ OPERATOR SAYS: ${message}`;
     },
     fileUrls,
     role: 'planner',
+    // 2026-09-03 (Rob: chat turns feel slow end-to-end): the Planner only
+    // ever returns a short reply plus, for builds, a text plan — never file
+    // content — so a tight cap is low-risk and this phase runs on every
+    // single turn (including plain conversation), making it the best return
+    // on latency of any phase in this pipeline. See ai.js's maxTokens docs.
+    maxTokens: 3000,
   });
 
   const plannerResult = planner.result;
@@ -375,6 +381,14 @@ OPERATOR SAYS: ${message}`;
       },
       fileUrls,
       role: 'coder',
+      // 2026-09-03: unlike the Planner, the Coder MUST return full,
+      // unabridged content for every changed file (never partial — see its
+      // own instructions above), so this cap is deliberately generous rather
+      // than tight: enough headroom for a normal multi-file build step, just
+      // a backstop against genuinely runaway generation. A build that's
+      // large enough to hit this already gets told (via OUTPUT_TRUNCATED) to
+      // split into smaller steps — the same guidance the app already gives.
+      maxTokens: 18000,
     });
 
     coderModel = coder.model;
@@ -434,6 +448,9 @@ OPERATOR SAYS: ${message}`;
           },
           fileUrls: undefined,
           role: 'coder',
+          // Same reasoning as the main Coder call above — full file content,
+          // generous rather than tight cap.
+          maxTokens: 18000,
         });
         const polishOps = Array.isArray(polish.result.fileOperations) ? polish.result.fileOperations : [];
         if (polishOps.length > 0) {
