@@ -8,6 +8,25 @@ import SheetSelect from './SheetSelect';
 
 const NATIVE_TARGETS = ['android-apk', 'ios-app', 'windows-exe', 'mac-app', 'linux-binary', 'python-package', 'rpi-distro', 'arduino-firmware'];
 
+// Self-dev mode (Rob, 2026-09-03): self-dev's "project" is Morpheus's own
+// ~150+ file monorepo, not a small generated app. Running the normal
+// full-project preview below (buildPreviewHtml, or even the native LLM path)
+// against the whole thing is both expensive and pointless — it can't
+// actually boot the real app (no router, no @/ aliases, no real npm
+// packages) and re-does that failed work on every turn regardless of what
+// changed. Self-dev instead previews ONLY the file(s) the most recent turn
+// touched: a small LLM-generated mockup of just that piece
+// (generateSelfDevPrototype.js) when a frontend file was touched, and
+// nothing at all — no build, no LLM call — when the turn only touched
+// server/* (a backend change has no UI to preview).
+const SELF_DEV_FRONTEND_PATH_RE = /^(src\/|public\/|index\.html$)/;
+
+function selfDevClassify(paths) {
+  const frontend = (paths || []).filter((p) => SELF_DEV_FRONTEND_PATH_RE.test(p));
+  const backend = (paths || []).filter((p) => !SELF_DEV_FRONTEND_PATH_RE.test(p));
+  return { frontend, backend };
+}
+
 // Target screen presets. `auto` fills the container (legacy behaviour);
 // the rest render at a fixed resolution and scale down to fit.
 const DEVICES = [
@@ -21,12 +40,24 @@ const DEVICES = [
   { id: 'custom', label: 'CUSTOM', w: null, h: null, icon: Monitor },
 ];
 
-export default function PreviewPanel({ files, projectId, compileTarget, onClose }) {
+export default function PreviewPanel({ files, projectId, compileTarget, onClose, selfDevTouched }) {
   const [html, setHtml] = useState('');
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState(null);
   const [key, setKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // selfDevTouched: { paths, rev } — only ever passed by SelfDev.jsx. Its
+  // presence (not compileTarget) is what switches this whole panel into
+  // scoped-preview mode; every branch below that reads `isSelfDev` exists to
+  // make sure the expensive full-project paths (buildPreviewHtml / the
+  // native LLM effect) never run for self-dev, not even once.
+  const isSelfDev = !!selfDevTouched;
+  const selfDevPaths = selfDevTouched?.paths || [];
+  const selfDevRev = selfDevTouched?.rev ?? 0;
+  const { frontend: selfDevFrontendPaths, backend: selfDevBackendPaths } = selfDevClassify(selfDevPaths);
+  const selfDevFrontendSig = selfDevFrontendPaths.join('|');
+  const selfDevState = selfDevPaths.length === 0 ? 'idle' : selfDevFrontendPaths.length === 0 ? 'backend-only' : 'prototype';
 
   // Device framing state
   const [deviceId, setDeviceId] = useState('auto');
@@ -56,9 +87,10 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
   const isFramed = deviceId !== 'auto' && dw && dh && stageSize.w > 0 && stageSize.h > 0;
   const scale = isFramed ? Math.min(stageSize.w / dw, stageSize.h / dh) : 1;
 
-  // Web app / source: synchronous in-browser build
+  // Web app / source: synchronous in-browser build. Skipped entirely in
+  // self-dev mode — see selfDevTouched effect below.
   useEffect(() => {
-    if (isNative) return;
+    if (isNative || isSelfDev) return;
     setBuilding(true);
     setError(null);
     try {
@@ -70,13 +102,15 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
     } finally {
       setBuilding(false);
     }
-  }, [fileSig, isNative]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fileSig, isNative, isSelfDev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Native: async LLM prototype generation (debounced — rapid edits settle
   // before triggering the expensive LLM call, and the previous prototype
-  // stays visible during regeneration so the user can keep iterating)
+  // stays visible during regeneration so the user can keep iterating).
+  // Self-dev projects are never a native compile_target in practice, but
+  // guard anyway — isSelfDev always wins.
   useEffect(() => {
-    if (!isNative || !projectId) return;
+    if (!isNative || isSelfDev || !projectId) return;
     let cancelled = false;
     let timer;
     const generate = async () => {
@@ -99,10 +133,50 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
     const delay = refreshKey > 0 && html ? 2000 : 0;
     timer = setTimeout(generate, delay);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [fileSig, isNative, projectId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fileSig, isNative, isSelfDev, projectId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Self-dev: scoped rapid prototype for whatever the most recent turn
+  // touched. Keyed on selfDevRev (bumped once per completed turn in
+  // useWorkspace.js) rather than fileSig, so this fires exactly once per
+  // turn — no debounce needed, unlike the native effect above, which keys
+  // off every file-list change. A turn that touched no frontend file (or no
+  // turn has happened yet this session) intentionally does nothing here:
+  // no LLM call, no build — see the idle/backend-only render branch below.
+  useEffect(() => {
+    if (!isSelfDev || !projectId) return;
+    if (selfDevState !== 'prototype') {
+      setHtml('');
+      setError(null);
+      setBuilding(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setBuilding(true);
+      setError(null);
+      try {
+        const res = await base44.functions.invoke('generateSelfDevPrototype', { projectId, paths: selfDevFrontendPaths });
+        if (!cancelled) {
+          setHtml(res.data.html || '');
+          setKey(k => k + 1);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Prototype generation failed');
+      } finally {
+        if (!cancelled) setBuilding(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // selfDevFrontendSig (not the array itself) is the real dependency — a
+    // fresh array reference is built every render regardless of content.
+    // refreshKey is included so the manual refresh button (rebuild(), below)
+    // can force a fresh generation of the exact same paths.
+  }, [isSelfDev, projectId, selfDevRev, selfDevState, selfDevFrontendSig, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rebuild = useCallback(() => {
-    if (isNative) {
+    if (isSelfDev) {
+      if (selfDevState === 'prototype') setRefreshKey(k => k + 1);
+    } else if (isNative) {
       setRefreshKey(k => k + 1);
     } else {
       setBuilding(true);
@@ -117,7 +191,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
         setBuilding(false);
       }
     }
-  }, [files, isNative]);
+  }, [files, isNative, isSelfDev, selfDevState]);
 
   const openInNewTab = () => {
     if (!html) return;
@@ -133,7 +207,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
         <div className="flex items-center gap-2 min-w-0">
           <Eye size={14} className="text-primary shrink-0" />
           <span className="text-primary font-display tracking-wider text-sm neon-glow whitespace-nowrap">
-            {isNative ? 'RAPID PROTOTYPE' : 'LIVE PREVIEW'}
+            {isSelfDev ? 'SCOPED PREVIEW' : isNative ? 'RAPID PROTOTYPE' : 'LIVE PREVIEW'}
           </span>
           {building && <Loader2 size={12} className="animate-spin text-primary/60 shrink-0" />}
           <CacheRefreshStamp />
@@ -180,7 +254,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
           )}
         </div>
       </div>
-      {isNative && html && !building && (
+      {isNative && !isSelfDev && html && !building && (
         <div className="flex items-center gap-2 border-b border-yellow-500/30 bg-yellow-500/10 px-3 py-1.5 shrink-0">
           <AlertTriangle size={12} className="text-yellow-500 shrink-0" />
           <span className="text-yellow-500/80 text-xs font-mono leading-tight">
@@ -188,12 +262,40 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose 
           </span>
         </div>
       )}
+      {isSelfDev && selfDevState === 'prototype' && html && !building && (
+        <div className="flex items-center gap-2 border-b border-yellow-500/30 bg-yellow-500/10 px-3 py-1.5 shrink-0">
+          <AlertTriangle size={12} className="text-yellow-500 shrink-0" />
+          <span className="text-yellow-500/80 text-xs font-mono leading-tight">
+            SCOPED PROTOTYPE — mockup of only the touched file(s) below, not the whole app. Logic flow simulated.
+          </span>
+        </div>
+      )}
+      {isSelfDev && selfDevState === 'prototype' && (
+        <div className="flex items-start gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 shrink-0 text-[11px] text-primary/60 font-mono">
+          <span className="shrink-0 text-primary/40">TOUCHED:</span>
+          <span className="truncate">{selfDevFrontendPaths.join(', ')}</span>
+        </div>
+      )}
       <div ref={stageRef} className="flex-1 bg-[#0a0a0a] relative overflow-hidden">
-        {building && !html ? (
+        {isSelfDev && selfDevState === 'idle' ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-background p-6">
+            <div className="text-primary/50 text-xs font-mono text-center max-w-xs leading-relaxed">
+              // No preview yet — ask Morpheus to change something. A scoped mockup of just the touched UI file(s) will appear here. Backend-only changes (server/*) never trigger a build.
+            </div>
+          </div>
+        ) : isSelfDev && selfDevState === 'backend-only' ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-background p-6">
+            <div className="text-primary/60 text-xs font-mono text-center max-w-sm leading-relaxed space-y-2">
+              <p>// Backend-only change — no visual preview needed.</p>
+              <p className="truncate">Touched: {selfDevBackendPaths.join(', ')}</p>
+              <p>Verify via PUSH TO PRODUCTION + the Admin Panel's Ops Console (logs / DB console), or ask Morpheus to walk through the logic in chat.</p>
+            </div>
+          </div>
+        ) : building && !html ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-background gap-2">
             <Loader2 size={24} className="animate-spin text-primary/60" />
             <span className="text-primary/60 text-xs font-mono">
-              {isNative ? 'Generating rapid prototype...' : 'Building preview...'}
+              {isSelfDev ? 'Generating scoped prototype...' : isNative ? 'Generating rapid prototype...' : 'Building preview...'}
             </span>
           </div>
         ) : error ? (
