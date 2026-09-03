@@ -25,67 +25,98 @@ Return JSON with:
 - summary: one-sentence overall verdict
 - approved: true if no critical issues were found, false if any critical issues exist`;
 
+const REVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          severity: { type: 'string', enum: ['critical', 'warning'] },
+          message: { type: 'string' }
+        }
+      }
+    },
+    summary: { type: 'string', description: 'One-sentence overall verdict' },
+    approved: { type: 'boolean', description: 'true if no critical issues' }
+  }
+};
+
+// 2026-09-03, round three: raising this cap (3000 -> 6000) was still not
+// enough — Rob hit the identical OUTPUT_TRUNCATED after a real ~7-minute
+// build, because this call used to review ALL of a build's accumulated
+// fileOps in ONE completion. That's the exact same "unbounded multi-file
+// output in a single call" shape as the old Coder bug — a big enough build
+// (many Coder chunks' worth of files, each contributing issues + a message)
+// will always eventually blow through whatever fixed number is picked here.
+// Rather than raise the number again and wait for round four, this now
+// reviews a few files per call and merges the results — the same chunking
+// fix already applied to the Coder (see chatWithMorpheus.js / chunkedFileGen.js).
+const REVIEW_CHUNK_SIZE = 5;
+const REVIEW_STEP_MAX_TOKENS = 8000; // generous for a handful of files' worth of issues
+
 // `progress` (optional, 5th arg) — 2026-09-03 (Rob: stream step-by-step
 // progress + an ETA in the chat window): { onProgress, stageName }. When
 // given, onProgress({stage: stageName, status: 'start'|'done'}) fires around
-// the invokeAI call below so a streaming caller (chatWithMorpheus.js) can
+// the invokeAI call(s) below so a streaming caller (chatWithMorpheus.js) can
 // emit a real progress event; every existing positional caller (only 4
 // args) just gets undefined here and onProgress?.() is a no-op, so nothing
 // else needs to change.
 export async function reviewFileOperations(userId, fileOps, contextBlock, plan, progress) {
   const { onProgress, stageName = 'reviewer' } = progress || {};
-  const opsBlock = fileOps.map((op, i) =>
-    `--- FILE ${i + 1}: ${op.path} (action: ${op.action || 'create'}) ---\n${op.content || '(empty)'}`
-  ).join('\n\n');
-
   const planNote = plan ? `\n\nORIGINAL BUILD PLAN (for context):\n${plan}` : '';
+  const manifest = fileOps.length > REVIEW_CHUNK_SIZE
+    ? `\n\nFULL FILE LIST IN THIS BUILD (for cross-file context only — most are reviewed in other batches): ${fileOps.map((op) => op.path).join(', ')}`
+    : '';
+
+  const chunks = [];
+  for (let i = 0; i < fileOps.length; i += REVIEW_CHUNK_SIZE) {
+    chunks.push(fileOps.slice(i, i + REVIEW_CHUNK_SIZE));
+  }
 
   onProgress?.({ stage: stageName, status: 'start' });
-  const review = await invokeAI({
-    userId,
-    prompt: `${REVIEWER_PROMPT}\n${contextBlock}\n\nPROPOSED FILE OPERATIONS TO REVIEW:\n${opsBlock}${planNote}\n\nReview these files now.`,
-    schema: {
-      type: 'object',
-      properties: {
-        issues: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              severity: { type: 'string', enum: ['critical', 'warning'] },
-              message: { type: 'string' }
-            }
-          }
-        },
-        summary: { type: 'string', description: 'One-sentence overall verdict' },
-        approved: { type: 'boolean', description: 'true if no critical issues' }
-      }
-    },
-    fileUrls: undefined,
-    role: 'reviewer',
-    // 2026-09-03 correction: the same "this is short output, cap it tight"
-    // reasoning was just proven wrong for the Planner's identical 3000 cap
-    // (it was the actual cause of Rob's OUTPUT_TRUNCATED failures, not the
-    // Coder — see chatWithMorpheus.js's planner call). The reviewer here
-    // reviews ALL of a build's accumulated fileOps in one call (every
-    // chunk from the Coder's per-file-group passes, merged) — with enough
-    // files and enough flagged issues, one line per issue can add up past
-    // 3000 too. Raised to 6000 as a preventive match, before this becomes
-    // the next hidden truncation point instead of waiting to hit it.
-    maxTokens: 6000,
-  });
+
+  const allIssues = [];
+  const summaries = [];
+  let approvedAll = true;
+  let model, provider;
+
+  for (const chunk of chunks) {
+    const opsBlock = chunk.map((op, i) =>
+      `--- FILE ${i + 1}: ${op.path} (action: ${op.action || 'create'}) ---\n${op.content || '(empty)'}`
+    ).join('\n\n');
+    const batchNote = chunks.length > 1
+      ? `\n\nReviewing batch of ${chunk.length} file(s) out of ${fileOps.length} total in this build.`
+      : '';
+
+    const review = await invokeAI({
+      userId,
+      prompt: `${REVIEWER_PROMPT}\n${contextBlock}\n\nPROPOSED FILE OPERATIONS TO REVIEW:\n${opsBlock}${planNote}${manifest}${batchNote}\n\nReview these files now.`,
+      schema: REVIEW_SCHEMA,
+      fileUrls: undefined,
+      role: 'reviewer',
+      maxTokens: REVIEW_STEP_MAX_TOKENS,
+    });
+    model = review.model;
+    provider = review.provider;
+    const result = review.result;
+    const issues = Array.isArray(result.issues) ? result.issues : [];
+    allIssues.push(...issues);
+    if (result.summary) summaries.push(result.summary);
+    if (issues.some((i) => i.severity === 'critical') || !result.approved) approvedAll = false;
+  }
+
   onProgress?.({ stage: stageName, status: 'done' });
 
-  const result = review.result;
-  const issues = Array.isArray(result.issues) ? result.issues : [];
-  const criticalIssues = issues.filter(i => i.severity === 'critical');
+  const criticalIssues = allIssues.filter((i) => i.severity === 'critical');
   return {
-    issues,
-    summary: result.summary || 'Review complete.',
-    approved: !criticalIssues.some(i => i.severity === 'critical') && !!result.approved,
-    provider: review.provider,
-    model: review.model,
+    issues: allIssues,
+    summary: summaries.join(' ') || 'Review complete.',
+    approved: approvedAll && criticalIssues.length === 0,
+    provider,
+    model,
   };
 }
 
