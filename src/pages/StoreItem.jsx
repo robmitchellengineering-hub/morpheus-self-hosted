@@ -99,8 +99,34 @@ export default function StoreItem() {
   const downloadFree = async () => {
     if (!template?.files) return;
     setDownloading(true);
+    setError(null);
     try {
-      await buildZip(template.files, template.name, template.artifacts);
+      if (template.has_artifacts) {
+        // A compiled build is attached — build the ZIP server-side
+        // (downloadFreeTemplate.js) instead of fetching the binary from
+        // the browser. cdn.morpheus.nz doesn't send CORS headers, so a
+        // client-side fetch() of the artifact always failed silently here
+        // (caught by buildZip's try/catch) and buyers got a ZIP with only
+        // the source — no error shown, no compiled build either. The
+        // server isn't subject to CORS, so it can fetch and bundle the
+        // artifact directly.
+        const res = await base44.functions.invoke('downloadFreeTemplate', { templateId });
+        const blob = res.data instanceof Blob ? res.data : null;
+        if (!blob) throw new Error('Download failed — please try again.');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(template.name || 'template').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        // No compiled build attached — the old client-side path is fine
+        // here since it never touches cdn.morpheus.nz (just the inline
+        // `files` JSON already in `template`), and skips a round trip.
+        await buildZip(template.files, template.name, template.artifacts);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
