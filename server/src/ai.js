@@ -289,9 +289,17 @@ async function resolveEndpoint(settings, role) {
  * @param {object} [opts.schema] JSON schema — when set, forces a structured JSON response
  * @param {string[]} [opts.fileUrls] reference file URLs (images sent as vision content parts)
  * @param {'planner'|'coder'|'reviewer'|'diagnosis'} [opts.role]
+ * @param {number} [opts.maxTokens] optional output cap — default is uncapped ("max think power").
+ *   Set this for calls whose output is naturally small and bounded (a single mockup document, a
+ *   short structured answer): capping turns an open-ended generation into a bounded one, which is
+ *   the single biggest lever on wall-clock latency for a non-streamed call, since the request
+ *   blocks until the model stops emitting tokens either way. Only pass it when a too-short
+ *   response degrades gracefully (invokeAI already throws OUTPUT_TRUNCATED on a JSON schema call
+ *   that gets cut off mid-object, which callers can surface as a retryable error) — never for a
+ *   call whose output length can't be reasonably estimated in advance.
  * @returns {Promise<{result: any, provider: string, model: string, usage?: object}>}
  */
-export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
+export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxTokens }) {
   const settings = await getUserSettings(userId);
   const { provider, baseUrl, apiKey, model } = await resolveEndpoint(settings, role);
 
@@ -353,7 +361,8 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
     messages = [{ role: 'user', content: effectivePrompt }];
   }
 
-  const body = { model, messages, temperature: 0.7 }; // no max_tokens cap — "max think power" default
+  const body = { model, messages, temperature: 0.7 }; // no max_tokens cap by default — "max think power"
+  if (maxTokens) body.max_tokens = maxTokens; // caller opted into a bounded-output call — see invokeAI's JSDoc above
 
   if (schema) {
     body.response_format = { type: 'json_object' };
