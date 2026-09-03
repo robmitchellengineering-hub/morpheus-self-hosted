@@ -148,6 +148,12 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               notifyComplete('failed', `Artifact save failed: ${saveResult.error}`);
               return;
             }
+            // Our own re-uploaded (public) URLs — used instead of GitHub's
+            // raw browser_download_url below, which 404s for anyone whose
+            // browser isn't authenticated into the private build repo.
+            if (saveResult?.artifacts?.length > 0) {
+              setStatus((prev) => ({ ...(prev || {}), savedArtifacts: saveResult.artifacts }));
+            }
           } catch (saveErr) {
             setPhase('error');
             setError(`Build succeeded but saving the artifact failed: ${saveErr?.message || saveErr}. Tap RECOMPILE to retry.`);
@@ -401,14 +407,26 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   // Build succeeded but published no downloadable artifact. Check the release on GitHub.
                 </p>
               )}
-              {status?.assets?.map((a, i) => (
-                <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
-                  <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
-                </a>
-              ))}
+              {/* Prefer our own re-uploaded copy (storage.js) — always a public
+                  URL. GitHub's asset browser_download_url (used as a fallback
+                  below) lives in a private build repo and 404s in the browser
+                  unless it happens to be signed into a GitHub account with
+                  access to that specific repo, so it's not a reliable primary
+                  link. */}
+              {status?.savedArtifacts?.length > 0
+                ? status.savedArtifacts.map((a, i) => (
+                    <a key={i} href={a.url} download={a.name} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
+                      <Download size={14} /> {a.name}{a.size ? ` (${(a.size / 1024 / 1024).toFixed(1)} MB)` : ''}
+                    </a>
+                  ))
+                : status?.assets?.map((a, i) => (
+                    <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
+                      <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
+                    </a>
+                  ))}
               {status?.releaseUrl && (
                 <a href={status.releaseUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary/50 hover:text-primary">
-                  <ExternalLink size={12} /> View release on GitHub
+                  <ExternalLink size={12} /> View release on GitHub (requires GitHub access)
                 </a>
               )}
               {(target === 'rpi-distro' || target === 'linux-distro') && (
