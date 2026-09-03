@@ -113,6 +113,94 @@ const ENTITY_NAMES = [
 
 const entities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, makeEntity(name)]));
 
+function safeParseJsonLine(line) {
+  try { return JSON.parse(line); } catch { return null; }
+}
+
+// 2026-09-03 (Rob: "stream the progress with an eta ... step by step in the
+// chat window") — streaming counterpart to functions.invoke, currently used
+// only for chatWithMorpheus (see useWorkspace.js's sendMessage). The server
+// streams newline-delimited JSON (see chatWithMorpheus.js): zero or more
+// {type:'stage', stage, status:'start'|'done', label, etaSeconds|
+// elapsedSeconds} progress events, then exactly one terminal
+// {type:'result', data} or {type:'error', ...} line. `onStage` fires for
+// each stage event as it arrives; the returned promise resolves with the
+// same `{ data }` shape functions.invoke returns (or rejects, matching
+// apiFetch's error contract) once the terminal line is read.
+//
+// A failure BEFORE the handler starts streaming (bad auth, validation,
+// project not found — see functions.routes.js) never reaches the NDJSON
+// path at all: it's a normal non-200 JSON error response, handled the same
+// way apiFetch handles one.
+async function invokeStream(name, body, onStage) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/functions/${name}`, { method: 'POST', headers, body: JSON.stringify(body || {}) });
+
+  const dispatchInsufficientCredits = (needed, available, message) => {
+    try {
+      window.dispatchEvent(new CustomEvent('morpheus:insufficient-credits', { detail: { needed, available, message } }));
+    } catch { /* window unavailable (SSR) */ }
+  };
+
+  if (!res.ok) {
+    let data = {};
+    try { data = await res.json(); } catch { /* non-JSON error body */ }
+    const err = new Error(data.error || res.statusText || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.data = data;
+    if (data.code === 'INSUFFICIENT_CREDITS') dispatchInsufficientCredits(data.needed, data.available, data.error);
+    throw err;
+  }
+
+  // Read the NDJSON body incrementally so onStage fires as each line
+  // arrives, rather than only after the whole response finishes — that's
+  // the entire point of streaming this instead of one JSON blob.
+  let finalEvent = null;
+  const handleLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const evt = safeParseJsonLine(trimmed);
+    if (!evt) return;
+    if (evt.type === 'stage') onStage?.(evt);
+    else if (evt.type === 'result' || evt.type === 'error') finalEvent = evt;
+  };
+
+  if (res.body?.getReader) {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        handleLine(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 1);
+      }
+    }
+    if (buffer) handleLine(buffer);
+  } else {
+    // Streaming reader unsupported in this environment — fall back to
+    // reading the whole body at once and replaying it line by line so the
+    // same parsing/onStage path still runs (just without the live benefit).
+    const text = await res.text();
+    text.split('\n').forEach(handleLine);
+  }
+
+  if (!finalEvent) throw new Error('Connection closed before Morpheus finished responding.');
+  if (finalEvent.type === 'error') {
+    const err = new Error(finalEvent.message || 'Internal error');
+    err.data = finalEvent;
+    if (finalEvent.code === 'INSUFFICIENT_CREDITS') dispatchInsufficientCredits(finalEvent.needed, finalEvent.available, finalEvent.message);
+    throw err;
+  }
+  return { data: finalEvent.data };
+}
+
 // base44.functions.invoke(name, body) returned an axios-style { data } object
 // in the original SDK — every call site (useWorkspace.js, BackendPanel.jsx,
 // etc.) already reads `res.data.X`, so this wraps the response the same way.
@@ -121,6 +209,7 @@ const functions = {
     const data = await apiFetch(`/functions/${name}`, { method: 'POST', body });
     return { data };
   },
+  invokeStream,
 };
 
 const integrations = {
