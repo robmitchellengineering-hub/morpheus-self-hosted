@@ -11,6 +11,64 @@ import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
+import { estimateCallMs } from '../lib/timingStats.js';
+
+// 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
+// doin step by step in the chat window") — this handler streams
+// newline-delimited JSON progress events over the same HTTP response
+// instead of returning one JSON blob at the end. See the bottom of this
+// file for the actual streaming loop; these two tables are what turn a raw
+// stage id into something worth showing the operator:
+//  - STAGE_LABELS: plain-English name for the step list in the chat window.
+//  - STAGE_ROLE: which invokeAI() `role` this stage's ETA should be based on
+//    (lib/timingStats.js tracks rolling-average latency per role, fed by
+//    every invokeAI call — polish and the critical-issue retry-coder call
+//    both return full file content just like the main Coder call, so they
+//    share its 'coder' timing bucket rather than needing their own).
+const STAGE_LABELS = {
+  planner: 'Planning the build',
+  coder: 'Writing the code',
+  reviewer: 'Reviewing the changes',
+  retry_coder: 'Fixing flagged issues',
+  retry_reviewer: 'Re-checking the fix',
+  polish: 'Polishing the UI',
+};
+const STAGE_ROLE = {
+  planner: 'planner',
+  coder: 'coder',
+  reviewer: 'reviewer',
+  retry_coder: 'coder',
+  retry_reviewer: 'reviewer',
+  polish: 'coder',
+};
+
+// One of these per request. `emit` writes one NDJSON line; `start`/`done`
+// wrap a stage the handler itself calls invokeAI for directly (planner,
+// coder, polish); `onProgress` adapts reviewer.js's own {stage, status}
+// callback shape (see reviewAndRetry) into the same emitted events, so the
+// reviewer/retry-coder/re-review steps show up as real steps too instead of
+// vanishing into one opaque "reviewing" phase.
+function makeStageEmitter(emit) {
+  let index = 0;
+  const startedAt = new Map();
+  const start = (stage) => {
+    startedAt.set(stage, Date.now());
+    emit({ type: 'stage', stage, status: 'start', label: STAGE_LABELS[stage], etaSeconds: Math.round(estimateCallMs(STAGE_ROLE[stage]) / 1000), index: index++ });
+  };
+  const done = (stage) => {
+    const t = startedAt.get(stage);
+    emit({ type: 'stage', stage, status: 'done', label: STAGE_LABELS[stage], elapsedSeconds: t ? Math.round((Date.now() - t) / 1000) : undefined });
+  };
+  return {
+    start,
+    done,
+    onProgress: (evt) => {
+      if (!evt?.stage) return;
+      if (evt.status === 'start') start(evt.stage);
+      else if (evt.status === 'done') done(evt.stage);
+    },
+  };
+}
 
 // Shared by both personality variants below — every technical/build rule is
 // identical regardless of whether Morpheus's Matrix-mentor voice is on or
@@ -202,7 +260,7 @@ SELF-DEV SAFETY RULE — YOU ARE EDITING MORPHEUS'S OWN LIVE PRODUCTION CODEBASE
 - Prefer small, targeted, reviewable changes over sweeping rewrites — the operator reviews every change in the file editor and live preview before pushing to production themselves.`;
 }
 
-export default async function handler({ user, body }) {
+export default async function handler({ user, body, res }) {
   const { projectId, message, fileUrls, focusPaths } = body || {};
   if (!projectId || !message) throw Object.assign(new Error('projectId and message required'), { status: 400 });
 
@@ -310,187 +368,226 @@ ${historyContext}
 ${designBlock}
 OPERATOR SAYS: ${message}`;
 
-  // ── Phase 1: Planner reasons about intent and design ──────────────────────
-  const planner = await invokeAI({
-    userId: user.id,
-    prompt: `${systemPrompt}${PLANNER_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
-    schema: {
-      type: 'object',
-      properties: {
-        reply: { type: 'string', description: 'Morpheus response in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true' },
-        needsCode: { type: 'boolean', description: 'true if code needs to be written/modified, false for pure conversation' },
-        needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
-        plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false)' }
-      }
-    },
-    fileUrls,
-    role: 'planner',
-    // 2026-09-03 (Rob: chat turns feel slow end-to-end): the Planner only
-    // ever returns a short reply plus, for builds, a text plan — never file
-    // content — so a tight cap is low-risk and this phase runs on every
-    // single turn (including plain conversation), making it the best return
-    // on latency of any phase in this pipeline. See ai.js's maxTokens docs.
-    maxTokens: 3000,
+  // From here on the response streams: zero or more {type:'stage',...}
+  // progress events (see makeStageEmitter above) followed by exactly one
+  // terminal {type:'result', data} or {type:'error', ...} line. Everything
+  // above this point can still throw normally — a bad projectId, a missing
+  // project, a self-dev permission failure — and get the router's usual
+  // clean JSON error response (functions.routes.js), since no headers have
+  // been sent yet. Once we're streaming, any failure (including
+  // InsufficientCreditsError from a later invokeAI call — the credit check
+  // happens per-call, not just on the first one) is caught below and sent as
+  // a {type:'error'} line instead, since the HTTP status/headers can't
+  // change after res.writeHead.
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no', // hint to any nginx-style proxy in front of this: don't buffer, flush each line
   });
+  const emit = (event) => { try { res.write(JSON.stringify(event) + '\n'); } catch { /* client disconnected mid-stream */ } };
+  const stages = makeStageEmitter(emit);
 
-  const plannerResult = planner.result;
-  const reply = plannerResult.reply || '...';
-  const needsCode = !!plannerResult.needsCode;
-  const needsClarification = !!plannerResult.needsClarification;
-
-  // ── Clarification gate: if the Planner is genuinely unsure, ask before building ─
-  if (needsClarification) {
-    await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: reply } });
-    const toolchain = buildToolchain(planner.provider, { planner: planner.model });
-    await logUsage(user.id, 'chat_simple', projectId, project.name, {
-      messageLength: message.length,
-      needsCode,
-      needsClarification: true,
-      ...toolchain,
-    });
-    return { reply, fileOperations: [], needsClarification: true };
-  }
-
-  // ── Phase 2: Coder implements the plan (only if code is needed) ────────────
-  let appliedOps = [];
-  let polishCount = 0;
-  let coderModel;
-  let reviewerModel;
-  let reviewSummary;
-  let reviewIssues = [];
-  if (needsCode && plannerResult.plan) {
-    const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
-    const coder = await invokeAI({
+  try {
+    // ── Phase 1: Planner reasons about intent and design ────────────────────
+    stages.start('planner');
+    const planner = await invokeAI({
       userId: user.id,
-      prompt: coderPrompt,
+      prompt: `${systemPrompt}${PLANNER_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
       schema: {
         type: 'object',
         properties: {
-          fileOperations: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                path: { type: 'string' },
-                content: { type: 'string' },
-                action: { type: 'string', enum: ['create', 'update', 'delete'] }
-              }
-            }
-          }
+          reply: { type: 'string', description: 'Morpheus response in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true' },
+          needsCode: { type: 'boolean', description: 'true if code needs to be written/modified, false for pure conversation' },
+          needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
+          plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false)' }
         }
       },
       fileUrls,
-      role: 'coder',
-      // 2026-09-03: unlike the Planner, the Coder MUST return full,
-      // unabridged content for every changed file (never partial — see its
-      // own instructions above), so this cap is deliberately generous rather
-      // than tight: enough headroom for a normal multi-file build step, just
-      // a backstop against genuinely runaway generation. A build that's
-      // large enough to hit this already gets told (via OUTPUT_TRUNCATED) to
-      // split into smaller steps — the same guidance the app already gives.
-      maxTokens: 18000,
+      role: 'planner',
+      // 2026-09-03 (Rob: chat turns feel slow end-to-end): the Planner only
+      // ever returns a short reply plus, for builds, a text plan — never file
+      // content — so a tight cap is low-risk and this phase runs on every
+      // single turn (including plain conversation), making it the best return
+      // on latency of any phase in this pipeline. See ai.js's maxTokens docs.
+      maxTokens: 3000,
     });
+    stages.done('planner');
 
-    coderModel = coder.model;
-    let fileOps = Array.isArray(coder.result.fileOperations) ? coder.result.fileOperations : [];
+    const plannerResult = planner.result;
+    const reply = plannerResult.reply || '...';
+    const needsCode = !!plannerResult.needsCode;
+    const needsClarification = !!plannerResult.needsClarification;
 
-    // Guarantee a polished styles.css exists for web-app builds. If the
-    // coder shipped its own, trust it; otherwise inject the design system
-    // verbatim so the app never lands with raw unstyled HTML.
-    if ((project.compile_target || 'source') === 'web-app' && !fileOps.some((op) => op.path === 'styles.css')) {
-      fileOps.unshift({ path: 'styles.css', content: DESIGN_SYSTEM_CSS, action: 'create' });
+    // ── Clarification gate: if the Planner is genuinely unsure, ask before building ─
+    if (needsClarification) {
+      await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: reply } });
+      const toolchain = buildToolchain(planner.provider, { planner: planner.model });
+      await logUsage(user.id, 'chat_simple', projectId, project.name, {
+        messageLength: message.length,
+        needsCode,
+        needsClarification: true,
+        ...toolchain,
+      });
+      emit({ type: 'result', data: { reply, fileOperations: [], needsClarification: true } });
+      return;
     }
 
-    // ── Phase 3: Reviewer checks the output before commit ──────────────────
-    if (fileOps.length > 0) {
-      const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, plannerResult.plan, coderPrompt);
-      fileOps = reviewed.fileOps;
-      reviewerModel = reviewed.reviewerModel;
-      reviewSummary = reviewed.reviewSummary;
-      reviewIssues = reviewed.issues || [];
-    }
-
-    if (fileOps.length > 0) {
-      await createSnapshot(user.id, projectId, 'Operator build request');
-    }
-    appliedOps = await applyFileOperations(user.id, projectId, fileOps, files);
-
-    // ── Phase 4: Optional UI polish pass (only when operator enabled it) ──
-    // A second, lightweight coder call that touches ONLY styling files. It
-    // runs when project.polish_ui is on and the build produced web-facing
-    // files (or the target is web-app). Never runs for pure native/CLI builds.
-    if (project.polish_ui && appliedOps.length > 0) {
-      const hasWebFiles = appliedOps.some((op) => /\.(html|css|jsx|tsx|vue|svelte)$/i.test(op.path) || op.path === 'styles.css');
-      if (hasWebFiles || (project.compile_target || 'source') === 'web-app') {
-        // Same fix as the `files` query above -- ProjectFile uniqueness is
-        // project-wide, not per-user (see schema.prisma), and this feeds
-        // applyFileOperations() below.
-        const freshFiles = await prisma.projectFile.findMany({ where: { project_id: projectId } });
-        const filesForPolish = freshFiles.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n');
-        const polish = await invokeAI({
-          userId: user.id,
-          prompt: `${systemPrompt}${POLISH_PROMPT}\n${contextBlock}\n\nCURRENT FILES (after main build):\n${filesForPolish}\n\nProduce the polished fileOperations now.`,
-          schema: {
-            type: 'object',
-            properties: {
-              fileOperations: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    path: { type: 'string' },
-                    content: { type: 'string' },
-                    action: { type: 'string', enum: ['create', 'update', 'delete'] }
-                  }
+    // ── Phase 2: Coder implements the plan (only if code is needed) ────────────
+    let appliedOps = [];
+    let polishCount = 0;
+    let coderModel;
+    let reviewerModel;
+    let reviewSummary;
+    let reviewIssues = [];
+    if (needsCode && plannerResult.plan) {
+      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
+      stages.start('coder');
+      const coder = await invokeAI({
+        userId: user.id,
+        prompt: coderPrompt,
+        schema: {
+          type: 'object',
+          properties: {
+            fileOperations: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  path: { type: 'string' },
+                  content: { type: 'string' },
+                  action: { type: 'string', enum: ['create', 'update', 'delete'] }
                 }
               }
             }
-          },
-          fileUrls: undefined,
-          role: 'coder',
-          // Same reasoning as the main Coder call above — full file content,
-          // generous rather than tight cap.
-          maxTokens: 18000,
-        });
-        const polishOps = Array.isArray(polish.result.fileOperations) ? polish.result.fileOperations : [];
-        if (polishOps.length > 0) {
-          await createSnapshot(user.id, projectId, 'UI polish pass (pre-polish)');
-          const appliedPolish = await applyFileOperations(user.id, projectId, polishOps, freshFiles);
-          appliedOps = [...appliedOps, ...appliedPolish];
-          polishCount = appliedPolish.length;
+          }
+        },
+        fileUrls,
+        role: 'coder',
+        // 2026-09-03: unlike the Planner, the Coder MUST return full,
+        // unabridged content for every changed file (never partial — see its
+        // own instructions above), so this cap is deliberately generous rather
+        // than tight: enough headroom for a normal multi-file build step, just
+        // a backstop against genuinely runaway generation. A build that's
+        // large enough to hit this already gets told (via OUTPUT_TRUNCATED) to
+        // split into smaller steps — the same guidance the app already gives.
+        maxTokens: 18000,
+      });
+      stages.done('coder');
+
+      coderModel = coder.model;
+      let fileOps = Array.isArray(coder.result.fileOperations) ? coder.result.fileOperations : [];
+
+      // Guarantee a polished styles.css exists for web-app builds. If the
+      // coder shipped its own, trust it; otherwise inject the design system
+      // verbatim so the app never lands with raw unstyled HTML.
+      if ((project.compile_target || 'source') === 'web-app' && !fileOps.some((op) => op.path === 'styles.css')) {
+        fileOps.unshift({ path: 'styles.css', content: DESIGN_SYSTEM_CSS, action: 'create' });
+      }
+
+      // ── Phase 3: Reviewer checks the output before commit ──────────────────
+      // reviewAndRetry emits its own 'reviewer' / 'retry_coder' /
+      // 'retry_reviewer' stage events via stages.onProgress — see reviewer.js.
+      if (fileOps.length > 0) {
+        const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, plannerResult.plan, coderPrompt, stages.onProgress);
+        fileOps = reviewed.fileOps;
+        reviewerModel = reviewed.reviewerModel;
+        reviewSummary = reviewed.reviewSummary;
+        reviewIssues = reviewed.issues || [];
+      }
+
+      if (fileOps.length > 0) {
+        await createSnapshot(user.id, projectId, 'Operator build request');
+      }
+      appliedOps = await applyFileOperations(user.id, projectId, fileOps, files);
+
+      // ── Phase 4: Optional UI polish pass (only when operator enabled it) ──
+      // A second, lightweight coder call that touches ONLY styling files. It
+      // runs when project.polish_ui is on and the build produced web-facing
+      // files (or the target is web-app). Never runs for pure native/CLI builds.
+      if (project.polish_ui && appliedOps.length > 0) {
+        const hasWebFiles = appliedOps.some((op) => /\.(html|css|jsx|tsx|vue|svelte)$/i.test(op.path) || op.path === 'styles.css');
+        if (hasWebFiles || (project.compile_target || 'source') === 'web-app') {
+          // Same fix as the `files` query above -- ProjectFile uniqueness is
+          // project-wide, not per-user (see schema.prisma), and this feeds
+          // applyFileOperations() below.
+          const freshFiles = await prisma.projectFile.findMany({ where: { project_id: projectId } });
+          const filesForPolish = freshFiles.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n');
+          stages.start('polish');
+          const polish = await invokeAI({
+            userId: user.id,
+            prompt: `${systemPrompt}${POLISH_PROMPT}\n${contextBlock}\n\nCURRENT FILES (after main build):\n${filesForPolish}\n\nProduce the polished fileOperations now.`,
+            schema: {
+              type: 'object',
+              properties: {
+                fileOperations: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      path: { type: 'string' },
+                      content: { type: 'string' },
+                      action: { type: 'string', enum: ['create', 'update', 'delete'] }
+                    }
+                  }
+                }
+              }
+            },
+            fileUrls: undefined,
+            role: 'coder',
+            // Same reasoning as the main Coder call above — full file content,
+            // generous rather than tight cap.
+            maxTokens: 18000,
+          });
+          stages.done('polish');
+          const polishOps = Array.isArray(polish.result.fileOperations) ? polish.result.fileOperations : [];
+          if (polishOps.length > 0) {
+            await createSnapshot(user.id, projectId, 'UI polish pass (pre-polish)');
+            const appliedPolish = await applyFileOperations(user.id, projectId, polishOps, freshFiles);
+            appliedOps = [...appliedOps, ...appliedPolish];
+            polishCount = appliedPolish.length;
+          }
         }
       }
     }
+
+    const reviewBlock = (reviewSummary || reviewIssues.some((i) => i.severity === 'critical')) && appliedOps.length > 0
+      ? formatReviewChatBlock({ summary: reviewSummary, approved: !reviewIssues.some((i) => i.severity === 'critical'), issues: reviewIssues })
+      : '';
+    let fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
+    if (polishCount > 0) {
+      fullReply += `\n\n// POLISH: refined styling on ${polishCount} file(s).`;
+    }
+    await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: fullReply } });
+
+    if (appliedOps.length > 0) {
+      await prisma.project.update({ where: { id: projectId }, data: { status: 'building' } });
+    }
+
+    // Log usage with the full toolchain manifest — SDK version, provider, and
+    // the exact AI models used for each phase — so the build log records what
+    // produced the output.
+    const toolchain = buildToolchain(planner.provider, {
+      planner: planner.model,
+      coder: coderModel,
+      reviewer: reviewerModel,
+    });
+    await logUsage(user.id, appliedOps.length > 0 ? 'chat_build' : 'chat_simple', projectId, project.name, {
+      messageLength: message.length,
+      needsCode,
+      fileCount: appliedOps.length,
+      reviewed: !!reviewerModel,
+      ...toolchain,
+    });
+
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps } });
+  } catch (err) {
+    console.error('[chatWithMorpheus]', err);
+    // Mirrors functions.routes.js's normal error shape (message/code/needed/
+    // available) so the frontend's stream reader can react the same way it
+    // would to a non-streamed error response — see base44Client.js's
+    // invokeStream, in particular the INSUFFICIENT_CREDITS handling.
+    emit({ type: 'error', message: err.message || 'Internal error', code: err.code, needed: err.needed, available: err.available });
+  } finally {
+    res.end();
   }
-
-  const reviewBlock = (reviewSummary || reviewIssues.some((i) => i.severity === 'critical')) && appliedOps.length > 0
-    ? formatReviewChatBlock({ summary: reviewSummary, approved: !reviewIssues.some((i) => i.severity === 'critical'), issues: reviewIssues })
-    : '';
-  let fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
-  if (polishCount > 0) {
-    fullReply += `\n\n// POLISH: refined styling on ${polishCount} file(s).`;
-  }
-  await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: fullReply } });
-
-  if (appliedOps.length > 0) {
-    await prisma.project.update({ where: { id: projectId }, data: { status: 'building' } });
-  }
-
-  // Log usage with the full toolchain manifest — SDK version, provider, and
-  // the exact AI models used for each phase — so the build log records what
-  // produced the output.
-  const toolchain = buildToolchain(planner.provider, {
-    planner: planner.model,
-    coder: coderModel,
-    reviewer: reviewerModel,
-  });
-  await logUsage(user.id, appliedOps.length > 0 ? 'chat_build' : 'chat_simple', projectId, project.name, {
-    messageLength: message.length,
-    needsCode,
-    fileCount: appliedOps.length,
-    reviewed: !!reviewerModel,
-    ...toolchain,
-  });
-
-  return { reply: fullReply || reply, fileOperations: appliedOps };
 }
