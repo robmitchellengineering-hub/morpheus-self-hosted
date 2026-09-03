@@ -16,6 +16,7 @@ import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
 import { getPlatformSetting } from './lib/platformSettings.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
 import { shouldUseFallback } from './lib/deepseekBalance.js';
+import { recordCallDuration } from './lib/timingStats.js';
 
 export async function getUserSettings(userId) {
   if (!userId) return null;
@@ -381,6 +382,13 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   // see the OUTPUT_TRUNCATED checks below, which intentionally bill for
   // real consumed tokens even though the response was cut off.
   let data;
+  // 2026-09-03 (Rob: stream progress + an ETA in the chat window): timed
+  // around just the provider round trip, not the billing/context-assembly
+  // work above it, so lib/timingStats.js's per-role rolling average reflects
+  // what actually varies call to call — recorded only on success (see below)
+  // since a hard network failure's latency isn't representative of a normal
+  // call and would skew the ETA down for no good reason.
+  const callStartedAt = Date.now();
   try {
     const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
@@ -435,6 +443,10 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     }
     throw err;
   }
+
+  // Real wall-clock time for this provider round trip, independent of
+  // output size/maxTokens — feeds chatWithMorpheus.js's streamed ETA.
+  recordCallDuration(role, Date.now() - callStartedAt);
 
   const usage = data?.usage;
   const choice = data?.choices?.[0];
