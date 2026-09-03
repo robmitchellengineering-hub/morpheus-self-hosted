@@ -126,31 +126,45 @@ async function recordUsageEvent({ userId, role, provider, model, usage, isExempt
 }
 
 // 2026-09-02: "put images and files it can't read through a converter so
-// the text AI can understand them" (Rob) — using the CALLING USER'S OWN
-// custom AI connection (Settings → AI Provider), not a new deployment-wide
-// vision key. Deliberately reads ai_base_url/ai_api_key/ai_model directly
-// off the settings row rather than gating on ai_mode === 'custom': the
-// Settings form only *shows* those fields while "Custom" is selected, but
-// it never clears them when you switch back to "Default (platform)" — so a
-// user who once configured (e.g.) Gemini there, then flipped back to
-// Default as their driving mode, still has a usable connection sitting in
-// the row. That's exactly Rob's case and exactly the intent: "my existing
-// gemini connection would work for image ... conversions for the default
-// ai" — the connection assists the default pipeline, it doesn't replace it.
-function hasUserConnection(settings) {
-  return !!(settings?.ai_base_url && settings?.ai_api_key && settings?.ai_model);
+// the text AI can understand them" (Rob) — first try the CALLING USER'S OWN
+// custom AI connection (Settings → AI Provider). Deliberately reads
+// ai_base_url/ai_api_key/ai_model directly off the settings row rather than
+// gating on ai_mode === 'custom': the Settings form only *shows* those
+// fields while "Custom" is selected, but it never clears them when you
+// switch back to "Default (platform)" — so a user who once configured a
+// connection there, then flipped back to Default as their driving mode,
+// still has it sitting in the row. The connection assists the default
+// pipeline, it doesn't replace it.
+//
+// 2026-09-03 correction: Rob clarified the Gemini connection he meant isn't
+// a per-user Settings row at all — it's this deployment's own
+// FALLBACK_LLM_* credentials (confirmed via Northflank env: base URL is
+// generativelanguage.googleapis.com). Gemini used to be Morpheus's platform
+// default before the 2026-09-02 switch to DeepSeek for cost, and that key
+// was kept configured as the balance-exhausted fallback — it's just never
+// been used for vision. So it's tier 2 here: no per-user connection found?
+// use the deployment's already-paid-for Gemini fallback key instead of
+// giving up. Every account benefits automatically, not just accounts that
+// configure their own connection.
+function getVisionAssistConnection(settings) {
+  if (settings?.ai_base_url && settings?.ai_api_key && settings?.ai_model) {
+    return { baseUrl: settings.ai_base_url, apiKey: decrypt(settings.ai_api_key), rawModel: settings.ai_model, source: 'user-connection' };
+  }
+  if (process.env.FALLBACK_LLM_BASE_URL && process.env.FALLBACK_LLM_API_KEY) {
+    return { baseUrl: process.env.FALLBACK_LLM_BASE_URL, apiKey: process.env.FALLBACK_LLM_API_KEY, rawModel: process.env.FALLBACK_LLM_MODEL, source: 'platform-fallback' };
+  }
+  return null;
 }
 
-// Asks the user's own connection to caption/transcribe image(s) into plain
-// text. Best-effort: any failure (bad/stale key, connection unreachable,
-// that endpoint also rejecting images) just returns null so the caller can
-// fall through to the older bare "can't see it" degradation note — this
-// must never be the reason a chat turn fails outright.
-async function describeImagesWithUserConnection(settings, imageUrls) {
+// Asks a vision-capable connection to caption/transcribe image(s) into
+// plain text. Best-effort: any failure (bad/stale key, connection
+// unreachable, that endpoint also rejecting images) just returns null so
+// the caller can fall through to the older bare "can't see it" degradation
+// note — this must never be the reason a chat turn fails outright.
+async function describeImagesWithConnection(connection, imageUrls) {
   try {
-    const baseUrl = settings.ai_base_url;
-    const apiKey = decrypt(settings.ai_api_key);
-    const model = await resolveModel(settings.ai_model, baseUrl, apiKey);
+    const { baseUrl, apiKey } = connection;
+    const model = await resolveModel(connection.rawModel, baseUrl, apiKey);
     const content = [
       {
         type: 'text',
@@ -378,18 +392,20 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role }) {
         /does not support image|image.*not support|unsupported.*image|vision.*not support|multimodal/i.test(errText);
       if (isImageUnsupportedError) {
         const originalText = messages[0].content?.[0]?.text ?? messages[0].content;
-        // 2026-09-02: before giving up on the image(s) entirely, try the
-        // calling user's own custom connection (their Gemini connection, in
-        // Rob's case — see describeImagesWithUserConnection above) to turn
-        // them into a text description, and splice that into the prompt
-        // that goes to the default model instead of just dropping the
-        // image(s) silently. Only attempted for the user whose message this
-        // is — never a different account's connection.
-        const imageDescription = hasUserConnection(settings)
-          ? await describeImagesWithUserConnection(settings, imageUrls)
+        // 2026-09-02/03: before giving up on the image(s) entirely, try a
+        // vision-capable connection to turn them into a text description
+        // and splice that into the prompt that goes to the default model,
+        // instead of just dropping the image(s) silently. Prefers the
+        // calling user's own connection; falls back to this deployment's
+        // Gemini FALLBACK_LLM_* credentials (see getVisionAssistConnection
+        // above) so this works out of the box even for accounts with no
+        // custom connection configured.
+        const visionConnection = getVisionAssistConnection(settings);
+        const imageDescription = visionConnection
+          ? await describeImagesWithConnection(visionConnection, imageUrls)
           : null;
         const fallbackText = imageDescription
-          ? `${originalText}\n\n[${imageUrls.length} image(s) were attached. The current AI model can't see images directly, so here is a description generated by your own connected AI (Settings → AI Provider):\n${imageDescription}]`
+          ? `${originalText}\n\n[${imageUrls.length} image(s) were attached. The current AI model can't see images directly, so here is a description generated by a connected vision AI:\n${imageDescription}]`
           : `${originalText}\n\n[Note: ${imageUrls.length} image(s) were attached to this message, but the current AI model does not accept image input, so this reply was generated from the text only. A vision-capable model can be set in Settings → AI Provider → Agent Models.]`;
         const fallbackBody = { ...body, messages: [{ role: 'user', content: fallbackText }] };
         res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(fallbackBody) });
