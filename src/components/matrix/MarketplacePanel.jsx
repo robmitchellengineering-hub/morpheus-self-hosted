@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Search, Store, Upload, Download, Tag, Loader2, DollarSign, CheckCircle2, Image as ImageIcon, Link2, Copy, Package } from 'lucide-react';
+import { X, Search, Store, Upload, Download, Tag, Loader2, DollarSign, CheckCircle2, Image as ImageIcon, Link2, Copy, Package, Trash2 } from 'lucide-react';
 import SheetSelect from './SheetSelect';
 
 export default function MarketplacePanel({ open, onClose, currentProject, onInstalled }) {
@@ -12,6 +12,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState(null);
   const [buying, setBuying] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const [error, setError] = useState('');
   const [publishTags, setPublishTags] = useState('');
   const [publishCategory, setPublishCategory] = useState('general');
@@ -101,6 +102,22 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
       setError(e.message);
     } finally {
       setBuying(null);
+    }
+  };
+
+  const deleteListing = async (template) => {
+    if (!window.confirm(`Remove "${template.name}" from the marketplace? This can't be undone — buyers who already installed it keep their copy, but it will no longer be listed or purchasable.`)) {
+      return;
+    }
+    setDeleting(template.id);
+    setError('');
+    try {
+      await base44.entities.Template.delete(template.id);
+      setTemplates(prev => prev.filter(t => t.id !== template.id));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -268,6 +285,11 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                         <button onClick={() => copyTemplateLink(t)} className="flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 px-2 py-1 transition-colors">
                           {copiedId === t.id ? <><CheckCircle2 size={10} /> COPIED</> : <><Link2 size={10} /> SHARE</>}
                         </button>
+                        {t.mine && (
+                          <button onClick={() => deleteListing(t)} disabled={deleting === t.id} className="flex items-center gap-1 text-[10px] text-red-500/70 hover:text-red-500 border border-red-500/30 hover:border-red-500/60 px-2 py-1 transition-colors disabled:opacity-50">
+                            {deleting === t.id ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />} DELETE
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
