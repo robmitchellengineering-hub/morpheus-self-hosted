@@ -52,18 +52,6 @@ export default async function handler({ user, body, res }) {
   const adapter = target ? getCompileTarget(target) : null;
   const artifactName = adapter?.artifact?.artifactName;
 
-  // Check if compiled artifacts already saved for this project — avoid
-  // duplicates if the user re-opens the compile panel or re-polls.
-  const existing = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
-  const alreadySaved = existing.filter((f) => f.path.startsWith('_compiled/'));
-  if (alreadySaved.length > 0) {
-    return {
-      saved: alreadySaved.length,
-      alreadyExists: true,
-      files: alreadySaved.map((f) => f.path),
-    };
-  }
-
   const accessToken = await getGithubToken(user.id);
   const h = ghHeaders(accessToken);
 
@@ -77,7 +65,42 @@ export default async function handler({ user, body, res }) {
     throw Object.assign(new Error('Release has no downloadable assets'), { status: 404 });
   }
 
+  // Compiled artifacts already saved for this project — but only short-circuit
+  // when they're from THIS SAME release. The tag is embedded in the saved
+  // row's content note (`// Build: <tag>`) precisely so this comparison is
+  // possible. Before 2026-09-03 this checked existence only, so recompiling
+  // a project (RECOMPILE, "try again", an auto-fix loop's retry, ...) always
+  // silently kept serving the very first build ever saved — every later
+  // compile "succeeded" in the UI but never actually updated the downloadable
+  // app. A same-release re-entry (component remount, a duplicate poll tick
+  // hitting the completed state twice) still short-circuits, avoiding
+  // duplicate rows/re-downloads for no reason.
+  const existing = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
+  const alreadySaved = existing.filter((f) => f.path.startsWith('_compiled/'));
+  const savedTag = alreadySaved[0]?.content?.match(/\/\/ Build: (\S+)/)?.[1];
+  if (alreadySaved.length > 0 && savedTag && release.tag_name && savedTag === release.tag_name) {
+    return {
+      saved: alreadySaved.length,
+      alreadyExists: true,
+      files: alreadySaved.map((f) => f.path),
+      // The frontend's "done" panel needs a working download link right
+      // away, not just the path — without this it fell back to GitHub's raw
+      // browser_download_url, which 404s for anyone whose browser isn't
+      // authenticated into the (private) build repo. See the matching
+      // `artifacts` field built below for a fresh save.
+      artifacts: alreadySaved.map((f) => ({ path: f.path, url: f.file_url, name: f.path.split('/').pop() })),
+    };
+  }
+  // A new release supersedes whatever was saved before — clear the stale
+  // rows so the file tree doesn't end up with two _compiled/app.apk entries
+  // (Prisma has no upsert-by-path here; path isn't unique) and so the
+  // FileViewer's download always points at the build that was just made.
+  if (alreadySaved.length > 0) {
+    await prisma.projectFile.deleteMany({ where: { id: { in: alreadySaved.map((f) => f.id) } } });
+  }
+
   const saved = [];
+  const artifacts = [];
   const errors = [];
   for (let i = 0; i < release.assets.length; i++) {
     const asset = release.assets[i];
@@ -133,6 +156,7 @@ export default async function handler({ user, body, res }) {
         },
       });
       saved.push(`_compiled/${displayName}`);
+      artifacts.push({ path: `_compiled/${displayName}`, url: file_url, name: displayName, size: asset.size });
     } catch (assetErr) {
       errors.push(`${asset.name}: ${assetErr?.message || String(assetErr)}`);
     }
@@ -143,5 +167,9 @@ export default async function handler({ user, body, res }) {
     return;
   }
 
-  return { saved: saved.length, files: saved };
+  // `artifacts` carries our own re-uploaded (public, working) URLs — the
+  // frontend's "done" panel uses these instead of GitHub's raw
+  // browser_download_url, which 404s for anyone not authenticated into the
+  // private build repo (see the alreadySaved branch above for why).
+  return { saved: saved.length, files: saved, artifacts };
 }
