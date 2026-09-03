@@ -95,6 +95,11 @@ export async function getContextSummary(userId, project, windowKind) {
       role: 'diagnosis', // reuse the diagnosis role slot: same "analyze, don't build" shape,
                           // and operators can already point LLM_DIAGNOSIS_MODEL at something
                           // cheaper/faster without this needing its own role/env var.
+      // 2026-09-03 audit: output here is deliberately a compressed summary
+      // (the prompt asks for compression, not concatenation) so it should
+      // stay naturally short, but it had no explicit cap either — closing
+      // the same gap as every other call site found this pass.
+      maxTokens: 4000,
     });
     const newSummary = (result?.summary || existing).trim();
     await prisma.project.update({
