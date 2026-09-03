@@ -423,12 +423,17 @@ OPERATOR SAYS: ${message}`;
       },
       fileUrls,
       role: 'planner',
-      // 2026-09-03 (Rob: chat turns feel slow end-to-end): the Planner only
-      // ever returns a short reply plus, for builds, a text plan — never file
-      // content — so a tight cap is low-risk and this phase runs on every
-      // single turn (including plain conversation), making it the best return
-      // on latency of any phase in this pipeline. See ai.js's maxTokens docs.
-      maxTokens: 3000,
+      // 2026-09-03 correction: this 3000 cap (set earlier today purely for
+      // latency) turned out to be the ACTUAL cause of the OUTPUT_TRUNCATED
+      // failures Rob kept hitting -- confirmed from the runtime logs, which
+      // showed the throw coming from this exact call, not the Coder. A
+      // detailed file-by-file plan with implementation notes/rationale, now
+      // also carrying the full plannedFiles list the chunked Coder pass
+      // depends on, routinely needs more than 3000 tokens for any real
+      // multi-file build -- so EVERY build was dying here, on the very first
+      // AI call, before the Coder chunking fix below ever got a chance to
+      // run. Raised to a still-bounded but realistic 12000.
+      maxTokens: 12000,
     });
     stages.done('planner');
 
