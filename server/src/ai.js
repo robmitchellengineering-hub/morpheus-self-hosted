@@ -468,7 +468,14 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   recordUsageEvent({ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits }).catch(() => {});
 
   if (finishReason === 'length') {
-    throw new Error('OUTPUT_TRUNCATED: The AI response was cut off by the token limit before it could finish. Reduce the number of files per step (2-3 max) and retry.');
+    // 2026-09-03: include which role/maxTokens actually truncated -- three
+    // rounds of chasing this same error taught the hard way that "it
+    // truncated" alone is nearly useless to debug: the Coder, the Planner,
+    // and the Reviewer all throw this identical string, and it took a
+    // console log dive to discover it was actually the Planner's cap, not
+    // the Coder's, that was failing every build. Now it's in the message
+    // itself instead of requiring that every time.
+    throw new Error(`OUTPUT_TRUNCATED (role=${role || 'unknown'}, maxTokens=${maxTokens ?? 'unset'}): The AI response was cut off by the token limit before it could finish. Reduce the number of files per step (2-3 max) and retry.`);
   }
 
   if (schema) {
