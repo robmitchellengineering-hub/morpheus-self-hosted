@@ -29,28 +29,39 @@ export default function MorpheusPipelineStatus({ stages }) {
   const totalElapsedSeconds = Math.max(0, Math.round((Date.now() - stages[0].startedAt) / 1000));
 
   return (
-    <div className="space-y-1">
-      {stages.map((s, i) => {
-        const isActive = s.status === 'active';
-        const remaining = isActive ? Math.round(s.etaSeconds - (Date.now() - s.startedAt) / 1000) : null;
-        return (
-          <div key={`${s.stage}-${i}`} className="flex items-baseline gap-2">
-            <span className={isActive ? 'text-primary animate-pulse' : 'text-primary/50'} aria-hidden="true">
-              {isActive ? '>' : '✓'}
-            </span>
-            <span className={isActive ? 'text-primary' : 'text-primary/50'}>{s.label}</span>
-            {isActive && (
-              <span className="text-primary/60 text-xs tabular-nums">
-                {remaining > 0 ? `~${formatDuration(remaining)} remaining` : 'finishing up...'}
+    <div className="flex items-start gap-3">
+      {/* 2026-09-03 (Rob: "add a larger animation that looks like its
+          thinking rotating around") — a big, unmissable spinning ring next
+          to the step list, distinct from the small 12px Loader2 icons used
+          elsewhere in this panel (voice button, revert confirm). Pure CSS
+          border-spin, no extra asset/library. */}
+      <div
+        className="h-11 w-11 shrink-0 rounded-full border-[3px] border-primary/15 border-t-primary animate-spin shadow-[0_0_14px_rgba(0,255,65,0.45)]"
+        aria-hidden="true"
+      />
+      <div className="space-y-1 flex-1 min-w-0">
+        {stages.map((s, i) => {
+          const isActive = s.status === 'active';
+          const remaining = isActive ? Math.round(s.etaSeconds - (Date.now() - s.startedAt) / 1000) : null;
+          return (
+            <div key={`${s.stage}-${i}`} className="flex items-baseline gap-2">
+              <span className={isActive ? 'text-primary animate-pulse' : 'text-primary/50'} aria-hidden="true">
+                {isActive ? '>' : '✓'}
               </span>
-            )}
-            {!isActive && s.elapsedSeconds != null && (
-              <span className="text-primary/35 text-xs tabular-nums">{formatDuration(s.elapsedSeconds)}</span>
-            )}
-          </div>
-        );
-      })}
-      <div className="text-primary/40 text-[10px] pt-0.5">total elapsed: {formatDuration(totalElapsedSeconds)}</div>
+              <span className={isActive ? 'text-primary' : 'text-primary/50'}>{s.label}</span>
+              {isActive && (
+                <span className="text-primary/60 text-xs tabular-nums">
+                  {remaining > 0 ? `~${formatDuration(remaining)} remaining` : 'finishing up...'}
+                </span>
+              )}
+              {!isActive && s.elapsedSeconds != null && (
+                <span className="text-primary/35 text-xs tabular-nums">{formatDuration(s.elapsedSeconds)}</span>
+              )}
+            </div>
+          );
+        })}
+        <div className="text-primary/40 text-[10px] pt-0.5">total elapsed: {formatDuration(totalElapsedSeconds)}</div>
+      </div>
     </div>
   );
 }

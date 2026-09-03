@@ -60,9 +60,18 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
     onResult: (text) => { if (inputRef.current) { inputRef.current.value = text; resizeTextarea(); } }
   });
 
+  // 2026-09-03 (Rob: "I have to scroll down to see the action happening"):
+  // this was already scrolling to bottom on send, but `pipelineStages`
+  // wasn't in the dependency list — so it only fired once when loading
+  // started, then never again as new stage lines (Planning -> Writing the
+  // code -> Reviewing -> ...) got appended underneath over the next tens of
+  // seconds. The visible bottom kept moving down without the scroll
+  // following it, so the operator had to manually scroll to see whichever
+  // step was actually running. Tracking pipelineStages here re-scrolls on
+  // every stage start/finish, not just the first one.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, loading, speakingId]);
+  }, [messages, loading, speakingId, pipelineStages]);
 
   const handleSend = () => {
     const text = inputRef.current?.value || '';
