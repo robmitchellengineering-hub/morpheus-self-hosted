@@ -97,7 +97,32 @@ export const macApp = {
     const icon = detectIcon(files, ['.icns', '.png']);
 
     if (isNodeProject(files)) {
-      // Build universal binary: both x64 and arm64, then lipo them together
+      // 2026-09-04 (Rob: "SyntaxError: Invalid or unexpected token / at
+      // readPrelude (node:internal/bootstrap/pkg:...)" when actually running
+      // a compiled Mac app): root cause was THIS step, not Gatekeeper.
+      // `lipo -create` is the normal way to merge two Mach-O executables
+      // into a universal binary, but a pkg/@yao-pkg/pkg binary isn't a plain
+      // Mach-O executable — it's a Mach-O executable with the entire bundled
+      // JS application appended as a trailer AFTER the executable segments,
+      // located at runtime by searching backward from the end of the
+      // currently-running file for a marker. lipo has no idea that trailer
+      // exists; it just concatenates the two files under a fat-binary
+      // header. The OS picks the correct architecture's Mach-O slice to
+      // execute, but that slice's own trailer-search-from-EOF now lands on
+      // whatever bytes happen to be at the end of the *combined* fat file
+      // (the other architecture's data), so the "JS bundle" it hands to
+      // `vm.Script` is garbage — hence the SyntaxError. This is a
+      // long-documented, unfixed limitation of pkg's binary format, not
+      // something specific to this project (see vercel/pkg#1597 — same
+      // "Invalid or unexpected token" in the same `readPrelude` bootstrap
+      // step, on the exact same lipo-a-fat-binary setup).
+      //
+      // Fix: don't lipo pkg binaries together at all. Ship both
+      // architecture-specific binaries intact inside the bundle, and make
+      // the actual CFBundleExecutable a tiny shell script (plain text is
+      // inherently architecture-independent — no lipo needed) that execs
+      // whichever one matches `uname -m` at launch time. Each binary keeps
+      // its own trailer fully intact since neither is ever byte-merged.
       const nodeVersion = detectNodeVersion(files) || '20';
       const steps = [
         { uses: 'actions/checkout@v4' },
@@ -109,15 +134,25 @@ export const macApp = {
         { run: 'npx @yao-pkg/pkg . --targets node20-macos-x64 --output app-x64' },
         { run: 'npx @yao-pkg/pkg . --targets node20-macos-arm64 --output app-arm64' },
         {
-          name: 'Create universal binary',
-          run: 'lipo -create app-x64 app-arm64 -output app || cp app-x64 app'
-        },
-        {
           name: 'Build .app bundle',
           run: [
             'mkdir -p "MorpheusApp.app/Contents/MacOS"',
             'mkdir -p "MorpheusApp.app/Contents/Resources"',
-            'cp app "MorpheusApp.app/Contents/MacOS/MorpheusApp"',
+            'cp app-x64 "MorpheusApp.app/Contents/MacOS/MorpheusApp-x64"',
+            'cp app-arm64 "MorpheusApp.app/Contents/MacOS/MorpheusApp-arm64"',
+            'chmod +x "MorpheusApp.app/Contents/MacOS/MorpheusApp-x64" "MorpheusApp.app/Contents/MacOS/MorpheusApp-arm64"',
+            // Single-quoted heredoc delimiter — do NOT let the build
+            // runner's shell expand $DIR/$@/uname here; those must stay
+            // literal so they evaluate at launch time, on the user's Mac.
+            "cat > \"MorpheusApp.app/Contents/MacOS/MorpheusApp\" <<'DISPATCH'",
+            '#!/bin/bash',
+            'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+            'if [ "$(uname -m)" = "arm64" ]; then',
+            '  exec "$DIR/MorpheusApp-arm64" "$@"',
+            'else',
+            '  exec "$DIR/MorpheusApp-x64" "$@"',
+            'fi',
+            'DISPATCH',
             'chmod +x "MorpheusApp.app/Contents/MacOS/MorpheusApp"',
             icon ? `cp ${icon} "MorpheusApp.app/Contents/Resources/app.icns"` : '# no icon found',
             'cat > "MorpheusApp.app/Contents/Info.plist" <<PLIST',
@@ -134,12 +169,17 @@ export const macApp = {
             '</dict>',
             '</plist>',
             'PLIST',
-            // Not a real fix for Gatekeeter (needs a paid Apple Developer
+            // Not a real fix for Gatekeeper (needs a paid Apple Developer
             // cert + notarization for that) — see the comment above
             // GATEKEEPER_README — but an ad-hoc signature gives macOS
             // something to inspect instead of an entirely unsigned binary,
             // which on most macOS versions turns the dead-end "damaged,
             // move to Bin" message into a clickable "Open Anyway" warning.
+            // Sign the two real Mach-O binaries individually (best-effort —
+            // the dispatcher script isn't a signable code object, so it's
+            // left alone) before signing the bundle as a whole.
+            'codesign --force --sign - "MorpheusApp.app/Contents/MacOS/MorpheusApp-x64" 2>/dev/null || true',
+            'codesign --force --sign - "MorpheusApp.app/Contents/MacOS/MorpheusApp-arm64" 2>/dev/null || true',
             'codesign --force --deep --sign - "MorpheusApp.app" || echo "codesign failed -- app will still work, just fully unsigned"',
             'cat > README.txt <<GATEKEEPER_README',
             GATEKEEPER_README,
@@ -209,7 +249,6 @@ export const macApp = {
     /ModuleNotFoundError/i,
     /ImportError/i,
     /PyInstaller/i,
-    /lipo.*failed/i,
     /pkg.*failed/i
   ]
 };
