@@ -25,13 +25,22 @@ Return JSON with:
 - summary: one-sentence overall verdict
 - approved: true if no critical issues were found, false if any critical issues exist`;
 
-export async function reviewFileOperations(userId, fileOps, contextBlock, plan) {
+// `progress` (optional, 5th arg) — 2026-09-03 (Rob: stream step-by-step
+// progress + an ETA in the chat window): { onProgress, stageName }. When
+// given, onProgress({stage: stageName, status: 'start'|'done'}) fires around
+// the invokeAI call below so a streaming caller (chatWithMorpheus.js) can
+// emit a real progress event; every existing positional caller (only 4
+// args) just gets undefined here and onProgress?.() is a no-op, so nothing
+// else needs to change.
+export async function reviewFileOperations(userId, fileOps, contextBlock, plan, progress) {
+  const { onProgress, stageName = 'reviewer' } = progress || {};
   const opsBlock = fileOps.map((op, i) =>
     `--- FILE ${i + 1}: ${op.path} (action: ${op.action || 'create'}) ---\n${op.content || '(empty)'}`
   ).join('\n\n');
 
   const planNote = plan ? `\n\nORIGINAL BUILD PLAN (for context):\n${plan}` : '';
 
+  onProgress?.({ stage: stageName, status: 'start' });
   const review = await invokeAI({
     userId,
     prompt: `${REVIEWER_PROMPT}\n${contextBlock}\n\nPROPOSED FILE OPERATIONS TO REVIEW:\n${opsBlock}${planNote}\n\nReview these files now.`,
@@ -61,6 +70,7 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan) 
     // before, once after) so it's a meaningful chunk of end-to-end latency.
     maxTokens: 3000,
   });
+  onProgress?.({ stage: stageName, status: 'done' });
 
   const result = review.result;
   const issues = Array.isArray(result.issues) ? result.issues : [];
@@ -107,7 +117,12 @@ export function buildRetryPrompt(fileOps, review, plan) {
 // checked and fixed before commit. Runs the Reviewer on the initial fileOps;
 // if critical issues are found, gives the Coder one retry pass with the
 // feedback, then returns the merged result. Never blocks — commits regardless.
-export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderPrompt) {
+// `onProgress` (optional, 6th arg) — see reviewFileOperations' comment above.
+// Fires { stage, status } for 'reviewer' (the initial review), and — only on
+// the critical-issue retry path — 'retry_coder' and 'retry_reviewer' too, so
+// a streaming caller can show each real step instead of one opaque "review"
+// phase. Every existing caller (5 args) leaves this undefined; harmless.
+export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderPrompt, onProgress) {
   if (fileOps.length === 0) return { fileOps, reviewed: false, approved: true, issues: [] };
 
   // Always deduplicate by path (last wins) — the LLM sometimes returns both
@@ -115,7 +130,7 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
   const byPath = new Map(fileOps.map(op => [op.path, op]));
   const dedupedOps = Array.from(byPath.values());
 
-  const review = await reviewFileOperations(userId, dedupedOps, contextBlock, plan);
+  const review = await reviewFileOperations(userId, dedupedOps, contextBlock, plan, { onProgress, stageName: 'reviewer' });
 
   if (!review.approved && review.issues.some(i => i.severity === 'critical')) {
     const retrySchema = {
@@ -134,6 +149,7 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
         }
       }
     };
+    onProgress?.({ stage: 'retry_coder', status: 'start' });
     const retry = await invokeAI({
       userId,
       prompt: `${coderPrompt}\n\n${buildRetryPrompt(dedupedOps, review, plan)}`,
@@ -144,13 +160,14 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
       // content, generous rather than tight cap.
       maxTokens: 18000,
     });
+    onProgress?.({ stage: 'retry_coder', status: 'done' });
     const corrected = Array.isArray(retry.result.fileOperations) ? retry.result.fileOperations : [];
     for (const c of corrected) {
       if (c.path) byPath.set(c.path, c);
     }
     const finalOps = Array.from(byPath.values());
     // Re-review after retry so the caller gets an accurate approval status.
-    const reReview = await reviewFileOperations(userId, finalOps, contextBlock, plan);
+    const reReview = await reviewFileOperations(userId, finalOps, contextBlock, plan, { onProgress, stageName: 'retry_reviewer' });
     return {
       fileOps: finalOps,
       reviewerModel: reReview.model,
