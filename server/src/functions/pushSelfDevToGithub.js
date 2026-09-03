@@ -12,6 +12,7 @@ import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { getGithubToken, pushFiles } from '../lib/github.js';
 import { SELF_DEV_REPO_FULL_NAME } from './importSelfDevRepo.js';
+import { runGenerateSelfDevManual, SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 
 export default async function handler({ user, body }) {
   if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
@@ -44,6 +45,21 @@ export default async function handler({ user, body }) {
   });
 
   await logUsage(user.id, 'self_dev_push', projectId, project.name, { fileCount: filesToPush.length, commitSha });
+
+  // Auto-refresh the SELF-DEV & ADMIN MANUAL (Rob, 2026-09-03) whenever this
+  // push actually touches one of the files that manual is built from — a
+  // push that only changed, say, the marketplace ZIP endpoint has nothing to
+  // do with self-dev/admin and shouldn't spend an LLM call regenerating a
+  // doc that wouldn't change. Never lets a manual-generation failure fail
+  // the push itself — the push already succeeded above; this is best-effort.
+  const touchedManualSource = filesToPush.some((f) => SELF_DEV_ADMIN_MANUAL_SOURCES.includes(f.path));
+  if (touchedManualSource) {
+    try {
+      await runGenerateSelfDevManual(user, 'auto:push');
+    } catch (err) {
+      console.error('[pushSelfDevToGithub] auto-regenerating self-dev/admin manual failed (push itself still succeeded):', err.message);
+    }
+  }
 
   return {
     repoFullName: SELF_DEV_REPO_FULL_NAME,
