@@ -34,12 +34,12 @@ const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downl
 // input/output, deploy/integration internals) into a stored, downloadable
 // doc, which is meant to be admin-only per base44's own self-documentation
 // tools. Closed here the same way synthesizeUpdatesPlan already was.
-// importSelfDevRepo/pushSelfDevToGithub/generateSelfDevPrototype: self-dev
-// (Morpheus editing its own live production repo) is admin-only end to end —
-// see chatWithMorpheus.js's matching in-handler check for why that one can't
-// be listed here too (it's shared by every project type, not
-// self-dev-exclusive).
-const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype']);
+// importSelfDevRepo/pushSelfDevToGithub/generateSelfDevPrototype/
+// generateSelfDevManual: self-dev (Morpheus editing its own live production
+// repo) is admin-only end to end — see chatWithMorpheus.js's matching
+// in-handler check for why that one can't be listed here too (it's shared by
+// every project type, not self-dev-exclusive).
+const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual']);
 
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;
