@@ -324,11 +324,29 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
 
   // Create the new tree from the fully-merged file list — no base_tree,
   // so this doesn't invoke GitHub's merge logic at all. Retry loop kept
-  // as a generic safety net for ordinary transient failures (5xx/429),
-  // not because BadObjectState is expected here anymore.
+  // as a generic safety net for ordinary transient failures (5xx/429).
+  //
+  // 2026-09-03, round six: Rob hit `GitRPC::BadObjectState` again on this
+  // exact endpoint (compiling a Mac app, repo=morpheus-build-anypdf-...,
+  // items=20) even with base_tree already removed. Round 5's theory (it was
+  // GitHub's base_tree merge logic specifically) explained some cases but
+  // not this one: this hit on a BRAND-NEW repo's very first real multi-file
+  // push, seconds after the atomic single-file init commit above (isNewRepo
+  // path) — i.e. every object involved (repo, first commit, ~20 new blobs)
+  // was only milliseconds old when this POST fired. That's a GitHub-side
+  // object-store replication race on a still-settling repo, not a request
+  // shape problem — the same wall other integrations hit on this endpoint
+  // (dependabot/dependabot-core#10280 among others), and one that's
+  // reported to clear given enough time rather than being permanent.
+  // Giving it a genuinely long runway (not shape-changing the request
+  // again) is the fix: BadObjectState specifically gets up to ~75s of
+  // backoff across 7 attempts instead of the old 30s/5 attempts, since 30s
+  // clearly wasn't always enough; any other error (a real, likely
+  // non-transient problem) keeps the original short/fast retry so this
+  // doesn't turn a genuine failure into a 75s hang for no reason.
   let tree = null;
   let lastTreeErr = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     const treeRes = await fetch(`${GH_API}/repos/${repoFullName}/git/trees`, {
       method: 'POST', headers: h,
       body: JSON.stringify({ tree: treeItems }),
@@ -336,11 +354,20 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
     if (treeRes.ok) { tree = await ghJson(treeRes); break; }
     const treeErr = await ghJson(treeRes);
     lastTreeErr = treeErr.message || JSON.stringify(treeErr);
-    console.log(`Tree attempt ${attempt + 1}/5: status=${treeRes.status}, repo=${repoFullName}, items=${treeItems.length}, error=${JSON.stringify(treeErr)}`);
+    const isBadObjectState = /BadObjectState/i.test(lastTreeErr);
+    const maxAttempts = isBadObjectState ? 7 : 5;
+    console.log(`Tree attempt ${attempt + 1}/${maxAttempts}${isBadObjectState ? ' (BadObjectState, extended backoff)' : ''}: status=${treeRes.status}, repo=${repoFullName}, items=${treeItems.length}, error=${JSON.stringify(treeErr)}`);
     if (treeRes.status === 401 || treeRes.status === 403) throw new Error('Failed to create tree: ' + lastTreeErr);
-    await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+    if (attempt + 1 >= maxAttempts) break;
+    const delayMs = isBadObjectState ? Math.min(5000 * (attempt + 1), 15000) : 2000 * (attempt + 1);
+    await new Promise(r => setTimeout(r, delayMs));
   }
-  if (!tree) throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, items=${treeItems.length}): ${lastTreeErr}`);
+  if (!tree) {
+    const retrySuggestion = /BadObjectState/i.test(lastTreeErr)
+      ? ' This is a known GitHub-side timing issue on brand-new repos, not a Morpheus bug — retrying the compile usually succeeds.'
+      : '';
+    throw new Error(`Failed to create tree after retries (repo=${repoFullName}, branch=${branch}, items=${treeItems.length}): ${lastTreeErr}${retrySuggestion}`);
+  }
 
   // Create a commit pointing to the new tree
   const newCommitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits`, {
