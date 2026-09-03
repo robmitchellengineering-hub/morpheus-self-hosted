@@ -54,8 +54,18 @@ const REVIEW_SCHEMA = {
 // Rather than raise the number again and wait for round four, this now
 // reviews a few files per call and merges the results — the same chunking
 // fix already applied to the Coder (see chatWithMorpheus.js / chunkedFileGen.js).
-const REVIEW_CHUNK_SIZE = 5;
-const REVIEW_STEP_MAX_TOKENS = 8000; // generous for a handful of files' worth of issues
+//
+// 2026-09-03, round four: the chunked version above STILL truncated
+// (maxTokens=8000, 5 files/batch) — 5 real files' worth of content read by
+// the model plus a full critical/warning issue list for each is more
+// output than 8000 tokens covers once files aren't trivially small. Rather
+// than raise the number a fourth time on its own, this shrinks the batch
+// too, matching the Coder's own economics (chatWithMorpheus.js /
+// chunkedFileGen.js use 3 files/step at a much higher per-step cap) instead
+// of assuming review output is cheap just because it's shorter than the
+// code it's reviewing.
+const REVIEW_CHUNK_SIZE = 3;
+const REVIEW_STEP_MAX_TOKENS = 16000; // generous for up to 3 files' worth of issues
 
 // `progress` (optional, 5th arg) — 2026-09-03 (Rob: stream step-by-step
 // progress + an ETA in the chat window): { onProgress, stageName }. When
