@@ -45,6 +45,23 @@ function setToken(token) {
   } catch { /* localStorage unavailable (private mode, SSR) — token just won't persist */ }
 }
 
+// 2026-09-04 (Rob: "the ai agent fix in compile seems to just keep running
+// ... getting blocked or faulting in any way"): this fetch had no timeout at
+// all, and neither did the outbound fetch server/src/ai.js makes to the AI
+// provider — confirmed by code read on both sides. That call to
+// diagnoseIssue (base44.functions.invoke → apiFetch) is exactly the request
+// behind the compile AI-fix UI, so a stall anywhere in that chain had no
+// safeguard and would look, from here, exactly like "keeps running forever"
+// with no error and no way to tell it apart from real (slow) progress. The
+// server side now hard-caps its own provider call at 180s (see ai.js's
+// fetchWithTimeout), so this client-side cap is set a bit above that —
+// long enough to let a legitimate slow-but-working backend call finish and
+// return its own clear error first, short enough that a genuine network
+// stall (dropped connection, proxy black hole) between browser and backend
+// still surfaces here as a plain, catchable timeout instead of hanging the
+// UI indefinitely.
+const API_FETCH_TIMEOUT_MS = 210_000;
+
 async function apiFetch(path, opts = {}) {
   const token = getToken();
   const isFormData = opts.body instanceof FormData;
@@ -53,7 +70,22 @@ async function apiFetch(path, opts = {}) {
   if (!isFormData && opts.body) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...opts, headers, signal: controller.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      const timeoutErr = new Error(`Request timed out after ${Math.round(API_FETCH_TIMEOUT_MS / 1000)}s. The server may be overloaded — please retry.`);
+      timeoutErr.status = 0;
+      timeoutErr.code = 'CLIENT_TIMEOUT';
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     let data = {};
