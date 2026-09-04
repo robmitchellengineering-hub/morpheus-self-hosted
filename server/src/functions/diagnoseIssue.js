@@ -18,7 +18,18 @@ export default async function handler({ user, body }) {
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
   if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
 
-  const files = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
+  // 2026-09-04: was scoped by `created_by_id` in addition to `project_id`.
+  // ProjectFile's real uniqueness constraint is [project_id, path] — NOT
+  // scoped by who created the file — so this filter could silently miss
+  // files that exist in the project but were created under a different
+  // user/session. applyFileFixes() (lib/diagnosis.js) uses this array to
+  // decide update() vs create() per path; missing a file here means it
+  // wrongly takes the create() branch and throws Prisma P2002 (unique
+  // constraint on [project_id, path]). Same bug already fixed in
+  // chatWithMorpheus.js and autonomousBuildStep.js on 2026-09-02 — this
+  // call site was missed then. Confirmed via production logs: this exact
+  // P2002 crash was hitting diagnoseCompile's auto-fix path.
+  const files = await prisma.projectFile.findMany({ where: { project_id: projectId } });
 
   let diagnosis;
 
