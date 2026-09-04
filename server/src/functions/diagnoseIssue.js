@@ -59,7 +59,61 @@ export default async function handler({ user, body }) {
     needsAction: diagnosis.needsUserAction.map((a) => ({ component: a.component, label: a.label, issue: a.issue, severity: a.severity })),
   });
 
+  // 2026-09-04 (Rob: "how does the chat know what work was done so they are
+  // working together to solve compile issues?" -> "yes" to making it
+  // automatic): before this, the ONLY way the chat conversation got any
+  // record that a diagnosis/auto-fix ran was if the user manually clicked
+  // "ASK MORPHEUS IN CHAT" on the DiagnosisPanel (see Workspace.jsx's
+  // onAskMorpheus, which builds a similar summary and sends it as a live
+  // chat turn). Go straight from a failed compile/deploy/build to retrying
+  // without clicking that button, and the chat had zero memory anything
+  // happened — even though chatWithMorpheus.js was silently reading the
+  // already-changed file content underneath it on the very next turn.
+  // This persists a passive log message every time ANY diagnosis completes
+  // (compile/deploy/github/build all funnel through this one handler), so
+  // the chat's own conversation history — which chatWithMorpheus.js's
+  // `historyContext` feeds back into the AI as real prompt context on every
+  // subsequent turn (see that file's `history` query, bounded to the last
+  // 20 messages) — always has a durable record of what the fixer found and
+  // did, whether or not the user ever opens chat about it.
+  //
+  // Uses the existing "// SYSTEM" content-prefix convention already
+  // established elsewhere (ChatPanel.jsx suppresses the voice-play button
+  // for any role:'morpheus' message starting with "// SYSTEM"; useWorkspace.js
+  // uses the same prefix for its own client-side "// SYSTEM FAILURE:" error
+  // messages) rather than inventing a new `role` value — this way it renders
+  // and behaves exactly like every other system-originated note already in
+  // this codebase, no frontend changes needed. This is a log entry, not a
+  // live turn: it does NOT trigger another AI reply, unlike clicking the
+  // "ASK MORPHEUS IN CHAT" button (which still exists for when the operator
+  // wants Morpheus to actively act on what's left, not just record it).
+  await prisma.chatMessage.create({
+    data: {
+      created_by_id: user.id,
+      project_id: projectId,
+      role: 'morpheus',
+      content: buildDiagnosisLogMessage(type, diagnosis),
+    },
+  });
+
   return { diagnosis };
+}
+
+function buildDiagnosisLogMessage(type, diagnosis) {
+  const lines = [`// SYSTEM — AI DIAGNOSIS (${type}): ${diagnosis.summary}`];
+  if (diagnosis.autoFixed?.length) {
+    lines.push('', 'Auto-fixed:');
+    for (const f of diagnosis.autoFixed) {
+      lines.push(`- ${f.component}: ${f.fix} (${f.fileCount} file(s) regenerated)`);
+    }
+  }
+  if (diagnosis.needsUserAction?.length) {
+    lines.push('', 'Still needs your action:');
+    for (const a of diagnosis.needsUserAction) {
+      lines.push(`- ${a.component}: ${a.issue}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 // ─── DEPLOY ──────────────────────────────────────────────────────────────────
