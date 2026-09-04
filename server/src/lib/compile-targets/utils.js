@@ -47,6 +47,34 @@ export function isPythonProject(files) {
     hasPattern(files, /\.py$/);
 }
 
+// Detect a Swift Package Manager project (Package.swift at the project
+// root). Used by mac-app.js to route real native macOS Swift apps to a
+// `swift build` step instead of the Node/pkg path. This matters because a
+// project can have BOTH a Package.swift AND a package.json (a JS launcher
+// shipped as a documented "convenience wrapper" that execs a pre-built
+// Swift binary) — isNodeProject(files) alone would wrongly claim that
+// project. Swift detection must be checked first, ahead of isNodeProject,
+// wherever a project could be either. See mac-app.js's Swift branch
+// (2026-09-04, Rob's AnyPDF app) for the incident that surfaced this.
+export function isSwiftProject(files) {
+  return hasFile(files, 'Package.swift');
+}
+
+// Detect the product name Swift Package Manager will actually build, by
+// reading Package.swift. Prefers the .executableTarget(name: "...") since
+// that's the binary `swift build` produces; falls back to the top-level
+// Package(name: "...") if no executable target is found (or the regex
+// can't match some more exotic Package.swift shape).
+export function detectSwiftExecutableName(files) {
+  const pkg = getFile(files, 'Package.swift');
+  if (!pkg) return null;
+  const execMatch = pkg.content.match(/\.executableTarget\(\s*name:\s*"([^"]+)"/);
+  if (execMatch) return execMatch[1];
+  const nameMatch = pkg.content.match(/Package\(\s*name:\s*"([^"]+)"/);
+  if (nameMatch) return nameMatch[1];
+  return null;
+}
+
 // Detect web framework from package.json dependencies
 export function detectWebFramework(files) {
   const pkg = parsePackageJson(files);
