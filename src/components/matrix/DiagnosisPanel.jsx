@@ -1,18 +1,74 @@
-import { Bot, Loader2, CheckCircle, XCircle, Wrench, ArrowRight, AlertTriangle, Key, ExternalLink, Link as LinkIcon, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Bot, CheckCircle, XCircle, Wrench, ArrowRight, AlertTriangle, Key, ExternalLink, Link as LinkIcon, MessageSquare, Timer } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { formatRunTime } from '@/hooks/useRunTimer';
 
 // Shared diagnosis results panel — renders the unified diagnosis shape returned
 // by the diagnoseIssue backend function. Used across deploy, compile, github, and
 // build flows for consistent Morpheus-wide AI assistance.
 
-export function DiagnosisLoading({ label = 'AI AGENT ANALYZING ERRORS...' }) {
+// 2026-09-04 (Rob: "i need an eta timer and larger spinning circle with steps
+// in the compile ai fix window, its hard to tell its doing anything") — the
+// diagnose call is a single opaque network request with no real progress
+// events, so there's no true step-by-step data to show (unlike the polling
+// phase, which gets real step counts from GitHub Actions). Rather than show
+// nothing, these steps advance on an elapsed-time heuristic — same spirit as
+// MorpheusPipelineStatus's chat-pipeline steps, just estimated instead of
+// server-confirmed. It's honest framing ("probably doing X now"), not a
+// tracked fact, but it beats a single pulsing icon for telling the person
+// something is actually happening.
+const DEFAULT_DIAGNOSIS_STEPS = [
+  { label: 'Reading error logs', atSeconds: 0 },
+  { label: 'Identifying root cause', atSeconds: 6 },
+  { label: 'Regenerating fixed files', atSeconds: 16 },
+  { label: 'Verifying the fix', atSeconds: 28 },
+];
+
+export function DiagnosisLoading({ label = 'AI AGENT ANALYZING ERRORS...', steps = DEFAULT_DIAGNOSIS_STEPS }) {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const activeIndex = steps.reduce((acc, s, i) => (elapsed >= s.atSeconds ? i : acc), 0);
+
   return (
     <div className="border border-primary/30 bg-primary/5 p-3">
-      <div className="flex items-center gap-2 text-primary text-sm mb-2">
+      <div className="flex items-center gap-2 text-primary text-sm mb-3">
         <Bot size={16} className="animate-pulse" /> {label}
+        <span className="ml-auto flex items-center gap-1 text-primary/55 text-xs font-mono tabular-nums">
+          <Timer size={12} /> {formatRunTime(elapsed)}
+        </span>
       </div>
-      <div className="flex items-center gap-2 text-primary/60 text-xs">
-        <Loader2 size={12} className="animate-spin" /> Diagnosing failures, regenerating broken files, and building action plan...
+      <div className="flex items-start gap-3">
+        {/* Larger, unmissable spinning ring — matches MorpheusPipelineStatus's
+            chat-pipeline indicator so long-running AI work reads the same way
+            everywhere in the app. */}
+        <div
+          className="h-11 w-11 shrink-0 rounded-full border-[3px] border-primary/15 border-t-primary animate-spin shadow-[0_0_14px_rgba(0,255,65,0.45)]"
+          aria-hidden="true"
+        />
+        <div className="space-y-1 flex-1 min-w-0 pt-0.5">
+          {steps.map((s, i) => {
+            const isActive = i === activeIndex;
+            const isDone = i < activeIndex;
+            return (
+              <div key={s.label} className="flex items-baseline gap-2 text-xs">
+                <span className={isActive ? 'text-primary animate-pulse' : isDone ? 'text-primary/50' : 'text-primary/30'} aria-hidden="true">
+                  {isDone ? '✓' : isActive ? '>' : '·'}
+                </span>
+                <span className={isActive ? 'text-primary' : isDone ? 'text-primary/50' : 'text-primary/30'}>{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

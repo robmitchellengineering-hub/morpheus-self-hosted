@@ -12,6 +12,61 @@ import { base44 } from '@/api/base44Client';
 
 const SUPPORTED = ['web-app', 'python-package', 'windows-exe', 'linux-binary', 'mac-app', 'android-apk', 'ios-app', 'rpi-distro', 'linux-distro', 'arduino-firmware'];
 
+// 2026-09-04 (Rob: "i need an eta timer and larger spinning circle with
+// steps in the compile ai fix window, its hard to tell its doing anything")
+// — the dispatch step (pushing files + triggering the GitHub Actions run)
+// has no real progress events of its own, so these steps advance on an
+// elapsed-time heuristic rather than tracked fact — same approach as the AI
+// diagnose steps in DiagnosisPanel.jsx. It's an honest "probably doing X
+// now" indicator, not a guarantee, but it beats a single spinner line for
+// telling Rob something is actually happening.
+const DISPATCH_STEPS = [
+  { label: 'Packaging project files', atSeconds: 0 },
+  { label: 'Pushing to GitHub', atSeconds: 3 },
+  { label: 'Triggering GitHub Actions run', atSeconds: 8 },
+];
+
+const COMPILE_DIAGNOSIS_STEPS = [
+  { label: 'Reading build logs', atSeconds: 0 },
+  { label: 'Identifying root cause', atSeconds: 6 },
+  { label: 'Regenerating fixed files', atSeconds: 16 },
+  { label: 'Preparing to recompile', atSeconds: 28 },
+];
+
+// Larger, unmissable spinning ring — matches MorpheusPipelineStatus's
+// chat-pipeline indicator so long builds read the same way everywhere.
+function BigSpinner({ className = '' }) {
+  return (
+    <div
+      className={`h-11 w-11 shrink-0 rounded-full border-[3px] border-primary/15 border-t-primary animate-spin shadow-[0_0_14px_rgba(0,255,65,0.45)] ${className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+// Renders a step list where progress is estimated from elapsed time rather
+// than a real completed/total count (used when the underlying operation is
+// a single opaque call with no progress events of its own).
+function HeuristicStepList({ steps, elapsedSeconds }) {
+  const activeIndex = steps.reduce((acc, s, i) => (elapsedSeconds >= s.atSeconds ? i : acc), 0);
+  return (
+    <div className="space-y-1 flex-1 min-w-0">
+      {steps.map((s, i) => {
+        const isActive = i === activeIndex;
+        const isDone = i < activeIndex;
+        return (
+          <div key={s.label} className="flex items-baseline gap-2 text-xs">
+            <span className={isActive ? 'text-primary animate-pulse' : isDone ? 'text-primary/50' : 'text-primary/30'} aria-hidden="true">
+              {isDone ? '✓' : isActive ? '>' : '·'}
+            </span>
+            <span className={isActive ? 'text-primary' : isDone ? 'text-primary/50' : 'text-primary/30'}>{s.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function CompilePanel({ open, onClose, project, onCompile, onPreview, onCheckStatus, onAskMorpheus, onCompileSuccess, onBuildBackend }) {
   const [phase, setPhase] = useState('idle');
   const [attempt, setAttempt] = useState(0);
@@ -74,6 +129,15 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     startTimeRef,
     progress: status?.stepProgress ? { completed: status.stepProgress.completed, total: status.stepProgress.total } : null,
     estimateSeconds: getCompileEstimate(target),
+  });
+
+  // Separate timer scoped to the dispatch phase (pushing to GitHub +
+  // triggering the run) — startTimeRef is set at the top of handleCompile,
+  // before phase flips to 'compiling', so this reads the same clock.
+  const { timerStr: dispatchTimerStr, elapsed: dispatchElapsed } = useRunTimer({
+    running: phase === 'compiling',
+    startTimeRef,
+    estimateSeconds: 20,
   });
 
   const stopPolling = useCallback(() => {
@@ -394,14 +458,22 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
             </>
           )}
           {phase === 'compiling' && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-primary/60 text-sm">
-                <Loader2 size={16} className="animate-spin" />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-primary/70 text-sm">
+                  <Timer size={13} className="text-primary/50" /> <span className="font-mono tabular-nums">{dispatchTimerStr}</span>
+                </div>
+                {attempt > 1 && <span className="text-[10px] text-primary/50 font-display tracking-wider">ATTEMPT {attempt}</span>}
+              </div>
+              <div className="text-primary/60 text-sm">
                 {dispatchRetryAttempt > 0
                   ? `GitHub is still catching up — retrying automatically (${dispatchRetryAttempt}/${MAX_DISPATCH_RETRIES})...`
                   : (attempt > 1 ? 'Recompiling to test AI fix...' : 'Dispatching build to GitHub Actions...')}
               </div>
-              {attempt > 1 && <span className="text-[10px] text-primary/50 font-display tracking-wider">ATTEMPT {attempt}</span>}
+              <div className="flex items-start gap-3 border border-primary/20 bg-primary/5 p-3">
+                <BigSpinner />
+                <HeuristicStepList steps={DISPATCH_STEPS} elapsedSeconds={dispatchElapsed} />
+              </div>
             </div>
           )}
           {phase === 'polling' && (
@@ -415,26 +487,29 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   <Square size={12} /> STOP
                 </button>
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-primary/60 text-sm">
-                  <Loader2 size={16} className="animate-spin" /> {status?.message || 'Build queued...'}
+              <div className="flex items-start gap-3 border border-primary/20 bg-primary/5 p-3">
+                <BigSpinner />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-primary/70 text-sm">{status?.message || 'Build queued...'}</div>
+                    {attempt > 1 && <span className="text-[10px] text-primary/50 font-display tracking-wider shrink-0 ml-2">ATTEMPT {attempt}</span>}
+                  </div>
+                  {status?.stepProgress && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs text-primary/70">
+                        <span className="font-mono">STEP {status.stepProgress.completed}/{status.stepProgress.total}</span>
+                        <span className="text-primary/50 truncate ml-2 text-right">{status.stepProgress.currentStep}</span>
+                      </div>
+                      <div className="h-1.5 bg-primary/10 border border-primary/20 overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-500"
+                          style={{ width: `${status.stepProgress.total > 0 ? (status.stepProgress.completed / status.stepProgress.total) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {attempt > 1 && <span className="text-[10px] text-primary/50 font-display tracking-wider">ATTEMPT {attempt}</span>}
               </div>
-              {status?.stepProgress && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs text-primary/70">
-                    <span className="font-mono">STEP {status.stepProgress.completed}/{status.stepProgress.total}</span>
-                    <span className="text-primary/50 truncate ml-2 text-right">{status.stepProgress.currentStep}</span>
-                  </div>
-                  <div className="h-1.5 bg-primary/10 border border-primary/20 overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all duration-500"
-                      style={{ width: `${status.stepProgress.total > 0 ? (status.stepProgress.completed / status.stepProgress.total) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-              )}
               {errorCountRef.current > 0 && (
                 <p className="text-xs text-yellow-500/80">
                   // Status check retrying ({errorCountRef.current}/{MAX_ERRORS}) — GitHub may be indexing the workflow...
@@ -564,7 +639,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   {diagnosing ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} AI DIAGNOSE & FIX
                 </button>
               )}
-              {diagnosing && <DiagnosisLoading label="AI AGENT ANALYZING BUILD ERRORS..." />}
+              {diagnosing && <DiagnosisLoading label="AI AGENT ANALYZING BUILD ERRORS..." steps={COMPILE_DIAGNOSIS_STEPS} />}
               {diagnosis && !diagnosing && (
                 <>
                   <DiagnosisPanel diagnosis={diagnosis} onRedeploy={() => handleCompile(false)} redeployLabel="RECOMPILE" onAskMorpheus={() => onAskMorpheus?.(diagnosis)} />
