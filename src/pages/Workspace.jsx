@@ -267,19 +267,22 @@ export default function Workspace() {
       <MarketplacePanel open={showMarket} onClose={() => setShowMarket(false)} currentProject={ws.currentProject} onInstalled={async (data) => { await ws.loadProjects(); setShowMarket(false); if (data?.projectId) navigate('/workspace/' + data.projectId); }} />
       <SellerPanel open={showSeller} onClose={() => setShowSeller(false)} />
       <CompilePanel open={showCompile} onClose={() => setShowCompile(false)} project={ws.currentProject} onCompile={ws.compileProject} onPreview={ws.previewCompile} onCheckStatus={ws.checkCompileStatus} onCompileSuccess={ws.saveCompiledArtifacts} onBuildBackend={() => { setShowCompile(false); setShowBackend(true); }} onAskMorpheus={(diagnosis) => {
-        const msg = [`The ${ws.currentProject?.compile_target || 'binary'} compile failed. AI diagnosis was run:`, '', diagnosis.summary];
-        if (diagnosis.autoFixed?.length) {
-          msg.push('', 'Auto-fixed:');
-          diagnosis.autoFixed.forEach(f => msg.push(`- ${f.component}: ${f.fix} (${f.fileCount} file(s) regenerated)`));
-        }
-        if (diagnosis.needsUserAction?.length) {
-          msg.push('', 'Still needs fixing:');
-          diagnosis.needsUserAction.forEach(a => msg.push(`- ${a.component}: ${a.issue}`));
-        }
-        msg.push('', 'Please fix the remaining code issues so the compile succeeds.');
+        // 2026-09-04: the diagnoseIssue backend function now automatically
+        // logs a "// SYSTEM — AI DIAGNOSIS ..." message (same summary/
+        // autoFixed/needsUserAction detail this used to re-type here) into
+        // chat history the moment diagnosis completes — see diagnoseIssue.js.
+        // That message is already in `history` by the time this turn's
+        // chatWithMorpheus call runs, so repeating the full summary here
+        // would just show it twice in the thread. This button's real job is
+        // no longer "record what happened" (automatic now) — it's "ask
+        // Morpheus to actually act on what's left," so it only needs to say
+        // that.
+        const msg = diagnosis.needsUserAction?.length
+          ? `Please fix the remaining issues from the diagnosis above so the ${ws.currentProject?.compile_target || 'binary'} compile succeeds.`
+          : `The diagnosis above auto-fixed everything it found — please recompile and let me know if anything still fails.`;
         setShowCompile(false);
         setMobileTab('chat');
-        ws.sendMessage(msg.join('\n'));
+        ws.sendMessage(msg);
       }} />
       <BackendPanel open={showBackend} onClose={() => setShowBackend(false)} project={ws.currentProject} />
       <RebuildDocDialog open={showRebuild} onClose={() => setShowRebuild(false)} />
