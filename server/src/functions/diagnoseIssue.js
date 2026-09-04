@@ -310,10 +310,28 @@ async function diagnoseBuild(userId, projectId, project, files, errorContext) {
 async function autoFixCodeErrors(userId, projectId, projectFiles, codeErrors, plan, components, contextType, errorContext) {
   if (codeErrors.length === 0 || projectFiles.length === 0) return [];
 
+  // 2026-09-04 fix (Rob: AnyPDF's Swift compile kept failing again after
+  // being "auto-fixed", and the fix messages read as generic re-completions
+  // rather than targeted patches): this used to cap each file at 2000 chars
+  // and the whole joined context at 20000 chars before handing it to the
+  // "regenerate the affected files with the fix applied" prompt below. Real
+  // source files here (PDFViewContainer.swift, ContentView.swift, etc.) run
+  // 2500-4000 chars each -- so the fixer AI was working from a file cut off
+  // partway through, with no way to know what it couldn't see. Told to
+  // "regenerate the full corrected content" from a truncated view, it did
+  // exactly that: reconstructed a plausible-looking whole file from the
+  // fragment + error text instead of patching the actual current bug,
+  // which is why the diagnosis kept reporting fixes that didn't stick.
+  // chatWithMorpheus.js's ordinary (non-self-dev) project path already
+  // sends full, untruncated file content the same way (see its filesContext
+  // above) at these same project sizes without issue, so this brings
+  // diagnosis in line with that rather than inventing a new convention.
+  // The 150000 ceiling is a backstop against a pathologically large project,
+  // not a normal-case limit.
   const fileContext = projectFiles
-    .map((f) => `--- ${f.path} ---\n${f.content.substring(0, 2000)}`)
+    .map((f) => `--- ${f.path} ---\n${f.content}`)
     .join('\n\n')
-    .substring(0, 20000);
+    .substring(0, 150000);
 
   const errorContextStr = codeErrors.map((r) => {
     // logs can be a string OR an array of {job, log} objects from getCompileStatus
