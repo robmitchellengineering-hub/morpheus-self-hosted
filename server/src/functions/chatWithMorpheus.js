@@ -186,6 +186,8 @@ Analyze the operator's message carefully:
 - If they are asking you to BUILD, CREATE, or MODIFY something, set needsCode: true and produce a precise build plan — file-by-file, with architecture decisions, implementation notes, and design rationale. Think deeply about reliability, usability, aesthetics, and edge cases. Your plan must be specific enough that a fast coder agent can implement it without ambiguity.
 - If they are just CONVERSING (asking a question, discussing ideas, reflecting), set needsCode: false and respond naturally in character. No plan is needed.
 
+KEEP THE PLAN CONCISE — this whole response has a hard output limit, and the coder agent re-reads your full plan text on every implementation pass (a large build can mean many passes), so a bloated plan costs real time and money on every single one of them, not just this call. Give each file 1-3 tight sentences of implementation notes — just enough that the coder can't get it wrong. Spend real depth ONLY on files with a genuine architectural decision, a tricky edge case, or a design choice that isn't obvious from the file's name and purpose; routine/boilerplate files (a standard config, a simple component, a README) get a single line. For a build touching many files, prefer a longer plannedFiles list over a longer plan — the file list costs almost nothing; paragraphs of prose per file do not scale.
+
 CLARIFICATION RULE — Reason first, then decide. After your planning pass, judge whether you have enough certainty to build correctly WITHOUT guessing. Only set needsClarification: true when there is a genuine, build-blocking ambiguity — a missing core requirement, a fork in architecture that materially changes the output, or a scope so vague that any choice you make is likely wrong. Do NOT ask for trivia, cosmetic preferences, or anything you can reasonably decide yourself. When in doubt, make a sensible default and build. When you DO ask, your reply must contain ONLY the clarifying questions (2-4 numbered questions, each with the specific options or info you need) framed in Morpheus's voice — no plan, no code. The operator answers, and on the next turn you build.
 
 For build requests where you are NOT asking clarification, your reply should be at most one or two sentences — brief acknowledgment. The code is the conversation. For conversations, let Morpheus out fully.
@@ -196,7 +198,7 @@ Return JSON with:
 - reply: Your response to the operator (in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true)
 - needsCode: true if code needs to be written/modified, false for pure conversation
 - needsClarification: true ONLY if a genuine build-blocking ambiguity prevents you from building correctly — reply then contains just the clarifying questions
-- plan: detailed file-by-file build plan with implementation notes (only required when needsCode is true AND needsClarification is false)
+- plan: concise file-by-file build plan with implementation notes — 1-3 sentences per file, deeper only where a file genuinely needs it (see KEEP THE PLAN CONCISE above) (only required when needsCode is true AND needsClarification is false)
 - plannedFiles: ordered array of every file path the plan will touch (only required when needsCode is true AND needsClarification is false) — see PLANNED FILES above`;
 
 const CODER_INSTRUCTIONS = `
@@ -433,7 +435,22 @@ OPERATOR SAYS: ${message}`;
       // multi-file build -- so EVERY build was dying here, on the very first
       // AI call, before the Coder chunking fix below ever got a chance to
       // run. Raised to a still-bounded but realistic 12000.
-      maxTokens: 12000,
+      //
+      // 2026-09-04 (Rob hit OUTPUT_TRUNCATED role=planner maxTokens=12000 on
+      // his original, most mature AnyPDF project — the one with the most
+      // accumulated files/history of the three AnyPDF constructs, so the
+      // most likely to produce a genuinely large plan): 12000 turned out to
+      // be the same story one size up. Unlike the Coder's full file content
+      // (truly unbounded — that's why it's chunked, not capped), the
+      // Planner's own output is a plan description plus a plain path list,
+      // which is naturally far more compressible — so this round pairs the
+      // usual "raise the ceiling" with actually tightening the instructions
+      // (see PLANNER_INSTRUCTIONS' "KEEP THE PLAN CONCISE" rule above) so a
+      // big build doesn't reflexively need a bigger cap next time too. Raised
+      // to 24000, matching CODER_STEP_MAX_TOKENS' scale below — generous
+      // headroom for a real many-file plan without chasing an unbounded
+      // number the way the Coder's is.
+      maxTokens: 24000,
     });
     stages.done('planner');
 
