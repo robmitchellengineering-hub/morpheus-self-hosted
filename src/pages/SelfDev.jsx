@@ -208,13 +208,13 @@ export default function SelfDev() {
   return (
     <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
       <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 flex-wrap">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex items-center gap-3 min-w-0 shrink-0">
             <Cpu size={18} className="text-primary shrink-0" />
             <span className="text-primary font-display tracking-wider truncate neon-glow">MORPHEUS SELF-DEV</span>
             <span className="hidden sm:inline text-xs text-primary/75 uppercase border border-primary/30 px-2 py-0.5 shrink-0">{ws.currentProject.status}</span>
           </div>
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto whitespace-nowrap">
             <button onClick={() => setShowHistory(true)} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               HISTORY
             </button>

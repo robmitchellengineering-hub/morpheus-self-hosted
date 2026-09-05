@@ -608,7 +608,7 @@ OPERATOR SAYS: ${message}`;
       // Guarantee a polished styles.css exists for web-app builds. If the
       // coder shipped its own, trust it; otherwise inject the design system
       // verbatim so the app never lands with raw unstyled HTML.
-      if ((project.compile_target || 'source') === 'web-app' && !fileOps.some((op) => op.path === 'styles.css')) {
+      if ((project.compile_target || 'source') === 'web-app' && !isSelfDev && !fileOps.some((op) => op.path === 'styles.css')) {
         fileOps.unshift({ path: 'styles.css', content: DESIGN_SYSTEM_CSS, action: 'create' });
       }
 
