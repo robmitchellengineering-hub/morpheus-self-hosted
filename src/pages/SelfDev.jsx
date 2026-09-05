@@ -70,7 +70,6 @@ export default function SelfDev() {
   }, []);
   const openFile = useCallback((f) => {
     ws.setSelectedFile(f);
-    setContextPaths((prev) => (prev.has(f.path) ? prev : new Set(prev).add(f.path)));
   }, [ws]);
 
   const syncFromGithub = useCallback(async () => {
@@ -154,7 +153,7 @@ export default function SelfDev() {
 
   const handleSend = (text, fileUrls) => {
     const pinned = Array.from(contextPaths);
-    ws.sendMessage(text, fileUrls, false, pinned.length > 0 ? pinned : (ws.selectedFile ? [ws.selectedFile.path] : []));
+    ws.sendMessage(text, fileUrls, false, pinned);
   };
 
   // Ops Console companion (2026-09-02) — pulls recent production error logs
