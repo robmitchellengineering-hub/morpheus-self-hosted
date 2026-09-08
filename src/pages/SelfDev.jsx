@@ -21,13 +21,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp, ListChecks } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
 import FileViewer from '@/components/matrix/FileViewer';
 import PreviewPanel from '@/components/matrix/PreviewPanel';
 import SelfDevHistoryModal from '@/components/matrix/SelfDevHistoryModal';
+import SelfDevFeatureModal from '@/components/matrix/SelfDevFeatureModal';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import HelpToggle from '@/components/matrix/HelpToggle';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
@@ -54,6 +55,8 @@ export default function SelfDev() {
     try { return window.innerWidth >= 768; } catch { return true; }
   });
   const [showHistory, setShowHistory] = useState(false);
+  const [showFeature, setShowFeature] = useState(false);
+  const [activeFeature, setActiveFeature] = useState(null);
   const [mobileTab, setMobileTab] = useState('chat');
   const [diagnosing, setDiagnosing] = useState(false);
   // Post-push deploy watcher (#4). phase: 'building' | 'deployed' | 'failed'
@@ -144,6 +147,16 @@ export default function SelfDev() {
       const parsed = raw ? JSON.parse(raw) : null;
       setLastPush(parsed && Date.now() - parsed.at < 24 * 3600 * 1000 ? parsed : null);
     } catch { setLastPush(null); }
+  }, [ws.currentProject?.id]);
+
+  // Load the active feature plan (#A1) for the header strip.
+  useEffect(() => {
+    if (!ws.currentProject?.id) return;
+    let cancelled = false;
+    base44.functions.invoke('getSelfDevFeatures', { projectId: ws.currentProject.id })
+      .then(({ data }) => { if (!cancelled) setActiveFeature(data.active || null); })
+      .catch(() => { /* table may not be migrated yet — the FEATURE panel explains */ });
+    return () => { cancelled = true; };
   }, [ws.currentProject?.id]);
 
   // #4 — deploy watcher. Polls Northflank after a push; on a failed
@@ -455,6 +468,9 @@ export default function SelfDev() {
             <button onClick={() => setShowHistory(true)} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               HISTORY
             </button>
+            <button onClick={() => setShowFeature(true)} title="Plan a multi-step feature to build on Morpheus, tracked across turns" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+              <ListChecks size={13} /> FEATURE{activeFeature ? ` (${activeFeature.doneCount}/${activeFeature.totalSteps})` : ''}
+            </button>
             <button onClick={syncFromGithub} disabled={syncing} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
               <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'SYNCING…' : 'SYNC FROM GITHUB'}
             </button>
@@ -479,6 +495,12 @@ export default function SelfDev() {
             This edits Morpheus's real source. Chat and file edits only change this local workspace — nothing reaches GitHub or production until you click PUSH TO PRODUCTION.
           </span>
         </div>
+        {activeFeature?.activeStep && (
+          <button onClick={() => setShowFeature(true)} className="flex items-center gap-2 w-full text-left border-t border-primary/20 bg-primary/5 px-4 py-1.5 text-[11px] text-primary/70 hover:bg-primary/10">
+            <ListChecks size={12} className="text-primary shrink-0" />
+            <span className="truncate"><span className="text-primary/50 uppercase tracking-wider">Feature</span> {activeFeature.title} — step {activeFeature.activeStep.n}/{activeFeature.totalSteps}: {activeFeature.activeStep.title}</span>
+          </button>
+        )}
         {syncResult?.ok && (
           <div className="flex items-center gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1 text-[11px] text-primary/60">
             <CheckCircle2 size={11} /> Synced {syncResult.fileCount} files from {syncResult.repoFullName}@{syncResult.branch}
@@ -650,6 +672,7 @@ export default function SelfDev() {
       )}
 
       <SelfDevHistoryModal open={showHistory} onClose={() => setShowHistory(false)} snapshots={ws.snapshots} onRestore={ws.restoreSnapshot} project={ws.currentProject} />
+      <SelfDevFeatureModal open={showFeature} onClose={() => setShowFeature(false)} projectId={ws.currentProject?.id} onActiveChange={setActiveFeature} />
 
       {showPushConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">

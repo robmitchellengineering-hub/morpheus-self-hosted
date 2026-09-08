@@ -13,6 +13,7 @@ import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../li
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
 import { estimateCallMs } from '../lib/timingStats.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
+import { getActiveFeature, featureContextBlock } from '../lib/selfDevFeature.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
 // doin step by step in the chat window") — this handler streams
@@ -539,6 +540,14 @@ export default async function handler({ user, body, res }) {
   // and coder build on a polished, consistent base instead of raw HTML.
   const designBlock = (project.compile_target || 'source') === 'web-app' && !isSelfDev ? designSystemPromptBlock() : '';
 
+  // Self-dev feature plan (SELF-DEV-V2 A1): if a feature is active for this
+  // project, the planner gets its goal + step list + which step is active,
+  // so a multi-turn feature stays coherent across turns instead of each turn
+  // re-deriving intent from one message. Build turns only; best-effort.
+  const featureBlock = (isSelfDev && mode === 'build')
+    ? featureContextBlock(await getActiveFeature(projectId).catch(() => null))
+    : '';
+
   // 2026-09-08 (Rob: "need to look at the functionality of the AI docs and
   // be able to feed that into morpheus every construct so the planner has a
   // better idea of how to build"): compileProject.js's adapters
@@ -567,7 +576,7 @@ PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
 COMPILE TARGET: ${project.compile_target || 'source'}
 ${summaryBlock}
-${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
+${featureBlock}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
 CURRENT FILES:
 ${filesContext}
 ${scopedNote}
