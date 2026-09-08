@@ -241,6 +241,44 @@ const SELF_DEV_ORIENTATION_FILES = ['AGENTS.md', 'CLAUDE.md', 'README.md', 'pack
 // context windows.
 const SELF_DEV_MAX_CONTEXT_BYTES = 150000;
 
+// Auto-select relevant self-dev files when the operator has not manually
+// pinned any. Sends the repo tree + operator message to the AI and asks for
+// up to 6 paths most likely needed. Returns an array; falls back to
+// SELF_DEV_ORIENTATION_FILES on any failure.
+async function autoSelectSelfDevPaths(userId, files, message) {
+  const tree = files.map((f) => f.path).sort().join('\n');
+  const prompt = `You are selecting file paths from a repository for a coding agent to read and modify.
+
+FULL REPO FILE TREE:
+${tree}
+
+OPERATOR REQUEST:
+${message}
+
+Return a JSON object with a "paths" array containing up to 6 file paths from the tree that are most relevant to fulfilling this request. Choose only paths that exist in the tree. Prioritize files that the coder will need to read or edit. Return an empty array if no file is relevant.`;
+  try {
+    const res = await invokeAI({
+      userId,
+      prompt,
+      schema: {
+        type: 'object',
+        properties: {
+          paths: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['paths'],
+      },
+      fileUrls: undefined,
+      role: 'coder', // lightweight selection; role not critical
+      maxTokens: 2000,
+    });
+    const selected = Array.isArray(res.result?.paths) ? res.result.paths.filter((p) => typeof p === 'string' && p) : [];
+    return selected.slice(0, 6);
+  } catch (err) {
+    console.error('[autoSelectSelfDevPaths] failed, falling back to orientation files:', err.message);
+    return SELF_DEV_ORIENTATION_FILES;
+  }
+}
+
 // Self-dev is Morpheus editing its own live, already-working production
 // codebase — a fundamentally different risk profile than generating a fresh
 // project from nothing. chatWithMorpheus.js normally sends every file's full
@@ -271,11 +309,11 @@ function buildSelfDevContext(files, focusPaths) {
   };
 }
 
-function selfDevSafetyNote(shownPaths) {
+function selfDevSafetyNote(shownPaths, autoSelected = false) {
   return `
 
 SELF-DEV SAFETY RULE — YOU ARE EDITING MORPHEUS'S OWN LIVE PRODUCTION CODEBASE, NOT A FRESH PROJECT:
-- You have full CONTENT only for these files: ${shownPaths.join(', ') || '(none)'}. Every other path in the file tree above exists in the real repo but you have NOT seen its content.
+- You have full CONTENT only for these files: ${shownPaths.join(', ') || '(none)'}${autoSelected ? ' (selected automatically because no files were manually pinned)' : ''}. Every other path in the file tree above exists in the real repo but you have NOT seen its content.
 - NEVER return a fileOperation with action "update" for a path whose content you have not seen above — you cannot know what you'd be overwriting, and a blind "update" would silently destroy real, working code. If a needed change touches a file that isn't shown, do not return fileOperations for it this turn — instead reply telling the operator exactly which additional file(s) to pin (checkbox in the file tree, or just open them) so you can see them too, then ask again in the same message which files those are.
 - It's fine to "create" genuinely new files/paths that don't exist yet in the tree above.
 - Prefer small, targeted, reviewable changes over sweeping rewrites — the operator reviews every change in the file editor and live preview before pushing to production themselves.`;
@@ -354,9 +392,21 @@ export default async function handler({ user, body, res }) {
   let filesContext;
   let selfDevNote = '';
   if (isSelfDev) {
-    const built = buildSelfDevContext(files, focusPaths);
+    // Determine effective focus paths: use manual pins if provided, otherwise
+    // auto-select based on the operator's message. Fallback to orientation
+    // files if auto-selection fails.
+    const manualFocusPaths = Array.isArray(focusPaths) && focusPaths.length > 0 ? focusPaths : null;
+    let effectiveFocusPaths;
+    let autoSelected = false;
+    if (manualFocusPaths) {
+      effectiveFocusPaths = manualFocusPaths;
+    } else {
+      effectiveFocusPaths = await autoSelectSelfDevPaths(user.id, files, message);
+      autoSelected = true;
+    }
+    const built = buildSelfDevContext(files, effectiveFocusPaths);
     filesContext = built.text;
-    selfDevNote = selfDevSafetyNote(built.shown);
+    selfDevNote = selfDevSafetyNote(built.shown, autoSelected);
   } else {
     // Unbounded, full-content context for ordinary (non-self-dev) projects —
     // unchanged from before. Fine at normal project sizes; see
@@ -582,7 +632,7 @@ OPERATOR SAYS: ${message}`;
       // Guarantee a polished styles.css exists for web-app builds. If the
       // coder shipped its own, trust it; otherwise inject the design system
       // verbatim so the app never lands with raw unstyled HTML.
-      if ((project.compile_target || 'source') === 'web-app' && !fileOps.some((op) => op.path === 'styles.css')) {
+      if ((project.compile_target || 'source') === 'web-app' && !isSelfDev && !fileOps.some((op) => op.path === 'styles.css')) {
         fileOps.unshift({ path: 'styles.css', content: DESIGN_SYSTEM_CSS, action: 'create' });
       }
 
