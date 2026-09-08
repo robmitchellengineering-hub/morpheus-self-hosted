@@ -5,10 +5,11 @@
 // specific to self-dev are: (1) it always operates on one singleton
 // project_type:'self_dev' Project instead of a picker, (2) a SYNC FROM
 // GITHUB action that pulls the real morpheus-self-hosted repo's current
-// files in (importSelfDevRepo), (3) a PUSH TO PRODUCTION action that pushes
-// straight to that same real repo/branch (pushSelfDevToGithub) — which is
-// what Northflank/Netlify's existing git-based auto-deploy actually watches,
-// so this one push is what ships a change live, and (4) chat messages carry
+// files in (importSelfDevRepo), (3) a PUSH TO PRODUCTION action
+// (pushSelfDevToGithub) that lands the change on a self-dev/<ts> branch and
+// opens a PR; Morpheus polls the PR's checks (mergeSelfDevPr) and
+// squash-merges to main once they're green, and Northflank/Netlify's
+// git-based auto-deploy ships that merge live, and (4) chat messages carry
 // the pinned/open files' paths as focusPaths (contextPaths below — opening a
 // file pins it, and multiple files can be pinned at once via the FileTree
 // checkboxes) so chatWithMorpheus.js can scope its context instead of
@@ -58,6 +59,11 @@ export default function SelfDev() {
   // Post-push deploy watcher (#4). phase: 'building' | 'deployed' | 'failed'
   // | 'timeout' | 'notConfigured'.
   const [deployWatch, setDeployWatch] = useState(null);
+  // PR-mode push watcher (#2). A default push opens a PR; this polls
+  // mergeSelfDevPr until it merges (checks green) or a check fails.
+  // phase: 'checking' | 'merged' | 'failed' | 'timeout'.
+  const [prWatch, setPrWatch] = useState(null);
+  const [mergingAnyway, setMergingAnyway] = useState(false);
   // The last push's commit, kept in localStorage so REVERT LAST PUSH (#3)
   // survives a reload. { commitSha, commitUrl, at }.
   const [lastPush, setLastPush] = useState(null);
@@ -174,6 +180,43 @@ export default function SelfDev() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [pushResult?.commitSha]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // #2 — PR merge watcher. After a PR-mode push, poll mergeSelfDevPr: while
+  // checks are pending it just keeps polling; on green it squash-merges and
+  // hands the merge commit to the deploy watcher (via pushResult.commitSha)
+  // + REVERT LAST PUSH; on a failed check it stops and offers MERGE ANYWAY.
+  useEffect(() => {
+    const prNumber = prWatch?.prNumber;
+    if (!prNumber || prWatch.phase === 'merged' || prWatch.phase === 'failed' || prWatch.phase === 'timeout') return;
+    let cancelled = false;
+    let attempts = 0;
+    const poll = async () => {
+      if (cancelled) return;
+      if (attempts++ > 40) { setPrWatch((w) => (w?.phase === 'checking' ? { ...w, phase: 'timeout' } : w)); return; }
+      try {
+        const { data } = await base44.functions.invoke('mergeSelfDevPr', {
+          prNumber, projectId: ws.currentProject.id, touchedManualSource: prWatch.touchedManualSource,
+        });
+        if (cancelled) return;
+        if (data.merged) {
+          setPrWatch((w) => ({ ...w, phase: 'merged', mergeCommitSha: data.mergeCommitSha }));
+          rememberLastPush({ commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }, ws.currentProject.id);
+          setPushResult((p) => ({ ...(p || {}), ok: true, commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }));
+          return;
+        }
+        if (data.state === 'failed' || data.state === 'conflict' || data.state === 'merge_failed') {
+          setPrWatch((w) => ({ ...w, phase: 'failed', state: data.state, failing: data.failing || [], message: data.message, prUrl: data.prUrl || w.prUrl }));
+          return;
+        }
+        setPrWatch((w) => ({ ...w, phase: 'checking', pending: (data.checks || []).filter((c) => c.status !== 'completed').map((c) => c.name) }));
+        setTimeout(poll, 20000);
+      } catch {
+        if (!cancelled) setTimeout(poll, 20000); // transient — keep trying
+      }
+    };
+    const t = setTimeout(poll, 12000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [prWatch?.prNumber, prWatch?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const runVerify = async () => {
     setVerifying(true);
     setVerifyResult(null);
@@ -213,11 +256,23 @@ export default function SelfDev() {
       setVerifyResult(null);
       setDeployWatch(null);
       setRevertResult(null);
-      // Northflank (backend) and Netlify (frontend) auto-build from this
-      // push. The deploy watcher effect (keyed on pushResult.commitSha)
-      // polls Northflank and, on a failed build/deploy, auto-pulls the logs
-      // into a fix turn — see below.
-      if (res.data?.commitSha) rememberLastPush(res.data, ws.currentProject.id);
+      setPrWatch(null);
+      if (res.data?.mode === 'pr') {
+        // Default path: a PR is open. Poll mergeSelfDevPr until it merges
+        // (every check green) or a check fails — then the deploy watcher
+        // takes over on the merge commit.
+        setPrWatch({
+          phase: 'checking',
+          prNumber: res.data.prNumber,
+          prUrl: res.data.prUrl,
+          touchedManualSource: res.data.touchedManualSource,
+        });
+      } else if (res.data?.commitSha) {
+        // Direct-to-main (force / hotfix). Northflank + Netlify auto-build
+        // from the push; the deploy watcher (keyed on pushResult.commitSha)
+        // polls Northflank and auto-diagnoses a failed deploy.
+        rememberLastPush(res.data, ws.currentProject.id);
+      }
     } catch (e) {
       setPushResult({ ok: false, error: e.message });
     } finally {
@@ -243,6 +298,30 @@ export default function SelfDev() {
       );
     } catch {
       /* logs unavailable — the failed banner + REVERT button still show */
+    }
+  };
+
+  // MERGE ANYWAY — the operator has judged a red check on the self-dev PR to
+  // be a false positive. Force-merges regardless of check state.
+  const mergeAnyway = async () => {
+    if (!prWatch?.prNumber) return;
+    setMergingAnyway(true);
+    try {
+      const { data } = await base44.functions.invoke('mergeSelfDevPr', {
+        prNumber: prWatch.prNumber, projectId: ws.currentProject.id, force: true,
+        touchedManualSource: prWatch.touchedManualSource,
+      });
+      if (data.merged) {
+        setPrWatch((w) => ({ ...w, phase: 'merged', mergeCommitSha: data.mergeCommitSha }));
+        rememberLastPush({ commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }, ws.currentProject.id);
+        setPushResult((p) => ({ ...(p || {}), ok: true, commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }));
+      } else {
+        setPrWatch((w) => ({ ...w, phase: 'failed', message: data.message || 'Merge still failed.' }));
+      }
+    } catch (e) {
+      setPrWatch((w) => ({ ...w, phase: 'failed', message: e?.response?.data?.error || e.message }));
+    } finally {
+      setMergingAnyway(false);
     }
   };
 
@@ -400,9 +479,12 @@ export default function SelfDev() {
             <span className="flex items-center gap-2">
               {pushResult.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
               {pushResult.ok
-                ? (pushResult.commitUrl
-                    ? <>Pushed to production: {[pushResult.createCount && `${pushResult.createCount} new`, pushResult.updateCount && `${pushResult.updateCount} changed`, pushResult.deleteCount && `${pushResult.deleteCount} deleted`].filter(Boolean).join(', ') || `${pushResult.fileCount} file(s)`} — <a href={pushResult.commitUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view commit</a></>
-                    : (pushResult.message || 'No changes to push.'))
+                ? (() => {
+                    const bits = [pushResult.createCount && `${pushResult.createCount} new`, pushResult.updateCount && `${pushResult.updateCount} changed`, pushResult.deleteCount && `${pushResult.deleteCount} deleted`].filter(Boolean).join(', ') || `${pushResult.fileCount} file(s)`;
+                    if (pushResult.commitUrl) return <>Merged to production: {bits} — <a href={pushResult.commitUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view commit</a></>;
+                    if (pushResult.mode === 'pr') return <>Staged {bits} to <a href={pushResult.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">PR #{pushResult.prNumber}</a> — see below.</>;
+                    return pushResult.message || 'No changes to push.';
+                  })()
                 : `Push failed: ${pushResult.error}`}
             </span>
             <div className="flex items-center gap-2 shrink-0">
@@ -412,6 +494,24 @@ export default function SelfDev() {
                 </button>
               )}
               <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+            </div>
+          </div>
+        )}
+        {prWatch && (
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${prWatch.phase === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-400' : prWatch.phase === 'merged' ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-primary/15 bg-primary/5 text-primary/60'}`}>
+            <span className="flex items-center gap-2 min-w-0">
+              {prWatch.phase === 'checking' && <><Loader2 size={11} className="animate-spin shrink-0" /> <span className="truncate">PR #{prWatch.prNumber} open — waiting for checks{prWatch.pending?.length ? ` (${prWatch.pending.join(', ')})` : ' (Netlify deploy preview)'}… <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view</a></span></>}
+              {prWatch.phase === 'merged' && <><CheckCircle2 size={11} className="shrink-0" /> PR #{prWatch.prNumber} merged to main ({prWatch.mergeCommitSha?.slice(0, 7)}) — deploying.</>}
+              {prWatch.phase === 'failed' && <><XCircle size={11} className="shrink-0" /> <span className="truncate">PR #{prWatch.prNumber} {prWatch.state === 'conflict' ? 'conflicts with main' : prWatch.message ? prWatch.message : `checks failed${prWatch.failing?.length ? `: ${prWatch.failing.join(', ')}` : ''}`} — main untouched. <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view PR</a></span></>}
+              {prWatch.phase === 'timeout' && <><span className="truncate">PR #{prWatch.prNumber} checks still pending — <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">check on GitHub</a>.</span></>}
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              {(prWatch.phase === 'failed' || prWatch.phase === 'timeout') && prWatch.state !== 'conflict' && (
+                <button onClick={mergeAnyway} disabled={mergingAnyway} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40 flex items-center gap-1">
+                  {mergingAnyway ? <Loader2 size={10} className="animate-spin" /> : null} MERGE ANYWAY
+                </button>
+              )}
+              <button onClick={() => setPrWatch(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
             </div>
           </div>
         )}
@@ -514,7 +614,7 @@ export default function SelfDev() {
               <span className="font-display tracking-wider">PUSH TO PRODUCTION</span>
             </div>
             <p className="text-primary/70 text-sm mb-4 leading-relaxed">
-              This pushes the changed files straight to <span className="text-primary">robmitchellengineering-hub/morpheus-self-hosted@main</span> — the real repo — as one commit. Northflank and Netlify redeploy live from it. A verification pass (esbuild syntax + import/export checks over the whole workspace) runs first and blocks the push on any error; still review the changes in the editor and preview yourself.
+              A verification pass (esbuild syntax + import/export checks over the whole workspace) runs first and blocks on any error. The changed files then go to a <span className="text-primary">self-dev/…</span> branch on the real <span className="text-primary">morpheus-self-hosted</span> repo as one commit, and Morpheus opens a PR. Once Netlify's deploy-preview build and every other check pass, it squash-merges to <span className="text-primary">main</span> automatically — Northflank and Netlify redeploy production from there. If a check fails, main is left untouched. Still review the changes in the editor and preview yourself.
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowPushConfirm(false)} disabled={pushing} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60`}>CANCEL</button>
