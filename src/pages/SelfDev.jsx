@@ -43,6 +43,8 @@ export default function SelfDev() {
   const [showPushConfirm, setShowPushConfirm] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [mobileTab, setMobileTab] = useState('chat');
   const [diagnosing, setDiagnosing] = useState(false);
@@ -109,11 +111,32 @@ export default function SelfDev() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const doPush = async () => {
+  const runVerify = async () => {
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const { data } = await base44.functions.invoke('verifySelfDev', {});
+      setVerifyResult(data);
+      return data;
+    } catch (e) {
+      setVerifyResult({ ok: false, error: e?.response?.data?.error || e.message, errors: [] });
+      return null;
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const doPush = async (force = false) => {
     setPushing(true);
     try {
-      const res = await base44.functions.invoke('pushSelfDevToGithub', { projectId: ws.currentProject.id });
+      const res = await base44.functions.invoke('pushSelfDevToGithub', { projectId: ws.currentProject.id, force });
+      if (res.data?.blocked) {
+        setVerifyResult(res.data.verify);
+        setPushResult({ ok: false, error: res.data.message });
+        return;
+      }
       setPushResult({ ok: true, ...res.data });
+      setVerifyResult(null);
       setDeployStatus(null);
       if (!res.data?.commitSha) return; // nothing changed — no deploy to check
       // This IS the actual deploy mechanism, in full: PUSH TO PRODUCTION just
@@ -225,6 +248,9 @@ export default function SelfDev() {
             <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
               <Stethoscope size={13} className={diagnosing ? 'animate-pulse' : ''} /> {diagnosing ? 'PULLING LOGS…' : 'DIAGNOSE FROM LOGS'}
             </button>
+            <button onClick={runVerify} disabled={verifying || pushing} title="Run esbuild syntax + import/export checks across the whole workspace — the same gate that runs before a push" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
+              <ShieldCheck size={13} className={verifying ? 'animate-pulse' : ''} /> {verifying ? 'VERIFYING…' : 'VERIFY'}
+            </button>
             <button onClick={() => setShowPushConfirm(true)} disabled={pushing} className={`${btnBase} text-black bg-primary hover:bg-primary/90 border-primary font-bold disabled:opacity-50`}>
               <Rocket size={13} /> PUSH TO PRODUCTION
             </button>
@@ -249,6 +275,30 @@ export default function SelfDev() {
             {syncResult.removed > 0 ? ` (${syncResult.removed} removed locally)` : ''}.
           </div>
         )}
+        {verifyResult && (
+          <div className={`border-t px-4 py-1.5 text-[11px] ${verifyResult.ok ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                {verifyResult.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                {verifyResult.error
+                  ? `Verify failed to run: ${verifyResult.error}`
+                  : verifyResult.ok
+                    ? `Verified — ${verifyResult.checkedFiles} files, no syntax or import errors.`
+                    : `Verification: ${verifyResult.errorCount} error(s) — fix before pushing.`}
+              </span>
+              <button onClick={() => setVerifyResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+            </div>
+            {verifyResult.errors?.length > 0 && (
+              <ul className="mt-1 space-y-0.5 font-mono max-h-40 overflow-y-auto scrollbar-matrix">
+                {verifyResult.errors.map((e, i) => (
+                  <li key={i} className="truncate">
+                    <span className="text-red-400/70">[{e.phase}]</span> {e.file}{e.line ? `:${e.line}` : ''} — {e.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {pushResult && (
           <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${pushResult.ok ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
             <span className="flex items-center gap-2">
@@ -259,7 +309,14 @@ export default function SelfDev() {
                     : (pushResult.message || 'No changes to push.'))
                 : `Push failed: ${pushResult.error}`}
             </span>
-            <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+            <div className="flex items-center gap-2 shrink-0">
+              {!pushResult.ok && verifyResult && !verifyResult.ok && (
+                <button onClick={() => doPush(true)} disabled={pushing} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40">
+                  PUSH ANYWAY
+                </button>
+              )}
+              <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+            </div>
           </div>
         )}
         {pushResult?.ok && deployStatus && (
@@ -348,12 +405,12 @@ export default function SelfDev() {
               <span className="font-display tracking-wider">PUSH TO PRODUCTION</span>
             </div>
             <p className="text-primary/70 text-sm mb-4 leading-relaxed">
-              This pushes every file in this workspace straight to <span className="text-primary">robmitchellengineering-hub/morpheus-self-hosted@main</span> — the real repo. Northflank and Netlify will pick it up and redeploy live. There is no PR/review step; make sure you've reviewed the changes in the file editor and preview first.
+              This pushes the changed files straight to <span className="text-primary">robmitchellengineering-hub/morpheus-self-hosted@main</span> — the real repo — as one commit. Northflank and Netlify redeploy live from it. A verification pass (esbuild syntax + import/export checks over the whole workspace) runs first and blocks the push on any error; still review the changes in the editor and preview yourself.
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowPushConfirm(false)} disabled={pushing} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60`}>CANCEL</button>
-              <button onClick={doPush} disabled={pushing} className={`${btnBase} text-black bg-primary hover:bg-primary/90 border-primary font-bold disabled:opacity-50`}>
-                {pushing ? <Loader2 size={13} className="animate-spin" /> : <Rocket size={13} />} {pushing ? 'PUSHING…' : 'CONFIRM PUSH'}
+              <button onClick={() => doPush(false)} disabled={pushing} className={`${btnBase} text-black bg-primary hover:bg-primary/90 border-primary font-bold disabled:opacity-50`}>
+                {pushing ? <Loader2 size={13} className="animate-spin" /> : <Rocket size={13} />} {pushing ? 'VERIFYING & PUSHING…' : 'CONFIRM PUSH'}
               </button>
             </div>
           </div>
