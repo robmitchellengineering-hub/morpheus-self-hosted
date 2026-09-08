@@ -20,7 +20,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck } from 'lucide-react';
+import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
@@ -45,6 +45,13 @@ export default function SelfDev() {
   const [pushResult, setPushResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
+  // Secondary toolbar actions collapse into a MORE row — expanded by default
+  // on desktop, tucked away on mobile where they used to scroll off the
+  // right edge (Command Deck 4.0 #3). useIsMobile() is false on first paint,
+  // so read the width directly for the initial state.
+  const [toolbarOpen, setToolbarOpen] = useState(() => {
+    try { return window.innerWidth >= 768; } catch { return true; }
+  });
   const [showHistory, setShowHistory] = useState(false);
   const [mobileTab, setMobileTab] = useState('chat');
   const [diagnosing, setDiagnosing] = useState(false);
@@ -233,36 +240,49 @@ export default function SelfDev() {
     <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
       <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-          <div className="flex items-center gap-3 min-w-0 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <Cpu size={18} className="text-primary shrink-0" />
             <span className="text-primary font-display tracking-wider truncate neon-glow">MORPHEUS SELF-DEV</span>
             <span className="hidden sm:inline text-xs text-primary/75 uppercase border border-primary/30 px-2 py-0.5 shrink-0">{ws.currentProject.status}</span>
           </div>
-          <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto whitespace-nowrap">
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setShowPushConfirm(true)} disabled={pushing} className={`${btnBase} text-black bg-primary hover:bg-primary/90 border-primary font-bold disabled:opacity-50`}>
+              <Rocket size={13} /> <span className="hidden sm:inline">PUSH TO PRODUCTION</span><span className="sm:hidden">PUSH</span>
+            </button>
+            <button
+              onClick={() => setToolbarOpen((o) => !o)}
+              aria-expanded={toolbarOpen}
+              aria-label={toolbarOpen ? 'Hide actions' : 'Show actions'}
+              className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}
+            >
+              {toolbarOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              <span className="hidden sm:inline">{toolbarOpen ? 'LESS' : 'MORE'}</span>
+            </button>
+          </div>
+        </div>
+        {toolbarOpen && (
+          <div className="flex flex-wrap items-center gap-2 px-4 pb-2.5 pt-2 border-t border-primary/10">
             <button onClick={() => setShowHistory(true)} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               HISTORY
             </button>
             <button onClick={syncFromGithub} disabled={syncing} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
               <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'SYNCING…' : 'SYNC FROM GITHUB'}
             </button>
-            <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
-              <Stethoscope size={13} className={diagnosing ? 'animate-pulse' : ''} /> {diagnosing ? 'PULLING LOGS…' : 'DIAGNOSE FROM LOGS'}
-            </button>
             <button onClick={runVerify} disabled={verifying || pushing} title="Run esbuild syntax + import/export checks across the whole workspace — the same gate that runs before a push" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
               <ShieldCheck size={13} className={verifying ? 'animate-pulse' : ''} /> {verifying ? 'VERIFYING…' : 'VERIFY'}
             </button>
-            <button onClick={() => setShowPushConfirm(true)} disabled={pushing} className={`${btnBase} text-black bg-primary hover:bg-primary/90 border-primary font-bold disabled:opacity-50`}>
-              <Rocket size={13} /> PUSH TO PRODUCTION
+            <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
+              <Stethoscope size={13} className={diagnosing ? 'animate-pulse' : ''} /> {diagnosing ? 'PULLING LOGS…' : 'DIAGNOSE FROM LOGS'}
             </button>
             <HelpToggle />
             <Link to="/admin" title="Admin Control Panel — model routing, config, ops console (DB console, Northflank logs), audit log" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               <ShieldCheck size={13} /> ADMIN
             </Link>
             <Link to="/" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
-              <HomeIcon size={13} />
+              <HomeIcon size={13} /> <span className="sm:hidden">HOME</span>
             </Link>
           </div>
-        </div>
+        )}
         <div className="flex items-start gap-2 border-t border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5">
           <AlertTriangle size={12} className="text-yellow-500 shrink-0 mt-0.5" />
           <span className="text-yellow-500/80 text-[11px] font-mono leading-tight">
