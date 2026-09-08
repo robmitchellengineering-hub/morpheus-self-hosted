@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Mic, MicOff, Volume2, VolumeX, Play, Loader2, Paperclip, X, Undo2, AlertTriangle, Wrench, Bot } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, Play, Loader2, Paperclip, X, Undo2, AlertTriangle, Wrench, Bot, MessagesSquare, Hammer } from 'lucide-react';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { base44 } from '@/api/base44Client';
@@ -14,7 +14,12 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // so it can't push the send row off-screen on a small viewport.
 const MAX_TEXTAREA_HEIGHT = 240;
 
-export default function ChatPanel({ messages, loading, pipelineStages, onSend, onRevert, canRevert, onAutonomous }) {
+export default function ChatPanel({ messages, loading, pipelineStages, onSend, onRevert, canRevert, onAutonomous, chatMode, onSetChatMode }) {
+  // CONTEXT ⇄ BUILD toggle is only rendered when the host wired it up
+  // (Workspace / Self-Dev). Undefined chatMode => treat as 'build', hide the
+  // strip entirely — keeps every other ChatPanel caller unchanged.
+  const modeEnabled = typeof onSetChatMode === 'function';
+  const mode = chatMode === 'context' ? 'context' : 'build';
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -199,7 +204,13 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
         {loading && (
           <div className="flex justify-start">
             <div className="text-primary/60 text-sm max-w-[85%]">
-              {pipelineStages && pipelineStages.length > 0 ? (
+              {/* Only surface the build-pipeline graphic once the build has
+                  actually moved past planning (coder/reviewer/etc). A
+                  chat-only turn never gets past 'planner', so it just shows
+                  the plain thinking indicator — Command Deck 4.0 rule: "no
+                  build pipeline display when only chatting". Context mode
+                  emits no stages at all and lands here too. */}
+              {pipelineStages && pipelineStages.some((s) => s.stage !== 'planner') ? (
                 <>
                   <div className="text-primary/75 mb-1">morpheus@construct:~$</div>
                   <MorpheusPipelineStatus stages={pipelineStages} />
@@ -238,6 +249,33 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           </button>
         </div>
       )}
+      {modeEnabled && (
+        <div className="border-t border-primary/20 px-3 py-2 flex items-center gap-2">
+          <div className="flex border border-primary/30 shrink-0">
+            <button
+              onClick={() => onSetChatMode('context')}
+              disabled={loading}
+              className={`flex items-center gap-1.5 text-[11px] tracking-wider px-2.5 py-1 transition-colors disabled:opacity-40 ${mode === 'context' ? 'text-black bg-primary font-bold' : 'text-primary/60 hover:text-primary'}`}
+              title="Discuss and plan — Morpheus never writes code in this mode"
+            >
+              <MessagesSquare size={12} /> CONTEXT
+            </button>
+            <button
+              onClick={() => onSetChatMode('build')}
+              disabled={loading}
+              className={`flex items-center gap-1.5 text-[11px] tracking-wider px-2.5 py-1 transition-colors disabled:opacity-40 border-l border-primary/30 ${mode === 'build' ? 'text-black bg-primary font-bold' : 'text-primary/60 hover:text-primary'}`}
+              title="Full build pipeline — plan, code, review"
+            >
+              <Hammer size={12} /> BUILD
+            </button>
+          </div>
+          <span className="text-[10px] text-primary/50 leading-tight">
+            {mode === 'context'
+              ? '// chat & shape the plan — nothing gets built or written'
+              : '// planner → coder → reviewer — changes are written to the workspace'}
+          </span>
+        </div>
+      )}
       <div className="border-t border-primary/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-2 items-center shadow-[0_-6px_24px_-6px_rgba(0,255,65,0.35)]">
         <button onClick={toggleVoice} className="text-primary/60 hover:text-primary shrink-0" title={voiceEnabled ? 'Mute Morpheus' : 'Unmute Morpheus'}>
           {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
@@ -252,7 +290,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           rows={1}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           onInput={resizeTextarea}
-          placeholder={listening ? 'listening...' : 'speak...'}
+          placeholder={listening ? 'listening...' : modeEnabled && mode === 'context' ? 'discuss, plan, ask...' : 'speak...'}
           className="flex-1 min-w-0 resize-none bg-transparent text-primary placeholder:text-primary/65 outline-none text-sm leading-5 py-0.5 overflow-y-auto scrollbar-matrix"
           disabled={loading}
           autoComplete="off"
