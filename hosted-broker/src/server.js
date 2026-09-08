@@ -66,7 +66,12 @@ app.get('/github/start', (req, res) => {
   const params = new URLSearchParams({
     client_id: process.env.BROKER_GITHUB_CLIENT_ID,
     redirect_uri: `${brokerOrigin(req)}/github/callback`,
-    scope: 'repo read:user workflow',
+    // 2026-09-08: added delete_repo so cleanupBuildRepos.js (batch-deletes
+    // the throwaway morpheus-build-* compile repos) works for
+    // broker-connected instances too, not just self-hosted OAuth Apps --
+    // see connections.routes.js's matching change for why `repo` alone
+    // doesn't cover it.
+    scope: 'repo delete_repo read:user workflow',
     state,
   });
   res.redirect(`https://github.com/login/oauth/authorize?${params}`);
