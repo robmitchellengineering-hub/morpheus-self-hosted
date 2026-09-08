@@ -77,29 +77,36 @@ ${filesContext}
 
 Generate the scoped rapid prototype HTML now. Return ONLY a JSON object: { "html": "<!DOCTYPE html>...</html>" }`;
 
-  const response = await invokeAI({
-    userId: user.id,
-    prompt,
-    schema: {
-      type: 'object',
-      properties: {
-        html: { type: 'string', description: 'Complete self-contained HTML document for the scoped rapid prototype' },
+  let response;
+  try {
+    response = await invokeAI({
+      userId: user.id,
+      prompt,
+      schema: {
+        type: 'object',
+        properties: {
+          html: { type: 'string', description: 'Complete self-contained HTML document for the scoped rapid prototype' },
+        },
       },
-    },
-    fileUrls: undefined,
-    role: 'planner',
-    // 2026-09-03 (Rob: "the rapid preview is anything but rapid"): this call
-    // was previously uncapped ("max think power" default in ai.js), so a
-    // single non-streamed generation could run to however many tokens the
-    // model felt like producing before the request resolved — the single
-    // biggest lever on how long the operator stares at a spinner. A scoped
-    // mockup of 1-12 small files never legitimately needs more than a few
-    // thousand tokens of HTML/CSS/JS, so bounding it turns an open-ended
-    // generation into a fast, predictable one. If a mockup is genuinely
-    // complex enough to hit this, invokeAI throws OUTPUT_TRUNCATED, which
-    // PreviewPanel already surfaces as a retryable error banner.
-    maxTokens: 5000,
-  });
+      fileUrls: undefined,
+      role: 'planner',
+      // 2026-09-03 (Rob: "the rapid preview is anything but rapid"): bounded
+      // so a single non-streamed generation can't run away. 12000 (was
+      // 5000) — a real component's mockup routinely needs 6-10k tokens of
+      // HTML/CSS/JS and 5000 truncated on almost every genuine build,
+      // surfacing OUTPUT_TRUNCATED where a preview should have been.
+      maxTokens: 12000,
+    });
+  } catch (err) {
+    // A mockup that's still too big even at 12k tokens: the operator wants
+    // a preview, not a raw OUTPUT_TRUNCATED string. Degrade to a clear
+    // "too complex" note the panel can render plainly.
+    if (/OUTPUT_TRUNCATED/.test(err.message || '')) {
+      await logUsage(user.id, 'self_dev_prototype', projectId, project.name, { fileCount: relevantFiles.length, paths: wantedPaths, truncated: true });
+      return { html: '', truncated: true, fileCount: relevantFiles.length, paths: wantedPaths };
+    }
+    throw err;
+  }
 
   let html = response.result.html || '';
   html = html.replace(/^```html?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
