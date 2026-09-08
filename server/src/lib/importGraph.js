@@ -160,10 +160,20 @@ export function buildReverseImports(files) {
   return rev;
 }
 
+// Only real first-party app JS is analysed. Excluded:
+//   - `.ts`/`.tsx` — this app is plain .js/.jsx; the only TS in the tree is
+//     the vendored base44 copy under public/, which leans on `export type` /
+//     type re-exports this regex parser can't reason about.
+//   - anything under `public/` — vendored / static bundles, not live source.
+const ANALYSABLE = /^(src|server\/src)\/(?!.*\.d\.ts$).*\.(jsx?|mjs)$/;
+// A target whose exports we can't (or needn't) enumerate — treated as
+// "assume the import is fine".
+const OPAQUE_TARGET = /\.(json|ts|tsx|css|scss|less|svg|png|jpe?g|gif|webp)$/;
+
 // [{ importer, target, name }] — a NAMED import of a local file that the file
 // doesn't (or no longer) exports. Conservative: skips targets with `export *`,
 // skips namespace imports, skips `default` unless the target truly has no
-// default export.
+// default export, skips .json/.ts/asset targets (implicit or opaque exports).
 export function findBrokenImports(files) {
   const pathSet = new Set(files.map((f) => f.path));
   const byPath = new Map(files.map((f) => [f.path, f]));
@@ -175,11 +185,11 @@ export function findBrokenImports(files) {
 
   const broken = [];
   for (const f of files) {
-    if (!CODE_EXT.test(f.path)) continue;
+    if (!ANALYSABLE.test(f.path)) continue;
     for (const imp of parseImports(f.content)) {
       if (imp.kind === 'side-effect' || imp.kind === 'dynamic' || imp.namespace) continue;
       const target = resolveImport(f.path, imp.spec, pathSet);
-      if (!target) continue;
+      if (!target || OPAQUE_TARGET.test(target)) continue;
       const ex = exportsOf(target);
       if (ex.hasStarExport) continue; // can't be sure what it re-exports
       for (const name of imp.names) {

@@ -83,6 +83,19 @@ export async function runVerifySelfDev(user) {
       }
     }));
 
+    // `base44/` is a real directory in the repo that a couple of frontend
+    // files legitimately import from (e.g. BackendPanel.jsx →
+    // base44/shared/infrastructureComponents.ts), but self-dev deliberately
+    // excludes base44/ from the workspace (shouldExclude) so esbuild can't
+    // resolve it here. Mark those imports external rather than flag a
+    // false-positive "could not resolve".
+    const externalBase44 = {
+      name: 'external-base44',
+      setup(build) {
+        build.onResolve({ filter: /(^|\/)base44\// }, (args) => ({ path: args.path, external: true }));
+      },
+    };
+
     // Pass 2 — bundle from real entry points (cross-file imports / exports).
     const bundleTargets = [
       { name: 'frontend', entry: 'src/main.jsx', platform: 'browser', alias: { '@': path.join(root, 'src') } },
@@ -103,6 +116,7 @@ export async function runVerifySelfDev(user) {
           jsx: 'automatic',
           alias: t.alias,
           loader: ASSET_LOADERS,
+          plugins: [externalBase44],
           logLevel: 'silent',
           absWorkingDir: root,
         });
