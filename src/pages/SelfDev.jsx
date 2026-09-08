@@ -55,8 +55,16 @@ export default function SelfDev() {
   const [showHistory, setShowHistory] = useState(false);
   const [mobileTab, setMobileTab] = useState('chat');
   const [diagnosing, setDiagnosing] = useState(false);
-  const [deployStatus, setDeployStatus] = useState(null);
+  // Post-push deploy watcher (#4). phase: 'building' | 'deployed' | 'failed'
+  // | 'timeout' | 'notConfigured'.
+  const [deployWatch, setDeployWatch] = useState(null);
+  // The last push's commit, kept in localStorage so REVERT LAST PUSH (#3)
+  // survives a reload. { commitSha, commitUrl, at }.
+  const [lastPush, setLastPush] = useState(null);
+  const [reverting, setReverting] = useState(false);
+  const [revertResult, setRevertResult] = useState(null);
   const didInit = useRef(false);
+  const autoDiagnosedFor = useRef(null);
 
   // AI context pinning (2026-09-02) — chatWithMorpheus.js's self-dev safety
   // rule refuses to blindly "update" any file whose content it hasn't been
@@ -118,6 +126,54 @@ export default function SelfDev() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Restore the last-push marker (for REVERT LAST PUSH) once the project is
+  // known — keep it for 24h.
+  useEffect(() => {
+    if (!ws.currentProject?.id) return;
+    try {
+      const raw = localStorage.getItem(`morpheus_selfdev_lastpush_${ws.currentProject.id}`);
+      const parsed = raw ? JSON.parse(raw) : null;
+      setLastPush(parsed && Date.now() - parsed.at < 24 * 3600 * 1000 ? parsed : null);
+    } catch { setLastPush(null); }
+  }, [ws.currentProject?.id]);
+
+  // #4 — deploy watcher. Polls Northflank after a push; on a failed
+  // build/deployment it flips the banner to 'failed' and fires
+  // autoDiagnoseDeploy once.
+  useEffect(() => {
+    const sha = pushResult?.ok ? pushResult.commitSha : null;
+    if (!sha) return;
+    let cancelled = false;
+    let attempts = 0;
+    setDeployWatch({ phase: 'building' });
+    const poll = async () => {
+      if (cancelled) return;
+      if (attempts++ > 45) { setDeployWatch((w) => (w?.phase === 'building' ? { ...w, phase: 'timeout' } : w)); return; }
+      try {
+        const res = await base44.admin.getNorthflankStatus();
+        if (cancelled) return;
+        if (res.configured === false) { setDeployWatch({ phase: 'notConfigured' }); return; }
+        const build = res.service?.status?.build?.status;
+        const deploy = res.service?.status?.deployment?.status;
+        const failed = /FAIL|ERROR|CANCEL/i.test(build || '') || /FAIL|ERROR|CRASH|BACKOFF/i.test(deploy || '');
+        const buildOk = /SUCCESS|SUCCESSFUL|COMPLETE|DONE/i.test(build || '');
+        const deployOk = /RUNNING|DEPLOYED|SUCCESS|COMPLETE|HEALTHY/i.test(deploy || '');
+        if (failed) {
+          setDeployWatch({ phase: 'failed', build, deploy });
+          if (autoDiagnosedFor.current !== sha) { autoDiagnosedFor.current = sha; autoDiagnoseDeploy(build, deploy); }
+          return;
+        }
+        if (buildOk && deployOk) { setDeployWatch({ phase: 'deployed', build, deploy }); return; }
+        setDeployWatch({ phase: 'building', build, deploy });
+        setTimeout(poll, 20000);
+      } catch {
+        if (!cancelled) setTimeout(poll, 20000); // transient — keep trying
+      }
+    };
+    const t = setTimeout(poll, 15000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [pushResult?.commitSha]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const runVerify = async () => {
     setVerifying(true);
     setVerifyResult(null);
@@ -133,6 +189,17 @@ export default function SelfDev() {
     }
   };
 
+  const handleSend = (text, fileUrls) => {
+    const pinned = Array.from(contextPaths);
+    ws.sendMessage(text, fileUrls, false, pinned);
+  };
+
+  const rememberLastPush = (data, projectId) => {
+    const entry = { commitSha: data.commitSha, commitUrl: data.commitUrl, at: Date.now() };
+    setLastPush(entry);
+    try { localStorage.setItem(`morpheus_selfdev_lastpush_${projectId}`, JSON.stringify(entry)); } catch { /* storage off */ }
+  };
+
   const doPush = async (force = false) => {
     setPushing(true);
     try {
@@ -144,18 +211,13 @@ export default function SelfDev() {
       }
       setPushResult({ ok: true, ...res.data });
       setVerifyResult(null);
-      setDeployStatus(null);
-      if (!res.data?.commitSha) return; // nothing changed — no deploy to check
-      // This IS the actual deploy mechanism, in full: PUSH TO PRODUCTION just
-      // committed straight to robmitchellengineering-hub/morpheus-self-hosted
-      // @main (the real repo — see pushSelfDevToGithub.js). Nothing here
-      // calls a deploy API — Northflank (backend) and Netlify (frontend) both
-      // watch that branch and rebuild/redeploy automatically on every push,
-      // with no PR/review step. checkDeployStatus below just confirms
-      // Northflank actually picked the push up, since that's the one leg of
-      // it Morpheus can check from inside itself (Netlify has no equivalent
-      // read-only API wired up yet — Admin Ops Console is Northflank-only).
-      checkDeployStatus();
+      setDeployWatch(null);
+      setRevertResult(null);
+      // Northflank (backend) and Netlify (frontend) auto-build from this
+      // push. The deploy watcher effect (keyed on pushResult.commitSha)
+      // polls Northflank and, on a failed build/deploy, auto-pulls the logs
+      // into a fix turn — see below.
+      if (res.data?.commitSha) rememberLastPush(res.data, ws.currentProject.id);
     } catch (e) {
       setPushResult({ ok: false, error: e.message });
     } finally {
@@ -164,27 +226,41 @@ export default function SelfDev() {
     }
   };
 
-  const checkDeployStatus = async () => {
-    setDeployStatus({ loading: true });
+  // #4 — when a deploy fails, pull build + runtime error logs and open a fix
+  // turn automatically. Reuses the normal chat/edit/review flow: the AI
+  // still only edits this local workspace; shipping the fix is still a
+  // deliberate PUSH.
+  const autoDiagnoseDeploy = async (build, deploy) => {
     try {
-      const res = await base44.admin.getNorthflankStatus();
-      if (res.configured === false) {
-        setDeployStatus({ loading: false, notConfigured: true });
-        return;
-      }
-      if (res.error) {
-        setDeployStatus({ loading: false, error: res.error });
-        return;
-      }
-      setDeployStatus({ loading: false, buildStatus: res.service?.status?.build?.status || 'unknown', checkedAt: new Date().toISOString() });
-    } catch (e) {
-      setDeployStatus({ loading: false, error: e.message });
+      const [b, r] = await Promise.all([
+        base44.admin.getNorthflankLogs({ search: 'error', minutes: 30, limit: 80, type: 'build' }),
+        base44.admin.getNorthflankLogs({ search: 'error', minutes: 30, limit: 60, type: 'runtime' }),
+      ]);
+      const fmt = (x) => (x.lines || []).map((l) => `${l.ts || ''} ${l.log}`).join('\n') || '(no matching lines)';
+      handleSend(
+        `⚠️ THE PUSH YOU JUST MADE FAILED TO DEPLOY. Northflank build=${build || '?'} deployment=${deploy || '?'}. Production is on a broken deploy — treat this as urgent.\n\nBUILD LOGS (errors, last 30 min):\n${fmt(b)}\n\nRUNTIME LOGS (errors, last 30 min):\n${fmt(r)}\n\nDiagnose the root cause and fix it in the code. If it can't be fixed quickly, say so plainly so I can REVERT LAST PUSH instead.`,
+        [],
+      );
+    } catch {
+      /* logs unavailable — the failed banner + REVERT button still show */
     }
   };
 
-  const handleSend = (text, fileUrls) => {
-    const pinned = Array.from(contextPaths);
-    ws.sendMessage(text, fileUrls, false, pinned);
+  const doRevert = async () => {
+    if (!lastPush?.commitSha) return;
+    setReverting(true);
+    setRevertResult(null);
+    try {
+      const { data } = await base44.functions.invoke('revertSelfDevPush', { commitSha: lastPush.commitSha });
+      setRevertResult({ ok: true, ...data });
+      setDeployWatch(null);
+      setLastPush(null);
+      try { localStorage.removeItem(`morpheus_selfdev_lastpush_${ws.currentProject.id}`); } catch { /* */ }
+    } catch (e) {
+      setRevertResult({ ok: false, error: e?.response?.data?.error || e.message });
+    } finally {
+      setReverting(false);
+    }
   };
 
   // Ops Console companion (2026-09-02) — pulls recent production error logs
@@ -339,22 +415,35 @@ export default function SelfDev() {
             </div>
           </div>
         )}
-        {pushResult?.ok && deployStatus && (
-          <div className="flex items-center justify-between gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1.5 text-[11px] text-primary/60">
+        {deployWatch && (
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${deployWatch.phase === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-400' : deployWatch.phase === 'deployed' ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-primary/15 bg-primary/5 text-primary/60'}`}>
             <span className="flex items-center gap-2">
-              {deployStatus.loading ? (
-                <><Loader2 size={11} className="animate-spin" /> Checking whether Northflank picked up the push...</>
-              ) : deployStatus.notConfigured ? (
-                <>Northflank status check not configured — see Admin Panel → Ops Console. Netlify/Northflank still auto-deploy from the push regardless.</>
-              ) : deployStatus.error ? (
-                <>Couldn't confirm deploy status: {deployStatus.error}</>
-              ) : (
-                <>Northflank build status: <span className="text-primary">{deployStatus.buildStatus}</span> — full detail in <Link to="/admin" className="underline hover:text-primary">Admin → Ops Console</Link></>
-              )}
+              {deployWatch.phase === 'building' && <><Loader2 size={11} className="animate-spin" /> Deploying — Northflank build {deployWatch.build || '…'}{deployWatch.deploy ? `, deployment ${deployWatch.deploy}` : ''}</>}
+              {deployWatch.phase === 'deployed' && <><CheckCircle2 size={11} /> Deployed — production is live on this push.</>}
+              {deployWatch.phase === 'failed' && <><XCircle size={11} /> Deploy FAILED (build {deployWatch.build || '?'} / deployment {deployWatch.deploy || '?'}) — pulled the logs into chat. Fix it or REVERT.</>}
+              {deployWatch.phase === 'timeout' && <>Deploy status still pending after 15 min — check <Link to="/admin" className="underline hover:text-primary">Admin → Ops Console</Link>.</>}
+              {deployWatch.phase === 'notConfigured' && <>Deploy watch off (no NORTHFLANK_API_TOKEN) — Northflank/Netlify still deploy from the push.</>}
             </span>
-            {!deployStatus.loading && (
-              <button onClick={checkDeployStatus} className="text-primary/50 hover:text-primary shrink-0" title="Check again"><RefreshCw size={11} /></button>
-            )}
+            <button onClick={() => setDeployWatch(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+          </div>
+        )}
+        {(lastPush || deployWatch?.phase === 'failed') && !revertResult && (
+          <div className="flex items-center justify-between gap-2 border-t border-yellow-500/20 bg-yellow-500/5 px-4 py-1.5 text-[11px] text-primary/60">
+            <span>// Last push {lastPush?.commitSha ? lastPush.commitSha.slice(0, 7) : ''} can be rolled back — one commit, production redeploys to the pre-push state.</span>
+            <button onClick={doRevert} disabled={reverting || !lastPush?.commitSha} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40 shrink-0 flex items-center gap-1">
+              {reverting ? <Loader2 size={10} className="animate-spin" /> : null} REVERT LAST PUSH
+            </button>
+          </div>
+        )}
+        {revertResult && (
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${revertResult.ok ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+            <span className="flex items-center gap-2">
+              {revertResult.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+              {revertResult.ok
+                ? <>Reverted — production rolling back to {revertResult.revertedToSha?.slice(0, 7)}. <a href={revertResult.commitUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">revert commit</a></>
+                : `Revert failed: ${revertResult.error}`}
+            </span>
+            <button onClick={() => setRevertResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
           </div>
         )}
         {contextPaths.size > 0 && (

@@ -424,6 +424,56 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
   return { branch, commitSha: newCommit.sha };
 }
 
+// Revert a commit on the repo's default branch by pointing a new commit at
+// the reverted commit's PARENT tree — i.e. restore the whole repo to exactly
+// how it was just before `commitSha`, as one new commit (no force-push, no
+// history rewrite). Used by revertSelfDevPush.js for an instant production
+// rollback.
+//
+// Refuses if the branch head has moved past `commitSha` since — at that
+// point a tree-swap would also silently undo whatever landed in between, so
+// the caller is told to revert by hand instead.
+export async function revertCommit(token, repoFullName, commitSha) {
+  const h = ghHeaders(token);
+
+  const repoData = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h }));
+  const branch = repoData.default_branch || 'main';
+
+  const refData = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, { headers: h }));
+  const headSha = refData.object?.sha;
+  if (!headSha) throw Object.assign(new Error(`Could not read ${repoFullName}@${branch} head`), { status: 502 });
+  if (headSha !== commitSha) {
+    throw Object.assign(new Error(`${branch} has moved on since that commit — revert it manually on GitHub.`), { status: 409 });
+  }
+
+  const commit = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}/git/commits/${commitSha}`, { headers: h }));
+  const parentSha = commit.parents?.[0]?.sha;
+  if (!parentSha) throw Object.assign(new Error('That commit has no parent — nothing to revert to.'), { status: 400 });
+  const parent = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}/git/commits/${parentSha}`, { headers: h }));
+  const parentTreeSha = parent.tree?.sha;
+  if (!parentTreeSha) throw Object.assign(new Error('Could not read the pre-commit tree.'), { status: 502 });
+
+  const firstLine = String(commit.message || '').split('\n')[0].slice(0, 80);
+  const newCommitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits`, {
+    method: 'POST', headers: h,
+    body: JSON.stringify({
+      message: `Revert "${firstLine}"\n\nRolls the repo back to ${parentSha.slice(0, 7)} (state before ${commitSha.slice(0, 7)}).`,
+      tree: parentTreeSha,
+      parents: [headSha],
+    }),
+  });
+  if (!newCommitRes.ok) throw new Error(`Failed to create revert commit: ${(await ghJson(newCommitRes)).message || newCommitRes.status}`);
+  const newCommit = await ghJson(newCommitRes);
+
+  const updateRefRes = await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, {
+    method: 'PATCH', headers: h,
+    body: JSON.stringify({ sha: newCommit.sha }),
+  });
+  if (!updateRefRes.ok) throw new Error(`Failed to move ${branch} to the revert commit: ${(await ghJson(updateRefRes)).message || updateRefRes.status}`);
+
+  return { commitSha: newCommit.sha, revertedToSha: parentSha, branch };
+}
+
 // List all repos owned by the authenticated user (paginated, 100/page).
 // Used by cleanupBuildRepos.js to find the throwaway morpheus-build-* repos
 // compileProject.js leaves behind -- one per compile attempt, never reused
