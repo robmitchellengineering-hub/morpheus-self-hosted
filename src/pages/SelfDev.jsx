@@ -33,6 +33,7 @@ import MatrixRain from '@/components/matrix/MatrixRain';
 import HelpToggle from '@/components/matrix/HelpToggle';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { buildDeployPreviewUrl } from '@/lib/deployPreviewUrl';
 
 const btnBase = "flex items-center gap-1.5 text-xs px-3 h-[36px] whitespace-nowrap shrink-0 border transition-colors";
 
@@ -579,7 +580,7 @@ export default function SelfDev() {
         {prWatch && (
           <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${prWatch.phase === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-400' : prWatch.phase === 'merged' ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-primary/15 bg-primary/5 text-primary/60'}`}>
             <span className="flex items-center gap-2 min-w-0">
-              {prWatch.phase === 'checking' && <><Loader2 size={11} className="animate-spin shrink-0" /> <span className="truncate">PR #{prWatch.prNumber} open — waiting for checks{prWatch.pending?.length ? ` (${prWatch.pending.join(', ')})` : ' (Netlify deploy preview)'}… <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view</a></span></>}
+              {prWatch.phase === 'checking' && <><Loader2 size={11} className="animate-spin shrink-0" /> <span className="truncate">PR #{prWatch.prNumber} open — waiting for checks{prWatch.pending?.length ? ` (${prWatch.pending.join(', ')})` : ' (Netlify deploy preview)'}… <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view</a> · <a href={buildDeployPreviewUrl(prWatch.prNumber)} target="_blank" rel="noreferrer" className="underline hover:text-primary">VIEW LIVE PREVIEW</a></span></>}
               {prWatch.phase === 'merged' && <><CheckCircle2 size={11} className="shrink-0" /> PR #{prWatch.prNumber} merged to main ({prWatch.mergeCommitSha?.slice(0, 7)}) — deploying.</>}
               {prWatch.phase === 'failed' && <><XCircle size={11} className="shrink-0" /> <span className="truncate">PR #{prWatch.prNumber} {prWatch.state === 'conflict' ? 'conflicts with main' : prWatch.message ? prWatch.message : `checks failed${prWatch.failing?.length ? `: ${prWatch.failing.join(', ')}` : ''}`} — main untouched. <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view PR</a></span></>}
               {prWatch.phase === 'timeout' && <><span className="truncate">PR #{prWatch.prNumber} checks still pending — <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">check on GitHub</a>.</span></>}
