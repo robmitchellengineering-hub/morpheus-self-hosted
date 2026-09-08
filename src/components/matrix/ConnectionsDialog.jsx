@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { X, Github, Check, XCircle, Loader2, Save, Plug, ExternalLink, Zap, Trash2, Search } from 'lucide-react';
+import { X, Github, Check, XCircle, Save, Plug, ExternalLink, Zap, Loader2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useGithubConnection } from '@/hooks/useGithubConnection';
 import ConnectionsSection, { PLATFORMS } from './ConnectionsSection';
 import CapabilityStatus from './CapabilityStatus';
+import GithubConnectionSection from './GithubConnectionSection';
 
 // Platforms grouped by the capability they unlock. A platform counts as
 // "connected" when at least one of its credential fields is filled (same rule
@@ -119,33 +120,6 @@ export default function ConnectionsDialog({ open, onClose }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Build-repo cleanup (Rob asked for "a github cli automated interface to
-  // batch delete all the old repos that get created trying to compile") --
-  // see server/src/functions/cleanupBuildRepos.js. Two-step: preview lists
-  // what would be deleted (dry run), delete requires that preview to have
-  // run first so nothing is ever removed sight-unseen.
-  const [cleanup, setCleanup] = useState({ status: 'idle', preview: null, result: null, error: null });
-
-  const previewCleanup = async () => {
-    setCleanup((c) => ({ ...c, status: 'previewing', error: null, result: null }));
-    try {
-      const { data } = await base44.functions.invoke('cleanupBuildRepos', { confirm: false });
-      setCleanup((c) => ({ ...c, status: 'previewed', preview: data }));
-    } catch (err) {
-      setCleanup((c) => ({ ...c, status: 'idle', error: err?.response?.data?.error || err.message }));
-    }
-  };
-
-  const runCleanup = async () => {
-    setCleanup((c) => ({ ...c, status: 'deleting', error: null }));
-    try {
-      const { data } = await base44.functions.invoke('cleanupBuildRepos', { confirm: true });
-      setCleanup((c) => ({ ...c, status: 'done', result: data, preview: null }));
-    } catch (err) {
-      setCleanup((c) => ({ ...c, status: 'previewed', error: err?.response?.data?.error || err.message }));
-    }
-  };
-
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -215,80 +189,8 @@ export default function ConnectionsDialog({ open, onClose }) {
 
         {/* body */}
         <div className="overflow-y-auto scrollbar-matrix p-4 space-y-5">
-          {/* GitHub (OAuth) */}
-          <section className="border border-primary/30 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <Github size={16} className={gh.connected ? 'text-primary shrink-0' : 'text-primary/50 shrink-0'} />
-                <span className="text-sm text-primary">GitHub</span>
-                {gh.connected ? (
-                  <span className="flex items-center gap-1 text-[10px] text-primary border border-primary/40 px-1.5 py-0.5 truncate">
-                    <Check size={10} /> CONNECTED{gh.login ? ` · ${gh.login}` : ''}
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-[10px] text-primary/50 border border-primary/20 px-1.5 py-0.5">
-                    <XCircle size={10} /> DISCONNECTED
-                  </span>
-                )}
-              </div>
-              {gh.connected ? (
-                <button onClick={gh.disconnect} className="text-xs text-red-500/80 hover:text-red-400 border border-red-500/30 px-2.5 py-1.5 min-h-[44px] shrink-0">DISCONNECT</button>
-              ) : (
-                <button onClick={gh.connect} className="text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-1.5 min-h-[44px] font-bold flex items-center gap-1 shrink-0">
-                  <Github size={12} /> CONNECT
-                </button>
-              )}
-            </div>
-            <p className="text-[10px] text-primary/50 mt-2">// Required to compile binaries, import repos, and push to GitHub. OAuth — no token pasting.</p>
-
-            {gh.connected && (
-              <div className="mt-3 border-t border-primary/15 pt-3">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <p className="text-[10px] text-primary/50 flex-1 min-w-[180px]">
-                    // Every compile attempt creates a fresh <code>morpheus-build-*</code> repo that's never reused. Clean up the ones older than 24h.
-                  </p>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={previewCleanup}
-                      disabled={cleanup.status === 'previewing' || cleanup.status === 'deleting'}
-                      className="text-xs text-primary border border-primary/40 px-2.5 py-1.5 min-h-[44px] flex items-center gap-1.5 disabled:opacity-40"
-                    >
-                      {cleanup.status === 'previewing' ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
-                      PREVIEW
-                    </button>
-                    {cleanup.status === 'previewed' && cleanup.preview?.count > 0 && (
-                      <button
-                        onClick={runCleanup}
-                        disabled={cleanup.status === 'deleting'}
-                        className="text-xs text-red-500/90 hover:text-red-400 border border-red-500/40 px-2.5 py-1.5 min-h-[44px] flex items-center gap-1.5 disabled:opacity-40"
-                      >
-                        {cleanup.status === 'deleting' ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        DELETE {cleanup.preview.count}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {cleanup.error && <p className="text-[10px] text-red-400 mt-2">// {cleanup.error}</p>}
-
-                {cleanup.status === 'previewed' && cleanup.preview && (
-                  <p className="text-[10px] text-primary/60 mt-2">
-                    {cleanup.preview.count === 0
-                      ? 'Nothing to clean up — no build repos older than 24h.'
-                      : `Found ${cleanup.preview.count} build repo${cleanup.preview.count === 1 ? '' : 's'} older than ${cleanup.preview.olderThanHours}h, ready to delete.`}
-                  </p>
-                )}
-
-                {cleanup.status === 'done' && cleanup.result && (
-                  <p className="text-[10px] mt-2 text-primary/60">
-                    Deleted {cleanup.result.deletedCount}/{cleanup.result.attempted}.
-                    {cleanup.result.failed?.length > 0 && ` ${cleanup.result.failed.length} failed.`}
-                    {cleanup.result.hint && <span className="text-red-400/90 block mt-1">// {cleanup.result.hint}</span>}
-                  </p>
-                )}
-              </div>
-            )}
-          </section>
+          {/* GitHub (OAuth) — shared with Settings.jsx, see GithubConnectionSection.jsx */}
+          <GithubConnectionSection />
 
           {/* Hosting / infra platforms (reuses the Settings connections UI) */}
           {loading ? (
