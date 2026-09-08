@@ -224,7 +224,12 @@ export async function createRepo(token, repoName, isPrivate, { autoInit = true }
   }
 }
 
-export async function pushFiles(token, repoFullName, files, commitMessage, { isNewRepo = false } = {}) {
+// `deletePaths` (optional): paths to REMOVE from the repo in this same
+// commit. They're dropped from the merged tree below, so the single commit
+// this makes is create + update + delete in one shot. Used by
+// pushSelfDevToGithub.js; empty/absent for every other caller (compile
+// pipeline, uploadToGithub), which only ever add/update.
+export async function pushFiles(token, repoFullName, files, commitMessage, { isNewRepo = false, deletePaths = [] } = {}) {
   const h = ghHeaders(token);
 
   if (isNewRepo) {
@@ -347,6 +352,9 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
     const blob = await createBlob(token, repoFullName, file);
     existingBlobs.set(file.path, { sha: blob.sha, mode: '100644' });
   }
+  // Drop deleted paths from the merged tree — a path that's absent from the
+  // final tree is removed from the repo by the commit.
+  for (const path of deletePaths || []) existingBlobs.delete(path);
   const treeItems = Array.from(existingBlobs.entries()).map(([path, entry]) => ({
     path, mode: entry.mode, type: 'blob', sha: entry.sha,
   }));

@@ -115,6 +115,7 @@ export default function SelfDev() {
       const res = await base44.functions.invoke('pushSelfDevToGithub', { projectId: ws.currentProject.id });
       setPushResult({ ok: true, ...res.data });
       setDeployStatus(null);
+      if (!res.data?.commitSha) return; // nothing changed — no deploy to check
       // This IS the actual deploy mechanism, in full: PUSH TO PRODUCTION just
       // committed straight to robmitchellengineering-hub/morpheus-self-hosted
       // @main (the real repo — see pushSelfDevToGithub.js). Nothing here
@@ -253,7 +254,9 @@ export default function SelfDev() {
             <span className="flex items-center gap-2">
               {pushResult.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
               {pushResult.ok
-                ? <>Pushed {pushResult.fileCount} files to production — <a href={pushResult.commitUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view commit</a></>
+                ? (pushResult.commitUrl
+                    ? <>Pushed to production: {[pushResult.createCount && `${pushResult.createCount} new`, pushResult.updateCount && `${pushResult.updateCount} changed`, pushResult.deleteCount && `${pushResult.deleteCount} deleted`].filter(Boolean).join(', ') || `${pushResult.fileCount} file(s)`} — <a href={pushResult.commitUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view commit</a></>
+                    : (pushResult.message || 'No changes to push.'))
                 : `Push failed: ${pushResult.error}`}
             </span>
             <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>

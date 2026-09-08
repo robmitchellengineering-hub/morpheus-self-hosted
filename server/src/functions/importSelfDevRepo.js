@@ -12,36 +12,14 @@
 import { prisma } from '../db.js';
 import { detectLanguage, logUsage } from '../lib/projectUtils.js';
 import { getGithubToken, ghHeaders, ghJson } from '../lib/github.js';
+import {
+  SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_BRANCH, SELF_DEV_REPO_FULL_NAME,
+  shouldExclude as shouldSkip,
+} from '../lib/selfDevRepo.js';
 
 const GH_API = 'https://api.github.com';
 
-// The real, live Morpheus production repo — not user-configurable. Self-dev
-// only ever reads from and pushes to this one repo/branch.
-const SELF_DEV_OWNER = 'robmitchellengineering-hub';
-const SELF_DEV_REPO = 'morpheus-self-hosted';
-const SELF_DEV_BRANCH = 'main';
-export const SELF_DEV_REPO_FULL_NAME = `${SELF_DEV_OWNER}/${SELF_DEV_REPO}`;
-
-function shouldSkip(path) {
-  const lower = path.toLowerCase();
-  if (lower.includes('node_modules/') || lower.includes('.git/')) return true;
-  if (lower.includes('/dist/') || lower.includes('/.next/') || lower.includes('/coverage/')) return true;
-  // base44/ — confirmed dead weight, not the app itself: README.md says it's
-  // "the original app's entity/function definitions, kept for reference; not
-  // used at runtime by this stack." ~75 files (2026-09-02: about a fifth of
-  // the whole repo) that never need editing, sorting alphabetically ahead of
-  // src/ and server/ in the flat file list — made genuinely-relevant files
-  // (e.g. src/pages/Landing.jsx) hard to find by scrolling. Safe to exclude
-  // from import: pushSelfDevToGithub.js only ever overlays/creates files, it
-  // never deletes anything upstream that's missing locally, so base44/ stays
-  // exactly as-is in the real repo regardless of this exclusion.
-  if (/^base44\//.test(lower)) return true;
-  // Lock files: huge, machine-generated, never something Rob or the AI needs
-  // to read/edit in a chat context.
-  if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(lower)) return true;
-  const binaryExts = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.mp3', '.mp4', '.zip', '.jar', '.class', '.so', '.dll', '.exe', '.bin', '.dat', '.pdf'];
-  return binaryExts.some((ext) => lower.endsWith(ext));
-}
+export { SELF_DEV_REPO_FULL_NAME };
 
 // Fetch blob contents with limited concurrency — sequential would be slow for
 // a 150+ file repo, but unbounded parallelism risks GitHub's secondary rate
