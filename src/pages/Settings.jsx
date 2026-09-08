@@ -7,6 +7,7 @@ import MatrixRain from '@/components/matrix/MatrixRain';
 import ConnectionsSection from '@/components/matrix/ConnectionsSection';
 import CreditBalance from '@/components/matrix/CreditBalance';
 import CapabilityStatus from '@/components/matrix/CapabilityStatus';
+import GithubConnectionSection from '@/components/matrix/GithubConnectionSection';
 import SheetSelect from '@/components/matrix/SheetSelect';
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -503,6 +504,10 @@ export default function Settings() {
                 <p className="text-xs text-primary/75">// Using "storm" — the deepest, most authoritative built-in voice. No configuration required.</p>
               )}
             </section>
+
+            <div className="mb-8">
+              <GithubConnectionSection />
+            </div>
 
             <ConnectionsSection connections={connections} onChange={setConnections} />
 
