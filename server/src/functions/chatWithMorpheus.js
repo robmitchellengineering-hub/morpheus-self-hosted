@@ -251,24 +251,30 @@ Return JSON with:
 const MAX_FILES_PER_CODER_STEP = 3;
 const CODER_STEP_MAX_TOKENS = 24000; // generous for 1-3 files' full content; small enough to leave huge headroom under any plausible per-call ceiling
 
-// Small, fixed set of files worth always showing in full for the self-dev
-// workspace even when the operator hasn't opened them — enough for the AI to
-// orient itself (what the app is, how the server is wired, the schema)
-// without re-sending the whole 150+-file repo on every turn.
+// Files worth always showing in full so the AI can orient itself, even when
+// nothing points at them. Self-dev (Morpheus's own monorepo) and an ordinary
+// large project want different sets; a normal project's set is filtered to
+// whatever actually exists.
 const SELF_DEV_ORIENTATION_FILES = ['AGENTS.md', 'CLAUDE.md', 'README.md', 'package.json', 'server/package.json', 'server/prisma/schema.prisma', 'src/App.jsx'];
-// Raised 60,000 -> 150,000 (2026-09-02): the operator can now pin several
-// files at once in the self-dev workspace (SelfDev.jsx's contextPaths), not
-// just the single open file, specifically so multi-file changes are
-// possible in one turn — a tighter cap would silently start dropping pinned
-// files' content again, defeating that fix. Still well inside normal model
-// context windows.
-const SELF_DEV_MAX_CONTEXT_BYTES = 150000;
+const GENERIC_ORIENTATION_FILES = ['package.json', 'README.md', 'index.html', 'src/App.jsx', 'src/App.tsx', 'src/main.jsx', 'src/main.tsx', 'src/index.js', 'vite.config.js', 'styles.css', 'src/index.css', 'tailwind.config.js', 'requirements.txt', 'main.py', 'go.mod', 'Cargo.toml'];
 
-// Auto-select relevant self-dev files when the operator has not manually
-// pinned any. Sends the repo tree + operator message to the AI and asks for
-// up to 6 paths most likely needed. Returns an array; falls back to
-// SELF_DEV_ORIENTATION_FILES on any failure.
-async function autoSelectSelfDevPaths(userId, files, message) {
+// Raised 60,000 -> 150,000 (2026-09-02): the operator can pin several files
+// at once in self-dev, and a tighter cap would silently drop pinned content.
+const SCOPED_MAX_CONTEXT_BYTES = 150000;
+
+// Above this much total file content, an ordinary project switches from
+// "send every file in full every turn" to the same scoped context self-dev
+// uses (full path tree + full content only for the relevant files). Below
+// it, sending everything is cheaper and simpler — no extra AI call — and
+// that's the unchanged default for the vast majority of projects.
+// 2026-09-08 (Rob: port self-dev's automatic file selection to the main
+// chat — "it's an AI cost that benefits the user cheaply").
+const SCOPED_CONTEXT_THRESHOLD_BYTES = 120000;
+
+// Ask a cheap AI pass which files a coding agent will most likely need for
+// this request. Generic — works for any repo. Returns up to `limit` existing
+// paths; falls back to `fallback` on any failure.
+async function autoSelectRelevantPaths(userId, files, message, { limit = 8, fallback = [] } = {}) {
   const tree = files.map((f) => f.path).sort().join('\n');
   const prompt = `You are selecting file paths from a repository for a coding agent to read and modify.
 
@@ -278,68 +284,58 @@ ${tree}
 OPERATOR REQUEST:
 ${message}
 
-Return a JSON object with a "paths" array containing up to 6 file paths from the tree that are most relevant to fulfilling this request. Choose only paths that exist in the tree. Prioritize files that the coder will need to read or edit. Return an empty array if no file is relevant.`;
+Return a JSON object with a "paths" array containing up to ${limit} file paths from the tree that are most relevant to fulfilling this request. Choose only paths that exist in the tree. Prioritize files the coder will need to read or edit. Return an empty array if no file is relevant.`;
   try {
     const res = await invokeAI({
       userId,
       prompt,
-      schema: {
-        type: 'object',
-        properties: {
-          paths: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['paths'],
-      },
+      schema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } }, required: ['paths'] },
       fileUrls: undefined,
       role: 'coder', // lightweight selection; role not critical
       maxTokens: 2000,
     });
     const selected = Array.isArray(res.result?.paths) ? res.result.paths.filter((p) => typeof p === 'string' && p) : [];
-    return selected.slice(0, 6);
+    return selected.slice(0, limit);
   } catch (err) {
-    console.error('[autoSelectSelfDevPaths] failed, falling back to orientation files:', err.message);
-    return SELF_DEV_ORIENTATION_FILES;
+    console.error('[autoSelectRelevantPaths] failed, using fallback:', err.message);
+    return fallback;
   }
 }
 
-// Self-dev is Morpheus editing its own live, already-working production
-// codebase — a fundamentally different risk profile than generating a fresh
-// project from nothing. chatWithMorpheus.js normally sends every file's full
-// content on every turn (see the note at the call site below); that doesn't
-// scale to Morpheus's own ~150+ file monorepo, so self-dev instead gets a
-// full path listing (so nothing is hidden — the operator can open anything)
-// plus full content only for whatever's actually open/relevant. Returns both
-// the assembled context string and the list of paths whose content was
-// actually shown, so the coder can be told in plain terms which files it's
-// allowed to blindly "update".
-function buildSelfDevContext(files, focusPaths) {
+// Scoped context: a full path listing (so nothing is hidden) plus full
+// content only for `focusPaths` + `orientationPaths`. Returns the text and
+// the list of paths whose content was actually shown, so the coder loop can
+// top up anything it's about to edit that isn't here (see the chunk loop).
+function buildScopedFilesContext(files, focusPaths, orientationPaths) {
   const tree = files.map((f) => f.path).sort().join('\n');
-  const wanted = new Set([...(Array.isArray(focusPaths) ? focusPaths : []), ...SELF_DEV_ORIENTATION_FILES]);
+  const wanted = new Set([...(Array.isArray(focusPaths) ? focusPaths : []), ...orientationPaths]);
   const shown = [];
   let used = 0;
   const sections = [];
   for (const f of files) {
     if (!wanted.has(f.path)) continue;
-    if (used > SELF_DEV_MAX_CONTEXT_BYTES) break;
+    if (used > SCOPED_MAX_CONTEXT_BYTES) break;
     sections.push(`--- ${f.path} ---\n${f.content}`);
     shown.push(f.path);
     used += f.content.length;
   }
-  const contentBlock = sections.join('\n\n') || '(nothing open yet — ask the operator which file(s) to look at)';
+  const contentBlock = sections.join('\n\n') || '(no files selected yet)';
   return {
     shown,
-    text: `FULL REPO FILE TREE (${files.length} files total — you can see every path exists, but only the files below have their CONTENT shown):\n${tree}\n\nOPEN / RELEVANT FILE CONTENTS:\n${contentBlock}`,
+    text: `FULL REPO FILE TREE (${files.length} files total — every path listed exists, but only the files below have their CONTENT shown):\n${tree}\n\nRELEVANT FILE CONTENTS:\n${contentBlock}`,
   };
 }
 
-function selfDevSafetyNote(shownPaths, autoSelected = false) {
+function scopedContextNote(shownPaths, { selfDev = false, autoSelected = false } = {}) {
+  const where = selfDev
+    ? "MORPHEUS'S OWN LIVE PRODUCTION CODEBASE, NOT A FRESH PROJECT"
+    : 'AN EXISTING PROJECT THAT ALREADY HAS WORKING CODE';
   return `
 
-SELF-DEV SAFETY RULE — YOU ARE EDITING MORPHEUS'S OWN LIVE PRODUCTION CODEBASE, NOT A FRESH PROJECT:
-- You have full CONTENT only for these files: ${shownPaths.join(', ') || '(none)'}${autoSelected ? ' (selected automatically because no files were manually pinned)' : ''}. Every other path in the file tree above exists in the real repo but you have NOT seen its content.
-- NEVER return a fileOperation with action "update" for a path whose content you have not seen above — you cannot know what you'd be overwriting, and a blind "update" would silently destroy real, working code. If a needed change touches a file that isn't shown, do not return fileOperations for it this turn — instead reply telling the operator exactly which additional file(s) to pin (checkbox in the file tree, or just open them) so you can see them too, then ask again in the same message which files those are.
-- It's fine to "create" genuinely new files/paths that don't exist yet in the tree above.
-- Prefer small, targeted, reviewable changes over sweeping rewrites — the operator reviews every change in the file editor and live preview before pushing to production themselves.`;
+SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
+- This project is large, so you have full CONTENT only for these files: ${shownPaths.join(', ') || '(none)'}${autoSelected ? ' (auto-selected as most relevant to this request)' : ''}. Every other path in the file tree above exists but you have NOT seen its content this turn.
+- It is fine to "create" genuinely new paths. For an "update" to an EXISTING path whose content is not shown above: still list it in plannedFiles — the coding step is given that file's current content when it implements it — but do not attempt a blind rewrite from memory in your plan.
+- Prefer small, targeted, reviewable changes over sweeping rewrites.${selfDev ? " The operator reviews every change before pushing to production themselves." : ''}`;
 }
 
 export default async function handler({ user, body, res }) {
@@ -416,36 +412,41 @@ export default async function handler({ user, body, res }) {
   await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'user', content: message } });
 
   const isSelfDev = project.project_type === 'self_dev';
+  const totalFileBytes = files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
+  // Self-dev always scopes (its repo is huge); an ordinary project scopes
+  // only once it's grown past the threshold — below that, "send everything"
+  // stays the default and costs no extra AI call.
+  const useScopedContext = isSelfDev || totalFileBytes > SCOPED_CONTEXT_THRESHOLD_BYTES;
   let filesContext;
-  let selfDevNote = '';
-  if (isSelfDev) {
-    // Determine effective focus paths: use manual pins if provided, otherwise
-    // auto-select based on the operator's message. Fallback to orientation
-    // files if auto-selection fails.
-    const manualFocusPaths = Array.isArray(focusPaths) && focusPaths.length > 0 ? focusPaths : null;
-    let effectiveFocusPaths;
+  let scopedNote = '';
+  let shownPaths = files.map((f) => f.path); // full send => everything is "shown"
+  if (useScopedContext) {
+    const orientation = isSelfDev
+      ? SELF_DEV_ORIENTATION_FILES
+      : GENERIC_ORIENTATION_FILES.filter((p) => files.some((f) => f.path === p));
+    const manualPins = Array.isArray(focusPaths) && focusPaths.length > 0 ? focusPaths : null;
+    let effectivePaths;
     let autoSelected = false;
-    if (manualFocusPaths) {
-      effectiveFocusPaths = manualFocusPaths;
+    if (manualPins) {
+      effectivePaths = manualPins;
     } else if (mode === 'context') {
-      // Context mode is meant to be one fast call — skip the extra
-      // auto-select AI round-trip. Orientation files + the full path tree
-      // (always in buildSelfDevContext) are enough to discuss and plan; the
-      // operator pins specifics before switching to BUILD.
-      effectiveFocusPaths = [];
+      // Context mode is one fast call — skip the extra auto-select round-trip.
+      effectivePaths = [];
     } else {
-      effectiveFocusPaths = await autoSelectSelfDevPaths(user.id, files, message);
+      effectivePaths = await autoSelectRelevantPaths(user.id, files, message, {
+        limit: isSelfDev ? 6 : 10,
+        fallback: orientation,
+      });
       autoSelected = true;
     }
-    const built = buildSelfDevContext(files, effectiveFocusPaths);
+    const built = buildScopedFilesContext(files, effectivePaths, orientation);
     filesContext = built.text;
-    selfDevNote = selfDevSafetyNote(built.shown, autoSelected);
+    shownPaths = built.shown;
+    if (mode === 'build') scopedNote = scopedContextNote(built.shown, { selfDev: isSelfDev, autoSelected });
   } else {
-    // Unbounded, full-content context for ordinary (non-self-dev) projects —
-    // unchanged from before. Fine at normal project sizes; see
-    // buildSelfDevContext above for why self-dev needs different handling.
     filesContext = files.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n') || '(no files yet)';
   }
+  const shownPathSet = new Set(shownPaths);
   const historyContext = history.map((h) => `${h.role === 'user' ? 'Operator' : 'Morpheus'}: ${h.content}`).join('\n') || '(conversation just started)';
   const summaryBlock = formatContextSummaryBlock(contextSummary);
 
@@ -488,7 +489,7 @@ ${summaryBlock}
 
 CURRENT FILES:
 ${filesContext}
-${selfDevNote}
+${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
@@ -657,7 +658,18 @@ OPERATOR SAYS: ${message}`;
           chunks.push(plannedFiles.slice(i, i + MAX_FILES_PER_CODER_STEP));
         }
         for (const chunk of chunks) {
-          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. Full content for each, never partial.`;
+          // When context is scoped (large/self-dev project), the shared
+          // contextBlock may not carry this chunk's files' content. Give the
+          // coder the CURRENT content of every existing file it's about to
+          // implement, so an "update" is never written blind from memory.
+          const chunkCurrent = chunk
+            .filter((p) => !shownPathSet.has(p))
+            .map((p) => files.find((f) => f.path === p))
+            .filter(Boolean)
+            .map((f) => `--- ${f.path} (current content) ---\n${f.content}`)
+            .join('\n\n');
+          const chunkCurrentBlock = chunkCurrent ? `\n\nCURRENT CONTENT OF THE FILE(S) FOR THIS STEP:\n${chunkCurrent}` : '';
+          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. Full content for each, never partial.`;
           const chunkCoder = await invokeAI({
             userId: user.id,
             prompt: chunkPrompt,
