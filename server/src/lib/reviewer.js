@@ -18,6 +18,8 @@ Check for:
 - COMPLETENESS: leftover placeholders, TODO, FIXME, "pseudo-code", "..." meant as real content, empty function bodies.
 - UI POLISH (warning severity — never block a build on these, just flag them): raw unstyled HTML relying on browser defaults for a web UI, missing hover/focus/transition states on interactive elements, inconsistent or ad-hoc spacing/typography with no scale, missing responsive breakpoints for a web UI, absent empty/loading/error states where a user would hit them, broken or inaccessible color contrast, hardcoded colors that ignore any design tokens the project defines. These are warnings — they surface polish gaps in the summary but must NOT be marked critical.
 
+- REGRESSIONS AGAINST KNOWN HAZARDS: if the context includes a KNOWN-HAZARDS.md (or similar "things that have already broken this codebase" file), check every proposed change against every item in it. A change that repeats a listed hazard is a CRITICAL issue — cite the hazard by its heading.
+
 Do NOT comment on naming or formatting. Only flag issues that would break the code, cause runtime failures, materially degrade performance, or (as warnings) leave the UI visibly unpolished. Be concise — one line per issue.
 
 Return JSON with:

@@ -260,7 +260,7 @@ const CODER_STEP_MAX_TOKENS = 24000; // generous for 1-3 files' full content; sm
 // nothing points at them. Self-dev (Morpheus's own monorepo) and an ordinary
 // large project want different sets; a normal project's set is filtered to
 // whatever actually exists.
-const SELF_DEV_ORIENTATION_FILES = ['AGENTS.md', 'CLAUDE.md', 'README.md', 'package.json', 'server/package.json', 'server/prisma/schema.prisma', 'src/App.jsx'];
+const SELF_DEV_ORIENTATION_FILES = ['KNOWN-HAZARDS.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', 'package.json', 'server/package.json', 'server/prisma/schema.prisma', 'src/App.jsx'];
 const GENERIC_ORIENTATION_FILES = ['package.json', 'README.md', 'index.html', 'src/App.jsx', 'src/App.tsx', 'src/main.jsx', 'src/main.tsx', 'src/index.js', 'vite.config.js', 'styles.css', 'src/index.css', 'tailwind.config.js', 'requirements.txt', 'main.py', 'go.mod', 'Cargo.toml'];
 
 // Raised 60,000 -> 150,000 (2026-09-02): the operator can pin several files
@@ -408,7 +408,7 @@ SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
 - PLANNER: it is fine to plan a "create" for a genuinely new path. For an "update" to an EXISTING path you have not seen, still list it in plannedFiles — the coding step is handed that file's real current content when it implements it — but keep your plan notes about it high-level; do not describe a line-by-line rewrite from memory.
 - CODER: for any file whose current content you were not shown, make the smallest change that satisfies the plan and preserve everything else; never reconstruct a file you cannot see.
 - REVIEWER: the context is scoped. Do NOT flag an issue that depends on a file not shown here (e.g. "imports X which may not exist") — you cannot verify it either way, so treat unseen files as correct.
-- Prefer small, targeted, reviewable changes over sweeping rewrites.${selfDev ? " The operator reviews every change before pushing to production themselves." : ''}`;
+- Prefer small, targeted, reviewable changes over sweeping rewrites.${selfDev ? " The operator reviews every change before pushing to production themselves." : ''}${selfDev ? "\n- KNOWN-HAZARDS.md is in the context above — a list of self-inflicted production breakages that have already happened here. PLANNER: do not plan anything that repeats one. REVIEWER: check every proposed change against every hazard in it and flag a violation as a CRITICAL issue." : ''}`;
 }
 
 export default async function handler({ user, body, res }) {

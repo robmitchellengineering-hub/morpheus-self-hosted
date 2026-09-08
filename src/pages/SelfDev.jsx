@@ -71,6 +71,9 @@ export default function SelfDev() {
   const [revertResult, setRevertResult] = useState(null);
   const didInit = useRef(false);
   const autoDiagnosedFor = useRef(null);
+  const smokeCheckedFor = useRef(null);
+  // Post-deploy smoke check (#4 / A4.1). { phase: 'running' | 'pass' | 'fail', failing }
+  const [smoke, setSmoke] = useState(null);
 
   // AI context pinning (2026-09-02) — chatWithMorpheus.js's self-dev safety
   // rule refuses to blindly "update" any file whose content it hasn't been
@@ -169,7 +172,17 @@ export default function SelfDev() {
           if (autoDiagnosedFor.current !== sha) { autoDiagnosedFor.current = sha; autoDiagnoseDeploy(build, deploy); }
           return;
         }
-        if (buildOk && deployOk) { setDeployWatch({ phase: 'deployed', build, deploy }); return; }
+        if (buildOk && deployOk) {
+          setDeployWatch({ phase: 'deployed', build, deploy });
+          // A4.1 — deploy is green; now black-box-check the live endpoints.
+          // A green deploy that broke a route gets the same fix turn a
+          // failed deploy does.
+          if (smokeCheckedFor.current !== sha) {
+            smokeCheckedFor.current = sha;
+            runSmokeCheck();
+          }
+          return;
+        }
         setDeployWatch({ phase: 'building', build, deploy });
         setTimeout(poll, 20000);
       } catch {
@@ -257,6 +270,8 @@ export default function SelfDev() {
       setDeployWatch(null);
       setRevertResult(null);
       setPrWatch(null);
+      setSmoke(null);
+      smokeCheckedFor.current = null;
       if (res.data?.mode === 'pr') {
         // Default path: a PR is open. Poll mergeSelfDevPr until it merges
         // (every check green) or a check fails — then the deploy watcher
@@ -293,11 +308,31 @@ export default function SelfDev() {
       ]);
       const fmt = (x) => (x.lines || []).map((l) => `${l.ts || ''} ${l.log}`).join('\n') || '(no matching lines)';
       handleSend(
-        `⚠️ THE PUSH YOU JUST MADE FAILED TO DEPLOY. Northflank build=${build || '?'} deployment=${deploy || '?'}. Production is on a broken deploy — treat this as urgent.\n\nBUILD LOGS (errors, last 30 min):\n${fmt(b)}\n\nRUNTIME LOGS (errors, last 30 min):\n${fmt(r)}\n\nDiagnose the root cause and fix it in the code. If it can't be fixed quickly, say so plainly so I can REVERT LAST PUSH instead.`,
+        `⚠️ THE PUSH YOU JUST MADE FAILED TO DEPLOY. Northflank build=${build || '?'} deployment=${deploy || '?'}. Production is on a broken deploy — treat this as urgent.\n\nBUILD LOGS (errors, last 30 min):\n${fmt(b)}\n\nRUNTIME LOGS (errors, last 30 min):\n${fmt(r)}\n\nDiagnose the root cause and fix it in the code. Add the root cause and a rule to prevent recurrence to KNOWN-HAZARDS.md as part of the fix. If it can't be fixed quickly, say so plainly so I can REVERT LAST PUSH instead.`,
         [],
       );
     } catch {
       /* logs unavailable — the failed banner + REVERT button still show */
+    }
+  };
+
+  // #4 / A4.1 — after a green deploy, black-box the live endpoints. If a
+  // critical path is down, open a fix turn (same flow as a failed deploy)
+  // and keep REVERT LAST PUSH in reach.
+  const runSmokeCheck = async () => {
+    setSmoke({ phase: 'running' });
+    try {
+      const { data } = await base44.functions.invoke('smokeCheckSelfDev', {});
+      if (data.ok) { setSmoke({ phase: 'pass' }); return; }
+      setSmoke({ phase: 'fail', failing: data.failing || [] });
+      const detail = (data.checks || []).map((c) => `${c.ok ? '✅' : '❌'} ${c.name} — ${c.detail}`).join('\n');
+      handleSend(
+        `⚠️ THE PUSH YOU JUST MADE DEPLOYED, BUT A POST-DEPLOY SMOKE CHECK OF PRODUCTION FAILED. Failing: ${(data.failing || []).join(', ')}.\n\n${detail}\n\nThe deploy went green but a live path is broken. Diagnose and fix it in the code, and add the root cause + a prevention rule to KNOWN-HAZARDS.md. If it can't be fixed fast, say so — I can REVERT LAST PUSH.`,
+        [],
+      );
+    } catch (e) {
+      // The check itself couldn't run — don't cry wolf, just note it.
+      setSmoke({ phase: 'fail', failing: ['smoke check unavailable'], error: e?.response?.data?.error || e.message });
     }
   };
 
@@ -527,7 +562,17 @@ export default function SelfDev() {
             <button onClick={() => setDeployWatch(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
           </div>
         )}
-        {(lastPush || deployWatch?.phase === 'failed') && !revertResult && (
+        {smoke && (
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${smoke.phase === 'fail' ? 'border-red-500/30 bg-red-500/10 text-red-400' : smoke.phase === 'pass' ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-primary/15 bg-primary/5 text-primary/60'}`}>
+            <span className="flex items-center gap-2 min-w-0">
+              {smoke.phase === 'running' && <><Loader2 size={11} className="animate-spin shrink-0" /> Smoke-checking production endpoints…</>}
+              {smoke.phase === 'pass' && <><CheckCircle2 size={11} className="shrink-0" /> Smoke check passed — API, auth, functions and the frontend all responding.</>}
+              {smoke.phase === 'fail' && <><XCircle size={11} className="shrink-0" /> <span className="truncate">Smoke check FAILED ({smoke.failing?.join(', ')}) — deploy went green but a live path is down. Pulled it into chat. Fix or REVERT.</span></>}
+            </span>
+            <button onClick={() => setSmoke(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+          </div>
+        )}
+        {(lastPush || deployWatch?.phase === 'failed' || smoke?.phase === 'fail') && !revertResult && (
           <div className="flex items-center justify-between gap-2 border-t border-yellow-500/20 bg-yellow-500/5 px-4 py-1.5 text-[11px] text-primary/60">
             <span>// Last push {lastPush?.commitSha ? lastPush.commitSha.slice(0, 7) : ''} can be rolled back — one commit, production redeploys to the pre-push state.</span>
             <button onClick={doRevert} disabled={reverting || !lastPush?.commitSha} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40 shrink-0 flex items-center gap-1">
