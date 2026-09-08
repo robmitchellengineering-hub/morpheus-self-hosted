@@ -34,6 +34,7 @@ import {
 import { SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 import { runVerifySelfDev } from './verifySelfDev.js';
 import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
+import { stampDecisionRef } from '../lib/selfDevDecisions.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -168,6 +169,7 @@ export default async function handler({ user, body }) {
     await logUsage(user.id, 'self_dev_push', projectId, project.name, {
       mode: 'direct', createCount, updateCount, deleteCount: deletePaths.length, commitSha,
     });
+    await stampDecisionRef(projectId, commitSha.slice(0, 7));
     if (touchedManualSource) {
       try {
         const { runGenerateSelfDevManual } = await import('./generateSelfDevManual.js');
@@ -228,6 +230,7 @@ export default async function handler({ user, body }) {
   await logUsage(user.id, 'self_dev_push', projectId, project.name, {
     mode: 'pr', prNumber: pr.number, createCount, updateCount, deleteCount: deletePaths.length, headSha: commitSha,
   });
+  await stampDecisionRef(projectId, `PR #${pr.number}`);
 
   return {
     mode: 'pr',

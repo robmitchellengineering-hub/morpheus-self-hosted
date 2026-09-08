@@ -39,7 +39,7 @@ const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downl
 // repo) is admin-only end to end — see chatWithMorpheus.js's matching
 // in-handler check for why that one can't be listed here too (it's shared by
 // every project type, not self-dev-exclusive).
-const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'planSelfDevFeature', 'updateSelfDevFeature', 'getSelfDevFeatures', 'applySelfDevMigrations']);
+const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'planSelfDevFeature', 'updateSelfDevFeature', 'getSelfDevFeatures', 'applySelfDevMigrations', 'getSelfDevDecisions']);
 
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;

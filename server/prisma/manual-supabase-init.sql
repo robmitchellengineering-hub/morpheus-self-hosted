@@ -257,6 +257,19 @@ create table self_dev_features (
 create index if not exists self_dev_features_project_status_idx
   on self_dev_features (project_id, status);
 
+-- Self-dev decisions log (Command Deck Tier 2 #7).
+create table if not exists self_dev_decisions (
+  id            text primary key default gen_random_uuid()::text,
+  created_by_id text not null references users(id) on delete cascade,
+  project_id    text not null references projects(id) on delete cascade,
+  summary       text not null,
+  rationale     text not null,
+  ref           text,
+  created_date  timestamp(3) not null default now()
+);
+create index if not exists self_dev_decisions_project_date_idx
+  on self_dev_decisions (project_id, created_date);
+
 -- Tracking table for self-dev DB migrations (SELF-DEV-V2 A2). applySelfDevMigrations
 -- records each server/prisma/selfdev-*.sql it has run so it never re-applies one.
 create table if not exists self_dev_migrations (

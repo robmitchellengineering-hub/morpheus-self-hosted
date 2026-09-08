@@ -15,6 +15,7 @@ import { estimateCallMs } from '../lib/timingStats.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock } from '../lib/selfDevFeature.js';
 import { buildReverseImports } from '../lib/importGraph.js';
+import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
 // doin step by step in the chat window") — this handler streams
@@ -549,6 +550,13 @@ export default async function handler({ user, body, res }) {
     ? featureContextBlock(await getActiveFeature(projectId).catch(() => null))
     : '';
 
+  // Self-dev decisions log (Tier 2 #7): the last few "what changed / why"
+  // entries, so the planner builds on past decisions instead of contradicting
+  // them. Build turns only; best-effort.
+  const decisionsBlock = (isSelfDev && mode === 'build')
+    ? await recentDecisionsBlock(projectId).catch(() => '')
+    : '';
+
   // 2026-09-08 (Rob: "need to look at the functionality of the AI docs and
   // be able to feed that into morpheus every construct so the planner has a
   // better idea of how to build"): compileProject.js's adapters
@@ -577,7 +585,7 @@ PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
 COMPILE TARGET: ${project.compile_target || 'source'}
 ${summaryBlock}
-${featureBlock}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
+${featureBlock}${decisionsBlock}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
 CURRENT FILES:
 ${filesContext}
 ${scopedNote}
@@ -667,7 +675,9 @@ OPERATOR SAYS: ${message}`;
           needsCode: { type: 'boolean', description: 'true if code needs to be written/modified, false for pure conversation' },
           needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
           plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false)' },
-          plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' }
+          plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' },
+          decisionSummary: { type: 'string', description: 'SELF-DEV BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
+          decisionRationale: { type: 'string', description: 'SELF-DEV BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' }
         }
       },
       fileUrls,
@@ -1026,6 +1036,17 @@ OPERATOR SAYS: ${message}`;
       reviewed: !!reviewerModel,
       ...toolchain,
     });
+
+    // Decisions log (Tier 2 #7): record what this self-dev change did + why,
+    // so later planning turns build on it. Only when the change actually
+    // touched files. `ref` is stamped later, once the change lands.
+    if (isSelfDev && appliedOps.length > 0) {
+      await recordDecision(
+        user.id, projectId,
+        plannerResult.decisionSummary || plannerResult.plan?.split('\n')[0] || reply,
+        plannerResult.decisionRationale || '',
+      );
+    }
 
     emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps } });
   } catch (err) {
