@@ -27,6 +27,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 //    both return full file content just like the main Coder call, so they
 //    share its 'coder' timing bucket rather than needing their own).
 const STAGE_LABELS = {
+  research: 'Investigating the codebase',
   planner: 'Planning the build',
   coder: 'Writing the code',
   reviewer: 'Reviewing the changes',
@@ -35,6 +36,7 @@ const STAGE_LABELS = {
   polish: 'Polishing the UI',
 };
 const STAGE_ROLE = {
+  research: 'planner',
   planner: 'planner',
   coder: 'coder',
   reviewer: 'reviewer',
@@ -302,6 +304,72 @@ Return a JSON object with a "paths" array containing up to ${limit} file paths f
   }
 }
 
+// Repo research pass (Command Deck: self-dev replaces the dev loop, Tier 2
+// #5). Before the planner runs, let an agent actually investigate the repo:
+// it's shown the file tree + the request, asks to read files, and we feed
+// them back — a few rounds — until it says it understands the blast radius.
+// This is what lets self-dev plan a cross-cutting change instead of guessing
+// off a one-shot "which 6 files look relevant" call. Returns the notes it
+// built up and every path it read (which then become the planner/coder's
+// scoped context). Falls back to a plain auto-select on any failure.
+async function researchRepo(userId, files, message, { maxRounds = 3, maxFiles = 16, onProgress } = {}) {
+  const tree = files.map((f) => f.path).sort().join('\n');
+  const byPath = new Map(files.map((f) => [f.path, f.content ?? '']));
+  const readSet = new Set();
+  let notes = '';
+  try {
+    for (let round = 0; round < maxRounds; round++) {
+      const readBlock = readSet.size
+        ? [...readSet].map((p) => `--- ${p} ---\n${(byPath.get(p) || '').slice(0, 12000)}`).join('\n\n')
+        : '(nothing read yet)';
+      const res = await invokeAI({
+        userId,
+        prompt: `You are investigating a codebase to understand exactly what a requested change will touch, BEFORE a plan is written. Be thorough about cross-file impact — callers, shared helpers, schema, routing, config.
+
+OPERATOR WANTS:
+${message}
+
+FULL FILE TREE (${files.length} files):
+${tree}
+
+FILES READ SO FAR:
+${readBlock}
+
+YOUR NOTES SO FAR:
+${notes || '(none)'}
+
+Return JSON: { readNext: [up to 6 paths from the tree you need to read next — [] if none], notes: "everything you now understand about what this change touches: the files involved, the call graph, gotchas, what must NOT break", done: true when you could hand a coder a precise plan }. You have read ${readSet.size}/${maxFiles} of your file budget and ${maxRounds - round} round(s) left.`,
+        schema: {
+          type: 'object',
+          properties: {
+            readNext: { type: 'array', items: { type: 'string' } },
+            notes: { type: 'string' },
+            done: { type: 'boolean' },
+          },
+          required: ['notes'],
+        },
+        fileUrls: undefined,
+        role: 'planner',
+        maxTokens: 4000,
+      });
+      notes = res.result.notes || notes;
+      const next = (Array.isArray(res.result.readNext) ? res.result.readNext : [])
+        .filter((p) => typeof p === 'string' && byPath.has(p) && !readSet.has(p));
+      for (const p of next) {
+        if (readSet.size >= maxFiles) break;
+        readSet.add(p);
+      }
+      if (onProgress) onProgress(readSet.size);
+      if (res.result.done || next.length === 0 || readSet.size >= maxFiles) break;
+    }
+  } catch (err) {
+    console.error('[researchRepo] failed, falling back to auto-select:', err.message);
+    const paths = await autoSelectRelevantPaths(userId, files, message, { limit: 8 });
+    return { notes: '', readPaths: paths };
+  }
+  return { notes, readPaths: [...readSet] };
+}
+
 // Scoped context: a full path listing (so nothing is hidden) plus full
 // content only for `focusPaths` + `orientationPaths`. Returns the text and
 // the list of paths whose content was actually shown, so the coder loop can
@@ -419,14 +487,22 @@ export default async function handler({ user, body, res }) {
   // only once it's grown past the threshold — below that, "send everything"
   // stays the default and costs no extra AI call.
   const useScopedContext = isSelfDev || totalFileBytes > SCOPED_CONTEXT_THRESHOLD_BYTES;
+  const orientation = isSelfDev
+    ? SELF_DEV_ORIENTATION_FILES
+    : GENERIC_ORIENTATION_FILES.filter((p) => files.some((f) => f.path === p));
+  const manualPins = Array.isArray(focusPaths) && focusPaths.length > 0 ? focusPaths : null;
+
   let filesContext;
   let scopedNote = '';
+  let researchNotes = '';
   let shownPaths = files.map((f) => f.path); // full send => everything is "shown"
-  if (useScopedContext) {
-    const orientation = isSelfDev
-      ? SELF_DEV_ORIENTATION_FILES
-      : GENERIC_ORIENTATION_FILES.filter((p) => files.some((f) => f.path === p));
-    const manualPins = Array.isArray(focusPaths) && focusPaths.length > 0 ? focusPaths : null;
+  // A self-dev BUILD turn with no manual pins gets the iterative research
+  // pass (researchRepo) instead of a one-shot file guess — deferred into the
+  // stream below so it can show as its own 'research' stage. Everything else
+  // resolves its context here, before streaming starts.
+  const deferResearch = useScopedContext && isSelfDev && mode === 'build' && !manualPins;
+
+  if (useScopedContext && !deferResearch) {
     let effectivePaths;
     let autoSelected = false;
     if (manualPins) {
@@ -445,10 +521,10 @@ export default async function handler({ user, body, res }) {
     filesContext = built.text;
     shownPaths = built.shown;
     if (mode === 'build') scopedNote = scopedContextNote(built.shown, { selfDev: isSelfDev, autoSelected });
-  } else {
+  } else if (!useScopedContext) {
     filesContext = files.map((f) => `--- ${f.path} ---\n${f.content}`).join('\n\n') || '(no files yet)';
   }
-  const shownPathSet = new Set(shownPaths);
+  let shownPathSet = new Set(shownPaths);
   const historyContext = history.map((h) => `${h.role === 'user' ? 'Operator' : 'Morpheus'}: ${h.content}`).join('\n') || '(conversation just started)';
   const summaryBlock = formatContextSummaryBlock(contextSummary);
 
@@ -483,12 +559,12 @@ export default async function handler({ user, body, res }) {
     return adapter?.aiNotes ? `\n${adapter.aiNotes}\n` : '';
   })();
 
-  const contextBlock = `
+  const assembleContextBlock = () => `
 PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
 COMPILE TARGET: ${project.compile_target || 'source'}
 ${summaryBlock}
-
+${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
 CURRENT FILES:
 ${filesContext}
 ${scopedNote}
@@ -497,6 +573,9 @@ CONVERSATION HISTORY:
 ${historyContext}
 ${designBlock}${compileAdapterBlock}
 OPERATOR SAYS: ${message}`;
+  // Fully resolved now unless the research pass still has to run (deferred
+  // into the stream); reassigned there.
+  let contextBlock = deferResearch ? '' : assembleContextBlock();
 
   // From here on the response streams: zero or more {type:'stage',...}
   // progress events (see makeStageEmitter above) followed by exactly one
@@ -545,6 +624,22 @@ OPERATOR SAYS: ${message}`;
       });
       emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context' } });
       return;
+    }
+
+    // ── Phase 0: Research — investigate the repo before planning ────────────
+    // Only for a self-dev build with no manual pins (deferResearch). Turns
+    // "guess 6 relevant files" into "actually read the call graph".
+    if (deferResearch) {
+      stages.start('research');
+      const research = await researchRepo(user.id, files, message);
+      researchNotes = research.notes || '';
+      const built = buildScopedFilesContext(files, research.readPaths || [], orientation);
+      filesContext = built.text;
+      shownPaths = built.shown;
+      shownPathSet = new Set(shownPaths);
+      scopedNote = scopedContextNote(built.shown, { selfDev: true, autoSelected: true });
+      contextBlock = assembleContextBlock();
+      stages.done('research');
     }
 
     // ── Phase 1: Planner reasons about intent and design ────────────────────
