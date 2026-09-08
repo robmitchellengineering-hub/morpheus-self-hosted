@@ -1,34 +1,65 @@
 # AGENTS.md
 
-## Project Context
+## Project context
 
-This is a Base44 app repository. Treat it as user-owned application code, keep changes focused on the user's request, and preserve existing project conventions.
+Morpheus is a chat-driven AI app builder. An autonomous **planner → coder →
+reviewer** loop edits real project files, snapshots them, and can compile and
+push them to GitHub and deploy. This repository is the **fully self-hosted
+rewrite**: the original Base44 BaaS backend has been replaced with a plain
+Node/Express + Prisma/Postgres stack. There is **no Base44 dependency at
+runtime** and no `base44` CLI in this workflow.
 
-Start with `README.md` for local setup, environment variables, and publish workflow.
+Start with `README.md` for local setup and environment variables. Treat this
+as user-owned application code: keep changes focused on the request and
+preserve existing conventions (the doc-comment style at the top of most
+`server/src/` files in particular — match it).
 
-## Base44 References
+## Stack
 
-- CLI overview: https://docs.base44.com/developers/references/cli/get-started/overview.md
-- Agent skills: https://docs.base44.com/developers/backend/overview/skills.md
+| Part | Tech | Notes |
+|---|---|---|
+| Frontend | Vite 6 + React 18, react-router-dom, Radix UI, Tailwind 3, framer-motion, three.js | `src/`. Matrix theme. Deployed on Netlify (auto-publishes `main`). |
+| Backend | Node + Express + Prisma, BullMQ worker, S3-compatible storage, Stripe, nodemailer | `server/`. Deployed on Northflank (Alpine container). |
+| Database | PostgreSQL via Prisma | Migrations in `server/prisma/migrations/`. Redis optional (enables the BullMQ worker). |
+| AI | OpenAI-compatible `/chat/completions`, `response_format: json_object` | `server/src/ai.js` `invokeAI()`. Primary `LLM_MODEL=deepseek-v4-flash`, fallback `gemini-flash-latest`. Per-user BYO key supported. |
 
-If your agent supports Agent Skills, install or update Base44 skills before Base44-specific work:
+## Key files
 
-```bash
-npx skills add base44/skills
-```
+- `src/` — frontend. Only `src/api/base44Client.js` and `src/lib/AuthContext.jsx`
+  were rewritten from the original; the rest of the UI is unchanged.
+- `src/api/base44Client.js` — frontend API client. The API base is a **runtime**
+  setting (`?api_base=` / localStorage), not build-time.
+- `server/src/routes/` — Express routes. `server/src/functions/` — ported
+  business-logic functions (chat, build loop, compile targets, GitHub, marketplace).
+- `server/src/ai.js` — the AI gateway. `server/src/entities.js` — generic entity CRUD.
+- `server/prisma/schema.prisma` — data model.
+- `base44/` — original entity/function definitions, **reference only, not used at runtime**.
+- `hosted-broker/` — optional separately-deployed shared OAuth/AI broker.
+- `server/PORTING_GUIDE.md` — Base44-API → this-stack mapping.
+- `FRESHNESS.md` — how model/dependency drift is detected (notify-only, never auto-edits).
 
-## Key Files
+## Working notes
 
-- `src/`: frontend application source.
-- `src/api/base44Client.js`: frontend Base44 SDK client.
-- `vite.config.js`: Vite config and Base44 Vite plugin setup.
-- `.env.local`: local-only environment values; never commit secrets.
+- **Local dev:** backend `cd server && npm install && node src/index.js` (port 4500);
+  frontend `npm install && npm run dev` (Vite, port 5173, proxies `/api`). Or
+  `docker compose up --build` for the whole stack. There is no `base44 dev`.
+- **Before finishing code changes, run the relevant checks:** frontend
+  `npm run lint` (eslint, rules-of-hooks enabled) and `npm run build`; backend
+  has no separate lint — verify with a build/bundle check.
+- `npm run build` runs `scripts/sync-capabilities.mjs` as a prebuild step, which
+  **rewrites `src/MORPHEUS_DESIGN_PLAN.md`** — `git checkout` that file before
+  committing if you only meant to build.
+- `npm install` in `server/` rewrites `server/package-lock.json` (it drops the
+  unresolvable `@base44/*` entries) — that lockfile is gitignored; don't commit it.
+- Never commit secrets. `server/.env.example` is the authoritative env list.
 
-## Working Notes
+## Self-dev
 
-- Use `base44 dev` as the default local development command when you need the local Base44 backend. It can run the backend and frontend together.
-- When docs or code mention the frontend being started automatically, that usually means the Base44 project config includes `site.serveCommand`, for example `"serveCommand": "npm run dev"` in `base44/config.jsonc`.
-- Use `npm run dev` only for frontend-only work against the hosted Base44 backend.
-- Prefer the existing Base44 CLI workflow over adding new npm scripts for Base44-specific tasks.
-- Reuse the existing SDK client and Vite plugin patterns before adding new Base44 integration paths.
-- Run the relevant checks from `package.json` before finishing code changes.
+Morpheus can develop **itself** through its own workspace: a singleton
+admin-only `Project` (`project_type: 'self_dev'`) mirrors this repo, and the
+normal chat/plan/code/review/preview flow edits it. The loop is:
+sync (pull `main`) → plan/code/review → **verify** (esbuild transform + bundle,
+`server/src/functions/verifySelfDev.js`) → **push** (one diff-only commit,
+`server/src/functions/pushSelfDevToGithub.js`) → **watch** (Northflank poll,
+auto-diagnose failed deploys) → **revert** (one-click, `revertSelfDevPush.js`).
+See `ROADMAP.md` for what's built and what's next.
