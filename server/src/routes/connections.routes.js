@@ -28,7 +28,16 @@ router.get('/github/start', requireAuth, (req, res) => {
     const params = new URLSearchParams({
       client_id: process.env.GITHUB_CLIENT_ID,
       redirect_uri: process.env.GITHUB_REDIRECT_URI,
-      scope: 'repo read:user workflow',
+      // 2026-09-08: added delete_repo (Rob asked for a way to batch-delete
+      // the throwaway morpheus-build-* repos compileProject.js creates on
+      // every compile attempt). `repo` alone does NOT cover deletion --
+      // GitHub carves delete_repo out as a separate OAuth scope even though
+      // `repo` grants "full control" of everything else. Existing
+      // connections made before this change won't have it and need to
+      // reconnect (Settings -> Connections -> Disconnect, then Connect
+      // again) before cleanupBuildRepos.js's delete step will work for them;
+      // until then it still works in dry-run/list mode.
+      scope: 'repo delete_repo read:user workflow',
       state,
     });
     return res.redirect(`https://github.com/login/oauth/authorize?${params}`);
@@ -73,8 +82,8 @@ router.get('/github/broker-callback', async (req, res) => {
 
     await prisma.githubConnection.upsert({
       where: { created_by_id: uid },
-      create: { created_by_id: uid, login: profile?.login, access_token: encrypt(access_token), scope: 'repo read:user workflow' },
-      update: { login: profile?.login, access_token: encrypt(access_token), scope: 'repo read:user workflow' },
+      create: { created_by_id: uid, login: profile?.login, access_token: encrypt(access_token), scope: 'repo delete_repo read:user workflow' },
+      update: { login: profile?.login, access_token: encrypt(access_token), scope: 'repo delete_repo read:user workflow' },
     });
 
     res.redirect(`${frontendUrl()}/settings?github=connected`);
