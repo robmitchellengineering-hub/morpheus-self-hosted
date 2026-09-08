@@ -256,13 +256,20 @@ const integrations = {
 
 // GitHub is the only connector this app ever used (GITHUB_CONNECTOR_ID in
 // useGithubConnection.js) — connectorId is accepted but ignored since
-// there's only one. connectAppUser returns a popup URL carrying the bearer
-// token as a query param (see server/src/auth.js's extractToken, which
-// accepts ?token= specifically for this redirect-based flow — a top-level
-// navigation can't set an Authorization header).
+// there's only one.
+//
+// The primary connect flow is now the device flow (githubDeviceStart /
+// githubDevicePoll → server/src/routes/connections.routes.js): no popup, no
+// redirect URI, works in mobile browsers and webviews. connectAppUser (the
+// old redirect+popup flow) is kept as a desktop-web fallback — it returns a
+// URL carrying the bearer token as a query param, since a top-level
+// navigation can't set an Authorization header (see server/src/auth.js's
+// extractToken, which accepts ?token= specifically for this).
 const connectors = {
   connectAppUser: async () => `${API_BASE}/connections/github/start?token=${encodeURIComponent(getToken() || '')}`,
   disconnectAppUser: async () => apiFetch('/connections/github', { method: 'DELETE' }),
+  githubDeviceStart: () => apiFetch('/connections/github/device/start', { method: 'POST' }),
+  githubDevicePoll: (poll_token) => apiFetch('/connections/github/device/poll', { method: 'POST', body: { poll_token } }),
 };
 
 const auth = {

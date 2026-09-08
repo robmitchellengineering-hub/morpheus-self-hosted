@@ -1,5 +1,5 @@
 import { useGithubConnection } from '@/hooks/useGithubConnection';
-import { Github, Loader2, Unlink, ExternalLink, KeyRound, AppWindow } from 'lucide-react';
+import { Github, Loader2, Unlink } from 'lucide-react';
 import HelpHint from './HelpHint';
 
 // Wraps GitHub-dependent UI. Shows a Connect button if the user hasn't linked
@@ -21,22 +21,14 @@ export default function GithubGate({ children, note }) {
         <p className="text-xs text-primary/50">
           // {note || 'Connect your GitHub account to continue. Morpheus pushes to your own repos using your free Actions minutes.'}
         </p>
-        <HelpHint id="github-connect" title="Connect Your GitHub" body="Connect your GitHub account so Morpheus can push code and compile binaries using your free GitHub Actions minutes. This is a 2-step setup:\n\n1. Register an OAuth app on GitHub (link below) to get your client ID + secret.\n2. Generate a personal access token (link below).\n\nThen click CONNECT GITHUB and authorize.">
+        <HelpHint id="github-connect" title="Connect Your GitHub" body="Connect your GitHub account so Morpheus can push code and compile binaries using your free GitHub Actions minutes.\n\nClick CONNECT GITHUB. A short code appears — enter it at github.com/login/device in the tab that opens, authorize Morpheus, and you're done. No OAuth app to register, no token to paste.">
           <button onClick={connect} className="w-full flex items-center justify-center gap-2 py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-bold text-sm tracking-wider">
             <Github size={16} /> CONNECT GITHUB
           </button>
         </HelpHint>
-        <div className="pt-2 border-t border-primary/15 space-y-1.5">
-          <p className="text-[10px] text-primary/75 uppercase tracking-wider">Setup help — 2 steps</p>
-          <a href="https://github.com/settings/applications/new" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-primary transition-colors">
-            <AppWindow size={11} className="shrink-0" /> Step 1: Register OAuth app (client ID + secret)
-            <ExternalLink size={10} className="shrink-0 ml-auto" />
-          </a>
-          <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-primary transition-colors">
-            <KeyRound size={11} className="shrink-0" /> Step 2: Generate auth token
-            <ExternalLink size={10} className="shrink-0 ml-auto" />
-          </a>
-        </div>
+        <p className="text-[10px] text-primary/50 pt-2 border-t border-primary/15">
+          // A code appears — enter it at github.com/login/device to authorize. Nothing to install or paste.
+        </p>
       </div>
     );
   }

@@ -38,6 +38,7 @@ const SelfDev = lazy(() => import('@/pages/SelfDev'));
 const AdminPanel = lazy(() => import('@/pages/AdminPanel'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
 
 
 const AuthenticatedApp = () => {
@@ -144,12 +145,14 @@ function App() {
       <AuthProvider>
         <HelpModeProvider>
         <QueryClientProvider client={queryClientInstance}>
-          <Router>
-            <ScrollToTop />
-            <AuthenticatedApp />
-          </Router>
-          <Toaster />
-          <InsufficientCreditsModal />
+          <GithubConnectionProvider>
+            <Router>
+              <ScrollToTop />
+              <AuthenticatedApp />
+            </Router>
+            <Toaster />
+            <InsufficientCreditsModal />
+          </GithubConnectionProvider>
         </QueryClientProvider>
         </HelpModeProvider>
       </AuthProvider>

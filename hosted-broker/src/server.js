@@ -16,7 +16,11 @@ import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import * as exchangeStore from './exchangeStore.js';
+import * as deviceStore from './deviceStore.js';
 import { allow } from './rateLimit.js';
+
+// Kept in sync with server/src/routes/connections.routes.js's GH_SCOPE.
+const GH_SCOPE = 'repo delete_repo read:user workflow';
 
 const app = express();
 app.use(cors());
@@ -115,6 +119,63 @@ app.post('/github/exchange', (req, res) => {
   const value = code ? exchangeStore.take(code) : null;
   if (!value) return res.status(400).json({ error: 'invalid or expired code' });
   res.json(value);
+});
+
+// ── GitHub device flow (broker-held OAuth App) ─────────────────────
+// The instance can't run the device flow itself when it has no OAuth App —
+// GitHub ties a device_code to the client_id that created it. So the broker
+// mints it with BROKER_GITHUB_CLIENT_ID and hands back an opaque ref; the
+// instance polls /github/device/poll with that ref and the broker does the
+// GitHub token exchange with its own credentials, returning the token
+// server-to-server exactly like /github/exchange.
+app.post('/github/device/start', async (req, res) => {
+  if (!process.env.BROKER_GITHUB_CLIENT_ID) return res.status(501).json({ error: 'Broker has no GitHub OAuth App configured' });
+  try {
+    const r = await fetch('https://github.com/login/device/code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ client_id: process.env.BROKER_GITHUB_CLIENT_ID, scope: GH_SCOPE }),
+    });
+    const d = await r.json();
+    if (!d.device_code) {
+      return res.status(502).json({ error: d.error_description || d.error || 'GitHub did not return a device code — is Device Flow enabled on the broker OAuth App?' });
+    }
+    const device_code_ref = deviceStore.put({ device_code: d.device_code });
+    res.json({ device_code_ref, user_code: d.user_code, verification_uri: d.verification_uri, interval: d.interval || 5, expires_in: d.expires_in || 900 });
+  } catch (err) {
+    res.status(502).json({ error: `device start failed: ${err.message}` });
+  }
+});
+
+app.post('/github/device/poll', async (req, res) => {
+  const { device_code_ref } = req.body || {};
+  const entry = device_code_ref ? deviceStore.get(device_code_ref) : null;
+  if (!entry) return res.status(400).json({ status: 'expired', error: 'invalid or expired device_code_ref' });
+  try {
+    const r = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        client_id: process.env.BROKER_GITHUB_CLIENT_ID,
+        device_code: entry.device_code,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+    });
+    const d = await r.json();
+    if (d.error === 'authorization_pending' || d.error === 'slow_down') return res.json({ status: 'pending' });
+    if (d.error === 'expired_token') { deviceStore.drop(device_code_ref); return res.status(400).json({ status: 'expired', error: 'device code expired' }); }
+    if (d.error === 'access_denied') { deviceStore.drop(device_code_ref); return res.status(400).json({ status: 'denied', error: 'authorization declined' }); }
+    if (d.error || !d.access_token) return res.status(400).json({ status: 'error', error: d.error_description || d.error || 'authorization failed' });
+
+    const profileRes = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${d.access_token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+    });
+    const profile = await profileRes.json();
+    deviceStore.drop(device_code_ref);
+    res.json({ status: 'connected', access_token: d.access_token, profile: { id: profile.id, login: profile.login, name: profile.name, avatar_url: profile.avatar_url } });
+  } catch (err) {
+    res.status(502).json({ status: 'error', error: `device poll failed: ${err.message}` });
+  }
 });
 
 // ── Google broker ──────────────────────────────────────────────────
