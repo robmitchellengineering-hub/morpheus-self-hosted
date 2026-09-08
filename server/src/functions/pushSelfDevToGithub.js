@@ -33,6 +33,7 @@ import {
 } from '../lib/selfDevRepo.js';
 import { SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 import { runVerifySelfDev } from './verifySelfDev.js';
+import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
 import crypto from 'node:crypto';
 
 const GH_API = 'https://api.github.com';
@@ -122,6 +123,20 @@ export default async function handler({ user, body }) {
     };
   }
 
+  // A2 — a schema.prisma change must ship its migration in the same push, so
+  // applySelfDevMigrations can run it against the DB after this lands. `force`
+  // skips the gate (below, via directToMain).
+  const schemaChanged = changed.some((c) => c.path === SCHEMA_PATH);
+  const hasMigration = changed.some((c) => MIGRATION_RE.test(c.path));
+  if (schemaChanged && !hasMigration && !(force || body?.directToMain === true)) {
+    return {
+      blocked: true,
+      reason: 'schema-no-migration',
+      repoFullName: SELF_DEV_REPO_FULL_NAME,
+      message: 'server/prisma/schema.prisma changed but no server/prisma/selfdev-<slug>.sql migration is included. Ask Morpheus to add the migration file (additive, idempotent DDL) in the same change, then push again — or push with force to skip.',
+    };
+  }
+
   const createCount = changed.filter((c) => !remoteAll.has(c.path)).length;
   const updateCount = changed.length - createCount;
   const summary = [
@@ -170,11 +185,22 @@ export default async function handler({ user, body }) {
         console.error('[pushSelfDevToGithub] manual regen failed (push succeeded):', err.message);
       }
     }
+    let migrations = null;
+    if (schemaChanged || hasMigration) {
+      try {
+        const { runApplySelfDevMigrations } = await import('./applySelfDevMigrations.js');
+        migrations = await runApplySelfDevMigrations(user, { projectId });
+      } catch (err) {
+        console.error('[pushSelfDevToGithub] migration apply failed (push succeeded):', err.message);
+        migrations = { error: err.message };
+      }
+    }
     return {
       mode: 'direct',
       fileCount: changed.length + deletePaths.length,
       createCount, updateCount, deleteCount: deletePaths.length,
       commitUrl, repoFullName: SELF_DEV_REPO_FULL_NAME, branch, commitSha,
+      migrations,
     };
   }
 
@@ -221,6 +247,7 @@ export default async function handler({ user, body }) {
     fileCount: changed.length + deletePaths.length,
     createCount, updateCount, deleteCount: deletePaths.length,
     touchedManualSource,
+    hasMigration: schemaChanged || hasMigration,
     repoFullName: SELF_DEV_REPO_FULL_NAME,
   };
 }

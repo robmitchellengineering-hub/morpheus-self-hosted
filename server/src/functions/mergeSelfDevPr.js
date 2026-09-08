@@ -31,7 +31,7 @@ const NO_CHECKS_GRACE_MS = 90 * 1000;
 const commitUrlFor = (sha) => `https://github.com/${SELF_DEV_REPO_FULL_NAME}/commit/${sha}`;
 const prUrlFor = (n) => `https://github.com/${SELF_DEV_REPO_FULL_NAME}/pull/${n}`;
 
-export async function runMergeSelfDevPr(user, prNumber, { force = false, projectId = null, touchedManualSource = false } = {}) {
+export async function runMergeSelfDevPr(user, prNumber, { force = false, projectId = null, touchedManualSource = false, hasMigration = false } = {}) {
   const token = await getGithubToken(user.id);
   const checks = await getPullRequestChecks(token, SELF_DEV_REPO_FULL_NAME, prNumber);
 
@@ -62,6 +62,7 @@ export async function runMergeSelfDevPr(user, prNumber, { force = false, project
   if (!merged) {
     return { merged: false, state: 'merge_failed', prNumber, prUrl: prUrlFor(prNumber), message: 'GitHub declined the merge — check the PR.' };
   }
+  let migrations = null;
 
   // Tidy up the throwaway branch — best effort.
   if (checks.headRef) {
@@ -89,9 +90,22 @@ export async function runMergeSelfDevPr(user, prNumber, { force = false, project
         console.error('[mergeSelfDevPr] manual regen failed (merge succeeded):', err.message);
       }
     }
+
+    // A2 — apply any selfdev-*.sql the merge brought in, so the DB matches the
+    // code before Northflank finishes redeploying. Additive-only; risky ones
+    // are reported, not run. Best-effort — the merge already happened.
+    if (hasMigration) {
+      try {
+        const { runApplySelfDevMigrations } = await import('./applySelfDevMigrations.js');
+        migrations = await runApplySelfDevMigrations(user, { projectId: project.id });
+      } catch (err) {
+        console.error('[mergeSelfDevPr] migration apply failed (merge succeeded):', err.message);
+        migrations = { error: err.message };
+      }
+    }
   }
 
-  return { merged: true, prNumber, mergeCommitSha, commitUrl: commitUrlFor(mergeCommitSha) };
+  return { merged: true, prNumber, mergeCommitSha, commitUrl: commitUrlFor(mergeCommitSha), migrations };
 }
 
 export default async function handler({ user, body }) {
@@ -106,5 +120,6 @@ export default async function handler({ user, body }) {
     force: body?.force === true,
     projectId: body?.projectId || null,
     touchedManualSource: body?.touchedManualSource === true,
+    hasMigration: body?.hasMigration === true,
   });
 }
