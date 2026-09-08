@@ -19,6 +19,7 @@
 import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { shouldExclude } from '../lib/selfDevRepo.js';
+import { findBrokenImports } from '../lib/importGraph.js';
 import * as esbuild from 'esbuild';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -113,6 +114,20 @@ export async function runVerifySelfDev(user) {
     }
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
+  }
+
+  // Cross-file export check (A3): a NAMED import of a local file that the file
+  // doesn't export — the exact "does not provide an export named X" class the
+  // 2026-09-06 github.js rewrite shipped to every compile path. Deterministic,
+  // and catches importers the esbuild bundle pass above can't reach from an
+  // entry point.
+  for (const b of findBrokenImports(files.filter((f) => !shouldExclude(f.path)))) {
+    errors.push({
+      phase: 'exports',
+      file: b.importer,
+      line: null,
+      text: `imports "${b.name}" from ${b.target}, which does not export it — a caller-breaking change to ${b.target}`,
+    });
   }
 
   // De-dupe (a broken export shows up once per importer).

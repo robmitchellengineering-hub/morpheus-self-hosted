@@ -28,6 +28,11 @@ exported function's return shape, without updating every caller in the same
 change. Adding is fine; removing/renaming/reshaping is not. When in doubt, keep
 both shapes (the fix here exposes `token` *and* `accessToken`).
 
+_Now enforced:_ `verifySelfDev` runs a deterministic cross-file check (a named
+import of a local file that the file doesn't export → verify fails), and the
+reviewer is handed a CALLER IMPACT manifest for every changed shared file. This
+applies to any shared module, not just `github.js`.
+
 ## H2 — `entities.js` `scope()` bypasses `created_by_id` for admins
 **Incident:** self-dev history and project discovery silently returned nothing.
 Root cause: admin queries were *additionally* filtering by

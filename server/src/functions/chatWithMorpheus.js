@@ -14,6 +14,7 @@ import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSumm
 import { estimateCallMs } from '../lib/timingStats.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock } from '../lib/selfDevFeature.js';
+import { buildReverseImports } from '../lib/importGraph.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
 // doin step by step in the chat window") — this handler streams
@@ -904,7 +905,29 @@ OPERATOR SAYS: ${message}`;
       // reviewAndRetry emits its own 'reviewer' / 'retry_coder' /
       // 'retry_reviewer' stage events via stages.onProgress — see reviewer.js.
       if (fileOps.length > 0) {
-        const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, plannerResult.plan, coderPrompt, stages.onProgress);
+        // Caller-impact manifest (A3): for a self-dev change to an EXISTING
+        // shared file, tell the reviewer every file that imports it and what
+        // it pulls — so it can check the change doesn't break a caller it
+        // can't see (the github.js incident class).
+        let reviewContext = contextBlock;
+        if (isSelfDev) {
+          const rev = buildReverseImports(files);
+          const impacted = fileOps
+            .filter((op) => op.action !== 'create' && files.some((f) => f.path === op.path))
+            .map((op) => ({ path: op.path, callers: rev.get(op.path) || [] }))
+            .filter((x) => x.callers.length > 0);
+          if (impacted.length > 0) {
+            const lines = impacted.map((x) => {
+              const cs = x.callers.slice(0, 25).map((c) => {
+                const what = c.namespace ? '* (namespace)' : c.names.length ? c.names.join(', ') : '(side-effect)';
+                return `    - ${c.importer}  imports: ${what}`;
+              });
+              return `  ${x.path} — imported by ${x.callers.length} file(s):\n${cs.join('\n')}`;
+            });
+            reviewContext += `\n\nCALLER IMPACT — this change modifies file(s) that other files import:\n${lines.join('\n')}\n\nThe change MUST keep every listed import valid: do not remove or rename an exported binding a caller uses, and do not change a function's signature or return shape in a way a caller relies on. Any such break is a CRITICAL issue — name the caller.`;
+          }
+        }
+        const reviewed = await reviewAndRetry(user.id, fileOps, reviewContext, plannerResult.plan, coderPrompt, stages.onProgress);
         fileOps = reviewed.fileOps;
         reviewerModel = reviewed.reviewerModel;
         reviewSummary = reviewed.reviewSummary;
