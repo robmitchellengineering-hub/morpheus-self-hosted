@@ -373,7 +373,33 @@ export const macApp = {
     /error:\s/i,
     /Compiling failed/i,
     /Could not find built Swift binary/i
-  ]
+  ],
+
+  // 2026-09-08 (Rob: "need to look at the functionality of the AI docs and
+  // be able to feed that into morpheus every construct so the planner has a
+  // better idea of how to build"): everything above this point is knowledge
+  // this adapter already has about what it will actually do with the
+  // project's files at compile time -- accumulated the hard way, from real
+  // Rob-reported failures (see the comments on validate()/buildSteps()
+  // above: the Node-wrapper-around-a-real-Swift-app misroute, the pkg/lipo
+  // fat-binary corruption, the Gatekeeper "damaged" message). None of that
+  // ever reached the planner or coder AI -- chatWithMorpheus.js's
+  // BUILD_TARGET_INSTRUCTIONS only ever told them "Swift: include Xcode
+  // project or Swift Package, document 'swift build' or xcodebuild", so
+  // they were writing Swift projects blind to what this adapter actually
+  // requires and does. aiNotes is this adapter's own plain-language summary
+  // of that, read by chatWithMorpheus.js (see its compileAdapterBlock) and
+  // injected into the SAME context block the planner and coder both see, on
+  // every construct/edit turn for a mac-app project -- so it can't drift out
+  // of sync with the adapter code the way a hand-duplicated copy in the
+  // system prompt would.
+  aiNotes: `PLATFORM COMPILE PIPELINE NOTES (mac-app target) — this is exactly what Morpheus's own compile pipeline will do with your files; write to it, don't guess:
+- Swift projects: ship as a Swift Package — Package.swift at the repo root plus Sources/<ExecutableName>/*.swift. The pipeline reads Package.swift and detects the binary name from ".executableTarget(name: \"...\")" (falls back to the top-level "Package(name: ...)" if there's no executable target) — name it explicitly and keep it consistent everywhere the app refers to its own name.
+- Do NOT also add a package.json "convenience wrapper" next to a real Swift project. The pipeline checks for Package.swift FIRST and only uses the Node/pkg path when there's no Package.swift — a wrapper script that execs a "pre-built" Swift binary at a fixed path will find nothing there, since the pipeline never runs that wrapper.
+- The pipeline itself runs "swift build -c release --arch arm64 --arch x86_64" (a real universal binary) and copies the result into <AppName>.app/Contents/MacOS/<AppName> for you — do not write your own build.sh, Xcode project, or GitHub Actions workflow for this target.
+- If you include your own Info.plist at the repo root, the pipeline uses it AS-IS, unmodified — its CFBundleExecutable must match the executable target name exactly or the .app looks built but fails to launch. When in doubt, omit Info.plist entirely; the pipeline then generates a correct minimal one automatically.
+- The app ships fully unsigned (best-effort ad-hoc "codesign --sign -" only — no paid Apple Developer certificate exists here). macOS Gatekeeper will show "is damaged, move to Bin"; a README.txt with the xattr -cr workaround is added to the download automatically. Don't add your own signing steps or claim the app is notarized.
+- Node/Python projects get the same .app-bundling treatment (pkg for Node, PyInstaller --windowed for Python) — a working entry point (package.json bin/main, or main.py/app.py) is all that's needed; you don't hand-write the packaging steps.`,
 };
 
 export default macApp;

@@ -127,7 +127,19 @@ export const iosApp = {
     /xcodebuild.*failed/i,
     /No .*found/i,
     /Code signing/i
-  ]
+  ],
+
+  // 2026-09-08: see mac-app.js's matching aiNotes comment for why this
+  // exists — a plain-language summary of what this adapter's buildSteps()
+  // above actually does, fed into the planner/coder context (via
+  // chatWithMorpheus.js's compileAdapterBlock) on every ios-app construct
+  // turn, instead of the generic "Swift with SwiftUI/UIKit" line they'd
+  // otherwise be working from blind.
+  aiNotes: `PLATFORM COMPILE PIPELINE NOTES (ios-app target) — this is exactly what Morpheus's own compile pipeline will do with your files; write to it, don't guess:
+- Ship either an Xcode project (.xcodeproj) or a Swift Package (Package.swift) — the pipeline detects which and builds accordingly. You don't write a GitHub Actions workflow yourself.
+- Swift Package path: builds arm64-only release ("swift build -c release --arch arm64") and tars up .build/release as the artifact — this is a development build, not an App Store archive, and doesn't need any signing configuration.
+- Xcode project path: runs "xcodebuild archive" with CODE_SIGNING_ALLOWED=NO (unsigned, development), then attempts an .ipa export and falls back to zipping the raw .app from the archive if export fails. Keep code signing settings in the project file absent or automatic — a project that requires a specific team/certificate will fail the archive step, since none is configured here.
+- A Podfile is supported (pod install runs automatically before the build) but adds real build time and another failure surface — only include one if the project genuinely needs a CocoaPods dependency, not by default.`,
 };
 
 export default iosApp;
