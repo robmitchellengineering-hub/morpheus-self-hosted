@@ -26,6 +26,7 @@ import {
   shouldExclude,
 } from '../lib/selfDevRepo.js';
 import { runGenerateSelfDevManual, SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
+import { runVerifySelfDev } from './verifySelfDev.js';
 import crypto from 'node:crypto';
 
 const GH_API = 'https://api.github.com';
@@ -41,13 +42,29 @@ function gitBlobSha(content) {
 export default async function handler({ user, body }) {
   if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
 
-  const { projectId } = body || {};
+  const { projectId, force } = body || {};
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
 
   const project = await prisma.project.findFirst({
     where: { id: projectId, created_by_id: user.id, project_type: 'self_dev' },
   });
   if (!project) throw Object.assign(new Error('Self-dev project not found'), { status: 404 });
+
+  // Gate the push on verification (esbuild syntax + cross-file
+  // import/export check over the whole workspace). `force: true` overrides,
+  // for the rare case the operator knows the flagged error is a false
+  // positive. See verifySelfDev.js.
+  if (!force) {
+    const verify = await runVerifySelfDev(user);
+    if (!verify.ok) {
+      return {
+        blocked: true,
+        verify,
+        repoFullName: SELF_DEV_REPO_FULL_NAME,
+        message: `Push blocked — verification found ${verify.errorCount} error(s). Fix them (or push again with force to override).`,
+      };
+    }
+  }
 
   const token = await getGithubToken(user.id); // throws a friendly "connect GitHub" error if unlinked
 
@@ -63,6 +80,10 @@ export default async function handler({ user, body }) {
   for (const e of treeData.tree || []) {
     if (e.type === 'blob') remoteAll.set(e.path, e.sha);
   }
+  // If GitHub truncated the tree, our view of the repo is incomplete —
+  // computing deletions off it could delete files that are actually still
+  // there. Push creates/updates only in that case, never deletions.
+  const treeTruncated = !!treeData.truncated;
 
   const localFiles = await prisma.projectFile.findMany({ where: { project_id: projectId } });
   const localPaths = new Set(localFiles.map((f) => f.path));
@@ -78,10 +99,13 @@ export default async function handler({ user, body }) {
   }
 
   // Deleted = a MIRRORED remote path that's no longer in the workspace.
+  // Skipped entirely when the remote tree came back truncated (see above).
   const deletePaths = [];
-  for (const remotePath of remoteAll.keys()) {
-    if (shouldExclude(remotePath)) continue; // base44/, lockfiles, binaries — not mirrored, not the operator's to delete here
-    if (!localPaths.has(remotePath)) deletePaths.push(remotePath);
+  if (!treeTruncated) {
+    for (const remotePath of remoteAll.keys()) {
+      if (shouldExclude(remotePath)) continue; // base44/, lockfiles, binaries — not mirrored, not the operator's to delete here
+      if (!localPaths.has(remotePath)) deletePaths.push(remotePath);
+    }
   }
 
   if (changed.length === 0 && deletePaths.length === 0) {
@@ -98,6 +122,7 @@ export default async function handler({ user, body }) {
     createCount && `${createCount} new`,
     updateCount && `${updateCount} changed`,
     deletePaths.length && `${deletePaths.length} deleted`,
+    treeTruncated && 'deletions skipped (remote tree truncated)',
   ].filter(Boolean).join(', ');
 
   const { branch, commitSha } = await pushFiles(

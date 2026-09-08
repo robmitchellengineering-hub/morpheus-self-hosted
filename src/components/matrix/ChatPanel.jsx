@@ -204,13 +204,16 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
         {loading && (
           <div className="flex justify-start">
             <div className="text-primary/60 text-sm max-w-[85%]">
-              {/* Only surface the build-pipeline graphic once the build has
-                  actually moved past planning (coder/reviewer/etc). A
-                  chat-only turn never gets past 'planner', so it just shows
-                  the plain thinking indicator — Command Deck 4.0 rule: "no
+              {/* Show the plain thinking indicator only while the planner is
+                  still running — at that point we don't yet know if this is a
+                  build or just a chat answer. The moment the planner finishes
+                  (or any later stage starts) we know, and show the step list:
+                  for a real build that's the pipeline; for a chat-only turn
+                  the planner step flashes for an instant before the reply
+                  replaces the whole loading block. Command Deck 4.0: "no
                   build pipeline display when only chatting". Context mode
-                  emits no stages at all and lands here too. */}
-              {pipelineStages && pipelineStages.some((s) => s.stage !== 'planner') ? (
+                  emits no stages and lands in the thinking branch. */}
+              {pipelineStages && pipelineStages.some((s) => s.stage !== 'planner' || s.status === 'done') ? (
                 <>
                   <div className="text-primary/75 mb-1">morpheus@construct:~$</div>
                   <MorpheusPipelineStatus stages={pipelineStages} />

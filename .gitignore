@@ -43,3 +43,5 @@ base44/.app.jsonc
 
 # local runtime state (freshness cache, embedded pg, etc.)
 server/data/
+
+server/package-lock.json

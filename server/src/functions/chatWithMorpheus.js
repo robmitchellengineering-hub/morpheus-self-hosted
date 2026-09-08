@@ -334,7 +334,9 @@ function scopedContextNote(shownPaths, { selfDev = false, autoSelected = false }
 
 SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
 - This project is large, so you have full CONTENT only for these files: ${shownPaths.join(', ') || '(none)'}${autoSelected ? ' (auto-selected as most relevant to this request)' : ''}. Every other path in the file tree above exists but you have NOT seen its content this turn.
-- It is fine to "create" genuinely new paths. For an "update" to an EXISTING path whose content is not shown above: still list it in plannedFiles — the coding step is given that file's current content when it implements it — but do not attempt a blind rewrite from memory in your plan.
+- PLANNER: it is fine to plan a "create" for a genuinely new path. For an "update" to an EXISTING path you have not seen, still list it in plannedFiles — the coding step is handed that file's real current content when it implements it — but keep your plan notes about it high-level; do not describe a line-by-line rewrite from memory.
+- CODER: for any file whose current content you were not shown, make the smallest change that satisfies the plan and preserve everything else; never reconstruct a file you cannot see.
+- REVIEWER: the context is scoped. Do NOT flag an issue that depends on a file not shown here (e.g. "imports X which may not exist") — you cannot verify it either way, so treat unseen files as correct.
 - Prefer small, targeted, reviewable changes over sweeping rewrites.${selfDev ? " The operator reviews every change before pushing to production themselves." : ''}`;
 }
 
@@ -688,9 +690,21 @@ OPERATOR SAYS: ${message}`;
         // model can still omit an optional field) — single-shot call, same
         // as the pre-chunking behavior, still with an explicit generous cap
         // rather than omitting max_tokens (see ai.js's maxTokens doc).
+        //
+        // In scoped mode contextBlock doesn't carry every file — pull any
+        // existing path the plan text mentions that wasn't shown, and give
+        // the coder its current content so this path can't rewrite blind
+        // either.
+        let fallbackCurrentBlock = '';
+        if (useScopedContext) {
+          const mentioned = files.filter((f) => !shownPathSet.has(f.path) && plannerResult.plan.includes(f.path));
+          if (mentioned.length > 0) {
+            fallbackCurrentBlock = `\n\nCURRENT CONTENT OF EXISTING FILES THE PLAN TOUCHES:\n${mentioned.map((f) => `--- ${f.path} (current content) ---\n${f.content}`).join('\n\n')}`;
+          }
+        }
         const coder = await invokeAI({
           userId: user.id,
-          prompt: coderPrompt,
+          prompt: coderPrompt + fallbackCurrentBlock,
           schema: coderSchema,
           fileUrls,
           role: 'coder',
