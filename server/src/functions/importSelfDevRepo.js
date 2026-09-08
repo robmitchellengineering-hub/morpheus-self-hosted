@@ -71,7 +71,11 @@ export default async function handler({ user, body }) {
     });
   }
 
-  const fetched = await mapWithConcurrency(blobs, 6, async (item) => {
+  // Concurrency 20: a full sync is ~470 blob GETs. At 6 that's ~90s of the
+  // operator watching a spinner; at 20 it's ~10-15s and still well under
+  // GitHub's secondary-rate-limit threshold for reads (which mostly targets
+  // write bursts). Read rate limit is 5000/hr — one sync is a rounding error.
+  const fetched = await mapWithConcurrency(blobs, 20, async (item) => {
     try {
       const blobRes = await fetch(`${GH_API}/repos/${SELF_DEV_OWNER}/${SELF_DEV_REPO}/git/blobs/${item.sha}`, { headers: h });
       if (!blobRes.ok) return null;

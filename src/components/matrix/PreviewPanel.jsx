@@ -157,11 +157,20 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
       try {
         const res = await base44.functions.invoke('generateSelfDevPrototype', { projectId, paths: selfDevFrontendPaths });
         if (!cancelled) {
-          setHtml(res.data.html || '');
-          setKey(k => k + 1);
+          if (res.data.truncated) {
+            setHtml('');
+            setError('This change is too large for a scoped preview — review it in the file editor instead.');
+          } else {
+            setHtml(res.data.html || '');
+            setKey(k => k + 1);
+          }
         }
       } catch (e) {
-        if (!cancelled) setError(e.message || 'Prototype generation failed');
+        if (!cancelled) {
+          setError(/OUTPUT_TRUNCATED/.test(e.message || '')
+            ? 'This change is too large for a scoped preview — review it in the file editor instead.'
+            : (e.message || 'Prototype generation failed'));
+        }
       } finally {
         if (!cancelled) setBuilding(false);
       }
