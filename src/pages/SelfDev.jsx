@@ -77,6 +77,9 @@ export default function SelfDev() {
   const smokeCheckedFor = useRef(null);
   // Post-deploy smoke check (#4 / A4.1). { phase: 'running' | 'pass' | 'fail', failing }
   const [smoke, setSmoke] = useState(null);
+  // A2 — DB migration apply result: { applied, failed, manual, results:[...] } | { error }
+  const [migrations, setMigrations] = useState(null);
+  const [applyingMigrations, setApplyingMigrations] = useState(false);
 
   // AI context pinning (2026-09-02) — chatWithMorpheus.js's self-dev safety
   // rule refuses to blindly "update" any file whose content it hasn't been
@@ -220,13 +223,14 @@ export default function SelfDev() {
       if (attempts++ > 40) { setPrWatch((w) => (w?.phase === 'checking' ? { ...w, phase: 'timeout' } : w)); return; }
       try {
         const { data } = await base44.functions.invoke('mergeSelfDevPr', {
-          prNumber, projectId: ws.currentProject.id, touchedManualSource: prWatch.touchedManualSource,
+          prNumber, projectId: ws.currentProject.id, touchedManualSource: prWatch.touchedManualSource, hasMigration: prWatch.hasMigration,
         });
         if (cancelled) return;
         if (data.merged) {
           setPrWatch((w) => ({ ...w, phase: 'merged', mergeCommitSha: data.mergeCommitSha }));
           rememberLastPush({ commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }, ws.currentProject.id);
           setPushResult((p) => ({ ...(p || {}), ok: true, commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }));
+          if (data.migrations) setMigrations(data.migrations);
           return;
         }
         if (data.state === 'failed' || data.state === 'conflict' || data.state === 'merge_failed') {
@@ -274,8 +278,8 @@ export default function SelfDev() {
     try {
       const res = await base44.functions.invoke('pushSelfDevToGithub', { projectId: ws.currentProject.id, force });
       if (res.data?.blocked) {
-        setVerifyResult(res.data.verify);
-        setPushResult({ ok: false, error: res.data.message });
+        if (res.data.verify) setVerifyResult(res.data.verify);
+        setPushResult({ ok: false, error: res.data.message, blockReason: res.data.reason });
         return;
       }
       setPushResult({ ok: true, ...res.data });
@@ -284,6 +288,7 @@ export default function SelfDev() {
       setRevertResult(null);
       setPrWatch(null);
       setSmoke(null);
+      setMigrations(null);
       smokeCheckedFor.current = null;
       if (res.data?.mode === 'pr') {
         // Default path: a PR is open. Poll mergeSelfDevPr until it merges
@@ -294,12 +299,14 @@ export default function SelfDev() {
           prNumber: res.data.prNumber,
           prUrl: res.data.prUrl,
           touchedManualSource: res.data.touchedManualSource,
+          hasMigration: res.data.hasMigration,
         });
       } else if (res.data?.commitSha) {
         // Direct-to-main (force / hotfix). Northflank + Netlify auto-build
         // from the push; the deploy watcher (keyed on pushResult.commitSha)
         // polls Northflank and auto-diagnoses a failed deploy.
         rememberLastPush(res.data, ws.currentProject.id);
+        if (res.data.migrations) setMigrations(res.data.migrations);
       }
     } catch (e) {
       setPushResult({ ok: false, error: e.message });
@@ -357,12 +364,13 @@ export default function SelfDev() {
     try {
       const { data } = await base44.functions.invoke('mergeSelfDevPr', {
         prNumber: prWatch.prNumber, projectId: ws.currentProject.id, force: true,
-        touchedManualSource: prWatch.touchedManualSource,
+        touchedManualSource: prWatch.touchedManualSource, hasMigration: prWatch.hasMigration,
       });
       if (data.merged) {
         setPrWatch((w) => ({ ...w, phase: 'merged', mergeCommitSha: data.mergeCommitSha }));
         rememberLastPush({ commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }, ws.currentProject.id);
         setPushResult((p) => ({ ...(p || {}), ok: true, commitSha: data.mergeCommitSha, commitUrl: data.commitUrl }));
+        if (data.migrations) setMigrations(data.migrations);
       } else {
         setPrWatch((w) => ({ ...w, phase: 'failed', message: data.message || 'Merge still failed.' }));
       }
@@ -370,6 +378,20 @@ export default function SelfDev() {
       setPrWatch((w) => ({ ...w, phase: 'failed', message: e?.response?.data?.error || e.message }));
     } finally {
       setMergingAnyway(false);
+    }
+  };
+
+  // A2 — re-run pending self-dev migrations (after a fix, or if auto-apply
+  // didn't fire). Additive-only; risky ones still need manual application.
+  const retryMigrations = async () => {
+    setApplyingMigrations(true);
+    try {
+      const { data } = await base44.functions.invoke('applySelfDevMigrations', { projectId: ws.currentProject.id });
+      setMigrations(data);
+    } catch (e) {
+      setMigrations({ error: e?.response?.data?.error || e.message });
+    } finally {
+      setApplyingMigrations(false);
     }
   };
 
@@ -545,7 +567,7 @@ export default function SelfDev() {
                 : `Push failed: ${pushResult.error}`}
             </span>
             <div className="flex items-center gap-2 shrink-0">
-              {!pushResult.ok && verifyResult && !verifyResult.ok && (
+              {!pushResult.ok && ((verifyResult && !verifyResult.ok) || pushResult.blockReason === 'schema-no-migration') && (
                 <button onClick={() => doPush(true)} disabled={pushing} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40">
                   PUSH ANYWAY
                 </button>
@@ -592,6 +614,32 @@ export default function SelfDev() {
               {smoke.phase === 'fail' && <><XCircle size={11} className="shrink-0" /> <span className="truncate">Smoke check FAILED ({smoke.failing?.join(', ')}) — deploy went green but a live path is down. Pulled it into chat. Fix or REVERT.</span></>}
             </span>
             <button onClick={() => setSmoke(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+          </div>
+        )}
+        {migrations && (
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${migrations.error || migrations.failed > 0 ? 'border-red-500/30 bg-red-500/10 text-red-400' : migrations.manual > 0 ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500/90' : 'border-primary/20 bg-primary/5 text-primary/70'}`}>
+            <span className="flex items-center gap-2 min-w-0">
+              <ListChecks size={11} className="shrink-0" />
+              <span className="truncate">
+                {migrations.error
+                  ? `DB migration apply failed: ${migrations.error}`
+                  : [
+                      migrations.applied > 0 && `${migrations.applied} migration(s) applied to the DB`,
+                      migrations.failed > 0 && `${migrations.failed} FAILED`,
+                      migrations.manual > 0 && `${migrations.manual} need manual apply (not additive)`,
+                      !migrations.applied && !migrations.failed && !migrations.manual && 'No pending migrations',
+                    ].filter(Boolean).join(' · ')}
+                {migrations.results?.filter((r) => r.status === 'needs-manual' || r.status === 'failed').map((r) => ` — ${r.filename}`).join('')}
+              </span>
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              {(migrations.failed > 0 || migrations.error) && (
+                <button onClick={retryMigrations} disabled={applyingMigrations} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40 flex items-center gap-1">
+                  {applyingMigrations ? <Loader2 size={10} className="animate-spin" /> : null} RETRY
+                </button>
+              )}
+              <button onClick={() => setMigrations(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+            </div>
           </div>
         )}
         {(lastPush || deployWatch?.phase === 'failed' || smoke?.phase === 'fail') && !revertResult && (

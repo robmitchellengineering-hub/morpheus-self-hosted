@@ -257,6 +257,14 @@ create table self_dev_features (
 create index if not exists self_dev_features_project_status_idx
   on self_dev_features (project_id, status);
 
+-- Tracking table for self-dev DB migrations (SELF-DEV-V2 A2). applySelfDevMigrations
+-- records each server/prisma/selfdev-*.sql it has run so it never re-applies one.
+create table if not exists self_dev_migrations (
+  filename        text primary key,
+  statement_count integer not null default 0,
+  applied_date    timestamp(3) not null default now()
+);
+
 -- Admin-only "MORPHEUS UPDATES PLAN" AI synthesis tool — reads the feedback
 -- table above, so create this after it.
 create table updates_plans (

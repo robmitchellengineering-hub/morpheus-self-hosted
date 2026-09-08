@@ -66,6 +66,16 @@ provider's undocumented default, which has truncated real builds repeatedly
 `reviewer.js`). **Rule:** any `invokeAI` call that can produce multi-file or
 long output must set a generous explicit `maxTokens`.
 
+## H8 — a `schema.prisma` change needs its migration in the same change
+The backend deploy only runs `prisma generate`, never a migration — the DB is
+migrated by hand-run `server/prisma/*.sql`. A `schema.prisma` change that ships
+without the matching SQL means the new code hits a column/table that doesn't
+exist in production. **Rule:** every `server/prisma/schema.prisma` change ships
+`server/prisma/selfdev-<slug>.sql` in the same change — idempotent, additive-only
+DDL. `pushSelfDevToGithub` blocks a schema change with no migration;
+`applySelfDevMigrations` runs additive ones after the merge (destructive DDL is
+left for a human).
+
 ## H7 — self-dev pushes must never touch `base44/`, lockfiles, or binaries
 `shouldExclude()` (`server/src/lib/selfDevRepo.js`) defines what self-dev
 mirrors. A 2026-09-06 rewrite of `pushSelfDevToGithub.js` computed deletions
