@@ -210,6 +210,21 @@ export default function SelfDev() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [pushResult?.commitSha]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A4.1 fallback — the smoke check is a black-box HTTP probe of production and
+  // doesn't need Northflank. The deploy watcher above only reaches
+  // runSmokeCheck() when NORTHFLANK_API_TOKEN is set and it sees a green
+  // deployment; without that it stops at 'notConfigured'. This runs the check
+  // ~2min after a push regardless (once the guard shows it hasn't run yet),
+  // giving Netlify + the backend time to roll out first.
+  useEffect(() => {
+    const sha = pushResult?.ok ? pushResult.commitSha : null;
+    if (!sha) return;
+    const t = setTimeout(() => {
+      if (smokeCheckedFor.current !== sha) { smokeCheckedFor.current = sha; runSmokeCheck(); }
+    }, 120000);
+    return () => clearTimeout(t);
+  }, [pushResult?.commitSha]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // #2 — PR merge watcher. After a PR-mode push, poll mergeSelfDevPr: while
   // checks are pending it just keeps polling; on green it squash-merges and
   // hands the merge commit to the deploy watcher (via pushResult.commitSha)
@@ -527,6 +542,7 @@ export default function SelfDev() {
         {syncResult?.ok && (
           <div className="flex items-center gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1 text-[11px] text-primary/60">
             <CheckCircle2 size={11} /> Synced {syncResult.fileCount} files from {syncResult.repoFullName}@{syncResult.branch}
+            {typeof syncResult.fetched === 'number' ? ` (${syncResult.fetched} changed)` : ''}
             {syncResult.removed > 0 ? ` (${syncResult.removed} removed locally)` : ''}.
           </div>
         )}

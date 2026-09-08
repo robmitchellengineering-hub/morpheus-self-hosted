@@ -14,7 +14,7 @@ import { detectLanguage, logUsage } from '../lib/projectUtils.js';
 import { getGithubToken, ghHeaders, ghJson } from '../lib/github.js';
 import {
   SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_BRANCH, SELF_DEV_REPO_FULL_NAME,
-  shouldExclude as shouldSkip,
+  shouldExclude as shouldSkip, gitBlobSha,
 } from '../lib/selfDevRepo.js';
 
 const GH_API = 'https://api.github.com';
@@ -71,11 +71,23 @@ export default async function handler({ user, body }) {
     });
   }
 
-  // Concurrency 20: a full sync is ~470 blob GETs. At 6 that's ~90s of the
-  // operator watching a spinner; at 20 it's ~10-15s and still well under
-  // GitHub's secondary-rate-limit threshold for reads (which mostly targets
-  // write bursts). Read rate limit is 5000/hr — one sync is a rounding error.
-  const fetched = await mapWithConcurrency(blobs, 20, async (item) => {
+  // Incremental sync: only fetch a blob whose remote git-sha differs from the
+  // content we already have. A first sync fetches everything (~470 blobs); a
+  // re-sync after a few upstream commits fetches a handful, turning a ~2.5min
+  // spinner into a few seconds. (2026-09-09 — Rob: "sync is slow".)
+  const localFiles = await prisma.projectFile.findMany({
+    where: { project_id: project.id },
+    select: { path: true, content: true },
+  });
+  const localShaByPath = new Map(localFiles.map((f) => [f.path, gitBlobSha(f.content)]));
+  const localContentByPath = new Map(localFiles.map((f) => [f.path, f.content]));
+
+  const toFetch = blobs.filter((item) => localShaByPath.get(item.path) !== item.sha);
+  const toFetchPaths = new Set(toFetch.map((item) => item.path));
+
+  // Concurrency 20: well under GitHub's secondary-rate-limit threshold for
+  // reads (which mostly targets write bursts). Read rate limit is 5000/hr.
+  const fetched = await mapWithConcurrency(toFetch, 20, async (item) => {
     try {
       const blobRes = await fetch(`${GH_API}/repos/${SELF_DEV_OWNER}/${SELF_DEV_REPO}/git/blobs/${item.sha}`, { headers: h });
       if (!blobRes.ok) return null;
@@ -87,12 +99,22 @@ export default async function handler({ user, body }) {
     }
   });
 
-  const ok = fetched.filter(Boolean);
-  const skipped = fetched.length - ok.length;
+  const fetchedOk = fetched.filter(Boolean);
+  const failed = fetched.length - fetchedOk.length;
 
-  // Upsert each fetched file, then delete any local rows for paths that no
-  // longer exist upstream — keeps the workspace a true mirror of HEAD.
-  for (const f of ok) {
+  // The full HEAD file set = freshly-fetched + the ones we skipped because
+  // they were already current.
+  const ok = [
+    ...fetchedOk,
+    ...blobs
+      .filter((item) => !toFetchPaths.has(item.path) && localContentByPath.has(item.path))
+      .map((item) => ({ path: item.path, content: localContentByPath.get(item.path) })),
+  ];
+  const skipped = failed;
+
+  // Upsert only what changed; delete any local rows for paths that no longer
+  // exist upstream — keeps the workspace a true mirror of HEAD.
+  for (const f of fetchedOk) {
     await prisma.projectFile.upsert({
       where: { project_id_path: { project_id: project.id, path: f.path } },
       update: { content: f.content, language: detectLanguage(f.path) },
@@ -106,20 +128,22 @@ export default async function handler({ user, body }) {
     await prisma.projectFile.deleteMany({ where: { id: { in: staleIds } } });
   }
 
+  const fetchedCount = fetchedOk.length;
   await prisma.chatMessage.create({
     data: {
       created_by_id: user.id,
       project_id: project.id,
       role: 'morpheus',
-      content: `Synced from ${SELF_DEV_REPO_FULL_NAME}@${SELF_DEV_BRANCH}: ${ok.length} files pulled${skipped ? `, ${skipped} skipped` : ''}${staleIds.length ? `, ${staleIds.length} removed locally (deleted upstream)` : ''}. This is the real, live Morpheus codebase — free your mind, but mind what you overwrite.`,
+      content: `Synced from ${SELF_DEV_REPO_FULL_NAME}@${SELF_DEV_BRANCH}: ${ok.length} files at HEAD (${fetchedCount} fetched, ${ok.length - fetchedCount} already current)${skipped ? `, ${skipped} failed` : ''}${staleIds.length ? `, ${staleIds.length} removed locally (deleted upstream)` : ''}. This is the real, live Morpheus codebase — free your mind, but mind what you overwrite.`,
     },
   });
 
-  await logUsage(user.id, 'self_dev_sync', project.id, project.name, { fileCount: ok.length, skipped, removed: staleIds.length });
+  await logUsage(user.id, 'self_dev_sync', project.id, project.name, { fileCount: ok.length, fetched: fetchedCount, skipped, removed: staleIds.length });
 
   return {
     projectId: project.id,
     fileCount: ok.length,
+    fetched: fetchedCount,
     skipped,
     removed: staleIds.length,
     repoFullName: SELF_DEV_REPO_FULL_NAME,
