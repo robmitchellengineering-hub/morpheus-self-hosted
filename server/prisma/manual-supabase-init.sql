@@ -242,6 +242,21 @@ create table self_dev_manuals (
   updated_date timestamp(3) not null default now()
 );
 
+-- Self-dev persistent feature plans (SELF-DEV-V2 A1).
+create table self_dev_features (
+  id text primary key default gen_random_uuid()::text,
+  created_by_id text not null references users(id) on delete cascade,
+  project_id text not null references projects(id) on delete cascade,
+  title text not null,
+  goal text not null,
+  steps text not null,
+  status text not null default 'active',
+  created_date timestamp(3) not null default now(),
+  updated_date timestamp(3) not null default now()
+);
+create index if not exists self_dev_features_project_status_idx
+  on self_dev_features (project_id, status);
+
 -- Admin-only "MORPHEUS UPDATES PLAN" AI synthesis tool — reads the feedback
 -- table above, so create this after it.
 create table updates_plans (

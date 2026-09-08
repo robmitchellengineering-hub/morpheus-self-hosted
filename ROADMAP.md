@@ -38,8 +38,8 @@ scoped repo context above 120 KB, collapsible mobile toolbar.
 |---|---|---|
 | **Known-hazards doc** — `KNOWN-HAZARDS.md` of past self-inflicted breakage; planner won't repeat one, reviewer flags a regression against it as critical; `revertSelfDevPush` + failed-deploy diagnosis append new incidents | ✅ done | `KNOWN-HAZARDS.md`, `chatWithMorpheus.js` (orientation), `reviewer.js` |
 | **Post-deploy smoke check** — after a green deploy, black-box the live API/auth/functions/frontend; a failure opens the same fix turn a failed deploy does | ✅ done | `server/src/functions/smokeCheckSelfDev.js`, `SelfDev.jsx` |
-| **Persistent feature plans** — a multi-step feature tracked across turns (plan + per-step status + the PRs that landed each step); planner reads it every turn | ⬜ next | — |
-| **DB migrations** — a `schema.prisma` change generates the matching `server/prisma/*.sql` and applies it post-merge | ⬜ | — |
+| **Persistent feature plans** — a multi-step feature tracked across turns (plan + per-step status); planner gets the goal + steps + active step every build turn | ✅ done | `SelfDevFeature` model, `server/src/functions/{plan,update,get}SelfDevFeature*.js`, `server/src/lib/selfDevFeature.js`, `SelfDevFeatureModal.jsx` |
+| **DB migrations** — a `schema.prisma` change generates the matching `server/prisma/*.sql` and applies it post-merge | ⬜ next | — |
 | **Self-dev reviewer path** — dedicated reviewer that checks changed exports against their callers | ⬜ | — |
 | **Backend change preview** — run a changed function in a rolled-back transaction against real data | ⬜ | — |
 

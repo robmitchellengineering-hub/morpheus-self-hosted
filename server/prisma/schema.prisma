@@ -60,6 +60,7 @@ model User {
   updates_plans   UpdatesPlan[]
   cost_snapshots  CostSnapshot[]
   self_dev_manuals SelfDevManual[]
+  self_dev_features SelfDevFeature[]
   github_connection GithubConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
@@ -160,6 +161,7 @@ model Project {
   usage_records  UsageRecord[]
   templates      Template[]
   backend_config BackendConfig?
+  self_dev_features SelfDevFeature[]
 
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
@@ -569,6 +571,34 @@ model SelfDevManual {
   updated_date    DateTime @updatedAt
 
   @@map("self_dev_manuals")
+}
+
+// Persistent multi-step feature plan for self-dev (SELF-DEV-V2 A1). A real
+// feature ("add project comments") spans several self-dev turns — schema +
+// routes + function + components + wiring. Without this, every turn re-derives
+// intent from one message and can contradict an earlier step. One `active`
+// feature per self-dev project at a time; chatWithMorpheus.js gives the planner
+// the goal + step list + which step is active on every build turn, and the
+// operator marks a step done from the FEATURE panel (planSelfDevFeature.js /
+// updateSelfDevFeature.js). `steps` is a JSON string (the codebase stores
+// structured data as Text, not Prisma Json — see Project.context_summary):
+//   [{ n, title, status: 'pending'|'active'|'done', ref?, note? }]
+model SelfDevFeature {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  title         String
+  goal          String   @db.Text
+  steps         String   @db.Text
+  status        String   @default("active") // active | done | abandoned
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("self_dev_features")
 }
 
 // AI-synthesized "MORPHEUS UPDATES PLAN" — admin-only, ranks all Feedback
