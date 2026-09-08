@@ -61,6 +61,7 @@ model User {
   cost_snapshots  CostSnapshot[]
   self_dev_manuals SelfDevManual[]
   self_dev_features SelfDevFeature[]
+  self_dev_decisions SelfDevDecision[]
   github_connection GithubConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
@@ -162,6 +163,7 @@ model Project {
   templates      Template[]
   backend_config BackendConfig?
   self_dev_features SelfDevFeature[]
+  self_dev_decisions SelfDevDecision[]
 
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
@@ -599,6 +601,30 @@ model SelfDevFeature {
   updated_date  DateTime @updatedAt
 
   @@map("self_dev_features")
+}
+
+// Decisions log for self-dev (Command Deck Tier 2 #7). After every self-dev
+// change that ships, the planner's one-line "what changed / why" is recorded
+// here, and the last ~8 entries are fed back into the planner's context on the
+// next build turn — so it builds on past decisions instead of contradicting
+// them. Pairs with KNOWN-HAZARDS.md: hazards say "don't repeat this break",
+// decisions say "here's why the code is the way it is". `ref` is stamped with
+// the PR/commit once the change lands (pushSelfDevToGithub / mergeSelfDevPr).
+model SelfDevDecision {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  summary       String   @db.Text // what changed
+  rationale     String   @db.Text // why
+  ref           String?            // PR #N or commit sha, stamped on land
+
+  created_date  DateTime @default(now())
+
+  @@index([project_id, created_date])
+  @@map("self_dev_decisions")
 }
 
 // AI-synthesized "MORPHEUS UPDATES PLAN" — admin-only, ranks all Feedback

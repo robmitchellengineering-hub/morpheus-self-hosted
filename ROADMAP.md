@@ -24,7 +24,7 @@ admin-only `Project` (`project_type: 'self_dev'`) that mirrors this repo.
 | 1.4 | Auto-diagnose failed deploys (poll Northflank, pull logs into a fix turn) | ✅ done | `src/pages/SelfDev.jsx` deploy watcher |
 | 2.5 | Repo research pass before planning (iterative investigate loop, ≤16 files / ≤3 rounds) | ✅ done | `server/src/functions/chatWithMorpheus.js` `researchRepo()` |
 | 2.6 | Diff-based edits — coder returns `edits:[{find,replace}]`, no-op on ambiguous/missing match | ✅ done | `server/src/lib/projectUtils.js` `applyEdits()` |
-| 2.7 | Decisions log — each self-dev change records what changed and why; planning reads it back | ⬜ | — |
+| 2.7 | Decisions log — each self-dev change records what changed and why; the planner reads the last ~8 back every build turn | ✅ done | `SelfDevDecision` model, `server/src/lib/selfDevDecisions.js`, `chatWithMorpheus.js`, DECISIONS tab in `SelfDevHistoryModal.jsx` |
 | 3.8 | Real branch preview — wire PreviewPanel to the Netlify per-PR deploy preview instead of the LLM mockup | ⬜ | Netlify already builds `deploy-preview-<N>--morpheus-self-hosted-app.netlify.app` |
 | 3.9 | Auto test-generation per change | ⬜ | — |
 
