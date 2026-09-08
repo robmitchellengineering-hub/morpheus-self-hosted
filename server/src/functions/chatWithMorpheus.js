@@ -202,6 +202,29 @@ Return JSON with:
 - plan: concise file-by-file build plan with implementation notes — 1-3 sentences per file, deeper only where a file genuinely needs it (see KEEP THE PLAN CONCISE above) (only required when needsCode is true AND needsClarification is false)
 - plannedFiles: ordered array of every file path the plan will touch (only required when needsCode is true AND needsClarification is false) — see PLANNED FILES above`;
 
+// CONTEXT MODE (Workspace / Self-Dev "CONTEXT ⇄ BUILD" toggle, 2026-09-08 —
+// Rob: "put morpheus into context mode so you can chat and build context
+// faster, then when you are ready to build put him in build mode"). In
+// context mode Morpheus answers in ONE fast pass — discuss, ask, sketch a
+// file-level plan in prose — and the planner→coder→reviewer pipeline never
+// runs: no snapshot, no fileOperations, no stage events (so the chat shows a
+// plain thinking indicator, not the build pipeline graphic). The operator
+// switches to BUILD mode when the plan is straight and they want it shipped.
+// BUILD mode is the existing two-phase behaviour, unchanged — it still
+// "just plans" for a pure-conversation turn (needsCode:false), it's just
+// also allowed to code.
+const CONTEXT_MODE_INSTRUCTIONS = `
+
+You are in CONTEXT MODE. The operator is working out what they want before any code is written — exploring the idea, weighing options, building up the shared context you'll both draw on when it's time to build.
+
+In this mode:
+- Discuss the request. Ask sharp questions only where the direction genuinely forks. Sketch an approach, a file-by-file plan, the trade-offs — all in prose.
+- Do NOT write code. Do NOT return fileOperations. Nothing you say here changes the project — no file is created, updated, or deleted in context mode.
+- When the plan is straight, say so and tell the operator to switch to BUILD mode so you can implement it.
+- Keep replies tight and fast. This is a working conversation, not a deliverable.
+
+Return JSON with just: reply (your response to the operator, in character).`;
+
 const CODER_INSTRUCTIONS = `
 
 You are the CODING agent in Morpheus's two-phase build pipeline.
@@ -321,6 +344,10 @@ SELF-DEV SAFETY RULE — YOU ARE EDITING MORPHEUS'S OWN LIVE PRODUCTION CODEBASE
 
 export default async function handler({ user, body, res }) {
   const { projectId, message, fileUrls, focusPaths } = body || {};
+  // 'context' (fast discuss/plan pass, no build pipeline) or 'build' (the
+  // full planner→coder→reviewer flow). Anything unrecognised = 'build', so
+  // existing callers that never send `mode` are unaffected.
+  const mode = body?.mode === 'context' ? 'context' : 'build';
   if (!projectId || !message) throw Object.assign(new Error('projectId and message required'), { status: 400 });
 
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
@@ -400,6 +427,12 @@ export default async function handler({ user, body, res }) {
     let autoSelected = false;
     if (manualFocusPaths) {
       effectiveFocusPaths = manualFocusPaths;
+    } else if (mode === 'context') {
+      // Context mode is meant to be one fast call — skip the extra
+      // auto-select AI round-trip. Orientation files + the full path tree
+      // (always in buildSelfDevContext) are enough to discuss and plan; the
+      // operator pins specifics before switching to BUILD.
+      effectiveFocusPaths = [];
     } else {
       effectiveFocusPaths = await autoSelectSelfDevPaths(user.id, files, message);
       autoSelected = true;
@@ -482,6 +515,35 @@ OPERATOR SAYS: ${message}`;
   const stages = makeStageEmitter(emit);
 
   try {
+    // ── CONTEXT MODE: one fast pass, no build pipeline ─────────────────────
+    // See CONTEXT_MODE_INSTRUCTIONS. No stage events are emitted, so the
+    // chat shows a plain thinking indicator instead of the pipeline graphic;
+    // no snapshot is taken and fileOperations is always empty.
+    if (mode === 'context') {
+      const ctx = await invokeAI({
+        userId: user.id,
+        prompt: `${systemPrompt}${CONTEXT_MODE_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
+        schema: {
+          type: 'object',
+          properties: { reply: { type: 'string', description: 'Morpheus response to the operator, in character — discussion, questions, or a prose plan. Never code.' } },
+          required: ['reply'],
+        },
+        fileUrls,
+        role: 'planner',
+        maxTokens: 6000,
+      });
+      const ctxReply = ctx.result.reply || '...';
+      await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: ctxReply } });
+      const ctxToolchain = buildToolchain(ctx.provider, { planner: ctx.model });
+      await logUsage(user.id, 'chat_simple', projectId, project.name, {
+        messageLength: message.length,
+        mode: 'context',
+        ...ctxToolchain,
+      });
+      emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context' } });
+      return;
+    }
+
     // ── Phase 1: Planner reasons about intent and design ────────────────────
     stages.start('planner');
     const planner = await invokeAI({
@@ -656,7 +718,7 @@ OPERATOR SAYS: ${message}`;
       // A second, lightweight coder call that touches ONLY styling files. It
       // runs when project.polish_ui is on and the build produced web-facing
       // files (or the target is web-app). Never runs for pure native/CLI builds.
-      if (project.polish_ui && appliedOps.length > 0) {
+      if (project.polish_ui && appliedOps.length > 0 && !isSelfDev) {
         const hasWebFiles = appliedOps.some((op) => /\.(html|css|jsx|tsx|vue|svelte)$/i.test(op.path) || op.path === 'styles.css');
         if (hasWebFiles || (project.compile_target || 'source') === 'web-app') {
           // Same fix as the `files` query above -- ProjectFile uniqueness is
