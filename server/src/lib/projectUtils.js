@@ -91,6 +91,57 @@ function isFakeBinaryPlaceholder(path, content) {
 
 // fileOps: [{ path, content, action: 'create'|'update'|'delete' }]
 // existingFiles: current ProjectFile rows (avoids an extra round-trip per op)
+// Apply a list of { find, replace } edits to a string. Returns
+// { ok, content, failed } — `failed` lists the edits that didn't apply, and
+// on any failure `content` is the ORIGINAL, untouched (a partial diff apply
+// is worse than none). Diff-based editing's whole point is that the coder
+// only ever touches what it names, so a non-matching `find` must be a
+// no-op, never a guess.
+//
+// Matching is: exact first; then whitespace-tolerant (trailing whitespace
+// per line ignored, leading indentation must still match) so the LLM
+// reproducing a block with slightly-off trailing spaces still lands. A
+// `find` that matches more than once is rejected as ambiguous.
+export function applyEdits(original, edits) {
+  let content = original;
+  const failed = [];
+  for (const edit of edits || []) {
+    const find = typeof edit?.find === 'string' ? edit.find : '';
+    const replace = typeof edit?.replace === 'string' ? edit.replace : '';
+    if (!find) { failed.push({ find, reason: 'empty find' }); continue; }
+
+    // exact
+    const first = content.indexOf(find);
+    if (first !== -1) {
+      if (content.indexOf(find, first + 1) !== -1) { failed.push({ find, reason: 'ambiguous — matches more than once' }); continue; }
+      content = content.slice(0, first) + replace + content.slice(first + find.length);
+      continue;
+    }
+
+    // whitespace-tolerant: match the find lines against a window of content
+    // lines, ignoring trailing whitespace on each line.
+    const norm = (s) => s.replace(/[ \t]+$/gm, '');
+    const cLines = content.split('\n');
+    const fLines = norm(find).split('\n');
+    const nLines = cLines.map(norm);
+    let hit = -1;
+    for (let i = 0; i + fLines.length <= nLines.length; i++) {
+      if (fLines.every((fl, k) => nLines[i + k] === fl)) {
+        if (hit !== -1) { hit = -2; break; } // ambiguous
+        hit = i;
+      }
+    }
+    if (hit >= 0) {
+      const before = cLines.slice(0, hit).join('\n');
+      const after = cLines.slice(hit + fLines.length).join('\n');
+      content = (before ? before + '\n' : '') + replace + (after ? '\n' + after : '');
+      continue;
+    }
+    failed.push({ find, reason: hit === -2 ? 'ambiguous — matches more than once' : 'not found — the file may differ from what you were shown' });
+  }
+  return { ok: failed.length === 0, content: failed.length ? original : content, failed };
+}
+
 export async function applyFileOperations(userId, projectId, fileOps, existingFiles) {
   const appliedOps = [];
   const seenPaths = new Set();
@@ -124,6 +175,31 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
       // trace of the real failure in the response or an error log.
       if (existing) await prisma.projectFile.delete({ where: { id: existing.id } });
       appliedOps.push({ path: op.path, action: 'delete' });
+      continue;
+    }
+
+    // Diff-based update: op carries `edits` (find/replace) instead of full
+    // `content`. Apply them against the file's current content; a
+    // non-matching edit leaves the file untouched and is reported back so
+    // the caller can retry that one file with full content.
+    if (op.action === 'update' && Array.isArray(op.edits) && op.edits.length > 0) {
+      if (!existing) {
+        appliedOps.push({ path: op.path, action: 'edit_failed', reason: 'file does not exist — cannot edit; use action "create"' });
+        continue;
+      }
+      const base = typeof existing.content === 'string'
+        ? existing.content
+        : (await prisma.projectFile.findUnique({ where: { id: existing.id } }))?.content || '';
+      const { ok, content, failed } = applyEdits(base, op.edits);
+      if (!ok) {
+        appliedOps.push({ path: op.path, action: 'edit_failed', reason: failed.map((f) => f.reason).join('; '), failedCount: failed.length });
+        continue;
+      }
+      await prisma.projectFile.update({
+        where: { id: existing.id },
+        data: { content, language: detectLanguage(op.path) },
+      });
+      appliedOps.push({ path: op.path, action: 'update' });
       continue;
     }
 
