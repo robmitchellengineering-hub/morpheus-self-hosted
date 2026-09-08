@@ -10,10 +10,21 @@
 // excluded path (all of base44/, the lockfiles, every binary) would look
 // like a file the operator deleted and get removed from the real repo.
 
+import crypto from 'node:crypto';
+
 export const SELF_DEV_OWNER = 'robmitchellengineering-hub';
 export const SELF_DEV_REPO = 'morpheus-self-hosted';
 export const SELF_DEV_BRANCH = 'main';
 export const SELF_DEV_REPO_FULL_NAME = `${SELF_DEV_OWNER}/${SELF_DEV_REPO}`;
+
+// git's own blob object id: sha1("blob <bytelen>\0" + bytes). Matches the
+// `sha` on a GitHub tree entry, so importSelfDevRepo can skip re-fetching a
+// blob whose content it already has, and pushSelfDevToGithub can tell an
+// unchanged file from a modified one without fetching the remote blob.
+export function gitBlobSha(content) {
+  const buf = Buffer.from(content ?? '', 'utf8');
+  return crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+}
 
 const BINARY_EXTS = [
   '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf',

@@ -29,22 +29,13 @@ import { logUsage } from '../lib/projectUtils.js';
 import { getGithubToken, ghHeaders, ghJson, pushFiles, createPullRequest } from '../lib/github.js';
 import {
   SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_BRANCH, SELF_DEV_REPO_FULL_NAME,
-  shouldExclude,
+  shouldExclude, gitBlobSha,
 } from '../lib/selfDevRepo.js';
 import { SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 import { runVerifySelfDev } from './verifySelfDev.js';
 import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
-import crypto from 'node:crypto';
 
 const GH_API = 'https://api.github.com';
-
-// git's own blob object id: sha1("blob <bytelen>\0" + bytes). Lets us
-// compare a local file against the remote tree entry's sha without fetching
-// the remote blob content.
-function gitBlobSha(content) {
-  const buf = Buffer.from(content ?? '', 'utf8');
-  return crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
-}
 
 export default async function handler({ user, body }) {
   if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
