@@ -6,7 +6,7 @@
 // optional UI polish pass. See PORTING_GUIDE.md for the call-mapping table.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
-import { createSnapshot, applyFileOperations, logUsage } from '../lib/projectUtils.js';
+import { createSnapshot, applyFileOperations, applyEdits, logUsage } from '../lib/projectUtils.js';
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -236,7 +236,10 @@ You receive a build plan from the planning agent. Implement it precisely — wri
 Apply all the build configuration rules from your system instructions — package.json, README.md, build configs matching the compile target, etc.
 
 Return JSON with:
-- fileOperations: array of { path, content, action } where action is "create", "update", or "delete". For "delete", content can be empty.`;
+- fileOperations: an array of file operations.
+  - action "create": include the full \`content\` of the new file.
+  - action "delete": \`content\` can be empty.
+  - action "update": include the full corrected \`content\` of the file. For a LARGE existing file where you're making a targeted change, you MAY instead return \`edits\`: an array of { find, replace }, where \`find\` is an EXACT snippet copied verbatim from the file's CURRENT content (include enough surrounding lines that it appears exactly ONCE in the file) and \`replace\` is what that snippet becomes. Omit \`content\` when you use \`edits\`. A \`find\` that doesn't match the file exactly is discarded and the file is left unchanged — so copy current content precisely, and never guess.`;
 
 // 2026-09-03 (Rob, after two rounds of raising/removing the per-call token
 // cap still hit OUTPUT_TRUNCATED on a real build): the actual fix isn't a
@@ -709,18 +712,26 @@ OPERATOR SAYS: ${message}`;
 
     // ── Phase 2: Coder implements the plan (only if code is needed) ────────────
     let appliedOps = [];
+    let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
     let polishCount = 0;
     let coderModel;
     let reviewerModel;
     let reviewSummary;
     let reviewIssues = [];
     if (needsCode && plannerResult.plan) {
+      // Nudge toward diff edits only where the coder is working against an
+      // existing, possibly-large file (self-dev / large project). A fresh
+      // build is almost all creates — leave it alone.
+      const diffModeNote = useScopedContext
+        ? '\n\nThis project already has working code. For any "update" to an existing file longer than ~60 lines, use `edits` (exact find/replace copied from the current content shown to you) rather than re-emitting the whole file — it is safer and cannot accidentally drop code you did not mention.'
+        : '';
+
       // coderPrompt (the full-plan version, no per-step file scoping) is kept
       // around for reviewAndRetry below — a critical-issue retry re-sends this
       // same base prompt plus the specific files that need fixing, so it needs
       // the complete, unscoped instructions rather than whichever chunk's
       // narrowed prompt happened to run last.
-      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
+      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
       const coderSchema = {
         type: 'object',
         properties: {
@@ -731,13 +742,20 @@ OPERATOR SAYS: ${message}`;
               properties: {
                 path: { type: 'string' },
                 content: { type: 'string' },
-                action: { type: 'string', enum: ['create', 'update', 'delete'] }
+                action: { type: 'string', enum: ['create', 'update', 'delete'] },
+                edits: {
+                  type: 'array',
+                  description: 'For a targeted "update" to a large file — used instead of content. Each { find, replace }: find is exact current text, replace is the new text.',
+                  items: {
+                    type: 'object',
+                    properties: { find: { type: 'string' }, replace: { type: 'string' } },
+                  },
+                },
               }
             }
           }
         }
       };
-
       const plannedFiles = Array.isArray(plannerResult.plannedFiles)
         ? plannerResult.plannedFiles.filter((p) => typeof p === 'string' && p)
         : [];
@@ -766,7 +784,7 @@ OPERATOR SAYS: ${message}`;
             .map((f) => `--- ${f.path} (current content) ---\n${f.content}`)
             .join('\n\n');
           const chunkCurrentBlock = chunkCurrent ? `\n\nCURRENT CONTENT OF THE FILE(S) FOR THIS STEP:\n${chunkCurrent}` : '';
-          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. Full content for each, never partial.`;
+          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
           const chunkCoder = await invokeAI({
             userId: user.id,
             prompt: chunkPrompt,
@@ -817,6 +835,60 @@ OPERATOR SAYS: ${message}`;
       // verbatim so the app never lands with raw unstyled HTML.
       if ((project.compile_target || 'source') === 'web-app' && !isSelfDev && !fileOps.some((op) => op.path === 'styles.css')) {
         fileOps.unshift({ path: 'styles.css', content: DESIGN_SYSTEM_CSS, action: 'create' });
+      }
+
+      // ── Resolve diff edits to full content BEFORE review ──────────────────
+      // A coder `update` may carry `edits` (find/replace) instead of full
+      // content. Apply them here, against each file's current content, so
+      // the reviewer sees the real end state (not a diff it can't
+      // syntax-check) and applyFileOperations only ever writes plain
+      // content. An edit that doesn't match is NOT applied — the file is
+      // retried once with full content instead.
+      const editFailures = [];
+      if (fileOps.some((op) => Array.isArray(op.edits) && op.edits.length > 0)) {
+        const curContent = new Map(files.map((f) => [f.path, f.content ?? '']));
+        const resolved = [];
+        for (const op of fileOps) {
+          if (op.action === 'update' && Array.isArray(op.edits) && op.edits.length > 0) {
+            if (!curContent.has(op.path)) { editFailures.push({ path: op.path, reason: 'file does not exist yet' }); continue; }
+            const { ok, content, failed } = applyEdits(curContent.get(op.path), op.edits);
+            if (!ok) { editFailures.push({ path: op.path, reason: failed.map((f) => f.reason).join('; ') }); continue; }
+            curContent.set(op.path, content); // so a 2nd edit op for the same file stacks
+            resolved.push({ path: op.path, action: 'update', content });
+          } else {
+            resolved.push(op);
+          }
+        }
+        fileOps = resolved;
+      }
+      // One targeted retry for files whose edits didn't match — ask for full
+      // content this time, with the file's real current content in hand.
+      if (editFailures.length > 0) {
+        stages.start('retry_coder');
+        const failPaths = [...new Set(editFailures.map((f) => f.path))];
+        editFailPaths = failPaths;
+        const curBlock = failPaths
+          .map((p) => files.find((f) => f.path === p))
+          .filter(Boolean)
+          .map((f) => `--- ${f.path} (current content) ---\n${f.content}`)
+          .join('\n\n');
+        try {
+          const retry = await invokeAI({
+            userId: user.id,
+            prompt: `${coderPrompt}\n\nYour \`edits\` for these file(s) did not match the current content and were NOT applied: ${editFailures.map((f) => `${f.path} (${f.reason})`).join('; ')}.\n\nCURRENT CONTENT:\n${curBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${failPaths.join(', ')}. Return each as action "update" with the FULL corrected \`content\` — no edits this time.`,
+            schema: coderSchema,
+            fileUrls,
+            role: 'coder',
+            maxTokens: 64000,
+          });
+          const retryOps = (Array.isArray(retry.result.fileOperations) ? retry.result.fileOperations : [])
+            .filter((op) => op.path && failPaths.includes(op.path) && typeof op.content === 'string');
+          fileOps.push(...retryOps);
+          editFailPaths = failPaths.filter((p) => !retryOps.some((op) => op.path === p));
+        } catch (err) {
+          console.error('[chatWithMorpheus] edit-failure retry failed:', err.message);
+        }
+        stages.done('retry_coder');
       }
 
       // ── Phase 3: Reviewer checks the output before commit ──────────────────
@@ -890,6 +962,16 @@ OPERATOR SAYS: ${message}`;
     let fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
     if (polishCount > 0) {
       fullReply += `\n\n// POLISH: refined styling on ${polishCount} file(s).`;
+    }
+    // Surface any file whose diff edit never landed (matched nothing, and
+    // the full-content retry didn't produce it either) so the operator
+    // knows it's unchanged rather than assuming it was edited.
+    const unresolved = [...new Set([
+      ...editFailPaths,
+      ...appliedOps.filter((op) => op.action === 'edit_failed').map((op) => op.path),
+    ])];
+    if (unresolved.length > 0) {
+      fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
     }
     await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: fullReply } });
 
