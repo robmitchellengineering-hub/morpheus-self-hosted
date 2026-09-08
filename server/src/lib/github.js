@@ -229,7 +229,13 @@ export async function createRepo(token, repoName, isPrivate, { autoInit = true }
 // this makes is create + update + delete in one shot. Used by
 // pushSelfDevToGithub.js; empty/absent for every other caller (compile
 // pipeline, uploadToGithub), which only ever add/update.
-export async function pushFiles(token, repoFullName, files, commitMessage, { isNewRepo = false, deletePaths = [] } = {}) {
+//
+// `targetBranch` (optional): commit onto this branch instead of the repo's
+// default branch. If it doesn't exist yet it's created from `baseBranch`
+// (or the default branch) head first — so pushSelfDevToGithub.js can land a
+// change on a fresh `self-dev/<ts>` branch for a PR instead of straight on
+// main. Absent for every other caller, which always target the default branch.
+export async function pushFiles(token, repoFullName, files, commitMessage, { isNewRepo = false, deletePaths = [], targetBranch = null, baseBranch = null } = {}) {
   const h = ghHeaders(token);
 
   if (isNewRepo) {
@@ -275,7 +281,28 @@ export async function pushFiles(token, repoFullName, files, commitMessage, { isN
   // Get the repo's default branch
   const repoRes = await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h });
   const repoData = await ghJson(repoRes);
-  const branch = repoData.default_branch || 'main';
+  const defaultBranch = repoData.default_branch || 'main';
+  const branch = targetBranch || defaultBranch;
+
+  // Pushing to a non-default branch that doesn't exist yet: create it from
+  // baseBranch (or the default branch) head so the commit below has a parent.
+  if (targetBranch && targetBranch !== defaultBranch) {
+    const existingRef = await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, { headers: h });
+    if (existingRef.status === 404) {
+      const fromBranch = baseBranch || defaultBranch;
+      const baseRefData = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${fromBranch}`, { headers: h }));
+      const baseSha = baseRefData.object?.sha;
+      if (!baseSha) throw new Error(`Could not read ${repoFullName}@${fromBranch} to branch ${branch} from`);
+      const createRefRes = await fetch(`${GH_API}/repos/${repoFullName}/git/refs`, {
+        method: 'POST', headers: h,
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha }),
+      });
+      // 422 = ref already exists (a race with a concurrent push) — fine.
+      if (!createRefRes.ok && createRefRes.status !== 422) {
+        throw new Error(`Failed to create branch ${branch}: ${(await ghJson(createRefRes)).message || createRefRes.status}`);
+      }
+    }
+  }
 
   // Get the branch ref's latest commit — retry; same race as the tree step below.
   let parentSha = null;
@@ -472,6 +499,96 @@ export async function revertCommit(token, repoFullName, commitSha) {
   if (!updateRefRes.ok) throw new Error(`Failed to move ${branch} to the revert commit: ${(await ghJson(updateRefRes)).message || updateRefRes.status}`);
 
   return { commitSha: newCommit.sha, revertedToSha: parentSha, branch };
+}
+
+// ── Pull requests (self-dev "push to a branch, auto-merge on green") ────────
+// pushSelfDevToGithub.js's default path lands a change on a `self-dev/<ts>`
+// branch and opens a PR instead of committing straight to main; mergeSelfDevPr.js
+// then polls the PR's checks and squash-merges it once they pass. Branch
+// protection / GitHub-native auto-merge isn't available on this repo (private,
+// free plan), so Morpheus does the poll-and-merge itself with these helpers.
+
+export async function createPullRequest(token, repoFullName, { head, base, title, body }) {
+  const h = ghHeaders(token);
+  const res = await fetch(`${GH_API}/repos/${repoFullName}/pulls`, {
+    method: 'POST', headers: h,
+    body: JSON.stringify({ head, base, title, body }),
+  });
+  const data = await ghJson(res);
+  if (!res.ok) {
+    throw Object.assign(new Error(`Failed to open PR ${head} → ${base}: ${data.message || res.status}`), { status: res.status, details: data });
+  }
+  return { number: data.number, url: data.html_url, headSha: data.head?.sha, headRef: data.head?.ref };
+}
+
+// Combined check state for a PR: merges the Checks API (check-runs — GitHub
+// Actions, Netlify) and the older commit-status API (some integrations still
+// post there) into one verdict: 'merged' | 'failed' | 'pending' | 'passing'.
+export async function getPullRequestChecks(token, repoFullName, prNumber) {
+  const h = ghHeaders(token);
+  const pr = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}/pulls/${prNumber}`, { headers: h }));
+  if (pr.merged) {
+    return { state: 'merged', prNumber, mergedSha: pr.merge_commit_sha, headRef: pr.head?.ref };
+  }
+  const headSha = pr.head?.sha;
+  const base = {
+    prNumber, headSha, headRef: pr.head?.ref, createdAt: pr.created_at,
+    mergeable: pr.mergeable, mergeableState: pr.mergeable_state,
+  };
+  if (!headSha) return { ...base, state: 'pending', checks: [] };
+
+  const [checkRuns, status] = await Promise.all([
+    ghJson(await fetch(`${GH_API}/repos/${repoFullName}/commits/${headSha}/check-runs`, { headers: h })),
+    ghJson(await fetch(`${GH_API}/repos/${repoFullName}/commits/${headSha}/status`, { headers: h })),
+  ]);
+
+  const runs = checkRuns.check_runs || [];
+  const OK = ['success', 'neutral', 'skipped'];
+  const runsPending = runs.filter((r) => r.status !== 'completed');
+  const runsFailed = runs.filter((r) => r.status === 'completed' && !OK.includes(r.conclusion));
+
+  const statuses = status.statuses || [];
+  const statusFailed = statuses.filter((s) => s.state === 'failure' || s.state === 'error');
+  const statusPending = statuses.filter((s) => s.state === 'pending');
+
+  const checks = [
+    ...runs.map((r) => ({ name: r.name, status: r.status, conclusion: r.conclusion })),
+    ...statuses.map((s) => ({ name: s.context, status: s.state === 'pending' ? 'in_progress' : 'completed', conclusion: s.state === 'pending' ? null : s.state })),
+  ];
+  const totalChecks = runs.length + statuses.length;
+
+  if (runsFailed.length || statusFailed.length) {
+    return { ...base, state: 'failed', checks, failing: [...runsFailed.map((r) => r.name), ...statusFailed.map((s) => s.context)] };
+  }
+  if (runsPending.length || statusPending.length) {
+    return { ...base, state: 'pending', checks };
+  }
+  return { ...base, state: 'passing', checks, noChecks: totalChecks === 0 };
+}
+
+export async function mergePullRequest(token, repoFullName, prNumber, { method = 'squash', commitTitle, commitMessage } = {}) {
+  const h = ghHeaders(token);
+  const res = await fetch(`${GH_API}/repos/${repoFullName}/pulls/${prNumber}/merge`, {
+    method: 'PUT', headers: h,
+    body: JSON.stringify({
+      merge_method: method,
+      ...(commitTitle ? { commit_title: commitTitle } : {}),
+      ...(commitMessage ? { commit_message: commitMessage } : {}),
+    }),
+  });
+  const data = await ghJson(res);
+  if (!res.ok) {
+    throw Object.assign(new Error(`Merge of PR #${prNumber} failed: ${data.message || res.status}`), { status: res.status, details: data });
+  }
+  return { merged: !!data.merged, mergeCommitSha: data.sha };
+}
+
+// Delete a branch ref. 204 = deleted, 422 = already gone — both fine for the
+// "tidy up the merged self-dev branch" use.
+export async function deleteBranch(token, repoFullName, branch) {
+  const h = ghHeaders(token);
+  const res = await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, { method: 'DELETE', headers: h });
+  return { ok: res.status === 204 || res.status === 422, status: res.status };
 }
 
 // List all repos owned by the authenticated user (paginated, 100/page).

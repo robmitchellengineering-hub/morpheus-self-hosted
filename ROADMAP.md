@@ -14,12 +14,12 @@ Goal: develop Morpheus inside Morpheus's own chat/plan/code/review workspace
 instead of an external editor + git + local testing. Self-dev is a singleton
 admin-only `Project` (`project_type: 'self_dev'`) that mirrors this repo.
 
-**Loop today:** sync → plan/code/review → verify → push → watch → revert
+**Loop today:** sync → plan/code/review → verify → push (→ PR → auto-merge on green checks) → watch → revert
 
 | Tier | Item | Status | Where |
 |---|---|---|---|
 | 1.1 | Pre-push verification (esbuild transform + bundle from real entry points) | ✅ done | `server/src/functions/verifySelfDev.js` |
-| 1.2 | Push to a branch + auto-merge on green verify (instead of straight to `main`) | ⬜ next | — |
+| 1.2 | Push to a branch + auto-merge on green verify (instead of straight to `main`) | ✅ done | `server/src/functions/pushSelfDevToGithub.js` (PR branch), `server/src/functions/mergeSelfDevPr.js` (poll checks + squash-merge) |
 | 1.3 | One-click revert of the last push (tree-swap, 409 guard if `main` moved) | ✅ done | `server/src/functions/revertSelfDevPush.js`, `server/src/lib/github.js` `revertCommit` |
 | 1.4 | Auto-diagnose failed deploys (poll Northflank, pull logs into a fix turn) | ✅ done | `src/pages/SelfDev.jsx` deploy watcher |
 | 2.5 | Repo research pass before planning (iterative investigate loop, ≤16 files / ≤3 rounds) | ✅ done | `server/src/functions/chatWithMorpheus.js` `researchRepo()` |

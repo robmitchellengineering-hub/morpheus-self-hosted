@@ -1,7 +1,13 @@
-// Self-dev "PUSH TO PRODUCTION": pushes the current state of the singleton
-// self_dev workspace to the REAL morpheus-self-hosted repo/branch. This is
-// the actual deploy trigger — Northflank + Netlify both auto-build from a
-// push to that branch, no PR step.
+// Self-dev "PUSH TO PRODUCTION": ships the current state of the singleton
+// self_dev workspace to the REAL morpheus-self-hosted repo.
+//
+// Default path (2026-09-09): land the change on a throwaway `self-dev/<ts>`
+// branch and open a PR. Netlify builds a deploy preview as a second gate
+// over the local esbuild verify, and mergeSelfDevPr.js squash-merges to main
+// once every check is green — so main (which Northflank + Netlify deploy
+// production from) only ever moves via a verified merge, and a broken change
+// never reaches a deploy. `force` (verify override / hotfix) or
+// `directToMain:true` commits straight to main, the original behaviour.
 //
 // How it decides what to push:
 //  1. Diff the local workspace (ProjectFile rows) against the remote git
@@ -20,12 +26,12 @@
 //     push = one deploy, not one deploy per changed file.
 import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
-import { getGithubToken, ghHeaders, ghJson, pushFiles } from '../lib/github.js';
+import { getGithubToken, ghHeaders, ghJson, pushFiles, createPullRequest } from '../lib/github.js';
 import {
   SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_BRANCH, SELF_DEV_REPO_FULL_NAME,
   shouldExclude,
 } from '../lib/selfDevRepo.js';
-import { runGenerateSelfDevManual, SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
+import { SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 import { runVerifySelfDev } from './verifySelfDev.js';
 import crypto from 'node:crypto';
 
@@ -125,50 +131,96 @@ export default async function handler({ user, body }) {
     treeTruncated && 'deletions skipped (remote tree truncated)',
   ].filter(Boolean).join(', ');
 
-  const { branch, commitSha } = await pushFiles(
-    token,
-    SELF_DEV_REPO_FULL_NAME,
-    changed,
+  // Whether this push touches a file the SELF-DEV & ADMIN MANUAL is built
+  // from — the manual is regenerated after the change actually lands (here
+  // for a direct push, in mergeSelfDevPr.js after the PR merges).
+  const touchedManualSource = changed.some((c) => SELF_DEV_ADMIN_MANUAL_SOURCES.includes(c.path))
+    || deletePaths.some((p) => SELF_DEV_ADMIN_MANUAL_SOURCES.includes(p));
+
+  // `force` (verify override / hotfix) or an explicit `directToMain` commits
+  // straight to main, the original behaviour. The default now lands the
+  // change on a throwaway branch and opens a PR — Netlify builds a deploy
+  // preview as a second gate over local esbuild, and mergeSelfDevPr.js
+  // squash-merges once every check is green. main only ever moves via that
+  // merge, so a bad change never reaches production or a deploy.
+  const directToMain = force || body?.directToMain === true;
+
+  if (directToMain) {
+    const { branch, commitSha } = await pushFiles(
+      token, SELF_DEV_REPO_FULL_NAME, changed,
+      `Self-dev: ${summary} (via Morpheus)`,
+      { isNewRepo: false, deletePaths },
+    );
+    const commitUrl = `https://github.com/${SELF_DEV_REPO_FULL_NAME}/commit/${commitSha}`;
+
+    await prisma.chatMessage.create({
+      data: {
+        created_by_id: user.id, project_id: projectId, role: 'morpheus',
+        content: `Pushed straight to ${SELF_DEV_REPO_FULL_NAME}@${branch} (${commitSha.substring(0, 7)}): ${summary}. Northflank and Netlify redeploy from here. Welcome to the real world.`,
+      },
+    });
+    await logUsage(user.id, 'self_dev_push', projectId, project.name, {
+      mode: 'direct', createCount, updateCount, deleteCount: deletePaths.length, commitSha,
+    });
+    if (touchedManualSource) {
+      try {
+        const { runGenerateSelfDevManual } = await import('./generateSelfDevManual.js');
+        await runGenerateSelfDevManual(user, 'auto:push');
+      } catch (err) {
+        console.error('[pushSelfDevToGithub] manual regen failed (push succeeded):', err.message);
+      }
+    }
+    return {
+      mode: 'direct',
+      fileCount: changed.length + deletePaths.length,
+      createCount, updateCount, deleteCount: deletePaths.length,
+      commitUrl, repoFullName: SELF_DEV_REPO_FULL_NAME, branch, commitSha,
+    };
+  }
+
+  // ── Default: push to a self-dev/<ts> branch + open a PR ──────────────────
+  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '').replace('T', '-');
+  const prBranch = `self-dev/${ts}`;
+  const { commitSha } = await pushFiles(
+    token, SELF_DEV_REPO_FULL_NAME, changed,
     `Self-dev: ${summary} (via Morpheus)`,
-    { isNewRepo: false, deletePaths },
+    { isNewRepo: false, deletePaths, targetBranch: prBranch, baseBranch: SELF_DEV_BRANCH },
   );
 
-  const commitUrl = `https://github.com/${SELF_DEV_REPO_FULL_NAME}/commit/${commitSha}`;
+  const pr = await createPullRequest(token, SELF_DEV_REPO_FULL_NAME, {
+    head: prBranch,
+    base: SELF_DEV_BRANCH,
+    title: `Self-dev: ${summary}`,
+    body: [
+      'Automated self-dev change via Morpheus.',
+      '',
+      `- ${createCount} new, ${updateCount} changed, ${deletePaths.length} deleted`,
+      `- Local esbuild verification passed before this PR was opened`,
+      '',
+      "Morpheus is polling this PR's checks and will squash-merge it automatically once they're green. If a check fails, main is left untouched.",
+    ].join('\n'),
+  });
 
   await prisma.chatMessage.create({
     data: {
-      created_by_id: user.id,
-      project_id: projectId,
-      role: 'morpheus',
-      content: `Pushed to ${SELF_DEV_REPO_FULL_NAME}@${branch} (${commitSha.substring(0, 7)}): ${summary}. Northflank and Netlify are watching this branch — production redeploys from here. Welcome to the real world.`,
+      created_by_id: user.id, project_id: projectId, role: 'morpheus',
+      content: `Opened PR #${pr.number} (\`${prBranch}\`) with ${summary}. Netlify is building a deploy preview now — I'll squash-merge to main automatically once every check passes. ${pr.url}`,
     },
   });
 
   await logUsage(user.id, 'self_dev_push', projectId, project.name, {
-    createCount, updateCount, deleteCount: deletePaths.length, commitSha,
+    mode: 'pr', prNumber: pr.number, createCount, updateCount, deleteCount: deletePaths.length, headSha: commitSha,
   });
 
-  // Auto-refresh the SELF-DEV & ADMIN MANUAL when this push touched a file it
-  // is built from — best-effort, never fails the push (which already
-  // succeeded above).
-  const touchedManualSource = changed.some((c) => SELF_DEV_ADMIN_MANUAL_SOURCES.includes(c.path))
-    || deletePaths.some((p) => SELF_DEV_ADMIN_MANUAL_SOURCES.includes(p));
-  if (touchedManualSource) {
-    try {
-      await runGenerateSelfDevManual(user, 'auto:push');
-    } catch (err) {
-      console.error('[pushSelfDevToGithub] auto-regenerating the self-dev/admin manual failed (push itself succeeded):', err.message);
-    }
-  }
-
   return {
+    mode: 'pr',
+    prNumber: pr.number,
+    prUrl: pr.url,
+    branch: prBranch,
+    headSha: commitSha,
     fileCount: changed.length + deletePaths.length,
-    createCount,
-    updateCount,
-    deleteCount: deletePaths.length,
-    commitUrl,
+    createCount, updateCount, deleteCount: deletePaths.length,
+    touchedManualSource,
     repoFullName: SELF_DEV_REPO_FULL_NAME,
-    branch,
-    commitSha,
   };
 }
