@@ -17,8 +17,36 @@ const GH_API = 'https://api.github.com';
 
 // ── Per-user connection (was githubConnection.ts) ───────────────────────────
 
-// Returns { login, token } for the given user's linked GitHub account, or
-// null if they haven't connected one. `token` is decrypted from storage.
+// Returns { login, token, accessToken } for the given user's linked GitHub
+// account, or null if they haven't connected one. `token`/`accessToken` are
+// both the same decrypted value — two names for the same field.
+//
+// 2026-09-08 fix (Rob's AnyPDF compile kept failing with no Swift-specific
+// error to chase): Morpheus's own self-dev feature had rewritten this whole
+// file on 2026-09-06 (commit fb2020f, "Self-dev update via Morpheus") to a
+// much smaller version built only for pushSelfDevToGithub.js's needs —
+// dropping getGithubToken/createRepo/pushFiles/ghHeaders/ghJson/getGhUser/
+// encryptAndSetGithubSecret entirely and changing this function's return
+// shape from {login, token} to {login, accessToken}. That silently broke
+// EVERY other caller of this file the moment it deployed: compileProject.js,
+// saveCompiledArtifacts.js, getCompileStatus.js, deployBackend.js,
+// generateRebuildDoc.js, checkGithubConnection.js, importFromGithub.js, and
+// workflow-renderer.js all import functions that version no longer
+// exported — a hard ESM "does not provide an export named ..." failure at
+// import time, not a build-specific bug. That's a highly plausible
+// explanation for "still failing to compile" reports with no new
+// Swift-specific error to show for it: every compile attempt would have
+// died before ever reaching GitHub Actions.
+// This session's cleanupBuildRepos.js work (github.js edits earlier
+// 2026-09-08) re-uploaded the pre-2026-09-06 version of this file wholesale
+// via GitHub's browser-upload flow (this sandbox has no working git
+// push/pull, so there was no diff/merge step to catch the conflict) — which
+// fixed the callers above but broke pushSelfDevToGithub.js the same way in
+// reverse, since IT now expects getGithubConnection().accessToken plus
+// fetchRemoteTree/createOrUpdateFile/deleteFile (added below). Exposing both
+// `token` and `accessToken` here, and keeping every function from both
+// versions of this file, is the actual fix: every real caller's needs are a
+// strict superset now, not a set of trade-offs between them.
 //
 // If this connection was made while the GitHub OAuth App's "Token
 // expiration" optional feature was on, `expires_at` is set and the access
@@ -41,7 +69,8 @@ export async function getGithubConnection(userId) {
     // surface a clear error if it's actually dead, same as before this fix.
   }
 
-  return { login: row.login, token: decrypt(row.access_token) };
+  const token = decrypt(row.access_token);
+  return { login: row.login, token, accessToken: token };
 }
 
 async function tryRefreshGithubToken(row) {
@@ -74,7 +103,7 @@ async function tryRefreshGithubToken(row) {
           : row.refresh_token_expires_at,
       },
     });
-    return { login: updated.login, token: data.access_token };
+    return { login: updated.login, token: data.access_token, accessToken: data.access_token };
   } catch (err) {
     console.log(`GitHub token refresh error for connection ${row.id}: ${err.message}`);
     return null;
@@ -423,6 +452,75 @@ export async function deleteRepo(token, repoFullName) {
   if (res.status === 204) return { ok: true };
   const err = await ghJson(res).catch(() => ({}));
   return { ok: false, status: res.status, error: err.message || `HTTP ${res.status}` };
+}
+
+// ── Self-dev push helpers (added by the 2026-09-06 self-dev rewrite of this
+// file, restored here 2026-09-08 alongside everything above rather than
+// dropped -- see getGithubConnection's comment for the full story) ─────────
+// pushSelfDevToGithub.js diffs the local self-dev workspace against the real
+// repo's tree and pushes only what changed, one Contents-API call per file,
+// rather than compileProject.js's blob/tree/commit batch approach above --
+// appropriate for self-dev's usual small, incremental change sets.
+
+// Fetch the full recursive tree for a branch, returning only blobs.
+// Each entry: { path, sha, mode }
+export async function fetchRemoteTree(owner, repo, branch, token) {
+  const h = ghHeaders(token);
+  const res = await fetch(`${GH_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, { headers: h });
+  const data = await ghJson(res);
+  if (!res.ok) {
+    const err = new Error(data.message || `GitHub API ${res.status}`);
+    err.status = res.status;
+    err.details = data;
+    throw err;
+  }
+  return (data.tree || [])
+    .filter((entry) => entry.type === 'blob')
+    .map((entry) => ({ path: entry.path, sha: entry.sha, mode: entry.mode || '100644' }));
+}
+
+// Create or update a single file via the Contents API. `content` may be a
+// Buffer (binary) or a string (text) -- both base64-encode the same way.
+// `sha` is required when updating an existing path, omitted when creating.
+export async function createOrUpdateFile(owner, repo, path, content, branch, token, message, sha) {
+  const h = ghHeaders(token);
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const body = {
+    message,
+    content: Buffer.isBuffer(content) ? content.toString('base64') : Buffer.from(content, 'utf-8').toString('base64'),
+    branch,
+  };
+  if (sha) body.sha = sha;
+  const res = await fetch(`${GH_API}/repos/${owner}/${repo}/contents/${encodedPath}`, {
+    method: 'PUT', headers: h, body: JSON.stringify(body),
+  });
+  const data = await ghJson(res);
+  if (!res.ok) {
+    const err = new Error(data.message || `GitHub API ${res.status}`);
+    err.status = res.status;
+    err.details = data;
+    throw err;
+  }
+  return data;
+}
+
+// Delete a single file via the Contents API. `sha` (the file's current blob
+// sha) is required by GitHub's delete endpoint to avoid racing a concurrent
+// edit.
+export async function deleteFile(owner, repo, path, branch, sha, token, message) {
+  const h = ghHeaders(token);
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(`${GH_API}/repos/${owner}/${repo}/contents/${encodedPath}`, {
+    method: 'DELETE', headers: h, body: JSON.stringify({ message, branch, sha }),
+  });
+  const data = await ghJson(res);
+  if (!res.ok) {
+    const err = new Error(data.message || `GitHub API ${res.status}`);
+    err.status = res.status;
+    err.details = data;
+    throw err;
+  }
+  return data;
 }
 
 // Encrypt a secret value with a repository's public key and set it as a
