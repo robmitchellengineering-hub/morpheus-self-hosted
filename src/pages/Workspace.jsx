@@ -277,9 +277,21 @@ export default function Workspace() {
         // no longer "record what happened" (automatic now) — it's "ask
         // Morpheus to actually act on what's left," so it only needs to say
         // that.
+        //
+        // 2026-09-08 fix (Rob): the needsUserAction-false branch used to say
+        // "the diagnosis above auto-fixed everything it found — please
+        // recompile," which reads to Morpheus as "nothing left to do" even
+        // when the build is still actively failing (diagnosis can report
+        // autoFixed while the underlying compile keeps erroring). Rob's own
+        // manual messages that actually get results are phrased as a direct
+        // investigate-and-fix instruction ("look at the ai fix log files and
+        // fix the issues it wont compile"), not a status recap. Both branches
+        // below now tell Morpheus to go look at the logs/files itself and fix
+        // what's actually wrong, instead of asserting a state Morpheus should
+        // just take on faith.
         const msg = diagnosis.needsUserAction?.length
-          ? `Please fix the remaining issues from the diagnosis above so the ${ws.currentProject?.compile_target || 'binary'} compile succeeds.`
-          : `The diagnosis above auto-fixed everything it found — please recompile and let me know if anything still fails.`;
+          ? `Look at the AI fix log and the current files yourself and fix the remaining issues so the ${ws.currentProject?.compile_target || 'binary'} compile succeeds.`
+          : `It's still not compiling. Look at the AI fix log above and the current files yourself — don't assume they're already correct — and fix whatever's actually wrong so the ${ws.currentProject?.compile_target || 'binary'} compile succeeds.`;
         setShowCompile(false);
         setMobileTab('chat');
         ws.sendMessage(msg);
