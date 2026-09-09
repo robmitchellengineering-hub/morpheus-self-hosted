@@ -89,7 +89,6 @@ export async function runUpdateSelfDevFeature(user, featureId, action, args = {}
 }
 
 export default async function handler({ user, body }) {
-  if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
   const { featureId, action } = body || {};
   if (!featureId || !action) throw Object.assign(new Error('featureId and action required'), { status: 400 });
   return runUpdateSelfDevFeature(user, featureId, action, body);
