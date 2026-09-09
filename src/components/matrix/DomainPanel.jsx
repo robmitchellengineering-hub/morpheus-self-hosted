@@ -1,0 +1,241 @@
+import { useState, useEffect, useCallback } from 'react';
+import { X, Globe, Loader2, Check, Copy, Activity, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { base44 } from '@/api/base44Client';
+
+// Domain connection + live-site status (2026-09-09). The site lives on the
+// operator's own host, served from their own repo — Morpheus stores only
+// the domain string (.morpheus/site.json). This panel: set the domain +
+// host, get the exact DNS records to add, and run an on-demand live check
+// (DNS / HTTPS / TLS cert / redirect). Continuous uptime monitoring is a
+// separate feature (a scheduled GitHub Action in the operator's repo).
+
+const HOST_LABELS = {
+  netlify: 'Netlify',
+  vercel: 'Vercel',
+  'cloudflare-pages': 'Cloudflare Pages',
+  'github-pages': 'GitHub Pages',
+  other: 'Other / my own server',
+};
+
+function CopyBtn({ text }) {
+  const [hit, setHit] = useState(false);
+  return (
+    <button
+      onClick={() => { navigator.clipboard?.writeText(text); setHit(true); setTimeout(() => setHit(false), 1200); }}
+      className="text-primary/40 hover:text-primary shrink-0"
+      title="Copy"
+    >
+      {hit ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+}
+
+function StatusRow({ label, ok, children }) {
+  const Icon = ok == null ? Activity : ok ? ShieldCheck : ShieldAlert;
+  const color = ok == null ? 'text-primary/50' : ok ? 'text-green-400/90' : 'text-red-400/90';
+  return (
+    <div className="flex items-start gap-2 text-[11px]">
+      <Icon size={13} className={`${color} mt-0.5 shrink-0`} />
+      <div className="min-w-0">
+        <span className="text-primary/70">{label}</span>
+        <div className={`${color} leading-snug`}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
+  const [state, setState] = useState(null); // { site, hosts, dnsRecords, tlsNote, githubRepo, isWeb }
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [checkErr, setCheckErr] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const { data } = await base44.functions.invoke('getProjectSite', { projectId });
+      setState(data);
+      setDraft(JSON.parse(JSON.stringify(data.site)));
+    } catch (e) {
+      setErr(e?.data?.error || e.message);
+    }
+  }, [projectId]);
+
+  useEffect(() => { if (open) { setSaved(false); setErr(null); setStatus(null); setCheckErr(null); load(); } }, [open, load]);
+
+  if (!open) return null;
+
+  const set = (key, value) => { setDraft((d) => ({ ...d, [key]: value })); setSaved(false); };
+
+  const save = async () => {
+    setSaving(true); setErr(null);
+    try {
+      const { data } = await base44.functions.invoke('saveProjectSite', { projectId, site: draft });
+      setState((s) => ({ ...s, site: data.site, dnsRecords: data.dnsRecords, tlsNote: data.tlsNote }));
+      setDraft(JSON.parse(JSON.stringify(data.site)));
+      setSaved(true);
+      onSetChange?.(!!data.site.domain);
+    } catch (e) {
+      setErr(e?.data?.error || e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runCheck = async () => {
+    setChecking(true); setCheckErr(null); setStatus(null);
+    try {
+      const { data } = await base44.functions.invoke('checkSiteStatus', { projectId });
+      setStatus(data);
+    } catch (e) {
+      setCheckErr(e?.data?.error || e.message);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const d = draft;
+  const hosts = state?.hosts || Object.keys(HOST_LABELS);
+  const records = state?.dnsRecords || [];
+  const savedDomain = state?.site?.domain;
+  const dirty = d && state && JSON.stringify(d) !== JSON.stringify(state.site);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/80" onClick={onClose}>
+      <div className="bg-background border-l border-primary/40 w-full max-w-md h-full flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 shrink-0">
+          <div className="flex items-center gap-2">
+            <Globe size={16} className="text-primary" />
+            <span className="text-primary font-display tracking-wider text-sm">DOMAIN</span>
+          </div>
+          <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
+        </div>
+
+        <p className="text-[11px] text-primary/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+          Your production domain and where it's hosted. The builder uses it for canonical / Open Graph / sitemap URLs.
+          Morpheus stores only the domain — your site stays on your host, served from your repo.
+          {state && state.isWeb === false && <span className="text-yellow-500/80"> This project isn't a web-app target.</span>}
+        </p>
+
+        {!d && <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
+
+        {d && (
+          <>
+            <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-5">
+              {/* Domain */}
+              <section>
+                <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Domain</div>
+                <input value={d.domain} onChange={(e) => set('domain', e.target.value)}
+                  placeholder="valiantmusic.com.au"
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50" />
+                <div className="text-[10px] text-primary/40 mt-1">Registrable domain, no https:// and no www — the www / apex choice is below.</div>
+              </section>
+
+              {/* Host */}
+              <section>
+                <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Hosted on</div>
+                <select value={d.host} onChange={(e) => set('host', e.target.value)}
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50">
+                  <option value="">— choose —</option>
+                  {hosts.map((h) => <option key={h} value={h}>{HOST_LABELS[h] || h}</option>)}
+                </select>
+                {d.host && d.host !== 'other' && (
+                  <input value={d.hostSubdomain} onChange={(e) => set('hostSubdomain', e.target.value)}
+                    placeholder={`your host subdomain (e.g. my-site.${d.host === 'github-pages' ? 'github.io' : d.host === 'vercel' ? 'vercel.app' : d.host === 'cloudflare-pages' ? 'pages.dev' : 'netlify.app'})`}
+                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50 mt-2" />
+                )}
+              </section>
+
+              {/* Canonical */}
+              <section>
+                <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Canonical hostname</div>
+                <div className="flex border border-primary/30 w-max">
+                  {[['apex', d.domain || 'example.com'], ['www', `www.${d.domain || 'example.com'}`]].map(([v, lbl]) => (
+                    <button key={v} onClick={() => set('canonical', v)}
+                      className={`text-[10px] px-2.5 py-1 font-mono transition-colors ${d.canonical === v ? 'text-black bg-primary font-bold' : 'text-primary/60 hover:text-primary'}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[10px] text-primary/40 mt-1">The other one 301-redirects here.</div>
+              </section>
+
+              {/* DNS records */}
+              {records.length > 0 && !dirty && (
+                <section>
+                  <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">DNS records to add</div>
+                  <div className="border border-primary/15">
+                    {records.map((r, i) => (
+                      <div key={i} className="px-2 py-1.5 border-b border-primary/10 last:border-0">
+                        <div className="flex items-center gap-2 font-mono text-[10px] text-primary/80">
+                          <span className="text-primary/50 w-12 shrink-0">{r.type}</span>
+                          <span className="w-8 shrink-0">{r.name}</span>
+                          <span className="flex-1 min-w-0 break-all">{r.value}</span>
+                          <CopyBtn text={r.value} />
+                        </div>
+                        {r.note && <div className="text-[9px] text-primary/35 mt-0.5 pl-14">{r.note}</div>}
+                      </div>
+                    ))}
+                  </div>
+                  {state.tlsNote && <div className="text-[10px] text-primary/45 mt-1.5 leading-snug">{state.tlsNote}</div>}
+                </section>
+              )}
+              {dirty && <div className="text-[10px] text-yellow-500/70">Save to refresh the DNS records for this host.</div>}
+
+              {/* Live check */}
+              {savedDomain && !dirty && (
+                <section className="border border-primary/15 bg-black/20 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[11px] text-primary/60 tracking-widest uppercase">Live status</div>
+                    <button onClick={runCheck} disabled={checking}
+                      className="flex items-center gap-1 px-2 py-1 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary text-[10px] disabled:opacity-40">
+                      {checking ? <Loader2 size={11} className="animate-spin" /> : <Activity size={11} />} CHECK NOW
+                    </button>
+                  </div>
+                  {checkErr && <div className="text-red-400 text-[10px] border border-red-500/30 px-2 py-1">{checkErr}</div>}
+                  {status && (
+                    <div className="space-y-2">
+                      <div className={`text-[11px] font-bold ${status.live ? 'text-green-400' : 'text-red-400'}`}>
+                        {status.live ? `● LIVE — ${status.canonicalHost}` : '● NOT FULLY LIVE'}
+                      </div>
+                      <StatusRow label="DNS" ok={status.dns.apex.resolves || status.dns.www.resolves}>
+                        apex {status.dns.apex.resolves ? (status.dns.apex.a[0] || status.dns.apex.cname[0] || 'resolves') : 'no record'} · www {status.dns.www.resolves ? (status.dns.www.cname[0] || status.dns.www.a[0] || 'resolves') : 'no record'}
+                      </StatusRow>
+                      <StatusRow label="HTTPS" ok={status.http[status.redirect.expected].ok}>
+                        {status.http[status.redirect.expected].status ?? '—'} · {status.http[status.redirect.expected].responseTimeMs}ms
+                        {status.http[status.redirect.expected].error ? ` · ${status.http[status.redirect.expected].error}` : ''}
+                      </StatusRow>
+                      <StatusRow label="TLS certificate" ok={status.tls.ok}>
+                        {status.tls.ok
+                          ? `valid · ${status.tls.daysLeft} days left${status.tls.issuer ? ` · ${status.tls.issuer}` : ''}`
+                          : (status.tls.error || 'invalid')}
+                      </StatusRow>
+                      <StatusRow label={`Redirect to ${status.redirect.expected}`} ok={status.redirect.ok}>
+                        {status.redirect.ok == null ? 'could not determine' : status.redirect.ok ? 'other hostname redirects correctly' : 'the other hostname does not redirect here'}
+                      </StatusRow>
+                      <div className="text-[9px] text-primary/30">checked {new Date(status.checkedAt).toLocaleTimeString()}</div>
+                    </div>
+                  )}
+                  {!status && !checkErr && !checking && <div className="text-[10px] text-primary/40">Run a check once DNS has had time to propagate (5–30 min after adding records).</div>}
+                </section>
+              )}
+            </div>
+
+            <div className="p-3 border-t border-primary/20 shrink-0 flex items-center gap-2">
+              <button onClick={save} disabled={saving} className="flex items-center gap-1.5 px-4 py-1.5 border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[11px] disabled:opacity-40">
+                {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Globe size={12} />}
+                {saved ? 'SAVED' : 'SAVE DOMAIN'}
+              </button>
+              <span className="text-[10px] text-primary/40">Written to <span className="font-mono">.morpheus/site.json</span>.</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
