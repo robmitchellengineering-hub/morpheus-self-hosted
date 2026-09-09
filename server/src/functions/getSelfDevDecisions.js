@@ -1,13 +1,16 @@
-// Read the self-dev decisions log (Command Deck Tier 2 #7) for the DECISIONS
-// tab in SelfDevHistoryModal. Returns { migrated, decisions } — migrated:false
-// when server/prisma/add-self-dev-decisions-table.sql hasn't been run yet.
+// Read a project's decisions log (originally self-dev Tier 2 #7, now every
+// project). Returns { migrated, decisions } — migrated:false when
+// server/prisma/add-self-dev-decisions-table.sql hasn't been run yet. Scoped
+// to the caller's own project.
 import { prisma } from '../db.js';
 import { isMissingDecisionsTable } from '../lib/selfDevDecisions.js';
 
 export default async function handler({ user, body, query }) {
-  if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
   const projectId = body?.projectId || query?.projectId;
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
+
+  const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
+  if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
 
   try {
     const decisions = await prisma.selfDevDecision.findMany({

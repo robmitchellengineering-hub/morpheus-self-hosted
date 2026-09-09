@@ -617,10 +617,10 @@ export default async function handler({ user, body, res }) {
     ? featureContextBlock(await getActiveFeature(projectId).catch(() => null))
     : '';
 
-  // Self-dev decisions log (Tier 2 #7): the last few "what changed / why"
-  // entries, so the planner builds on past decisions instead of contradicting
-  // them. Build turns only; best-effort.
-  const decisionsBlock = (isSelfDev && mode === 'build')
+  // Decisions log (originally self-dev Tier 2 #7, now every project): the last
+  // few "what changed / why" entries, so the planner builds on past decisions
+  // instead of contradicting them. Target-agnostic. Build turns only.
+  const decisionsBlock = (mode === 'build')
     ? await recentDecisionsBlock(projectId).catch(() => '')
     : '';
 
@@ -751,8 +751,8 @@ OPERATOR SAYS: ${message}`;
           needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
           plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false)' },
           plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' },
-          decisionSummary: { type: 'string', description: 'SELF-DEV BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
-          decisionRationale: { type: 'string', description: 'SELF-DEV BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' }
+          decisionSummary: { type: 'string', description: 'CODE BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
+          decisionRationale: { type: 'string', description: 'CODE BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' }
         }
       },
       fileUrls,
@@ -990,12 +990,13 @@ OPERATOR SAYS: ${message}`;
       // reviewAndRetry emits its own 'reviewer' / 'retry_coder' /
       // 'retry_reviewer' stage events via stages.onProgress — see reviewer.js.
       if (fileOps.length > 0) {
-        // Caller-impact manifest (A3): for a self-dev change to an EXISTING
-        // shared file, tell the reviewer every file that imports it and what
-        // it pulls — so it can check the change doesn't break a caller it
-        // can't see (the github.js incident class).
+        // Caller-impact manifest (A3): for a change to an EXISTING shared
+        // file, tell the reviewer every file that imports it and what it
+        // pulls — so it can check the change doesn't break a caller it
+        // can't see (the github.js incident class). ES-module analysis, so
+        // it's a no-op for Python / Arduino / Go / etc. projects.
         let reviewContext = contextBlock;
-        if (isSelfDev) {
+        {
           const rev = buildReverseImports(files);
           const impacted = fileOps
             .filter((op) => op.action !== 'create' && files.some((f) => f.path === op.path))
@@ -1112,10 +1113,9 @@ OPERATOR SAYS: ${message}`;
       ...toolchain,
     });
 
-    // Decisions log (Tier 2 #7): record what this self-dev change did + why,
-    // so later planning turns build on it. Only when the change actually
-    // touched files. `ref` is stamped later, once the change lands.
-    if (isSelfDev && appliedOps.length > 0) {
+    // Decisions log: record what this change did + why, so later planning
+    // turns build on it. Any project, only when files actually changed.
+    if (appliedOps.length > 0) {
       await recordDecision(
         user.id, projectId,
         plannerResult.decisionSummary || plannerResult.plan?.split('\n')[0] || reply,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, History, RotateCcw, ScrollText, Copy, Check, Download, Loader2, MessageSquare, Camera, Wrench, Bot, Search } from 'lucide-react';
+import { X, History, RotateCcw, ScrollText, Copy, Check, Download, Loader2, MessageSquare, Camera, Wrench, Bot, Search, ListChecks } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import JSZip from 'jszip';
 import ChatHistoryTab from '@/components/matrix/ChatHistoryTab';
@@ -74,6 +74,14 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
   const [expandedId, setExpandedId] = useState(null);
   const [logSearch, setLogSearch] = useState('');
   const [snapSearch, setSnapSearch] = useState('');
+  const [decisions, setDecisions] = useState(null); // null = not loaded
+
+  useEffect(() => {
+    if (!open || tab !== 'decisions' || decisions || !project?.id) return;
+    base44.functions.invoke('getSelfDevDecisions', { projectId: project.id })
+      .then(({ data }) => setDecisions(data))
+      .catch(() => setDecisions({ migrated: true, decisions: [] }));
+  }, [open, tab, decisions, project?.id]);
 
   const loadLogs = useCallback(async () => {
     if (!project?.id) return;
@@ -161,6 +169,9 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
           </button>
           <button onClick={() => setTab('chat')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'chat' ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-primary/75 hover:text-primary/70'}`}>
             <Search size={14} /> CHAT
+          </button>
+          <button onClick={() => setTab('decisions')} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs tracking-wider transition-colors ${tab === 'decisions' ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-primary/75 hover:text-primary/70'}`}>
+            <ListChecks size={14} /> DECISIONS
           </button>
         </div>
 
@@ -270,6 +281,23 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
           </>
         ) : tab === 'chat' ? (
           <ChatHistoryTab project={project} />
+        ) : tab === 'decisions' ? (
+          <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-2">
+            {!decisions && <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+            {decisions && !decisions.migrated && (
+              <p className="text-primary/75 italic text-sm">Decisions log not available yet on this deployment.</p>
+            )}
+            {decisions?.migrated && decisions.decisions.length === 0 && (
+              <p className="text-primary/75 italic text-sm">No decisions logged yet. Each build that changes files records what it did and why here, and the recent ones are fed back to the planner.</p>
+            )}
+            {decisions?.decisions?.map((d) => (
+              <div key={d.id} className="border border-primary/20 p-3">
+                <p className="text-primary text-sm">{d.summary}</p>
+                {d.rationale && d.rationale !== '—' && <p className="text-primary/60 text-xs mt-1 leading-relaxed">{d.rationale}</p>}
+                <p className="text-primary/40 text-[11px] mt-1.5">{new Date(d.created_date).toLocaleString()}{d.ref ? ` · ${d.ref}` : ''}</p>
+              </div>
+            ))}
+          </div>
         ) : (
           <>
             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-primary/10 shrink-0">
