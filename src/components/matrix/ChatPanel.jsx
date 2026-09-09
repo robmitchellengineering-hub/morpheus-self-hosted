@@ -251,12 +251,12 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
               <Hammer size={12} /> BUILD
             </button>
           </div>
-          {typeof onSetWebAccess === 'function' && mode === 'build' && (
+          {typeof onSetWebAccess === 'function' && (
             <button
               onClick={() => onSetWebAccess(!webAccess)}
               disabled={loading}
               className={`flex items-center gap-1.5 text-[11px] tracking-wider border px-2.5 py-1 shrink-0 transition-colors disabled:opacity-40 ${webAccess ? 'text-black bg-primary font-bold border-primary' : 'text-primary/60 hover:text-primary border-primary/30'}`}
-              title="Let Morpheus search the web and read pasted URLs before planning — for current library/API info the project files don't have"
+              title="Let Morpheus search the web and read pasted URLs before answering — for current library/API info the project files don't have. Free sources always; a Gemini key adds Google-grounded search."
             >
               <Globe size={12} /> WEB
             </button>

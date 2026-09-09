@@ -35,8 +35,10 @@ export function useWorkspace() {
   // so it deliberately doesn't need a DB column or migration.
   const [chatMode, setChatModeState] = useState('build');
   // WEB toggle (2026-09-09) — let Morpheus search the web + read pasted URLs
-  // before planning a build. Persisted per-project like chatMode; the backend
-  // no-ops it unless TAVILY_API_KEY is set. Default off.
+  // before a build or context turn. Persisted per-project like chatMode.
+  // Free sources (Wikipedia / arXiv / llms.txt / direct fetch) always work; a
+  // Gemini key adds grounded search. Defaults on for self-dev (set in
+  // selectProject), off elsewhere.
   const [webAccess, setWebAccessState] = useState(false);
 
   const loadProjects = useCallback(async () => {
@@ -68,8 +70,12 @@ export function useWorkspace() {
     try {
       const saved = localStorage.getItem(`morpheus_chat_mode_${project.id}`);
       setChatModeState(saved === 'context' || saved === 'build' ? saved : 'build');
-      setWebAccessState(localStorage.getItem(`morpheus_web_access_${project.id}`) === '1');
-    } catch { setChatModeState('build'); setWebAccessState(false); }
+      // Self-dev defaults web research ON (it routinely needs current
+      // library/API docs); other projects default off. An explicit saved
+      // choice always wins.
+      const savedWeb = localStorage.getItem(`morpheus_web_access_${project.id}`);
+      setWebAccessState(savedWeb === '1' ? true : savedWeb === '0' ? false : project.project_type === 'self_dev');
+    } catch { setChatModeState('build'); setWebAccessState(project.project_type === 'self_dev'); }
     await Promise.all([loadFiles(project.id), loadMessages(project.id), loadSnapshots(project.id)]);
   }, [loadFiles, loadMessages, loadSnapshots]);
 
