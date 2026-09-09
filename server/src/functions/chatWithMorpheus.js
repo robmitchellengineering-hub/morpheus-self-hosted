@@ -574,11 +574,14 @@ export default async function handler({ user, body, res }) {
   let researchNotes = '';
   let webNotes = '';
   let shownPaths = files.map((f) => f.path); // full send => everything is "shown"
-  // A self-dev BUILD turn with no manual pins gets the iterative research
-  // pass (researchRepo) instead of a one-shot file guess — deferred into the
-  // stream below so it can show as its own 'research' stage. Everything else
-  // resolves its context here, before streaming starts.
-  const deferResearch = useScopedContext && isSelfDev && mode === 'build' && !manualPins;
+  // A scoped-context BUILD turn with no manual pins gets the iterative
+  // research pass (researchRepo) instead of a one-shot file guess — deferred
+  // into the stream below so it can show as its own 'research' stage. Self-dev
+  // always scopes; an ordinary project reaches this once it's past the size
+  // threshold, which is exactly when a one-shot "guess the relevant files"
+  // starts missing cross-file impact. Everything else resolves its context
+  // here, before streaming starts.
+  const deferResearch = useScopedContext && mode === 'build' && !manualPins;
   // Web research (a search + any pasted URLs) runs in the stream as its own
   // stage when the operator turns the WEB toggle on (body.webAccess) and the
   // deployment has TAVILY_API_KEY set. The pre-check decides whether to
@@ -736,17 +739,20 @@ OPERATOR SAYS: ${message}`;
     }
 
     // ── Phase 0b: Repo research — investigate the codebase before planning ──
-    // Only for a self-dev build with no manual pins (deferResearch). Turns
-    // "guess 6 relevant files" into "actually read the call graph".
+    // Any scoped-context build with no manual pins (deferResearch): self-dev,
+    // or an ordinary project past the size threshold. Turns "guess the
+    // relevant files" into "actually read the call graph". A smaller repo
+    // needs a smaller budget than the self-dev monorepo.
     if (deferResearch) {
       stages.start('research');
-      const research = await researchRepo(user.id, files, message);
+      const research = await researchRepo(user.id, files, message,
+        isSelfDev ? {} : { maxRounds: 2, maxFiles: 10 });
       researchNotes = research.notes || '';
       const built = buildScopedFilesContext(files, research.readPaths || [], orientation);
       filesContext = built.text;
       shownPaths = built.shown;
       shownPathSet = new Set(shownPaths);
-      scopedNote = scopedContextNote(built.shown, { selfDev: true, autoSelected: true });
+      scopedNote = scopedContextNote(built.shown, { selfDev: isSelfDev, autoSelected: true });
       contextBlock = assembleContextBlock();
       stages.done('research');
     }
