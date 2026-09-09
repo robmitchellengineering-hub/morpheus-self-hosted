@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Mic, MicOff, Volume2, VolumeX, Play, Loader2, Paperclip, X, Undo2, AlertTriangle, Wrench, Bot, MessagesSquare, Hammer } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, Play, Loader2, Paperclip, X, Undo2, AlertTriangle, Wrench, Bot, MessagesSquare, Hammer, Globe } from 'lucide-react';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { base44 } from '@/api/base44Client';
@@ -14,7 +14,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // so it can't push the send row off-screen on a small viewport.
 const MAX_TEXTAREA_HEIGHT = 240;
 
-export default function ChatPanel({ messages, loading, pipelineStages, onSend, onRevert, canRevert, onAutonomous, chatMode, onSetChatMode }) {
+export default function ChatPanel({ messages, loading, pipelineStages, onSend, onRevert, canRevert, onAutonomous, chatMode, onSetChatMode, webAccess, onSetWebAccess }) {
   // CONTEXT ⇄ BUILD toggle is only rendered when the host wired it up
   // (Workspace / Self-Dev). Undefined chatMode => treat as 'build', hide the
   // strip entirely — keeps every other ChatPanel caller unchanged.
@@ -272,6 +272,16 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
               <Hammer size={12} /> BUILD
             </button>
           </div>
+          {typeof onSetWebAccess === 'function' && mode === 'build' && (
+            <button
+              onClick={() => onSetWebAccess(!webAccess)}
+              disabled={loading}
+              className={`flex items-center gap-1.5 text-[11px] tracking-wider border px-2.5 py-1 shrink-0 transition-colors disabled:opacity-40 ${webAccess ? 'text-black bg-primary font-bold border-primary' : 'text-primary/60 hover:text-primary border-primary/30'}`}
+              title="Let Morpheus search the web and read pasted URLs before planning — for current library/API info the project files don't have"
+            >
+              <Globe size={12} /> WEB
+            </button>
+          )}
           <span className="text-[10px] text-primary/50 leading-tight">
             {mode === 'context'
               ? '// chat & shape the plan — nothing gets built or written'

@@ -16,6 +16,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock } from '../lib/selfDevFeature.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
+import { webResearchConfigured, searchKey, webSearch, webFetch, URL_RE } from '../lib/webResearch.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
 // doin step by step in the chat window") — this handler streams
@@ -30,6 +31,7 @@ import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js
 //    both return full file content just like the main Coder call, so they
 //    share its 'coder' timing bucket rather than needing their own).
 const STAGE_LABELS = {
+  web: 'Searching the web',
   research: 'Investigating the codebase',
   planner: 'Planning the build',
   coder: 'Writing the code',
@@ -39,6 +41,7 @@ const STAGE_LABELS = {
   polish: 'Polishing the UI',
 };
 const STAGE_ROLE = {
+  web: 'planner',
   research: 'planner',
   planner: 'planner',
   coder: 'coder',
@@ -310,6 +313,64 @@ Return a JSON object with a "paths" array containing up to ${limit} file paths f
   }
 }
 
+// Web research pass. Before planning, if web access is on and the request
+// could benefit from CURRENT external info the project files won't have
+// (library/API versions, current best practices, an error message, a URL the
+// operator pasted), search the web and fetch any pasted URLs, and feed a
+// findings block into the planner + coder. Best-effort — any failure returns
+// '' and the build proceeds without it.
+async function researchWeb(userId, message, { onProgress } = {}) {
+  const key = searchKey();
+  if (!key) return '';
+
+  const blocks = [];
+  try {
+    // 1. Any URL the operator pasted — read it directly.
+    const urls = [...new Set((message.match(URL_RE) || []).map((u) => u.replace(/[.,;:)]+$/, '')))].slice(0, 2);
+    for (const url of urls) {
+      onProgress?.();
+      try {
+        const page = await webFetch(key, url);
+        blocks.push(`PAGE: ${page.url}\n${page.content}`);
+      } catch (e) {
+        blocks.push(`PAGE: ${url}\n(could not read this page: ${e.message})`);
+      }
+    }
+
+    // 2. Ask a cheap call whether — and what — to search for.
+    const decide = await invokeAI({
+      userId,
+      prompt: `You decide whether a build request needs a WEB SEARCH for current external information the project's own files could not contain — e.g. a library or API's current version/usage, a current best practice, the meaning of a specific error string, or docs for a named service.
+
+REQUEST: ${message}
+
+Return JSON: { "queries": ["...", "..."] } — 0 to 3 focused search queries. Return an empty array if the request is self-contained (a UI tweak, a rename, internal logic, anything answerable from the codebase alone). Do NOT search for general programming knowledge the coder already has.`,
+      schema: { type: 'object', properties: { queries: { type: 'array', items: { type: 'string' } } } },
+      role: 'planner',
+      maxTokens: 500,
+    });
+    const queries = (Array.isArray(decide.result?.queries) ? decide.result.queries : [])
+      .map((q) => String(q || '').trim()).filter(Boolean).slice(0, 3);
+
+    for (const q of queries) {
+      onProgress?.();
+      try {
+        const { answer, results } = await webSearch(key, q, { maxResults: 4 });
+        const lines = [`SEARCH: ${q}`];
+        if (answer) lines.push(`Summary: ${answer}`);
+        for (const r of results) lines.push(`- ${r.title} <${r.url}>\n  ${r.content}`);
+        blocks.push(lines.join('\n'));
+      } catch (e) {
+        blocks.push(`SEARCH: ${q}\n(search failed: ${e.message})`);
+      }
+    }
+  } catch (err) {
+    console.error('[researchWeb] failed:', err.message);
+  }
+
+  return blocks.length ? blocks.join('\n\n') : '';
+}
+
 // Repo research pass (Command Deck: self-dev replaces the dev loop, Tier 2
 // #5). Before the planner runs, let an agent actually investigate the repo:
 // it's shown the file tree + the request, asks to read files, and we feed
@@ -501,12 +562,18 @@ export default async function handler({ user, body, res }) {
   let filesContext;
   let scopedNote = '';
   let researchNotes = '';
+  let webNotes = '';
   let shownPaths = files.map((f) => f.path); // full send => everything is "shown"
   // A self-dev BUILD turn with no manual pins gets the iterative research
   // pass (researchRepo) instead of a one-shot file guess — deferred into the
   // stream below so it can show as its own 'research' stage. Everything else
   // resolves its context here, before streaming starts.
   const deferResearch = useScopedContext && isSelfDev && mode === 'build' && !manualPins;
+  // Web research (a search + any pasted URLs) runs in the stream as its own
+  // stage when the operator turns the WEB toggle on (body.webAccess) and the
+  // deployment has TAVILY_API_KEY set. The pre-check decides whether to
+  // actually search, so a self-contained request costs just one small call.
+  const deferWeb = mode === 'build' && body?.webAccess === true && webResearchConfigured();
 
   if (useScopedContext && !deferResearch) {
     let effectivePaths;
@@ -585,7 +652,7 @@ PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
 COMPILE TARGET: ${project.compile_target || 'source'}
 ${summaryBlock}
-${featureBlock}${decisionsBlock}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
+${featureBlock}${decisionsBlock}${webNotes ? `\nWEB RESEARCH (current external info found before planning — prefer this over stale assumptions):\n${webNotes}\n` : ''}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
 CURRENT FILES:
 ${filesContext}
 ${scopedNote}
@@ -594,9 +661,9 @@ CONVERSATION HISTORY:
 ${historyContext}
 ${designBlock}${compileAdapterBlock}
 OPERATOR SAYS: ${message}`;
-  // Fully resolved now unless the research pass still has to run (deferred
-  // into the stream); reassigned there.
-  let contextBlock = deferResearch ? '' : assembleContextBlock();
+  // Fully resolved now unless a research pass still has to run (repo and/or
+  // web — deferred into the stream); reassigned there.
+  let contextBlock = (deferResearch || deferWeb) ? '' : assembleContextBlock();
 
   // From here on the response streams: zero or more {type:'stage',...}
   // progress events (see makeStageEmitter above) followed by exactly one
@@ -647,7 +714,15 @@ OPERATOR SAYS: ${message}`;
       return;
     }
 
-    // ── Phase 0: Research — investigate the repo before planning ────────────
+    // ── Phase 0a: Web research — search + read pasted URLs before planning ──
+    if (deferWeb) {
+      stages.start('web');
+      webNotes = await researchWeb(user.id, message);
+      contextBlock = assembleContextBlock();
+      stages.done('web');
+    }
+
+    // ── Phase 0b: Repo research — investigate the codebase before planning ──
     // Only for a self-dev build with no manual pins (deferResearch). Turns
     // "guess 6 relevant files" into "actually read the call graph".
     if (deferResearch) {

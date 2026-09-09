@@ -703,7 +703,7 @@ export default function SelfDev() {
       {isMobile ? (
         <div className="flex-1 flex overflow-hidden overscroll-none min-h-0">
           <div className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} flex-1 min-w-0 min-h-0`}>
-            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={handleSend} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} />
+            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={handleSend} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} />
           </div>
           <div className={`${mobileTab === 'files' ? 'flex' : 'hidden'} flex-1 flex-col min-w-0 min-h-0`}>
             <FileTree files={ws.files} selectedFile={ws.selectedFile} onSelect={openFile} contextPaths={contextPaths} onToggleContext={toggleContext} />
@@ -716,7 +716,7 @@ export default function SelfDev() {
       ) : (
         <PanelGroup direction="horizontal" className="flex-1 overflow-hidden min-h-0">
           <Panel defaultSize={33} minSize={15} className="min-w-0 overflow-hidden">
-            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={handleSend} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} />
+            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={handleSend} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} />
           </Panel>
           <PanelResizeHandle className="relative w-2 bg-primary/10 hover:bg-primary/30 transition-colors cursor-col-resize shrink-0 group">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-primary/30 group-hover:bg-primary rounded-full transition-colors" />
