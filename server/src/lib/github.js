@@ -501,6 +501,73 @@ export async function revertCommit(token, repoFullName, commitSha) {
   return { commitSha: newCommit.sha, revertedToSha: parentSha, branch };
 }
 
+// List recent commits on a repo's default branch — for the DOMAIN panel's
+// rollback picker. Each entry: { sha, shortSha, message, author, date, url }.
+export async function listRecentCommits(token, repoFullName, { perPage = 20 } = {}) {
+  const h = ghHeaders(token);
+  const repoData = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h }));
+  const branch = repoData.default_branch || 'main';
+  const res = await fetch(`${GH_API}/repos/${repoFullName}/commits?sha=${branch}&per_page=${Math.min(perPage, 100)}`, { headers: h });
+  const data = await ghJson(res);
+  if (!res.ok) throw Object.assign(new Error(data.message || `GitHub API ${res.status}`), { status: res.status });
+  return {
+    branch,
+    headSha: data[0]?.sha || null,
+    commits: (data || []).map((c) => ({
+      sha: c.sha,
+      shortSha: String(c.sha).slice(0, 7),
+      message: String(c.commit?.message || '').split('\n')[0].slice(0, 120),
+      author: c.commit?.author?.name || c.author?.login || 'unknown',
+      date: c.commit?.author?.date || null,
+      url: c.html_url,
+    })),
+  };
+}
+
+// Roll the default branch back to the exact tree of `targetSha`, as ONE new
+// commit whose parent is the current head — no force-push, no history
+// rewrite, fully auditable. The connected host redeploys on the push. Use
+// this (not revertCommit) when rolling back past more than the last commit.
+export async function rollbackToCommit(token, repoFullName, targetSha) {
+  const h = ghHeaders(token);
+
+  const repoData = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h }));
+  const branch = repoData.default_branch || 'main';
+
+  const refData = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, { headers: h }));
+  const headSha = refData.object?.sha;
+  if (!headSha) throw Object.assign(new Error(`Could not read ${repoFullName}@${branch} head`), { status: 502 });
+  if (headSha === targetSha) {
+    throw Object.assign(new Error('That is already the current state of the branch.'), { status: 400 });
+  }
+
+  const targetRes = await fetch(`${GH_API}/repos/${repoFullName}/commits/${targetSha}`, { headers: h });
+  const target = await ghJson(targetRes);
+  if (!targetRes.ok) throw Object.assign(new Error(target.message || `Commit ${targetSha} not found`), { status: targetRes.status });
+  const targetTreeSha = target.commit?.tree?.sha;
+  if (!targetTreeSha) throw Object.assign(new Error('Could not read that commit’s file tree.'), { status: 502 });
+
+  const targetSummary = String(target.commit?.message || '').split('\n')[0].slice(0, 80);
+  const newCommitRes = await fetch(`${GH_API}/repos/${repoFullName}/git/commits`, {
+    method: 'POST', headers: h,
+    body: JSON.stringify({
+      message: `Roll back to ${String(targetSha).slice(0, 7)} — "${targetSummary}"\n\nRestores every file to the state at ${String(targetSha).slice(0, 7)}. Forward commit on ${branch}; nothing is rewritten.`,
+      tree: targetTreeSha,
+      parents: [headSha],
+    }),
+  });
+  const newCommit = await ghJson(newCommitRes);
+  if (!newCommitRes.ok) throw Object.assign(new Error(`Failed to create rollback commit: ${newCommit.message || newCommitRes.status}`), { status: 502 });
+
+  const updateRefRes = await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${branch}`, {
+    method: 'PATCH', headers: h,
+    body: JSON.stringify({ sha: newCommit.sha }),
+  });
+  if (!updateRefRes.ok) throw Object.assign(new Error(`Failed to move ${branch}: ${(await ghJson(updateRefRes)).message || updateRefRes.status}`), { status: 502 });
+
+  return { branch, commitSha: newCommit.sha, rolledBackToSha: targetSha, previousHeadSha: headSha };
+}
+
 // ── Pull requests (self-dev "push to a branch, auto-merge on green") ────────
 // pushSelfDevToGithub.js's default path lands a change on a `self-dev/<ts>`
 // branch and opens a PR instead of committing straight to main; mergeSelfDevPr.js
