@@ -20,6 +20,7 @@ import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { shouldExclude } from '../lib/selfDevRepo.js';
 import { findBrokenImports } from '../lib/importGraph.js';
+import { checkSyntax } from '../lib/syntaxCheck.js';
 import * as esbuild from 'esbuild';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -70,18 +71,11 @@ export async function runVerifySelfDev(user) {
 
     const codeFiles = files.filter((f) => CODE_EXT.test(f.path) && !shouldExclude(f.path));
 
-    // Pass 1 — per-file transform (syntax / JSX).
-    await Promise.all(codeFiles.map(async (f) => {
-      try {
-        await esbuild.transform(f.content ?? '', {
-          loader: /tsx?$/.test(f.path) ? (f.path.endsWith('x') ? 'tsx' : 'ts') : 'jsx',
-          jsx: 'automatic',
-          sourcefile: f.path,
-        });
-      } catch (e) {
-        for (const err of e.errors || [{ text: e.message }]) errors.push({ phase: 'syntax', ...fmtLoc(err, root), file: err.location?.file || f.path });
-      }
-    }));
+    // Pass 1 — per-file transform (syntax / JSX). Shared with the regular
+    // build gate (lib/syntaxCheck.js).
+    for (const e of await checkSyntax(codeFiles.map((f) => ({ path: f.path, content: f.content ?? '' })))) {
+      errors.push({ phase: 'syntax', file: e.file, line: e.line, column: e.column, text: e.text });
+    }
 
     // `base44/` is a real directory in the repo that a couple of frontend
     // files legitimately import from (e.g. BackendPanel.jsx →
