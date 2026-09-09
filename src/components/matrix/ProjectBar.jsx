@@ -1,4 +1,4 @@
-import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe, FileJson } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { generateManual } from '@/lib/generateManual';
 import BuildStamp from './BuildStamp';
@@ -8,7 +8,7 @@ import SheetSelect from './SheetSelect';
 
 const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
-export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
   return (
     <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
       {/* Row 1: project identity + primary action */}
@@ -99,6 +99,13 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           <HelpHint id="domain" title="Domain" body="Your production domain and host. The builder uses it for canonical, Open Graph and sitemap URLs. Get the exact DNS records to add at your registrar, and run an on-demand live check — DNS, HTTPS, TLS certificate, redirects. Your site stays on your host.">
             <button onClick={onDomain} className={`${btnBase} ${domainSet ? 'text-primary border-primary/60' : ''}`}>
               <Globe size={14} /> DOMAIN
+            </button>
+          </HelpHint>
+        )}
+        {onContent && (
+          <HelpHint id="content" title="Content" body="Edit the site's text and lists — headlines, copy, services, team, FAQ — without a rebuild. The builder keeps this content in content/*.json in your repo; edits here commit straight back and your host redeploys.">
+            <button onClick={onContent} className={btnBase}>
+              <FileJson size={14} /> CONTENT
             </button>
           </HelpHint>
         )}

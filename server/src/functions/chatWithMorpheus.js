@@ -21,6 +21,7 @@ import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
 import { publishPromptBlock } from '../lib/publishChecklist.js';
 import { getForms, formsPromptBlock } from '../lib/projectForms.js';
 import { getSite, sitePromptBlock } from '../lib/projectSite.js';
+import { cmsPromptBlock } from '../lib/projectCms.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -723,6 +724,13 @@ export default async function handler({ user, body, res }) {
     ? sitePromptBlock(await getSite(projectId).catch(() => null))
     : '';
 
+  // Light CMS: on a web build, tell the coder to externalise editable copy
+  // and lists into content/*.json so the operator can change them from the
+  // CONTENT panel without a rebuild. Web builds only, non-self-dev.
+  const cmsBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+    ? cmsPromptBlock()
+    : '';
+
   const assembleContextBlock = () => `
 PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
@@ -735,7 +743,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}
+${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.
