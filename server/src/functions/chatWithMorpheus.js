@@ -20,6 +20,7 @@ import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
 import { publishPromptBlock } from '../lib/publishChecklist.js';
 import { getForms, formsPromptBlock } from '../lib/projectForms.js';
+import { getSite, sitePromptBlock } from '../lib/projectSite.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -714,6 +715,14 @@ export default async function handler({ user, body, res }) {
     ? formsPromptBlock(await getForms(projectId).catch(() => null))
     : '';
 
+  // Production domain: once the operator sets .morpheus/site.json, hand the
+  // coder the real origin so absolute URLs (og:image, canonical, sitemap
+  // <loc>, JSON-LD) are correct instead of guessed. Web builds only,
+  // non-self-dev.
+  const siteBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+    ? sitePromptBlock(await getSite(projectId).catch(() => null))
+    : '';
+
   const assembleContextBlock = () => `
 PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
@@ -726,7 +735,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}
+${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.
