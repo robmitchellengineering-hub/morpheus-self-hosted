@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Globe, Loader2, Check, Copy, Activity, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { X, Globe, Loader2, Check, Copy, Activity, ShieldCheck, ShieldAlert, History, RotateCcw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // Domain connection + live-site status (2026-09-09). The site lives on the
@@ -8,6 +8,10 @@ import { base44 } from '@/api/base44Client';
 // host, get the exact DNS records to add, and run an on-demand live check
 // (DNS / HTTPS / TLS cert / redirect). Continuous uptime monitoring is a
 // separate feature (a scheduled GitHub Action in the operator's repo).
+//
+// Rollback: the connected repo IS the deploy history (the host redeploys on
+// push). "Roll back" lands one forward commit restoring every file to the
+// chosen state — no force-push, no history rewrite.
 
 const HOST_LABELS = {
   netlify: 'Netlify',
@@ -16,6 +20,15 @@ const HOST_LABELS = {
   'github-pages': 'GitHub Pages',
   other: 'Other / my own server',
 };
+
+function relTime(iso) {
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 2592000) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
 function CopyBtn({ text }) {
   const [hit, setHit] = useState(false);
@@ -53,6 +66,10 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState(null);
   const [checkErr, setCheckErr] = useState(null);
+  const [history, setHistory] = useState(null); // { connected, commits, branch, headSha, repo }
+  const [historyErr, setHistoryErr] = useState(null);
+  const [rollingBack, setRollingBack] = useState(null); // sha being rolled back to
+  const [rollbackDone, setRollbackDone] = useState(null); // { commitSha, rolledBackToSha }
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -63,9 +80,15 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
     } catch (e) {
       setErr(e?.data?.error || e.message);
     }
+    try {
+      const { data } = await base44.functions.invoke('getSiteHistory', { projectId });
+      setHistory(data);
+    } catch (e) {
+      setHistoryErr(e?.data?.error || e.message);
+    }
   }, [projectId]);
 
-  useEffect(() => { if (open) { setSaved(false); setErr(null); setStatus(null); setCheckErr(null); load(); } }, [open, load]);
+  useEffect(() => { if (open) { setSaved(false); setErr(null); setStatus(null); setCheckErr(null); setHistoryErr(null); setRollbackDone(null); load(); } }, [open, load]);
 
   if (!open) return null;
 
@@ -95,6 +118,21 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
       setCheckErr(e?.data?.error || e.message);
     } finally {
       setChecking(false);
+    }
+  };
+
+  const rollback = async (sha) => {
+    if (!window.confirm(`Roll the live site back to ${sha.slice(0, 7)}?\n\nThis lands one new commit on ${history?.branch || 'the branch'} that restores every file to that state. Your host will redeploy. Nothing is force-pushed or rewritten.`)) return;
+    setRollingBack(sha); setHistoryErr(null); setRollbackDone(null);
+    try {
+      const { data } = await base44.functions.invoke('rollbackSite', { projectId, targetSha: sha, confirm: true });
+      setRollbackDone(data);
+      const { data: h } = await base44.functions.invoke('getSiteHistory', { projectId });
+      setHistory(h);
+    } catch (e) {
+      setHistoryErr(e?.data?.error || e.message);
+    } finally {
+      setRollingBack(null);
     }
   };
 
@@ -224,6 +262,52 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                   {!status && !checkErr && !checking && <div className="text-[10px] text-primary/40">Run a check once DNS has had time to propagate (5–30 min after adding records).</div>}
                 </section>
               )}
+
+              {/* Deploy history + rollback */}
+              <section>
+                <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2 flex items-center gap-1.5"><History size={12} /> Deploy history</div>
+                {historyErr && <div className="text-red-400 text-[10px] border border-red-500/30 px-2 py-1 mb-2">{historyErr}</div>}
+                {rollbackDone && (
+                  <div className="text-[10px] text-green-400/90 border border-green-500/30 px-2 py-1.5 mb-2 leading-snug">
+                    Rolled back to {rollbackDone.rolledBackToSha.slice(0, 7)} as commit {rollbackDone.commitSha.slice(0, 7)}. Your host is redeploying now.
+                  </div>
+                )}
+                {!history && !historyErr && <div className="text-[10px] text-primary/40 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading commits…</div>}
+                {history && !history.connected && (
+                  <div className="text-[10px] text-primary/45 leading-snug">Connect this project to a GitHub repo (Export to GitHub) to see deploy history and roll back.</div>
+                )}
+                {history?.connected && (
+                  <>
+                    <div className="text-[10px] text-primary/40 mb-1.5">{history.repo} · {history.branch} — your host redeploys on every commit.</div>
+                    <div className="border border-primary/15 divide-y divide-primary/10">
+                      {history.commits.map((c) => {
+                        const isHead = c.sha === history.headSha;
+                        return (
+                          <div key={c.sha} className="px-2 py-1.5">
+                            <div className="flex items-start gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] text-primary/80 truncate">{c.message}</div>
+                                <div className="text-[9px] text-primary/35 font-mono">
+                                  {c.shortSha} · {c.author}{c.date ? ` · ${relTime(c.date)}` : ''}{isHead ? ' · LIVE' : ''}
+                                </div>
+                              </div>
+                              {isHead ? (
+                                <span className="text-[9px] text-green-400/70 shrink-0 mt-0.5">● current</span>
+                              ) : (
+                                <button onClick={() => rollback(c.sha)} disabled={!!rollingBack}
+                                  className="flex items-center gap-1 text-[9px] text-primary/60 hover:text-primary border border-primary/25 hover:border-primary/60 px-1.5 py-0.5 shrink-0 disabled:opacity-40">
+                                  {rollingBack === c.sha ? <Loader2 size={9} className="animate-spin" /> : <RotateCcw size={9} />} ROLL BACK
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[9px] text-primary/30 mt-1.5">Rollback lands a new commit that restores every file to that point — nothing is force-pushed or lost.</div>
+                  </>
+                )}
+              </section>
             </div>
 
             <div className="p-3 border-t border-primary/20 shrink-0 flex items-center gap-2">
