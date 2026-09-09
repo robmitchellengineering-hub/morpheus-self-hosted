@@ -301,12 +301,6 @@
   @keyframes route-fade-in { from { opacity: 0 } to { opacity: 1 } }
   .route-fade { animation: route-fade-in 0.18s ease-out; }
 
-  @keyframes review-flash {
-    0%, 100% { border-color: rgba(239,68,68,0.4); box-shadow: 0 0 0 rgba(239,68,68,0); }
-    50% { border-color: rgba(239,68,68,1); box-shadow: 0 0 14px rgba(239,68,68,0.55); }
-  }
-  .review-flash { animation: review-flash 1s ease-in-out infinite; }
-
   @keyframes enter-pulse {
     0%, 100% { box-shadow: 0 0 6px rgba(0,255,65,0.35), inset 0 0 4px rgba(0,255,65,0.2); border-color: rgba(0,255,65,0.6); }
     50% { box-shadow: 0 0 22px rgba(0,255,65,0.85), inset 0 0 10px rgba(0,255,65,0.5); border-color: rgba(0,255,65,1); }
