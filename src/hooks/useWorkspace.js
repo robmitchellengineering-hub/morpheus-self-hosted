@@ -34,6 +34,10 @@ export function useWorkspace() {
   // per-project in localStorage — a workflow preference, not project data,
   // so it deliberately doesn't need a DB column or migration.
   const [chatMode, setChatModeState] = useState('build');
+  // WEB toggle (2026-09-09) — let Morpheus search the web + read pasted URLs
+  // before planning a build. Persisted per-project like chatMode; the backend
+  // no-ops it unless TAVILY_API_KEY is set. Default off.
+  const [webAccess, setWebAccessState] = useState(false);
 
   const loadProjects = useCallback(async () => {
     const data = await base44.entities.Project.list('-created_date', 50);
@@ -64,7 +68,8 @@ export function useWorkspace() {
     try {
       const saved = localStorage.getItem(`morpheus_chat_mode_${project.id}`);
       setChatModeState(saved === 'context' || saved === 'build' ? saved : 'build');
-    } catch { setChatModeState('build'); }
+      setWebAccessState(localStorage.getItem(`morpheus_web_access_${project.id}`) === '1');
+    } catch { setChatModeState('build'); setWebAccessState(false); }
     await Promise.all([loadFiles(project.id), loadMessages(project.id), loadSnapshots(project.id)]);
   }, [loadFiles, loadMessages, loadSnapshots]);
 
@@ -73,6 +78,14 @@ export function useWorkspace() {
     setChatModeState(next);
     setCurrentProject((proj) => {
       if (proj) { try { localStorage.setItem(`morpheus_chat_mode_${proj.id}`, next); } catch { /* storage unavailable */ } }
+      return proj;
+    });
+  }, []);
+
+  const setWebAccess = useCallback((on) => {
+    setWebAccessState(!!on);
+    setCurrentProject((proj) => {
+      if (proj) { try { localStorage.setItem(`morpheus_web_access_${proj.id}`, on ? '1' : '0'); } catch { /* storage unavailable */ } }
       return proj;
     });
   }, []);
@@ -154,7 +167,7 @@ export function useWorkspace() {
             : s);
         });
       };
-      const res = await base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [], mode: chatMode }, onStage);
+      const res = await base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [], mode: chatMode, webAccess }, onStage);
       const morpheusMsg = { id: 'm-' + Date.now(), role: 'morpheus', content: res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
       if (res.data.fileOperations?.length > 0) {
@@ -347,5 +360,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
 }
