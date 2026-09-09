@@ -23,6 +23,7 @@ import { publishPromptBlock } from '../lib/publishChecklist.js';
 import { getForms, formsPromptBlock } from '../lib/projectForms.js';
 import { getSite, sitePromptBlock } from '../lib/projectSite.js';
 import { cmsPromptBlock } from '../lib/projectCms.js';
+import { getAnalytics, analyticsPromptBlock } from '../lib/projectAnalytics.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -734,6 +735,12 @@ export default async function handler({ user, body, res }) {
     ? cmsPromptBlock()
     : '';
 
+  // Analytics: once the operator picks a (cookieless, free) provider in the
+  // DOMAIN panel, hand the coder the exact <script> to embed in <head>.
+  const analyticsBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+    ? analyticsPromptBlock(await getAnalytics(projectId).catch(() => null))
+    : '';
+
   const assembleContextBlock = () => `
 PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
@@ -746,7 +753,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}
+${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}${analyticsBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Globe, Loader2, Check, Copy, Activity, ShieldCheck, ShieldAlert, History, RotateCcw } from 'lucide-react';
+import { X, Globe, Loader2, Check, Copy, Activity, ShieldCheck, ShieldAlert, History, RotateCcw, BarChart3 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // Domain connection + live-site status (2026-09-09). The site lives on the
@@ -29,6 +29,14 @@ function relTime(iso) {
   if (s < 2592000) return `${Math.floor(s / 86400)}d ago`;
   return new Date(iso).toLocaleDateString();
 }
+
+const A_FIELD_META = {
+  token: ['Beacon token', 'from Cloudflare → Web Analytics → your site'],
+  code: ['Site code', 'your GoatCounter subdomain, e.g. valiantmusic'],
+  domain: ['data-domain', 'e.g. valiantmusic.com.au'],
+  src: ['Script URL', 'https://your-instance/js/script.js'],
+  websiteId: ['Website ID', 'the UUID from your Umami dashboard'],
+};
 
 function CopyBtn({ text }) {
   const [hit, setHit] = useState(false);
@@ -73,6 +81,11 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
   const [monitorInterval, setMonitorInterval] = useState(15);
   const [monitorBusy, setMonitorBusy] = useState(null); // 'set' | 'off'
   const [monitorErr, setMonitorErr] = useState(null);
+  const [analytics, setAnalytics] = useState(null); // { analytics, providers, snippet, isWeb }
+  const [aDraft, setADraft] = useState(null);
+  const [aBusy, setABusy] = useState(false);
+  const [aSaved, setASaved] = useState(false);
+  const [aErr, setAErr] = useState(null);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -89,9 +102,16 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
     } catch (e) {
       setHistoryErr(e?.data?.error || e.message);
     }
+    try {
+      const { data } = await base44.functions.invoke('getProjectAnalytics', { projectId });
+      setAnalytics(data);
+      setADraft(JSON.parse(JSON.stringify(data.analytics)));
+    } catch (e) {
+      setAErr(e?.data?.error || e.message);
+    }
   }, [projectId]);
 
-  useEffect(() => { if (open) { setSaved(false); setErr(null); setStatus(null); setCheckErr(null); setHistoryErr(null); setRollbackDone(null); setMonitorErr(null); load(); } }, [open, load]);
+  useEffect(() => { if (open) { setSaved(false); setErr(null); setStatus(null); setCheckErr(null); setHistoryErr(null); setRollbackDone(null); setMonitorErr(null); setAErr(null); setASaved(false); load(); } }, [open, load]);
 
   useEffect(() => {
     if (history?.monitoring?.active && history.monitoring.intervalMinutes) setMonitorInterval(history.monitoring.intervalMinutes);
@@ -169,6 +189,23 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
       setMonitorErr(e?.data?.error || e.message);
     } finally {
       setMonitorBusy(null);
+    }
+  };
+
+  const setA = (key, value) => { setADraft((a) => ({ ...a, [key]: value })); setASaved(false); };
+  const setAProvider = (provider) => { setADraft({ provider }); setASaved(false); };
+
+  const saveAnalytics = async () => {
+    setABusy(true); setAErr(null);
+    try {
+      const { data } = await base44.functions.invoke('saveProjectAnalytics', { projectId, analytics: aDraft });
+      setAnalytics((s) => ({ ...s, analytics: data.analytics, snippet: data.snippet }));
+      setADraft(JSON.parse(JSON.stringify(data.analytics)));
+      setASaved(true);
+    } catch (e) {
+      setAErr(e?.data?.error || e.message);
+    } finally {
+      setABusy(false);
     }
   };
 
@@ -296,6 +333,55 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     </div>
                   )}
                   {!status && !checkErr && !checking && <div className="text-[10px] text-primary/40">Run a check once DNS has had time to propagate (5–30 min after adding records).</div>}
+                </section>
+              )}
+
+              {/* Analytics */}
+              {analytics && analytics.isWeb !== false && aDraft && (
+                <section className="border border-primary/15 bg-black/20 p-3">
+                  <div className="text-[11px] text-primary/60 tracking-widest uppercase mb-2 flex items-center gap-1.5"><BarChart3 size={12} /> Analytics</div>
+                  {aErr && <div className="text-red-400 text-[10px] border border-red-500/30 px-2 py-1 mb-2">{aErr}</div>}
+                  <div className="text-[10px] text-primary/45 leading-snug mb-2">
+                    Cookieless, privacy-friendly options only — the builder embeds the script and your own account collects the data. No cookie banner needed.
+                  </div>
+                  <select value={aDraft.provider} onChange={(e) => setAProvider(e.target.value)}
+                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50">
+                    {Object.entries(analytics.providers).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}
+                  </select>
+
+                  {aDraft.provider && (analytics.providers[aDraft.provider]?.fields || []).length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {(analytics.providers[aDraft.provider].fields).map((f) => (
+                        <label key={f} className="block">
+                          <span className="text-[10px] text-primary/45 uppercase">{(A_FIELD_META[f] || [f])[0]}</span>
+                          <input value={aDraft[f] || ''} onChange={(e) => setA(f, e.target.value)}
+                            placeholder={(A_FIELD_META[f] || [f, ''])[1]}
+                            className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50 mt-0.5" />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {aDraft.provider && analytics.providers[aDraft.provider]?.note && (
+                    <div className="text-[9px] text-primary/35 leading-relaxed mt-2">{analytics.providers[aDraft.provider].note}</div>
+                  )}
+
+                  {analytics.snippet && JSON.stringify(aDraft) === JSON.stringify(analytics.analytics) && (
+                    <div className="mt-2">
+                      <div className="text-[9px] text-primary/40 uppercase mb-1">Embedded in &lt;head&gt;</div>
+                      <div className="flex items-start gap-2 bg-black/40 border border-primary/15 px-2 py-1.5">
+                        <code className="text-[9px] text-primary/70 break-all flex-1 leading-relaxed">{analytics.snippet}</code>
+                        <CopyBtn text={analytics.snippet} />
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={saveAnalytics} disabled={aBusy}
+                    className="mt-2.5 flex items-center gap-1.5 px-3 py-1 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary text-[10px] disabled:opacity-40">
+                    {aBusy ? <Loader2 size={10} className="animate-spin" /> : aSaved ? <Check size={10} /> : <BarChart3 size={10} />}
+                    {aSaved ? 'SAVED' : aDraft.provider ? 'SAVE ANALYTICS' : 'SAVE (NONE)'}
+                  </button>
+                  <span className="text-[9px] text-primary/35 ml-2">→ <span className="font-mono">.morpheus/analytics.json</span></span>
                 </section>
               )}
 
