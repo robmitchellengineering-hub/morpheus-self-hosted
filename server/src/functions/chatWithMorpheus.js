@@ -17,6 +17,7 @@ import { getActiveFeature, featureContextBlock, createFeature } from '../lib/sel
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
+import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -639,6 +640,13 @@ export default async function handler({ user, body, res }) {
   // and coder build on a polished, consistent base instead of raw HTML.
   const designBlock = (project.compile_target || 'source') === 'web-app' && !isSelfDev ? designSystemPromptBlock() : '';
 
+  // Brand kit (.morpheus/brand.json in the project): the operator's colours,
+  // fonts, radius, logo and voice as HARD token values that override the
+  // design system defaults. Web builds only; empty when still on defaults.
+  const brandBlock = (project.compile_target || 'source') === 'web-app' && !isSelfDev
+    ? brandPromptBlock(await getBrand(projectId).catch(() => null))
+    : '';
+
   // Feature plan (originally self-dev A1, now any project): if a feature is
   // active for this project, the planner gets its goal + step list + which
   // step is active, so a multi-turn feature stays coherent instead of each
@@ -700,7 +708,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${designBlock}${compileAdapterBlock}
+${brandBlock}${designBlock}${compileAdapterBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.
