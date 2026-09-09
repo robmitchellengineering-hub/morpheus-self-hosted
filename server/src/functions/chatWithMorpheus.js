@@ -16,6 +16,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
+import { checkA11y } from '../lib/a11yCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
 import { publishPromptBlock } from '../lib/publishChecklist.js';
@@ -46,6 +47,7 @@ const STAGE_LABELS = {
   retry_coder: 'Fixing flagged issues',
   retry_reviewer: 'Re-checking the fix',
   verify: 'Checking the code parses',
+  a11y: 'Checking accessibility',
   polish: 'Polishing the UI',
 };
 const STAGE_ROLE = {
@@ -57,6 +59,7 @@ const STAGE_ROLE = {
   retry_coder: 'coder',
   retry_reviewer: 'reviewer',
   verify: 'reviewer',
+  a11y: 'reviewer',
   polish: 'coder',
 };
 
@@ -923,6 +926,7 @@ OPERATOR SAYS: ${message}`;
     let appliedOps = [];
     let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
     let syntaxCritical = []; // files that still didn't parse after a fix attempt
+    let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
     let polishCount = 0;
     let coderModel;
     let reviewerModel;
@@ -1179,6 +1183,51 @@ OPERATOR SAYS: ${message}`;
         syntaxCritical = syntaxErrors.map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
       }
 
+      // ── Accessibility gate (web-app builds) ──────────────────────────────
+      // Deterministic checks over the changed HTML/JSX (lib/a11yCheck.js):
+      // missing alt, icon-only buttons/links with no name, unlabelled
+      // fields, positive tabindex, div-onClick. A finding → one targeted
+      // coder retry; anything left is surfaced as a // A11Y note (the site
+      // still works, so it doesn't block the build).
+      if (fileOps.length > 0 && !isSelfDev && (project.compile_target || 'source') === 'web-app') {
+        const changedMarkup = () => fileOps
+          .filter((op) => op.action !== 'delete' && typeof op.content === 'string')
+          .map((op) => ({ path: op.path, content: op.content }));
+        let a11yFindings = checkA11y(changedMarkup());
+        if (a11yFindings.length > 0) {
+          stages.start('a11y');
+          const badPaths = [...new Set(a11yFindings.map((e) => e.file))];
+          const curBlock = badPaths
+            .map((p) => fileOps.find((op) => op.path === p && typeof op.content === 'string'))
+            .filter(Boolean)
+            .map((op) => `--- ${op.path} ---\n${op.content}`)
+            .join('\n\n');
+          try {
+            const fix = await invokeAI({
+              userId: user.id,
+              prompt: `${coderPrompt}\n\nThe markup you just wrote has accessibility problems:\n${a11yFindings.map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} [${e.rule}] — ${e.text}`).join('\n')}\n\nCURRENT CONTENT:\n${curBlock}\n\nReturn each file as action "update" with the FULL corrected \`content\` — fix ONLY these accessibility issues (add alt text that describes the image, give icon-only controls an aria-label, associate labels with fields, drop positive tabindex, make clickable divs real buttons). Change nothing else.`,
+              schema: coderSchema,
+              fileUrls,
+              role: 'coder',
+              maxTokens: 64000,
+            });
+            const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
+              .filter((op) => op.path && badPaths.includes(op.path) && typeof op.content === 'string');
+            for (const fx of fixOps) {
+              const orig = fileOps.find((op) => op.path === fx.path);
+              if (orig) orig.content = fx.content;
+            }
+            // re-run BOTH gates: an a11y "fix" must still parse
+            const reSyntax = await checkSyntax(fixOps.map((op) => ({ path: op.path, content: op.content })));
+            if (reSyntax.length === 0) a11yFindings = checkA11y(changedMarkup());
+          } catch (err) {
+            console.error('[chatWithMorpheus] a11y-fix retry failed:', err.message);
+          }
+          stages.done('a11y');
+        }
+        a11yNotes = a11yFindings.map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
+      }
+
       if (fileOps.length > 0) {
         await createSnapshot(user.id, projectId, 'Operator build request');
       }
@@ -1253,6 +1302,9 @@ OPERATOR SAYS: ${message}`;
     }
     if (syntaxCritical.length > 0) {
       fullReply += `\n\n// CRITICAL: the code still has a syntax error after a fix attempt — ${syntaxCritical.join('; ')}. The change was applied anyway; ask me to fix ${syntaxCritical.length === 1 ? 'it' : 'them'} or revert.`;
+    }
+    if (a11yNotes.length > 0) {
+      fullReply += `\n\n// A11Y: ${a11yNotes.length} accessibility issue${a11yNotes.length === 1 ? '' : 's'} left after a fix pass — ${a11yNotes.join('; ')}. The site still works; ask me to fix ${a11yNotes.length === 1 ? 'it' : 'them'}.`;
     }
 
     // ── Feature progress ──────────────────────────────────────────────────
