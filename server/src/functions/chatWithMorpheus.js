@@ -16,6 +16,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
+import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -656,6 +657,14 @@ export default async function handler({ user, body, res }) {
     ? await recentDecisionsBlock(projectId).catch(() => '')
     : '';
 
+  // Media Library: the project's content assets (photos, posters, media) with
+  // their exact urls, so the coder writes real <img src> instead of inventing
+  // paths or reaching for a placeholder service. Zero-custody — these are just
+  // urls. Not for self-dev (Morpheus's own site has no operator media).
+  const mediaBlock = (mode === 'build' && !isSelfDev)
+    ? mediaAssetsBlock(await getProjectAssets(projectId))
+    : '';
+
   // 2026-09-08 (Rob: "need to look at the functionality of the AI docs and
   // be able to feed that into morpheus every construct so the planner has a
   // better idea of how to build"): compileProject.js's adapters
@@ -684,7 +693,7 @@ PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
 COMPILE TARGET: ${project.compile_target || 'source'}
 ${summaryBlock}
-${featureBlock}${decisionsBlock}${webNotes ? `\nWEB RESEARCH (current external info found before planning — prefer this over stale assumptions):\n${webNotes}\n` : ''}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
+${featureBlock}${decisionsBlock}${mediaBlock}${webNotes ? `\nWEB RESEARCH (current external info found before planning — prefer this over stale assumptions):\n${webNotes}\n` : ''}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
 CURRENT FILES:
 ${filesContext}
 ${scopedNote}

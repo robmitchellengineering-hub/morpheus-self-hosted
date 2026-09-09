@@ -242,6 +242,13 @@ const functions = {
     return { data };
   },
   invokeStream,
+
+  // Media Library (its own route, not the function dispatcher — the upload is
+  // multipart). Return the raw JSON, not the { data } wrapper.
+  listProjectAssets: (projectId) => apiFetch(`/media-assets/${projectId}`),
+  addProjectAssetUrl: (projectId, body) => apiFetch(`/media-assets/${projectId}/url`, { method: 'POST', body }),
+  addProjectAssetFile: (projectId, form) => apiFetch(`/media-assets/${projectId}/upload`, { method: 'POST', body: form }),
+  deleteProjectAsset: (projectId, assetId) => apiFetch(`/media-assets/${projectId}/${assetId}`, { method: 'DELETE' }),
 };
 
 const integrations = {

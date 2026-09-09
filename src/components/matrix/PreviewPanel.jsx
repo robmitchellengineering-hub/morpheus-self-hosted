@@ -69,6 +69,27 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
   const isNative = NATIVE_TARGETS.includes(compileTarget);
   const fileSig = files.map(f => f.path + ':' + (f.content || '').length).join('|');
 
+  // Media Library: site-relative asset urls ("/assets/x.jpg") don't resolve
+  // inside the preview iframe — swap them for a URL that loads now. Loaded
+  // once per project; not used in self-dev (scoped preview, no operator media).
+  const [assetMap, setAssetMap] = useState({});
+  useEffect(() => {
+    if (isSelfDev || !projectId) { setAssetMap({}); return; }
+    let cancelled = false;
+    base44.functions.listProjectAssets(projectId)
+      .then((data) => {
+        if (cancelled) return;
+        const map = {};
+        for (const a of data.assets || []) {
+          if (a.source === 'repo' && a.url && a.preview_url) map[a.url] = a.preview_url;
+        }
+        setAssetMap(map);
+      })
+      .catch(() => { if (!cancelled) setAssetMap({}); });
+    return () => { cancelled = true; };
+  }, [projectId, isSelfDev]);
+  const assetMapSig = Object.entries(assetMap).map(([k, v]) => k + '>' + v).join('|');
+
   // Measure the available stage area so we can scale a fixed-resolution
   // device frame down to fit it entirely.
   useLayoutEffect(() => {
@@ -94,7 +115,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
     setBuilding(true);
     setError(null);
     try {
-      const h = buildPreviewHtml(files);
+      const h = buildPreviewHtml(files, { assetMap });
       setHtml(h);
       setKey(k => k + 1);
     } catch (e) {
@@ -102,7 +123,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
     } finally {
       setBuilding(false);
     }
-  }, [fileSig, isNative, isSelfDev]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fileSig, isNative, isSelfDev, assetMapSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Native: async LLM prototype generation (debounced — rapid edits settle
   // before triggering the expensive LLM call, and the previous prototype
@@ -191,7 +212,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
       setBuilding(true);
       setError(null);
       try {
-        const h = buildPreviewHtml(files);
+        const h = buildPreviewHtml(files, { assetMap });
         setHtml(h);
         setKey(k => k + 1);
       } catch (e) {
@@ -200,7 +221,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
         setBuilding(false);
       }
     }
-  }, [files, isNative, isSelfDev, selfDevState]);
+  }, [files, isNative, isSelfDev, selfDevState, assetMap]);
 
   const openInNewTab = () => {
     if (!html) return;
