@@ -15,6 +15,7 @@ import { estimateCallMs } from '../lib/timingStats.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { buildReverseImports } from '../lib/importGraph.js';
+import { checkSyntax } from '../lib/syntaxCheck.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, searchKey, webSearch, webFetch, URL_RE } from '../lib/webResearch.js';
 
@@ -38,6 +39,7 @@ const STAGE_LABELS = {
   reviewer: 'Reviewing the changes',
   retry_coder: 'Fixing flagged issues',
   retry_reviewer: 'Re-checking the fix',
+  verify: 'Checking the code parses',
   polish: 'Polishing the UI',
 };
 const STAGE_ROLE = {
@@ -48,6 +50,7 @@ const STAGE_ROLE = {
   reviewer: 'reviewer',
   retry_coder: 'coder',
   retry_reviewer: 'reviewer',
+  verify: 'reviewer',
   polish: 'coder',
 };
 
@@ -837,6 +840,7 @@ OPERATOR SAYS: ${message}`;
     // ── Phase 2: Coder implements the plan (only if code is needed) ────────────
     let appliedOps = [];
     let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
+    let syntaxCritical = []; // files that still didn't parse after a fix attempt
     let polishCount = 0;
     let coderModel;
     let reviewerModel;
@@ -1049,6 +1053,50 @@ OPERATOR SAYS: ${message}`;
         reviewIssues = reviewed.issues || [];
       }
 
+      // ── Syntax gate: the change must at least parse ───────────────────────
+      // Deterministic per-file esbuild check over the final fileOps — the
+      // same pass-1 the self-dev verify gate runs (lib/syntaxCheck.js), now
+      // on every build. A parse error means a half-applied edit or a
+      // malformed generation; one targeted full-content retry, then flag it
+      // so the operator isn't silently handed a white screen. Skips files in
+      // other languages, so it's a no-op for Python / Arduino / etc.
+      if (fileOps.length > 0) {
+        const changedCode = () => fileOps
+          .filter((op) => op.action !== 'delete' && typeof op.content === 'string')
+          .map((op) => ({ path: op.path, content: op.content }));
+        let syntaxErrors = await checkSyntax(changedCode());
+        if (syntaxErrors.length > 0) {
+          stages.start('verify');
+          const badPaths = [...new Set(syntaxErrors.map((e) => e.file))];
+          const curBlock = badPaths
+            .map((p) => fileOps.find((op) => op.path === p && typeof op.content === 'string'))
+            .filter(Boolean)
+            .map((op) => `--- ${op.path} ---\n${op.content}`)
+            .join('\n\n');
+          try {
+            const fix = await invokeAI({
+              userId: user.id,
+              prompt: `${coderPrompt}\n\nThe code you just wrote does not parse:\n${syntaxErrors.map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — fix the syntax error, change nothing else.`,
+              schema: coderSchema,
+              fileUrls,
+              role: 'coder',
+              maxTokens: 64000,
+            });
+            const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
+              .filter((op) => op.path && badPaths.includes(op.path) && typeof op.content === 'string');
+            for (const fx of fixOps) {
+              const orig = fileOps.find((op) => op.path === fx.path);
+              if (orig) orig.content = fx.content;
+            }
+            syntaxErrors = await checkSyntax(changedCode());
+          } catch (err) {
+            console.error('[chatWithMorpheus] syntax-fix retry failed:', err.message);
+          }
+          stages.done('verify');
+        }
+        syntaxCritical = syntaxErrors.map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
+      }
+
       if (fileOps.length > 0) {
         await createSnapshot(user.id, projectId, 'Operator build request');
       }
@@ -1120,6 +1168,9 @@ OPERATOR SAYS: ${message}`;
     if (unresolved.length > 0) {
       fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
     }
+    if (syntaxCritical.length > 0) {
+      fullReply += `\n\n// CRITICAL: the code still has a syntax error after a fix attempt — ${syntaxCritical.join('; ')}. The change was applied anyway; ask me to fix ${syntaxCritical.length === 1 ? 'it' : 'them'} or revert.`;
+    }
 
     // ── Feature progress ──────────────────────────────────────────────────
     // Escalation turn: announce the plan and advance past step 1 (just built).
@@ -1127,7 +1178,7 @@ OPERATOR SAYS: ${message}`;
     // build changed files — the planner's context said to build that step, so
     // it's done; the operator can reopen it from the FEATURE panel to refine.
     // Self-dev advances its steps manually (on push, from the panel).
-    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0;
+    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0;
     if (escalatedFeature && escalatedFeature.activeStep) {
       fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
       if (buildProgressed) {
