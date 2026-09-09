@@ -721,6 +721,26 @@ export async function fetchRemoteTree(owner, repo, branch, token) {
     .map((entry) => ({ path: entry.path, sha: entry.sha, mode: entry.mode || '100644' }));
 }
 
+// Read one file via the Contents API. Returns { content, sha, size } with
+// content decoded to a UTF-8 string, or null if the path doesn't exist.
+// Files up to 1MB come back inline (bigger ones would need the blob API --
+// not a concern for the content/*.json the CMS panel edits).
+export async function getFileContent(owner, repo, path, branch, token) {
+  const h = ghHeaders(token);
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(`${GH_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`, { headers: h });
+  if (res.status === 404) return null;
+  const data = await ghJson(res);
+  if (!res.ok) {
+    const err = new Error(data.message || `GitHub API ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  if (Array.isArray(data) || data.type !== 'file') return null; // a directory
+  const content = data.encoding === 'base64' ? Buffer.from(data.content, 'base64').toString('utf-8') : (data.content || '');
+  return { content, sha: data.sha, size: data.size };
+}
+
 // Create or update a single file via the Contents API. `content` may be a
 // Buffer (binary) or a string (text) -- both base64-encode the same way.
 // `sha` is required when updating an existing path, omitted when creating.
