@@ -18,6 +18,7 @@ import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
+import { publishPromptBlock } from '../lib/publishChecklist.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -696,6 +697,13 @@ export default async function handler({ user, body, res }) {
     return adapter?.aiNotes ? `\n${adapter.aiNotes}\n` : '';
   })();
 
+  // Publish readiness: what a *shipped* build of this target includes (each
+  // adapter declares its own — lib/publishChecklist.js). Surfaced so output
+  // lands launch-ready. Build turns, non-self-dev.
+  const publishBlock = (mode === 'build' && !isSelfDev)
+    ? publishPromptBlock(project.compile_target || 'source')
+    : '';
+
   const assembleContextBlock = () => `
 PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
@@ -708,7 +716,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${brandBlock}${designBlock}${compileAdapterBlock}
+${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.
