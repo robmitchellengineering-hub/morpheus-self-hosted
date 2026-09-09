@@ -27,6 +27,16 @@ export function isNorthflankConfigured() {
   return Boolean(process.env.NORTHFLANK_API_TOKEN);
 }
 
+// Write actions (restart) are OFF by default even when a token is present —
+// the read-only integration only needs view scope, and turning on writes is
+// a deliberate opt-in (NORTHFLANK_WRITE_ENABLED=true) that also signals the
+// token has been given the scope for it (Project > Services > General >
+// Update). Keeps "read the logs" and "restart production" as separate
+// decisions. 2026-09-09, pairs with the Self-Dev OPS panel.
+export function isNorthflankWriteEnabled() {
+  return isNorthflankConfigured() && process.env.NORTHFLANK_WRITE_ENABLED === 'true';
+}
+
 // Defaults match this deployment's own known project/service — see the
 // Northflank URLs used throughout MORPHEUS-STATUS docs (team
 // morpheusv1s-team, project morpheus-self-hosted, service morpheus-backend).
@@ -89,4 +99,29 @@ export async function getServiceLogs({ search, minutesBack = 60, limit = 200, ty
     .slice()
     .reverse()
     .map((l) => ({ ts: l.ts, log: l.log, containerId: l.containerId }));
+}
+
+// Rolling restart of the running containers — same image, no rebuild. The
+// operational "it's wedged, kick it" action. Requires NORTHFLANK_WRITE_ENABLED
+// (see isNorthflankWriteEnabled) and a token with Services > Update scope.
+// (Redeploy-from-latest-build isn't exposed: Northflank's CD already
+// redeploys on every push to main, and the API path for a manual one is
+// deprecated.)
+export async function restartService() {
+  if (!isNorthflankWriteEnabled()) {
+    throw Object.assign(new Error('Northflank write actions are disabled — set NORTHFLANK_WRITE_ENABLED=true'), {
+      status: 400,
+      code: 'NORTHFLANK_WRITE_DISABLED',
+    });
+  }
+  const token = process.env.NORTHFLANK_API_TOKEN;
+  const res = await fetch(`${NF_API}/projects/${projectId()}/services/${serviceId()}/restart`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error?.message || data?.message || `Northflank restart failed: HTTP ${res.status}`);
+  }
+  return { ok: true };
 }

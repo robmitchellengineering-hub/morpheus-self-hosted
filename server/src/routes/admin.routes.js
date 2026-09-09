@@ -9,7 +9,7 @@ import { getAllPlatformSettings, getPlatformSetting, setPlatformSetting } from '
 import { MODEL_PRICING } from '../lib/costEstimate.js';
 import { brokerConfigured } from '../config/hostedDefaults.js';
 import { getCachedStatus as getDeepSeekBalanceStatus, isDeepSeekPrimary, hasFallbackConfigured } from '../lib/deepseekBalance.js';
-import { getServiceStatus as getNorthflankServiceStatus, getServiceLogs, isNorthflankConfigured } from '../lib/northflank.js';
+import { getServiceStatus as getNorthflankServiceStatus, getServiceLogs, isNorthflankConfigured, isNorthflankWriteEnabled, restartService as restartNorthflankService } from '../lib/northflank.js';
 import { stripeFetch } from '../lib/stripe.js';
 
 const router = express.Router();
@@ -281,12 +281,39 @@ function isNorthflankLogSearchSafe(value) {
 }
 
 router.get('/ops/northflank/status', async (req, res) => {
-  if (!isNorthflankConfigured()) return res.json({ configured: false });
+  if (!isNorthflankConfigured()) return res.json({ configured: false, writeEnabled: false });
   try {
-    res.json({ configured: true, service: await getNorthflankServiceStatus() });
+    res.json({ configured: true, writeEnabled: isNorthflankWriteEnabled(), service: await getNorthflankServiceStatus() });
   } catch (err) {
-    res.status(502).json({ configured: true, error: err.message });
+    res.status(502).json({ configured: true, writeEnabled: isNorthflankWriteEnabled(), error: err.message });
   }
+});
+
+// Rolling restart of the production backend. Write-gated (NORTHFLANK_WRITE_ENABLED)
+// and requires an explicit confirm flag from the caller's dialog. Audit-logged
+// whether it succeeds or fails — same bar as the DB-console writes above.
+router.post('/ops/northflank/restart', async (req, res) => {
+  if (!isNorthflankWriteEnabled()) {
+    return res.status(400).json({ error: 'Northflank restart is not enabled — set NORTHFLANK_WRITE_ENABLED=true and give the token Services > Update scope.' });
+  }
+  if (req.body?.confirm !== true) {
+    return res.status(400).json({ error: 'Restart requires confirmation.' });
+  }
+  let error = null;
+  try {
+    await restartNorthflankService();
+  } catch (err) {
+    error = err.message;
+  }
+  await prisma.adminAuditLog.create({
+    data: {
+      admin_id: req.user.id,
+      action: 'ops_northflank_restart',
+      details: JSON.stringify({ ok: !error, error }),
+    },
+  }).catch(() => {});
+  if (error) return res.status(502).json({ error });
+  res.json({ ok: true });
 });
 
 router.get('/ops/northflank/logs', async (req, res) => {

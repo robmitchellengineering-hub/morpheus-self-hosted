@@ -105,8 +105,21 @@ function LogsTab() {
   const [logs, setLogs] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+  const [restart, setRestart] = useState(null); // null | 'confirm' | 'running' | { done, error }
 
-  useEffect(() => { base44.admin.getNorthflankStatus().then(setStatus).catch((e) => setErr(e.message)); }, []);
+  const loadStatus = useCallback(() => base44.admin.getNorthflankStatus().then(setStatus).catch((e) => setErr(e.message)), []);
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const doRestart = async () => {
+    setRestart('running');
+    try {
+      await base44.admin.restartNorthflankService();
+      setRestart({ done: true });
+      setTimeout(loadStatus, 3000);
+    } catch (e) {
+      setRestart({ error: e?.response?.data?.error || e.message });
+    }
+  };
 
   const pull = async () => {
     setLoading(true); setErr(null);
@@ -130,11 +143,22 @@ function LogsTab() {
           </div>
         )}
         {status?.configured && status.service && (
-          <div className="text-[11px] text-primary/70 mb-2">
-            Build: <span className="text-primary">{status.service?.status?.build?.status || 'unknown'}</span>
-            {status.service?.name ? ` — ${status.service.name}` : ''}
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="text-[11px] text-primary/70">
+              Build: <span className="text-primary">{status.service?.status?.build?.status || 'unknown'}</span>
+              {status.service?.name ? ` — ${status.service.name}` : ''}
+            </div>
+            {status.writeEnabled ? (
+              <button onClick={() => setRestart('confirm')} disabled={restart === 'running'} className="flex items-center gap-1 text-[11px] border border-yellow-500/50 text-yellow-500 px-2 py-1 hover:bg-yellow-500/10 disabled:opacity-40">
+                <RefreshCw size={11} className={restart === 'running' ? 'animate-spin' : ''} /> RESTART SERVICE
+              </button>
+            ) : (
+              <span className="text-primary/40 text-[10px]" title="Set NORTHFLANK_WRITE_ENABLED=true and give the token Services > Update scope">restart disabled</span>
+            )}
           </div>
         )}
+        {restart?.done && <div className="text-primary/70 text-[11px] border border-primary/20 bg-primary/5 px-2 py-1.5 mb-2">Restart requested — the backend is rolling its containers. Watch the logs below.</div>}
+        {restart?.error && <div className="text-red-400 text-[11px] border border-red-500/30 px-2 py-1.5 mb-2">Restart failed: {restart.error}</div>}
         {!notConfigured && (
           <>
             <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -159,6 +183,23 @@ function LogsTab() {
           </>
         )}
       </Section>
+
+      {restart === 'confirm' && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4" onClick={() => setRestart(null)}>
+          <div className="bg-background border border-yellow-500/40 max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-3 text-yellow-500"><AlertTriangle size={18} /><span className="font-display tracking-wider">RESTART PRODUCTION</span></div>
+            <p className="text-primary/70 text-[11px] mb-4 leading-relaxed">
+              This does a rolling restart of the live <span className="text-primary">{status?.service?.name || 'backend'}</span> containers — same build, no rebuild. Requests in flight may drop for a few seconds. Logged to the audit trail.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setRestart(null)} className="px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary text-[11px]">CANCEL</button>
+              <button onClick={doRestart} className="flex items-center gap-1 px-3 py-1.5 border border-yellow-500 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 text-[11px] font-bold">
+                <RefreshCw size={12} /> RESTART NOW
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
