@@ -21,7 +21,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp, ListChecks } from 'lucide-react';
+import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp, ListChecks, Info } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
@@ -81,6 +81,20 @@ export default function SelfDev() {
   // A2 — DB migration apply result: { applied, failed, manual, results:[...] } | { error }
   const [migrations, setMigrations] = useState(null);
   const [applyingMigrations, setApplyingMigrations] = useState(false);
+  // One-off notices (things that used to be a blocking alert()): { kind: 'error' | 'info', text }.
+  const [notice, setNotice] = useState(null);
+
+  // Auto-dismiss the transient "it worked" bars so a run of successful
+  // actions doesn't leave a wall of green stacked above the workspace.
+  // Errors and in-progress states stay until dismissed or superseded.
+  useEffect(() => {
+    const timers = [];
+    if (syncResult?.ok) timers.push(setTimeout(() => setSyncResult(null), 10000));
+    if (verifyResult?.ok) timers.push(setTimeout(() => setVerifyResult(null), 12000));
+    if (revertResult?.ok) timers.push(setTimeout(() => setRevertResult(null), 12000));
+    if (notice?.kind === 'info') timers.push(setTimeout(() => setNotice(null), 8000));
+    return () => timers.forEach(clearTimeout);
+  }, [syncResult, verifyResult, revertResult, notice]);
 
   // AI context pinning (2026-09-02) — chatWithMorpheus.js's self-dev safety
   // rule refuses to blindly "update" any file whose content it hasn't been
@@ -443,11 +457,11 @@ export default function SelfDev() {
     try {
       const res = await base44.admin.getNorthflankLogs({ search: 'error', minutes: 60, limit: 60, type: 'runtime' });
       if (res.configured === false) {
-        alert('Northflank not configured — set NORTHFLANK_API_TOKEN. See Admin Panel → Ops Console for setup instructions.');
+        setNotice({ kind: 'info', text: 'Northflank not connected — set NORTHFLANK_API_TOKEN to pull production logs (Admin → Ops Console has the setup).' });
         return;
       }
       if (res.error) {
-        alert(`Couldn't pull logs: ${res.error}`);
+        setNotice({ kind: 'error', text: `Couldn't pull logs: ${res.error}` });
         return;
       }
       const lines = res.lines || [];
@@ -459,7 +473,7 @@ export default function SelfDev() {
         []
       );
     } catch (e) {
-      alert(`Couldn't pull logs: ${e.message}`);
+      setNotice({ kind: 'error', text: `Couldn't pull logs: ${e.message}` });
     } finally {
       setDiagnosing(false);
     }
@@ -502,32 +516,45 @@ export default function SelfDev() {
             </button>
           </div>
         </div>
-        {toolbarOpen && (
+        {toolbarOpen && (() => {
+          const secBtn = `${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`;
+          const groupLabel = 'text-[10px] tracking-widest text-primary/40 uppercase self-center pr-1';
+          return (
           <div className="flex flex-wrap items-center gap-2 px-4 pb-2.5 pt-2 border-t border-primary/10">
-            <button onClick={() => setShowHistory(true)} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
-              HISTORY
-            </button>
-            <button onClick={() => setShowFeature(true)} title="Plan a multi-step feature to build on Morpheus, tracked across turns" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
-              <ListChecks size={13} /> FEATURE{activeFeature ? ` (${activeFeature.doneCount}/${activeFeature.totalSteps})` : ''}
-            </button>
-            <button onClick={syncFromGithub} disabled={syncing} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
+            {/* Build — shape and check the change before it ships */}
+            <span className={groupLabel}>Build</span>
+            <button onClick={syncFromGithub} disabled={syncing} title="Pull the current morpheus-self-hosted main branch into this workspace" className={`${secBtn} disabled:opacity-50`}>
               <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'SYNCING…' : 'SYNC FROM GITHUB'}
             </button>
-            <button onClick={runVerify} disabled={verifying || pushing} title="Run esbuild syntax + import/export checks across the whole workspace — the same gate that runs before a push" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
+            <button onClick={() => setShowFeature(true)} title="Plan a multi-step feature to build on Morpheus, tracked across turns" className={secBtn}>
+              <ListChecks size={13} /> FEATURE{activeFeature ? ` (${activeFeature.doneCount}/${activeFeature.totalSteps})` : ''}
+            </button>
+            <button onClick={runVerify} disabled={verifying || pushing} title="Run esbuild syntax + import/export checks across the whole workspace — the same gate that runs before a push" className={`${secBtn} disabled:opacity-50`}>
               <ShieldCheck size={13} className={verifying ? 'animate-pulse' : ''} /> {verifying ? 'VERIFYING…' : 'VERIFY'}
             </button>
-            <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50`}>
+            <button onClick={() => setShowHistory(true)} title="Browse and restore earlier snapshots of this workspace" className={secBtn}>
+              HISTORY
+            </button>
+
+            <span className="h-6 w-px bg-primary/15 mx-1 self-center hidden sm:block" />
+
+            {/* Operate — keep production running */}
+            <span className={groupLabel}>Operate</span>
+            <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${secBtn} disabled:opacity-50`}>
               <Stethoscope size={13} className={diagnosing ? 'animate-pulse' : ''} /> {diagnosing ? 'PULLING LOGS…' : 'DIAGNOSE FROM LOGS'}
             </button>
-            <HelpToggle />
-            <Link to="/admin" title="Admin Control Panel — model routing, config, ops console (DB console, Northflank logs), audit log" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+            <Link to="/admin" title="Admin Control Panel — model routing, config, ops console (DB console, Northflank logs), audit log" className={secBtn}>
               <ShieldCheck size={13} /> ADMIN
             </Link>
-            <Link to="/" className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+
+            <span className="flex-1" />
+            <HelpToggle />
+            <Link to="/" title="Back to Morpheus" className={secBtn}>
               <HomeIcon size={13} /> <span className="sm:hidden">HOME</span>
             </Link>
           </div>
-        )}
+          );
+        })()}
         <div className="flex items-start gap-2 border-t border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5">
           <AlertTriangle size={12} className="text-yellow-500 shrink-0 mt-0.5" />
           <span className="text-yellow-500/80 text-[11px] font-mono leading-tight">
@@ -539,6 +566,19 @@ export default function SelfDev() {
             <ListChecks size={12} className="text-primary shrink-0" />
             <span className="truncate"><span className="text-primary/50 uppercase tracking-wider">Feature</span> {activeFeature.title} — step {activeFeature.activeStep.n}/{activeFeature.totalSteps}: {activeFeature.activeStep.title}</span>
           </button>
+        )}
+        {/* Status region — sync / verify / push / PR / deploy / smoke / migrations
+            / revert results. Capped in height and scrollable so a run of actions
+            can't push the workspace off-screen; successes auto-dismiss. */}
+        <div className="max-h-[34vh] overflow-y-auto scrollbar-matrix">
+        {notice && (
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${notice.kind === 'error' ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-primary/20 bg-primary/5 text-primary/70'}`}>
+            <span className="flex items-center gap-2 min-w-0">
+              {notice.kind === 'error' ? <XCircle size={11} className="shrink-0" /> : <Info size={11} className="shrink-0" />}
+              <span className="truncate">{notice.text}</span>
+            </span>
+            <button onClick={() => setNotice(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
+          </div>
         )}
         {syncResult?.ok && (
           <div className="flex items-center gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1 text-[11px] text-primary/60">
@@ -679,6 +719,7 @@ export default function SelfDev() {
             <button onClick={() => setRevertResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
           </div>
         )}
+        </div>
         {contextPaths.size > 0 && (
           <div className="flex items-start gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1.5 text-[11px] text-primary/70 flex-wrap">
             <span className="uppercase tracking-wider text-primary/50 shrink-0 mt-0.5">AI context ({contextPaths.size}):</span>
