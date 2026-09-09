@@ -19,6 +19,7 @@ import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
 import { publishPromptBlock } from '../lib/publishChecklist.js';
+import { getForms, formsPromptBlock } from '../lib/projectForms.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -704,6 +705,15 @@ export default async function handler({ user, body, res }) {
     ? publishPromptBlock(project.compile_target || 'source')
     : '';
 
+  // Forms delivery: if the operator has configured where this site's <form>
+  // submissions go (.morpheus/forms.json — netlify | smtp | sheet), hand the
+  // coder the delivery contract so every form it builds actually delivers to
+  // the operator's own inbox/sheet. Zero-custody: no submission touches
+  // Morpheus. Web builds only, non-self-dev.
+  const formsBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+    ? formsPromptBlock(await getForms(projectId).catch(() => null))
+    : '';
+
   const assembleContextBlock = () => `
 PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
@@ -716,7 +726,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}
+${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.

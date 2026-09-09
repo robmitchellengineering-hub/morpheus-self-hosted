@@ -19,6 +19,7 @@ import FeatureModal from '@/components/matrix/FeatureModal';
 import MediaPanel from '@/components/matrix/MediaPanel';
 import BrandPanel from '@/components/matrix/BrandPanel';
 import PublishPanel from '@/components/matrix/PublishPanel';
+import FormsPanel from '@/components/matrix/FormsPanel';
 import AutonomousPanel from '@/components/matrix/AutonomousPanel';
 import TestsPanel from '@/components/matrix/TestsPanel';
 import UsagePanel from '@/components/matrix/UsagePanel';
@@ -65,6 +66,8 @@ export default function Workspace() {
   const [brandSet, setBrandSet] = useState(false);
   const [showPublish, setShowPublish] = useState(false);
   const [publishMissing, setPublishMissing] = useState(0);
+  const [showForms, setShowForms] = useState(false);
+  const [formsOn, setFormsOn] = useState(false);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('time');
 
@@ -102,13 +105,16 @@ export default function Workspace() {
 
   // Asset count for the MEDIA button badge + whether a brand is set.
   useEffect(() => {
-    if (!ws.currentProject?.id) { setAssetCount(0); setBrandSet(false); return; }
+    if (!ws.currentProject?.id) { setAssetCount(0); setBrandSet(false); setFormsOn(false); return; }
     let cancelled = false;
     base44.functions.listProjectAssets(ws.currentProject.id)
       .then((data) => { if (!cancelled) setAssetCount(data.assets?.length || 0); })
       .catch(() => { /* not migrated — the panel explains */ });
     base44.functions.invoke('getProjectBrand', { projectId: ws.currentProject.id })
       .then(({ data }) => { if (!cancelled) setBrandSet(!!data.set); })
+      .catch(() => { /* */ });
+    base44.functions.invoke('getProjectForms', { projectId: ws.currentProject.id })
+      .then(({ data }) => { if (!cancelled) setFormsOn(!!data.forms?.enabled); })
       .catch(() => { /* */ });
     return () => { cancelled = true; };
   }, [ws.currentProject?.id]);
@@ -264,7 +270,7 @@ export default function Workspace() {
 
   return (
     <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
-      <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
+      <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
       <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
         <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>CHAT</button>
         <button onClick={() => setMobileTab('files')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'files' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>FILES</button>
@@ -312,6 +318,7 @@ export default function Workspace() {
       <MediaPanel open={showMedia} onClose={() => setShowMedia(false)} projectId={ws.currentProject?.id} onCountChange={setAssetCount} />
       <BrandPanel open={showBrand} onClose={() => setShowBrand(false)} projectId={ws.currentProject?.id} onSetChange={setBrandSet} />
       <PublishPanel open={showPublish} onClose={() => setShowPublish(false)} projectId={ws.currentProject?.id} onRequestFix={(text) => ws.sendMessage(text)} />
+      <FormsPanel open={showForms} onClose={() => setShowForms(false)} projectId={ws.currentProject?.id} onSetChange={setFormsOn} />
       <AutonomousPanel open={showAutonomous} onClose={() => setShowAutonomous(false)} project={ws.currentProject} onStep={ws.runAutonomousStep} onSendToChat={(msg) => { setShowAutonomous(false); setMobileTab('chat'); ws.sendMessage(msg); }} />
       <TestsPanel open={showTests} onClose={() => setShowTests(false)} project={ws.currentProject} onGenerate={ws.generateTests} />
       <UsagePanel open={showUsage} onClose={() => setShowUsage(false)} />
