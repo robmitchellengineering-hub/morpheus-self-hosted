@@ -316,6 +316,10 @@ function sanitizeForJson(value) {
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(sanitizeForJson);
   if (value && typeof value === 'object') {
+    // Prisma Decimal (and similar numeric wrappers) — a raw query returns
+    // these as class instances that JSON.stringify turns into "{}". They
+    // carry a real toString(); use it instead of walking their internals.
+    if (typeof value.toFixed === 'function' || value.constructor?.name === 'Decimal') return value.toString();
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitizeForJson(v)]));
   }
   return value;
