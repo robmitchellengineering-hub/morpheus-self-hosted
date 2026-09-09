@@ -70,6 +70,9 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
   const [historyErr, setHistoryErr] = useState(null);
   const [rollingBack, setRollingBack] = useState(null); // sha being rolled back to
   const [rollbackDone, setRollbackDone] = useState(null); // { commitSha, rolledBackToSha }
+  const [monitorInterval, setMonitorInterval] = useState(15);
+  const [monitorBusy, setMonitorBusy] = useState(null); // 'set' | 'off'
+  const [monitorErr, setMonitorErr] = useState(null);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -88,7 +91,11 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
     }
   }, [projectId]);
 
-  useEffect(() => { if (open) { setSaved(false); setErr(null); setStatus(null); setCheckErr(null); setHistoryErr(null); setRollbackDone(null); load(); } }, [open, load]);
+  useEffect(() => { if (open) { setSaved(false); setErr(null); setStatus(null); setCheckErr(null); setHistoryErr(null); setRollbackDone(null); setMonitorErr(null); load(); } }, [open, load]);
+
+  useEffect(() => {
+    if (history?.monitoring?.active && history.monitoring.intervalMinutes) setMonitorInterval(history.monitoring.intervalMinutes);
+  }, [history?.monitoring?.active, history?.monitoring?.intervalMinutes]);
 
   if (!open) return null;
 
@@ -133,6 +140,35 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
       setHistoryErr(e?.data?.error || e.message);
     } finally {
       setRollingBack(null);
+    }
+  };
+
+  const refreshHistory = async () => {
+    try { const { data } = await base44.functions.invoke('getSiteHistory', { projectId }); setHistory(data); } catch { /* */ }
+  };
+
+  const setupMonitor = async (minutes) => {
+    setMonitorBusy('set'); setMonitorErr(null);
+    try {
+      await base44.functions.invoke('setupUptimeMonitor', { projectId, intervalMinutes: minutes });
+      await refreshHistory();
+    } catch (e) {
+      setMonitorErr(e?.data?.error || e.message);
+    } finally {
+      setMonitorBusy(null);
+    }
+  };
+
+  const removeMonitor = async () => {
+    if (!window.confirm('Turn off uptime monitoring? This deletes the workflow file from your repo.')) return;
+    setMonitorBusy('off'); setMonitorErr(null);
+    try {
+      await base44.functions.invoke('removeUptimeMonitor', { projectId, confirm: true });
+      await refreshHistory();
+    } catch (e) {
+      setMonitorErr(e?.data?.error || e.message);
+    } finally {
+      setMonitorBusy(null);
     }
   };
 
@@ -260,6 +296,49 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     </div>
                   )}
                   {!status && !checkErr && !checking && <div className="text-[10px] text-primary/40">Run a check once DNS has had time to propagate (5–30 min after adding records).</div>}
+                </section>
+              )}
+
+              {/* Uptime monitoring */}
+              {history?.connected && (
+                <section className="border border-primary/15 bg-black/20 p-3">
+                  <div className="text-[11px] text-primary/60 tracking-widest uppercase mb-2 flex items-center gap-1.5"><Activity size={12} /> Uptime monitoring</div>
+                  {monitorErr && <div className="text-red-400 text-[10px] border border-red-500/30 px-2 py-1 mb-2">{monitorErr}</div>}
+                  {history.monitoring?.active ? (
+                    <>
+                      <div className="text-[10px] text-green-400/90 mb-1.5">● ON — checks {history.monitoring.url || 'the site'} every {history.monitoring.intervalMinutes || 15} min from a GitHub Action in your repo. Opens an issue if it's down.</div>
+                      <div className="flex items-center gap-2">
+                        <select value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value))}
+                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-primary focus:outline-none">
+                          {[15, 30, 60].map((n) => <option key={n} value={n}>every {n} min</option>)}
+                        </select>
+                        <button onClick={() => setupMonitor(monitorInterval)} disabled={monitorBusy}
+                          className="text-[10px] text-primary/70 hover:text-primary border border-primary/25 hover:border-primary/60 px-2 py-1 disabled:opacity-40">
+                          {monitorBusy === 'set' ? <Loader2 size={10} className="animate-spin" /> : 'UPDATE'}
+                        </button>
+                        <button onClick={removeMonitor} disabled={monitorBusy}
+                          className="text-[10px] text-red-400/70 hover:text-red-400 border border-red-500/25 hover:border-red-500/50 px-2 py-1 disabled:opacity-40">
+                          {monitorBusy === 'off' ? <Loader2 size={10} className="animate-spin" /> : 'TURN OFF'}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-[10px] text-primary/45 leading-snug mb-1.5">
+                        Add a check that runs on GitHub's schedule and opens an issue in your repo if the site stops responding. Needs a domain set above. Nothing runs on Morpheus.
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value))}
+                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-primary focus:outline-none">
+                          {[15, 30, 60].map((n) => <option key={n} value={n}>every {n} min</option>)}
+                        </select>
+                        <button onClick={() => setupMonitor(monitorInterval)} disabled={monitorBusy || !savedDomain}
+                          className="flex items-center gap-1 text-[10px] text-primary/80 hover:text-primary border border-primary/40 hover:border-primary px-2 py-1 disabled:opacity-40">
+                          {monitorBusy === 'set' ? <Loader2 size={10} className="animate-spin" /> : <Activity size={10} />} TURN ON
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </section>
               )}
 
