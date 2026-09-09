@@ -609,11 +609,11 @@ export default async function handler({ user, body, res }) {
   // and coder build on a polished, consistent base instead of raw HTML.
   const designBlock = (project.compile_target || 'source') === 'web-app' && !isSelfDev ? designSystemPromptBlock() : '';
 
-  // Self-dev feature plan (SELF-DEV-V2 A1): if a feature is active for this
-  // project, the planner gets its goal + step list + which step is active,
-  // so a multi-turn feature stays coherent across turns instead of each turn
-  // re-deriving intent from one message. Build turns only; best-effort.
-  const featureBlock = (isSelfDev && mode === 'build')
+  // Feature plan (originally self-dev A1, now any project): if a feature is
+  // active for this project, the planner gets its goal + step list + which
+  // step is active, so a multi-turn feature stays coherent instead of each
+  // turn re-deriving intent from one message. Build turns only; best-effort.
+  const featureBlock = (mode === 'build')
     ? featureContextBlock(await getActiveFeature(projectId).catch(() => null))
     : '';
 

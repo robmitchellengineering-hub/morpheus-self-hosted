@@ -28,7 +28,7 @@ import FileTree from '@/components/matrix/FileTree';
 import FileViewer from '@/components/matrix/FileViewer';
 import PreviewPanel from '@/components/matrix/PreviewPanel';
 import SelfDevHistoryModal from '@/components/matrix/SelfDevHistoryModal';
-import SelfDevFeatureModal from '@/components/matrix/SelfDevFeatureModal';
+import FeatureModal from '@/components/matrix/FeatureModal';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import HelpToggle from '@/components/matrix/HelpToggle';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
@@ -737,7 +737,7 @@ export default function SelfDev() {
       )}
 
       <SelfDevHistoryModal open={showHistory} onClose={() => setShowHistory(false)} snapshots={ws.snapshots} onRestore={ws.restoreSnapshot} project={ws.currentProject} />
-      <SelfDevFeatureModal open={showFeature} onClose={() => setShowFeature(false)} projectId={ws.currentProject?.id} onActiveChange={setActiveFeature} />
+      <FeatureModal open={showFeature} onClose={() => setShowFeature(false)} projectId={ws.currentProject?.id} onActiveChange={setActiveFeature} />
 
       {showPushConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">

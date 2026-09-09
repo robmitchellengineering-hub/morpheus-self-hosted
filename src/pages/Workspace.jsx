@@ -15,6 +15,7 @@ import FileViewer from '@/components/matrix/FileViewer';
 import NewProjectDialog from '@/components/matrix/NewProjectDialog';
 import ShareDialog from '@/components/matrix/ShareDialog';
 import HistoryPanel from '@/components/matrix/HistoryPanel';
+import FeatureModal from '@/components/matrix/FeatureModal';
 import AutonomousPanel from '@/components/matrix/AutonomousPanel';
 import TestsPanel from '@/components/matrix/TestsPanel';
 import UsagePanel from '@/components/matrix/UsagePanel';
@@ -53,6 +54,8 @@ export default function Workspace() {
   const [showRebuild, setShowRebuild] = useState(false);
   const [showPipeline, setShowPipeline] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
+  const [showFeature, setShowFeature] = useState(false);
+  const [activeFeature, setActiveFeature] = useState(null);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('time');
 
@@ -76,6 +79,16 @@ export default function Workspace() {
       setShowMarket(true);
     }
   }, []);
+
+  // Active feature plan for the FEATURE button badge.
+  useEffect(() => {
+    if (!ws.currentProject?.id) { setActiveFeature(null); return; }
+    let cancelled = false;
+    base44.functions.invoke('getSelfDevFeatures', { projectId: ws.currentProject.id })
+      .then(({ data }) => { if (!cancelled) setActiveFeature(data.active || null); })
+      .catch(() => { /* table not migrated on this deployment — panel explains */ });
+    return () => { cancelled = true; };
+  }, [ws.currentProject?.id]);
 
   // Sync project selection with the route so the hardware back button
   // returns to the project list and history is preserved.
@@ -217,7 +230,7 @@ export default function Workspace() {
 
   return (
     <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
-      <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
+      <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
       <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
         <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>CHAT</button>
         <button onClick={() => setMobileTab('files')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'files' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>FILES</button>
@@ -261,6 +274,7 @@ export default function Workspace() {
       <NewProjectDialog open={showNew} onClose={() => setShowNew(false)} onCreate={async (n, d, t) => { const p = await ws.createProject(n, d, t); setShowNew(false); if (p?.id) navigate('/workspace/' + p.id); }} />
       <ShareDialog open={showShare} onClose={() => setShowShare(false)} project={ws.currentProject} onUploadGithub={ws.uploadToGithub} onEmail={ws.emailProjectFiles} />
       <HistoryPanel open={showHistory} onClose={() => setShowHistory(false)} snapshots={ws.snapshots} onRestore={ws.restoreSnapshot} project={ws.currentProject} />
+      <FeatureModal open={showFeature} onClose={() => setShowFeature(false)} projectId={ws.currentProject?.id} onActiveChange={setActiveFeature} />
       <AutonomousPanel open={showAutonomous} onClose={() => setShowAutonomous(false)} project={ws.currentProject} onStep={ws.runAutonomousStep} onSendToChat={(msg) => { setShowAutonomous(false); setMobileTab('chat'); ws.sendMessage(msg); }} />
       <TestsPanel open={showTests} onClose={() => setShowTests(false)} project={ws.currentProject} onGenerate={ws.generateTests} />
       <UsagePanel open={showUsage} onClose={() => setShowUsage(false)} />

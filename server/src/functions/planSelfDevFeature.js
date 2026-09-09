@@ -1,33 +1,33 @@
-// Start a self-dev feature (SELF-DEV-V2 A1): the operator describes a feature
-// to build on Morpheus; one planner call breaks it into an ordered list of
+// Start a feature (originally self-dev A1, now any project): the operator
+// describes a feature; one planner call breaks it into an ordered list of
 // small, shippable steps; it's saved as the project's active feature. From
 // then on chatWithMorpheus.js gives the planner the goal + steps + current
 // step every build turn (see lib/selfDevFeature.js).
 //
-// One active feature per self-dev project — refuses if one already exists
-// (finish or abandon it first, via updateSelfDevFeature.js).
+// One active feature per project — refuses if one already exists (finish or
+// abandon it first, via updateSelfDevFeature.js).
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { isMissingFeatureTable, serializeSteps, normalizeSteps, hydrate } from '../lib/selfDevFeature.js';
 
-const SYSTEM = `You are the planning agent for Morpheus self-dev — Morpheus developing its own codebase (a Vite/React frontend + Node/Express/Prisma backend).
+const SYSTEM = `You are the planning agent inside Morpheus, an AI app builder.
 
-The operator has described a FEATURE they want to build on Morpheus. Break it into an ordered list of small, individually shippable steps — each step is one self-dev build turn that ends in a reviewable push (e.g. "add the SelfDevFeature Prisma model + migration", "add the planSelfDevFeature backend function", "add the FEATURE panel to SelfDev.jsx").
+The operator has described a FEATURE they want to add to their project. Break it into an ordered list of small, individually shippable steps — each step is one build turn that ends in a reviewable change (e.g. "add the data model", "add the API endpoint", "wire the UI panel").
 
 RULES:
 - 3 to 8 steps. Fewer if the feature is genuinely small.
 - Each step must be independently reviewable and leave the app working — never "half a schema change".
-- Order them so each step builds on the last (schema → backend → wiring → UI is the usual shape).
+- Order them so each step builds on the last (data → logic → wiring → UI is the usual shape).
 - Step titles are short imperative phrases, no numbering, no prose.
 - Also give the feature a short title (2-5 words).
 - Return ONLY JSON: { "title": "...", "steps": ["...", "..."] }`;
 
 export async function runPlanSelfDevFeature(user, projectId, goal) {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, created_by_id: user.id, project_type: 'self_dev' },
+    where: { id: projectId, created_by_id: user.id },
   });
-  if (!project) throw Object.assign(new Error('Self-dev project not found'), { status: 404 });
+  if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
 
   let existing;
   try {
@@ -86,7 +86,6 @@ export async function runPlanSelfDevFeature(user, projectId, goal) {
 }
 
 export default async function handler({ user, body }) {
-  if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
   const projectId = body?.projectId;
   const goal = String(body?.goal || '').trim();
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });

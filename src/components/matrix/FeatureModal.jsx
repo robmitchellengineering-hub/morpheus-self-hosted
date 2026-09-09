@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, ListChecks, Loader2, Check, Circle, Dot, RotateCcw, Trash2, Plus } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
-// Self-dev feature plans (SELF-DEV-V2 A1). A feature is a multi-step plan
-// tracked across turns: chatWithMorpheus gives the planner the goal + steps +
-// active step every build turn (server/src/lib/selfDevFeature.js), and the
-// operator marks a step done here once its push is in. One active feature per
-// self-dev project.
-export default function SelfDevFeatureModal({ open, onClose, projectId, onActiveChange }) {
+// Feature plans (originally self-dev A1, now any project). A feature is a
+// multi-step plan tracked across turns: chatWithMorpheus gives the planner the
+// goal + steps + active step every build turn (server/src/lib/selfDevFeature.js),
+// and the operator marks a step done here as it's built. One active feature
+// per project.
+export default function FeatureModal({ open, onClose, projectId, onActiveChange }) {
   const [loading, setLoading] = useState(false);
   const [state, setState] = useState({ migrated: true, active: null, recent: [] });
   const [goal, setGoal] = useState('');
@@ -73,7 +73,7 @@ export default function SelfDevFeatureModal({ open, onClose, projectId, onActive
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 shrink-0">
           <div className="flex items-center gap-2">
             <ListChecks size={18} className="text-primary" />
-            <span className="text-primary font-display tracking-wider text-sm">SELF-DEV FEATURE</span>
+            <span className="text-primary font-display tracking-wider text-sm">FEATURE</span>
           </div>
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
@@ -83,8 +83,7 @@ export default function SelfDevFeatureModal({ open, onClose, projectId, onActive
 
           {!state.migrated && (
             <div className="border border-yellow-500/40 bg-yellow-500/10 text-yellow-500/90 text-xs p-3 leading-relaxed">
-              The <span className="font-mono">self_dev_features</span> table hasn't been created yet. Run{' '}
-              <span className="font-mono">server/prisma/add-self-dev-features-table.sql</span> against the database, then reopen this panel.
+              Feature plans aren't available on this deployment yet (the <span className="font-mono">self_dev_features</span> table hasn't been created).
             </div>
           )}
 
@@ -93,13 +92,13 @@ export default function SelfDevFeatureModal({ open, onClose, projectId, onActive
           {state.migrated && !loading && !f && (
             <div className="space-y-3">
               <p className="text-primary/70 text-sm leading-relaxed">
-                Describe a feature to build on Morpheus. It'll be broken into small, shippable steps — the planner gets the goal + step list + current step on every build turn, so a multi-turn feature stays on track.
+                Describe a feature you want to add. It'll be broken into small, shippable steps — the planner gets the goal + step list + current step on every build turn, so a multi-turn feature stays on track instead of drifting.
               </p>
               <textarea
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
                 rows={4}
-                placeholder="e.g. Add a decisions log — every self-dev push records what changed and why, and the planner reads recent entries back."
+                placeholder="e.g. Add a comments system — users can leave threaded comments on any item, with edit/delete and a count badge."
                 className="w-full bg-black/40 border border-primary/30 text-primary text-sm p-2 font-mono focus:border-primary/60 outline-none resize-y"
               />
               <button onClick={plan} disabled={planning || goal.trim().length < 10} className="flex items-center gap-1.5 text-xs px-3 h-[34px] text-black bg-primary hover:bg-primary/90 font-bold disabled:opacity-40">
