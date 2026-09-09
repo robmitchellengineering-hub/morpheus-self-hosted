@@ -17,7 +17,7 @@ import { getActiveFeature, featureContextBlock, createFeature } from '../lib/sel
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
-import { webResearchConfigured, searchKey, webSearch, webFetch, URL_RE } from '../lib/webResearch.js';
+import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
 // doin step by step in the chat window") — this handler streams
@@ -330,18 +330,24 @@ Return a JSON object with a "paths" array containing up to ${limit} file paths f
 // findings block into the planner + coder. Best-effort — any failure returns
 // '' and the build proceeds without it.
 async function researchWeb(userId, message, { onProgress } = {}) {
-  const key = searchKey();
-  if (!key) return '';
-
+  const searchKey = await resolveSearchKey(userId).catch(() => null);
   const blocks = [];
+  const sources = []; // { host, url } — surfaced to the operator as // SOURCES:
+  const note = (url) => { try { sources.push({ host: new URL(url).host.replace(/^www\./, ''), url }); } catch { /* skip */ } };
   try {
-    // 1. Any URL the operator pasted — read it directly.
-    const urls = [...new Set((message.match(URL_RE) || []).map((u) => u.replace(/[.,;:)]+$/, '')))].slice(0, 2);
+    // 1. Any URL the operator pasted — read it directly. A bare origin also
+    //    gets an llms.txt probe (a site's own LLM-readable summary).
+    const urls = [...new Set((message.match(URL_RE) || []).map((u) => u.replace(/[.,;:)]+$/, '')))].slice(0, 3);
     for (const url of urls) {
       onProgress?.();
       try {
-        const page = await webFetch(key, url);
+        if (/^https?:\/\/[^/]+\/?$/.test(url)) {
+          const llms = await fetchLlmsTxt(url);
+          if (llms) { blocks.push(`LLMS.TXT: ${llms.url}\n${llms.content}`); note(llms.url); continue; }
+        }
+        const page = await webFetch(url);
         blocks.push(`PAGE: ${page.url}\n${page.content}`);
+        note(page.url);
       } catch (e) {
         blocks.push(`PAGE: ${url}\n(could not read this page: ${e.message})`);
       }
@@ -365,10 +371,11 @@ Return JSON: { "queries": ["...", "..."] } — 0 to 3 focused search queries. Re
     for (const q of queries) {
       onProgress?.();
       try {
-        const { answer, results } = await webSearch(key, q, { maxResults: 4 });
+        const { answer, results } = await webSearch(searchKey, q, { maxResults: 4 });
         const lines = [`SEARCH: ${q}`];
         if (answer) lines.push(`Summary: ${answer}`);
-        for (const r of results) lines.push(`- ${r.title} <${r.url}>\n  ${r.content}`);
+        for (const r of results) { lines.push(`- ${r.title} <${r.url}>${r.content ? `\n  ${r.content}` : ''}`); note(r.url); }
+        if (lines.length === 1) lines.push('(no results found)');
         blocks.push(lines.join('\n'));
       } catch (e) {
         blocks.push(`SEARCH: ${q}\n(search failed: ${e.message})`);
@@ -378,7 +385,10 @@ Return JSON: { "queries": ["...", "..."] } — 0 to 3 focused search queries. Re
     console.error('[researchWeb] failed:', err.message);
   }
 
-  return blocks.length ? blocks.join('\n\n') : '';
+  // De-dupe sources by url, keep first-seen order.
+  const seen = new Set();
+  const uniqueSources = sources.filter((s) => !seen.has(s.url) && seen.add(s.url));
+  return { notes: blocks.length ? blocks.join('\n\n') : '', sources: uniqueSources };
 }
 
 // Repo research pass (Command Deck: self-dev replaces the dev loop, Tier 2
@@ -573,6 +583,7 @@ export default async function handler({ user, body, res }) {
   let scopedNote = '';
   let researchNotes = '';
   let webNotes = '';
+  let webSources = []; // [{ host, url }] from the web-research pass — shown to the operator
   let shownPaths = files.map((f) => f.path); // full send => everything is "shown"
   // A scoped-context BUILD turn with no manual pins gets the iterative
   // research pass (researchRepo) instead of a one-shot file guess — deferred
@@ -583,10 +594,15 @@ export default async function handler({ user, body, res }) {
   // here, before streaming starts.
   const deferResearch = useScopedContext && mode === 'build' && !manualPins;
   // Web research (a search + any pasted URLs) runs in the stream as its own
-  // stage when the operator turns the WEB toggle on (body.webAccess) and the
-  // deployment has TAVILY_API_KEY set. The pre-check decides whether to
-  // actually search, so a self-contained request costs just one small call.
-  const deferWeb = mode === 'build' && body?.webAccess === true && webResearchConfigured();
+  // stage — in BUILD and CONTEXT mode — when the operator turns the WEB toggle
+  // on (body.webAccess). Self-dev defaults it ON (it routinely needs current
+  // library/API docs) unless the operator explicitly turned it off. The
+  // pre-check decides whether to actually search, so a self-contained request
+  // costs just one small call. Always "configured" now — free sources
+  // (Wikipedia / arXiv / llms.txt / direct fetch) need nothing; a Gemini key
+  // just adds the grounded-search tier (see lib/webResearch.js).
+  const webWanted = body?.webAccess === true || (isSelfDev && body?.webAccess === undefined);
+  const deferWeb = webWanted && webResearchConfigured();
 
   if (useScopedContext && !deferResearch) {
     let effectivePaths;
@@ -701,10 +717,26 @@ OPERATOR SAYS: ${message}`;
   const stages = makeStageEmitter(emit);
 
   try {
+    // ── Phase 0a: Web research — search + read pasted URLs before planning ──
+    // Runs for both CONTEXT and BUILD mode (it's just as useful when
+    // discussing an approach as when building it).
+    if (deferWeb) {
+      stages.start('web');
+      const web = await researchWeb(user.id, message);
+      webNotes = web.notes;
+      webSources = web.sources;
+      contextBlock = assembleContextBlock();
+      stages.done('web');
+    }
+    const sourcesLine = webSources.length
+      ? `\n\n// SOURCES: ${webSources.slice(0, 6).map((s) => `${s.host} <${s.url}>`).join('  ·  ')}`
+      : '';
+
     // ── CONTEXT MODE: one fast pass, no build pipeline ─────────────────────
-    // See CONTEXT_MODE_INSTRUCTIONS. No stage events are emitted, so the
-    // chat shows a plain thinking indicator instead of the pipeline graphic;
-    // no snapshot is taken and fileOperations is always empty.
+    // See CONTEXT_MODE_INSTRUCTIONS. Aside from the web stage above, no stage
+    // events are emitted, so the chat shows a plain thinking indicator instead
+    // of the pipeline graphic; no snapshot is taken and fileOperations is
+    // always empty.
     if (mode === 'context') {
       const ctx = await invokeAI({
         userId: user.id,
@@ -718,7 +750,7 @@ OPERATOR SAYS: ${message}`;
         role: 'planner',
         maxTokens: 6000,
       });
-      const ctxReply = ctx.result.reply || '...';
+      const ctxReply = (ctx.result.reply || '...') + sourcesLine;
       await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: ctxReply } });
       const ctxToolchain = buildToolchain(ctx.provider, { planner: ctx.model });
       await logUsage(user.id, 'chat_simple', projectId, project.name, {
@@ -728,14 +760,6 @@ OPERATOR SAYS: ${message}`;
       });
       emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context' } });
       return;
-    }
-
-    // ── Phase 0a: Web research — search + read pasted URLs before planning ──
-    if (deferWeb) {
-      stages.start('web');
-      webNotes = await researchWeb(user.id, message);
-      contextBlock = assembleContextBlock();
-      stages.done('web');
     }
 
     // ── Phase 0b: Repo research — investigate the codebase before planning ──
@@ -1161,6 +1185,7 @@ OPERATOR SAYS: ${message}`;
       ? formatReviewChatBlock({ summary: reviewSummary, approved: !reviewIssues.some((i) => i.severity === 'critical'), issues: reviewIssues })
       : '';
     let fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
+    fullReply += sourcesLine;
     if (polishCount > 0) {
       fullReply += `\n\n// POLISH: refined styling on ${polishCount} file(s).`;
     }
