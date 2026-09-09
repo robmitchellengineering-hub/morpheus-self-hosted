@@ -329,6 +329,7 @@ const admin = {
   getNorthflankStatus: () => apiFetch('/admin/ops/northflank/status'),
   getNorthflankLogs: ({ search, minutes, limit, type } = {}) =>
     apiFetch(`/admin/ops/northflank/logs${qs({ search, minutes, limit, type })}`),
+  restartNorthflankService: () => apiFetch('/admin/ops/northflank/restart', { method: 'POST', body: { confirm: true } }),
   runDbQuery: (sql, confirm = false) => apiFetch('/admin/ops/db-query', { method: 'POST', body: { sql, confirm } }),
   getStripeHealth: () => apiFetch('/admin/ops/stripe-health'),
   // Currency report — AI model + npm dependency freshness. Backed by
