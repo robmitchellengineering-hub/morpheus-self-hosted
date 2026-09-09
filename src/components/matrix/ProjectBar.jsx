@@ -1,4 +1,4 @@
-import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { generateManual } from '@/lib/generateManual';
 import BuildStamp from './BuildStamp';
@@ -8,7 +8,7 @@ import SheetSelect from './SheetSelect';
 
 const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
-export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
   return (
     <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
       {/* Row 1: project identity + primary action */}
@@ -85,6 +85,13 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           <HelpHint id="brand" title="Brand kit" body="This site's colours, fonts, corner radius and voice. On a web build the builder is given these as hard constraints — no more guessing at your brand. Saved as a config file inside the project.">
             <button onClick={onBrand} className={`${btnBase} ${brandSet ? 'text-primary border-primary/60' : ''}`}>
               <Palette size={14} /> BRAND
+            </button>
+          </HelpHint>
+        )}
+        {onForms && (
+          <HelpHint id="forms" title="Forms" body="Where this site's contact / signup form submissions go. Morpheus never receives them — the builder generates a handler that runs on your host and delivers to your own inbox or Google Sheet. Set the destination and method here.">
+            <button onClick={onForms} className={`${btnBase} ${formsOn ? 'text-primary border-primary/60' : ''}`}>
+              <Inbox size={14} /> FORMS
             </button>
           </HelpHint>
         )}
