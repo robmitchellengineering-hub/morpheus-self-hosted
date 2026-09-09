@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Mic, MicOff, Volume2, VolumeX, Play, Loader2, Paperclip, X, Undo2, AlertTriangle, Wrench, Bot, MessagesSquare, Hammer, Globe } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, Play, Loader2, Paperclip, X, Undo2, AlertTriangle, Bot, MessagesSquare, Hammer, Globe } from 'lucide-react';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { base44 } from '@/api/base44Client';
@@ -25,7 +25,6 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
   const [uploading, setUploading] = useState(false);
   const [revertConfirm, setRevertConfirm] = useState(false);
   const [reverting, setReverting] = useState(false);
-  const [fixDismissed, setFixDismissed] = useState(false);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
@@ -43,16 +42,6 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
   };
 
   const lastUserIdx = messages.map(m => m.role).lastIndexOf('user');
-
-  // A review "comes back red" when the latest Morpheus message flags critical
-  // issues with a "// CRITICAL" line. The Fix button flashes until pressed.
-  const lastMorpheusIdx = messages.map(m => m.role).lastIndexOf('morpheus');
-  const lastMorpheus = lastMorpheusIdx >= 0 ? messages[lastMorpheusIdx] : null;
-  const reviewIsRed = !!lastMorpheus && lastMorpheus.content.split('\n').some(l => l.startsWith('// CRITICAL'));
-
-  useEffect(() => {
-    if (reviewIsRed) setFixDismissed(false);
-  }, [lastMorpheus?.id]);
 
   const handleRevert = async () => {
     setReverting(true);
@@ -242,16 +231,6 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
         </div>
       )}
       <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" accept="image/*,.pdf,.txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.html,.xml,.py,.java,.kt,.swift,.go,.rs,.c,.cpp,.h,.yml,.yaml,.toml,.csv" />
-      {messages.length > 0 && !loading && (
-        <div className="border-t border-primary/20 px-3 pt-2 flex gap-2 flex-wrap">
-          <button
-            onClick={() => { setFixDismissed(true); onSend("Address the issues from the review. Look at the critical issues flagged in the last review, fix every one of them in the affected files, and re-output the corrected code. Don't stop until all review issues are resolved and the code is clean.", []); }}
-            className={`flex items-center gap-1.5 text-xs border px-2.5 py-1 transition-colors ${reviewIsRed && !fixDismissed ? 'review-flash text-primary border-red-500' : 'text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5'}`}
-          >
-            <Wrench size={12} /> Fix review issues
-          </button>
-        </div>
-      )}
       {modeEnabled && (
         <div className="border-t border-primary/20 px-3 py-2 flex items-center gap-2">
           <div className="flex border border-primary/30 shrink-0">
