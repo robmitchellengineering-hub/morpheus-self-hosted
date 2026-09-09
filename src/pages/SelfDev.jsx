@@ -21,7 +21,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp, ListChecks, Info } from 'lucide-react';
+import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp, ListChecks, Info, HeartPulse } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
@@ -29,6 +29,7 @@ import FileViewer from '@/components/matrix/FileViewer';
 import PreviewPanel from '@/components/matrix/PreviewPanel';
 import SelfDevHistoryModal from '@/components/matrix/SelfDevHistoryModal';
 import FeatureModal from '@/components/matrix/FeatureModal';
+import OpsPanel from '@/components/matrix/OpsPanel';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import HelpToggle from '@/components/matrix/HelpToggle';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
@@ -57,6 +58,7 @@ export default function SelfDev() {
   });
   const [showHistory, setShowHistory] = useState(false);
   const [showFeature, setShowFeature] = useState(false);
+  const [showOps, setShowOps] = useState(false);
   const [activeFeature, setActiveFeature] = useState(null);
   const [mobileTab, setMobileTab] = useState('chat');
   const [diagnosing, setDiagnosing] = useState(false);
@@ -540,10 +542,13 @@ export default function SelfDev() {
 
             {/* Operate — keep production running */}
             <span className={groupLabel}>Operate</span>
+            <button onClick={() => setShowOps(true)} title="Operations console — health, logs, database, spend, dependency currency, punch list" className={secBtn}>
+              <HeartPulse size={13} /> OPS
+            </button>
             <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${secBtn} disabled:opacity-50`}>
               <Stethoscope size={13} className={diagnosing ? 'animate-pulse' : ''} /> {diagnosing ? 'PULLING LOGS…' : 'DIAGNOSE FROM LOGS'}
             </button>
-            <Link to="/admin" title="Admin Control Panel — model routing, config, ops console (DB console, Northflank logs), audit log" className={secBtn}>
+            <Link to="/admin" title="Full Admin panel — model routing, per-model margins, audit log" className={secBtn}>
               <ShieldCheck size={13} /> ADMIN
             </Link>
 
@@ -780,6 +785,7 @@ export default function SelfDev() {
 
       <SelfDevHistoryModal open={showHistory} onClose={() => setShowHistory(false)} snapshots={ws.snapshots} onRestore={ws.restoreSnapshot} project={ws.currentProject} />
       <FeatureModal open={showFeature} onClose={() => setShowFeature(false)} projectId={ws.currentProject?.id} onActiveChange={setActiveFeature} />
+      <OpsPanel open={showOps} onClose={() => setShowOps(false)} />
 
       {showPushConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">

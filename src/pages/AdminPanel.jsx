@@ -880,7 +880,7 @@ function NorthflankCard() {
 }
 
 function DbConsoleCard() {
-  const [sql, setSql] = useState('SELECT key, value FROM "PlatformSetting" ORDER BY key;');
+  const [sql, setSql] = useState('SELECT key, value FROM platform_settings ORDER BY key;');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [running, setRunning] = useState(false);

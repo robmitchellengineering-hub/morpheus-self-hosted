@@ -331,6 +331,11 @@ const admin = {
     apiFetch(`/admin/ops/northflank/logs${qs({ search, minutes, limit, type })}`),
   runDbQuery: (sql, confirm = false) => apiFetch('/admin/ops/db-query', { method: 'POST', body: { sql, confirm } }),
   getStripeHealth: () => apiFetch('/admin/ops/stripe-health'),
+  // Currency report — AI model + npm dependency freshness. Backed by
+  // server/src/freshness.js (also runs on a schedule with email-on-change);
+  // getFreshness returns the last computed report, refreshFreshness forces one.
+  getFreshness: () => apiFetch('/admin/freshness'),
+  refreshFreshness: (notify = false) => apiFetch('/admin/freshness/refresh', { method: 'POST', body: { notify } }),
 };
 
 export const base44 = { entities, functions, integrations, connectors, auth, admin };
