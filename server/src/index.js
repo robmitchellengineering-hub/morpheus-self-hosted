@@ -11,6 +11,7 @@ import connectionsRoutes from './routes/connections.routes.js';
 import entitiesRoutes from './routes/entities.routes.js';
 import functionsRoutes from './routes/functions.routes.js';
 import uploadsRoutes from './routes/uploads.routes.js';
+import mediaAssetsRoutes from './routes/mediaAssets.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import { LOCAL_ROOT } from './storage.js';
 import { startFreshnessSchedule } from './freshnessSchedule.js';
@@ -47,6 +48,7 @@ app.use('/api/connections', connectionsRoutes);
 app.use('/api/entities', entitiesRoutes);
 app.use('/api/functions', functionsRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/media-assets', mediaAssetsRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Local-disk storage driver serves files from here. Swap to S3/R2 + a CDN

@@ -202,7 +202,24 @@ li{padding:3px 0;color:#00ff41;opacity:0.6}
 </body></html>`;
 }
 
-export function buildPreviewHtml(files) {
+// Media Library assets committed to the user's repo are referenced in the
+// code by their site-relative path ("/assets/x.jpg") — which the deployed
+// host serves, but the in-iframe preview can't. `assetMap` ({ "/assets/x.jpg":
+// "<resolvable preview url>" }) swaps those for a URL that loads now (the raw
+// GitHub URL for a public repo). A plain string replace of the exact,
+// distinctive path catches src / srcset / href / CSS url() / JSX alike.
+// Pasted-URL assets are already absolute and need nothing.
+function applyAssetMap(html, assetMap) {
+  if (!assetMap) return html;
+  let out = html;
+  for (const [sitePath, previewUrl] of Object.entries(assetMap)) {
+    if (!sitePath || !previewUrl || sitePath === previewUrl) continue;
+    out = out.split(sitePath).join(previewUrl);
+  }
+  return out;
+}
+
+export function buildPreviewHtml(files, { assetMap } = {}) {
   if (!files || files.length === 0) return buildFallbackPreview({});
   const fileMap = {};
   for (const f of files) {
@@ -214,11 +231,13 @@ export function buildPreviewHtml(files) {
   const hasReact = (pkg && (pkg.dependencies?.react || pkg.devDependencies?.react)) ||
     Object.keys(fileMap).some(p => /\.(jsx|tsx)$/.test(p));
 
+  let html;
   if (hasReact) {
-    return buildReactPreview(fileMap, pkg, indexHtml);
+    html = buildReactPreview(fileMap, pkg, indexHtml);
+  } else if (indexHtml) {
+    html = buildStaticPreview(indexHtml, fileMap);
+  } else {
+    html = buildFallbackPreview(fileMap);
   }
-  if (indexHtml) {
-    return buildStaticPreview(indexHtml, fileMap);
-  }
-  return buildFallbackPreview(fileMap);
+  return applyAssetMap(html, assetMap);
 }

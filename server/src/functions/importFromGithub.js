@@ -64,6 +64,11 @@ export default async function handler({ user, body }) {
     },
   });
 
+  // Remember which repo this came from (Media Library commits assets here).
+  // Best-effort so it can't break the import before add-project-assets-table.sql
+  // has run.
+  await prisma.project.update({ where: { id: project.id }, data: { github_repo: `${owner}/${repo}` } }).catch(() => {});
+
   // Fetch file contents and build ProjectFile records
   const fileRecords = [];
   let fetched = 0;

@@ -62,6 +62,7 @@ model User {
   self_dev_manuals SelfDevManual[]
   self_dev_features SelfDevFeature[]
   self_dev_decisions SelfDevDecision[]
+  project_assets   ProjectAsset[]
   github_connection GithubConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
@@ -156,6 +157,12 @@ model Project {
   context_summary               String? @db.Text
   context_summary_message_count Int     @default(0)
 
+  // "owner/repo" of the GitHub repo this project is connected to — set by
+  // uploadToGithub.js / importFromGithub.js. Media Library's "add from
+  // device" commits assets straight into this repo (public/assets/*), and
+  // it's where a static site actually gets deployed from.
+  github_repo    String?
+
   files          ProjectFile[]
   chat_messages  ChatMessage[]
   snapshots      FileSnapshot[]
@@ -164,6 +171,7 @@ model Project {
   backend_config BackendConfig?
   self_dev_features SelfDevFeature[]
   self_dev_decisions SelfDevDecision[]
+  assets         ProjectAsset[]
 
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
@@ -671,4 +679,36 @@ model CostSnapshot {
   updated_date  DateTime @updatedAt
 
   @@map("cost_snapshots")
+}
+
+// Media Library (2026-09-09) — a project's content assets (product photos,
+// event posters, self-made ads, media). ZERO CUSTODY: Morpheus stores only
+// the url + caption, never the bytes. `source:'url'` = the operator pasted a
+// public link they host themselves; `source:'repo'` = uploaded from device
+// and committed straight into the project's own GitHub repo
+// (public/assets/*, via github.js createOrUpdateFile) — the buffer is never
+// persisted anywhere in Morpheus. The coder gets the url list as context so
+// it writes real <img src> instead of placeholders. See MediaPanel.jsx.
+model ProjectAsset {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  name          String                       // operator-facing label
+  kind          String   @default("image")   // image | video | audio | pdf | font | other
+  source        String   @default("url")     // url | repo
+  url           String                       // what the coder writes into the code ("/assets/x.jpg" for repo, absolute for url)
+  preview_url   String?                      // resolvable URL for the panel thumbnail + preview build (raw.githubusercontent for repo assets)
+  repo_path     String?                      // path in github_repo, for delete (repo source only)
+  alt           String?
+  width         Int?
+  height        Int?
+  size          Int?
+
+  created_date  DateTime @default(now())
+
+  @@index([project_id, created_date])
+  @@map("project_assets")
 }

@@ -46,6 +46,10 @@ export default async function handler({ user, body }) {
   ];
   await pushFiles(accessToken, repo.full_name, allFiles, 'Upload from Morpheus', { isNewRepo: repo._isNewRepo });
 
+  // Remember the connection so the Media Library can commit assets straight
+  // into this repo, and so re-uploads / deploy know where "the repo" is.
+  await prisma.project.update({ where: { id: projectId }, data: { github_repo: repo.full_name } }).catch(() => {});
+
   await logUsage(user.id, 'github_upload', projectId, project.name, { repo: repo.full_name, fileCount: files.length + 1 });
   return { repoUrl: repo.html_url, fileCount: files.length };
 }
