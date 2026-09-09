@@ -74,8 +74,38 @@ export function hydrate(feature) {
   };
 }
 
-// The active feature for a self-dev project, hydrated — or null (no feature,
-// or the table isn't migrated yet).
+// Create a feature from a ready-made step list (the planner's, when it
+// auto-escalates a multi-turn job — chatWithMorpheus.js). Returns the hydrated
+// feature, the existing active one if there already is one, or null (fewer
+// than 2 steps, or the table isn't migrated). Best-effort: never throws.
+export async function createFeature(userId, projectId, { title, goal, stepTitles }) {
+  const titles = (Array.isArray(stepTitles) ? stepTitles : [])
+    .map((s) => String(s || '').trim()).filter(Boolean).slice(0, 8);
+  if (titles.length < 2) return null;
+  try {
+    const existing = await prisma.selfDevFeature.findFirst({ where: { project_id: projectId, status: 'active' } });
+    if (existing) return hydrate(existing);
+    const steps = normalizeSteps(titles.map((t, i) => ({ n: i + 1, title: t, status: i === 0 ? 'active' : 'pending' })));
+    const row = await prisma.selfDevFeature.create({
+      data: {
+        created_by_id: userId,
+        project_id: projectId,
+        title: String(title || goal || 'Feature').trim().slice(0, 80),
+        goal: String(goal || title || '').trim().slice(0, 2000) || '—',
+        steps: serializeSteps(steps),
+        status: 'active',
+      },
+    });
+    return hydrate(row);
+  } catch (err) {
+    if (isMissingFeatureTable(err)) return null;
+    console.error('[selfDevFeature] createFeature failed:', err.message);
+    return null;
+  }
+}
+
+// The active feature for a project, hydrated — or null (no feature, or the
+// table isn't migrated yet).
 export async function getActiveFeature(projectId) {
   try {
     const row = await prisma.selfDevFeature.findFirst({
@@ -103,6 +133,6 @@ GOAL: ${feature.goal}
 STEPS:
 ${lines.join('\n')}
 
-You are building this feature one step per turn. Implement ONLY the step marked ACTIVE. Do not start a later step, and do not redo a step marked done. If the operator's message is clearly a bug fix or a change outside this feature, follow the operator instead and leave the feature steps alone.
+You are building this feature one step per turn. Implement ONLY the step marked ACTIVE. Do not start a later step, and do not redo a step marked done. Set stepComplete: true if this turn fully finishes the active step (so the next turn moves on); set it false if the operator is asking for a tweak or fix that's still part of the active step. If the operator's message is clearly a bug fix or a change outside this feature, follow the operator, set stepComplete: false, and leave the feature steps alone.
 `;
 }

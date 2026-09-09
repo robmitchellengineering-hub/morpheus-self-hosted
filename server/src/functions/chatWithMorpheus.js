@@ -13,7 +13,7 @@ import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../li
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
 import { estimateCallMs } from '../lib/timingStats.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
-import { getActiveFeature, featureContextBlock } from '../lib/selfDevFeature.js';
+import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { webResearchConfigured, searchKey, webSearch, webFetch, URL_RE } from '../lib/webResearch.js';
@@ -203,12 +203,19 @@ For build requests where you are NOT asking clarification, your reply should be 
 
 PLANNED FILES — when needsCode is true, also return plannedFiles: an ordered array of every file path this build will create or modify (e.g. ["package.json", "README.md", "src/App.jsx", "src/index.css", ...]). List EVERY file the plan calls for, in a sensible implementation order (config/setup files first, then the files that depend on them). The coder agent implements this list a few files at a time in separate passes, so it must be complete and exact — a file missing from this list will not get written.
 
+MULTI-STEP ESCALATION — if the request genuinely cannot be built well in one pass (it needs a data-model change AND backend AND several UI pieces wired together, or it's roughly 6+ non-trivial files with real dependencies between them), do NOT try to cram it into one turn. Instead:
+- set featureSteps: an ordered list of 3-8 small, individually shippable steps — each step is one build turn that leaves the app working (e.g. "add the comments data model", "add the comment API endpoints", "add the comment thread component", "wire comments into the item view").
+- set featureTitle: a 2-5 word name for the whole thing.
+- make your plan and plannedFiles cover ONLY THE FIRST STEP — that is what gets built this turn; the remaining steps are tracked and built on later turns.
+Do NOT escalate a single component, a bug fix, a styling change, or a handful of closely-related files — those are one turn. Only escalate when nothing is already being tracked (no active feature is shown in your context).
+
 Return JSON with:
 - reply: Your response to the operator (in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true)
 - needsCode: true if code needs to be written/modified, false for pure conversation
 - needsClarification: true ONLY if a genuine build-blocking ambiguity prevents you from building correctly — reply then contains just the clarifying questions
-- plan: concise file-by-file build plan with implementation notes — 1-3 sentences per file, deeper only where a file genuinely needs it (see KEEP THE PLAN CONCISE above) (only required when needsCode is true AND needsClarification is false)
-- plannedFiles: ordered array of every file path the plan will touch (only required when needsCode is true AND needsClarification is false) — see PLANNED FILES above`;
+- plan: concise file-by-file build plan with implementation notes — 1-3 sentences per file, deeper only where a file genuinely needs it (see KEEP THE PLAN CONCISE above) (only required when needsCode is true AND needsClarification is false); when you set featureSteps, this covers only the first step
+- plannedFiles: ordered array of every file path the plan will touch (only required when needsCode is true AND needsClarification is false) — see PLANNED FILES above
+- featureTitle / featureSteps: only when escalating a multi-step job (see MULTI-STEP ESCALATION above)`;
 
 // CONTEXT MODE (Workspace / Self-Dev "CONTEXT ⇄ BUILD" toggle, 2026-09-08 —
 // Rob: "put morpheus into context mode so you can chat and build context
@@ -613,9 +620,12 @@ export default async function handler({ user, body, res }) {
   // active for this project, the planner gets its goal + step list + which
   // step is active, so a multi-turn feature stays coherent instead of each
   // turn re-deriving intent from one message. Build turns only; best-effort.
-  const featureBlock = (mode === 'build')
-    ? featureContextBlock(await getActiveFeature(projectId).catch(() => null))
-    : '';
+  // If NO feature is active, the planner may auto-escalate a big job into one
+  // (see MULTI-STEP ESCALATION + the post-planner block below).
+  const activeFeature = (mode === 'build')
+    ? await getActiveFeature(projectId).catch(() => null)
+    : null;
+  const featureBlock = featureContextBlock(activeFeature);
 
   // Decisions log (originally self-dev Tier 2 #7, now every project): the last
   // few "what changed / why" entries, so the planner builds on past decisions
@@ -749,8 +759,11 @@ OPERATOR SAYS: ${message}`;
           reply: { type: 'string', description: 'Morpheus response in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true' },
           needsCode: { type: 'boolean', description: 'true if code needs to be written/modified, false for pure conversation' },
           needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
-          plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false)' },
+          plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false). When featureSteps is set, this covers only the first step.' },
           plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' },
+          featureTitle: { type: 'string', description: 'MULTI-STEP ESCALATION only: a 2-5 word name for a job too big for one turn.' },
+          featureSteps: { type: 'array', items: { type: 'string' }, description: 'MULTI-STEP ESCALATION only: 3-8 ordered, individually shippable step titles. When set, plan/plannedFiles cover only the first.' },
+          stepComplete: { type: 'boolean', description: 'When an ACTIVE FEATURE is shown in your context: true if THIS turn fully completes the active step (advance to the next); false if it is a tweak/fix still within the active step.' },
           decisionSummary: { type: 'string', description: 'CODE BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
           decisionRationale: { type: 'string', description: 'CODE BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' }
         }
@@ -790,6 +803,22 @@ OPERATOR SAYS: ${message}`;
     const reply = plannerResult.reply || '...';
     const needsCode = !!plannerResult.needsCode;
     const needsClarification = !!plannerResult.needsClarification;
+
+    // ── Auto-escalation: a job too big for one turn becomes a feature ──────
+    // The planner returned a step breakdown; record it as the project's
+    // active feature (step 1 active) and let the build below proceed on
+    // step 1 only (the planner scoped its plan/plannedFiles to it). Skipped
+    // if a feature is already active, if the operator is just asking a
+    // question, or if the table isn't migrated.
+    let escalatedFeature = null;
+    if (needsCode && !needsClarification && !activeFeature
+        && Array.isArray(plannerResult.featureSteps) && plannerResult.featureSteps.length >= 3) {
+      escalatedFeature = await createFeature(user.id, projectId, {
+        title: plannerResult.featureTitle,
+        goal: message,
+        stepTitles: plannerResult.featureSteps,
+      });
+    }
 
     // ── Clarification gate: if the Planner is genuinely unsure, ask before building ─
     if (needsClarification) {
@@ -1091,6 +1120,36 @@ OPERATOR SAYS: ${message}`;
     if (unresolved.length > 0) {
       fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
     }
+
+    // ── Feature progress ──────────────────────────────────────────────────
+    // Escalation turn: announce the plan and advance past step 1 (just built).
+    // Ongoing feature turn (non-self-dev): advance the active step when the
+    // build changed files — the planner's context said to build that step, so
+    // it's done; the operator can reopen it from the FEATURE panel to refine.
+    // Self-dev advances its steps manually (on push, from the panel).
+    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0;
+    if (escalatedFeature && escalatedFeature.activeStep) {
+      fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
+      if (buildProgressed) {
+        try {
+          const { runUpdateSelfDevFeature } = await import('./updateSelfDevFeature.js');
+          await runUpdateSelfDevFeature(user, escalatedFeature.id, 'completeStep', { stepN: escalatedFeature.activeStep.n, silent: true });
+        } catch (e) { console.error('[chatWithMorpheus] feature step advance failed:', e.message); }
+      }
+    } else if (activeFeature && activeFeature.status === 'active' && activeFeature.activeStep && buildProgressed && !isSelfDev) {
+      if (plannerResult.stepComplete === true) {
+        try {
+          const { runUpdateSelfDevFeature } = await import('./updateSelfDevFeature.js');
+          const { feature } = await runUpdateSelfDevFeature(user, activeFeature.id, 'completeStep', { stepN: activeFeature.activeStep.n, silent: true });
+          fullReply += feature.status === 'done'
+            ? `\n\n// FEATURE: "${feature.title}" complete — all ${feature.totalSteps} steps built.`
+            : `\n\n// FEATURE: step ${activeFeature.activeStep.n}/${feature.totalSteps} done. Next: ${feature.activeStep?.title}. (Reopen it from the FEATURE panel to keep refining.)`;
+        } catch (e) { console.error('[chatWithMorpheus] feature step advance failed:', e.message); }
+      } else {
+        fullReply += `\n\n// FEATURE: still on step ${activeFeature.activeStep.n}/${activeFeature.totalSteps} — ${activeFeature.activeStep.title}. Say "next" when it's ready.`;
+      }
+    }
+
     await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: fullReply } });
 
     if (appliedOps.length > 0) {
@@ -1123,7 +1182,7 @@ OPERATOR SAYS: ${message}`;
       );
     }
 
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps } });
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // Mirrors functions.routes.js's normal error shape (message/code/needed/

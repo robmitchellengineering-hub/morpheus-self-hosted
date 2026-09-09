@@ -78,7 +78,9 @@ export async function runUpdateSelfDevFeature(user, featureId, action, args = {}
     data: { steps: serializeSteps(steps), status },
   });
 
-  if (chatNote) {
+  // `args.silent` — used when chatWithMorpheus advances a step itself, so it
+  // can fold the progress note into its own reply instead of a second message.
+  if (chatNote && !args.silent) {
     await prisma.chatMessage.create({
       data: { created_by_id: user.id, project_id: feature.project_id, role: 'morpheus', content: chatNote },
     });

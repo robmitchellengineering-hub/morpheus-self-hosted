@@ -153,7 +153,8 @@ export default function SelfDev() {
     } catch { setLastPush(null); }
   }, [ws.currentProject?.id]);
 
-  // Load the active feature plan (#A1) for the header strip.
+  // Load the active feature plan (#A1) for the header strip — re-fetched
+  // after every turn so an auto-escalation shows up.
   useEffect(() => {
     if (!ws.currentProject?.id) return;
     let cancelled = false;
@@ -161,7 +162,7 @@ export default function SelfDev() {
       .then(({ data }) => { if (!cancelled) setActiveFeature(data.active || null); })
       .catch(() => { /* table may not be migrated yet — the FEATURE panel explains */ });
     return () => { cancelled = true; };
-  }, [ws.currentProject?.id]);
+  }, [ws.currentProject?.id, ws.messages.length]);
 
   // #4 — deploy watcher. Polls Northflank after a push; on a failed
   // build/deployment it flips the banner to 'failed' and fires

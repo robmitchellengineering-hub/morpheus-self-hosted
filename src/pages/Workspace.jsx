@@ -80,7 +80,8 @@ export default function Workspace() {
     }
   }, []);
 
-  // Active feature plan for the FEATURE button badge.
+  // Active feature plan for the FEATURE button badge. Re-fetched after every
+  // turn (messages change) so an auto-escalation or a step advance shows up.
   useEffect(() => {
     if (!ws.currentProject?.id) { setActiveFeature(null); return; }
     let cancelled = false;
@@ -88,7 +89,7 @@ export default function Workspace() {
       .then(({ data }) => { if (!cancelled) setActiveFeature(data.active || null); })
       .catch(() => { /* table not migrated on this deployment — panel explains */ });
     return () => { cancelled = true; };
-  }, [ws.currentProject?.id]);
+  }, [ws.currentProject?.id, ws.messages.length]);
 
   // Sync project selection with the route so the hardware back button
   // returns to the project list and history is preserved.
