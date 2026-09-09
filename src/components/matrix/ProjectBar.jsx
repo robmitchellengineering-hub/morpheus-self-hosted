@@ -1,4 +1,4 @@
-import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { generateManual } from '@/lib/generateManual';
 import BuildStamp from './BuildStamp';
@@ -8,7 +8,7 @@ import SheetSelect from './SheetSelect';
 
 const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
-export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
   return (
     <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
       {/* Row 1: project identity + primary action */}
@@ -78,6 +78,13 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           <HelpHint id="media" title="Media library" body="Photos, posters, ads and other content for the site. Paste a link you host yourself, or upload from your device straight into your connected GitHub repo — Morpheus never stores the file, just the URL. Listed assets are offered to the builder by name.">
             <button onClick={onMedia} className={btnBase}>
               <ImageIcon size={14} /> MEDIA{assetCount ? ` ${assetCount}` : ''}
+            </button>
+          </HelpHint>
+        )}
+        {onBrand && (
+          <HelpHint id="brand" title="Brand kit" body="This site's colours, fonts, corner radius and voice. On a web build the builder is given these as hard constraints — no more guessing at your brand. Saved as a config file inside the project.">
+            <button onClick={onBrand} className={`${btnBase} ${brandSet ? 'text-primary border-primary/60' : ''}`}>
+              <Palette size={14} /> BRAND
             </button>
           </HelpHint>
         )}
