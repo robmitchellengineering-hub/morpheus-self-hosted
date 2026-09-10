@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { X, Rocket, Loader2, Check, AlertTriangle, GitBranch, ShieldCheck, ShieldAlert, FileDiff } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Rocket, Loader2, Check, AlertTriangle, GitBranch, ShieldCheck, ShieldAlert, FileDiff, ExternalLink, GitPullRequest } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // DEPLOY panel (2026-09-10) — ship this project's code to its connected
-// WordPress site through the `wordpress` delivery adapter. Slice 1 is
-// read-only: live-site health, the plugin's armed state, and a dry-run diff
-// (what a deploy would change — nothing is written). The armed ship +
-// auto-merge path lands once there's a staging site to prove rollback on.
-//
-// The WordPress connection is shared with the STORE panel (one
-// PluginConnection per project) — connect there first.
+// WordPress site through the `wordpress` delivery adapter.
+//   SHIP  → verify → open a PR on the repo
+//   then  → Morpheus polls the PR and squash-merges it on green, then fires
+//           the plugin's deploy webhook so the live site pulls the change
+// The plugin only writes files to the live server when it's "Armed" in
+// Settings → Morpheus; until then a deploy request just reports what it
+// would change. The WordPress connection is shared with the STORE panel.
 
 const inputNote = 'text-[11px] text-primary/45 leading-relaxed';
 
@@ -37,6 +37,11 @@ export default function DeployPanel({ open, onClose, projectId }) {
   const [diff, setDiff] = useState(null);
   const [running, setRunning] = useState(false);
 
+  const [ship, setShip] = useState(null);       // ship result
+  const [shipping, setShipping] = useState(false);
+  const [merge, setMerge] = useState(null);     // { phase, result }
+  const pollRef = useRef(null);
+
   const load = useCallback(async () => {
     if (!projectId) return;
     setLoading(true); setErr(null);
@@ -44,8 +49,6 @@ export default function DeployPanel({ open, onClose, projectId }) {
       const { data } = await base44.functions.invoke('wordPressDeploy', { projectId, action: 'status' });
       setState(data);
     } catch (e) {
-      // resolveWordpressDelivery throws a friendly 400 when no connection /
-      // repo / GitHub — surface it as the "not ready" state, not an error.
       const msg = e?.data?.error || e.message;
       if (e?.data?.status === 400 || /connect|repo|GitHub/i.test(msg)) {
         setState({ connected: false, reason: msg });
@@ -58,8 +61,43 @@ export default function DeployPanel({ open, onClose, projectId }) {
   }, [projectId]);
 
   useEffect(() => {
-    if (open) { setVerify(null); setDiff(null); setErr(null); load(); }
+    if (open) { setVerify(null); setDiff(null); setShip(null); setMerge(null); setErr(null); load(); }
   }, [open, load]);
+
+  // Clear any running poll when the panel closes / unmounts.
+  useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
+
+  // Merge watcher — after a PR is open, poll the `merge` action until it
+  // merges (green) or a check fails. On merge the server has already fired
+  // the deploy webhook; the result carries the plugin's response.
+  useEffect(() => {
+    const prNumber = ship?.shipped ? ship.prNumber : null;
+    if (!prNumber || merge?.phase === 'merged' || merge?.phase === 'failed') return;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const { data } = await base44.functions.invoke('wordPressDeploy', { projectId, action: 'merge', prNumber });
+        if (cancelled) return;
+        if (data.merged) {
+          setMerge({ phase: 'merged', result: data });
+          load(); // refresh live-site health + last-deploy
+          return;
+        }
+        if (data.state === 'failed' || data.state === 'conflict' || data.state === 'merge_failed') {
+          setMerge({ phase: 'failed', result: data });
+          return;
+        }
+        setMerge({ phase: 'polling', result: data });
+        pollRef.current = setTimeout(poll, 15000);
+      } catch {
+        if (!cancelled) pollRef.current = setTimeout(poll, 20000);
+      }
+    };
+    pollRef.current = setTimeout(poll, 8000);
+    return () => { cancelled = true; if (pollRef.current) clearTimeout(pollRef.current); };
+  }, [ship?.prNumber, merge?.phase, projectId, load]);
 
   if (!open) return null;
 
@@ -81,7 +119,18 @@ export default function DeployPanel({ open, onClose, projectId }) {
     finally { setRunning(false); }
   };
 
+  const runShip = async () => {
+    setShipping(true); setErr(null); setShip(null); setMerge(null);
+    try {
+      const { data } = await base44.functions.invoke('wordPressDeploy', { projectId, action: 'ship' });
+      setShip(data);
+      if (data.blocked) setErr('Syntax check failed — fix the code (in chat) and try again.');
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setShipping(false); }
+  };
+
   const ready = state?.connected;
+  const busy = shipping || merge?.phase === 'polling';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/80" onClick={onClose}>
@@ -95,7 +144,7 @@ export default function DeployPanel({ open, onClose, projectId }) {
         </div>
 
         <p className={`${inputNote} px-4 py-2 border-b border-primary/10 shrink-0`}>
-          Ship this project’s code to its connected WordPress site. Morpheus opens a PR on your repo; once CI is green and it merges, the plugin writes the change to the live server and health-checks it.
+          Ship this project’s code to its connected WordPress site. Morpheus opens a PR on your repo, squash-merges it once checks pass, then the plugin writes the change to the live server and health-checks it.
         </p>
 
         {err && <div className="m-4 mb-0 text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
@@ -112,7 +161,7 @@ export default function DeployPanel({ open, onClose, projectId }) {
 
         {!loading && ready && (
           <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-5">
-            {/* connection */}
+            {/* target */}
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 text-[10px] text-primary/40 uppercase tracking-wider">
                 <GitBranch size={11} /> Target
@@ -122,8 +171,11 @@ export default function DeployPanel({ open, onClose, projectId }) {
               {state.plugin && (
                 <div className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide px-2 py-1 border mt-1 ${state.plugin.armed ? 'text-yellow-500/90 border-yellow-500/40' : 'text-primary/60 border-primary/30'}`}>
                   {state.plugin.armed ? <ShieldAlert size={11} /> : <ShieldCheck size={11} />}
-                  plugin {state.plugin.armed ? 'ARMED — writes files' : 'not armed — dry-run'} · v{state.plugin.version}
+                  plugin {state.plugin.armed ? 'ARMED — writes to live site' : 'not armed — deploy is a dry-run'} · v{state.plugin.version}
                 </div>
+              )}
+              {state.plugin && !state.plugin.configured && (
+                <div className="text-[10px] text-primary/40">Deploy module not configured on the plugin yet — set the repo + a GitHub token in Settings → Morpheus for it to write files.</div>
               )}
             </div>
 
@@ -138,53 +190,94 @@ export default function DeployPanel({ open, onClose, projectId }) {
               </div>
             )}
 
-            {/* verify */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-primary/40 uppercase tracking-wider">Syntax check</span>
-                <button onClick={runVerify} disabled={verifying}
-                  className="text-[11px] px-3 py-1.5 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary disabled:opacity-40">
-                  {verifying ? <Loader2 size={11} className="animate-spin inline" /> : 'VERIFY'}
-                </button>
-              </div>
-              {verify && (
-                verify.ok
-                  ? <div className="text-[11px] text-primary/70 flex items-center gap-1.5"><Check size={12} /> {verify.checkedFiles} script file{verify.checkedFiles === 1 ? '' : 's'} clean</div>
-                  : <div className="space-y-1">
-                      {verify.errors.map((e, i) => (
-                        <div key={i} className="text-[10px] text-red-400 font-mono">{e.file}:{e.line} — {e.text}</div>
-                      ))}
-                    </div>
-              )}
+            {/* verify + dry run */}
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={runVerify} disabled={verifying || busy}
+                className="text-[11px] px-3 py-2 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary disabled:opacity-40">
+                {verifying ? <Loader2 size={11} className="animate-spin inline" /> : 'VERIFY'}
+              </button>
+              <button onClick={runDryRun} disabled={running || busy}
+                className="flex items-center justify-center gap-1.5 text-[11px] px-3 py-2 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary disabled:opacity-40">
+                {running ? <Loader2 size={11} className="animate-spin" /> : <FileDiff size={11} />} DRY RUN
+              </button>
             </div>
 
-            {/* dry run */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-primary/40 uppercase tracking-wider">What would deploy</span>
-                <button onClick={runDryRun} disabled={running}
-                  className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary disabled:opacity-40">
-                  {running ? <Loader2 size={11} className="animate-spin" /> : <FileDiff size={11} />} DRY RUN
-                </button>
+            {verify && (
+              verify.ok
+                ? <div className="text-[11px] text-primary/70 flex items-center gap-1.5"><Check size={12} /> {verify.checkedFiles} script file{verify.checkedFiles === 1 ? '' : 's'} clean</div>
+                : <div className="space-y-1">
+                    {verify.errors.map((e, i) => (
+                      <div key={i} className="text-[10px] text-red-400 font-mono">{e.file}:{e.line} — {e.text}</div>
+                    ))}
+                  </div>
+            )}
+
+            {diff && !diff.changed && (
+              <div className="text-[11px] text-primary/55">Nothing to deploy — the site’s repo already matches this project.</div>
+            )}
+            {diff && diff.changed && (
+              <div className="space-y-1.5">
+                <div className="text-[11px] text-primary/70">{diff.createCount} new · {diff.updateCount} changed · {diff.deleteCount} deleted</div>
+                <div className="max-h-40 overflow-y-auto scrollbar-matrix border border-primary/15 p-2 space-y-0.5">
+                  {diff.changedPaths.map((p) => <div key={p} className="text-[10px] text-primary/60 font-mono">{p}</div>)}
+                  {diff.deletePaths.map((p) => <div key={p} className="text-[10px] text-red-400/70 font-mono">− {p}</div>)}
+                </div>
               </div>
-              {diff && !diff.changed && (
-                <div className="text-[11px] text-primary/55">Nothing to deploy — the site’s repo already matches this project.</div>
+            )}
+
+            {/* ship */}
+            <div className="border-t border-primary/15 pt-4 space-y-2">
+              <button onClick={runShip} disabled={busy}
+                className="w-full flex items-center justify-center gap-2 h-[44px] bg-primary text-black font-bold text-[13px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
+                {shipping ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+                {shipping ? 'SHIPPING…' : 'SHIP TO SITE'}
+              </button>
+
+              {ship?.shipped === false && ship.reason === 'no-changes' && (
+                <div className="text-[11px] text-primary/55">Nothing to ship — the repo already matches this project.</div>
               )}
-              {diff && diff.changed && (
-                <div className="space-y-1.5">
-                  <div className="text-[11px] text-primary/70">
-                    {diff.createCount} new · {diff.updateCount} changed · {diff.deleteCount} deleted
-                  </div>
-                  <div className="max-h-40 overflow-y-auto scrollbar-matrix border border-primary/15 p-2 space-y-0.5">
-                    {diff.changedPaths.map((p) => <div key={p} className="text-[10px] text-primary/60 font-mono">{p}</div>)}
-                    {diff.deletePaths.map((p) => <div key={p} className="text-[10px] text-red-400/70 font-mono">− {p}</div>)}
-                  </div>
+              {ship?.blocked && (
+                <div className="text-[11px] text-red-400">Syntax check failed — nothing was pushed. Fix it in chat and ship again.</div>
+              )}
+
+              {ship?.shipped && (
+                <div className="border border-primary/25 px-3 py-2.5 space-y-2 text-[11px]">
+                  <a href={ship.prUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-primary/80 hover:text-primary">
+                    <GitPullRequest size={12} /> PR #{ship.prNumber} — {ship.summary}
+                    <ExternalLink size={10} />
+                  </a>
+
+                  {(!merge || merge.phase === 'polling') && (
+                    <div className="flex items-center gap-1.5 text-primary/55">
+                      <Loader2 size={11} className="animate-spin" />
+                      {merge?.result?.note || 'Waiting for checks, then merging…'}
+                    </div>
+                  )}
+                  {merge?.phase === 'failed' && (
+                    <div className="text-red-400">
+                      {merge.result.message || `Checks failed (${(merge.result.failing || []).join(', ') || 'see the PR'}). Base branch untouched.`}
+                    </div>
+                  )}
+                  {merge?.phase === 'merged' && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-primary"><Check size={12} /> Merged.</div>
+                      {merge.result.deploy && (
+                        <div className="text-primary/60">
+                          {merge.result.deploy.triggered
+                            ? (state.plugin?.armed
+                                ? 'Plugin deployed the change to the live site.'
+                                : 'Plugin acknowledged (not armed — it reported the diff, wrote nothing).')
+                            : `Deploy webhook not fired: ${merge.result.deploy.reason || merge.result.deploy.error || 'unknown'}`}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
             <div className="border border-primary/20 bg-primary/[0.03] px-3 py-2.5 text-[10px] text-primary/50 leading-relaxed">
-              Deploys are <span className="text-primary/70">dry-run only</span> for now — Morpheus writes nothing to the live site until a staging environment is set up to prove the auto-rollback. Use chat to make changes; they land in your repo and show here.
+              To make changes, use <span className="text-primary/70">chat</span> in this project — they land in the file tree, then ship here. The plugin only writes to the live server when <span className="text-primary/70">Armed</span> in Settings → Morpheus; arm it once a ship has gone through cleanly.
             </div>
           </div>
         )}
