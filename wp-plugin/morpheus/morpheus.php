@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API. Two modules: Deploy and Store.
- * Version:           0.3.0
+ * Version:           0.4.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -24,14 +24,14 @@
  *  Store   — signed POST to /wp-json/morpheus/v1/store for WooCommerce and
  *            content actions (create a product, set stock, draft a post…),
  *            so the operator can run the shop from their phone through
- *            Morpheus. (Added in 0.3.)
+ *            Morpheus. (Added in 0.4.)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.3.0' );
+define( 'MORPHEUS_VERSION', '0.4.0' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -44,6 +44,7 @@ require_once MORPHEUS_DIR . 'includes/class-settings.php';
 require_once MORPHEUS_DIR . 'includes/class-rest.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-github.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-deploy.php';
+require_once MORPHEUS_DIR . 'includes/store/class-store.php';
 
 register_activation_hook( __FILE__, function () {
 	if ( ! is_dir( MORPHEUS_STATE_DIR ) ) {
@@ -62,3 +63,4 @@ register_activation_hook( __FILE__, function () {
 add_action( 'admin_menu', array( 'Morpheus_Settings', 'register_menu' ) );
 add_action( 'admin_init', array( 'Morpheus_Settings', 'register_settings' ) );
 add_action( 'rest_api_init', array( 'Morpheus_REST', 'register_routes' ) );
+add_action( 'rest_api_init', array( 'Morpheus_Store', 'register_routes' ) );

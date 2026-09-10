@@ -21,8 +21,10 @@ for f in $( cd "$PLUGIN_DIR" && find . -name '*.php' -not -path './tests/*' | se
 done
 
 echo
-echo "== harness (WordPress + PHP ${PHP_VERSION}) =="
+echo "== harness (WordPress + WooCommerce + PHP ${PHP_VERSION}) =="
+# The blueprint installs WooCommerce so the Store-module tests run too.
 $PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
+  --blueprint "$PLUGIN_DIR/tests/blueprint.json" \
   --auto-mount "$PLUGIN_DIR" \
   --mount "$PLUGIN_DIR/tests:/tests" \
   -- /tests/harness.php
