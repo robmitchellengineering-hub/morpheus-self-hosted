@@ -17,14 +17,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @param string $rel_path  repo-relative path, forward slashes, no leading slash
  * @return bool
  */
-function morpheus_deploy_is_denied( $rel_path ) {
+function morpheus_is_denied( $rel_path ) {
 	$patterns = array(
 		'#(^|/)wp-config\.php$#i',
 		'#(^|/)\.env(\.|$)#i',
 		'#(^|/)\.htaccess$#i',              // server config — WP manages its own section
 		'#(^|/)wp-content/uploads(/|$)#i',   // the media library
 		'#(^|/)wp-content/(cache|upgrade|upgrade-temp-backup|wp-rocket-config)(/|$)#i',
-		'#(^|/)wp-content/morpheus-deploy-state(/|$)#i', // this plugin's own state
+		'#(^|/)wp-content/morpheus-state(/|$)#i', // this plugin's own state
 		'#(^|/)\.git(/|$)#i',
 		'#(^|/)\.user\.ini$#i',
 	);
@@ -44,7 +44,7 @@ function morpheus_deploy_is_denied( $rel_path ) {
  * @param string $rel_path
  * @return bool
  */
-function morpheus_deploy_path_is_safe( $rel_path ) {
+function morpheus_path_is_safe( $rel_path ) {
 	if ( ! is_string( $rel_path ) || $rel_path === '' ) {
 		return false;
 	}
@@ -66,7 +66,7 @@ function morpheus_deploy_path_is_safe( $rel_path ) {
 	// once joined + normalised, it must still sit under ABSPATH
 	$abs  = rtrim( ABSPATH, '/\\' );
 	$full = $abs . '/' . $rel_path;
-	$norm = morpheus_deploy_normalise( $full );
+	$norm = morpheus_normalise( $full );
 	return strpos( $norm, $abs . '/' ) === 0;
 }
 
@@ -74,7 +74,7 @@ function morpheus_deploy_path_is_safe( $rel_path ) {
  * Collapse "." and ".." in a path string without hitting the filesystem
  * (realpath() would fail for files that don't exist yet).
  */
-function morpheus_deploy_normalise( $path ) {
+function morpheus_normalise( $path ) {
 	$parts = array();
 	foreach ( explode( '/', str_replace( '\\', '/', $path ) ) as $seg ) {
 		if ( $seg === '' || $seg === '.' ) {
@@ -94,7 +94,7 @@ function morpheus_deploy_normalise( $path ) {
  * Git's blob object hash for a string — sha1("blob <len>\0<content>").
  * Matches gitBlobSha() on the Morpheus side, so the diff agrees.
  */
-function morpheus_deploy_git_blob_sha( $content ) {
+function morpheus_git_blob_sha( $content ) {
 	$content = (string) $content;
 	return sha1( 'blob ' . strlen( $content ) . "\0" . $content );
 }
@@ -107,7 +107,7 @@ function morpheus_deploy_git_blob_sha( $content ) {
  * @param string $header_sig value of the X-Morpheus-Signature header ("sha256=<hex>")
  * @return bool
  */
-function morpheus_deploy_signature_ok( $raw_body, $secret, $header_sig ) {
+function morpheus_signature_ok( $raw_body, $secret, $header_sig ) {
 	if ( ! is_string( $secret ) || $secret === '' || ! is_string( $header_sig ) ) {
 		return false;
 	}
@@ -116,13 +116,13 @@ function morpheus_deploy_signature_ok( $raw_body, $secret, $header_sig ) {
 }
 
 /** Append a line to the deploy log (JSON-per-line). Best effort. */
-function morpheus_deploy_log( $event, array $data = array() ) {
+function morpheus_log( $event, array $data = array() ) {
 	$line = wp_json_encode( array_merge(
 		array( 'at' => gmdate( 'c' ), 'event' => $event ),
 		$data
 	) );
 	@file_put_contents(
-		MORPHEUS_DEPLOY_STATE_DIR . '/deploy.log',
+		MORPHEUS_STATE_DIR . '/deploy.log',
 		$line . "\n",
 		FILE_APPEND | LOCK_EX
 	);

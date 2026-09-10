@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class Morpheus_Deploy_GitHub {
+class Morpheus_GitHub {
 
 	/** @var string owner/repo */
 	private $repo;
@@ -25,7 +25,7 @@ class Morpheus_Deploy_GitHub {
 		$headers = array(
 			'Accept'               => $accept,
 			'X-GitHub-Api-Version' => '2022-11-28',
-			'User-Agent'           => 'MorpheusDeploy/' . MORPHEUS_DEPLOY_VERSION,
+			'User-Agent'           => 'Morpheus/' . MORPHEUS_VERSION,
 		);
 		// Only send the token when we have one — a public repo needs none,
 		// and an empty Bearer is a 401.

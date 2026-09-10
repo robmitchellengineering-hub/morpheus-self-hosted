@@ -1,11 +1,11 @@
 <?php
 /**
- * Integration + unit test harness for Morpheus Deploy. Run inside a
+ * Integration + unit test harness for the Morpheus plugin. Run inside a
  * WordPress Playground boot with the plugin mounted + active:
  *
  *   wp-playground-cli php \
- *     --auto-mount ./wp-plugin/morpheus-deploy \
- *     --mount ./wp-plugin/morpheus-deploy/tests:/tests \
+ *     --auto-mount ./wp-plugin/morpheus \
+ *     --mount ./wp-plugin/morpheus/tests:/tests \
  *     -- /tests/harness.php
  *
  * Loads WordPress, checks the plugin registered its routes, unit-tests the
@@ -30,13 +30,13 @@ function ok( $cond, $label ) {
 }
 
 echo "\n== plugin loaded ==\n";
-ok( function_exists( 'morpheus_deploy_is_denied' ), 'helpers loaded' );
-ok( class_exists( 'Morpheus_Deploy_REST' ), 'REST class loaded' );
-ok( class_exists( 'Morpheus_Deploy_Deployer' ), 'Deployer class loaded' );
+ok( function_exists( 'morpheus_is_denied' ), 'helpers loaded' );
+ok( class_exists( 'Morpheus_REST' ), 'REST class loaded' );
+ok( class_exists( 'Morpheus_Deploy' ), 'Deployer class loaded' );
 
 // Force route registration (rest_api_init may not have fired in CLI context).
-if ( class_exists( 'Morpheus_Deploy_REST' ) ) {
-	Morpheus_Deploy_REST::register_routes();
+if ( class_exists( 'Morpheus_REST' ) ) {
+	Morpheus_REST::register_routes();
 }
 $routes = rest_get_server()->get_routes();
 ok( isset( $routes['/morpheus/v1/deploy'] ), 'route /morpheus/v1/deploy registered' );
@@ -44,43 +44,43 @@ ok( isset( $routes['/morpheus/v1/status'] ), 'route /morpheus/v1/status register
 
 echo "\n== helpers: deny-list ==\n";
 $denied = array( 'wp-config.php', 'a/wp-config.php', 'wp-content/uploads/2024/x.jpg', '.htaccess', '.env.production', 'x/.git/config', '.user.ini', 'wp-content/cache/x.php' );
-foreach ( $denied as $p ) { ok( morpheus_deploy_is_denied( $p ), "denied: $p" ); }
+foreach ( $denied as $p ) { ok( morpheus_is_denied( $p ), "denied: $p" ); }
 $allowed = array( 'index.php', 'wp-content/themes/woodmart-child/style.css', 'wp-content/plugins/x/x.php', 'wp-content/mu-plugins/y.php' );
-foreach ( $allowed as $p ) { ok( ! morpheus_deploy_is_denied( $p ), "allowed: $p" ); }
+foreach ( $allowed as $p ) { ok( ! morpheus_is_denied( $p ), "allowed: $p" ); }
 
 echo "\n== helpers: path safety ==\n";
-foreach ( array( '../x', '/abs', 'a/../b', "a\0b", 'a\\b', '.', 'a/./b' ) as $p ) { ok( ! morpheus_deploy_path_is_safe( $p ), "unsafe: " . json_encode( $p ) ); }
-foreach ( array( 'wp-content/themes/x/a.php', 'index.php', 'a/b/c/d.js' ) as $p ) { ok( morpheus_deploy_path_is_safe( $p ), "safe: $p" ); }
+foreach ( array( '../x', '/abs', 'a/../b', "a\0b", 'a\\b', '.', 'a/./b' ) as $p ) { ok( ! morpheus_path_is_safe( $p ), "unsafe: " . json_encode( $p ) ); }
+foreach ( array( 'wp-content/themes/x/a.php', 'index.php', 'a/b/c/d.js' ) as $p ) { ok( morpheus_path_is_safe( $p ), "safe: $p" ); }
 
 echo "\n== helpers: git blob sha (must match git) ==\n";
 // git hash-object of the empty blob and of "hello\n"
-ok( morpheus_deploy_git_blob_sha( '' ) === 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', 'empty blob sha' );
-ok( morpheus_deploy_git_blob_sha( "hello\n" ) === 'ce013625030ba8dba906f756967f9e9ca394464a', '"hello\\n" blob sha' );
+ok( morpheus_git_blob_sha( '' ) === 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', 'empty blob sha' );
+ok( morpheus_git_blob_sha( "hello\n" ) === 'ce013625030ba8dba906f756967f9e9ca394464a', '"hello\\n" blob sha' );
 
 echo "\n== helpers: signature ==\n";
 $secret = 'test-secret';
 $body   = '{"commit":"abc1234","at":"2026-01-01T00:00:00Z"}';
 $good   = 'sha256=' . hash_hmac( 'sha256', $body, $secret );
-ok( morpheus_deploy_signature_ok( $body, $secret, $good ), 'valid signature accepted' );
-ok( ! morpheus_deploy_signature_ok( $body, $secret, 'sha256=deadbeef' ), 'bad signature rejected' );
-ok( ! morpheus_deploy_signature_ok( $body . ' ', $secret, $good ), 'tampered body rejected' );
-ok( ! morpheus_deploy_signature_ok( $body, 'wrong', $good ), 'wrong secret rejected' );
+ok( morpheus_signature_ok( $body, $secret, $good ), 'valid signature accepted' );
+ok( ! morpheus_signature_ok( $body, $secret, 'sha256=deadbeef' ), 'bad signature rejected' );
+ok( ! morpheus_signature_ok( $body . ' ', $secret, $good ), 'tampered body rejected' );
+ok( ! morpheus_signature_ok( $body, 'wrong', $good ), 'wrong secret rejected' );
 
 echo "\n== REST: /status ==\n";
 $res  = rest_do_request( new WP_REST_Request( 'GET', '/morpheus/v1/status' ) );
 $data = $res->get_data();
 ok( $res->get_status() === 200, 'status 200' );
-ok( ( $data['plugin'] ?? '' ) === 'morpheus-deploy', 'reports plugin name' );
+ok( ( $data['plugin'] ?? '' ) === 'morpheus', 'reports plugin name' );
 ok( ( $data['writes'] ?? null ) === false, 'writes = false when not armed' );
-update_option( 'morpheus_deploy_settings', array_merge( Morpheus_Deploy_Settings::defaults(), array( 'armed' => 1 ) ) );
+update_option( 'morpheus_settings', array_merge( Morpheus_Settings::defaults(), array( 'armed' => 1 ) ) );
 $armed = rest_do_request( new WP_REST_Request( 'GET', '/morpheus/v1/status' ) )->get_data();
 ok( ( $armed['writes'] ?? null ) === true && ( $armed['armed'] ?? null ) === true, 'writes = true when armed' );
-delete_option( 'morpheus_deploy_settings' );
+delete_option( 'morpheus_settings' );
 
 echo "\n== REST: /deploy auth ==\n";
-update_option( 'morpheus_deploy_settings', array(
+update_option( 'morpheus_settings', array(
 	'repo' => 'octocat/Hello-World', 'branch' => 'master',
-	'github_token' => '', 'deploy_secret' => $secret,
+	'github_token' => '', 'webhook_secret' => $secret,
 	'site_url' => '', 'health_paths' => '/', 'armed' => 0,
 ) );
 
@@ -139,7 +139,7 @@ class Fake_GitHub {
 	}
 }
 
-function blob( $c ) { return morpheus_deploy_git_blob_sha( $c ); }
+function blob( $c ) { return morpheus_git_blob_sha( $c ); }
 function mkroot() {
 	$d = sys_get_temp_dir() . '/md-' . substr( md5( microtime() . mt_rand() ), 0, 10 );
 	mkdir( $d, 0777, true );
@@ -160,7 +160,7 @@ function rmrf( $d ) {
 	@rmdir( $d );
 }
 
-$SETTINGS = array( 'repo' => 'acme/site', 'branch' => 'main', 'github_token' => '', 'deploy_secret' => 't', 'site_url' => '', 'health_paths' => '', 'armed' => 1 );
+$SETTINGS = array( 'repo' => 'acme/site', 'branch' => 'main', 'github_token' => '', 'webhook_secret' => 't', 'site_url' => '', 'health_paths' => '', 'armed' => 1 );
 
 echo "\n== deploy: happy path ==\n";
 $root = mkroot();
@@ -182,7 +182,7 @@ $fg->changes = array(
 	array( 'path' => 'old.txt',                       'status' => 'removed',  'sha' => null ),
 );
 $healthy_url = home_url(); // the running Playground WP — a real 200
-$d  = new Morpheus_Deploy_Deployer( array_merge( $SETTINGS, array( 'site_url' => $healthy_url ) ), $root, $fg );
+$d  = new Morpheus_Deploy( array_merge( $SETTINGS, array( 'site_url' => $healthy_url ) ), $root, $fg );
 $r  = $d->deploy( 'C0MM1T', 'happy' );
 ok( is_array( $r ) && ! empty( $r['deployed'] ), 'deployed: true' );
 ok( empty( $r['rolled_back'] ), 'not rolled back' );
@@ -191,7 +191,7 @@ ok( file_get_contents( "$root/wp-content/themes/t/style.css" ) === "new css\n", 
 ok( ! file_exists( "$root/old.txt" ), 'removed file deleted' );
 ok( file_get_contents( "$root/wp-config.php" ) === "SECRET\n", 'DENIED wp-config.php untouched' );
 ok( in_array( 'wp-config.php', $r['skipped_denied'], true ), 'wp-config.php reported as skipped_denied' );
-$snap = glob( MORPHEUS_DEPLOY_STATE_DIR . '/snapshots/*/manifest.json' );
+$snap = glob( MORPHEUS_STATE_DIR . '/snapshots/*/manifest.json' );
 ok( ! empty( $snap ), 'a snapshot manifest was written' );
 
 echo "\n== deploy: unsafe path -> abort, nothing written ==\n";
@@ -203,7 +203,7 @@ $fg2->changes = array(
 	array( 'path' => 'a.txt',    'status' => 'added', 'sha' => blob( 'a' ) ),
 	array( 'path' => '../evil',  'status' => 'added', 'sha' => blob( 'x' ) ),
 );
-$r2 = ( new Morpheus_Deploy_Deployer( $SETTINGS, $root2, $fg2 ) )->deploy( 'C', '' );
+$r2 = ( new Morpheus_Deploy( $SETTINGS, $root2, $fg2 ) )->deploy( 'C', '' );
 ok( is_wp_error( $r2 ) && $r2->get_error_code() === 'unsafe_paths', 'unsafe path aborts with unsafe_paths' );
 ok( ! file_exists( "$root2/a.txt" ), 'safe sibling file not written on abort' );
 
@@ -217,7 +217,7 @@ $fg3->changes = array(
 	array( 'path' => 'app/new.js',    'status' => 'added',    'sha' => blob( "new\n" ) ),
 );
 // point the health check at a host that won't resolve -> wp_remote_get errors -> unhealthy
-$r3 = ( new Morpheus_Deploy_Deployer( array_merge( $SETTINGS, array( 'site_url' => 'http://127.0.0.1:59999' ) ), $root3, $fg3 ) )->deploy( 'C', 'breaks' );
+$r3 = ( new Morpheus_Deploy( array_merge( $SETTINGS, array( 'site_url' => 'http://127.0.0.1:59999' ) ), $root3, $fg3 ) )->deploy( 'C', 'breaks' );
 ok( is_array( $r3 ) && ! empty( $r3['rolled_back'] ), 'rolled_back: true on failed health check' );
 ok( empty( $r3['deployed'] ), 'deployed: false' );
 ok( file_get_contents( "$root3/app/config.js" ) === "v1\n", 'changed file restored to pre-deploy content' );
@@ -231,7 +231,7 @@ $fg4 = new Fake_GitHub();
 $fg4->files   = array( 'x.js' => "expected\n" );
 $fg4->changes = array( array( 'path' => 'x.js', 'status' => 'modified', 'sha' => blob( "expected\n" ) ) );
 $fg4->override_content = array( 'x.js' => "CORRUPTED IN TRANSIT\n" ); // != the declared sha
-$r4 = ( new Morpheus_Deploy_Deployer( array_merge( $SETTINGS, array( 'site_url' => $healthy_url ) ), $root4, $fg4 ) )->deploy( 'C', '' );
+$r4 = ( new Morpheus_Deploy( array_merge( $SETTINGS, array( 'site_url' => $healthy_url ) ), $root4, $fg4 ) )->deploy( 'C', '' );
 ok( is_array( $r4 ) && ! empty( $r4['rolled_back'] ), 'sha mismatch triggers rollback' );
 ok( file_get_contents( "$root4/x.js" ) === "orig\n", 'file restored after sha-mismatch rollback' );
 
@@ -244,7 +244,7 @@ $fg5->changes = array(
 	array( 'path' => 'a.txt', 'status' => 'modified', 'sha' => blob( "two\n" ) ),
 	array( 'path' => 'b.txt', 'status' => 'added',    'sha' => blob( "b\n" ) ),
 );
-$dep5 = new Morpheus_Deploy_Deployer( array_merge( $SETTINGS, array( 'site_url' => $healthy_url ) ), $root5, $fg5 );
+$dep5 = new Morpheus_Deploy( array_merge( $SETTINGS, array( 'site_url' => $healthy_url ) ), $root5, $fg5 );
 $ok5  = $dep5->deploy( 'C', 'to-undo' );
 ok( ! empty( $ok5['deployed'] ) && file_get_contents( "$root5/a.txt" ) === "two\n", 'deploy landed before undo' );
 $undo = $dep5->rollback_last();
@@ -258,11 +258,11 @@ seed( $root6, array( 'z.txt' => "z\n" ) );
 $fg6 = new Fake_GitHub();
 $fg6->files = array( 'z.txt' => "changed\n" );
 $fg6->changes = array( array( 'path' => 'z.txt', 'status' => 'modified', 'sha' => blob( "changed\n" ) ) );
-$r6 = ( new Morpheus_Deploy_Deployer( array_merge( $SETTINGS, array( 'armed' => 0 ) ), $root6, $fg6 ) )->dry_run( 'C', '' );
+$r6 = ( new Morpheus_Deploy( array_merge( $SETTINGS, array( 'armed' => 0 ) ), $root6, $fg6 ) )->dry_run( 'C', '' );
 ok( ( $r6['dry_run'] ?? false ) === true && file_get_contents( "$root6/z.txt" ) === "z\n", 'dry_run leaves files alone' );
 
 foreach ( array( $root, $root2, $root3, $root4, $root5, $root6 ) as $r ) { rmrf( $r ); }
-rmrf( MORPHEUS_DEPLOY_STATE_DIR . '/snapshots' );
+rmrf( MORPHEUS_STATE_DIR . '/snapshots' );
 
 echo "\n";
 echo "==== $pass passed, $fail failed ====\n";

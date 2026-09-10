@@ -1,23 +1,23 @@
 <?php
 /**
- * The wp-admin settings screen: Settings → Morpheus Deploy.
- * Stores everything in one option array, morpheus_deploy_settings.
+ * The wp-admin settings screen: Settings → Morpheus.
+ * Stores everything in one option array, the option 'morpheus_settings'.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class Morpheus_Deploy_Settings {
+class Morpheus_Settings {
 
-	const OPTION = 'morpheus_deploy_settings';
+	const OPTION = 'morpheus_settings';
 
 	public static function defaults() {
 		return array(
 			'repo'          => '',   // "owner/repo"
 			'branch'        => 'main',
 			'github_token'  => '',   // a fine-grained PAT / GitHub App token with Contents:read on the repo
-			'deploy_secret' => '',   // shared HMAC secret, also set on the Morpheus side
+			'webhook_secret' => '',   // shared HMAC secret, also set on the Morpheus side
 			'site_url'      => '',    // used for the post-deploy health check; defaults to home_url()
 			'health_paths'  => "/\n/shop/\n/cart/", // one per line
 			'armed'         => 0,     // 0 = the deploy endpoint reports only; 1 = it writes files
@@ -34,10 +34,10 @@ class Morpheus_Deploy_Settings {
 
 	public static function register_menu() {
 		add_options_page(
-			'Morpheus Deploy',
-			'Morpheus Deploy',
+			'Morpheus',
+			'Morpheus',
 			'manage_options',
-			'morpheus-deploy',
+			'morpheus',
 			array( __CLASS__, 'render' )
 		);
 	}
@@ -65,10 +65,10 @@ class Morpheus_Deploy_Settings {
 				$out['github_token'] = sanitize_text_field( $tok );
 			}
 		}
-		if ( isset( $in['deploy_secret'] ) ) {
-			$sec = trim( $in['deploy_secret'] );
-			if ( $sec !== '' && $sec !== self::mask( $out['deploy_secret'] ) ) {
-				$out['deploy_secret'] = sanitize_text_field( $sec );
+		if ( isset( $in['webhook_secret'] ) ) {
+			$sec = trim( $in['webhook_secret'] );
+			if ( $sec !== '' && $sec !== self::mask( $out['webhook_secret'] ) ) {
+				$out['webhook_secret'] = sanitize_text_field( $sec );
 			}
 		}
 		if ( isset( $in['site_url'] ) ) {
@@ -111,11 +111,11 @@ class Morpheus_Deploy_Settings {
 			return;
 		}
 		$o        = self::get();
-		$endpoint = esc_url( rest_url( MORPHEUS_DEPLOY_REST_NS . '/deploy' ) );
+		$endpoint = esc_url( rest_url( MORPHEUS_REST_NS . '/deploy' ) );
 		$last     = get_option( 'morpheus_deploy_last', array() );
 		?>
 		<div class="wrap">
-			<h1>Morpheus Deploy <span style="font-size:13px;color:#888;">v<?php echo esc_html( MORPHEUS_DEPLOY_VERSION ); ?></span></h1>
+			<h1>Morpheus <span style="font-size:13px;color:#888;">v<?php echo esc_html( MORPHEUS_VERSION ); ?></span></h1>
 			<p>Deploys code to this site from a connected GitHub repo — no FTP. Morpheus opens a pull request, and once its checks pass and it merges, it calls this endpoint:</p>
 			<p><code><?php echo $endpoint; ?></code></p>
 			<p style="color:<?php echo $o['armed'] ? '#1f7a4d' : '#b26a00'; ?>;">
@@ -151,7 +151,7 @@ class Morpheus_Deploy_Settings {
 					<tr>
 						<th><label for="md-secret">Deploy secret</label></th>
 						<td>
-							<input name="<?php echo self::OPTION; ?>[deploy_secret]" id="md-secret" type="password" class="regular-text" value="<?php echo esc_attr( self::mask( $o['deploy_secret'] ) ); ?>" autocomplete="off">
+							<input name="<?php echo self::OPTION; ?>[webhook_secret]" id="md-secret" type="password" class="regular-text" value="<?php echo esc_attr( self::mask( $o['webhook_secret'] ) ); ?>" autocomplete="off">
 							<p class="description">Shared with Morpheus. Every deploy request is HMAC-SHA256 signed with this.</p>
 						</td>
 					</tr>
