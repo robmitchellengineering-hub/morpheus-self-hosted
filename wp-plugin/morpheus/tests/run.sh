@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Morpheus Deploy test harness in a real WordPress, using the free
+# Run the Morpheus plugin test harness in a real WordPress, using the free
 # WordPress Playground CLI (WASM PHP — no Docker, no system PHP). First run
 # downloads Playground + the PHP/WP images (~cached after).
 #
@@ -13,7 +13,7 @@ PLUGIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 PG="npx --yes @wp-playground/cli@latest"
 
 echo "== php -l (PHP ${PHP_VERSION}) =="
-for f in morpheus-deploy.php uninstall.php includes/*.php; do
+for f in $( cd "$PLUGIN_DIR" && find . -name '*.php' -not -path './tests/*' | sed 's|^\./||' ); do
   out=$( $PG php --php "$PHP_VERSION" --verbosity quiet --mount "$PLUGIN_DIR:/p" -- -l "/p/$f" 2>&1 \
          | grep -iE 'no syntax errors|parse error|syntax error' | head -1 )
   echo "  $f -> ${out:-<no output>}"

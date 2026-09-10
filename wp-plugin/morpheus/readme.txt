@@ -1,4 +1,4 @@
-=== Morpheus Deploy ===
+=== Morpheus ===
 Contributors: morpheus
 Requires at least: 6.0
 Tested up to: 6.7
@@ -6,7 +6,7 @@ Requires PHP: 7.4
 Stable tag: 0.2.0
 License: GPLv2 or later
 
-Deploys code changes to this site from a connected GitHub repo — no FTP.
+Run your WordPress/WooCommerce site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API.
 
 == Description ==
 
@@ -32,8 +32,8 @@ the health check fails.
 
 == Installation ==
 
-1. Upload the `morpheus-deploy` folder to `wp-content/plugins/` and activate.
-2. Settings → Morpheus Deploy: set the repo (`owner/repo`), branch, a GitHub
+1. Upload the `morpheus` folder to `wp-content/plugins/` and activate.
+2. Settings → Morpheus: set the repo (`owner/repo`), branch, a GitHub
    token with Contents:read, and a deploy secret.
 3. Give Morpheus the same secret and the endpoint URL shown on the settings
    screen.

@@ -8,10 +8,10 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
-delete_option( 'morpheus_deploy_settings' );
+delete_option( 'morpheus_settings' );
 delete_option( 'morpheus_deploy_last' );
 
-$state = WP_CONTENT_DIR . '/morpheus-deploy-state';
+$state = WP_CONTENT_DIR . '/morpheus-state';
 if ( is_dir( $state ) ) {
 	$it = new RecursiveIteratorIterator(
 		new RecursiveDirectoryIterator( $state, FilesystemIterator::SKIP_DOTS ),

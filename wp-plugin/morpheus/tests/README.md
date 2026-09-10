@@ -1,11 +1,11 @@
-# Morpheus Deploy — tests
+# Morpheus plugin — tests
 
 The plugin is tested in a **real WordPress** using [WordPress Playground
 CLI](https://wordpress.github.io/wordpress-playground/) — WASM PHP, so no
 Docker and no system PHP install. It's free and runs anywhere Node runs.
 
 ```bash
-cd wp-plugin/morpheus-deploy
+cd wp-plugin/morpheus
 ./tests/run.sh          # php -l all files, then the harness on PHP 8.2
 ./tests/run.sh 7.4      # minimum supported version
 ```

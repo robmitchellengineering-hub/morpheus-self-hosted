@@ -45,3 +45,4 @@ base44/.app.jsonc
 server/data/
 
 server/package-lock.json
+dist-plugin/

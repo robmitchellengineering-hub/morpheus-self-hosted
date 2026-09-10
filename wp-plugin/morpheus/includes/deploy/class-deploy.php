@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class Morpheus_Deploy_Deployer {
+class Morpheus_Deploy {
 
 	const MAX_FILE_BYTES = 10 * 1024 * 1024; // refuse a deploy that ships a file bigger than this
 	const KEEP_SNAPSHOTS = 5;
@@ -39,7 +39,7 @@ class Morpheus_Deploy_Deployer {
 
 	private function github() {
 		if ( ! $this->gh ) {
-			$this->gh = new Morpheus_Deploy_GitHub( $this->s['repo'], $this->s['github_token'] );
+			$this->gh = new Morpheus_GitHub( $this->s['repo'], $this->s['github_token'] );
 		}
 		return $this->gh;
 	}
@@ -51,7 +51,7 @@ class Morpheus_Deploy_Deployer {
 	 */
 	private function compute_plan( $commit_sha ) {
 		if ( empty( $this->s['repo'] ) ) {
-			return new WP_Error( 'not_configured', 'Set the repo in Settings → Morpheus Deploy.', array( 'status' => 400 ) );
+			return new WP_Error( 'not_configured', 'Set the repo in Settings → Morpheus.', array( 'status' => 400 ) );
 		}
 
 		$gh     = $this->github();
@@ -84,8 +84,8 @@ class Morpheus_Deploy_Deployer {
 			}
 			$bad = false;
 			foreach ( $paths as $p ) {
-				if ( ! morpheus_deploy_path_is_safe( $p ) ) { $plan['unsafe'][] = $p; $bad = true; }
-				elseif ( morpheus_deploy_is_denied( $p ) )  { $plan['denied'][] = $p; $bad = true; }
+				if ( ! morpheus_path_is_safe( $p ) ) { $plan['unsafe'][] = $p; $bad = true; }
+				elseif ( morpheus_is_denied( $p ) )  { $plan['denied'][] = $p; $bad = true; }
 			}
 			if ( $bad ) {
 				continue;
@@ -102,7 +102,7 @@ class Morpheus_Deploy_Deployer {
 
 			if ( ! file_exists( $disk ) ) {
 				$plan['create'][] = $rel;
-			} elseif ( $f['sha'] && morpheus_deploy_git_blob_sha( file_get_contents( $disk ) ) === $f['sha'] ) {
+			} elseif ( $f['sha'] && morpheus_git_blob_sha( file_get_contents( $disk ) ) === $f['sha'] ) {
 				$plan['unchanged']++;
 			} else {
 				$plan['update'][] = $rel;
@@ -130,7 +130,7 @@ class Morpheus_Deploy_Deployer {
 		}
 		$plan = $p['plan'];
 
-		morpheus_deploy_log( 'dry_run', array( 'commit' => $commit_sha, 'create' => count( $plan['create'] ), 'update' => count( $plan['update'] ), 'delete' => count( $plan['delete'] ), 'denied' => count( $plan['denied'] ), 'unsafe' => count( $plan['unsafe'] ) ) );
+		morpheus_log( 'dry_run', array( 'commit' => $commit_sha, 'create' => count( $plan['create'] ), 'update' => count( $plan['update'] ), 'delete' => count( $plan['delete'] ), 'denied' => count( $plan['denied'] ), 'unsafe' => count( $plan['unsafe'] ) ) );
 
 		return array(
 			'ok'           => true,
@@ -167,7 +167,7 @@ class Morpheus_Deploy_Deployer {
 		// An unsafe path in the change set is an attack signature — abort,
 		// touch nothing.
 		if ( ! empty( $plan['unsafe'] ) ) {
-			morpheus_deploy_log( 'aborted', array( 'why' => 'unsafe paths', 'paths' => $plan['unsafe'] ) );
+			morpheus_log( 'aborted', array( 'why' => 'unsafe paths', 'paths' => $plan['unsafe'] ) );
 			return new WP_Error( 'unsafe_paths', 'Change touches unsafe paths; nothing was written.', array( 'status' => 422, 'unsafe' => $plan['unsafe'] ) );
 		}
 
@@ -176,7 +176,7 @@ class Morpheus_Deploy_Deployer {
 		}
 
 		$deploy_id = gmdate( 'Ymd-His' ) . '-' . substr( md5( $commit_sha . microtime() ), 0, 6 );
-		$snap_dir  = MORPHEUS_DEPLOY_STATE_DIR . '/snapshots/' . $deploy_id;
+		$snap_dir  = MORPHEUS_STATE_DIR . '/snapshots/' . $deploy_id;
 		wp_mkdir_p( $snap_dir );
 
 		$writes  = array_merge( $plan['create'], $plan['update'] );
@@ -218,7 +218,7 @@ class Morpheus_Deploy_Deployer {
 				break;
 			}
 			$want = $by_path[ $rel ] ?? null;
-			if ( $want && morpheus_deploy_git_blob_sha( $content ) !== $want ) {
+			if ( $want && morpheus_git_blob_sha( $content ) !== $want ) {
 				$failed = "content of $rel did not match the expected git hash";
 				break;
 			}
@@ -257,7 +257,7 @@ class Morpheus_Deploy_Deployer {
 			}
 			$rolled_back = true;
 			$health_after = $this->health_check();
-			morpheus_deploy_log( 'rolled_back', array( 'deploy_id' => $deploy_id, 'commit' => $commit_sha, 'why' => $failed ?: 'health check failed', 'health_after' => $health_after ) );
+			morpheus_log( 'rolled_back', array( 'deploy_id' => $deploy_id, 'commit' => $commit_sha, 'why' => $failed ?: 'health check failed', 'health_after' => $health_after ) );
 
 			$this->finish( $deploy_id, $commit_sha, false, $reason );
 			return array(
@@ -278,7 +278,7 @@ class Morpheus_Deploy_Deployer {
 		// 6. Success.
 		$this->update_managed_manifest( $written, $deleted );
 		$this->finish( $deploy_id, $commit_sha, true, $reason );
-		morpheus_deploy_log( 'deployed', array( 'deploy_id' => $deploy_id, 'commit' => $commit_sha, 'created' => count( $plan['create'] ), 'updated' => count( $plan['update'] ), 'deleted' => count( $deleted ) ) );
+		morpheus_log( 'deployed', array( 'deploy_id' => $deploy_id, 'commit' => $commit_sha, 'created' => count( $plan['create'] ), 'updated' => count( $plan['update'] ), 'deleted' => count( $deleted ) ) );
 
 		return array(
 			'ok'          => true,
@@ -321,7 +321,7 @@ class Morpheus_Deploy_Deployer {
 		if ( ! $id ) {
 			return new WP_Error( 'nothing_to_roll_back', 'No recorded deploy to roll back.', array( 'status' => 400 ) );
 		}
-		$snap_dir = MORPHEUS_DEPLOY_STATE_DIR . '/snapshots/' . $id;
+		$snap_dir = MORPHEUS_STATE_DIR . '/snapshots/' . $id;
 		$mf       = @file_get_contents( $snap_dir . '/manifest.json' );
 		$manifest = $mf ? json_decode( $mf, true ) : null;
 		if ( ! is_array( $manifest ) || empty( $manifest['entries'] ) ) {
@@ -332,7 +332,7 @@ class Morpheus_Deploy_Deployer {
 			@opcache_reset();
 		}
 		$health = $this->health_check();
-		morpheus_deploy_log( 'manual_rollback', array( 'deploy_id' => $id, 'health' => $health ) );
+		morpheus_log( 'manual_rollback', array( 'deploy_id' => $id, 'health' => $health ) );
 		return array( 'ok' => (bool) $health['ok'], 'rolled_back_deploy' => $id, 'commit' => $manifest['commit'] ?? null, 'health' => $health );
 	}
 
@@ -386,7 +386,7 @@ class Morpheus_Deploy_Deployer {
 	}
 
 	private function prune_snapshots() {
-		$dir = MORPHEUS_DEPLOY_STATE_DIR . '/snapshots';
+		$dir = MORPHEUS_STATE_DIR . '/snapshots';
 		if ( ! is_dir( $dir ) ) {
 			return;
 		}
@@ -404,7 +404,7 @@ class Morpheus_Deploy_Deployer {
 	}
 
 	private function update_managed_manifest( array $written, array $deleted ) {
-		$path = MORPHEUS_DEPLOY_STATE_DIR . '/managed.json';
+		$path = MORPHEUS_STATE_DIR . '/managed.json';
 		$set  = array();
 		$cur  = @file_get_contents( $path );
 		if ( $cur ) {
