@@ -25,6 +25,8 @@ import { getSite, sitePromptBlock } from '../lib/projectSite.js';
 import { cmsPromptBlock } from '../lib/projectCms.js';
 import { getAnalytics, analyticsPromptBlock } from '../lib/projectAnalytics.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
+import { getWpConnection } from '../lib/wpPlugin.js';
+import { wordpressPromptBlock } from '../lib/projectWordpress.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
@@ -579,6 +581,12 @@ export default async function handler({ user, body, res }) {
   await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'user', content: message } });
 
   const isSelfDev = project.project_type === 'self_dev';
+  // A project connected to a live WordPress site (via the WEBSITE panel) is
+  // editing a WP theme inside a real install, not building a standalone app —
+  // this swaps the web-app-builder context blocks for the WordPress one.
+  const wpConn = isSelfDev ? null : await getWpConnection(projectId, user.id).catch(() => null);
+  const isWordPress = !!wpConn;
+  const isWebApp = (project.compile_target || 'source') === 'web-app' && !isSelfDev && !isWordPress;
   const totalFileBytes = files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
   // Self-dev always scopes (its repo is huge); an ordinary project scopes
   // only once it's grown past the threshold — below that, "send everything"
@@ -646,12 +654,18 @@ export default async function handler({ user, body, res }) {
 
   // For web-app targets, append the shared design system so the planner
   // and coder build on a polished, consistent base instead of raw HTML.
-  const designBlock = (project.compile_target || 'source') === 'web-app' && !isSelfDev ? designSystemPromptBlock() : '';
+  const designBlock = isWebApp ? designSystemPromptBlock() : '';
+
+  // WordPress site context — replaces the web-app-builder blocks below when
+  // the project is connected to a live WP site (see lib/projectWordpress.js).
+  const wordpressBlock = isWordPress
+    ? wordpressPromptBlock({ repo: wpConn.repo || project.github_repo, files })
+    : '';
 
   // Brand kit (.morpheus/brand.json in the project): the operator's colours,
-  // fonts, radius, logo and voice as HARD token values that override the
-  // design system defaults. Web builds only; empty when still on defaults.
-  const brandBlock = (project.compile_target || 'source') === 'web-app' && !isSelfDev
+  // fonts, radius, logo and voice as HARD token values. Web builds and
+  // WordPress restyles both benefit; empty when still on defaults.
+  const brandBlock = (isWebApp || isWordPress)
     ? brandPromptBlock(await getBrand(projectId).catch(() => null))
     : '';
 
@@ -677,7 +691,7 @@ export default async function handler({ user, body, res }) {
   // their exact urls, so the coder writes real <img src> instead of inventing
   // paths or reaching for a placeholder service. Zero-custody — these are just
   // urls. Not for self-dev (Morpheus's own site has no operator media).
-  const mediaBlock = (mode === 'build' && !isSelfDev)
+  const mediaBlock = (mode === 'build' && !isSelfDev && !isWordPress)
     ? mediaAssetsBlock(await getProjectAssets(projectId))
     : '';
 
@@ -707,7 +721,7 @@ export default async function handler({ user, body, res }) {
   // Publish readiness: what a *shipped* build of this target includes (each
   // adapter declares its own — lib/publishChecklist.js). Surfaced so output
   // lands launch-ready. Build turns, non-self-dev.
-  const publishBlock = (mode === 'build' && !isSelfDev)
+  const publishBlock = (mode === 'build' && isWebApp)
     ? publishPromptBlock(project.compile_target || 'source')
     : '';
 
@@ -716,7 +730,7 @@ export default async function handler({ user, body, res }) {
   // coder the delivery contract so every form it builds actually delivers to
   // the operator's own inbox/sheet. Zero-custody: no submission touches
   // Morpheus. Web builds only, non-self-dev.
-  const formsBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+  const formsBlock = (mode === 'build' && isWebApp)
     ? formsPromptBlock(await getForms(projectId).catch(() => null))
     : '';
 
@@ -724,27 +738,27 @@ export default async function handler({ user, body, res }) {
   // coder the real origin so absolute URLs (og:image, canonical, sitemap
   // <loc>, JSON-LD) are correct instead of guessed. Web builds only,
   // non-self-dev.
-  const siteBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+  const siteBlock = (mode === 'build' && isWebApp)
     ? sitePromptBlock(await getSite(projectId).catch(() => null))
     : '';
 
   // Light CMS: on a web build, tell the coder to externalise editable copy
   // and lists into content/*.json so the operator can change them from the
   // CONTENT panel without a rebuild. Web builds only, non-self-dev.
-  const cmsBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+  const cmsBlock = (mode === 'build' && isWebApp)
     ? cmsPromptBlock()
     : '';
 
   // Analytics: once the operator picks a (cookieless, free) provider in the
   // DOMAIN panel, hand the coder the exact <script> to embed in <head>.
-  const analyticsBlock = (mode === 'build' && !isSelfDev && (project.compile_target || 'source') === 'web-app')
+  const analyticsBlock = (mode === 'build' && isWebApp)
     ? analyticsPromptBlock(await getAnalytics(projectId).catch(() => null))
     : '';
 
   const assembleContextBlock = () => `
 PROJECT: ${project.name}
 ${project.description ? 'DESCRIPTION: ' + project.description : ''}
-COMPILE TARGET: ${project.compile_target || 'source'}
+${isWordPress ? 'TARGET: WordPress site (live) — see the WORDPRESS SITE notes below' : `COMPILE TARGET: ${project.compile_target || 'source'}`}
 ${summaryBlock}
 ${featureBlock}${decisionsBlock}${mediaBlock}${webNotes ? `\nWEB RESEARCH (current external info found before planning — prefer this over stale assumptions):\n${webNotes}\n` : ''}${researchNotes ? `\nRESEARCH FINDINGS (from investigating the repo before planning):\n${researchNotes}\n` : ''}
 CURRENT FILES:
@@ -753,7 +767,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}${analyticsBlock}
+${wordpressBlock}${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}${analyticsBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.
@@ -1054,7 +1068,7 @@ OPERATOR SAYS: ${message}`;
       // Guarantee a polished styles.css exists for web-app builds. If the
       // coder shipped its own, trust it; otherwise inject the design system
       // verbatim so the app never lands with raw unstyled HTML.
-      if ((project.compile_target || 'source') === 'web-app' && !isSelfDev && !fileOps.some((op) => op.path === 'styles.css')) {
+      if (isWebApp && !fileOps.some((op) => op.path === 'styles.css')) {
         fileOps.unshift({ path: 'styles.css', content: DESIGN_SYSTEM_CSS, action: 'create' });
       }
 
@@ -1196,7 +1210,7 @@ OPERATOR SAYS: ${message}`;
       // fields, positive tabindex, div-onClick. A finding → one targeted
       // coder retry; anything left is surfaced as a // A11Y note (the site
       // still works, so it doesn't block the build).
-      if (fileOps.length > 0 && !isSelfDev && (project.compile_target || 'source') === 'web-app') {
+      if (fileOps.length > 0 && isWebApp) {
         const changedMarkup = () => fileOps
           .filter((op) => op.action !== 'delete' && typeof op.content === 'string')
           .map((op) => ({ path: op.path, content: op.content }));
@@ -1246,7 +1260,7 @@ OPERATOR SAYS: ${message}`;
       // files (or the target is web-app). Never runs for pure native/CLI builds.
       if (project.polish_ui && appliedOps.length > 0 && !isSelfDev) {
         const hasWebFiles = appliedOps.some((op) => /\.(html|css|jsx|tsx|vue|svelte)$/i.test(op.path) || op.path === 'styles.css');
-        if (hasWebFiles || (project.compile_target || 'source') === 'web-app') {
+        if ((hasWebFiles || isWebApp) && !isWordPress) {
           // Same fix as the `files` query above -- ProjectFile uniqueness is
           // project-wide, not per-user (see schema.prisma), and this feeds
           // applyFileOperations() below.
