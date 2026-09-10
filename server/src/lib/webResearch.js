@@ -99,22 +99,23 @@ export async function geminiGroundedSearch(searchKey, query) {
   return null;
 }
 
-// Gemini vision → structured JSON. `image` is { data: base64, mimeType }.
-// Uses the same resolveSearchKey() Gemini credential as grounded search.
-// Returns the parsed object, or throws.
-export async function geminiVisionJson(searchKey, prompt, image) {
+// Gemini vision → structured JSON. `images` is one { data: base64, mimeType }
+// or an array of them. Uses the same resolveSearchKey() Gemini credential as
+// grounded search. Returns the parsed object, or throws.
+export async function geminiVisionJson(searchKey, prompt, images) {
   if (!searchKey?.key) throw Object.assign(new Error('No Gemini key available for photo analysis.'), { status: 400 });
+  const list = (Array.isArray(images) ? images : [images]).filter((i) => i && i.data).slice(0, 6);
   const endpoint = `https://${GEMINI_HOST}/v1beta/models/${encodeURIComponent(searchKey.model)}:generateContent?key=${searchKey.key}`;
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(60_000),
     body: JSON.stringify({
       contents: [{
         role: 'user',
         parts: [
           { text: prompt },
-          { inline_data: { mime_type: image.mimeType || 'image/jpeg', data: image.data } },
+          ...list.map((im) => ({ inline_data: { mime_type: im.mimeType || 'image/jpeg', data: im.data } })),
         ],
       }],
       generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },

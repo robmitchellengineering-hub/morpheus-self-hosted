@@ -44,8 +44,11 @@ async function fetchImageBase64(url) {
 
 export default async function handler({ user, body }) {
   const { projectId, imageUrl, hint } = body || {};
+  const imageUrls = (Array.isArray(body?.imageUrls) ? body.imageUrls : [])
+    .concat(imageUrl ? [imageUrl] : [])
+    .filter((u) => typeof u === 'string' && u).slice(0, 5);
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
-  if (!imageUrl) throw Object.assign(new Error('A photo is required — take or choose one first.'), { status: 400 });
+  if (!imageUrls.length) throw Object.assign(new Error('A photo is required — take or choose one first.'), { status: 400 });
 
   const project = await prisma.project.findFirst({
     where: { id: projectId, created_by_id: user.id },
@@ -64,6 +67,7 @@ Currency: ${ctx.currency || 'AUD'}
 Available categories (pick one, exact spelling): ${catNames.length ? catNames.join(' | ') : '(none — leave category "")'}
 Available brands (pick one if it applies, exact spelling): ${brandNames.length ? brandNames.join(' | ') : '(none — leave brand "")'}
 ${hint && String(hint).trim() ? `Seller's note: ${String(hint).trim()}` : ''}
+${imageUrls.length > 1 ? `${imageUrls.length} photos of the same item are attached — use all of them together (different angles, the label, the case, wear).` : ''}
 
 Return ONLY this JSON object, no other text:
 ${FIELDS}`;
@@ -71,8 +75,9 @@ ${FIELDS}`;
   let raw;
   const searchKey = await resolveSearchKey(user.id);
   if (searchKey?.key) {
-    const image = await fetchImageBase64(imageUrl);
-    raw = await geminiVisionJson(searchKey, prompt, image);
+    const images = (await Promise.all(imageUrls.map((u) => fetchImageBase64(u).catch(() => null)))).filter(Boolean);
+    if (!images.length) throw Object.assign(new Error('None of the photos could be read.'), { status: 400 });
+    raw = await geminiVisionJson(searchKey, prompt, images);
   } else {
     // No Gemini key — use whatever chat model is configured (invokeAI sends
     // the image as a vision part; quality depends on that model).
@@ -89,7 +94,7 @@ ${FIELDS}`;
         },
         required: ['name', 'short_description', 'description'],
       },
-      fileUrls: [imageUrl],
+      fileUrls: imageUrls,
       role: 'diagnosis',
       maxTokens: 1400,
     });

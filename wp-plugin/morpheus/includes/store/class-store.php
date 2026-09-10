@@ -69,10 +69,41 @@ class Morpheus_Store {
 			$s = is_array( $d ) && isset( $d['status'] ) ? $d['status'] : 422;
 			return Morpheus_REST::err( $r->get_error_code(), $r->get_error_message(), $s );
 		}
+
+		// A product/post created or changed here won't show on the shop and
+		// category archives until their cached HTML is purged — WooCommerce's
+		// own save hooks don't always reach page-cache plugins from a REST
+		// context. Flush WC's product transients and, when a page cache is
+		// present, the whole cached site.
+		if ( in_array( $action, array( 'create_product', 'update_product', 'set_stock', 'create_post' ), true ) ) {
+			self::purge_caches();
+		}
+
 		return new WP_REST_Response( array_merge( array( 'ok' => true, 'action' => $action ), $r ), 200 );
 	}
 
 	// ── helpers ────────────────────────────────────────────────────────────
+
+	/** Clear WooCommerce product transients + any page cache, so a new/
+	 *  changed product appears on the shop and category archives right away. */
+	private static function purge_caches() {
+		if ( function_exists( 'wc_delete_product_transients' ) ) {
+			wc_delete_product_transients();
+		}
+		if ( class_exists( 'WC_Cache_Helper' ) && method_exists( 'WC_Cache_Helper', 'get_transient_version' ) ) {
+			WC_Cache_Helper::get_transient_version( 'product', true );
+		}
+		// Page-cache plugins — call whatever's present. Each is a no-op if absent.
+		if ( function_exists( 'rocket_clean_domain' ) )        { rocket_clean_domain(); }        // WP Rocket
+		if ( function_exists( 'w3tc_flush_all' ) )             { w3tc_flush_all(); }             // W3 Total Cache
+		if ( function_exists( 'wp_cache_clear_cache' ) )       { wp_cache_clear_cache(); }       // WP Super Cache
+		if ( function_exists( 'sg_cachepress_purge_cache' ) )  { sg_cachepress_purge_cache(); }  // SiteGround
+		if ( has_action( 'litespeed_purge_all' ) )             { do_action( 'litespeed_purge_all' ); } // LiteSpeed
+		if ( function_exists( 'wpo_cache_flush' ) )            { wpo_cache_flush(); }            // WP-Optimize
+		wp_cache_flush(); // object cache
+		morpheus_log( 'cache_purge', array() );
+	}
+
 
 	/** The site's "Brand" taxonomy — Woodmart registers one; fall back sensibly. */
 	private static function brand_taxonomy() {

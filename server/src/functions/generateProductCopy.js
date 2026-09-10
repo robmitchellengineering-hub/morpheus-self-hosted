@@ -8,6 +8,9 @@ import { invokeAI } from '../ai.js';
 
 export default async function handler({ user, body }) {
   const { projectId, name, category, brand, notes, imageUrl } = body || {};
+  const imageUrls = (Array.isArray(body?.imageUrls) ? body.imageUrls : [])
+    .concat(imageUrl ? [imageUrl] : [])
+    .filter((u) => typeof u === 'string' && u).slice(0, 5);
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
   if (!name || !String(name).trim()) throw Object.assign(new Error('Give the product a name first.'), { status: 400 });
 
@@ -23,7 +26,7 @@ export default async function handler({ user, body }) {
     category ? `Category: ${category}` : null,
     brand ? `Brand: ${brand}` : null,
     notes && String(notes).trim() ? `Seller's notes (rough — polish these, don't just repeat them): ${String(notes).trim()}` : null,
-    imageUrl ? `A photo of the item is attached — use what you can actually see, but do not guess at condition, year, or specs that aren't given.` : null,
+    imageUrls.length ? `${imageUrls.length === 1 ? 'A photo' : `${imageUrls.length} photos`} of the item ${imageUrls.length === 1 ? 'is' : 'are'} attached — use what you can actually see, but do not guess at condition, year, or specs that aren't given.` : null,
   ].filter(Boolean);
 
   const prompt = `You write product copy for this store's online shop. Keep it honest and specific — no hype clichés ("perfect for any musician!"), no invented specifications, model years, or condition claims. If a detail isn't given or clearly visible, leave it out.
@@ -47,7 +50,7 @@ Return JSON: { "short_description": "...", "description": "..." }`;
       },
       required: ['short_description', 'description'],
     },
-    fileUrls: imageUrl ? [imageUrl] : undefined,
+    fileUrls: imageUrls.length ? imageUrls : undefined,
     role: 'diagnosis',
     maxTokens: 1200,
   });

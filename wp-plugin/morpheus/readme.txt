@@ -3,7 +3,7 @@ Contributors: morpheus
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.4.0
+Stable tag: 0.4.1
 License: GPLv2 or later
 
 Run your WordPress/WooCommerce site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API.
@@ -61,6 +61,12 @@ the health check fails.
   deploy state, and whether WooCommerce is available.
 
 == Changelog ==
+
+= 0.4.1 =
+* Store: purge WooCommerce product transients + the page cache (WP Rocket,
+  W3TC, WP Super Cache, SiteGround, LiteSpeed, WP-Optimize) after a product
+  or post is created/updated, so it shows on the shop and category archives
+  right away.
 
 = 0.4.0 =
 * Store module: /store endpoint for WooCommerce product + content actions.
