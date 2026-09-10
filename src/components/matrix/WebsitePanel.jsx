@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code } from 'lucide-react';
+import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import SetupTab from './website/SetupTab';
+import CodeTab from './website/CodeTab';
 import DeployTab from './website/DeployTab';
 import ShopTab from './website/ShopTab';
 import EmbedTab from './website/EmbedTab';
@@ -13,6 +14,7 @@ import EmbedTab from './website/EmbedTab';
 
 const TABS = [
   { id: 'setup', label: 'SETUP', icon: Wrench },
+  { id: 'code', label: 'CODE', icon: FileCode },
   { id: 'deploy', label: 'DEPLOY', icon: Rocket },
   { id: 'shop', label: 'SHOP', icon: ShoppingBag },
   { id: 'embed', label: 'EMBED', icon: Code },
@@ -85,6 +87,12 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
           {!loading && tab === 'setup' && (
             <div className="flex-1 overflow-y-auto scrollbar-matrix">
               <SetupTab store={store} projectId={projectId} onChanged={async () => { const d = await load(); if (d?.connected) setTab('shop'); }} />
+            </div>
+          )}
+
+          {!loading && tab === 'code' && (
+            <div className="flex-1 overflow-y-auto scrollbar-matrix">
+              <CodeTab projectId={projectId} />
             </div>
           )}
 
