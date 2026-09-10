@@ -14,6 +14,7 @@ import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { resolveWordpressDelivery, loadProjectFiles } from '../lib/pluginProject.js';
 import { wpStatus } from '../lib/wpPlugin.js';
 import { logUsage } from '../lib/projectUtils.js';
+import { policyIdForUser, forceAllowed, assertWithinVelocity, assertRepoAllowed } from '../lib/tenantPolicy.js';
 
 const ALLOWED = new Set(['status', 'verify', 'dry_run', 'ship', 'merge']);
 const wp = getDeliveryAdapter('wordpress');
@@ -24,6 +25,7 @@ export default async function handler({ user, body }) {
   if (!ALLOWED.has(action)) throw Object.assign(new Error(`Unknown deploy action: ${action}`), { status: 400 });
 
   const { conn, project, config, token } = await resolveWordpressDelivery(projectId, user.id);
+  const policyId = policyIdForUser(user);
 
   if (action === 'status') {
     const [health, live] = await Promise.all([
@@ -50,7 +52,7 @@ export default async function handler({ user, body }) {
 
   if (action === 'merge') {
     if (!prNumber) throw Object.assign(new Error('prNumber required'), { status: 400 });
-    const result = await wp.merge({ token, config, prNumber: Number(prNumber), force: !!force });
+    const result = await wp.merge({ token, config, prNumber: Number(prNumber), force: forceAllowed(policyId, force) });
     if (result.merged && !result.alreadyMerged) {
       await logUsage(user.id, 'wp_deploy_merge', projectId, project.name, {
         repo: config.repo, prNumber: Number(prNumber), deploy: result.deploy?.triggered,
@@ -91,9 +93,12 @@ export default async function handler({ user, body }) {
     };
   }
 
-  // action === 'ship' — verify first (self-dev's gate), then open the PR.
+  // action === 'ship' — policy gates (repo access + velocity), verify, then PR.
+  await assertRepoAllowed(token, config.repo, policyId);
+  await assertWithinVelocity(user.id, policyId, 'wp_deploy_ship');
+
   const verify = await wp.verify({ files });
-  if (!verify.ok && !force) {
+  if (!verify.ok && !forceAllowed(policyId, force)) {
     return { shipped: false, blocked: true, reason: 'verify', verify };
   }
 
