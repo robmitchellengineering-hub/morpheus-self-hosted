@@ -11,14 +11,14 @@
 //   label         string
 //   describe()    → {...} metadata            — repo, branch, preview/ship/rollback kind
 //   verify({ files })                → { ok, errorCount, errors, checkedFiles }
+//   ship({ user, files, directToMain, precheck }) → engine ship result (see engine/ship.js)
 //   merge({ user, prNumber, force })  → engine merge result (see engine/merge.js)
 //   rollback({ user, commitSha })     → { commitSha, revertedToSha, branch, commitUrl }
 //   healthCheck({ user, target })     → { ok, checks: [{name, ok, detail}], failing }
-//   ship(...)  — land the change (arrives with the pushSelfDevToGithub extraction)
 //
-// `describe`, `verify`, `merge`, `rollback` and `healthCheck` are
-// implemented. `ship` follows, once pushSelfDevToGithub's diff-and-push
-// logic moves into server/src/lib/engine/.
+// All five capabilities are implemented for 'self-dev'. The WordPress
+// adapter reuses merge / rollback as-is (the PR lives on GitHub) and brings
+// its own verify entry points, ship (webhook + PHP write) and healthCheck.
 
 import { selfDevDelivery } from './selfDev.js';
 
