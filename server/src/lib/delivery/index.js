@@ -10,15 +10,15 @@
 //   id            string                     — stable key
 //   label         string
 //   describe()    → {...} metadata            — repo, branch, preview/ship/rollback kind
-//   verify({ files })             → { ok, errorCount, errors, checkedFiles }
-//   merge({ user, prNumber, force }) → engine merge result (see engine/merge.js)
-//   healthCheck({ user, target })  → { ok, checks: [{name, ok, detail}], failing }
-//   ship(...)     — land the change (added when the logic moves out of functions/)
-//   rollback(...) — restore the previous state
+//   verify({ files })                → { ok, errorCount, errors, checkedFiles }
+//   merge({ user, prNumber, force })  → engine merge result (see engine/merge.js)
+//   rollback({ user, commitSha })     → { commitSha, revertedToSha, branch, commitUrl }
+//   healthCheck({ user, target })     → { ok, checks: [{name, ok, detail}], failing }
+//   ship(...)  — land the change (arrives with the pushSelfDevToGithub extraction)
 //
-// `describe`, `verify`, `merge` and `healthCheck` are implemented today.
-// `ship` / `rollback` arrive as their logic moves out of the self-dev
-// functions into server/src/lib/engine/, one capability per PR.
+// `describe`, `verify`, `merge`, `rollback` and `healthCheck` are
+// implemented. `ship` follows, once pushSelfDevToGithub's diff-and-push
+// logic moves into server/src/lib/engine/.
 
 import { selfDevDelivery } from './selfDev.js';
 

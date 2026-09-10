@@ -8,8 +8,8 @@
 // pushed since) — see github.js's revertCommit.
 import { prisma } from '../db.js';
 import { logUsage, detectLanguage } from '../lib/projectUtils.js';
-import { getGithubToken, revertCommit } from '../lib/github.js';
 import { SELF_DEV_REPO_FULL_NAME } from '../lib/selfDevRepo.js';
+import { getDeliveryAdapter } from '../lib/delivery/index.js';
 
 // Drop a dated, unfilled incident section into the workspace's KNOWN-HAZARDS.md
 // so the next self-dev turn's planner/reviewer see that this push broke prod —
@@ -43,10 +43,8 @@ export default async function handler({ user, body }) {
     where: { created_by_id: user.id, project_type: 'self_dev' },
   });
 
-  const token = await getGithubToken(user.id);
-  const { commitSha: revertSha, revertedToSha, branch } = await revertCommit(token, SELF_DEV_REPO_FULL_NAME, commitSha);
-
-  const commitUrl = `https://github.com/${SELF_DEV_REPO_FULL_NAME}/commit/${revertSha}`;
+  const { commitSha: revertSha, revertedToSha, branch, commitUrl, repoFullName } =
+    await getDeliveryAdapter('self-dev').rollback({ user, commitSha });
 
   if (project) {
     await prisma.chatMessage.create({
@@ -62,5 +60,5 @@ export default async function handler({ user, body }) {
       console.error('[revertSelfDevPush] could not append hazard stub (revert succeeded):', e.message));
   }
 
-  return { commitSha: revertSha, revertedToSha, branch, commitUrl, repoFullName: SELF_DEV_REPO_FULL_NAME };
+  return { commitSha: revertSha, revertedToSha, branch, commitUrl, repoFullName };
 }

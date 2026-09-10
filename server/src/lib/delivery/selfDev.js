@@ -8,7 +8,7 @@
 // / merge / rollback still live in server/src/functions/*SelfDev*.js and
 // are delegated to there; they move here in the shared-engine extraction.
 import { SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, shouldExclude } from '../selfDevRepo.js';
-import { getGithubToken } from '../github.js';
+import { getGithubToken, revertCommit } from '../github.js';
 import { verifyProject, DEFAULT_ENTRY_POINTS } from '../engine/verify.js';
 import { mergePrWhenGreen } from '../engine/merge.js';
 
@@ -79,6 +79,22 @@ export const selfDevDelivery = {
       force,
       commitTitle: `Self-dev PR #${prNumber} (via Morpheus)`,
     });
+  },
+
+  // Point main at the tree from just before `commitSha`, as one new commit
+  // (github.js revertCommit — refuses if the branch head has moved since).
+  // Northflank + Netlify redeploy from it. The caller handles the chat
+  // note, usage log, and KNOWN-HAZARDS.md stub.
+  async rollback({ user, commitSha }) {
+    const token = await getGithubToken(user.id);
+    const r = await revertCommit(token, SELF_DEV_REPO_FULL_NAME, commitSha);
+    return {
+      commitSha: r.commitSha,
+      revertedToSha: r.revertedToSha,
+      branch: r.branch,
+      commitUrl: `https://github.com/${SELF_DEV_REPO_FULL_NAME}/commit/${r.commitSha}`,
+      repoFullName: SELF_DEV_REPO_FULL_NAME,
+    };
   },
 
   // Black-box probe of the just-deployed production URLs. A failure feeds
