@@ -63,6 +63,7 @@ model User {
   self_dev_features SelfDevFeature[]
   self_dev_decisions SelfDevDecision[]
   project_assets   ProjectAsset[]
+  plugin_connections PluginConnection[]
   github_connection GithubConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
@@ -172,6 +173,7 @@ model Project {
   self_dev_features SelfDevFeature[]
   self_dev_decisions SelfDevDecision[]
   assets         ProjectAsset[]
+  plugin_connections PluginConnection[]
 
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
@@ -711,4 +713,29 @@ model ProjectAsset {
 
   @@index([project_id, created_date])
   @@map("project_assets")
+}
+
+// Connection to a Morpheus WordPress plugin on the operator's own site —
+// { site URL, shared signing secret }. Lets the Store panel drive
+// WooCommerce/content actions on the site through the plugin's /store
+// endpoint, and (later) the deploy webhook. Secret encrypted at rest
+// (src/crypto.js). One connection per (project, kind).
+model PluginConnection {
+  id             String   @id @default(uuid())
+  created_by_id  String
+  owner          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id     String
+  project        Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  kind           String   @default("wordpress")
+  site_url       String
+  webhook_secret String   @db.Text          // encrypted at rest
+  repo           String?                     // owner/repo the plugin's Deploy module targets, if set
+  meta           String?  @db.Text           // JSON — last status, cached context, etc.
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@unique([project_id, kind])
+  @@map("plugin_connections")
 }
