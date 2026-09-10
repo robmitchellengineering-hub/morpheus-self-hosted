@@ -1,50 +1,17 @@
 // Pre-push verification for the self-dev workspace (Command Deck 4.0 /
 // self-dev-replaces-the-dev-loop, Tier 1 #1). Before PUSH TO PRODUCTION,
-// this materialises the whole workspace to a temp dir and runs esbuild over
-// it two ways:
+// the change must parse, bundle from the real entry points, and keep its
+// cross-file named exports intact — the "does not provide an export named X"
+// class the 2026-09-06 github.js rewrite shipped to production.
 //
-//   1. transform every JS/TS/JSX/TSX file on its own — catches syntax and
-//      JSX errors anywhere, including files not reachable from an entry.
-//   2. bundle from the real entry points (src/main.jsx for the frontend,
-//      server/src/{index,worker}.js for the backend) with all npm packages
-//      marked external — catches broken local imports and missing named
-//      exports across files (exactly the "does not provide an export named
-//      X" class that the 2026-09-06 self-dev rewrite of github.js shipped to
-//      production).
-//
-// It does NOT run the real `vite build` or `eslint` — the backend container
-// has neither (server/Dockerfile installs prod deps only, no frontend
-// tree). esbuild is a single dependency-free binary and covers the failure
-// modes that actually take a self-dev push down.
+// The verify machinery now lives in the shared engine
+// (server/src/lib/engine/verify.js) and is reached through the 'self-dev'
+// delivery adapter, which supplies self-dev's entry points, exclude rule,
+// and the base44/ external shim. This function loads the workspace and
+// keeps the admin gate + usage log.
 import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
-import { shouldExclude } from '../lib/selfDevRepo.js';
-import { findBrokenImports } from '../lib/importGraph.js';
-import { checkSyntax } from '../lib/syntaxCheck.js';
-import * as esbuild from 'esbuild';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-
-const CODE_EXT = /\.(jsx?|tsx?|mjs|cjs)$/;
-const ASSET_LOADERS = {
-  '.css': 'empty', '.scss': 'empty', '.less': 'empty',
-  '.svg': 'empty', '.png': 'empty', '.jpg': 'empty', '.jpeg': 'empty',
-  '.gif': 'empty', '.webp': 'empty', '.ico': 'empty',
-  '.woff': 'empty', '.woff2': 'empty', '.ttf': 'empty', '.eot': 'empty',
-  '.mp3': 'empty', '.mp4': 'empty', '.wav': 'empty',
-};
-
-function fmtLoc(err, root) {
-  const l = err.location;
-  const strip = (s) => (root ? String(s).split(root + '/').join('').replace(/^.*?\/selfdev-verify-[^/]+\//, '') : s);
-  return {
-    file: l ? strip(l.file) : null,
-    line: l?.line ?? null,
-    column: l?.column ?? null,
-    text: strip(err.text),
-  };
-}
+import { getDeliveryAdapter } from '../lib/delivery/index.js';
 
 export async function runVerifySelfDev(user) {
   const project = await prisma.project.findFirst({
@@ -58,103 +25,11 @@ export async function runVerifySelfDev(user) {
   });
   if (files.length === 0) throw Object.assign(new Error('Workspace is empty — sync from GitHub first'), { status: 400 });
 
-  const root = await mkdtemp(path.join(tmpdir(), 'selfdev-verify-'));
-  const errors = [];
-  try {
-    // Materialise the workspace.
-    for (const f of files) {
-      if (shouldExclude(f.path)) continue;
-      const full = path.join(root, f.path);
-      await mkdir(path.dirname(full), { recursive: true });
-      await writeFile(full, f.content ?? '');
-    }
+  const result = await getDeliveryAdapter('self-dev').verify({ files });
 
-    const codeFiles = files.filter((f) => CODE_EXT.test(f.path) && !shouldExclude(f.path));
+  await logUsage(user.id, 'self_dev_verify', project.id, project.name, { ok: result.ok, errorCount: result.errorCount });
 
-    // Pass 1 — per-file transform (syntax / JSX). Shared with the regular
-    // build gate (lib/syntaxCheck.js).
-    for (const e of await checkSyntax(codeFiles.map((f) => ({ path: f.path, content: f.content ?? '' })))) {
-      errors.push({ phase: 'syntax', file: e.file, line: e.line, column: e.column, text: e.text });
-    }
-
-    // `base44/` is a real directory in the repo that a couple of frontend
-    // files legitimately import from (e.g. BackendPanel.jsx →
-    // base44/shared/infrastructureComponents.ts), but self-dev deliberately
-    // excludes base44/ from the workspace (shouldExclude) so esbuild can't
-    // resolve it here. Mark those imports external rather than flag a
-    // false-positive "could not resolve".
-    const externalBase44 = {
-      name: 'external-base44',
-      setup(build) {
-        build.onResolve({ filter: /(^|\/)base44\// }, (args) => ({ path: args.path, external: true }));
-      },
-    };
-
-    // Pass 2 — bundle from real entry points (cross-file imports / exports).
-    const bundleTargets = [
-      { name: 'frontend', entry: 'src/main.jsx', platform: 'browser', alias: { '@': path.join(root, 'src') } },
-      { name: 'backend', entry: 'server/src/index.js', platform: 'node', alias: {} },
-      { name: 'worker', entry: 'server/src/worker.js', platform: 'node', alias: {} },
-    ];
-    for (const t of bundleTargets) {
-      const entryFull = path.join(root, t.entry);
-      if (!files.some((f) => f.path === t.entry)) continue;
-      try {
-        await esbuild.build({
-          entryPoints: [entryFull],
-          bundle: true,
-          write: false,
-          packages: 'external', // npm deps not resolved — only local files
-          format: 'esm',
-          platform: t.platform,
-          jsx: 'automatic',
-          alias: t.alias,
-          loader: ASSET_LOADERS,
-          plugins: [externalBase44],
-          logLevel: 'silent',
-          absWorkingDir: root,
-        });
-      } catch (e) {
-        for (const err of e.errors || [{ text: e.message }]) {
-          errors.push({ phase: `resolve:${t.name}`, ...fmtLoc(err, root), file: err.location?.file?.replace(root + '/', '') || t.entry });
-        }
-      }
-    }
-  } finally {
-    await rm(root, { recursive: true, force: true }).catch(() => {});
-  }
-
-  // Cross-file export check (A3): a NAMED import of a local file that the file
-  // doesn't export — the exact "does not provide an export named X" class the
-  // 2026-09-06 github.js rewrite shipped to every compile path. Deterministic,
-  // and catches importers the esbuild bundle pass above can't reach from an
-  // entry point.
-  for (const b of findBrokenImports(files.filter((f) => !shouldExclude(f.path)))) {
-    errors.push({
-      phase: 'exports',
-      file: b.importer,
-      line: null,
-      text: `imports "${b.name}" from ${b.target}, which does not export it — a caller-breaking change to ${b.target}`,
-    });
-  }
-
-  // De-dupe (a broken export shows up once per importer).
-  const seen = new Set();
-  const unique = errors.filter((e) => {
-    const k = `${e.file}:${e.line}:${e.text}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-
-  await logUsage(user.id, 'self_dev_verify', project.id, project.name, { ok: unique.length === 0, errorCount: unique.length });
-
-  return {
-    ok: unique.length === 0,
-    errorCount: unique.length,
-    errors: unique.slice(0, 50),
-    checkedFiles: files.filter((f) => CODE_EXT.test(f.path) && !shouldExclude(f.path)).length,
-  };
+  return result;
 }
 
 export default async function handler({ user }) {

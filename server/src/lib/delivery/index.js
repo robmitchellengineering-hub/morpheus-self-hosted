@@ -10,15 +10,15 @@
 //   id            string                     — stable key
 //   label         string
 //   describe()    → {...} metadata            — repo, branch, preview/ship/rollback kind
+//   verify({ files })            → { ok, errorCount, errors, checkedFiles }
 //   healthCheck({ user, target }) → { ok, checks: [{name, ok, detail}], failing }
 //   ship(...)     — land the change (added when the logic moves out of functions/)
 //   merge(...)    — bring it to the deploy branch
 //   rollback(...) — restore the previous state
 //
-// Only `describe` and `healthCheck` are implemented in every adapter today.
-// `ship` / `merge` / `rollback` arrive with the shared-engine extraction,
-// where the self-dev functions' logic moves into lib/ and both self-dev and
-// the plugin call it through here.
+// `describe`, `verify` and `healthCheck` are implemented today. `ship` /
+// `merge` / `rollback` arrive as their logic moves out of the self-dev
+// functions into server/src/lib/engine/, one capability per PR.
 
 import { selfDevDelivery } from './selfDev.js';
 

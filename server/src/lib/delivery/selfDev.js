@@ -7,9 +7,21 @@
 // smokeCheckSelfDev.js so the engine has one place to call). verify / ship
 // / merge / rollback still live in server/src/functions/*SelfDev*.js and
 // are delegated to there; they move here in the shared-engine extraction.
-import { SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH } from '../selfDevRepo.js';
+import { SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, shouldExclude } from '../selfDevRepo.js';
+import { verifyProject, DEFAULT_ENTRY_POINTS } from '../engine/verify.js';
 
 const stripSlash = (u) => (u || '').replace(/\/+$/, '');
+
+// `base44/` is a real repo dir a few frontend files import from, but
+// self-dev deliberately keeps it out of the workspace (shouldExclude), so
+// esbuild can't resolve it during verify — mark those imports external
+// rather than flag a false-positive "could not resolve".
+const externalBase44 = {
+  name: 'external-base44',
+  setup(build) {
+    build.onResolve({ filter: /(^|\/)base44\// }, (args) => ({ path: args.path, external: true }));
+  },
+};
 
 async function probe(name, url, { method = 'GET', expect = [200], expectText = null, timeoutMs = 10000 } = {}) {
   const ctrl = new AbortController();
@@ -43,6 +55,17 @@ export const selfDevDelivery = {
       rollbackKind: 'tree-revert',             // github.js revertCommit
       supports: ['verify', 'ship', 'merge', 'healthCheck', 'rollback'],
     };
+  },
+
+  // Does the workspace parse, bundle from the real entry points, and keep
+  // its cross-file exports intact? `files` is the whole workspace
+  // ([{ path, content }]); the caller loads it.
+  async verify({ files }) {
+    return verifyProject(files, {
+      exclude: shouldExclude,
+      entryPoints: DEFAULT_ENTRY_POINTS,
+      esbuildPlugins: [externalBase44],
+    });
   },
 
   // Black-box probe of the just-deployed production URLs. A failure feeds
