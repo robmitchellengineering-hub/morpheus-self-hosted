@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { prisma } from './db.js';
+import { WIDGET_TOKEN_PREFIX, resolveWidgetToken } from './lib/widgetToken.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
@@ -37,9 +38,19 @@ function extractToken(req) {
 }
 
 // Attaches req.user when a valid token is present; does not reject otherwise.
+// A `wgt_` embeddable-widget token resolves to its owner + attaches req.widget
+// ({ projectId, scopes, tokenId }); the functions router narrows what that
+// request may then do.
 export async function optionalAuth(req, _res, next) {
   const token = extractToken(req);
   if (!token) return next();
+  if (token.startsWith(WIDGET_TOKEN_PREFIX)) {
+    try {
+      const w = await resolveWidgetToken(token);
+      if (w) { req.user = w.user; req.widget = { projectId: w.projectId, scopes: w.scopes, tokenId: w.tokenId }; }
+    } catch { /* ignore — proceeds unauthenticated */ }
+    return next();
+  }
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });

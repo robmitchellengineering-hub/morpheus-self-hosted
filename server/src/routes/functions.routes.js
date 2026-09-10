@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { requireAuth, requireAdmin } from '../auth.js';
+import { widgetMayCall } from '../lib/widgetToken.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FUNCTIONS_DIR = path.join(__dirname, '..', 'functions');
@@ -50,6 +51,15 @@ router.all('/:name', async (req, res, next) => {
 
   if (!PUBLIC_FUNCTIONS.has(name)) {
     return requireAuth(req, res, () => {
+      // An embeddable-widget token acts as the owner but is boxed in: only
+      // functions in its scopes, never admin/self-dev functions (even if the
+      // owner is an admin), and always pinned to its own project.
+      if (req.widget) {
+        if (ADMIN_FUNCTIONS.has(name) || !widgetMayCall(req.widget.scopes, name)) {
+          return res.status(403).json({ error: `Widget tokens can't call ${name}` });
+        }
+        req.body = { ...(req.body || {}), projectId: req.widget.projectId };
+      }
       if (ADMIN_FUNCTIONS.has(name)) {
         return requireAdmin(req, res, () => runFunction(name, filePath, req, res, next));
       }
