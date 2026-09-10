@@ -20,7 +20,7 @@ class Morpheus_Deploy_Settings {
 			'deploy_secret' => '',   // shared HMAC secret, also set on the Morpheus side
 			'site_url'      => '',    // used for the post-deploy health check; defaults to home_url()
 			'health_paths'  => "/\n/shop/\n/cart/", // one per line
-			'armed'         => 0,     // 0 = dry-run only (v0.1 ignores this and never writes)
+			'armed'         => 0,     // 0 = the deploy endpoint reports only; 1 = it writes files
 		);
 	}
 
@@ -118,7 +118,12 @@ class Morpheus_Deploy_Settings {
 			<h1>Morpheus Deploy <span style="font-size:13px;color:#888;">v<?php echo esc_html( MORPHEUS_DEPLOY_VERSION ); ?></span></h1>
 			<p>Deploys code to this site from a connected GitHub repo — no FTP. Morpheus opens a pull request, and once its checks pass and it merges, it calls this endpoint:</p>
 			<p><code><?php echo $endpoint; ?></code></p>
-			<p style="color:#b26a00;"><strong>Version 0.1 is dry-run only</strong> — it reports what a deploy would change and never writes a file.</p>
+			<p style="color:<?php echo $o['armed'] ? '#1f7a4d' : '#b26a00'; ?>;">
+				<strong><?php echo $o['armed'] ? 'Armed' : 'Not armed'; ?></strong> —
+				<?php echo $o['armed']
+					? 'a deploy request writes the changed files, health-checks the site, and rolls back on failure.'
+					: 'a deploy request only reports what it would change. Nothing is written until you tick “Armed” below.'; ?>
+			</p>
 
 			<?php if ( ! empty( $last ) ) : ?>
 				<h2>Last request</h2>
@@ -164,8 +169,8 @@ class Morpheus_Deploy_Settings {
 					<tr>
 						<th>Armed</th>
 						<td>
-							<label><input name="<?php echo self::OPTION; ?>[armed]" type="checkbox" value="1" <?php checked( $o['armed'], 1 ); ?>> Allow this plugin to write files</label>
-							<p class="description">v0.1 ignores this — writes arrive in a later version. Leave off for now.</p>
+							<label><input name="<?php echo self::OPTION; ?>[armed]" type="checkbox" value="1" <?php checked( $o['armed'], 1 ); ?>> Let a deploy request write files</label>
+							<p class="description">Off: the endpoint reports what it would change. On: it writes the changed files, health-checks the site, and restores a snapshot if anything breaks. Add <code>?dry=1</code> to the endpoint URL to force a report even when armed.</p>
 						</td>
 					</tr>
 				</table>

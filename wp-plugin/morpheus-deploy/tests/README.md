@@ -22,11 +22,17 @@ cd wp-plugin/morpheus-deploy
 - runs a **real dry-run** against the public `octocat/Hello-World` repo
   (outbound fetch to api.github.com), asserting the diff report
 
-43 assertions, all green on PHP 7.4 and 8.2.
+The **armed write path** (v0.2) is driven with a fake GitHub client against
+a scratch site root under `sys_get_temp_dir()`, asserting:
 
-## What's not covered yet
+- happy path — new file written, changed file updated, removed file deleted,
+  a denied path (`wp-config.php`) left untouched and reported, snapshot taken
+- an unsafe path (`../evil`) in the change set aborts the whole deploy —
+  nothing written, not even safe sibling files
+- a failed post-write health check rolls back — changed files restored,
+  created files removed, untouched files left alone
+- a blob-sha mismatch (content corrupted in transit) rolls back
+- `rollback_last()` — the operator "undo" — restores the previous deploy
+- not armed → report only, files untouched
 
-The write path (v0.2, behind the `armed` toggle) — file writes, the
-snapshot, the post-write health check, and auto-rollback. Those tests land
-with that code, and will use a scratch WordPress tree in the Playground VFS
-as the write target so nothing real is touched.
+66 assertions, all green on PHP 7.4 and 8.2.
