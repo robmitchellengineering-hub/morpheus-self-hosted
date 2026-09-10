@@ -64,6 +64,7 @@ model User {
   self_dev_decisions SelfDevDecision[]
   project_assets   ProjectAsset[]
   plugin_connections PluginConnection[]
+  widget_tokens    WidgetToken[]
   github_connection GithubConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
@@ -174,6 +175,7 @@ model Project {
   self_dev_decisions SelfDevDecision[]
   assets         ProjectAsset[]
   plugin_connections PluginConnection[]
+  widget_tokens  WidgetToken[]
 
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
@@ -738,4 +740,29 @@ model PluginConnection {
 
   @@unique([project_id, kind])
   @@map("plugin_connections")
+}
+
+// An embeddable-widget access token — lets a slim Morpheus surface embedded
+// on the owner's own site act as the owner, but scoped to ONE project and a
+// fixed set of actions. The full token (wgt_<hex>) is shown once at
+// creation; only its SHA-256 is stored. See the "Self-Dev as a Plugin"
+// scope doc, §"The chat surface".
+model WidgetToken {
+  id            String    @id @default(uuid())
+  created_by_id String
+  owner         User      @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project   @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  token_prefix  String    // "wgt_" + first 8 chars — for display in the token list
+  token_hash    String    @unique // sha256(full token)
+  label         String?
+  scopes        String    @default("chat,deploy,store") // comma-separated
+  revoked       Boolean   @default(false)
+  last_used_at  DateTime?
+
+  created_date  DateTime  @default(now())
+
+  @@index([project_id])
+  @@map("widget_tokens")
 }
