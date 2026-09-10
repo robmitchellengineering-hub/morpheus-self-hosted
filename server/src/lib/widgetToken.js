@@ -17,7 +17,7 @@ export const WIDGET_ALWAYS = ['getWidgetContext'];
 export const WIDGET_SCOPE_FUNCTIONS = {
   chat: ['chatWithMorpheus', 'getProjectFiles', 'getSelfDevFeatures'],
   deploy: ['wordPressDeploy'],
-  store: ['getWordPressStore', 'wordPressStoreAction', 'generateProductCopy'],
+  store: ['getWordPressStore', 'wordPressStoreAction', 'generateProductCopy', 'analyzeProductPhoto'],
 };
 
 export function isMissingWidgetTable(err) {
