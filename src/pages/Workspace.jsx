@@ -23,6 +23,7 @@ import FormsPanel from '@/components/matrix/FormsPanel';
 import DomainPanel from '@/components/matrix/DomainPanel';
 import ContentPanel from '@/components/matrix/ContentPanel';
 import StorePanel from '@/components/matrix/StorePanel';
+import DeployPanel from '@/components/matrix/DeployPanel';
 import AutonomousPanel from '@/components/matrix/AutonomousPanel';
 import TestsPanel from '@/components/matrix/TestsPanel';
 import UsagePanel from '@/components/matrix/UsagePanel';
@@ -76,6 +77,7 @@ export default function Workspace() {
   const [showContent, setShowContent] = useState(false);
   const [showStore, setShowStore] = useState(false);
   const [storeConnected, setStoreConnected] = useState(false);
+  const [showDeploy, setShowDeploy] = useState(false);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('time');
 
@@ -281,7 +283,7 @@ export default function Workspace() {
 
   return (
     <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
-      <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onDomain={ws.currentProject?.compile_target === 'web-app' ? () => setShowDomain(true) : undefined} domainSet={domainSet} onContent={ws.currentProject?.compile_target === 'web-app' ? () => setShowContent(true) : undefined} onStore={ws.currentProject?.compile_target === 'web-app' ? () => setShowStore(true) : undefined} storeConnected={storeConnected} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
+      <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onDomain={ws.currentProject?.compile_target === 'web-app' ? () => setShowDomain(true) : undefined} domainSet={domainSet} onContent={ws.currentProject?.compile_target === 'web-app' ? () => setShowContent(true) : undefined} onStore={ws.currentProject?.compile_target === 'web-app' ? () => setShowStore(true) : undefined} storeConnected={storeConnected} onDeploy={ws.currentProject?.compile_target === 'web-app' ? () => setShowDeploy(true) : undefined} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
       <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
         <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>CHAT</button>
         <button onClick={() => setMobileTab('files')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'files' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>FILES</button>
@@ -333,6 +335,7 @@ export default function Workspace() {
       <DomainPanel open={showDomain} onClose={() => setShowDomain(false)} projectId={ws.currentProject?.id} onSetChange={setDomainSet} />
       <ContentPanel open={showContent} onClose={() => setShowContent(false)} projectId={ws.currentProject?.id} />
       <StorePanel open={showStore} onClose={() => setShowStore(false)} projectId={ws.currentProject?.id} onConnectedChange={setStoreConnected} />
+      <DeployPanel open={showDeploy} onClose={() => setShowDeploy(false)} projectId={ws.currentProject?.id} />
       <AutonomousPanel open={showAutonomous} onClose={() => setShowAutonomous(false)} project={ws.currentProject} onStep={ws.runAutonomousStep} onSendToChat={(msg) => { setShowAutonomous(false); setMobileTab('chat'); ws.sendMessage(msg); }} />
       <TestsPanel open={showTests} onClose={() => setShowTests(false)} project={ws.currentProject} onGenerate={ws.generateTests} />
       <UsagePanel open={showUsage} onClose={() => setShowUsage(false)} />
