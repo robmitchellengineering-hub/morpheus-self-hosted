@@ -38,10 +38,13 @@ the health check fails.
 == Installation ==
 
 1. Upload the `morpheus` folder to `wp-content/plugins/` and activate.
-2. Settings → Morpheus: set the repo (`owner/repo`), branch, a GitHub
-   token with Contents:read, and a deploy secret.
-3. Give Morpheus the same secret and the endpoint URL shown on the settings
-   screen.
+2. Settings → Morpheus: set a signing secret (any random string, 12+
+   characters). This alone enables the Store module.
+3. In Morpheus, open the STORE panel, enter this site's URL and the same
+   secret, and connect.
+4. For the Deploy module as well: also set the repo (`owner/repo`), branch,
+   and a GitHub token with Contents:read, and keep "Armed" off until you've
+   reviewed a dry-run diff.
 
 == Endpoints ==
 
