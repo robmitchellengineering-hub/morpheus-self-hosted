@@ -3,23 +3,28 @@ Contributors: morpheus
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.2.0
+Stable tag: 0.4.0
 License: GPLv2 or later
 
 Run your WordPress/WooCommerce site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API.
 
 == Description ==
 
-Morpheus builds changes to your site through chat, opens a pull request on
-your connected GitHub repo, and — once its checks pass and the PR merges —
-calls this plugin's endpoint. The plugin verifies the request signature,
-diffs the merge commit against what's on disk, and (from v0.2) writes only
-the changed files, health-checks the site, and rolls back automatically if
-anything breaks.
+One plugin, two modules, one shared signed-request auth (HMAC-SHA256 over
+the raw body, verified against a secret set here and on the Morpheus side).
 
-It never touches wp-config.php, wp-content/uploads, cache directories, .git,
-.htaccess, or .env — that deny-list is enforced in the plugin's own code,
-independent of your repo's .gitignore.
+**Deploy** — Morpheus builds changes through chat, opens a pull request on
+your connected repo, and once its checks pass and the PR merges, calls the
+deploy endpoint. The plugin diffs the merge commit, snapshots what it
+touches, writes the changed files, health-checks the site, and restores the
+snapshot if anything breaks. It never touches wp-config.php,
+wp-content/uploads, cache directories, .git, .htaccess, or .env — that
+deny-list is enforced in the plugin's own code, independent of .gitignore.
+
+**Store** — a signed endpoint for WooCommerce and content actions (create a
+product, set stock, update a product, draft a post), so you can run the
+shop from your phone through Morpheus. Products are created as drafts unless
+you say otherwise. Requires WooCommerce for the product actions.
 
 = Arming =
 
@@ -45,10 +50,23 @@ the health check fails.
   Add `?dry=1` (or `"dry_run": true` in the body) to force a report.
 * `POST /wp-json/morpheus/v1/rollback` — signed; restores the last deploy's
   snapshot.
+* `POST /wp-json/morpheus/v1/store` — signed; body
+  `{ "action": "create_product" | "update_product" | "set_stock" |
+  "list_products" | "get_product" | "context" | "create_post", "data": {…},
+  "at": "<iso>" }`.
 * `GET /wp-json/morpheus/v1/status` — unauthenticated; reports version,
-  configured/armed state.
+  deploy state, and whether WooCommerce is available.
 
 == Changelog ==
+
+= 0.4.0 =
+* Store module: /store endpoint for WooCommerce product + content actions.
+  Products created as drafts by default; image sideload from URLs; brand +
+  category taxonomy handling.
+
+= 0.3.0 =
+* Renamed to "Morpheus"; deploy code moved into a Deploy module; one shared
+  signing secret.
 
 = 0.2.0 =
 * Armed deploy: snapshot, write, health-check, auto-rollback. Rollback

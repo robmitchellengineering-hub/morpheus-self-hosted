@@ -38,27 +38,38 @@ class Morpheus_REST {
 		return new WP_REST_Response( array(
 			'plugin'     => 'morpheus',
 			'version'    => MORPHEUS_VERSION,
+			'signing'    => (bool) $s['webhook_secret'],
+			'deploy'     => array(
+				'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
+				'armed'      => (bool) $s['armed'],
+				'repo'       => $s['repo'] ?: null,
+				'branch'     => $s['branch'],
+				'last'       => get_option( 'morpheus_deploy_last', null ),
+			),
+			'store'      => array(
+				'available'   => class_exists( 'WooCommerce' ),
+				'woocommerce' => defined( 'WC_VERSION' ) ? WC_VERSION : null,
+			),
+			// kept flat for older callers
 			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
 			'armed'      => (bool) $s['armed'],
-			'writes'     => (bool) $s['armed'], // armed → the deploy endpoint writes files
-			'repo'       => $s['repo'] ?: null,
-			'branch'     => $s['branch'],
-			'last'       => get_option( 'morpheus_deploy_last', null ),
+			'writes'     => (bool) $s['armed'],
 		), 200 );
 	}
 
 	/**
-	 * Shared front door for the signed POST endpoints: verify the HMAC over
-	 * the raw body, check the replay window, and return the decoded body or
-	 * a WP_REST_Response error.
+	 * Shared front door for the signed POST endpoints (used by both the
+	 * deploy and store modules): verify the HMAC over the raw body, check
+	 * the replay window, and return the decoded body or a WP_REST_Response
+	 * error.
 	 */
-	private static function verified_body( WP_REST_Request $request ) {
+	public static function verified_body( WP_REST_Request $request ) {
 		$raw    = $request->get_body();
 		$secret = Morpheus_Settings::get( 'webhook_secret' );
 		$sig    = $request->get_header( 'X-Morpheus-Signature' );
 
 		if ( ! $secret ) {
-			return self::err( 'not_configured', 'Deploy secret is not set.', 400 );
+			return self::err( 'not_configured', 'The signing secret is not set in Settings → Morpheus.', 400 );
 		}
 		if ( ! morpheus_signature_ok( $raw, $secret, (string) $sig ) ) {
 			morpheus_log( 'rejected', array( 'why' => 'bad signature', 'route' => $request->get_route() ) );
@@ -124,7 +135,7 @@ class Morpheus_REST {
 		return new WP_REST_Response( $result, 200 );
 	}
 
-	private static function err( $code, $message, $status, array $extra = array() ) {
+	public static function err( $code, $message, $status, array $extra = array() ) {
 		return new WP_REST_Response( array_merge( array( 'ok' => false, 'error' => $code, 'message' => $message ), $extra ), $status );
 	}
 }

@@ -264,6 +264,88 @@ ok( ( $r6['dry_run'] ?? false ) === true && file_get_contents( "$root6/z.txt" ) 
 foreach ( array( $root, $root2, $root3, $root4, $root5, $root6 ) as $r ) { rmrf( $r ); }
 rmrf( MORPHEUS_STATE_DIR . '/snapshots' );
 
+// ── Store module ──────────────────────────────────────────────────────────
+
+echo "\n== Store module ==\n";
+Morpheus_Store::register_routes();
+$routes = rest_get_server()->get_routes();
+ok( isset( $routes['/morpheus/v1/store'] ), 'route /morpheus/v1/store registered' );
+
+$STORE_SECRET = 'store-secret';
+update_option( 'morpheus_settings', array_merge( Morpheus_Settings::defaults(), array( 'webhook_secret' => $STORE_SECRET ) ) );
+
+function store_req( $action, $data, $secret ) {
+	$raw = json_encode( array( 'action' => $action, 'data' => $data, 'at' => gmdate( 'c' ) ) );
+	$r   = new WP_REST_Request( 'POST', '/morpheus/v1/store' );
+	$r->set_header( 'content-type', 'application/json' );
+	$r->set_header( 'X-Morpheus-Signature', 'sha256=' . hash_hmac( 'sha256', $raw, $secret ) );
+	$r->set_body( $raw );
+	return rest_do_request( $r );
+}
+
+// auth still enforced
+ok( store_req( 'context', array(), 'wrong-secret' )->get_status() === 401, 'bad signature -> 401' );
+
+if ( ! class_exists( 'WooCommerce' ) ) {
+	echo "  (WooCommerce not installed in this boot — run tests/run.sh which loads the blueprint; skipping WC asserts)\n";
+	$wc = store_req( 'create_product', array( 'name' => 'x' ), $STORE_SECRET );
+	ok( $wc->get_status() === 409 && ( $wc->get_data()['error'] ?? '' ) === 'no_woocommerce', 'product action -> 409 no_woocommerce when WC absent' );
+} else {
+	$ctx = store_req( 'context', array(), $STORE_SECRET )->get_data();
+	ok( ! empty( $ctx['ok'] ) && isset( $ctx['currency'] ), 'context returns currency + categories' );
+	ok( ( $ctx['default_status'] ?? '' ) === 'draft', 'context default_status is draft' );
+
+	// create — no status given -> must be a draft
+	$create = store_req( 'create_product', array(
+		'name'          => '1978 Fender Stratocaster (harness)',
+		'description'   => 'Sunburst, original pickups. <strong>Test</strong> product.',
+		'regular_price' => '3200',
+		'sku'           => 'HARNESS-STRAT-78',
+		'stock'         => 1,
+		'categories'    => array( 'Instruments' ),
+		'brand'         => 'Fender',
+	), $STORE_SECRET )->get_data();
+	ok( ! empty( $create['ok'] ) && ! empty( $create['created'] ), 'create_product ok' );
+	$pid = $create['product']['id'] ?? 0;
+	$p   = $pid ? wc_get_product( $pid ) : null;
+	ok( $p && $p->get_status() === 'draft', 'new product is a draft (never auto-published)' );
+	ok( $p && $p->get_regular_price() === '3200', 'price set' );
+	ok( $p && $p->get_sku() === 'HARNESS-STRAT-78', 'sku set' );
+	ok( $p && $p->get_manage_stock() && (int) $p->get_stock_quantity() === 1, 'stock managed = 1' );
+	ok( $p && in_array( 'Instruments', wp_get_post_terms( $pid, 'product_cat', array( 'fields' => 'names' ) ), true ), 'category assigned (created if new)' );
+
+	// set_stock
+	store_req( 'set_stock', array( 'sku' => 'HARNESS-STRAT-78', 'quantity' => 0 ), $STORE_SECRET );
+	$p = wc_get_product( $pid );
+	ok( (int) $p->get_stock_quantity() === 0 && $p->get_stock_status() === 'outofstock', 'set_stock 0 -> outofstock' );
+
+	// update_product
+	store_req( 'update_product', array( 'id' => $pid, 'sale_price' => '2950', 'status' => 'publish' ), $STORE_SECRET );
+	$p = wc_get_product( $pid );
+	ok( $p->get_sale_price() === '2950' && $p->get_status() === 'publish', 'update_product: sale price + publish' );
+
+	// list_products finds it
+	$list = store_req( 'list_products', array( 'search' => 'harness', 'status' => 'publish' ), $STORE_SECRET )->get_data();
+	$found = false;
+	foreach ( ( $list['products'] ?? array() ) as $lp ) { if ( ( $lp['sku'] ?? '' ) === 'HARNESS-STRAT-78' ) { $found = true; } }
+	ok( $found, 'list_products returns the new product' );
+
+	// image sideload on update (real public image)
+	$img = store_req( 'update_product', array( 'id' => $pid, 'images' => array( 'https://ps.w.org/woocommerce/assets/icon-128x128.png' ) ), $STORE_SECRET )->get_data();
+	$p   = wc_get_product( $pid );
+	ok( $p->get_image_id() > 0, 'sideloaded image became the product image' );
+
+	// create_post
+	$post = store_req( 'create_post', array( 'title' => 'Back in stock — harness', 'content' => 'We are open again.' ), $STORE_SECRET )->get_data();
+	ok( ! empty( $post['ok'] ) && get_post_status( $post['post']['id'] ) === 'draft', 'create_post -> draft' );
+
+	// cleanup
+	wp_delete_post( $pid, true );
+	wp_delete_post( $post['post']['id'], true );
+}
+
+delete_option( 'morpheus_settings' );
+
 echo "\n";
 echo "==== $pass passed, $fail failed ====\n";
 exit( $fail === 0 ? 0 : 1 );
