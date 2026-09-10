@@ -22,14 +22,19 @@ class Morpheus_Deploy_GitHub {
 	}
 
 	private function get( $path, $accept = 'application/vnd.github+json' ) {
+		$headers = array(
+			'Accept'               => $accept,
+			'X-GitHub-Api-Version' => '2022-11-28',
+			'User-Agent'           => 'MorpheusDeploy/' . MORPHEUS_DEPLOY_VERSION,
+		);
+		// Only send the token when we have one — a public repo needs none,
+		// and an empty Bearer is a 401.
+		if ( is_string( $this->token ) && $this->token !== '' ) {
+			$headers['Authorization'] = 'Bearer ' . $this->token;
+		}
 		$res = wp_remote_get( 'https://api.github.com/repos/' . $this->repo . $path, array(
 			'timeout' => 20,
-			'headers' => array(
-				'Authorization'        => 'Bearer ' . $this->token,
-				'Accept'               => $accept,
-				'X-GitHub-Api-Version' => '2022-11-28',
-				'User-Agent'           => 'MorpheusDeploy/' . MORPHEUS_DEPLOY_VERSION,
-			),
+			'headers' => $headers,
 		) );
 		if ( is_wp_error( $res ) ) {
 			return new WP_Error( 'github_http', $res->get_error_message() );

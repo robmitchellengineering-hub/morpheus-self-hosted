@@ -27,9 +27,11 @@ class Morpheus_Deploy_Deployer {
 	 * @return array|WP_Error
 	 */
 	public function dry_run( $commit_sha, $reason = '' ) {
-		if ( empty( $this->s['repo'] ) || empty( $this->s['github_token'] ) ) {
-			return new WP_Error( 'not_configured', 'Set the repo and GitHub token in Settings → Morpheus Deploy.', array( 'status' => 400 ) );
+		if ( empty( $this->s['repo'] ) ) {
+			return new WP_Error( 'not_configured', 'Set the repo in Settings → Morpheus Deploy.', array( 'status' => 400 ) );
 		}
+		// A private repo needs a token; a public one doesn't. We don't know
+		// which without a call, so let it try and surface GitHub's 404/401.
 
 		$gh = new Morpheus_Deploy_GitHub( $this->s['repo'], $this->s['github_token'] );
 
