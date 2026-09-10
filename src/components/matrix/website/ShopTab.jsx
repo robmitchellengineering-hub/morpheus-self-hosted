@@ -12,6 +12,7 @@ const BLANK = {
 };
 const inputCls = 'w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50';
 const areaCls = 'w-full bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50';
+const MAX_PHOTOS = 6;
 
 function Field({ label, hint, children }) {
   return (
@@ -26,7 +27,7 @@ function Field({ label, hint, children }) {
 export default function ShopTab({ store, projectId }) {
   const [view, setView] = useState('add'); // add | list
   const [form, setForm] = useState(BLANK);
-  const [photo, setPhoto] = useState(null);
+  const [photos, setPhotos] = useState([]); // [{ url, name }]
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
@@ -71,12 +72,12 @@ export default function ShopTab({ store, projectId }) {
   }
 
   const analyzeFromPhoto = async () => {
-    if (!photo?.url) { setErr('Add a photo first.'); return; }
+    if (!photos.length) { setErr('Add a photo first.'); return; }
     setAnalyzing(true); setErr(null); setPhotoNote(null);
     try {
       const { data } = await base44.functions.invoke('analyzeProductPhoto', {
         projectId,
-        imageUrl: photo.url,
+        imageUrls: photos.map((p) => p.url),
         hint: [form.name, form.short_description, form.description].filter((s) => s && s.trim()).join(' — ') || undefined,
       });
       setForm((f) => ({
@@ -109,7 +110,7 @@ export default function ShopTab({ store, projectId }) {
         // whatever's already typed in the description boxes becomes the
         // seller's rough notes for Morpheus to polish
         notes: [form.short_description, form.description].filter((s) => s && s.trim()).join('\n') || undefined,
-        imageUrl: photo?.url || undefined,
+        imageUrls: photos.map((p) => p.url),
       });
       setForm((f) => ({
         ...f,
@@ -123,12 +124,15 @@ export default function ShopTab({ store, projectId }) {
     }
   };
 
-  const pickPhoto = async (file) => {
-    if (!file) return;
+  const pickPhotos = async (fileList) => {
+    const files = [...(fileList || [])].slice(0, MAX_PHOTOS - photos.length);
+    if (!files.length) return;
     setUploading(true); setErr(null);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      setPhoto({ url: file_url, name: file.name });
+      for (const file of files) {
+        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        setPhotos((p) => (p.length >= MAX_PHOTOS ? p : [...p, { url: file_url, name: file.name }]));
+      }
     } catch (e) { setErr('Photo upload failed: ' + (e?.data?.error || e.message)); }
     finally { setUploading(false); }
   };
@@ -144,7 +148,7 @@ export default function ShopTab({ store, projectId }) {
     if (form.description.trim()) data.description = form.description.trim();
     if (form.category) data.categories = [form.category];
     if (form.brand) data.brand = [form.brand];
-    if (photo?.url) data.images = [photo.url];
+    if (photos.length) data.images = photos.map((p) => p.url);
     try {
       const { data: res } = await base44.functions.invoke('wordPressStoreAction', {
         projectId, action: 'create_product', data,
@@ -153,7 +157,7 @@ export default function ShopTab({ store, projectId }) {
         setErr(res.message || res.error || 'The store rejected the product.');
       } else {
         setResult({ product: res.product, published: status === 'publish' });
-        setForm(BLANK); setPhoto(null); setPhotoNote(null); setProducts(null);
+        setForm(BLANK); setPhotos([]); setPhotoNote(null); setProducts(null);
       }
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setSaving(false); }
@@ -229,37 +233,30 @@ export default function ShopTab({ store, projectId }) {
                 onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} />
             </Field>
 
-            <Field label="Photo" hint="added to your site’s media library as the product image">
-              <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                onChange={(e) => pickPhoto(e.target.files?.[0])} />
+            <Field label={`Photos${photos.length ? ` (${photos.length}/${MAX_PHOTOS})` : ''}`} hint="first is the main image, the rest become the product gallery">
+              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+                onChange={(e) => pickPhotos(e.target.files)} />
               <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
-                onChange={(e) => pickPhoto(e.target.files?.[0])} />
-              {photo ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 border border-primary/20 px-2.5 py-2">
-                    <img src={photo.url} alt="" className="w-12 h-12 object-cover border border-primary/20" />
-                    <span className="text-[11px] text-primary/70 truncate flex-1">{photo.name}</span>
-                    <button onClick={() => { setPhoto(null); setPhotoNote(null); }} className="text-primary/40 hover:text-red-400 text-[11px]">remove</button>
-                  </div>
-                  <button onClick={analyzeFromPhoto} disabled={analyzing || uploading || generating}
-                    className="w-full flex items-center justify-center gap-2 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
-                    {analyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    {analyzing ? 'MORPHEUS IS LOOKING…' : 'AUTO-FILL FROM PHOTO'}
-                  </button>
-                  <div className="text-[9px] text-primary/35">
-                    Fills every field from the photo — name, category, brand, price, stock, copy. All editable after.
-                  </div>
-                  {photoNote && (
-                    <div className="text-[10px] text-yellow-500/80 border border-yellow-500/25 px-2.5 py-1.5 leading-relaxed">
-                      <span className="uppercase tracking-wide text-yellow-500/60">Check:</span> {photoNote}
+                onChange={(e) => pickPhotos(e.target.files)} />
+
+              {photos.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-2">
+                  {photos.map((p, i) => (
+                    <div key={p.url} className="relative border border-primary/20 aspect-square">
+                      <img src={p.url} alt="" className="w-full h-full object-cover" />
+                      {i === 0 && <span className="absolute bottom-0 left-0 text-[8px] bg-primary text-black px-1">MAIN</span>}
+                      <button onClick={() => setPhotos((ps) => ps.filter((x) => x.url !== p.url))}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-primary/40 text-primary/60 hover:text-red-400 text-[10px] leading-none">×</button>
                     </div>
-                  )}
+                  ))}
                 </div>
-              ) : (
+              )}
+
+              {photos.length < MAX_PHOTOS && (
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => cameraRef.current?.click()} disabled={uploading}
                     className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
-                    {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} Camera
+                    {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} {photos.length ? 'Add' : 'Camera'}
                   </button>
                   <button onClick={() => fileRef.current?.click()} disabled={uploading}
                     className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
@@ -268,6 +265,24 @@ export default function ShopTab({ store, projectId }) {
                 </div>
               )}
             </Field>
+
+            {photos.length > 0 && (
+              <>
+                <button onClick={analyzeFromPhoto} disabled={analyzing || uploading || generating}
+                  className="w-full flex items-center justify-center gap-2 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
+                  {analyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  {analyzing ? 'MORPHEUS IS LOOKING…' : `AUTO-FILL FROM ${photos.length === 1 ? 'PHOTO' : `${photos.length} PHOTOS`}`}
+                </button>
+                <div className="text-[9px] text-primary/35 -mt-2">
+                  Reads all the photos together — name, category, brand, price, stock, copy. All editable after.
+                </div>
+                {photoNote && (
+                  <div className="text-[10px] text-yellow-500/80 border border-yellow-500/25 px-2.5 py-1.5 leading-relaxed">
+                    <span className="uppercase tracking-wide text-yellow-500/60">Check:</span> {photoNote}
+                  </div>
+                )}
+              </>
+            )}
 
             <button onClick={generateCopy} disabled={generating || uploading || !form.name.trim()}
               className="w-full flex items-center justify-center gap-2 h-[42px] border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40">
