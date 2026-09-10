@@ -12,6 +12,7 @@ import { getGithubToken, revertCommit } from '../github.js';
 import { verifyProject, DEFAULT_ENTRY_POINTS } from '../engine/verify.js';
 import { mergePrWhenGreen } from '../engine/merge.js';
 import { shipChange } from '../engine/ship.js';
+import { probe } from './http.js';
 
 const stripSlash = (u) => (u || '').replace(/\/+$/, '');
 
@@ -25,22 +26,6 @@ const externalBase44 = {
     build.onResolve({ filter: /(^|\/)base44\// }, (args) => ({ path: args.path, external: true }));
   },
 };
-
-async function probe(name, url, { method = 'GET', expect = [200], expectText = null, timeoutMs = 10000 } = {}) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { method, headers: { 'User-Agent': 'Morpheus-smoke' }, signal: ctrl.signal });
-    const body = expectText ? await res.text() : '';
-    const statusOk = expect.includes(res.status);
-    const textOk = !expectText || body.includes(expectText);
-    return { name, ok: statusOk && textOk, detail: `${method} ${url} → ${res.status}${!textOk ? ' (body check failed)' : ''}` };
-  } catch (err) {
-    return { name, ok: false, detail: `${method} ${url} → ${err.name === 'AbortError' ? 'timed out' : err.message}` };
-  } finally {
-    clearTimeout(t);
-  }
-}
 
 export const selfDevDelivery = {
   id: 'self-dev',
