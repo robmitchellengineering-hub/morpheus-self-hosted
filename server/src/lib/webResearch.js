@@ -99,6 +99,38 @@ export async function geminiGroundedSearch(searchKey, query) {
   return null;
 }
 
+// Gemini vision → structured JSON. `image` is { data: base64, mimeType }.
+// Uses the same resolveSearchKey() Gemini credential as grounded search.
+// Returns the parsed object, or throws.
+export async function geminiVisionJson(searchKey, prompt, image) {
+  if (!searchKey?.key) throw Object.assign(new Error('No Gemini key available for photo analysis.'), { status: 400 });
+  const endpoint = `https://${GEMINI_HOST}/v1beta/models/${encodeURIComponent(searchKey.model)}:generateContent?key=${searchKey.key}`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(45_000),
+    body: JSON.stringify({
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: image.mimeType || 'image/jpeg', data: image.data } },
+        ],
+      }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Gemini vision call failed (HTTP ${res.status})${body ? ': ' + body.slice(0, 300) : ''}`);
+  }
+  const d = await res.json();
+  const text = (d?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
+  if (!text) throw new Error('Gemini returned an empty response.');
+  try { return JSON.parse(text); }
+  catch { throw new Error('Gemini did not return valid JSON.'); }
+}
+
 // ── Tier 2: Wikipedia ────────────────────────────────────────────────────
 export async function wikipediaSearch(query, { max = 2 } = {}) {
   try {

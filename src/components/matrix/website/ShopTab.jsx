@@ -32,6 +32,8 @@ export default function ShopTab({ store, projectId }) {
   const [result, setResult] = useState(null);
   const [err, setErr] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [photoNote, setPhotoNote] = useState(null);
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
 
@@ -67,6 +69,33 @@ export default function ShopTab({ store, projectId }) {
       </div>
     );
   }
+
+  const analyzeFromPhoto = async () => {
+    if (!photo?.url) { setErr('Add a photo first.'); return; }
+    setAnalyzing(true); setErr(null); setPhotoNote(null);
+    try {
+      const { data } = await base44.functions.invoke('analyzeProductPhoto', {
+        projectId,
+        imageUrl: photo.url,
+        hint: [form.name, form.short_description, form.description].filter((s) => s && s.trim()).join(' — ') || undefined,
+      });
+      setForm((f) => ({
+        ...f,
+        name: data.name || f.name,
+        category: data.category || f.category,
+        brand: data.brand || f.brand,
+        regular_price: data.suggested_price || f.regular_price,
+        stock: data.stock || f.stock,
+        short_description: data.short_description || f.short_description,
+        description: data.description || f.description,
+      }));
+      if (data.notes_for_seller) setPhotoNote(data.notes_for_seller);
+    } catch (e) {
+      setErr('Photo analysis failed: ' + (e?.data?.error || e.message));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const generateCopy = async () => {
     if (!form.name.trim()) { setErr('Add a product name before generating copy.'); return; }
@@ -124,7 +153,7 @@ export default function ShopTab({ store, projectId }) {
         setErr(res.message || res.error || 'The store rejected the product.');
       } else {
         setResult({ product: res.product, published: status === 'publish' });
-        setForm(BLANK); setPhoto(null); setProducts(null);
+        setForm(BLANK); setPhoto(null); setPhotoNote(null); setProducts(null);
       }
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setSaving(false); }
@@ -206,10 +235,25 @@ export default function ShopTab({ store, projectId }) {
               <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
                 onChange={(e) => pickPhoto(e.target.files?.[0])} />
               {photo ? (
-                <div className="flex items-center gap-2 border border-primary/20 px-2.5 py-2">
-                  <img src={photo.url} alt="" className="w-12 h-12 object-cover border border-primary/20" />
-                  <span className="text-[11px] text-primary/70 truncate flex-1">{photo.name}</span>
-                  <button onClick={() => setPhoto(null)} className="text-primary/40 hover:text-red-400 text-[11px]">remove</button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 border border-primary/20 px-2.5 py-2">
+                    <img src={photo.url} alt="" className="w-12 h-12 object-cover border border-primary/20" />
+                    <span className="text-[11px] text-primary/70 truncate flex-1">{photo.name}</span>
+                    <button onClick={() => { setPhoto(null); setPhotoNote(null); }} className="text-primary/40 hover:text-red-400 text-[11px]">remove</button>
+                  </div>
+                  <button onClick={analyzeFromPhoto} disabled={analyzing || uploading || generating}
+                    className="w-full flex items-center justify-center gap-2 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
+                    {analyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    {analyzing ? 'MORPHEUS IS LOOKING…' : 'AUTO-FILL FROM PHOTO'}
+                  </button>
+                  <div className="text-[9px] text-primary/35">
+                    Fills every field from the photo — name, category, brand, price, stock, copy. All editable after.
+                  </div>
+                  {photoNote && (
+                    <div className="text-[10px] text-yellow-500/80 border border-yellow-500/25 px-2.5 py-1.5 leading-relaxed">
+                      <span className="uppercase tracking-wide text-yellow-500/60">Check:</span> {photoNote}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
@@ -246,11 +290,11 @@ export default function ShopTab({ store, projectId }) {
           </div>
 
           <div className="p-3 border-t border-primary/20 shrink-0 flex items-center gap-2">
-            <button onClick={() => submit('draft')} disabled={saving || uploading || generating || !form.name.trim()}
+            <button onClick={() => submit('draft')} disabled={saving || uploading || generating || analyzing || !form.name.trim()}
               className="flex-1 flex items-center justify-center gap-1.5 h-[44px] border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40">
               {saving ? <Loader2 size={13} className="animate-spin" /> : null} SAVE DRAFT
             </button>
-            <button onClick={() => submit('publish')} disabled={saving || uploading || generating || !form.name.trim()}
+            <button onClick={() => submit('publish')} disabled={saving || uploading || generating || analyzing || !form.name.trim()}
               className="flex-1 flex items-center justify-center gap-1.5 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
               {saving ? <Loader2 size={13} className="animate-spin" /> : null} PUBLISH
             </button>
