@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, Check, ExternalLink, Package, ImagePlus, RefreshCw } from 'lucide-react';
+import { Loader2, Check, ExternalLink, Package, ImagePlus, RefreshCw, Camera, Sparkles } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // SHOP tab of the WEBSITE panel — run a connected WooCommerce store from
@@ -31,7 +31,9 @@ export default function ShopTab({ store, projectId }) {
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState(null);
+  const [generating, setGenerating] = useState(false);
   const fileRef = useRef(null);
+  const cameraRef = useRef(null);
 
   const [products, setProducts] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
@@ -65,6 +67,32 @@ export default function ShopTab({ store, projectId }) {
       </div>
     );
   }
+
+  const generateCopy = async () => {
+    if (!form.name.trim()) { setErr('Add a product name before generating copy.'); return; }
+    setGenerating(true); setErr(null);
+    try {
+      const { data } = await base44.functions.invoke('generateProductCopy', {
+        projectId,
+        name: form.name.trim(),
+        category: form.category || undefined,
+        brand: form.brand || undefined,
+        // whatever's already typed in the description boxes becomes the
+        // seller's rough notes for Morpheus to polish
+        notes: [form.short_description, form.description].filter((s) => s && s.trim()).join('\n') || undefined,
+        imageUrl: photo?.url || undefined,
+      });
+      setForm((f) => ({
+        ...f,
+        short_description: data.short_description || f.short_description,
+        description: data.description || f.description,
+      }));
+    } catch (e) {
+      setErr('Copy generation failed: ' + (e?.data?.error || e.message));
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const pickPhoto = async (file) => {
     if (!file) return;
@@ -172,41 +200,57 @@ export default function ShopTab({ store, projectId }) {
                 onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} />
             </Field>
 
+            <Field label="Photo" hint="added to your site’s media library as the product image">
+              <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => pickPhoto(e.target.files?.[0])} />
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={(e) => pickPhoto(e.target.files?.[0])} />
+              {photo ? (
+                <div className="flex items-center gap-2 border border-primary/20 px-2.5 py-2">
+                  <img src={photo.url} alt="" className="w-12 h-12 object-cover border border-primary/20" />
+                  <span className="text-[11px] text-primary/70 truncate flex-1">{photo.name}</span>
+                  <button onClick={() => setPhoto(null)} className="text-primary/40 hover:text-red-400 text-[11px]">remove</button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => cameraRef.current?.click()} disabled={uploading}
+                    className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
+                    {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} Camera
+                  </button>
+                  <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                    className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
+                    {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />} Library
+                  </button>
+                </div>
+              )}
+            </Field>
+
+            <button onClick={generateCopy} disabled={generating || uploading || !form.name.trim()}
+              className="w-full flex items-center justify-center gap-2 h-[42px] border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40">
+              {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              {generating ? 'MORPHEUS IS WRITING…' : 'WRITE COPY WITH MORPHEUS'}
+            </button>
+            <div className="text-[9px] text-primary/35 -mt-2">
+              Uses the name, category, brand and photo. Type rough notes in the boxes below first and Morpheus will polish them.
+            </div>
+
             <Field label="Short description" hint="the blurb near the price">
               <textarea className={areaCls} rows={2} value={form.short_description}
                 onChange={(e) => setForm((f) => ({ ...f, short_description: e.target.value }))} />
             </Field>
 
             <Field label="Full description">
-              <textarea className={areaCls} rows={4} value={form.description}
+              <textarea className={areaCls} rows={5} value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-            </Field>
-
-            <Field label="Photo" hint="added to your site’s media library as the product image">
-              <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                onChange={(e) => pickPhoto(e.target.files?.[0])} />
-              {photo ? (
-                <div className="flex items-center gap-2 border border-primary/20 px-2.5 py-2">
-                  <img src={photo.url} alt="" className="w-10 h-10 object-cover border border-primary/20" />
-                  <span className="text-[11px] text-primary/70 truncate flex-1">{photo.name}</span>
-                  <button onClick={() => setPhoto(null)} className="text-primary/40 hover:text-red-400 text-[11px]">remove</button>
-                </div>
-              ) : (
-                <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                  className="w-full flex items-center justify-center gap-2 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
-                  {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
-                  {uploading ? 'Uploading…' : 'Choose a photo'}
-                </button>
-              )}
             </Field>
           </div>
 
           <div className="p-3 border-t border-primary/20 shrink-0 flex items-center gap-2">
-            <button onClick={() => submit('draft')} disabled={saving || uploading || !form.name.trim()}
+            <button onClick={() => submit('draft')} disabled={saving || uploading || generating || !form.name.trim()}
               className="flex-1 flex items-center justify-center gap-1.5 h-[44px] border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40">
               {saving ? <Loader2 size={13} className="animate-spin" /> : null} SAVE DRAFT
             </button>
-            <button onClick={() => submit('publish')} disabled={saving || uploading || !form.name.trim()}
+            <button onClick={() => submit('publish')} disabled={saving || uploading || generating || !form.name.trim()}
               className="flex-1 flex items-center justify-center gap-1.5 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
               {saving ? <Loader2 size={13} className="animate-spin" /> : null} PUBLISH
             </button>
