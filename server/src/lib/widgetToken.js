@@ -15,7 +15,7 @@ export const WIDGET_ALWAYS = ['getWidgetContext'];
 // The functions a widget token is allowed to call, keyed by scope.
 // Anything not listed (and not in WIDGET_ALWAYS) is owner-session-only.
 export const WIDGET_SCOPE_FUNCTIONS = {
-  chat: ['chatWithMorpheus', 'getProjectFiles', 'getSelfDevFeatures'],
+  chat: ['chatWithMorpheus', 'getProjectFiles', 'getSelfDevFeatures', 'repoFiles'],
   deploy: ['wordPressDeploy'],
   store: ['getWordPressStore', 'wordPressStoreAction', 'generateProductCopy', 'analyzeProductPhoto'],
 };
