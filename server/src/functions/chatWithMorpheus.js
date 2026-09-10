@@ -26,7 +26,7 @@ import { cmsPromptBlock } from '../lib/projectCms.js';
 import { getAnalytics, analyticsPromptBlock } from '../lib/projectAnalytics.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { getWpConnection } from '../lib/wpPlugin.js';
-import { wordpressPromptBlock } from '../lib/projectWordpress.js';
+import { wordpressPromptBlock, ensureWpFiles } from '../lib/projectWordpress.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
@@ -587,6 +587,20 @@ export default async function handler({ user, body, res }) {
   const wpConn = isSelfDev ? null : await getWpConnection(projectId, user.id).catch(() => null);
   const isWordPress = !!wpConn;
   const isWebApp = (project.compile_target || 'source') === 'web-app' && !isSelfDev && !isWordPress;
+
+  // On a WordPress build turn, pull the theme files this request needs
+  // straight from the connected repo, so the coder isn't working blind on
+  // whatever happened to be hand-imported. Best-effort, never blocks chat.
+  if (isWordPress && mode === 'build') {
+    try {
+      const pulled = await ensureWpFiles({ user, project, wpConn, message });
+      if (pulled.added) {
+        const fresh = await prisma.projectFile.findMany({ where: { project_id: projectId, path: { in: pulled.paths } } });
+        for (const f of fresh) if (!files.some((x) => x.path === f.path)) files.push(f);
+      }
+    } catch (e) { console.error('[ensureWpFiles]', e.message); }
+  }
+
   const totalFileBytes = files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
   // Self-dev always scopes (its repo is huge); an ordinary project scopes
   // only once it's grown past the threshold — below that, "send everything"
