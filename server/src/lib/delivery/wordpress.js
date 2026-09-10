@@ -104,6 +104,10 @@ export const wordpressDelivery = {
     return shipChange(token, config.repo, {
       files,
       exclude: isDenied,
+      // The project's files are a working subset of a whole WordPress
+      // install, never a mirror — a file the project doesn't have is not a
+      // deletion. Only ever create / update.
+      noDeletions: true,
       baseBranch: config.branch || 'main',
       branchPrefix: 'morpheus/',
       directToMain: false,

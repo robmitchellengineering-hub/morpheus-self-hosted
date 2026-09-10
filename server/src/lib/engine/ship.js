@@ -44,6 +44,10 @@ function diffLine({ createCount, updateCount, deleteCount, treeTruncated }) {
  * @param {string} [opts.label]           commit / PR title prefix, default "Change"
  * @param {string} [opts.prNote]          an extra bullet in the default PR body
  * @param {string} [opts.prBody]          full PR body override (ignores prNote)
+ * @param {boolean} [opts.noDeletions]    never delete a remote file just
+ *        because `files` omits it — for a caller whose `files` is a working
+ *        subset of the repo, not a mirror (e.g. the WordPress plugin, which
+ *        manages a handful of theme/plugin files inside a whole WP install)
  * @param {(cs:{changedPaths:string[],deletePaths:string[],createCount:number,updateCount:number})=>(object|null|Promise<object|null>)} [opts.precheck]
  *        run after the diff, before the push; a non-null return blocks the
  *        ship and is spread into { shipped: false, ...return }
@@ -53,6 +57,7 @@ export async function shipChange(token, repoFullName, opts) {
   const {
     files, exclude = () => false, baseBranch = 'main',
     branchPrefix = 'change/', directToMain = false, label = 'Change', prNote, prBody, precheck,
+    noDeletions = false,
   } = opts;
 
   const [owner, repo] = repoFullName.split('/');
@@ -79,7 +84,7 @@ export async function shipChange(token, repoFullName, opts) {
   }
 
   const deletePaths = [];
-  if (!treeTruncated) {
+  if (!treeTruncated && !noDeletions) {
     for (const remotePath of remoteAll.keys()) {
       if (exclude(remotePath)) continue;
       if (!localPaths.has(remotePath)) deletePaths.push(remotePath);
