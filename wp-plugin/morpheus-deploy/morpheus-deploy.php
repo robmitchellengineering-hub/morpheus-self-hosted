@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:       Morpheus Deploy
- * Description:        Deploys code changes to this site from a connected GitHub repo — no FTP. Receives a signed webhook, pulls the changed files, and writes them with PHP.
- * Version:           0.1.0
+ * Description:        Deploys code changes to this site from a connected GitHub repo — no FTP. Receives a signed webhook, pulls the changed files, writes them with PHP, health-checks the site, and rolls back automatically on failure.
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -12,20 +12,22 @@
  * "Self-Dev as a Plugin" scope doc). Morpheus builds the change, opens a PR
  * on the connected repo, and once CI is green and the PR merges, POSTs a
  * signed request to /wp-json/morpheus/v1/deploy. This plugin verifies the
- * signature, diffs the merge commit's tree against what's on disk, and (in
- * a later version) writes only the changed files, then health-checks and
- * rolls back on failure.
+ * signature, diffs the merge commit against its parent (GitHub compare, so
+ * only the changed files are ever considered), snapshots what it's about to
+ * touch, writes the changed files, health-checks the site, and restores the
+ * snapshot automatically if anything breaks.
  *
- * v0.1.0 is DRY-RUN ONLY: it reports what a deploy would change and never
- * writes a file. Writing is gated behind an explicit "arm" toggle added in
- * the next version.
+ * Writing is gated behind the "Armed" setting. Off (default) → the deploy
+ * endpoint reports what it *would* change and writes nothing. On → it
+ * writes. The hard deny-list (wp-config.php, wp-content/uploads, cache,
+ * .git, .htaccess, .env) is enforced in this plugin's code regardless.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_DEPLOY_VERSION', '0.1.0' );
+define( 'MORPHEUS_DEPLOY_VERSION', '0.2.0' );
 define( 'MORPHEUS_DEPLOY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_DEPLOY_REST_NS', 'morpheus/v1' );
 
