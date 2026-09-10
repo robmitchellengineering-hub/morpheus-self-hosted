@@ -1,4 +1,4 @@
-import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, ShoppingBag, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe, FileJson } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, ShoppingBag, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, CloudUpload, Inbox, Globe, FileJson } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { generateManual } from '@/lib/generateManual';
 import BuildStamp from './BuildStamp';
@@ -8,7 +8,7 @@ import SheetSelect from './SheetSelect';
 
 const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
-export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onStore, storeConnected, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onStore, storeConnected, onDeploy, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
   return (
     <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
       {/* Row 1: project identity + primary action */}
@@ -113,6 +113,13 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           <HelpHint id="store" title="Store" body="Run a connected WordPress / WooCommerce shop from here — add products and posts, set stock, publish or save as draft. Connect the Morpheus plugin on your own site once; Morpheus keeps only the connection, never your catalogue. New products stay drafts until you hit Publish.">
             <button onClick={onStore} className={`${btnBase} ${storeConnected ? 'text-primary border-primary/60' : ''}`}>
               <ShoppingBag size={14} /> STORE
+            </button>
+          </HelpHint>
+        )}
+        {onDeploy && (
+          <HelpHint id="deploy" title="Deploy" body="Ship this project's code to its connected WordPress site. Morpheus opens a PR on your repo; once CI passes and it merges, the plugin writes the change to the live server and health-checks it. Read-only for now — live-site health and a dry-run diff of what would change — until a staging site is set up to prove auto-rollback.">
+            <button onClick={onDeploy} className={btnBase}>
+              <CloudUpload size={14} /> DEPLOY
             </button>
           </HelpHint>
         )}
