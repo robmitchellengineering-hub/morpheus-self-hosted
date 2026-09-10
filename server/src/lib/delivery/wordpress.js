@@ -108,6 +108,10 @@ export const wordpressDelivery = {
       // install, never a mirror — a file the project doesn't have is not a
       // deletion. Only ever create / update.
       noDeletions: true,
+      // Commit changed files one-by-one via the Contents API. A full WP
+      // install is ~27k blobs; rebuilding+POSTing the whole tree 500s on
+      // GitHub. Incremental never touches the full tree.
+      incremental: true,
       baseBranch: config.branch || 'main',
       branchPrefix: 'morpheus/',
       directToMain: false,
