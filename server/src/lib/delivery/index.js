@@ -10,14 +10,14 @@
 //   id            string                     — stable key
 //   label         string
 //   describe()    → {...} metadata            — repo, branch, preview/ship/rollback kind
-//   verify({ files })            → { ok, errorCount, errors, checkedFiles }
-//   healthCheck({ user, target }) → { ok, checks: [{name, ok, detail}], failing }
+//   verify({ files })             → { ok, errorCount, errors, checkedFiles }
+//   merge({ user, prNumber, force }) → engine merge result (see engine/merge.js)
+//   healthCheck({ user, target })  → { ok, checks: [{name, ok, detail}], failing }
 //   ship(...)     — land the change (added when the logic moves out of functions/)
-//   merge(...)    — bring it to the deploy branch
 //   rollback(...) — restore the previous state
 //
-// `describe`, `verify` and `healthCheck` are implemented today. `ship` /
-// `merge` / `rollback` arrive as their logic moves out of the self-dev
+// `describe`, `verify`, `merge` and `healthCheck` are implemented today.
+// `ship` / `rollback` arrive as their logic moves out of the self-dev
 // functions into server/src/lib/engine/, one capability per PR.
 
 import { selfDevDelivery } from './selfDev.js';

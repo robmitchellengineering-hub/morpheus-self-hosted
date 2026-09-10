@@ -8,7 +8,9 @@
 // / merge / rollback still live in server/src/functions/*SelfDev*.js and
 // are delegated to there; they move here in the shared-engine extraction.
 import { SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, shouldExclude } from '../selfDevRepo.js';
+import { getGithubToken } from '../github.js';
 import { verifyProject, DEFAULT_ENTRY_POINTS } from '../engine/verify.js';
+import { mergePrWhenGreen } from '../engine/merge.js';
 
 const stripSlash = (u) => (u || '').replace(/\/+$/, '');
 
@@ -65,6 +67,17 @@ export const selfDevDelivery = {
       exclude: shouldExclude,
       entryPoints: DEFAULT_ENTRY_POINTS,
       esbuildPlugins: [externalBase44],
+    });
+  },
+
+  // Poll the self-dev PR's checks and squash-merge it once green. Returns
+  // the engine's merge result; the caller handles self-dev's side effects
+  // (chat note, usage log, manual regen, migration apply).
+  async merge({ user, prNumber, force = false }) {
+    const token = await getGithubToken(user.id);
+    return mergePrWhenGreen(token, SELF_DEV_REPO_FULL_NAME, prNumber, {
+      force,
+      commitTitle: `Self-dev PR #${prNumber} (via Morpheus)`,
     });
   },
 
