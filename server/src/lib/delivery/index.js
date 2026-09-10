@@ -21,9 +21,11 @@
 // its own verify entry points, ship (webhook + PHP write) and healthCheck.
 
 import { selfDevDelivery } from './selfDev.js';
+import { wordpressDelivery } from './wordpress.js';
 
 const ADAPTERS = {
   [selfDevDelivery.id]: selfDevDelivery,
+  [wordpressDelivery.id]: wordpressDelivery,
 };
 
 export const DELIVERY_IDS = Object.keys(ADAPTERS);
@@ -35,8 +37,9 @@ export function getDeliveryAdapter(id) {
 }
 
 // For a project row: which adapter delivers it. Self-dev projects use
-// 'self-dev'; everything else has no delivery adapter yet (previews/deploy
-// still go through the per-project host config until the extraction lands).
+// 'self-dev'. A plugin-tenant project's adapter ('wordpress', later others)
+// is resolved by the plugin-api from the tenant's connection, not from the
+// project row — so everything else is still null here.
 export function deliveryIdForProject(project) {
   return (project?.project_type === 'self_dev') ? 'self-dev' : null;
 }
