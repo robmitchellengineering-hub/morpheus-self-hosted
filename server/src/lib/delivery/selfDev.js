@@ -11,6 +11,7 @@ import { SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, shouldExclude } from '../self
 import { getGithubToken, revertCommit } from '../github.js';
 import { verifyProject, DEFAULT_ENTRY_POINTS } from '../engine/verify.js';
 import { mergePrWhenGreen } from '../engine/merge.js';
+import { shipChange } from '../engine/ship.js';
 
 const stripSlash = (u) => (u || '').replace(/\/+$/, '');
 
@@ -78,6 +79,25 @@ export const selfDevDelivery = {
     return mergePrWhenGreen(token, SELF_DEV_REPO_FULL_NAME, prNumber, {
       force,
       commitTitle: `Self-dev PR #${prNumber} (via Morpheus)`,
+    });
+  },
+
+  // Diff the workspace against the self-dev repo and push the delta — to a
+  // `self-dev/<ts>` branch + PR by default, or straight to main when
+  // `directToMain` (force / hotfix). Returns the engine's ship result; the
+  // caller handles self-dev's side effects (chat note, usage log, decision
+  // stamp, manual regen, migration apply).
+  async ship({ user, files, directToMain = false, precheck }) {
+    const token = await getGithubToken(user.id);
+    return shipChange(token, SELF_DEV_REPO_FULL_NAME, {
+      files,
+      exclude: shouldExclude,
+      baseBranch: SELF_DEV_BRANCH,
+      branchPrefix: 'self-dev/',
+      directToMain,
+      label: 'Self-dev',
+      prNote: 'Local esbuild verification passed before this PR was opened',
+      precheck,
     });
   },
 
