@@ -1,73 +1,32 @@
 // Auto-merge the self-dev PR opened by pushSelfDevToGithub.js once its checks
 // are green (Command Deck: self-dev replaces the dev loop, Tier 1 #2).
 //
-// The SelfDev page polls this after a PR-mode push. Each call reads the PR's
-// combined check state (Checks API + commit-status API) and:
-//   - 'pending'  → return, the page polls again shortly
-//   - 'failed'   → return the failing check names; main is left untouched,
-//                  the page shows "view PR / MERGE ANYWAY"
-//   - 'passing'  → squash-merge the PR, delete the branch, drop a chat note,
-//                  return the merge commit so the page's deploy watcher +
-//                  REVERT LAST PUSH take over on it
+// The SelfDev page polls this after a PR-mode push. The poll-and-squash-merge
+// logic now lives in the shared engine (server/src/lib/engine/merge.js) and
+// is reached through the 'self-dev' delivery adapter:
+//   - 'pending'  → the page polls again shortly
+//   - 'failed'   → the failing check names; main is left untouched
+//   - 'conflict' → sync + re-apply + push again
+//   - merged     → this function drops the chat note, logs usage, regenerates
+//                  the manual and applies any migration the merge brought in
 //
 // `force: true` (the page's MERGE ANYWAY button) merges regardless of check
-// state — the operator has decided a red check is a false positive, same
-// escape hatch as pushSelfDevToGithub's `force`.
-//
-// Branch protection / GitHub-native auto-merge isn't available on this repo
-// (private, free plan), which is why this poll-and-merge lives here instead.
+// state — the operator has decided a red check is a false positive.
 import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
-import {
-  getGithubToken, getPullRequestChecks, mergePullRequest, deleteBranch,
-} from '../lib/github.js';
-import { SELF_DEV_REPO_FULL_NAME } from '../lib/selfDevRepo.js';
-
-// A PR with genuinely no checks configured should still be mergeable — but
-// Netlify's checks take a little while to even appear after the PR opens, so
-// don't treat "no checks yet" as "passing" until the PR is at least this old.
-const NO_CHECKS_GRACE_MS = 90 * 1000;
-
-const commitUrlFor = (sha) => `https://github.com/${SELF_DEV_REPO_FULL_NAME}/commit/${sha}`;
-const prUrlFor = (n) => `https://github.com/${SELF_DEV_REPO_FULL_NAME}/pull/${n}`;
+import { getDeliveryAdapter } from '../lib/delivery/index.js';
 
 export async function runMergeSelfDevPr(user, prNumber, { force = false, projectId = null, touchedManualSource = false, hasMigration = false } = {}) {
-  const token = await getGithubToken(user.id);
-  const checks = await getPullRequestChecks(token, SELF_DEV_REPO_FULL_NAME, prNumber);
+  const result = await getDeliveryAdapter('self-dev').merge({ user, prNumber, force });
 
-  if (checks.state === 'merged') {
-    return { merged: true, alreadyMerged: true, prNumber, mergeCommitSha: checks.mergedSha, commitUrl: checks.mergedSha ? commitUrlFor(checks.mergedSha) : null };
+  // Not merged this call (pending / failed / conflict / merge_failed), or it
+  // was already merged on a previous call — nothing more to do.
+  if (result.merged !== true || result.alreadyMerged) {
+    return result;
   }
 
-  if (!force) {
-    if (checks.state === 'failed') {
-      return { merged: false, state: 'failed', prNumber, prUrl: prUrlFor(prNumber), failing: checks.failing || [], checks: checks.checks || [] };
-    }
-    if (checks.state === 'pending') {
-      return { merged: false, state: 'pending', prNumber, checks: checks.checks || [] };
-    }
-    // state === 'passing'
-    if (checks.noChecks && checks.createdAt && (Date.now() - new Date(checks.createdAt).getTime()) < NO_CHECKS_GRACE_MS) {
-      return { merged: false, state: 'pending', prNumber, checks: [], note: 'waiting for checks to register' };
-    }
-    if (checks.mergeable === false) {
-      return { merged: false, state: 'conflict', prNumber, prUrl: prUrlFor(prNumber), message: 'This PR conflicts with main — SYNC FROM GITHUB, re-apply the change, and push again.' };
-    }
-  }
-
-  const { merged, mergeCommitSha } = await mergePullRequest(token, SELF_DEV_REPO_FULL_NAME, prNumber, {
-    method: 'squash',
-    commitTitle: `Self-dev PR #${prNumber} (via Morpheus)`,
-  });
-  if (!merged) {
-    return { merged: false, state: 'merge_failed', prNumber, prUrl: prUrlFor(prNumber), message: 'GitHub declined the merge — check the PR.' };
-  }
+  const { mergeCommitSha } = result;
   let migrations = null;
-
-  // Tidy up the throwaway branch — best effort.
-  if (checks.headRef) {
-    try { await deleteBranch(token, SELF_DEV_REPO_FULL_NAME, checks.headRef); } catch { /* leave it */ }
-  }
 
   const project = projectId
     ? await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id, project_type: 'self_dev' } })
@@ -77,10 +36,10 @@ export async function runMergeSelfDevPr(user, prNumber, { force = false, project
     await prisma.chatMessage.create({
       data: {
         created_by_id: user.id, project_id: project.id, role: 'morpheus',
-        content: `Merged PR #${prNumber} → main (${mergeCommitSha.slice(0, 7)})${force ? ' — forced past a red check' : ', all checks green'}. Northflank and Netlify are redeploying production from here. REVERT LAST PUSH rolls this one merge back.`,
+        content: `Merged PR #${prNumber} → main (${mergeCommitSha.slice(0, 7)})${result.forced ? ' — forced past a red check' : ', all checks green'}. Northflank and Netlify are redeploying production from here. REVERT LAST PUSH rolls this one merge back.`,
       },
     });
-    await logUsage(user.id, 'self_dev_pr_merge', project.id, project.name, { prNumber, mergeCommitSha, forced: force });
+    await logUsage(user.id, 'self_dev_pr_merge', project.id, project.name, { prNumber, mergeCommitSha, forced: result.forced });
 
     if (touchedManualSource) {
       try {
@@ -105,7 +64,7 @@ export async function runMergeSelfDevPr(user, prNumber, { force = false, project
     }
   }
 
-  return { merged: true, prNumber, mergeCommitSha, commitUrl: commitUrlFor(mergeCommitSha), migrations };
+  return { merged: true, prNumber, mergeCommitSha, commitUrl: result.commitUrl, migrations };
 }
 
 export default async function handler({ user, body }) {
