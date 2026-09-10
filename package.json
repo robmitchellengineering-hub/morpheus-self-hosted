@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "sync:capabilities": "node scripts/sync-capabilities.mjs",
-    "prebuild": "node scripts/sync-capabilities.mjs",
+    "prebuild": "node scripts/sync-capabilities.mjs && node scripts/pack-wp-plugin.mjs",
     "build": "vite build",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
