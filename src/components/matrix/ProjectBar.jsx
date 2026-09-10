@@ -1,4 +1,4 @@
-import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe, FileJson } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, ShoppingBag, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe, FileJson } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { generateManual } from '@/lib/generateManual';
 import BuildStamp from './BuildStamp';
@@ -8,7 +8,7 @@ import SheetSelect from './SheetSelect';
 
 const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
-export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onStore, storeConnected, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
   return (
     <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
       {/* Row 1: project identity + primary action */}
@@ -106,6 +106,13 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           <HelpHint id="content" title="Content" body="Edit the site's text and lists — headlines, copy, services, team, FAQ — without a rebuild. The builder keeps this content in content/*.json in your repo; edits here commit straight back and your host redeploys.">
             <button onClick={onContent} className={btnBase}>
               <FileJson size={14} /> CONTENT
+            </button>
+          </HelpHint>
+        )}
+        {onStore && (
+          <HelpHint id="store" title="Store" body="Run a connected WordPress / WooCommerce shop from here — add products and posts, set stock, publish or save as draft. Connect the Morpheus plugin on your own site once; Morpheus keeps only the connection, never your catalogue. New products stay drafts until you hit Publish.">
+            <button onClick={onStore} className={`${btnBase} ${storeConnected ? 'text-primary border-primary/60' : ''}`}>
+              <ShoppingBag size={14} /> STORE
             </button>
           </HelpHint>
         )}
