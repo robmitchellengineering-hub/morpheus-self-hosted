@@ -235,8 +235,53 @@ export async function createRepo(token, repoName, isPrivate, { autoInit = true }
 // (or the default branch) head first — so pushSelfDevToGithub.js can land a
 // change on a fresh `self-dev/<ts>` branch for a PR instead of straight on
 // main. Absent for every other caller, which always target the default branch.
-export async function pushFiles(token, repoFullName, files, commitMessage, { isNewRepo = false, deletePaths = [], targetBranch = null, baseBranch = null } = {}) {
+export async function pushFiles(token, repoFullName, files, commitMessage, { isNewRepo = false, deletePaths = [], targetBranch = null, baseBranch = null, incremental = false } = {}) {
   const h = ghHeaders(token);
+
+  // Incremental path — commit each changed file directly via the Contents
+  // API onto `targetBranch`, one commit per file. The tree-rebuild path
+  // below reads the WHOLE repo tree and POSTs it back, which GitHub 500s on
+  // a large repo (a full WordPress install is ~27k blobs). This path never
+  // touches the full tree, so it scales to any repo size — used by the
+  // WordPress delivery adapter, whose changes are always a few files inside
+  // a big install. Requires a target branch and no deletions.
+  if (incremental && targetBranch) {
+    const repoData0 = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}`, { headers: h }));
+    const defaultBranch0 = repoData0.default_branch || 'main';
+    // Create the branch off base if it doesn't exist yet.
+    const existRef = await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${targetBranch}`, { headers: h });
+    if (existRef.status === 404) {
+      const from = baseBranch || defaultBranch0;
+      const baseRef = await ghJson(await fetch(`${GH_API}/repos/${repoFullName}/git/refs/heads/${from}`, { headers: h }));
+      const baseSha = baseRef.object?.sha;
+      if (!baseSha) throw new Error(`Could not read ${repoFullName}@${from} to branch from`);
+      const cr = await fetch(`${GH_API}/repos/${repoFullName}/git/refs`, {
+        method: 'POST', headers: h,
+        body: JSON.stringify({ ref: `refs/heads/${targetBranch}`, sha: baseSha }),
+      });
+      if (!cr.ok && cr.status !== 422) throw new Error(`Failed to create branch ${targetBranch}: ${(await ghJson(cr)).message || cr.status}`);
+    }
+    let lastCommitSha = null;
+    for (const file of files) {
+      const encPath = file.path.split('/').map(encodeURIComponent).join('/');
+      // Current blob sha on this branch, if the file already exists.
+      let sha;
+      const cur = await fetch(`${GH_API}/repos/${repoFullName}/contents/${encPath}?ref=${targetBranch}`, { headers: h });
+      if (cur.ok) sha = (await ghJson(cur)).sha;
+      const put = await fetch(`${GH_API}/repos/${repoFullName}/contents/${encPath}`, {
+        method: 'PUT', headers: h,
+        body: JSON.stringify({
+          message: files.length > 1 ? `${commitMessage} — ${file.path}` : commitMessage,
+          content: Buffer.from(file.content ?? '', 'utf-8').toString('base64'),
+          branch: targetBranch,
+          ...(sha ? { sha } : {}),
+        }),
+      });
+      if (!put.ok) throw new Error(`Failed to write ${file.path} (HTTP ${put.status}): ${(await ghJson(put)).message || put.status}`);
+      lastCommitSha = (await ghJson(put)).commit?.sha || lastCommitSha;
+    }
+    return { branch: targetBranch, commitSha: lastCommitSha };
+  }
 
   if (isNewRepo) {
     // Brand-new, still-empty repo (created with auto_init:false — see

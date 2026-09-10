@@ -44,6 +44,9 @@ function diffLine({ createCount, updateCount, deleteCount, treeTruncated }) {
  * @param {string} [opts.label]           commit / PR title prefix, default "Change"
  * @param {string} [opts.prNote]          an extra bullet in the default PR body
  * @param {string} [opts.prBody]          full PR body override (ignores prNote)
+ * @param {boolean} [opts.incremental]    commit changed files one-by-one via
+ *        the Contents API instead of rebuilding the whole tree — required
+ *        for a large repo (a full WordPress install 500s the tree endpoint)
  * @param {boolean} [opts.noDeletions]    never delete a remote file just
  *        because `files` omits it — for a caller whose `files` is a working
  *        subset of the repo, not a mirror (e.g. the WordPress plugin, which
@@ -57,7 +60,7 @@ export async function shipChange(token, repoFullName, opts) {
   const {
     files, exclude = () => false, baseBranch = 'main',
     branchPrefix = 'change/', directToMain = false, label = 'Change', prNote, prBody, precheck,
-    noDeletions = false,
+    noDeletions = false, incremental = false,
   } = opts;
 
   const [owner, repo] = repoFullName.split('/');
@@ -110,7 +113,10 @@ export async function shipChange(token, repoFullName, opts) {
   const counts = { createCount, updateCount, deleteCount, changedPaths, summary, treeTruncated };
 
   if (directToMain) {
-    const { branch, commitSha } = await pushFiles(token, repoFullName, changed, commitMessage, { isNewRepo: false, deletePaths });
+    const { branch, commitSha } = await pushFiles(token, repoFullName, changed, commitMessage,
+      incremental
+        ? { isNewRepo: false, deletePaths, incremental: true, targetBranch: baseBranch }
+        : { isNewRepo: false, deletePaths });
     return {
       shipped: true, mode: 'direct', branch, commitSha,
       commitUrl: `https://github.com/${repoFullName}/commit/${commitSha}`,
@@ -121,7 +127,7 @@ export async function shipChange(token, repoFullName, opts) {
   const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '').replace('T', '-');
   const prBranch = `${branchPrefix}${ts}`;
   const { commitSha } = await pushFiles(token, repoFullName, changed, commitMessage, {
-    isNewRepo: false, deletePaths, targetBranch: prBranch, baseBranch,
+    isNewRepo: false, deletePaths, targetBranch: prBranch, baseBranch, incremental,
   });
   const pr = await createPullRequest(token, repoFullName, {
     head: prBranch,
