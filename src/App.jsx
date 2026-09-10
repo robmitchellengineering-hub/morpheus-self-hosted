@@ -36,6 +36,7 @@ const UpdatesPlan = lazy(() => import('@/pages/UpdatesPlan'));
 const CostTracker = lazy(() => import('@/pages/CostTracker'));
 const SelfDev = lazy(() => import('@/pages/SelfDev'));
 const AdminPanel = lazy(() => import('@/pages/AdminPanel'));
+const Embed = lazy(() => import('@/pages/Embed'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
@@ -43,9 +44,14 @@ import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const location = useLocation();
+  // The embeddable-widget surface authenticates itself with a widget token
+  // (see src/pages/Embed.jsx) — it must never be gated by, or redirected to,
+  // the normal user-session login flow, and it has no app chrome.
+  const isEmbed = location.pathname === '/embed';
 
   // Show loading spinner while checking app public settings or auth
-  if (isLoadingPublicSettings || isLoadingAuth) {
+  if ((isLoadingPublicSettings || isLoadingAuth) && !isEmbed) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
@@ -54,7 +60,7 @@ const AuthenticatedApp = () => {
   }
 
   // Handle authentication errors
-  if (authError) {
+  if (authError && !isEmbed) {
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
     } else if (authError.type === 'auth_required') {
@@ -68,7 +74,7 @@ const AuthenticatedApp = () => {
   return (
     <>
       <AnimatedRoutes />
-      <MobileTabBar />
+      {!isEmbed && <MobileTabBar />}
     </>
   );
 };
@@ -101,6 +107,7 @@ function AnimatedRoutes() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/embed" element={<Embed />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             <Route path="/workspace" element={<Workspace />} />
             <Route path="/workspace/:projectId" element={<Workspace />} />

@@ -8,8 +8,12 @@ import { prisma } from '../db.js';
 export const WIDGET_TOKEN_PREFIX = 'wgt_';
 export const DEFAULT_SCOPES = ['chat', 'deploy', 'store'];
 
-// The functions a widget token is ever allowed to call, keyed by scope.
-// Anything not listed is owner-session-only.
+// Callable with any valid widget token, whatever its scopes — the surface
+// needs these to bootstrap.
+export const WIDGET_ALWAYS = ['getWidgetContext'];
+
+// The functions a widget token is allowed to call, keyed by scope.
+// Anything not listed (and not in WIDGET_ALWAYS) is owner-session-only.
 export const WIDGET_SCOPE_FUNCTIONS = {
   chat: ['chatWithMorpheus', 'getProjectFiles', 'getSelfDevFeatures'],
   deploy: ['wordPressDeploy'],
@@ -88,5 +92,6 @@ export async function resolveWidgetToken(raw) {
 
 // Is `functionName` callable with these widget scopes?
 export function widgetMayCall(scopes, functionName) {
+  if (WIDGET_ALWAYS.includes(functionName)) return true;
   return (scopes || []).some((s) => (WIDGET_SCOPE_FUNCTIONS[s] || []).includes(functionName));
 }

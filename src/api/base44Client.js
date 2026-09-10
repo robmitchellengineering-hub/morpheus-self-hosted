@@ -34,7 +34,15 @@ function resolveApiBase() {
 const API_BASE = resolveApiBase();
 const TOKEN_KEY = 'morpheus_token';
 
+// In-memory bearer override — set by the embeddable-widget surface (/embed)
+// so its `wgt_` token authenticates its requests WITHOUT touching
+// localStorage, which is shared with any real Morpheus session in another
+// same-origin tab.
+let overrideToken = null;
+export function setOverrideToken(t) { overrideToken = t || null; }
+
 export function getToken() {
+  if (overrideToken) return overrideToken;
   try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
