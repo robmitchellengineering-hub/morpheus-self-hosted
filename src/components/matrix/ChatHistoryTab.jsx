@@ -36,8 +36,12 @@ export default function ChatHistoryTab({ project }) {
     if (!project?.id) return;
     setLoading(true);
     try {
-      const data = await base44.entities.ChatMessage.filter({ project_id: project.id }, 'created_date', 5000);
-      setAll(data);
+      // Descending + reverse, not ascending + limit — an ascending sort with
+      // a cap fetches the OLDEST N rows once a project passes 5000 total
+      // messages, silently dropping recent history from "searchable" full
+      // history. See useWorkspace.js's loadMessages for the same fix.
+      const data = await base44.entities.ChatMessage.filter({ project_id: project.id }, '-created_date', 5000);
+      setAll(data.reverse());
     } catch (e) {
       console.error('Failed to load chat history:', e);
     } finally {
