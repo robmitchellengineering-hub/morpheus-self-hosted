@@ -2,13 +2,13 @@
 // `base44.integrations.Core.UploadFile({ file })` posts here.
 import { Router } from 'express';
 import multer from 'multer';
-import { requireAuth } from '../auth.js';
+import { requireAuth, blockWidget } from '../auth.js';
 import { uploadFile } from '../storage.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 const router = Router();
 
-router.post('/', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/', requireAuth, blockWidget, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file provided' });
     const { file_url } = await uploadFile({

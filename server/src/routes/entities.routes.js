@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireAuth, blockWidget } from '../auth.js';
 import {
   isKnownEntity, listEntities, filterEntities, getEntity,
   createEntity, updateEntity, deleteEntity, deleteManyByQuery, bulkCreateEntities,
 } from '../entities.js';
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, blockWidget);
 
 router.use('/:name', (req, res, next) => {
   if (!isKnownEntity(req.params.name)) return res.status(404).json({ error: `Unknown entity: ${req.params.name}` });
