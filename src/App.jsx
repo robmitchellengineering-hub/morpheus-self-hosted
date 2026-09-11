@@ -37,6 +37,7 @@ const CostTracker = lazy(() => import('@/pages/CostTracker'));
 const SelfDev = lazy(() => import('@/pages/SelfDev'));
 const AdminPanel = lazy(() => import('@/pages/AdminPanel'));
 const Embed = lazy(() => import('@/pages/Embed'));
+const AliceStats = lazy(() => import('@/pages/AliceStats'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
@@ -108,6 +109,7 @@ function AnimatedRoutes() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/embed" element={<Embed />} />
+          <Route path="/stats/alice" element={<AliceStats />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             <Route path="/workspace" element={<Workspace />} />
             <Route path="/workspace/:projectId" element={<Workspace />} />
