@@ -164,12 +164,6 @@ model Project {
   // device" commits assets straight into this repo (public/assets/*), and
   // it's where a static site actually gets deployed from.
   github_repo    String?
-  // Optional per-construct GitHub token (encrypted at rest, src/crypto.js).
-  // For client work: when the client's repo isn't covered by the owner's
-  // global GitHub connection, they hand over a fine-grained PAT scoped to
-  // that one repo and it's stored here. getGithubToken(userId, {projectId})
-  // prefers this over the global connection.
-  github_token   String?  @db.Text
 
   files          ProjectFile[]
   chat_messages  ChatMessage[]

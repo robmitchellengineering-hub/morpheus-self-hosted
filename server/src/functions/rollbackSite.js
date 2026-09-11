@@ -21,7 +21,7 @@ export default async function handler({ user, body }) {
     throw Object.assign(new Error('This project isn’t connected to a GitHub repo — export it first.'), { status: 400 });
   }
 
-  const token = await getGithubToken(user.id, { projectId });
+  const token = await getGithubToken(user.id);
   const result = await rollbackToCommit(token, project.github_repo, String(targetSha));
   return { ...result, repo: project.github_repo };
 }

@@ -25,7 +25,7 @@ import { getSite, sitePromptBlock } from '../lib/projectSite.js';
 import { cmsPromptBlock } from '../lib/projectCms.js';
 import { getAnalytics, analyticsPromptBlock } from '../lib/projectAnalytics.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
-import { getWpConnection, wpStore } from '../lib/wpPlugin.js';
+import { getWpConnection } from '../lib/wpPlugin.js';
 import { wordpressPromptBlock, ensureWpFiles } from '../lib/projectWordpress.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -508,11 +508,7 @@ SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
 }
 
 export default async function handler({ user, body, res }) {
-  // pageUrl/pageTitle: the embed widget's floating dock sends the front-end
-  // URL it's currently open over (see public/plugin.js + Embed.jsx), so a
-  // WordPress operator asking "what should I change here" gets an answer
-  // grounded in the actual page in front of them, not a guess.
-  const { projectId, message, fileUrls, focusPaths, pageUrl, pageTitle } = body || {};
+  const { projectId, message, fileUrls, focusPaths } = body || {};
   // 'context' (fast discuss/plan pass, no build pipeline) or 'build' (the
   // full planner→coder→reviewer flow). Anything unrecognised = 'build', so
   // existing callers that never send `mode` are unaffected.
@@ -680,39 +676,6 @@ export default async function handler({ user, body, res }) {
     ? wordpressPromptBlock({ repo: wpConn.repo || project.github_repo, files })
     : '';
 
-  // "What is the operator looking at right now" — only ever set by the
-  // floating embed widget on a WordPress project. Best-effort: the plugin
-  // resolves the URL via WP's own rewrite rules (any permalink structure,
-  // any theme) and hands back the product/page it matched, if any. Never
-  // blocks chat if the site is slow/unreachable/on an old plugin version.
-  // `resolvedPage` (the plugin's raw match, or null) is reused below in
-  // CONTEXT MODE to ground a proposed lifecycle action (trash/publish/
-  // restock) in real, already-verified data — never in whatever an LLM
-  // free-form invents.
-  let resolvedPage = null;
-  const currentPageBlock = (isWordPress && pageUrl) ? await (async () => {
-    try {
-      const res = await wpStore(wpConn, 'resolve_url', { url: pageUrl });
-      const r = res?.data;
-      if (!res?.ok || !r) return `\nOPERATOR'S CURRENT PAGE: ${pageUrl}${pageTitle ? ` ("${pageTitle}")` : ''} — could not resolve what this is; answer from the URL alone.\n`;
-      if (!r.resolved) {
-        return `\nOPERATOR'S CURRENT PAGE: ${pageUrl}${pageTitle ? ` ("${pageTitle}")` : ''} — not a page/post/product Morpheus recognises (could be a 404, a theme-generated archive, or a plugin-rendered view).\n`;
-      }
-      if (r.kind === 'home') {
-        return `\nOPERATOR'S CURRENT PAGE: the homepage (${pageUrl}).\n`;
-      }
-      resolvedPage = r;
-      const detail = r.product
-        ? `product "${r.product.name}" — ${r.product.status}, ${r.product.price ? `$${r.product.price}` : 'no price'}${r.product.stock != null ? `, ${r.product.stock} in stock` : ''}`
-        : r.page
-          ? `page "${r.page.title}" — ${r.page.status}`
-          : `${r.kind} "${r.title}" — ${r.status}`;
-      return `\nOPERATOR'S CURRENT PAGE — they are looking at this right now, in front of them, not just describing it: ${pageUrl}\nResolves to: ${detail} (id ${r.id}). Ground your answer in this specific ${r.kind} when they ask about "this page" / "here" / "what's in front of me".\n\nIf — and only if — they clearly ask to trash/publish/unpublish THIS item or change ITS stock, set proposeAction accordingly (see the response schema); you are never executing it yourself, only flagging the intent for the operator to confirm.\n`;
-    } catch {
-      return `\nOPERATOR'S CURRENT PAGE: ${pageUrl}${pageTitle ? ` ("${pageTitle}")` : ''} — could not reach the site to resolve it; answer from the URL alone.\n`;
-    }
-  })() : '';
-
   // Brand kit (.morpheus/brand.json in the project): the operator's colours,
   // fonts, radius, logo and voice as HARD token values. Web builds and
   // WordPress restyles both benefit; empty when still on defaults.
@@ -818,7 +781,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${wordpressBlock}${currentPageBlock}${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}${analyticsBlock}
+${wordpressBlock}${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}${analyticsBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.
@@ -865,39 +828,12 @@ OPERATOR SAYS: ${message}`;
     // of the pipeline graphic; no snapshot is taken and fileOperations is
     // always empty.
     if (mode === 'context') {
-      // Only worth asking the model for a lifecycle-action proposal when
-      // there's an already-verified product/page in front of the operator
-      // to act on (resolvedPage, from the currentPageBlock resolve_url call
-      // above) — otherwise there's nothing safe to ground it in, so don't
-      // even offer the fields (keeps the schema, and the odds of a spurious
-      // proposal, down).
-      const actionKind = resolvedPage?.product ? 'product' : resolvedPage?.page ? 'page' : null;
-      // Bulk: the operator names several products by name in one message
-      // ("unpublish the Strat, the ES335 and the P-Bass") rather than acting
-      // on the single item resolvedPage grounds. Offered whenever the site
-      // is connected — not gated on being on a product page — but each name
-      // still has to resolve to a real, unambiguous live product before
-      // anything is proposed (see below); the model only ever picks names +
-      // a verb, never an id.
       const ctx = await invokeAI({
         userId: user.id,
         prompt: `${systemPrompt}${CONTEXT_MODE_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
         schema: {
           type: 'object',
-          properties: {
-            reply: { type: 'string', description: 'Morpheus response to the operator, in character — discussion, questions, or a prose plan. Never code.' },
-            ...(actionKind ? {
-              proposeAction: { type: 'boolean', description: `true ONLY if the operator clearly asked to trash, publish, unpublish${actionKind === 'product' ? ', or restock' : ''} the item named in OPERATOR'S CURRENT PAGE above, and you are certain that is the item they mean, AND they named exactly one item (more than one → use proposeBulkAction instead). false for anything vague, ambiguous, or about a DIFFERENT item — ask a clarifying question in reply instead of guessing.` },
-              actionType: { type: 'string', enum: actionKind === 'product' ? ['trash', 'publish', 'unpublish', 'set_stock'] : ['trash', 'publish', 'unpublish'], description: 'only meaningful when proposeAction is true' },
-              ...(actionKind === 'product' ? { stockQuantity: { type: 'number', description: 'only when actionType is set_stock — the new quantity the operator asked for' } } : {}),
-            } : {}),
-            ...(isWordPress ? {
-              proposeBulkAction: { type: 'boolean', description: 'true ONLY if the operator clearly named TWO OR MORE specific products by name (not a category, not "all products", not an open-ended query) and asked to trash, publish, unpublish, or restock all of them the same way. false otherwise — for a single item use proposeAction instead; for anything vague or open-ended, ask a clarifying question in reply instead of guessing.' },
-              bulkActionType: { type: 'string', enum: ['trash', 'publish', 'unpublish', 'set_stock'], description: 'only meaningful when proposeBulkAction is true — the ONE verb applied to every named product' },
-              bulkProductNames: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'only when proposeBulkAction is true — each product exactly as the operator named it, up to 10' },
-              bulkStockQuantity: { type: 'number', description: 'only when bulkActionType is set_stock — the same new quantity for every named product' },
-            } : {}),
-          },
+          properties: { reply: { type: 'string', description: 'Morpheus response to the operator, in character — discussion, questions, or a prose plan. Never code.' } },
           required: ['reply'],
         },
         fileUrls,
@@ -912,66 +848,7 @@ OPERATOR SAYS: ${message}`;
         mode: 'context',
         ...ctxToolchain,
       });
-
-      // Build the actual plugin call server-side from resolvedPage (real,
-      // already-verified data) + the model's chosen verb — never from
-      // anything the model output directly, so a proposal can never name an
-      // arbitrary action or id.
-      let proposedAction = null;
-      if (actionKind && ctx.result.proposeAction && ctx.result.actionType) {
-        const name = resolvedPage.product?.name || resolvedPage.page?.title;
-        const verb = ctx.result.actionType;
-        if (verb === 'trash') {
-          proposedAction = { action: actionKind === 'product' ? 'delete_product' : 'delete_page', data: { id: resolvedPage.id }, label: `Trash "${name}"`, kind: actionKind };
-        } else if (verb === 'publish' || verb === 'unpublish') {
-          proposedAction = { action: actionKind === 'product' ? 'update_product' : 'update_page', data: { id: resolvedPage.id, status: verb === 'publish' ? 'publish' : 'draft' }, label: `${verb === 'publish' ? 'Publish' : 'Unpublish'} "${name}"`, kind: actionKind };
-        } else if (verb === 'set_stock' && actionKind === 'product' && Number.isFinite(ctx.result.stockQuantity)) {
-          const qty = Math.max(0, Math.round(ctx.result.stockQuantity));
-          proposedAction = { action: 'set_stock', data: { id: resolvedPage.id, quantity: qty }, label: `Set stock to ${qty} for "${name}"`, kind: actionKind };
-        }
-      }
-
-      // Bulk: resolve each named product against the LIVE store — a name is
-      // only ever accepted when it matches exactly one real product
-      // (case-insensitive, whole-name). Anything ambiguous or not found is
-      // dropped into `unresolved` and surfaced to the operator instead of
-      // guessed at. Same rule as the single-item path: the model chose
-      // names + a verb, everything else (ids, the actual plugin call) is
-      // built here from data the plugin itself just confirmed exists.
-      let proposedBulkAction = null;
-      if (isWordPress && ctx.result.proposeBulkAction && ctx.result.bulkActionType && Array.isArray(ctx.result.bulkProductNames) && ctx.result.bulkProductNames.length) {
-        const verb = ctx.result.bulkActionType;
-        const names = ctx.result.bulkProductNames.slice(0, 10).map((n) => String(n || '').trim()).filter(Boolean);
-        const qty = verb === 'set_stock' && Number.isFinite(ctx.result.bulkStockQuantity) ? Math.max(0, Math.round(ctx.result.bulkStockQuantity)) : null;
-        const resolvedItems = [];
-        const unresolved = [];
-        for (const name of names) {
-          try {
-            const res = await wpStore(wpConn, 'list_products', { search: name, limit: 10 });
-            const matches = (res?.data?.products || []).filter((p) => (p.name || '').trim().toLowerCase() === name.toLowerCase());
-            if (matches.length !== 1) { unresolved.push(name); continue; }
-            const p = matches[0];
-            const action = verb === 'trash' ? 'delete_product' : verb === 'set_stock' ? 'set_stock' : 'update_product';
-            const data = verb === 'trash' ? { id: p.id }
-              : verb === 'set_stock' ? { id: p.id, quantity: qty ?? 0 }
-                : { id: p.id, status: verb === 'publish' ? 'publish' : 'draft' };
-            resolvedItems.push({ action, data, label: p.name, id: p.id });
-          } catch {
-            unresolved.push(name);
-          }
-        }
-        if (resolvedItems.length) {
-          const verbLabel = verb === 'trash' ? 'Trash' : verb === 'publish' ? 'Publish' : verb === 'unpublish' ? 'Unpublish' : `Set stock to ${qty ?? 0} for`;
-          proposedBulkAction = {
-            actionType: verb,
-            items: resolvedItems,
-            unresolved,
-            label: `${verbLabel} ${resolvedItems.length} product${resolvedItems.length === 1 ? '' : 's'}`,
-          };
-        }
-      }
-
-      emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context', proposedAction, proposedBulkAction } });
+      emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context' } });
       return;
     }
 

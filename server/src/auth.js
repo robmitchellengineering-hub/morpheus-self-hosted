@@ -73,22 +73,6 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-// A `wgt_` widget token resolves to its owner's full req.user (see
-// optionalAuth above), so a route that only checks requireAuth — or even
-// requireAdmin, since the owner really is an admin — would otherwise be
-// fully reachable through it: every project's files, account settings,
-// GitHub connections, admin controls, all of it, when the token was only
-// ever supposed to grant one project + a fixed set of functions. The one
-// route that's actually meant to accept a widget token is functions.routes.js,
-// which does its own per-function narrowing (widgetMayCall + forced
-// projectId) — every OTHER authenticated router mounts this right after
-// requireAuth so a widget token 403s there instead of inheriting the
-// owner's full account.
-export function blockWidget(req, res, next) {
-  if (req.widget) return res.status(403).json({ error: 'This endpoint is not available to a widget token.' });
-  next();
-}
-
 export function publicUser(user) {
   if (!user) return null;
   const { password_hash, otp_code, ...rest } = user;

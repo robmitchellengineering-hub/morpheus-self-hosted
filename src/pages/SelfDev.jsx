@@ -21,7 +21,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp, ListChecks, Info, HeartPulse } from 'lucide-react';
+import { Cpu, RefreshCw, Rocket, Home as HomeIcon, AlertTriangle, Loader2, CheckCircle2, XCircle, X, Stethoscope, ShieldCheck, ChevronDown, ChevronUp, ListChecks, Info, HeartPulse, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
@@ -548,6 +548,9 @@ export default function SelfDev() {
             <button onClick={diagnoseFromLogs} disabled={diagnosing || ws.loading} title="Pull recent production error logs from Northflank and ask the AI to diagnose + fix them" className={`${secBtn} disabled:opacity-50`}>
               <Stethoscope size={13} className={diagnosing ? 'animate-pulse' : ''} /> {diagnosing ? 'PULLING LOGS…' : 'DIAGNOSE FROM LOGS'}
             </button>
+            <Link to="/stats/alice" title="Aliceinthealice Wikipedia/Wikidata highlights" className={secBtn}>
+              <ExternalLink size={13} /> ALICE STATS
+            </Link>
             <Link to="/admin" title="Full Admin panel — model routing, per-model margins, audit log" className={secBtn}>
               <ShieldCheck size={13} /> ADMIN
             </Link>

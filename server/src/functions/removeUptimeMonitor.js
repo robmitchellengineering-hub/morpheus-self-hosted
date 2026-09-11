@@ -18,7 +18,7 @@ export default async function handler({ user, body }) {
   }
 
   const [owner, repo] = project.github_repo.split('/');
-  const token = await getGithubToken(user.id, { projectId });
+  const token = await getGithubToken(user.id);
   const { default_branch } = await (await fetch(`${GH_API}/repos/${owner}/${repo}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } })).json();
   const branch = default_branch || 'main';
 
