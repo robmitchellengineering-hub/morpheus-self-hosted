@@ -872,6 +872,13 @@ OPERATOR SAYS: ${message}`;
       // even offer the fields (keeps the schema, and the odds of a spurious
       // proposal, down).
       const actionKind = resolvedPage?.product ? 'product' : resolvedPage?.page ? 'page' : null;
+      // Bulk: the operator names several products by name in one message
+      // ("unpublish the Strat, the ES335 and the P-Bass") rather than acting
+      // on the single item resolvedPage grounds. Offered whenever the site
+      // is connected — not gated on being on a product page — but each name
+      // still has to resolve to a real, unambiguous live product before
+      // anything is proposed (see below); the model only ever picks names +
+      // a verb, never an id.
       const ctx = await invokeAI({
         userId: user.id,
         prompt: `${systemPrompt}${CONTEXT_MODE_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
@@ -880,9 +887,15 @@ OPERATOR SAYS: ${message}`;
           properties: {
             reply: { type: 'string', description: 'Morpheus response to the operator, in character — discussion, questions, or a prose plan. Never code.' },
             ...(actionKind ? {
-              proposeAction: { type: 'boolean', description: `true ONLY if the operator clearly asked to trash, publish, unpublish${actionKind === 'product' ? ', or restock' : ''} the item named in OPERATOR'S CURRENT PAGE above, and you are certain that is the item they mean. false for anything vague, ambiguous, or about a DIFFERENT item — ask a clarifying question in reply instead of guessing.` },
+              proposeAction: { type: 'boolean', description: `true ONLY if the operator clearly asked to trash, publish, unpublish${actionKind === 'product' ? ', or restock' : ''} the item named in OPERATOR'S CURRENT PAGE above, and you are certain that is the item they mean, AND they named exactly one item (more than one → use proposeBulkAction instead). false for anything vague, ambiguous, or about a DIFFERENT item — ask a clarifying question in reply instead of guessing.` },
               actionType: { type: 'string', enum: actionKind === 'product' ? ['trash', 'publish', 'unpublish', 'set_stock'] : ['trash', 'publish', 'unpublish'], description: 'only meaningful when proposeAction is true' },
               ...(actionKind === 'product' ? { stockQuantity: { type: 'number', description: 'only when actionType is set_stock — the new quantity the operator asked for' } } : {}),
+            } : {}),
+            ...(isWordPress ? {
+              proposeBulkAction: { type: 'boolean', description: 'true ONLY if the operator clearly named TWO OR MORE specific products by name (not a category, not "all products", not an open-ended query) and asked to trash, publish, unpublish, or restock all of them the same way. false otherwise — for a single item use proposeAction instead; for anything vague or open-ended, ask a clarifying question in reply instead of guessing.' },
+              bulkActionType: { type: 'string', enum: ['trash', 'publish', 'unpublish', 'set_stock'], description: 'only meaningful when proposeBulkAction is true — the ONE verb applied to every named product' },
+              bulkProductNames: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'only when proposeBulkAction is true — each product exactly as the operator named it, up to 10' },
+              bulkStockQuantity: { type: 'number', description: 'only when bulkActionType is set_stock — the same new quantity for every named product' },
             } : {}),
           },
           required: ['reply'],
@@ -918,7 +931,47 @@ OPERATOR SAYS: ${message}`;
         }
       }
 
-      emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context', proposedAction } });
+      // Bulk: resolve each named product against the LIVE store — a name is
+      // only ever accepted when it matches exactly one real product
+      // (case-insensitive, whole-name). Anything ambiguous or not found is
+      // dropped into `unresolved` and surfaced to the operator instead of
+      // guessed at. Same rule as the single-item path: the model chose
+      // names + a verb, everything else (ids, the actual plugin call) is
+      // built here from data the plugin itself just confirmed exists.
+      let proposedBulkAction = null;
+      if (isWordPress && ctx.result.proposeBulkAction && ctx.result.bulkActionType && Array.isArray(ctx.result.bulkProductNames) && ctx.result.bulkProductNames.length) {
+        const verb = ctx.result.bulkActionType;
+        const names = ctx.result.bulkProductNames.slice(0, 10).map((n) => String(n || '').trim()).filter(Boolean);
+        const qty = verb === 'set_stock' && Number.isFinite(ctx.result.bulkStockQuantity) ? Math.max(0, Math.round(ctx.result.bulkStockQuantity)) : null;
+        const resolvedItems = [];
+        const unresolved = [];
+        for (const name of names) {
+          try {
+            const res = await wpStore(wpConn, 'list_products', { search: name, limit: 10 });
+            const matches = (res?.data?.products || []).filter((p) => (p.name || '').trim().toLowerCase() === name.toLowerCase());
+            if (matches.length !== 1) { unresolved.push(name); continue; }
+            const p = matches[0];
+            const action = verb === 'trash' ? 'delete_product' : verb === 'set_stock' ? 'set_stock' : 'update_product';
+            const data = verb === 'trash' ? { id: p.id }
+              : verb === 'set_stock' ? { id: p.id, quantity: qty ?? 0 }
+                : { id: p.id, status: verb === 'publish' ? 'publish' : 'draft' };
+            resolvedItems.push({ action, data, label: p.name, id: p.id });
+          } catch {
+            unresolved.push(name);
+          }
+        }
+        if (resolvedItems.length) {
+          const verbLabel = verb === 'trash' ? 'Trash' : verb === 'publish' ? 'Publish' : verb === 'unpublish' ? 'Unpublish' : `Set stock to ${qty ?? 0} for`;
+          proposedBulkAction = {
+            actionType: verb,
+            items: resolvedItems,
+            unresolved,
+            label: `${verbLabel} ${resolvedItems.length} product${resolvedItems.length === 1 ? '' : 's'}`,
+          };
+        }
+      }
+
+      emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context', proposedAction, proposedBulkAction } });
       return;
     }
 
