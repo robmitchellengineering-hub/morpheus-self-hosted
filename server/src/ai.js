@@ -95,6 +95,25 @@ async function resolvePlatformDefaultModel(role) {
   );
 }
 
+// Same admin-editable-override pattern as model routing above, for
+// `temperature` — the one build-pipeline knob (planner/coder/reviewer/
+// diagnosis, and CONTEXT/BUILD chat) that was previously a single hardcoded
+// 0.7 for every role with no way to tune it without a code deploy. Role-
+// specific PlatformSetting key first, then the platform-wide base key,
+// falling back to the original 0.7 default if nothing's been set — existing
+// behavior is unchanged until an admin actually sets one of these.
+const DEFAULT_TEMPERATURE = 0.7;
+async function resolvePlatformTemperature(role) {
+  const raw = (role && (await getPlatformSetting(`default_${role}_temperature`))) ||
+    (await getPlatformSetting('default_temperature'));
+  if (raw == null || raw === '') return DEFAULT_TEMPERATURE;
+  const n = Number(raw);
+  // OpenAI-compatible APIs generally accept 0-2; clamp rather than reject so
+  // a stray admin typo degrades to a sane bound instead of breaking every
+  // call platform-wide.
+  return Number.isFinite(n) ? Math.min(2, Math.max(0, n)) : DEFAULT_TEMPERATURE;
+}
+
 // Token System Build Plan Step 2 — real per-call metering. Logs one
 // UsageEvent row per completed AI call with the provider's own real token
 // counts (not the old bucketed *estimates* in lib/costEstimate.js, which
@@ -406,7 +425,8 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     messages = [{ role: 'user', content: effectivePrompt }];
   }
 
-  const body = { model, messages, temperature: 0.7 }; // no max_tokens cap by default — "max think power"
+  const temperature = await resolvePlatformTemperature(role);
+  const body = { model, messages, temperature }; // no max_tokens cap by default — "max think power"
   if (maxTokens) body.max_tokens = maxTokens; // caller opted into a bounded-output call — see invokeAI's JSDoc above
 
   if (schema) {
