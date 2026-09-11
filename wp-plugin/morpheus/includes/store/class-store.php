@@ -16,8 +16,9 @@
  *   list_products   — recent products (id, name, sku, price, stock, status)
  *   get_product     — one product by id or sku
  *   create_product  — new simple product (draft by default)
- *   update_product  — partial update by id or sku
+ *   update_product  — partial update by id or sku (status too: publish ↔ draft)
  *   set_stock       — quantity by id or sku
+ *   delete_product  — trash by id or sku (force:true bypasses the trash)
  *   create_post     — a blog post (draft by default)
  */
 
@@ -45,7 +46,7 @@ class Morpheus_Store {
 		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : '';
 		$data   = isset( $body['data'] ) && is_array( $body['data'] ) ? $body['data'] : array();
 
-		$product_actions = array( 'context', 'list_products', 'get_product', 'create_product', 'update_product', 'set_stock' );
+		$product_actions = array( 'context', 'list_products', 'get_product', 'create_product', 'update_product', 'set_stock', 'delete_product' );
 		if ( in_array( $action, $product_actions, true ) && ! class_exists( 'WooCommerce' ) ) {
 			return Morpheus_REST::err( 'no_woocommerce', 'WooCommerce is not active on this site.', 409 );
 		}
@@ -59,6 +60,7 @@ class Morpheus_Store {
 			case 'create_product': $r = self::create_product( $data ); break;
 			case 'update_product': $r = self::update_product( $data ); break;
 			case 'set_stock':      $r = self::set_stock( $data ); break;
+			case 'delete_product': $r = self::delete_product( $data ); break;
 			case 'create_post':    $r = self::create_post( $data ); break;
 			default:
 				return Morpheus_REST::err( 'unknown_action', "Unknown store action: {$action}", 400 );
@@ -75,7 +77,7 @@ class Morpheus_Store {
 		// own save hooks don't always reach page-cache plugins from a REST
 		// context. Flush WC's product transients and, when a page cache is
 		// present, the whole cached site.
-		if ( in_array( $action, array( 'create_product', 'update_product', 'set_stock', 'create_post' ), true ) ) {
+		if ( in_array( $action, array( 'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post' ), true ) ) {
 			self::purge_caches();
 		}
 
@@ -242,10 +244,13 @@ class Morpheus_Store {
 		if ( is_wp_error( $p ) ) {
 			return $p;
 		}
+		$bt     = self::brand_taxonomy();
+		$brands = $bt ? wp_get_post_terms( $p->get_id(), $bt, array( 'fields' => 'names' ) ) : array();
 		return array( 'product' => array_merge( self::product_summary( $p ), array(
 			'description'       => $p->get_description(),
 			'short_description' => $p->get_short_description(),
 			'categories'        => wp_get_post_terms( $p->get_id(), 'product_cat', array( 'fields' => 'names' ) ),
+			'brands'            => is_wp_error( $brands ) ? array() : $brands,
 			'images'            => array_values( array_filter( array_merge(
 				array( wp_get_attachment_url( $p->get_image_id() ) ),
 				array_map( 'wp_get_attachment_url', $p->get_gallery_image_ids() )
@@ -350,6 +355,23 @@ class Morpheus_Store {
 		$p->set_stock_status( $qty > 0 ? 'instock' : 'outofstock' );
 		$p->save();
 		return array( 'product' => self::product_summary( $p ) );
+	}
+
+	/** Trash a product (reversible from wp-admin). data.force === true deletes
+	 *  it permanently instead — use sparingly. */
+	private static function delete_product( $data ) {
+		$p = self::find_product( $data );
+		if ( is_wp_error( $p ) ) {
+			return $p;
+		}
+		$id    = $p->get_id();
+		$name  = $p->get_name();
+		$force = ! empty( $data['force'] );
+		$ok    = $p->delete( $force );
+		if ( ! $ok ) {
+			return new WP_Error( 'delete_failed', 'WooCommerce could not remove the product.', array( 'status' => 500 ) );
+		}
+		return array( 'deleted' => true, 'id' => $id, 'name' => $name, 'permanent' => $force );
 	}
 
 	private static function create_post( $data ) {
