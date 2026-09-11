@@ -151,6 +151,15 @@ export function useWorkspace() {
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
     setPipelineStages([]);
+    // A dropped connection (the phone's network blipping, or a backend
+    // redeploy restarting the API pod mid-request — see PR #83) surfaces as
+    // a raw browser fetch error with no `.status`/`.data` — invokeStream
+    // never got a real response to parse one from. That's a different
+    // failure than the server actually answering with an error (a real
+    // exception, insufficient credits, a syntax-gate rejection), which
+    // always carries `.status` or `.data` and should never be silently
+    // retried — the server may already be mid-build.
+    const isBareNetworkFailure = (e) => !e?.status && !e?.data;
     try {
       // focusPaths: only meaningful for self-dev projects (which files' full
       // content chatWithMorpheus should show the AI, on top of a whole-repo
@@ -162,7 +171,9 @@ export function useWorkspace() {
       // actually happen, which onStage below turns into pipelineStages for
       // ChatPanel/MorpheusPipelineStatus to render as a step list with a
       // live ETA. See base44Client.js's invokeStream for the wire format.
+      let anyStageSeen = false;
       const onStage = (evt) => {
+        anyStageSeen = true;
         setPipelineStages(prev => {
           if (evt.status === 'start') {
             return [...prev, { stage: evt.stage, label: evt.label, status: 'active', etaSeconds: evt.etaSeconds, startedAt: Date.now() }];
@@ -173,7 +184,23 @@ export function useWorkspace() {
             : s);
         });
       };
-      const res = await base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [], mode: chatMode, webAccess }, onStage);
+      const attempt = () => base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [], mode: chatMode, webAccess }, onStage);
+      let res;
+      try {
+        res = await attempt();
+      } catch (e) {
+        // Retry exactly once, and only when nothing ever reached the
+        // server (no stage event fired) — so a build that's already
+        // mid-pipeline is never silently duplicated. Quiet: the existing
+        // loading/thinking UI already covers this, no separate "retrying"
+        // state needed.
+        if (isBareNetworkFailure(e) && !anyStageSeen) {
+          await new Promise(r => setTimeout(r, 1200));
+          res = await attempt();
+        } else {
+          throw e;
+        }
+      }
       const morpheusMsg = { id: 'm-' + Date.now(), role: 'morpheus', content: res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
       if (res.data.fileOperations?.length > 0) {
@@ -181,7 +208,8 @@ export function useWorkspace() {
         setLastTouched(prev => ({ paths: res.data.fileOperations.map(op => op.path).filter(Boolean), rev: prev.rev + 1 }));
       }
     } catch (e) {
-      setMessages(prev => [...prev, { id: 'e-' + Date.now(), role: 'morpheus', content: '// SYSTEM FAILURE: ' + e.message, project_id: currentProject.id }]);
+      const prefix = isBareNetworkFailure(e) ? '// SYSTEM FAILURE: connection dropped twice — ' : '// SYSTEM FAILURE: ';
+      setMessages(prev => [...prev, { id: 'e-' + Date.now(), role: 'morpheus', content: prefix + e.message, project_id: currentProject.id }]);
     } finally {
       setLoading(false);
       setPipelineStages([]);
