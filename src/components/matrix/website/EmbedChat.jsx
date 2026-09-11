@@ -1,11 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Loader2, Send, Sparkles, Hammer, MessagesSquare, Rocket, FileDiff, Check, GitPullRequest, ExternalLink } from 'lucide-react';
+import { Loader2, Send, Sparkles, Hammer, MessagesSquare, Rocket, FileDiff, Check, GitPullRequest, ExternalLink, AlertTriangle, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // CHAT tab of the embeddable widget.
 //
 //   DISCUSS mode — chatWithMorpheus in CONTEXT mode. Ask questions, sketch a
-//   plan. Nothing is written, no build is spent.
+//   plan. Nothing is written, no build is spent. When the operator clearly
+//   asks to trash/publish/unpublish/restock the item on the current page,
+//   the reply carries a proposedAction — built server-side from the page's
+//   already-verified resolve_url match, never from anything the model
+//   output directly — and shows as a confirm card right under the message.
+//   Nothing runs until the operator taps Confirm.
 //
 //   BUILD mode — the real planner/coder/reviewer pipeline, same as the full
 //   workspace, grounded on whatever page the dock is open over (see
@@ -27,6 +32,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
   const scrollRef = useRef(null);
 
   const canShip = (scopes || []).includes('deploy');
+  const canStore = (scopes || []).includes('store');
 
   // The most recent build turn that changed files — its own little
   // dry-run/ship/merge state, same shape DeployTab.jsx keeps.
@@ -102,7 +108,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
         { projectId, message: text, mode, webAccess: false, pageUrl: pageUrl || undefined, pageTitle: pageTitle || undefined },
         (evt) => { if (evt.status === 'start') setStage(evt.label || 'Working'); },
       );
-      setMessages((m) => [...m, { role: 'morpheus', content: data?.reply || '…' }]);
+      setMessages((m) => [...m, { role: 'morpheus', content: data?.reply || '…', proposedAction: data?.proposedAction || null }]);
       const changed = (data?.fileOperations || []).filter((op) => op.action !== 'skipped_fake_binary');
       if (mode === 'build' && changed.length) {
         setLastBuild({ paths: changed.map((op) => op.path) });
@@ -136,6 +142,24 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
     finally { setShipping(false); }
   };
 
+  const setMsgActionState = (index, patch) => {
+    setMessages((cur) => cur.map((m, i) => (i === index ? { ...m, ...patch } : m)));
+  };
+
+  const runProposedAction = async (index, action) => {
+    setMsgActionState(index, { actionState: 'running' });
+    try {
+      const { data: res } = await base44.functions.invoke('wordPressStoreAction', { projectId, action: action.action, data: action.data });
+      if (res && res.ok === false) {
+        setMsgActionState(index, { actionState: 'error', actionError: res.message || res.error || 'The site rejected it.' });
+      } else {
+        setMsgActionState(index, { actionState: 'done' });
+      }
+    } catch (e) {
+      setMsgActionState(index, { actionState: 'error', actionError: e?.data?.error || e.message });
+    }
+  };
+
   const busy = sending || shipping || merge?.phase === 'polling';
 
   return (
@@ -152,14 +176,54 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
         )}
 
         {messages.map((m, i) => (
-          <div key={i} className={m.role === 'user' ? 'text-right' : ''}>
-            <div className={`inline-block max-w-[85%] text-left px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words border ${
-              m.role === 'user'
-                ? 'border-primary/30 bg-primary/5 text-primary/90'
-                : 'border-primary/15 text-primary/80'
-            }`}>
-              {m.content}
+          <div key={i}>
+            <div className={m.role === 'user' ? 'text-right' : ''}>
+              <div className={`inline-block max-w-[85%] text-left px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words border ${
+                m.role === 'user'
+                  ? 'border-primary/30 bg-primary/5 text-primary/90'
+                  : 'border-primary/15 text-primary/80'
+              }`}>
+                {m.content}
+              </div>
             </div>
+
+            {m.proposedAction && (
+              <div className="mt-1.5 border border-yellow-500/35 bg-yellow-500/5 px-3 py-2.5 space-y-2 text-[11px]">
+                {(!m.actionState || m.actionState === 'pending') && (
+                  <>
+                    <div className="flex items-center gap-1.5 text-yellow-500/90">
+                      <AlertTriangle size={12} /> Are you sure? <span className="text-primary/80">{m.proposedAction.label}</span>
+                    </div>
+                    {canStore ? (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setMsgActionState(i, { actionState: 'cancelled' })}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-[30px] border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/60 text-[10px]">
+                          <X size={11} /> Cancel
+                        </button>
+                        <button onClick={() => runProposedAction(i, m.proposedAction)}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-[30px] bg-yellow-500/90 text-black font-bold hover:bg-yellow-500 text-[10px]">
+                          <Check size={11} /> Confirm
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-primary/45">This widget's token can't run shop actions — do it from the SHOP or PAGES tab instead.</div>
+                    )}
+                  </>
+                )}
+                {m.actionState === 'running' && (
+                  <div className="flex items-center gap-1.5 text-primary/60"><Loader2 size={11} className="animate-spin" /> Working…</div>
+                )}
+                {m.actionState === 'done' && (
+                  <div className="flex items-center gap-1.5 text-primary"><Check size={12} /> Done — {m.proposedAction.label}</div>
+                )}
+                {m.actionState === 'error' && (
+                  <div className="text-red-400">Failed: {m.actionError || 'unknown error'}</div>
+                )}
+                {m.actionState === 'cancelled' && (
+                  <div className="text-primary/45">Cancelled — nothing changed.</div>
+                )}
+              </div>
+            )}
           </div>
         ))}
 
