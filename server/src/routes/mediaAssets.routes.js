@@ -93,7 +93,7 @@ router.post('/:projectId/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Connect this project to a GitHub repo first (Export to GitHub), then upload — the file is committed straight into your repo.' });
     }
     const [owner, repo] = project.github_repo.split('/');
-    const token = await getGithubToken(req.user.id);
+    const token = await getGithubToken(req.user.id, { projectId: req.params.projectId });
 
     // Default branch.
     const repoInfo = await ghJson(await fetch(`${GH_API}/repos/${owner}/${repo}`, { headers: ghHeaders(token) }));
@@ -150,7 +150,7 @@ router.delete('/:projectId/:assetId', async (req, res) => {
       // Best-effort — a missing repo file shouldn't block removing the row.
       try {
         const [owner, repo] = project.github_repo.split('/');
-        const token = await getGithubToken(req.user.id);
+        const token = await getGithubToken(req.user.id, { projectId: req.params.projectId });
         const repoInfo = await ghJson(await fetch(`${GH_API}/repos/${owner}/${repo}`, { headers: ghHeaders(token) }));
         const branch = repoInfo?.default_branch || 'main';
         const existing = await ghJson(await fetch(
