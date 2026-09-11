@@ -10,6 +10,7 @@ const ALLOWED = new Set([
   'context', 'list_products', 'get_product',
   'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post',
   'list_pages', 'get_page', 'create_page', 'update_page', 'delete_page',
+  'resolve_url',
 ]);
 const WRITE_ACTIONS = new Set([
   'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post',

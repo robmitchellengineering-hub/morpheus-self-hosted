@@ -24,9 +24,18 @@ export default function Embed() {
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
   const rootRef = useRef(null);
+  // The floating dock (public/plugin.js) appends the page it's open over —
+  // used to ground CHAT's answers in what the operator is actually looking
+  // at (see chatWithMorpheus.js's currentPageBlock). Absent for a plain
+  // inline embed or when the loader predates this.
+  const pageUrlRef = useRef(null);
+  const pageTitleRef = useRef(null);
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get('token');
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    pageUrlRef.current = params.get('pageUrl') || null;
+    pageTitleRef.current = params.get('pageTitle') || null;
     if (!token) { setErr('This embed is missing its token.'); return; }
     setOverrideToken(token);
     (async () => {
@@ -105,7 +114,10 @@ export default function Embed() {
               })}
             </div>
           )}
-          {tab === 'chat' && <EmbedChat projectId={ctx.projectId} projectName={ctx.projectName} />}
+          {tab === 'chat' && (
+            <EmbedChat projectId={ctx.projectId} projectName={ctx.projectName}
+              pageUrl={pageUrlRef.current} pageTitle={pageTitleRef.current} />
+          )}
           {tab === 'deploy' && <DeployTab projectId={ctx.projectId} />}
           {tab === 'shop' && (
             store

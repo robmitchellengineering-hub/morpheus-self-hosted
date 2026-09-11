@@ -398,6 +398,18 @@ if ( defined( 'WPSEO_VERSION' ) ) {
 $bad_page = store_req( 'get_page', array( 'id' => 999999999 ), $STORE_SECRET );
 ok( $bad_page->get_status() === 404, 'get_page 404s on an unknown id' );
 
+// resolve_url — "what page is the operator looking at" for the embed widget
+$page_permalink = get_permalink( $page_id );
+$resolved = store_req( 'resolve_url', array( 'url' => $page_permalink ), $STORE_SECRET )->get_data();
+ok( ! empty( $resolved['resolved'] ) && ( $resolved['kind'] ?? '' ) === 'page' && (int) ( $resolved['id'] ?? 0 ) === $page_id, 'resolve_url finds the page by its real permalink' );
+ok( ( $resolved['page']['title'] ?? '' ) === 'Hours (updated) — harness', 'resolve_url enriches with the page summary' );
+
+$resolved_home = store_req( 'resolve_url', array( 'url' => home_url( '/' ) ), $STORE_SECRET )->get_data();
+ok( ! empty( $resolved_home['resolved'] ) && ( $resolved_home['kind'] ?? '' ) === 'home', 'resolve_url recognises the homepage' );
+
+$resolved_none = store_req( 'resolve_url', array( 'url' => home_url( '/no-such-page-' . wp_generate_password( 8, false ) . '/' ) ), $STORE_SECRET )->get_data();
+ok( empty( $resolved_none['resolved'] ), 'resolve_url reports unresolved for a url that matches nothing' );
+
 $del_page = store_req( 'delete_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
 ok( ! empty( $del_page['ok'] ) && ! empty( $del_page['deleted'] ) && empty( $del_page['permanent'] ), 'delete_page -> trashed' );
 ok( get_post_status( $page_id ) === 'trash', 'page is in the trash, not gone' );

@@ -25,6 +25,9 @@
  *   create_page     — new page (draft by default)
  *   update_page     — partial update by id (title/content/excerpt/status)
  *   delete_page     — trash by id (force:true bypasses the trash)
+ *   resolve_url     — what WP content a front-end URL is (product/page/
+ *                     post/none), for "the operator is looking at this
+ *                     page right now" context — no WooCommerce needed
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -72,6 +75,7 @@ class Morpheus_Store {
 			case 'create_page':    $r = self::create_page( $data ); break;
 			case 'update_page':    $r = self::update_page( $data ); break;
 			case 'delete_page':    $r = self::delete_page( $data ); break;
+			case 'resolve_url':    $r = self::resolve_url( $data ); break;
 			default:
 				return Morpheus_REST::err( 'unknown_action', "Unknown store action: {$action}", 400 );
 		}
@@ -554,5 +558,46 @@ class Morpheus_Store {
 			return new WP_Error( 'delete_failed', 'WordPress could not remove the page.', array( 'status' => 500 ) );
 		}
 		return array( 'deleted' => true, 'id' => $id, 'title' => $title, 'permanent' => $force );
+	}
+
+	// ── page awareness — what is the operator actually looking at ───────────
+
+	/** Resolve a front-end URL to whatever WP content it is, using core's own
+	 *  rewrite-rule matching (url_to_postid) so it works on any permalink
+	 *  structure or theme, not a guess from the path shape. Enriches with the
+	 *  product/page summary when it recognises the post type; otherwise just
+	 *  says what it found (or that it found nothing — a 404, an archive, the
+	 *  homepage). */
+	private static function resolve_url( $data ) {
+		if ( empty( $data['url'] ) ) {
+			return new WP_Error( 'bad_request', 'Pass a url.', array( 'status' => 400 ) );
+		}
+		$url  = esc_url_raw( trim( (string) $data['url'] ) );
+		$post_id = url_to_postid( $url );
+		if ( ! $post_id ) {
+			$is_home = untrailingslashit( $url ) === untrailingslashit( home_url() );
+			return array( 'resolved' => $is_home, 'kind' => $is_home ? 'home' : 'unknown' );
+		}
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return array( 'resolved' => false, 'kind' => 'unknown' );
+		}
+		$out = array(
+			'resolved'  => true,
+			'kind'      => $post->post_type,
+			'id'        => $post_id,
+			'title'     => $post->post_title,
+			'status'    => $post->post_status,
+			'edit_url'  => admin_url( 'post.php?post=' . $post_id . '&action=edit' ),
+		);
+		if ( 'product' === $post->post_type && class_exists( 'WooCommerce' ) ) {
+			$p = wc_get_product( $post_id );
+			if ( $p ) {
+				$out['product'] = self::product_summary( $p );
+			}
+		} elseif ( 'page' === $post->post_type ) {
+			$out['page'] = self::page_summary( $post );
+		}
+		return $out;
 	}
 }
