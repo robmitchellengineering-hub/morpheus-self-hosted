@@ -8,7 +8,7 @@ import { base44 } from '@/api/base44Client';
 // full Morpheus workspace. Server-side the turn is still saved to the
 // project's history, so the conversation carries over to the workspace.
 
-export default function EmbedChat({ projectId, projectName }) {
+export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle }) {
   const [messages, setMessages] = useState([]); // [{ role: 'user' | 'morpheus', content }]
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -31,7 +31,7 @@ export default function EmbedChat({ projectId, projectName }) {
     try {
       const { data } = await base44.functions.invokeStream(
         'chatWithMorpheus',
-        { projectId, message: text, mode: 'context', webAccess: false },
+        { projectId, message: text, mode: 'context', webAccess: false, pageUrl: pageUrl || undefined, pageTitle: pageTitle || undefined },
         (evt) => { if (evt.status === 'start') setStage(evt.label || 'Working'); },
       );
       setMessages((m) => [...m, { role: 'morpheus', content: data?.reply || '…' }]);
@@ -54,6 +54,7 @@ export default function EmbedChat({ projectId, projectName }) {
             <div className="flex items-center gap-1.5 text-primary/80 mb-1"><Sparkles size={13} /> Ask Morpheus about {projectName || 'your site'}</div>
             Questions, ideas, a plan for a change — this is a discussion. Nothing here changes the
             site. When you’re ready to build, open the full Morpheus workspace.
+            {pageUrl && <div className="mt-1.5 text-primary/40">It knows you’re looking at this page — ask about “this” or “here” and it’ll answer for what’s in front of you.</div>}
           </div>
         )}
 

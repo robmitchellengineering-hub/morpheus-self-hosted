@@ -36,7 +36,17 @@
   try { origin = new URL(script.src, window.location.href).origin; }
   catch (e) { origin = 'https://morpheus.nz'; }
 
-  var embedSrc = origin + '/embed?token=' + encodeURIComponent(token);
+  // The page this script is running on — passed through so CHAT can ground
+  // its answers in what the operator is actually looking at (the parent
+  // page's URL isn't otherwise readable from inside the iframe; it's a
+  // different origin). Best-effort: never blocks the embed if unavailable.
+  var pageUrl = '', pageTitle = '';
+  try { pageUrl = window.location.href; } catch (e) { /* ignore */ }
+  try { pageTitle = document.title || ''; } catch (e) { /* ignore */ }
+
+  var embedSrc = origin + '/embed?token=' + encodeURIComponent(token) +
+    (pageUrl ? '&pageUrl=' + encodeURIComponent(pageUrl) : '') +
+    (pageTitle ? '&pageTitle=' + encodeURIComponent(pageTitle) : '');
   var isDock = script.getAttribute('data-dock') === '1';
 
   if (isDock) {

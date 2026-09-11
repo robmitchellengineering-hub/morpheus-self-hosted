@@ -25,7 +25,7 @@ import { getSite, sitePromptBlock } from '../lib/projectSite.js';
 import { cmsPromptBlock } from '../lib/projectCms.js';
 import { getAnalytics, analyticsPromptBlock } from '../lib/projectAnalytics.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
-import { getWpConnection } from '../lib/wpPlugin.js';
+import { getWpConnection, wpStore } from '../lib/wpPlugin.js';
 import { wordpressPromptBlock, ensureWpFiles } from '../lib/projectWordpress.js';
 import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
 
@@ -508,7 +508,11 @@ SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
 }
 
 export default async function handler({ user, body, res }) {
-  const { projectId, message, fileUrls, focusPaths } = body || {};
+  // pageUrl/pageTitle: the embed widget's floating dock sends the front-end
+  // URL it's currently open over (see public/plugin.js + Embed.jsx), so a
+  // WordPress operator asking "what should I change here" gets an answer
+  // grounded in the actual page in front of them, not a guess.
+  const { projectId, message, fileUrls, focusPaths, pageUrl, pageTitle } = body || {};
   // 'context' (fast discuss/plan pass, no build pipeline) or 'build' (the
   // full planner→coder→reviewer flow). Anything unrecognised = 'build', so
   // existing callers that never send `mode` are unaffected.
@@ -676,6 +680,33 @@ export default async function handler({ user, body, res }) {
     ? wordpressPromptBlock({ repo: wpConn.repo || project.github_repo, files })
     : '';
 
+  // "What is the operator looking at right now" — only ever set by the
+  // floating embed widget on a WordPress project. Best-effort: the plugin
+  // resolves the URL via WP's own rewrite rules (any permalink structure,
+  // any theme) and hands back the product/page it matched, if any. Never
+  // blocks chat if the site is slow/unreachable/on an old plugin version.
+  const currentPageBlock = (isWordPress && pageUrl) ? await (async () => {
+    try {
+      const res = await wpStore(wpConn, 'resolve_url', { url: pageUrl });
+      const r = res?.data;
+      if (!res?.ok || !r) return `\nOPERATOR'S CURRENT PAGE: ${pageUrl}${pageTitle ? ` ("${pageTitle}")` : ''} — could not resolve what this is; answer from the URL alone.\n`;
+      if (!r.resolved) {
+        return `\nOPERATOR'S CURRENT PAGE: ${pageUrl}${pageTitle ? ` ("${pageTitle}")` : ''} — not a page/post/product Morpheus recognises (could be a 404, a theme-generated archive, or a plugin-rendered view).\n`;
+      }
+      if (r.kind === 'home') {
+        return `\nOPERATOR'S CURRENT PAGE: the homepage (${pageUrl}).\n`;
+      }
+      const detail = r.product
+        ? `product "${r.product.name}" — ${r.product.status}, ${r.product.price ? `$${r.product.price}` : 'no price'}${r.product.stock != null ? `, ${r.product.stock} in stock` : ''}`
+        : r.page
+          ? `page "${r.page.title}" — ${r.page.status}`
+          : `${r.kind} "${r.title}" — ${r.status}`;
+      return `\nOPERATOR'S CURRENT PAGE — they are looking at this right now, in front of them, not just describing it: ${pageUrl}\nResolves to: ${detail} (id ${r.id}). Ground your answer in this specific ${r.kind} when they ask about "this page" / "here" / "what's in front of me".\n`;
+    } catch {
+      return `\nOPERATOR'S CURRENT PAGE: ${pageUrl}${pageTitle ? ` ("${pageTitle}")` : ''} — could not reach the site to resolve it; answer from the URL alone.\n`;
+    }
+  })() : '';
+
   // Brand kit (.morpheus/brand.json in the project): the operator's colours,
   // fonts, radius, logo and voice as HARD token values. Web builds and
   // WordPress restyles both benefit; empty when still on defaults.
@@ -781,7 +812,7 @@ ${scopedNote}
 
 CONVERSATION HISTORY:
 ${historyContext}
-${wordpressBlock}${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}${analyticsBlock}
+${wordpressBlock}${currentPageBlock}${brandBlock}${designBlock}${compileAdapterBlock}${publishBlock}${formsBlock}${siteBlock}${cmsBlock}${analyticsBlock}
 OPERATOR SAYS: ${message}`;
   // Fully resolved now unless a research pass still has to run (repo and/or
   // web — deferred into the stream); reassigned there.
