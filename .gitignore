@@ -49,3 +49,4 @@ dist-plugin/
 
 # Generated on prebuild by scripts/pack-wp-plugin.mjs
 public/morpheus-wordpress-plugin.zip
+public/plugin-manifest.json
