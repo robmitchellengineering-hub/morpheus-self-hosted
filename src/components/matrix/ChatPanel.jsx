@@ -63,8 +63,25 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
   // following it, so the operator had to manually scroll to see whichever
   // step was actually running. Tracking pipelineStages here re-scrolls on
   // every stage start/finish, not just the first one.
+  //
+  // 2026-09-11 (Rob: "every time I log into self dev I see this page and
+  // not what I've just been doing"): this ran synchronously in the effect
+  // body, reading scrollHeight in the same tick as the state update — fine
+  // for a couple of new lines appended to an already-rendered list, but
+  // switching projects (or the initial load) replaces the whole list in
+  // one jump (0 -> up to 100 messages), and the browser hadn't necessarily
+  // finished laying out all of them out yet when scrollHeight was read, so
+  // the scroll could land short of the real bottom. A double rAF — one to
+  // let the paint this render triggered land, one more to guarantee layout
+  // is committed before measuring — is the standard fix for "just-rendered
+  // DOM height" races like this.
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    });
+    return () => cancelAnimationFrame(id);
   }, [messages, loading, speakingId, pipelineStages]);
 
   const handleSend = () => {
