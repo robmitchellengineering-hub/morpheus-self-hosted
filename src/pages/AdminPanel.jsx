@@ -200,6 +200,19 @@ function ModelsTab() {
     }
   };
 
+  const saveTempOverride = async (role, value) => {
+    const key = role === 'default' ? 'default_temperature' : `default_${role}_temperature`;
+    setSavingKey(key);
+    try {
+      await base44.admin.setSetting(key, value || null);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   const saveCatalogEntry = async (modelId) => {
     const patch = draft[modelId];
     if (!patch) return;
@@ -288,6 +301,36 @@ function ModelsTab() {
                   defaultValue={settings.settings[key] || ''}
                   onBlur={(e) => { if (e.target.value !== (settings.settings[key] || '')) saveOverride(role, e.target.value.trim()); }}
                   placeholder={settings.envDefaults[envKey] || 'auto'}
+                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+                />
+                {savingKey === key && <Loader2 size={13} className="animate-spin text-primary/60" />}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="text-xs text-primary/60 mb-1 tracking-wider">PLATFORM DEFAULT TEMPERATURE</div>
+        <p className="text-primary/50 text-xs mb-3">
+          The "think temperature" for each pipeline role — 0 is deterministic, 2 is maximally random. Everything (planner, coder, reviewer, diagnosis, and chat) ran at a single hardcoded 0.7 before this; role-specific here wins over "default", which wins over the built-in 0.7. Leave blank to keep that default.
+        </p>
+        <div className="space-y-2">
+          {roles.map((role) => {
+            const key = role === 'default' ? 'default_temperature' : `default_${role}_temperature`;
+            return (
+              <div key={role} className="flex items-center gap-2">
+                <span className="text-primary/70 text-xs w-24 shrink-0 uppercase">{role}</span>
+                <input
+                  type="number" min="0" max="2" step="0.1"
+                  defaultValue={settings.settings[key] || ''}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v === (settings.settings[key] || '')) return;
+                    if (v !== '' && (!Number.isFinite(Number(v)) || Number(v) < 0 || Number(v) > 2)) return; // leave it for them to fix — nothing bad saved
+                    saveTempOverride(role, v);
+                  }}
+                  placeholder="0.7"
                   className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
                 />
                 {savingKey === key && <Loader2 size={13} className="animate-spin text-primary/60" />}
