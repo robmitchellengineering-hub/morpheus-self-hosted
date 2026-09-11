@@ -115,7 +115,7 @@ export default function Embed() {
             </div>
           )}
           {tab === 'chat' && (
-            <EmbedChat projectId={ctx.projectId} projectName={ctx.projectName}
+            <EmbedChat projectId={ctx.projectId} projectName={ctx.projectName} scopes={ctx.scopes}
               pageUrl={pageUrlRef.current} pageTitle={pageTitleRef.current} />
           )}
           {tab === 'deploy' && <DeployTab projectId={ctx.projectId} />}
