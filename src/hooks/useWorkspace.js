@@ -201,30 +201,61 @@ export function useWorkspace() {
         });
       };
       const attempt = () => base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [], mode: chatMode, webAccess }, onStage);
+      // Reload the real message list and, if a reply newer than what was
+      // just sent is already sitting there, recover it — no error, no
+      // retry. Same reality-check the catch block below uses; pulled out
+      // so the "tab was backgrounded" path can poll it patiently instead
+      // of only checking once.
+      const tryRecover = async () => {
+        const freshMessagesDesc = await base44.entities.ChatMessage.filter({ project_id: currentProject.id }, '-created_date', 100);
+        const recovered = freshMessagesDesc[0];
+        if (recovered?.role === 'morpheus' && new Date(recovered.created_date).getTime() >= sentAt) {
+          await loadFiles(currentProject.id); // a build turn's file writes, if any
+          setMessages(freshMessagesDesc.reverse());
+          return true;
+        }
+        return false;
+      };
       let res;
       try {
         res = await attempt();
       } catch (e) {
         if (!isBareNetworkFailure(e)) throw e;
-        // Ask the server what actually happened rather than guess. A reply
-        // already sitting in the DB, newer than the message we just sent,
-        // means the turn completed — recover it and stop, no retry, no
-        // error shown. `Promise.all` so a build turn's file writes (if any)
-        // come back at the same time as the reply that names them.
-        // Descending + reverse, not ascending + limit — see loadMessages'
-        // comment above for why the latter silently returns the OLDEST
-        // rows once a project passes the limit.
-        const [freshMessagesDesc] = await Promise.all([
-          base44.entities.ChatMessage.filter({ project_id: currentProject.id }, '-created_date', 100),
-          loadFiles(currentProject.id),
-        ]);
-        const recovered = freshMessagesDesc[0];
-        if (recovered?.role === 'morpheus' && new Date(recovered.created_date).getTime() >= sentAt) {
-          setMessages(freshMessagesDesc.reverse());
-          return; // real reply recovered — done, no error, no retry
+        // Browsers throttle or outright kill a background tab's streaming
+        // fetch (battery/data saving) — switching tabs while a turn runs is
+        // completely normal and shouldn't ever surface as an error. If the
+        // tab is hidden right now, retrying the actual call immediately is
+        // pointless (it would likely die the same way while the operator
+        // is still elsewhere) and risky (chatWithMorpheus.js saves the
+        // reply — and writes any files — before it streams the final line
+        // back, so the first attempt may still be genuinely in flight
+        // server-side; resending too early could duplicate a real build).
+        // Wait for them to come back, then check reality patiently instead
+        // of guessing: poll for a few seconds rather than only once, since
+        // a build turn in progress when they return needs a moment to
+        // actually finish.
+        if (document.hidden) {
+          await new Promise((resolve) => {
+            const onVisible = () => {
+              if (!document.hidden) {
+                document.removeEventListener('visibilitychange', onVisible);
+                resolve();
+              }
+            };
+            document.addEventListener('visibilitychange', onVisible);
+          });
+          for (let i = 0; i < 8; i++) {
+            if (await tryRecover()) return; // recovered — done, no error, no retry
+            await new Promise(r => setTimeout(r, 2500));
+          }
+          // ~20s of patient polling since they came back and still nothing
+          // — fall through to the same one-retry-then-give-up path below.
+        } else if (await tryRecover()) {
+          return; // reply already landed, tab was never hidden — no error, no retry
         }
-        // Confirmed nothing reached the server — safe to retry once, quiet
-        // (the existing loading/thinking UI already covers the wait).
+        // Confirmed (as best it can be) nothing reached the server — safe
+        // to retry once, quiet (the existing loading/thinking UI already
+        // covers the wait).
         await new Promise(r => setTimeout(r, 1200));
         res = await attempt();
       }
