@@ -35,7 +35,7 @@ export default async function handler({ user, body }) {
   if (!url) throw Object.assign(new Error('Set a production domain in the DOMAIN panel first (or pass a url).'), { status: 400 });
 
   const [owner, repo] = project.github_repo.split('/');
-  const token = await getGithubToken(user.id);
+  const token = await getGithubToken(user.id, { projectId });
   const { default_branch } = await (await fetch(`${GH_API}/repos/${owner}/${repo}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } })).json();
   const branch = default_branch || 'main';
 

@@ -16,9 +16,18 @@
  *   list_products   — recent products (id, name, sku, price, stock, status)
  *   get_product     — one product by id or sku
  *   create_product  — new simple product (draft by default)
- *   update_product  — partial update by id or sku
+ *   update_product  — partial update by id or sku (status too: publish ↔ draft)
  *   set_stock       — quantity by id or sku
+ *   delete_product  — trash by id or sku (force:true bypasses the trash)
  *   create_post     — a blog post (draft by default)
+ *   list_pages      — pages (id, title, slug, status) — no WooCommerce needed
+ *   get_page        — one page's full content by id
+ *   create_page     — new page (draft by default)
+ *   update_page     — partial update by id (title/content/excerpt/status)
+ *   delete_page     — trash by id (force:true bypasses the trash)
+ *   resolve_url     — what WP content a front-end URL is (product/page/
+ *                     post/none), for "the operator is looking at this
+ *                     page right now" context — no WooCommerce needed
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -45,7 +54,7 @@ class Morpheus_Store {
 		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : '';
 		$data   = isset( $body['data'] ) && is_array( $body['data'] ) ? $body['data'] : array();
 
-		$product_actions = array( 'context', 'list_products', 'get_product', 'create_product', 'update_product', 'set_stock' );
+		$product_actions = array( 'context', 'list_products', 'get_product', 'create_product', 'update_product', 'set_stock', 'delete_product' );
 		if ( in_array( $action, $product_actions, true ) && ! class_exists( 'WooCommerce' ) ) {
 			return Morpheus_REST::err( 'no_woocommerce', 'WooCommerce is not active on this site.', 409 );
 		}
@@ -59,7 +68,14 @@ class Morpheus_Store {
 			case 'create_product': $r = self::create_product( $data ); break;
 			case 'update_product': $r = self::update_product( $data ); break;
 			case 'set_stock':      $r = self::set_stock( $data ); break;
+			case 'delete_product': $r = self::delete_product( $data ); break;
 			case 'create_post':    $r = self::create_post( $data ); break;
+			case 'list_pages':     $r = self::list_pages( $data ); break;
+			case 'get_page':       $r = self::get_page_action( $data ); break;
+			case 'create_page':    $r = self::create_page( $data ); break;
+			case 'update_page':    $r = self::update_page( $data ); break;
+			case 'delete_page':    $r = self::delete_page( $data ); break;
+			case 'resolve_url':    $r = self::resolve_url( $data ); break;
 			default:
 				return Morpheus_REST::err( 'unknown_action', "Unknown store action: {$action}", 400 );
 		}
@@ -75,7 +91,7 @@ class Morpheus_Store {
 		// own save hooks don't always reach page-cache plugins from a REST
 		// context. Flush WC's product transients and, when a page cache is
 		// present, the whole cached site.
-		if ( in_array( $action, array( 'create_product', 'update_product', 'set_stock', 'create_post' ), true ) ) {
+		if ( in_array( $action, array( 'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post', 'create_page', 'update_page', 'delete_page' ), true ) ) {
 			self::purge_caches();
 		}
 
@@ -176,6 +192,32 @@ class Morpheus_Store {
 		);
 	}
 
+	/** Yoast SEO title + meta description, on whatever post id. No-op (and
+	 *  reports unavailable via context.seo_available) when Yoast isn't
+	 *  active — the two postmeta keys are Yoast's own, so writing them with
+	 *  Yoast off would just be orphaned data nothing reads. */
+	private static function set_seo_meta( $post_id, $data ) {
+		if ( ! defined( 'WPSEO_VERSION' ) ) {
+			return;
+		}
+		if ( isset( $data['seo_title'] ) ) {
+			update_post_meta( $post_id, '_yoast_wpseo_title', sanitize_text_field( $data['seo_title'] ) );
+		}
+		if ( isset( $data['seo_description'] ) ) {
+			update_post_meta( $post_id, '_yoast_wpseo_metadesc', sanitize_text_field( $data['seo_description'] ) );
+		}
+	}
+
+	private static function seo_meta( $post_id ) {
+		if ( ! defined( 'WPSEO_VERSION' ) ) {
+			return array( 'seo_title' => '', 'seo_description' => '' );
+		}
+		return array(
+			'seo_title'       => (string) get_post_meta( $post_id, '_yoast_wpseo_title', true ),
+			'seo_description' => (string) get_post_meta( $post_id, '_yoast_wpseo_metadesc', true ),
+		);
+	}
+
 	private static function find_product( $data ) {
 		if ( ! empty( $data['id'] ) ) {
 			$p = wc_get_product( (int) $data['id'] );
@@ -215,6 +257,7 @@ class Morpheus_Store {
 			'brands'          => $brands,
 			'product_count'   => (int) wp_count_posts( 'product' )->publish + (int) wp_count_posts( 'product' )->draft,
 			'default_status'  => 'draft',
+			'seo_available'   => defined( 'WPSEO_VERSION' ),
 		);
 	}
 
@@ -242,10 +285,13 @@ class Morpheus_Store {
 		if ( is_wp_error( $p ) ) {
 			return $p;
 		}
-		return array( 'product' => array_merge( self::product_summary( $p ), array(
+		$bt     = self::brand_taxonomy();
+		$brands = $bt ? wp_get_post_terms( $p->get_id(), $bt, array( 'fields' => 'names' ) ) : array();
+		return array( 'product' => array_merge( self::product_summary( $p ), self::seo_meta( $p->get_id() ), array(
 			'description'       => $p->get_description(),
 			'short_description' => $p->get_short_description(),
 			'categories'        => wp_get_post_terms( $p->get_id(), 'product_cat', array( 'fields' => 'names' ) ),
+			'brands'            => is_wp_error( $brands ) ? array() : $brands,
 			'images'            => array_values( array_filter( array_merge(
 				array( wp_get_attachment_url( $p->get_image_id() ) ),
 				array_map( 'wp_get_attachment_url', $p->get_gallery_image_ids() )
@@ -307,6 +353,7 @@ class Morpheus_Store {
 			}
 			$p->save();
 		}
+		self::set_seo_meta( $id, $data );
 
 		return array( 'product' => self::product_summary( wc_get_product( $id ) ), 'created' => true );
 	}
@@ -333,6 +380,7 @@ class Morpheus_Store {
 			$p->set_gallery_image_ids( array_merge( $gallery, $img_ids ) );
 			$p->save();
 		}
+		self::set_seo_meta( $id, $data );
 		return array( 'product' => self::product_summary( wc_get_product( $id ) ), 'updated' => true );
 	}
 
@@ -350,6 +398,23 @@ class Morpheus_Store {
 		$p->set_stock_status( $qty > 0 ? 'instock' : 'outofstock' );
 		$p->save();
 		return array( 'product' => self::product_summary( $p ) );
+	}
+
+	/** Trash a product (reversible from wp-admin). data.force === true deletes
+	 *  it permanently instead — use sparingly. */
+	private static function delete_product( $data ) {
+		$p = self::find_product( $data );
+		if ( is_wp_error( $p ) ) {
+			return $p;
+		}
+		$id    = $p->get_id();
+		$name  = $p->get_name();
+		$force = ! empty( $data['force'] );
+		$ok    = $p->delete( $force );
+		if ( ! $ok ) {
+			return new WP_Error( 'delete_failed', 'WooCommerce could not remove the product.', array( 'status' => 500 ) );
+		}
+		return array( 'deleted' => true, 'id' => $id, 'name' => $name, 'permanent' => $force );
 	}
 
 	private static function create_post( $data ) {
@@ -381,5 +446,158 @@ class Morpheus_Store {
 			'permalink' => get_permalink( $post_id ),
 			'edit_url'  => admin_url( 'post.php?post=' . $post_id . '&action=edit' ),
 		), 'created' => true );
+	}
+
+	// ── pages — plain WordPress content, no WooCommerce required ────────────
+
+	private static function page_summary( $post ) {
+		return array(
+			'id'        => $post->ID,
+			'title'     => $post->post_title,
+			'slug'      => $post->post_name,
+			'status'    => $post->post_status,
+			'modified'  => $post->post_modified,
+			'permalink' => get_permalink( $post->ID ),
+			'edit_url'  => admin_url( 'post.php?post=' . $post->ID . '&action=edit' ),
+		);
+	}
+
+	private static function find_page( $data ) {
+		if ( empty( $data['id'] ) ) {
+			return new WP_Error( 'bad_request', 'Pass a page id.', array( 'status' => 400 ) );
+		}
+		$post = get_post( (int) $data['id'] );
+		if ( ! $post || 'page' !== $post->post_type ) {
+			return new WP_Error( 'not_found', 'No page with that id.', array( 'status' => 404 ) );
+		}
+		return $post;
+	}
+
+	private static function list_pages( $data ) {
+		$q = new WP_Query( array(
+			'post_type'      => 'page',
+			'post_status'    => isset( $data['status'] ) ? sanitize_key( $data['status'] ) : array( 'publish', 'draft', 'pending', 'private' ),
+			'posts_per_page' => min( 50, max( 1, (int) ( $data['limit'] ?? 30 ) ) ),
+			'orderby'        => 'title',
+			'order'          => 'ASC',
+			's'              => isset( $data['search'] ) ? sanitize_text_field( $data['search'] ) : '',
+		) );
+		$out = array();
+		foreach ( $q->posts as $post ) {
+			$out[] = self::page_summary( $post );
+		}
+		return array( 'pages' => $out, 'total' => (int) $q->found_posts );
+	}
+
+	// Named get_page_action (not get_page) — get_page() is a WP core function
+	// and this stays a plain private method on the class, but avoiding the
+	// name keeps a search for "get_page" pointing at the real one.
+	private static function get_page_action( $data ) {
+		$post = self::find_page( $data );
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+		return array( 'page' => array_merge( self::page_summary( $post ), self::seo_meta( $post->ID ), array(
+			'content' => $post->post_content,
+			'excerpt' => $post->post_excerpt,
+		) ) );
+	}
+
+	private static function create_page( $data ) {
+		if ( empty( $data['title'] ) ) {
+			return new WP_Error( 'bad_request', 'A page title is required.', array( 'status' => 400 ) );
+		}
+		$status = ( isset( $data['status'] ) && in_array( $data['status'], array( 'draft', 'publish', 'pending', 'private' ), true ) )
+			? $data['status'] : 'draft'; // never auto-publish
+		$id = wp_insert_post( array(
+			'post_type'    => 'page',
+			'post_title'   => sanitize_text_field( $data['title'] ),
+			'post_content' => isset( $data['content'] ) ? wp_kses_post( $data['content'] ) : '',
+			'post_excerpt' => isset( $data['excerpt'] ) ? sanitize_text_field( $data['excerpt'] ) : '',
+			'post_status'  => $status,
+		), true );
+		if ( is_wp_error( $id ) ) {
+			return $id;
+		}
+		self::set_seo_meta( $id, $data );
+		return array( 'page' => self::page_summary( get_post( $id ) ), 'created' => true );
+	}
+
+	private static function update_page( $data ) {
+		$post = self::find_page( $data );
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+		$update = array( 'ID' => $post->ID );
+		if ( isset( $data['title'] ) )              { $update['post_title'] = sanitize_text_field( $data['title'] ); }
+		if ( isset( $data['content'] ) )             { $update['post_content'] = wp_kses_post( $data['content'] ); }
+		if ( isset( $data['excerpt'] ) )             { $update['post_excerpt'] = sanitize_text_field( $data['excerpt'] ); }
+		if ( isset( $data['status'] ) && in_array( $data['status'], array( 'draft', 'publish', 'pending', 'private' ), true ) ) {
+			$update['post_status'] = $data['status'];
+		}
+		$id = wp_update_post( $update, true );
+		if ( is_wp_error( $id ) ) {
+			return $id;
+		}
+		self::set_seo_meta( $id, $data );
+		return array( 'page' => self::page_summary( get_post( $id ) ), 'updated' => true );
+	}
+
+	/** Trash a page (reversible from wp-admin). data.force === true deletes
+	 *  it permanently instead — use sparingly. */
+	private static function delete_page( $data ) {
+		$post = self::find_page( $data );
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+		$force  = ! empty( $data['force'] );
+		$id     = $post->ID;
+		$title  = $post->post_title;
+		$result = wp_delete_post( $id, $force );
+		if ( ! $result ) {
+			return new WP_Error( 'delete_failed', 'WordPress could not remove the page.', array( 'status' => 500 ) );
+		}
+		return array( 'deleted' => true, 'id' => $id, 'title' => $title, 'permanent' => $force );
+	}
+
+	// ── page awareness — what is the operator actually looking at ───────────
+
+	/** Resolve a front-end URL to whatever WP content it is, using core's own
+	 *  rewrite-rule matching (url_to_postid) so it works on any permalink
+	 *  structure or theme, not a guess from the path shape. Enriches with the
+	 *  product/page summary when it recognises the post type; otherwise just
+	 *  says what it found (or that it found nothing — a 404, an archive, the
+	 *  homepage). */
+	private static function resolve_url( $data ) {
+		if ( empty( $data['url'] ) ) {
+			return new WP_Error( 'bad_request', 'Pass a url.', array( 'status' => 400 ) );
+		}
+		$url  = esc_url_raw( trim( (string) $data['url'] ) );
+		$post_id = url_to_postid( $url );
+		if ( ! $post_id ) {
+			$is_home = untrailingslashit( $url ) === untrailingslashit( home_url() );
+			return array( 'resolved' => $is_home, 'kind' => $is_home ? 'home' : 'unknown' );
+		}
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return array( 'resolved' => false, 'kind' => 'unknown' );
+		}
+		$out = array(
+			'resolved'  => true,
+			'kind'      => $post->post_type,
+			'id'        => $post_id,
+			'title'     => $post->post_title,
+			'status'    => $post->post_status,
+			'edit_url'  => admin_url( 'post.php?post=' . $post_id . '&action=edit' ),
+		);
+		if ( 'product' === $post->post_type && class_exists( 'WooCommerce' ) ) {
+			$p = wc_get_product( $post_id );
+			if ( $p ) {
+				$out['product'] = self::product_summary( $p );
+			}
+		} elseif ( 'page' === $post->post_type ) {
+			$out['page'] = self::page_summary( $post );
+		}
+		return $out;
 	}
 }
