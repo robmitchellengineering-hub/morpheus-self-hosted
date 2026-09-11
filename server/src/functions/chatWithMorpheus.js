@@ -685,6 +685,11 @@ export default async function handler({ user, body, res }) {
   // resolves the URL via WP's own rewrite rules (any permalink structure,
   // any theme) and hands back the product/page it matched, if any. Never
   // blocks chat if the site is slow/unreachable/on an old plugin version.
+  // `resolvedPage` (the plugin's raw match, or null) is reused below in
+  // CONTEXT MODE to ground a proposed lifecycle action (trash/publish/
+  // restock) in real, already-verified data — never in whatever an LLM
+  // free-form invents.
+  let resolvedPage = null;
   const currentPageBlock = (isWordPress && pageUrl) ? await (async () => {
     try {
       const res = await wpStore(wpConn, 'resolve_url', { url: pageUrl });
@@ -696,12 +701,13 @@ export default async function handler({ user, body, res }) {
       if (r.kind === 'home') {
         return `\nOPERATOR'S CURRENT PAGE: the homepage (${pageUrl}).\n`;
       }
+      resolvedPage = r;
       const detail = r.product
         ? `product "${r.product.name}" — ${r.product.status}, ${r.product.price ? `$${r.product.price}` : 'no price'}${r.product.stock != null ? `, ${r.product.stock} in stock` : ''}`
         : r.page
           ? `page "${r.page.title}" — ${r.page.status}`
           : `${r.kind} "${r.title}" — ${r.status}`;
-      return `\nOPERATOR'S CURRENT PAGE — they are looking at this right now, in front of them, not just describing it: ${pageUrl}\nResolves to: ${detail} (id ${r.id}). Ground your answer in this specific ${r.kind} when they ask about "this page" / "here" / "what's in front of me".\n`;
+      return `\nOPERATOR'S CURRENT PAGE — they are looking at this right now, in front of them, not just describing it: ${pageUrl}\nResolves to: ${detail} (id ${r.id}). Ground your answer in this specific ${r.kind} when they ask about "this page" / "here" / "what's in front of me".\n\nIf — and only if — they clearly ask to trash/publish/unpublish THIS item or change ITS stock, set proposeAction accordingly (see the response schema); you are never executing it yourself, only flagging the intent for the operator to confirm.\n`;
     } catch {
       return `\nOPERATOR'S CURRENT PAGE: ${pageUrl}${pageTitle ? ` ("${pageTitle}")` : ''} — could not reach the site to resolve it; answer from the URL alone.\n`;
     }
@@ -859,12 +865,26 @@ OPERATOR SAYS: ${message}`;
     // of the pipeline graphic; no snapshot is taken and fileOperations is
     // always empty.
     if (mode === 'context') {
+      // Only worth asking the model for a lifecycle-action proposal when
+      // there's an already-verified product/page in front of the operator
+      // to act on (resolvedPage, from the currentPageBlock resolve_url call
+      // above) — otherwise there's nothing safe to ground it in, so don't
+      // even offer the fields (keeps the schema, and the odds of a spurious
+      // proposal, down).
+      const actionKind = resolvedPage?.product ? 'product' : resolvedPage?.page ? 'page' : null;
       const ctx = await invokeAI({
         userId: user.id,
         prompt: `${systemPrompt}${CONTEXT_MODE_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
         schema: {
           type: 'object',
-          properties: { reply: { type: 'string', description: 'Morpheus response to the operator, in character — discussion, questions, or a prose plan. Never code.' } },
+          properties: {
+            reply: { type: 'string', description: 'Morpheus response to the operator, in character — discussion, questions, or a prose plan. Never code.' },
+            ...(actionKind ? {
+              proposeAction: { type: 'boolean', description: `true ONLY if the operator clearly asked to trash, publish, unpublish${actionKind === 'product' ? ', or restock' : ''} the item named in OPERATOR'S CURRENT PAGE above, and you are certain that is the item they mean. false for anything vague, ambiguous, or about a DIFFERENT item — ask a clarifying question in reply instead of guessing.` },
+              actionType: { type: 'string', enum: actionKind === 'product' ? ['trash', 'publish', 'unpublish', 'set_stock'] : ['trash', 'publish', 'unpublish'], description: 'only meaningful when proposeAction is true' },
+              ...(actionKind === 'product' ? { stockQuantity: { type: 'number', description: 'only when actionType is set_stock — the new quantity the operator asked for' } } : {}),
+            } : {}),
+          },
           required: ['reply'],
         },
         fileUrls,
@@ -879,7 +899,26 @@ OPERATOR SAYS: ${message}`;
         mode: 'context',
         ...ctxToolchain,
       });
-      emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context' } });
+
+      // Build the actual plugin call server-side from resolvedPage (real,
+      // already-verified data) + the model's chosen verb — never from
+      // anything the model output directly, so a proposal can never name an
+      // arbitrary action or id.
+      let proposedAction = null;
+      if (actionKind && ctx.result.proposeAction && ctx.result.actionType) {
+        const name = resolvedPage.product?.name || resolvedPage.page?.title;
+        const verb = ctx.result.actionType;
+        if (verb === 'trash') {
+          proposedAction = { action: actionKind === 'product' ? 'delete_product' : 'delete_page', data: { id: resolvedPage.id }, label: `Trash "${name}"`, kind: actionKind };
+        } else if (verb === 'publish' || verb === 'unpublish') {
+          proposedAction = { action: actionKind === 'product' ? 'update_product' : 'update_page', data: { id: resolvedPage.id, status: verb === 'publish' ? 'publish' : 'draft' }, label: `${verb === 'publish' ? 'Publish' : 'Unpublish'} "${name}"`, kind: actionKind };
+        } else if (verb === 'set_stock' && actionKind === 'product' && Number.isFinite(ctx.result.stockQuantity)) {
+          const qty = Math.max(0, Math.round(ctx.result.stockQuantity));
+          proposedAction = { action: 'set_stock', data: { id: resolvedPage.id, quantity: qty }, label: `Set stock to ${qty} for "${name}"`, kind: actionKind };
+        }
+      }
+
+      emit({ type: 'result', data: { reply: ctxReply, fileOperations: [], mode: 'context', proposedAction } });
       return;
     }
 
