@@ -16,7 +16,7 @@ export default async function handler({ user, body, query }) {
     return { connected: false, commits: [], branch: null, headSha: null, monitoring: { active: false } };
   }
 
-  const token = await getGithubToken(user.id);
+  const token = await getGithubToken(user.id, { projectId });
   const { branch, headSha, commits } = await listRecentCommits(token, project.github_repo, { perPage: 20 });
 
   const [owner, repo] = project.github_repo.split('/');

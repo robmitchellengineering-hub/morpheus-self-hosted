@@ -35,7 +35,7 @@ export async function ensureWpFiles({ user, project, wpConn, message }) {
   const themeFilesHeld = [...have].filter((p) => /^wp-content\/themes\//.test(p)).length;
   if (themeFilesHeld >= 30) return { added: 0, paths: [] };
 
-  const token = await getGithubToken(user.id);
+  const token = await getGithubToken(user.id, { projectId: project.id });
   const [owner, name] = repo.split('/');
   const res = await fetch(`${GH_API}/repos/${owner}/${name}/git/trees/${encodeURIComponent(branch)}?recursive=1`, { headers: ghHeaders(token) });
   const data = await ghJson(res);

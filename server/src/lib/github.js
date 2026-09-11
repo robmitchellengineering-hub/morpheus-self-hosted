@@ -110,13 +110,33 @@ async function tryRefreshGithubToken(row) {
   }
 }
 
-// Returns the current app user's GitHub access token, or throws a friendly
-// error if they haven't connected their GitHub account yet.
+// Returns the GitHub access token to use for a given user, or throws a
+// friendly error if there's none.
+//
+// With { projectId }: if that project has its own stored token
+// (Project.github_token — a per-construct PAT for client work whose repo
+// isn't covered by the owner's global connection), that wins. Otherwise —
+// and for every existing caller that passes no projectId — it's the user's
+// global GitHub OAuth connection.
 // (was getAppUserGithubToken(base44) in githubConnection.ts)
-export async function getGithubToken(userId) {
+export async function getGithubToken(userId, { projectId } = {}) {
+  if (projectId) {
+    try {
+      const p = await prisma.project.findFirst({
+        where: { id: projectId, created_by_id: userId },
+        select: { github_token: true },
+      });
+      if (p?.github_token) return decrypt(p.github_token);
+    } catch {
+      // column not migrated yet, or a bad ciphertext — fall back to global
+    }
+  }
   const connection = await getGithubConnection(userId);
   if (!connection?.token) {
-    throw Object.assign(new Error('GitHub not connected — connect it in Settings'), { status: 400 });
+    throw Object.assign(
+      new Error('GitHub not connected — connect it in Settings, or set a token for this construct in the WEBSITE panel → Code tab.'),
+      { status: 400 },
+    );
   }
   return connection.token;
 }

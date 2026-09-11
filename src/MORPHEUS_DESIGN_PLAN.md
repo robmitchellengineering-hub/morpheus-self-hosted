@@ -16,16 +16,17 @@ Morpheus turns a phone into a complete software studio. Describe what you want i
 - **Autonomous build pipeline** — A self-correcting loop: compile → run → on failure, an AI agent reads the logs, writes a fix, and recompiles — only escalating to you when it's truly stuck.
 - **One chat, every target** — Compile the same project to a web app, Windows EXE, macOS app, Linux binary, Android APK, iOS app, Python package, or Arduino firmware — all from your phone.
 - **Bootable OS images** — Bake your app into a Raspberry Pi image or a full PC/server Linux distro (Debian/Ubuntu/Fedora) that boots and runs your software on first start. Customise hostname, timezone, locale, SSH, and packages at build time.
-- **Network flashing** — Push a finished OS image straight to a Pi or server over SSH — no SD-card swapping, no disk juggling.
 - **Auto-generated backends** — Morpheus plans, writes, and deploys a backend (API, database, auth) for your app, then wires the frontend to it automatically.
-- **Live deploy with log-pulling** — Connect Cloudflare, Vercel, Supabase and others; Morpheus deploys and then pulls live logs back so you can watch it run.
-- **GitHub, end-to-end** — OAuth in, import existing repos, push new code, and trigger remote builds via GitHub Actions — your code lives in your own account.
 - **Marketplace** — Publish your project as a paid template; browse, buy, and install others' templates in one tap. Sellers get a cut, buyers get working code.
+- **Network flashing** — Push a finished OS image straight to a Pi or server over SSH — no SD-card swapping, no disk juggling.
+- **GitHub, end-to-end** — OAuth in, import existing repos, push new code, and trigger remote builds via GitHub Actions — your code lives in your own account.
+- **Live deploy with log-pulling** — Connect Cloudflare, Vercel, Supabase and others; Morpheus deploys and then pulls live logs back so you can watch it run.
 - **AI diagnosis** — When a build or deploy breaks, an AI agent analyses the real error logs and either auto-fixes or hands you a precise, actionable next step.
 - **Dependency sync** — One tap updates every dependency across npm, pip, Maven, Cargo, Go, Gem, Composer, Gradle, and PlatformIO — nested manifests included.
-- **Portable Morpheus** — Download a self-contained copy of the builder so you can run Morpheus offline on your own machine.
-- **Help mode** — Toggle it on and tap any feature; Morpheus explains what it does and how to use it, inline.
 - **Cost transparency** — Every AI action shows its estimated compute cost in USD up front, so you always know what you're spending.
+- **Perpetual project memory** — Every message you type and every file Morpheus writes is stored permanently with the construct. On each build, the full conversation history and the complete file tree are fed back in as context — so Morpheus never forgets a requirement, a decision, or a fix from earlier in the project. The more you tell him, the better he builds.
+- **Searchable project history** — An important diagnostics tool. Every chat message, build log, tool action, diagnosis, and file snapshot is stored permanently and searchable end-to-end. When something breaks or a requirement drifts, search the full record to find exactly when, why, and what changed — no scrolling, no guessing.
+- **Help mode** — Toggle it on and tap any feature; Morpheus explains what it does and how to use it, inline.
 - **Voice** — On demand, Morpheus speaks its replies aloud — for hands-free building on the go.
 
 ---

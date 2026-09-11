@@ -51,13 +51,27 @@ async function resolve(projectId, userId) {
     throw Object.assign(new Error('No GitHub repo connected — set the repo in the plugin (Settings → Morpheus) or Export to GitHub.'), { status: 400 });
   }
   const meta = conn?.meta && typeof conn.meta === 'object' ? conn.meta : {};
-  return { project, repo, branch: meta.branch || 'main', token: await getGithubToken(userId) };
+  return { project, repo, branch: meta.branch || 'main', token: await getGithubToken(userId, { projectId }) };
 }
 
 export default async function handler({ user, body, query }) {
   const projectId = body?.projectId || query?.projectId;
   const action = body?.action || query?.action || 'tree';
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
+
+  // Doesn't need (or throw on) a repo — the CODE tab reads this to render
+  // the "Repo & access" section before anything is connected.
+  if (action === 'config') {
+    const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
+    if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
+    const conn = await getWpConnection(projectId, user.id);
+    return {
+      repo: conn?.repo || project.github_repo || null,
+      repoSource: conn?.repo ? 'plugin' : (project.github_repo ? 'project' : null),
+      branch: (conn?.meta && typeof conn.meta === 'object' ? conn.meta.branch : null) || 'main',
+      tokenScope: project.github_token ? 'construct' : 'global',
+    };
+  }
 
   const { project, repo, branch, token } = await resolve(projectId, user.id);
 
