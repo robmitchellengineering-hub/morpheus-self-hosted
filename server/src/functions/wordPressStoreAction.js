@@ -9,8 +9,12 @@ import { policyIdForUser, assertWithinVelocity } from '../lib/tenantPolicy.js';
 const ALLOWED = new Set([
   'context', 'list_products', 'get_product',
   'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post',
+  'list_pages', 'get_page', 'create_page', 'update_page', 'delete_page',
 ]);
-const WRITE_ACTIONS = new Set(['create_product', 'update_product', 'set_stock', 'delete_product', 'create_post']);
+const WRITE_ACTIONS = new Set([
+  'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post',
+  'create_page', 'update_page', 'delete_page',
+]);
 
 export default async function handler({ user, body }) {
   const { projectId, action, data } = body || {};

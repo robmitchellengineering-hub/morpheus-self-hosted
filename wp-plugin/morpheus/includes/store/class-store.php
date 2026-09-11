@@ -20,6 +20,11 @@
  *   set_stock       — quantity by id or sku
  *   delete_product  — trash by id or sku (force:true bypasses the trash)
  *   create_post     — a blog post (draft by default)
+ *   list_pages      — pages (id, title, slug, status) — no WooCommerce needed
+ *   get_page        — one page's full content by id
+ *   create_page     — new page (draft by default)
+ *   update_page     — partial update by id (title/content/excerpt/status)
+ *   delete_page     — trash by id (force:true bypasses the trash)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -62,6 +67,11 @@ class Morpheus_Store {
 			case 'set_stock':      $r = self::set_stock( $data ); break;
 			case 'delete_product': $r = self::delete_product( $data ); break;
 			case 'create_post':    $r = self::create_post( $data ); break;
+			case 'list_pages':     $r = self::list_pages( $data ); break;
+			case 'get_page':       $r = self::get_page_action( $data ); break;
+			case 'create_page':    $r = self::create_page( $data ); break;
+			case 'update_page':    $r = self::update_page( $data ); break;
+			case 'delete_page':    $r = self::delete_page( $data ); break;
 			default:
 				return Morpheus_REST::err( 'unknown_action', "Unknown store action: {$action}", 400 );
 		}
@@ -77,7 +87,7 @@ class Morpheus_Store {
 		// own save hooks don't always reach page-cache plugins from a REST
 		// context. Flush WC's product transients and, when a page cache is
 		// present, the whole cached site.
-		if ( in_array( $action, array( 'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post' ), true ) ) {
+		if ( in_array( $action, array( 'create_product', 'update_product', 'set_stock', 'delete_product', 'create_post', 'create_page', 'update_page', 'delete_page' ), true ) ) {
 			self::purge_caches();
 		}
 
@@ -403,5 +413,115 @@ class Morpheus_Store {
 			'permalink' => get_permalink( $post_id ),
 			'edit_url'  => admin_url( 'post.php?post=' . $post_id . '&action=edit' ),
 		), 'created' => true );
+	}
+
+	// ── pages — plain WordPress content, no WooCommerce required ────────────
+
+	private static function page_summary( $post ) {
+		return array(
+			'id'        => $post->ID,
+			'title'     => $post->post_title,
+			'slug'      => $post->post_name,
+			'status'    => $post->post_status,
+			'modified'  => $post->post_modified,
+			'permalink' => get_permalink( $post->ID ),
+			'edit_url'  => admin_url( 'post.php?post=' . $post->ID . '&action=edit' ),
+		);
+	}
+
+	private static function find_page( $data ) {
+		if ( empty( $data['id'] ) ) {
+			return new WP_Error( 'bad_request', 'Pass a page id.', array( 'status' => 400 ) );
+		}
+		$post = get_post( (int) $data['id'] );
+		if ( ! $post || 'page' !== $post->post_type ) {
+			return new WP_Error( 'not_found', 'No page with that id.', array( 'status' => 404 ) );
+		}
+		return $post;
+	}
+
+	private static function list_pages( $data ) {
+		$q = new WP_Query( array(
+			'post_type'      => 'page',
+			'post_status'    => isset( $data['status'] ) ? sanitize_key( $data['status'] ) : array( 'publish', 'draft', 'pending', 'private' ),
+			'posts_per_page' => min( 50, max( 1, (int) ( $data['limit'] ?? 30 ) ) ),
+			'orderby'        => 'title',
+			'order'          => 'ASC',
+			's'              => isset( $data['search'] ) ? sanitize_text_field( $data['search'] ) : '',
+		) );
+		$out = array();
+		foreach ( $q->posts as $post ) {
+			$out[] = self::page_summary( $post );
+		}
+		return array( 'pages' => $out, 'total' => (int) $q->found_posts );
+	}
+
+	// Named get_page_action (not get_page) — get_page() is a WP core function
+	// and this stays a plain private method on the class, but avoiding the
+	// name keeps a search for "get_page" pointing at the real one.
+	private static function get_page_action( $data ) {
+		$post = self::find_page( $data );
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+		return array( 'page' => array_merge( self::page_summary( $post ), array(
+			'content' => $post->post_content,
+			'excerpt' => $post->post_excerpt,
+		) ) );
+	}
+
+	private static function create_page( $data ) {
+		if ( empty( $data['title'] ) ) {
+			return new WP_Error( 'bad_request', 'A page title is required.', array( 'status' => 400 ) );
+		}
+		$status = ( isset( $data['status'] ) && in_array( $data['status'], array( 'draft', 'publish', 'pending', 'private' ), true ) )
+			? $data['status'] : 'draft'; // never auto-publish
+		$id = wp_insert_post( array(
+			'post_type'    => 'page',
+			'post_title'   => sanitize_text_field( $data['title'] ),
+			'post_content' => isset( $data['content'] ) ? wp_kses_post( $data['content'] ) : '',
+			'post_excerpt' => isset( $data['excerpt'] ) ? sanitize_text_field( $data['excerpt'] ) : '',
+			'post_status'  => $status,
+		), true );
+		if ( is_wp_error( $id ) ) {
+			return $id;
+		}
+		return array( 'page' => self::page_summary( get_post( $id ) ), 'created' => true );
+	}
+
+	private static function update_page( $data ) {
+		$post = self::find_page( $data );
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+		$update = array( 'ID' => $post->ID );
+		if ( isset( $data['title'] ) )              { $update['post_title'] = sanitize_text_field( $data['title'] ); }
+		if ( isset( $data['content'] ) )             { $update['post_content'] = wp_kses_post( $data['content'] ); }
+		if ( isset( $data['excerpt'] ) )             { $update['post_excerpt'] = sanitize_text_field( $data['excerpt'] ); }
+		if ( isset( $data['status'] ) && in_array( $data['status'], array( 'draft', 'publish', 'pending', 'private' ), true ) ) {
+			$update['post_status'] = $data['status'];
+		}
+		$id = wp_update_post( $update, true );
+		if ( is_wp_error( $id ) ) {
+			return $id;
+		}
+		return array( 'page' => self::page_summary( get_post( $id ) ), 'updated' => true );
+	}
+
+	/** Trash a page (reversible from wp-admin). data.force === true deletes
+	 *  it permanently instead — use sparingly. */
+	private static function delete_page( $data ) {
+		$post = self::find_page( $data );
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+		$force  = ! empty( $data['force'] );
+		$id     = $post->ID;
+		$title  = $post->post_title;
+		$result = wp_delete_post( $id, $force );
+		if ( ! $result ) {
+			return new WP_Error( 'delete_failed', 'WordPress could not remove the page.', array( 'status' => 500 ) );
+		}
+		return array( 'deleted' => true, 'id' => $id, 'title' => $title, 'permanent' => $force );
 	}
 }
