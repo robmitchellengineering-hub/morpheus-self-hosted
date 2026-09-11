@@ -335,6 +335,20 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	$p   = wc_get_product( $pid );
 	ok( $p->get_image_id() > 0, 'sideloaded image became the product image' );
 
+	// update_product can unpublish (publish -> draft) without deleting
+	store_req( 'update_product', array( 'id' => $pid, 'status' => 'draft' ), $STORE_SECRET );
+	$p = wc_get_product( $pid );
+	ok( $p->get_status() === 'draft', 'update_product: unpublish (status -> draft)' );
+
+	// get_product returns brand terms for an edit form
+	$got = store_req( 'get_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
+	ok( in_array( 'Fender', $got['product']['brands'] ?? array(), true ), 'get_product returns brand terms' );
+
+	// delete_product -> trash (reversible)
+	$del = store_req( 'delete_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
+	ok( ! empty( $del['ok'] ) && ! empty( $del['deleted'] ) && empty( $del['permanent'] ), 'delete_product -> trashed' );
+	ok( get_post_status( $pid ) === 'trash', 'product is in the trash, not gone' );
+
 	// create_post
 	$post = store_req( 'create_post', array( 'title' => 'Back in stock — harness', 'content' => 'We are open again.' ), $STORE_SECRET )->get_data();
 	ok( ! empty( $post['ok'] ) && get_post_status( $post['post']['id'] ) === 'draft', 'create_post -> draft' );

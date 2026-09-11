@@ -3,7 +3,7 @@ Contributors: morpheus
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.4.1
+Stable tag: 0.4.2
 License: GPLv2 or later
 
 Run your WordPress/WooCommerce site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API.
@@ -55,12 +55,21 @@ the health check fails.
   snapshot.
 * `POST /wp-json/morpheus/v1/store` — signed; body
   `{ "action": "create_product" | "update_product" | "set_stock" |
-  "list_products" | "get_product" | "context" | "create_post", "data": {…},
-  "at": "<iso>" }`.
+  "delete_product" | "list_products" | "get_product" | "context" |
+  "create_post", "data": {…}, "at": "<iso>" }`.
 * `GET /wp-json/morpheus/v1/status` — unauthenticated; reports version,
   deploy state, and whether WooCommerce is available.
 
 == Changelog ==
+
+= 0.4.2 =
+* Store: `delete_product` action — trashes a product by id or sku (reversible
+  from wp-admin; `force:true` deletes permanently). Lets the operator retire
+  a listing from Morpheus instead of the WordPress admin.
+* Store: `update_product` can flip status (publish ↔ draft), so a listing can
+  be unpublished without deleting it.
+* Store: `get_product` now returns the product's brand terms, so an edit form
+  can pre-fill them.
 
 = 0.4.1 =
 * Store: purge WooCommerce product transients + the page cache (WP Rocket,
