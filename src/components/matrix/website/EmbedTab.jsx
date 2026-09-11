@@ -10,7 +10,7 @@ import { base44 } from '@/api/base44Client';
 const ALL_SCOPES = [
   { id: 'chat', label: 'Chat (discuss)' },
   { id: 'deploy', label: 'Deploy code' },
-  { id: 'store', label: 'Run the shop' },
+  { id: 'store', label: 'Shop & pages' },
 ];
 const HOST = typeof window !== 'undefined' ? window.location.origin : 'https://morpheus.nz';
 

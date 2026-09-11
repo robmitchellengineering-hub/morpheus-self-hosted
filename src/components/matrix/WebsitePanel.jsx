@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode } from 'lucide-react';
+import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode, FileText } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import SetupTab from './website/SetupTab';
 import CodeTab from './website/CodeTab';
 import DeployTab from './website/DeployTab';
 import ShopTab from './website/ShopTab';
+import PagesTab from './website/PagesTab';
 import EmbedTab from './website/EmbedTab';
 
 // WEBSITE panel (2026-09-10) — one place to control the Morpheus plugin on
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'code', label: 'CODE', icon: FileCode },
   { id: 'deploy', label: 'DEPLOY', icon: Rocket },
   { id: 'shop', label: 'SHOP', icon: ShoppingBag },
+  { id: 'pages', label: 'PAGES', icon: FileText },
   { id: 'embed', label: 'EMBED', icon: Code },
 ];
 
@@ -69,7 +71,7 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
         <div className="flex border-b border-primary/15 shrink-0 text-[11px]">
           {TABS.map((t) => {
             const Icon = t.icon;
-            const gated = t.id === 'deploy' || t.id === 'shop' ? !connected : false;
+            const gated = t.id === 'deploy' || t.id === 'shop' || t.id === 'pages' ? !connected : false;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex-1 h-[42px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : gated ? 'text-primary/25' : 'text-primary/45'}`}>
@@ -107,6 +109,12 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
           {!loading && tab === 'shop' && (
             connected
               ? <ShopTab store={store} projectId={projectId} />
+              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+          )}
+
+          {!loading && tab === 'pages' && (
+            connected
+              ? <PagesTab projectId={projectId} />
               : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
           )}
 

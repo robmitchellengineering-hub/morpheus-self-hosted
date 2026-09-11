@@ -358,6 +358,32 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	wp_delete_post( $post['post']['id'], true );
 }
 
+// Page actions need only WordPress core, not WooCommerce — run regardless
+// of which boot this is.
+$page = store_req( 'create_page', array( 'title' => 'Hours — harness', 'content' => 'Open 9-5 daily.' ), $STORE_SECRET )->get_data();
+ok( ! empty( $page['ok'] ) && ! empty( $page['created'] ), 'create_page ok' );
+$page_id = $page['page']['id'] ?? 0;
+ok( $page_id && get_post_status( $page_id ) === 'draft', 'new page is a draft (never auto-published)' );
+
+$listed = store_req( 'list_pages', array( 'search' => 'harness', 'status' => 'draft' ), $STORE_SECRET )->get_data();
+$found_page = false;
+foreach ( ( $listed['pages'] ?? array() ) as $lp ) { if ( (int) ( $lp['id'] ?? 0 ) === $page_id ) { $found_page = true; } }
+ok( $found_page, 'list_pages finds the new page' );
+
+store_req( 'update_page', array( 'id' => $page_id, 'title' => 'Hours (updated) — harness', 'status' => 'publish' ), $STORE_SECRET );
+$got_page = store_req( 'get_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
+ok( ( $got_page['page']['title'] ?? '' ) === 'Hours (updated) — harness' && ( $got_page['page']['status'] ?? '' ) === 'publish', 'update_page: title + publish' );
+ok( ( $got_page['page']['content'] ?? '' ) === 'Open 9-5 daily.', 'get_page returns content' );
+
+$bad_page = store_req( 'get_page', array( 'id' => 999999999 ), $STORE_SECRET );
+ok( $bad_page->get_status() === 404, 'get_page 404s on an unknown id' );
+
+$del_page = store_req( 'delete_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
+ok( ! empty( $del_page['ok'] ) && ! empty( $del_page['deleted'] ) && empty( $del_page['permanent'] ), 'delete_page -> trashed' );
+ok( get_post_status( $page_id ) === 'trash', 'page is in the trash, not gone' );
+
+wp_delete_post( $page_id, true );
+
 delete_option( 'morpheus_settings' );
 
 echo "\n";

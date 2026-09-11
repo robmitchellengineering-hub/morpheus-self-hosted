@@ -35,4 +35,4 @@ a scratch site root under `sys_get_temp_dir()`, asserting:
 - `rollback_last()` — the operator "undo" — restores the previous deploy
 - not armed → report only, files untouched
 
-70 assertions, all green on PHP 7.4 and 8.2.
+78 assertions, all green on PHP 7.4 and 8.2.

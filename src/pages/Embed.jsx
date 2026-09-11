@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare } from 'lucide-react';
+import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare, FileText } from 'lucide-react';
 import { base44, setOverrideToken } from '@/api/base44Client';
 import DeployTab from '@/components/matrix/website/DeployTab';
 import ShopTab from '@/components/matrix/website/ShopTab';
+import PagesTab from '@/components/matrix/website/PagesTab';
 import EmbedChat from '@/components/matrix/website/EmbedChat';
 
 // The embeddable-widget surface — loaded in an iframe by public/plugin.js on
@@ -14,6 +15,7 @@ const SCOPE_TABS = [
   { scope: 'chat', id: 'chat', label: 'CHAT', icon: MessageSquare },
   { scope: 'deploy', id: 'deploy', label: 'DEPLOY', icon: Rocket },
   { scope: 'store', id: 'shop', label: 'SHOP', icon: ShoppingBag },
+  { scope: 'store', id: 'pages', label: 'PAGES', icon: FileText },
 ];
 
 export default function Embed() {
@@ -110,6 +112,7 @@ export default function Embed() {
               ? <ShopTab store={store} projectId={ctx.projectId} />
               : <div className="p-4 text-[12px] text-primary/50">The connected store isn’t reachable right now.</div>
           )}
+          {tab === 'pages' && <PagesTab projectId={ctx.projectId} />}
         </>
       )}
     </div>

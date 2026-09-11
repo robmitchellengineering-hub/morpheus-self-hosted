@@ -3,7 +3,7 @@ Contributors: morpheus
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.4.2
+Stable tag: 0.4.3
 License: GPLv2 or later
 
 Run your WordPress/WooCommerce site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API.
@@ -56,11 +56,18 @@ the health check fails.
 * `POST /wp-json/morpheus/v1/store` — signed; body
   `{ "action": "create_product" | "update_product" | "set_stock" |
   "delete_product" | "list_products" | "get_product" | "context" |
-  "create_post", "data": {…}, "at": "<iso>" }`.
+  "create_post" | "list_pages" | "get_page" | "create_page" | "update_page" |
+  "delete_page", "data": {…}, "at": "<iso>" }`.
 * `GET /wp-json/morpheus/v1/status` — unauthenticated; reports version,
   deploy state, and whether WooCommerce is available.
 
 == Changelog ==
+
+= 0.4.3 =
+* Store: page actions — `list_pages`, `get_page`, `create_page`, `update_page`,
+  `delete_page`. Plain WordPress content, no WooCommerce required. Pages are
+  DRAFT by default on create, same as products and posts. Cache purged after
+  any write.
 
 = 0.4.2 =
 * Store: `delete_product` action — trashes a product by id or sku (reversible
