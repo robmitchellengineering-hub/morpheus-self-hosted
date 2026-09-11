@@ -219,24 +219,47 @@ export default function AliceStats() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    // Each source is fetched independently; a missing/404 source is treated
+    // as "no data for that source" and must not abort the rest of the page.
+    // Only when every source fails do we show a page-level error.
     try {
-      // 1. XTools global stats for Aliceinthealice (WMF wikis)
-      const gtData = await fetchXtools(`/user/global_stats/${encodeURIComponent(GLOBAL_USERNAME)}`);
-      const gt = gtData?.global_stats || gtData;
+      // 1. XTools global stats (WMF wikis). 404 means no stats yet.
+      let gt = null;
+      try {
+        const gtData = await fetchXtools(`/user/global_stats/${encodeURIComponent(GLOBAL_USERNAME)}`);
+        gt = gtData?.global_stats || gtData;
+      } catch {
+        gt = null;
+      }
       setGlobalStats(gt);
 
-      // 2. Meta globaluserinfo for registration date
-      const guiRes = await fetchJson(
-        `https://meta.wikimedia.org/w/api.php?action=query&list=globaluserinfo&format=json&origin=*&guiprop=editcount|groups|merged|registration&guiuser=${encodeURIComponent(GLOBAL_USERNAME)}`,
-      );
-      const gui = guiRes?.query?.globaluserinfo || null;
+      // 2. Meta globaluserinfo for registration date. 404 means unresolved.
+      let gui = null;
+      try {
+        const guiRes = await fetchJson(
+          `https://meta.wikimedia.org/w/api.php?action=query&list=globaluserinfo&format=json&origin=*&guiprop=editcount|groups|merged|registration&guiuser=${encodeURIComponent(GLOBAL_USERNAME)}`,
+        );
+        gui = guiRes?.query?.globaluserinfo || null;
+      } catch {
+        gui = null;
+      }
       setGlobalInfo(gui);
 
-      // 3. AU wiki full contributions
-      const auAll = await fetchAllAuContributions();
+      // 3. AU wiki full contributions. A 404 or any API error simply means
+      // no AU data on this request — leave the list empty and keep going.
+      let auAll = [];
+      try {
+        auAll = await fetchAllAuContributions();
+      } catch {
+        auAll = [];
+      }
       setAuContributions(auAll);
 
-      // 4. For each WMF wiki with edits > 0, fetch detailed XTools data
+      // 4. For each WMF wiki with edits > 0, fetch detailed XTools data.
+      // Individual wiki endpoints are fetched with .catch(() => null)
+      // (and the whole per-wiki block is also caught), so a 404 for one
+      // wiki never aborts the others. If all of a wiki's detail endpoints
+      // come back empty, mark it missing so the UI can show a subtle note.
       const perWiki = gt?.per_wiki || [];
       const activeWmfWikis = perWiki.filter((w) => Number(w.total_revisions) > 0);
       const details = {};
@@ -249,7 +272,7 @@ export default function AliceStats() {
             namespaceTotals: {},
             pagesCreated: [],
             bytesAdded: { added: 0, removed: 0 },
-            error: null,
+            missing: false,
           };
           try {
             const [monthData, topData, nsData, pagesData, bytesData] = await Promise.all([
@@ -264,15 +287,35 @@ export default function AliceStats() {
             if (nsData) detail.namespaceTotals = extractNamespaceTotals(nsData);
             if (pagesData) detail.pagesCreated = extractPagesCreated(pagesData);
             if (bytesData) detail.bytesAdded = extractBytes(bytesData);
-          } catch (err) {
-            detail.error = `XTools detail failed: ${err.message}`;
+            // If every detail endpoint for this wiki is empty/null, mark it
+            // missing — its total edit count is still known from global stats.
+            if (!monthData && !topData && !nsData && !pagesData && !bytesData) {
+              detail.missing = true;
+            }
+          } catch {
+            detail.missing = true;
           }
           details[wikiId] = detail;
         }),
       );
       setWikiDetails(details);
+
+      // Only show a page-level error when every source failed. Partial
+      // failures (e.g. one wiki 404s) are normal and stay non-fatal.
+      const anyGlobal = gt !== null;
+      const anyGui = gui !== null;
+      const anyAu = auAll.length > 0;
+      const anyWiki = Object.keys(details).length > 0;
+      if (!anyGlobal && !anyGui && !anyAu && !anyWiki) {
+        setError('Could not load any live Wikimedia data. The APIs may be unreachable or the editor account may not exist yet.');
+      } else {
+        setError(null);
+      }
+
       setLastUpdated(new Date().toISOString());
     } catch (err) {
+      // Only unexpected coding errors land here; API failures were already
+      // handled above and do not trigger the red full-page banner.
       setError(err.message || 'Failed to load stats');
     } finally {
       setLoading(false);
@@ -586,6 +629,8 @@ export default function AliceStats() {
               <p className="text-[11px] text-primary/40 mt-2">
                 Counts for WMF wikis come from XTools global stats; the Wikimedia AU
                 count comes from a complete continuation fetch of her contributions.
+                When XTools is missing detail for a wiki, only its edit count is
+                shown — all charts below draw from the detail that is available.
               </p>
             </div>
 
