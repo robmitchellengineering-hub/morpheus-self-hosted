@@ -8,9 +8,9 @@ import { base44 } from '@/api/base44Client';
 // stored, so the full value is shown exactly once, right after you create it.
 
 const ALL_SCOPES = [
+  { id: 'chat', label: 'Chat (discuss)' },
   { id: 'deploy', label: 'Deploy code' },
   { id: 'store', label: 'Run the shop' },
-  { id: 'chat', label: 'Chat / build' },
 ];
 const HOST = typeof window !== 'undefined' ? window.location.origin : 'https://morpheus.nz';
 
@@ -22,7 +22,7 @@ export default function EmbedTab({ projectId, connected }) {
   const [tokens, setTokens] = useState(null);
   const [err, setErr] = useState(null);
   const [label, setLabel] = useState('');
-  const [scopes, setScopes] = useState(['deploy', 'store']);
+  const [scopes, setScopes] = useState(['chat', 'deploy', 'store']);
   const [creating, setCreating] = useState(false);
   const [fresh, setFresh] = useState(null); // { token } shown once
   const [copied, setCopied] = useState(null);

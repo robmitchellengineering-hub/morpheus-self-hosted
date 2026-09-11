@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink } from 'lucide-react';
+import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare } from 'lucide-react';
 import { base44, setOverrideToken } from '@/api/base44Client';
 import DeployTab from '@/components/matrix/website/DeployTab';
 import ShopTab from '@/components/matrix/website/ShopTab';
+import EmbedChat from '@/components/matrix/website/EmbedChat';
 
 // The embeddable-widget surface — loaded in an iframe by public/plugin.js on
 // the owner's own site. Authenticates with the `wgt_` token in ?token=,
@@ -10,6 +11,7 @@ import ShopTab from '@/components/matrix/website/ShopTab';
 // its content height to the parent so the iframe never scrolls internally.
 
 const SCOPE_TABS = [
+  { scope: 'chat', id: 'chat', label: 'CHAT', icon: MessageSquare },
   { scope: 'deploy', id: 'deploy', label: 'DEPLOY', icon: Rocket },
   { scope: 'store', id: 'shop', label: 'SHOP', icon: ShoppingBag },
 ];
@@ -80,7 +82,7 @@ export default function Embed() {
 
       {ctx && chatOnly && (
         <div className="p-6 text-[12px] text-primary/60 leading-relaxed">
-          This embed can run builds via chat — open it in Morpheus for the full workspace.
+          This embed has no panels enabled — open it in Morpheus for the full workspace.
           <a href="https://morpheus.nz/workspace" target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-1 text-primary/80 hover:text-primary ml-1">open <ExternalLink size={10} /></a>
         </div>
@@ -101,6 +103,7 @@ export default function Embed() {
               })}
             </div>
           )}
+          {tab === 'chat' && <EmbedChat projectId={ctx.projectId} projectName={ctx.projectName} />}
           {tab === 'deploy' && <DeployTab projectId={ctx.projectId} />}
           {tab === 'shop' && (
             store
