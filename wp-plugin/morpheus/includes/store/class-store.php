@@ -188,6 +188,32 @@ class Morpheus_Store {
 		);
 	}
 
+	/** Yoast SEO title + meta description, on whatever post id. No-op (and
+	 *  reports unavailable via context.seo_available) when Yoast isn't
+	 *  active — the two postmeta keys are Yoast's own, so writing them with
+	 *  Yoast off would just be orphaned data nothing reads. */
+	private static function set_seo_meta( $post_id, $data ) {
+		if ( ! defined( 'WPSEO_VERSION' ) ) {
+			return;
+		}
+		if ( isset( $data['seo_title'] ) ) {
+			update_post_meta( $post_id, '_yoast_wpseo_title', sanitize_text_field( $data['seo_title'] ) );
+		}
+		if ( isset( $data['seo_description'] ) ) {
+			update_post_meta( $post_id, '_yoast_wpseo_metadesc', sanitize_text_field( $data['seo_description'] ) );
+		}
+	}
+
+	private static function seo_meta( $post_id ) {
+		if ( ! defined( 'WPSEO_VERSION' ) ) {
+			return array( 'seo_title' => '', 'seo_description' => '' );
+		}
+		return array(
+			'seo_title'       => (string) get_post_meta( $post_id, '_yoast_wpseo_title', true ),
+			'seo_description' => (string) get_post_meta( $post_id, '_yoast_wpseo_metadesc', true ),
+		);
+	}
+
 	private static function find_product( $data ) {
 		if ( ! empty( $data['id'] ) ) {
 			$p = wc_get_product( (int) $data['id'] );
@@ -227,6 +253,7 @@ class Morpheus_Store {
 			'brands'          => $brands,
 			'product_count'   => (int) wp_count_posts( 'product' )->publish + (int) wp_count_posts( 'product' )->draft,
 			'default_status'  => 'draft',
+			'seo_available'   => defined( 'WPSEO_VERSION' ),
 		);
 	}
 
@@ -256,7 +283,7 @@ class Morpheus_Store {
 		}
 		$bt     = self::brand_taxonomy();
 		$brands = $bt ? wp_get_post_terms( $p->get_id(), $bt, array( 'fields' => 'names' ) ) : array();
-		return array( 'product' => array_merge( self::product_summary( $p ), array(
+		return array( 'product' => array_merge( self::product_summary( $p ), self::seo_meta( $p->get_id() ), array(
 			'description'       => $p->get_description(),
 			'short_description' => $p->get_short_description(),
 			'categories'        => wp_get_post_terms( $p->get_id(), 'product_cat', array( 'fields' => 'names' ) ),
@@ -322,6 +349,7 @@ class Morpheus_Store {
 			}
 			$p->save();
 		}
+		self::set_seo_meta( $id, $data );
 
 		return array( 'product' => self::product_summary( wc_get_product( $id ) ), 'created' => true );
 	}
@@ -348,6 +376,7 @@ class Morpheus_Store {
 			$p->set_gallery_image_ids( array_merge( $gallery, $img_ids ) );
 			$p->save();
 		}
+		self::set_seo_meta( $id, $data );
 		return array( 'product' => self::product_summary( wc_get_product( $id ) ), 'updated' => true );
 	}
 
@@ -464,7 +493,7 @@ class Morpheus_Store {
 		if ( is_wp_error( $post ) ) {
 			return $post;
 		}
-		return array( 'page' => array_merge( self::page_summary( $post ), array(
+		return array( 'page' => array_merge( self::page_summary( $post ), self::seo_meta( $post->ID ), array(
 			'content' => $post->post_content,
 			'excerpt' => $post->post_excerpt,
 		) ) );
@@ -486,6 +515,7 @@ class Morpheus_Store {
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
+		self::set_seo_meta( $id, $data );
 		return array( 'page' => self::page_summary( get_post( $id ) ), 'created' => true );
 	}
 
@@ -505,6 +535,7 @@ class Morpheus_Store {
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
+		self::set_seo_meta( $id, $data );
 		return array( 'page' => self::page_summary( get_post( $id ) ), 'updated' => true );
 	}
 

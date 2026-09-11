@@ -8,7 +8,7 @@ import { base44 } from '@/api/base44Client';
 
 const inputCls = 'w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50';
 const areaCls = 'w-full bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50';
-const BLANK = { title: '', content: '', excerpt: '' };
+const BLANK = { title: '', content: '', excerpt: '', seo_title: '', seo_description: '' };
 
 function Field({ label, hint, children }) {
   return (
@@ -20,7 +20,8 @@ function Field({ label, hint, children }) {
   );
 }
 
-export default function PagesTab({ projectId }) {
+export default function PagesTab({ projectId, store }) {
+  const seoAvailable = !!store?.context?.seo_available;
   const [view, setView] = useState('list'); // list | edit
   const [pages, setPages] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
@@ -65,7 +66,10 @@ export default function PagesTab({ projectId }) {
       const p = data?.page;
       if (!p) { setErr('Could not load that page.'); return; }
       setEditStatus(p.status);
-      setForm({ title: p.title || '', content: p.content || '', excerpt: p.excerpt || '' });
+      setForm({
+        title: p.title || '', content: p.content || '', excerpt: p.excerpt || '',
+        seo_title: p.seo_title || '', seo_description: p.seo_description || '',
+      });
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setLoadingEdit(false); }
   };
@@ -79,6 +83,10 @@ export default function PagesTab({ projectId }) {
     setSaving(true); setErr(null);
     try {
       const data = { title: form.title.trim(), content: form.content, excerpt: form.excerpt.trim() };
+      if (seoAvailable) {
+        data.seo_title = form.seo_title.trim();
+        data.seo_description = form.seo_description.trim();
+      }
       if (status) data.status = status;
       if (editId == null) {
         const { data: res } = await base44.functions.invoke('wordPressStoreAction', {
@@ -201,9 +209,19 @@ export default function PagesTab({ projectId }) {
               <Field label="Content" hint="basic HTML is fine — headings, paragraphs, links">
                 <textarea className={areaCls} rows={10} value={form.content} onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))} />
               </Field>
-              <Field label="Excerpt" hint="optional — used by some themes for previews/SEO">
+              <Field label="Excerpt" hint="optional — used by some themes for previews">
                 <textarea className={areaCls} rows={2} value={form.excerpt} onChange={(e) => setForm((f) => ({ ...f, excerpt: e.target.value }))} />
               </Field>
+              {seoAvailable && (
+                <>
+                  <Field label="SEO title" hint="shown in Google and the browser tab — Yoast">
+                    <input className={inputCls} value={form.seo_title} onChange={(e) => setForm((f) => ({ ...f, seo_title: e.target.value }))} />
+                  </Field>
+                  <Field label="SEO description" hint="the blurb under the title in search results">
+                    <textarea className={areaCls} rows={2} value={form.seo_description} onChange={(e) => setForm((f) => ({ ...f, seo_description: e.target.value }))} />
+                  </Field>
+                </>
+              )}
             </div>
           )}
 

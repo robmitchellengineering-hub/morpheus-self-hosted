@@ -9,7 +9,7 @@ import { base44 } from '@/api/base44Client';
 
 const BLANK = {
   name: '', regular_price: '', sale_price: '', category: '', brand: '',
-  stock: '', short_description: '', description: '',
+  stock: '', short_description: '', description: '', seo_title: '', seo_description: '',
 };
 const inputCls = 'w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50';
 const areaCls = 'w-full bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50';
@@ -55,6 +55,7 @@ export default function ShopTab({ store, projectId }) {
   const cats = ctx.categories || [];
   const brands = ctx.brands || [];
   const sym = ctx.currency_symbol || '$';
+  const seoAvailable = !!ctx.seo_available;
 
   const loadProducts = useCallback(async () => {
     setLoadingList(true); setErr(null);
@@ -161,6 +162,10 @@ export default function ShopTab({ store, projectId }) {
     data.stock = form.stock !== '' ? Number(form.stock) : null;
     data.short_description = form.short_description.trim();
     data.description = form.description.trim();
+    if (seoAvailable) {
+      data.seo_title = form.seo_title.trim();
+      data.seo_description = form.seo_description.trim();
+    }
     if (mode === 'add' || form.category !== (loaded?.category ?? '')) {
       data.categories = form.category ? [form.category] : [];
     }
@@ -209,6 +214,8 @@ export default function ShopTab({ store, projectId }) {
         stock: p.stock == null ? '' : String(p.stock),
         short_description: p.short_description || '',
         description: p.description || '',
+        seo_title: p.seo_title || '',
+        seo_description: p.seo_description || '',
       };
       setForm(next);
       setLoaded({ category: next.category, brand: next.brand });
@@ -397,6 +404,17 @@ export default function ShopTab({ store, projectId }) {
         <textarea className={areaCls} rows={5} value={form.description}
           onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
       </Field>
+
+      {seoAvailable && (
+        <>
+          <Field label="SEO title" hint="shown in Google and the browser tab — Yoast">
+            <input className={inputCls} value={form.seo_title} onChange={(e) => setForm((f) => ({ ...f, seo_title: e.target.value }))} />
+          </Field>
+          <Field label="SEO description" hint="the blurb under the title in search results">
+            <textarea className={areaCls} rows={2} value={form.seo_description} onChange={(e) => setForm((f) => ({ ...f, seo_description: e.target.value }))} />
+          </Field>
+        </>
+      )}
     </div>
   );
 
