@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Folder, FileCode, ChevronLeft, Check, Trash2, Download, RefreshCw } from 'lucide-react';
+import { Loader2, Folder, FileCode, ChevronLeft, Check, Trash2, Download, RefreshCw, GitBranch, KeyRound } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+
+const inputSm = 'w-full bg-black/30 border border-primary/20 px-2.5 h-[36px] text-[12px] text-primary focus:outline-none focus:border-primary/50';
 
 // CODE tab of the WEBSITE panel — browse the connected repo and pull the
 // files you actually work with (a theme folder, a few templates) into the
@@ -24,6 +26,20 @@ export default function CodeTab({ projectId }) {
   const [result, setResult] = useState(null);
   const [imported, setImported] = useState(null);
 
+  const [config, setConfig] = useState(null); // { repo, repoSource, branch, tokenScope }
+  const [repoInput, setRepoInput] = useState('');
+  const [tokenInput, setTokenInput] = useState('');
+  const [savingCfg, setSavingCfg] = useState(false);
+  const [cfgMsg, setCfgMsg] = useState(null);
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const { data } = await base44.functions.invoke('repoFiles', { projectId, action: 'config' });
+      setConfig(data);
+      setRepoInput(data.repo || '');
+    } catch (e) { setErr(e?.data?.error || e.message); }
+  }, [projectId]);
+
   const loadTree = useCallback(async (d) => {
     setLoading(true); setErr(null);
     try {
@@ -44,7 +60,26 @@ export default function CodeTab({ projectId }) {
     } catch { /* non-fatal */ }
   }, [projectId]);
 
-  useEffect(() => { loadTree(''); loadImported(); }, [loadTree, loadImported]);
+  useEffect(() => { loadConfig(); loadTree(''); loadImported(); }, [loadConfig, loadTree, loadImported]);
+
+  const saveConfig = async ({ token, clearToken } = {}) => {
+    setSavingCfg(true); setErr(null); setCfgMsg(null);
+    try {
+      const { data } = await base44.functions.invoke('setProjectGithub', {
+        projectId,
+        repo: repoInput.trim() !== (config?.repo || '') ? repoInput.trim() : undefined,
+        token: token || undefined,
+        clearToken: clearToken || undefined,
+      });
+      setTokenInput('');
+      setCfgMsg(data.canPush === false
+        ? 'Connected (read-only — this token/account can’t push, so deploys will fail).'
+        : 'Saved.');
+      await loadConfig();
+      loadTree('');
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setSavingCfg(false); }
+  };
 
   const toggle = (path) => setSelected((s) => {
     const n = new Set(s);
@@ -71,24 +106,64 @@ export default function CodeTab({ projectId }) {
     } catch (e) { setErr(e?.data?.error || e.message); }
   };
 
-  if (tree?.notReady) {
-    return (
-      <div className="p-4 text-[12px] text-primary/55 leading-relaxed">
-        {tree.reason}
-        <div className="text-[10px] text-primary/40 mt-2">Set the repo in Settings → Morpheus on your site, then reopen this tab.</div>
-      </div>
-    );
-  }
-
   const parent = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '';
+  const repoLocked = config?.repoSource === 'plugin'; // set on the plugin side (Settings → Morpheus)
+  const noRepo = tree?.notReady || !config?.repo;
 
   return (
     <div className="p-4 space-y-4">
+      {/* repo & access */}
+      <div className="border border-primary/20 p-3 space-y-2.5">
+        <div className="flex items-center gap-1.5 text-[10px] text-primary/40 uppercase tracking-wider"><GitBranch size={11} /> Repo &amp; access</div>
+        {repoLocked ? (
+          <div className="text-[11px] text-primary/70 font-mono break-all">{config.repo} · {config.branch}
+            <div className="text-[9px] text-primary/35 font-sans normal-case tracking-normal mt-0.5">Set on the site (Settings → Morpheus) — change it there.</div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input className={inputSm} placeholder="owner/repo" value={repoInput}
+              onChange={(e) => setRepoInput(e.target.value)} autoCapitalize="off" autoCorrect="off" />
+            <button onClick={() => saveConfig()} disabled={savingCfg || repoInput.trim() === (config?.repo || '')}
+              className="shrink-0 px-3 h-[36px] text-[11px] border border-primary/40 text-primary/80 hover:border-primary hover:text-primary disabled:opacity-40">
+              {savingCfg ? <Loader2 size={11} className="animate-spin" /> : 'Save'}
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-1.5 text-[10px] text-primary/45">
+          <KeyRound size={10} />
+          {config?.tokenScope === 'construct'
+            ? <span>Using a token set for this construct.</span>
+            : <span>Using your global GitHub connection.</span>}
+          {config?.tokenScope === 'construct' && (
+            <button onClick={() => saveConfig({ clearToken: true })} disabled={savingCfg} className="text-primary/40 hover:text-red-400 ml-auto">clear</button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <input className={inputSm} type="password" placeholder="paste a token for this repo (optional)"
+            value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} autoCapitalize="off" autoCorrect="off" />
+          <button onClick={() => saveConfig({ token: tokenInput.trim() })} disabled={savingCfg || tokenInput.trim().length < 8}
+            className="shrink-0 px-3 h-[36px] text-[11px] border border-primary/40 text-primary/80 hover:border-primary hover:text-primary disabled:opacity-40">
+            Set
+          </button>
+        </div>
+        <div className="text-[9px] text-primary/35 leading-relaxed">
+          For a client repo your own GitHub account can’t reach: paste a fine-grained token scoped to just that repo (Contents: read &amp; write). Stored encrypted.
+        </div>
+        {cfgMsg && <div className="text-[10px] text-primary/60">{cfgMsg}</div>}
+      </div>
+
+      {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
+
+      {noRepo ? (
+        <div className="text-[11px] text-primary/45 leading-relaxed">
+          {tree?.notReady ? tree.reason : 'Connect a repo above to browse and import its files.'}
+        </div>
+      ) : (
+      <>
       <p className="text-[11px] text-primary/50 leading-relaxed">
         Pull the files chat should be able to edit — your theme folder, key templates, the stylesheet. Keep it tight; WordPress core is skipped automatically.
       </p>
-
-      {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
 
       {/* breadcrumb */}
       <div className="flex items-center gap-2 text-[11px]">
@@ -162,6 +237,8 @@ export default function CodeTab({ projectId }) {
       <div className="text-[10px] text-primary/35 leading-relaxed">
         Once files are in, chat in this project — Morpheus edits them the WordPress way, and ships through the Deploy tab. It never touches WP core or plugins it didn’t write.
       </div>
+      </>
+      )}
     </div>
   );
 }

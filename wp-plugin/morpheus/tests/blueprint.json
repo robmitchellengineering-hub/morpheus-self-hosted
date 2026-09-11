@@ -1,7 +1,7 @@
 {
 	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
 	"preferredVersions": { "php": "8.2", "wp": "latest" },
-	"plugins": [ "woocommerce" ],
+	"plugins": [ "woocommerce", "wordpress-seo" ],
 	"steps": [
 		{ "step": "runPHP", "code": "<?php require_once '/wordpress/wp-load.php'; if ( class_exists('WC_Install') ) { WC_Install::install(); } update_option('woocommerce_currency','AUD'); ?>" }
 	]

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles, Sun, Moon, User, LogOut } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles, Sun, Moon, User, LogOut, ExternalLink, AlertTriangle } from 'lucide-react';
 import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -12,6 +12,16 @@ import SheetSelect from '@/components/matrix/SheetSelect';
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/lib/AuthContext';
+
+// Guided Free Setup — Gemini's official OpenAI-compatibility endpoint. Saved
+// under the hood exactly like a manual Custom setup (ai_mode:'custom' +
+// these two values) — the guided flow only removes the "what do I even put
+// in Base URL" friction, it doesn't add a new code path. ai_model 'auto'
+// hits resolveModel()'s official-alias shortcut for this host (see
+// server/src/ai.js), so it always tracks Gemini's current default model
+// with zero maintenance here — same principle as FRESHNESS.md.
+const GEMINI_GUIDED_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+const GEMINI_GUIDED_MODEL = 'auto';
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Automatic (platform default — lowest credit cost)' },
@@ -38,6 +48,12 @@ export default function Settings() {
   const [aiBaseUrl, setAiBaseUrl] = useState('');
   const [aiApiKey, setAiApiKey] = useState('');
   const [aiModel, setAiModel] = useState('');
+  // UI-only: which panel the AI Provider section shows. Distinct from
+  // aiMode (the actual persisted field, only ever 'default' | 'custom') so
+  // picking "Guided Free Setup" can't accidentally save an ai_mode value
+  // resolveEndpoint() doesn't recognise.
+  const [providerMode, setProviderMode] = useState('default');
+  const [keyTest, setKeyTest] = useState(null); // { testing } | { ok, message }
   const [plannerModel, setPlannerModel] = useState('');
   const [coderModel, setCoderModel] = useState('');
   const [reviewerModel, setReviewerModel] = useState('');
@@ -60,10 +76,13 @@ export default function Settings() {
       .then(rows => {
         if (rows[0]) {
           setSettings(rows[0]);
-          setAiMode(rows[0].ai_mode || 'default');
-          setAiBaseUrl(rows[0].ai_base_url || '');
+          const mode = rows[0].ai_mode || 'default';
+          const baseUrl = rows[0].ai_base_url || '';
+          setAiMode(mode);
+          setAiBaseUrl(baseUrl);
           setAiApiKey(rows[0].ai_api_key || '');
           setAiModel(rows[0].ai_model || '');
+          setProviderMode(mode === 'custom' && baseUrl === GEMINI_GUIDED_BASE_URL ? 'guided' : mode);
           setPlannerModel(rows[0].planner_model || '');
           setCoderModel(rows[0].coder_model || '');
           setReviewerModel(rows[0].reviewer_model || '');
@@ -82,6 +101,28 @@ export default function Settings() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const handleProviderModeChange = (next) => {
+    setProviderMode(next);
+    setKeyTest(null);
+    if (next === 'guided') {
+      setAiMode('custom');
+      setAiBaseUrl(GEMINI_GUIDED_BASE_URL);
+      setAiModel(GEMINI_GUIDED_MODEL);
+    } else {
+      setAiMode(next === 'custom' ? 'custom' : 'default');
+    }
+  };
+
+  const testKey = async () => {
+    setKeyTest({ testing: true });
+    try {
+      const { data } = await base44.functions.invoke('testAiProviderKey', { baseUrl: aiBaseUrl.trim(), apiKey: aiApiKey.trim() });
+      setKeyTest(data.ok ? { ok: true } : { ok: false, message: data.message });
+    } catch (e) {
+      setKeyTest({ ok: false, message: e?.data?.error || e.message });
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -286,20 +327,68 @@ export default function Settings() {
 
               <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Mode</label>
               <SheetSelect
-                value={aiMode}
-                onChange={setAiMode}
+                value={providerMode}
+                onChange={handleProviderModeChange}
                 label="MODE"
-                options={[{ value: 'default', label: 'Default (platform)' }, { value: 'custom', label: 'Custom OpenAI-compatible endpoint' }]}
+                options={[
+                  { value: 'default', label: 'Default (platform)' },
+                  { value: 'guided', label: 'Guided Free Setup — Gemini (free)' },
+                  { value: 'custom', label: 'Custom OpenAI-compatible endpoint' },
+                ]}
                 triggerClassName="w-full mb-4"
               />
 
-              {aiMode === 'custom' ? (
+              {providerMode === 'guided' ? (
+                <div className="space-y-4">
+                  <ol className="space-y-2.5 text-xs text-primary/70 list-decimal list-inside">
+                    <li>
+                      Open{' '}
+                      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 inline-flex items-center gap-1">
+                        Google AI Studio <ExternalLink size={11} />
+                      </a>{' '}
+                      and sign in with any Google account.
+                    </li>
+                    <li>Click <span className="text-primary">Create API key</span> — it's free, no card required.</li>
+                    <li>Copy the key and paste it below.</li>
+                  </ol>
+                  <div>
+                    <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Gemini API Key</label>
+                    <div className="flex gap-2">
+                      <input
+                        type={showKey ? 'text' : 'password'}
+                        value={aiApiKey}
+                        onChange={e => { setAiApiKey(e.target.value); setKeyTest(null); }}
+                        placeholder="AIza..."
+                        className="flex-1 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                      />
+                      <button onClick={() => setShowKey(!showKey)} className="px-3 border border-primary/30 text-primary/60 hover:text-primary" title={showKey ? 'Hide key' : 'Show key'}>
+                        {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={testKey}
+                      disabled={!aiApiKey.trim() || keyTest?.testing}
+                      className="text-xs px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/60 disabled:opacity-40 flex items-center gap-1.5"
+                    >
+                      {keyTest?.testing ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                      Test key
+                    </button>
+                    {keyTest?.ok === true && <span className="text-xs text-primary flex items-center gap-1"><Check size={12} /> Key works</span>}
+                    {keyTest?.ok === false && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {keyTest.message || 'Key rejected'}</span>}
+                  </div>
+                  <p className="text-xs text-primary/50">
+                    // ~5,000 free grounded requests/month on the Gemini 3 family, then usage-billed to this key directly by Google — never through Morpheus. Rate-limited under heavy autonomous builds; switch to platform default if you hit that.
+                  </p>
+                </div>
+              ) : providerMode === 'custom' ? (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1">Base URL</label>
                     <input
                       value={aiBaseUrl}
-                      onChange={e => setAiBaseUrl(e.target.value)}
+                      onChange={e => { setAiBaseUrl(e.target.value); setKeyTest(null); }}
                       placeholder="https://api.openai.com/v1"
                       className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
@@ -322,7 +411,7 @@ export default function Settings() {
                       <input
                         type={showKey ? 'text' : 'password'}
                         value={aiApiKey}
-                        onChange={e => setAiApiKey(e.target.value)}
+                        onChange={e => { setAiApiKey(e.target.value); setKeyTest(null); }}
                         placeholder="sk-..."
                         className="flex-1 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                       />
@@ -343,6 +432,18 @@ export default function Settings() {
                       placeholder="gpt-4o"
                       className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={testKey}
+                      disabled={!aiBaseUrl.trim() || !aiApiKey.trim() || keyTest?.testing}
+                      className="text-xs px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/60 disabled:opacity-40 flex items-center gap-1.5"
+                    >
+                      {keyTest?.testing ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                      Test connection
+                    </button>
+                    {keyTest?.ok === true && <span className="text-xs text-primary flex items-center gap-1"><Check size={12} /> Connected</span>}
+                    {keyTest?.ok === false && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {keyTest.message || 'Rejected'}</span>}
                   </div>
                 </div>
               ) : (

@@ -9,18 +9,17 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { prisma } from '../db.js';
-import { requireAuth } from '../auth.js';
+import { requireAuth, blockWidget } from '../auth.js';
 import { getGithubToken, ghHeaders, ghJson, createOrUpdateFile, deleteFile } from '../lib/github.js';
 import {
   isMissingAssetTable, kindFromType, normalizeKind, slugify, extFromNameOrType,
 } from '../lib/projectAssets.js';
-import { logError } from '../lib/errorLogger.js';
 
 const GH_API = 'https://api.github.com';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
 const router = Router();
 
-router.use(requireAuth);
+router.use(requireAuth, blockWidget);
 
 async function ownedProject(userId, projectId) {
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: userId } });
@@ -54,7 +53,6 @@ router.get('/:projectId', async (req, res) => {
     }
     res.json({ migrated, assets, githubRepo: project.github_repo || null });
   } catch (err) {
-    logError('mediaAssets:list', err);
     res.status(err.status || 500).json({ error: err.message });
   }
 });
@@ -82,7 +80,6 @@ router.post('/:projectId/url', async (req, res) => {
     res.json({ asset: assetView(row) });
   } catch (err) {
     if (isMissingAssetTable(err)) return res.status(400).json({ error: 'migration-pending' });
-    logError('mediaAssets:url-add', err);
     res.status(err.status || 500).json({ error: err.message });
   }
 });
@@ -96,7 +93,7 @@ router.post('/:projectId/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Connect this project to a GitHub repo first (Export to GitHub), then upload — the file is committed straight into your repo.' });
     }
     const [owner, repo] = project.github_repo.split('/');
-    const token = await getGithubToken(req.user.id);
+    const token = await getGithubToken(req.user.id, { projectId: req.params.projectId });
 
     // Default branch.
     const repoInfo = await ghJson(await fetch(`${GH_API}/repos/${owner}/${repo}`, { headers: ghHeaders(token) }));
@@ -138,7 +135,6 @@ router.post('/:projectId/upload', upload.single('file'), async (req, res) => {
     res.json({ asset: assetView(row) });
   } catch (err) {
     if (isMissingAssetTable(err)) return res.status(400).json({ error: 'migration-pending' });
-    logError('mediaAssets:upload', err);
     res.status(err.status || 500).json({ error: err.message });
   }
 });
@@ -154,7 +150,7 @@ router.delete('/:projectId/:assetId', async (req, res) => {
       // Best-effort — a missing repo file shouldn't block removing the row.
       try {
         const [owner, repo] = project.github_repo.split('/');
-        const token = await getGithubToken(req.user.id);
+        const token = await getGithubToken(req.user.id, { projectId: req.params.projectId });
         const repoInfo = await ghJson(await fetch(`${GH_API}/repos/${owner}/${repo}`, { headers: ghHeaders(token) }));
         const branch = repoInfo?.default_branch || 'main';
         const existing = await ghJson(await fetch(
@@ -173,7 +169,6 @@ router.delete('/:projectId/:assetId', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     if (isMissingAssetTable(err)) return res.status(400).json({ error: 'migration-pending' });
-    logError('mediaAssets:delete', err);
     res.status(err.status || 500).json({ error: err.message });
   }
 });

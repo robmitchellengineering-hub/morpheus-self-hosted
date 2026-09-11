@@ -48,7 +48,7 @@ export async function resolveWordpressDelivery(projectId, userId) {
     );
   }
 
-  const token = await getGithubToken(userId); // throws 400 if GitHub not connected
+  const token = await getGithubToken(userId, { projectId }); // throws 400 if GitHub not connected
 
   const meta = conn.meta && typeof conn.meta === 'object' ? conn.meta : {};
   const config = {

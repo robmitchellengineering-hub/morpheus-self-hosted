@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, Check, ExternalLink, Package, ImagePlus, RefreshCw, Camera, Sparkles } from 'lucide-react';
+import { Loader2, Check, ExternalLink, Package, ImagePlus, RefreshCw, Camera, Sparkles, ChevronLeft, Trash2, EyeOff, Eye } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // SHOP tab of the WEBSITE panel — run a connected WooCommerce store from
-// here. New products are DRAFT unless you hit Publish. The plugin does the
-// WooCommerce work; this signs and forwards.
+// here. New products are DRAFT unless you hit Publish. Existing products can
+// be edited, unpublished or trashed. The plugin does the WooCommerce work;
+// this signs and forwards.
 
 const BLANK = {
   name: '', regular_price: '', sale_price: '', category: '', brand: '',
-  stock: '', short_description: '', description: '',
+  stock: '', short_description: '', description: '', seo_title: '', seo_description: '',
 };
 const inputCls = 'w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50';
 const areaCls = 'w-full bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50';
@@ -25,9 +26,9 @@ function Field({ label, hint, children }) {
 }
 
 export default function ShopTab({ store, projectId }) {
-  const [view, setView] = useState('add'); // add | list
+  const [view, setView] = useState('add'); // add | list | edit
   const [form, setForm] = useState(BLANK);
-  const [photos, setPhotos] = useState([]); // [{ url, name }]
+  const [photos, setPhotos] = useState([]); // [{ url, name, existing? }]
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
@@ -40,26 +41,38 @@ export default function ShopTab({ store, projectId }) {
 
   const [products, setProducts] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
+  const [search, setSearch] = useState('');
+
+  // edit mode
+  const [editId, setEditId] = useState(null);
+  const [editStatus, setEditStatus] = useState(null); // the product's current status
+  const [editName, setEditName] = useState('');
+  const [loaded, setLoaded] = useState(null); // snapshot of the product as loaded (for change detection)
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const ctx = store?.context || {};
   const cats = ctx.categories || [];
   const brands = ctx.brands || [];
   const sym = ctx.currency_symbol || '$';
+  const seoAvailable = !!ctx.seo_available;
 
   const loadProducts = useCallback(async () => {
     setLoadingList(true); setErr(null);
     try {
       const { data } = await base44.functions.invoke('wordPressStoreAction', {
-        projectId, action: 'list_products', data: { limit: 20 },
+        projectId, action: 'list_products', data: { limit: 20, search: search.trim() || undefined },
       });
       setProducts(data?.products || []);
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setLoadingList(false); }
-  }, [projectId]);
+  }, [projectId, search]);
 
   useEffect(() => {
     if (view === 'list' && products == null) loadProducts();
   }, [view, products, loadProducts]);
+
+  const newPhotos = photos.filter((p) => !p.existing);
 
   if (!store?.store_available) {
     return (
@@ -107,8 +120,6 @@ export default function ShopTab({ store, projectId }) {
         name: form.name.trim(),
         category: form.category || undefined,
         brand: form.brand || undefined,
-        // whatever's already typed in the description boxes becomes the
-        // seller's rough notes for Morpheus to polish
         notes: [form.short_description, form.description].filter((s) => s && s.trim()).join('\n') || undefined,
         imageUrls: photos.map((p) => p.url),
       });
@@ -137,179 +148,316 @@ export default function ShopTab({ store, projectId }) {
     finally { setUploading(false); }
   };
 
+  const resetForm = () => { setForm(BLANK); setPhotos([]); setPhotoNote(null); setLoaded(null); };
+
+  // Build the data payload for create/update. Only NEW photo urls go in
+  // `images` — the plugin appends them, so sending an existing one would
+  // re-sideload and duplicate it. On edit, category/brand are sent only when
+  // changed: get_product gives us just the first term, so blindly sending it
+  // back would drop any others.
+  const formPayload = (mode) => {
+    const data = { name: form.name.trim() };
+    data.regular_price = form.regular_price !== '' ? form.regular_price : '';
+    data.sale_price = form.sale_price !== '' ? form.sale_price : '';
+    data.stock = form.stock !== '' ? Number(form.stock) : null;
+    data.short_description = form.short_description.trim();
+    data.description = form.description.trim();
+    if (seoAvailable) {
+      data.seo_title = form.seo_title.trim();
+      data.seo_description = form.seo_description.trim();
+    }
+    if (mode === 'add' || form.category !== (loaded?.category ?? '')) {
+      data.categories = form.category ? [form.category] : [];
+    }
+    if (ctx.brand_taxonomy && (mode === 'add' || form.brand !== (loaded?.brand ?? ''))) {
+      data.brand = form.brand ? [form.brand] : [];
+    }
+    const add = newPhotos.map((p) => p.url);
+    if (add.length) data.images = add;
+    return data;
+  };
+
   const submit = async (status) => {
     if (!form.name.trim()) { setErr('Give the product a name.'); return; }
     setSaving(true); setErr(null); setResult(null);
-    const data = { name: form.name.trim(), status };
-    if (form.regular_price !== '') data.regular_price = form.regular_price;
-    if (form.sale_price !== '') data.sale_price = form.sale_price;
-    if (form.stock !== '') data.stock = Number(form.stock);
-    if (form.short_description.trim()) data.short_description = form.short_description.trim();
-    if (form.description.trim()) data.description = form.description.trim();
-    if (form.category) data.categories = [form.category];
-    if (form.brand) data.brand = [form.brand];
-    if (photos.length) data.images = photos.map((p) => p.url);
     try {
       const { data: res } = await base44.functions.invoke('wordPressStoreAction', {
-        projectId, action: 'create_product', data,
+        projectId, action: 'create_product', data: { ...formPayload('add'), status },
       });
       if (res && res.ok === false) {
         setErr(res.message || res.error || 'The store rejected the product.');
       } else {
         setResult({ product: res.product, published: status === 'publish' });
-        setForm(BLANK); setPhotos([]); setPhotoNote(null); setProducts(null);
+        resetForm(); setProducts(null);
       }
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setSaving(false); }
   };
 
+  const openEdit = async (id) => {
+    setView('edit'); setEditId(id); setConfirmDelete(false);
+    setLoadingEdit(true); setErr(null); setResult(null); setPhotoNote(null);
+    try {
+      const { data } = await base44.functions.invoke('wordPressStoreAction', {
+        projectId, action: 'get_product', data: { id },
+      });
+      const p = data?.product;
+      if (!p) { setErr('Could not load that product.'); return; }
+      setEditStatus(p.status);
+      setEditName(p.name);
+      const next = {
+        name: p.name || '',
+        regular_price: p.price || '',
+        sale_price: p.sale || '',
+        category: (p.categories || [])[0] || '',
+        brand: (p.brands || [])[0] || '',
+        stock: p.stock == null ? '' : String(p.stock),
+        short_description: p.short_description || '',
+        description: p.description || '',
+        seo_title: p.seo_title || '',
+        seo_description: p.seo_description || '',
+      };
+      setForm(next);
+      setLoaded({ category: next.category, brand: next.brand });
+      setPhotos((p.images || []).map((url) => ({ url, existing: true })));
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setLoadingEdit(false); }
+  };
+
+  const saveEdit = async (nextStatus) => {
+    if (!form.name.trim()) { setErr('Give the product a name.'); return; }
+    setSaving(true); setErr(null);
+    try {
+      const data = { id: editId, ...formPayload('edit') };
+      if (nextStatus) data.status = nextStatus;
+      const { data: res } = await base44.functions.invoke('wordPressStoreAction', {
+        projectId, action: 'update_product', data,
+      });
+      if (res && res.ok === false) {
+        setErr(res.message || res.error || 'The store rejected the change.');
+      } else {
+        setEditStatus(res.product?.status || nextStatus || editStatus);
+        setEditName(res.product?.name || form.name.trim());
+        setResult({ product: res.product, edited: true, published: (res.product?.status || nextStatus) === 'publish' });
+        // reflect the newly-added photos as existing now
+        setPhotos((ps) => ps.map((x) => ({ ...x, existing: true })));
+        setProducts(null);
+      }
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setSaving(false); }
+  };
+
+  const doDelete = async () => {
+    setSaving(true); setErr(null);
+    try {
+      const { data: res } = await base44.functions.invoke('wordPressStoreAction', {
+        projectId, action: 'delete_product', data: { id: editId },
+      });
+      if (res && res.ok === false) {
+        setErr(res.message || res.error || 'Could not remove the product.');
+      } else {
+        setProducts(null); setView('list'); resetForm();
+        setEditId(null); setConfirmDelete(false);
+      }
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setSaving(false); }
+  };
+
+  const backToList = () => {
+    setView('list'); setEditId(null); resetForm(); setResult(null); setErr(null);
+  };
+
+  const busy = saving || uploading || generating || analyzing;
+
+  // ── the shared product form body (add + edit) ──────────────────────────
+  const formBody = (mode) => (
+    <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-4">
+      {result && mode === 'add' && (
+        <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-primary/80 leading-relaxed">
+          <div className="flex items-center gap-1.5 text-primary font-bold mb-1">
+            <Check size={13} /> {result.published ? 'Published' : 'Saved as draft'}
+          </div>
+          “{result.product?.name}” — {result.published ? 'live now' : 'not visible to shoppers until you publish it'}.
+          {result.product?.edit_url && (
+            <a href={result.product.edit_url} target="_blank" rel="noreferrer"
+              className="flex items-center gap-1 text-primary/70 hover:text-primary mt-1">
+              <ExternalLink size={11} /> Edit on your site
+            </a>
+          )}
+        </div>
+      )}
+      {result && mode === 'edit' && (
+        <div className="border border-primary/40 bg-primary/5 px-3 py-2 text-[11px] text-primary/80 flex items-center gap-1.5">
+          <Check size={13} className="text-primary" /> Saved{result.published === false ? ' (draft)' : ''}.
+        </div>
+      )}
+
+      <Field label="Product name">
+        <input className={inputCls} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={`Price (${sym})`}>
+          <input className={inputCls} inputMode="decimal" placeholder="0.00" value={form.regular_price}
+            onChange={(e) => setForm((f) => ({ ...f, regular_price: e.target.value }))} />
+        </Field>
+        <Field label={`Sale price (${sym})`} hint="optional">
+          <input className={inputCls} inputMode="decimal" placeholder="—" value={form.sale_price}
+            onChange={(e) => setForm((f) => ({ ...f, sale_price: e.target.value }))} />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Category">
+          <select className={inputCls} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
+            <option value="">—</option>
+            {cats.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        </Field>
+        {ctx.brand_taxonomy && (
+          <Field label="Brand">
+            <select className={inputCls} value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))}>
+              <option value="">—</option>
+              {brands.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+
+      <Field label="Stock quantity" hint="leave blank for no stock tracking">
+        <input className={inputCls} inputMode="numeric" placeholder="—" value={form.stock}
+          onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} />
+      </Field>
+
+      <Field
+        label={`Photos${photos.length ? ` (${photos.length}/${MAX_PHOTOS})` : ''}`}
+        hint={mode === 'edit' ? 'existing photos stay; new ones are added to the gallery' : 'first is the main image, the rest become the product gallery'}>
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => pickPhotos(e.target.files)} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+          onChange={(e) => pickPhotos(e.target.files)} />
+
+        {photos.length > 0 && (
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            {photos.map((p, i) => (
+              <div key={p.url} className="relative border border-primary/20 aspect-square">
+                <img src={p.url} alt="" className="w-full h-full object-cover" />
+                {i === 0 && <span className="absolute bottom-0 left-0 text-[8px] bg-primary text-black px-1">MAIN</span>}
+                {p.existing
+                  ? <span className="absolute bottom-0 right-0 text-[8px] bg-black/70 text-primary/70 px-1">on site</span>
+                  : (
+                    <button onClick={() => setPhotos((ps) => ps.filter((x) => x.url !== p.url))}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-primary/40 text-primary/60 hover:text-red-400 text-[10px] leading-none">×</button>
+                  )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {photos.length < MAX_PHOTOS && (
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => cameraRef.current?.click()} disabled={uploading}
+              className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
+              {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} {photos.length ? 'Add' : 'Camera'}
+            </button>
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
+              {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />} Library
+            </button>
+          </div>
+        )}
+      </Field>
+
+      {photos.length > 0 && (
+        <>
+          <button onClick={analyzeFromPhoto} disabled={analyzing || uploading || generating}
+            className="w-full flex items-center justify-center gap-2 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
+            {analyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            {analyzing ? 'MORPHEUS IS LOOKING…' : `AUTO-FILL FROM ${photos.length === 1 ? 'PHOTO' : `${photos.length} PHOTOS`}`}
+          </button>
+          <div className="text-[9px] text-primary/35 -mt-2">
+            Reads all the photos together — name, category, brand, price, stock, copy. All editable after.
+          </div>
+          {photoNote && (
+            <div className="text-[10px] text-yellow-500/80 border border-yellow-500/25 px-2.5 py-1.5 leading-relaxed">
+              <span className="uppercase tracking-wide text-yellow-500/60">Check:</span> {photoNote}
+            </div>
+          )}
+        </>
+      )}
+
+      <button onClick={generateCopy} disabled={generating || uploading || !form.name.trim()}
+        className="w-full flex items-center justify-center gap-2 h-[42px] border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40">
+        {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+        {generating ? 'MORPHEUS IS WRITING…' : 'WRITE COPY WITH MORPHEUS'}
+      </button>
+      <div className="text-[9px] text-primary/35 -mt-2">
+        Uses the name, category, brand and photo. Type rough notes in the boxes below first and Morpheus will polish them.
+      </div>
+
+      <Field label="Short description" hint="the blurb near the price">
+        <textarea className={areaCls} rows={2} value={form.short_description}
+          onChange={(e) => setForm((f) => ({ ...f, short_description: e.target.value }))} />
+      </Field>
+
+      <Field label="Full description">
+        <textarea className={areaCls} rows={5} value={form.description}
+          onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+      </Field>
+
+      {seoAvailable && (
+        <>
+          <Field label="SEO title" hint="shown in Google and the browser tab — Yoast">
+            <input className={inputCls} value={form.seo_title} onChange={(e) => setForm((f) => ({ ...f, seo_title: e.target.value }))} />
+          </Field>
+          <Field label="SEO description" hint="the blurb under the title in search results">
+            <textarea className={areaCls} rows={2} value={form.seo_description} onChange={(e) => setForm((f) => ({ ...f, seo_description: e.target.value }))} />
+          </Field>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex border-b border-primary/15 shrink-0 text-[11px]">
-        <button onClick={() => setView('add')}
-          className={`flex-1 h-[40px] flex items-center justify-center gap-1.5 ${view === 'add' ? 'text-primary border-b-2 border-primary' : 'text-primary/45'}`}>
-          <Package size={13} /> ADD PRODUCT
-        </button>
-        <button onClick={() => setView('list')}
-          className={`flex-1 h-[40px] flex items-center justify-center gap-1.5 ${view === 'list' ? 'text-primary border-b-2 border-primary' : 'text-primary/45'}`}>
-          <RefreshCw size={13} /> RECENT
-        </button>
-      </div>
+      {view !== 'edit' && (
+        <div className="flex border-b border-primary/15 shrink-0 text-[11px]">
+          <button onClick={() => { setView('add'); setResult(null); }}
+            className={`flex-1 h-[40px] flex items-center justify-center gap-1.5 ${view === 'add' ? 'text-primary border-b-2 border-primary' : 'text-primary/45'}`}>
+            <Package size={13} /> ADD PRODUCT
+          </button>
+          <button onClick={() => setView('list')}
+            className={`flex-1 h-[40px] flex items-center justify-center gap-1.5 ${view === 'list' ? 'text-primary border-b-2 border-primary' : 'text-primary/45'}`}>
+            <RefreshCw size={13} /> PRODUCTS
+          </button>
+        </div>
+      )}
+
+      {view === 'edit' && (
+        <div className="flex items-center gap-2 border-b border-primary/15 shrink-0 h-[40px] px-3">
+          <button onClick={backToList} className="flex items-center gap-1 text-[11px] text-primary/60 hover:text-primary">
+            <ChevronLeft size={14} /> Products
+          </button>
+          <span className="text-[11px] text-primary/80 truncate ml-1">{editName || 'Edit product'}</span>
+          {editStatus && (
+            <span className={`ml-auto text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${editStatus === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
+              {editStatus === 'publish' ? 'live' : editStatus}
+            </span>
+          )}
+        </div>
+      )}
 
       {err && <div className="m-4 mb-0 text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
 
       {view === 'add' && (
         <>
-          <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-4">
-            {result && (
-              <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-primary/80 leading-relaxed">
-                <div className="flex items-center gap-1.5 text-primary font-bold mb-1">
-                  <Check size={13} /> {result.published ? 'Published' : 'Saved as draft'}
-                </div>
-                “{result.product?.name}” — {result.published ? 'live now' : 'not visible to shoppers until you publish it'}.
-                {result.product?.edit_url && (
-                  <a href={result.product.edit_url} target="_blank" rel="noreferrer"
-                    className="flex items-center gap-1 text-primary/70 hover:text-primary mt-1">
-                    <ExternalLink size={11} /> Edit on your site
-                  </a>
-                )}
-              </div>
-            )}
-
-            <Field label="Product name">
-              <input className={inputCls} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label={`Price (${sym})`}>
-                <input className={inputCls} inputMode="decimal" placeholder="0.00" value={form.regular_price}
-                  onChange={(e) => setForm((f) => ({ ...f, regular_price: e.target.value }))} />
-              </Field>
-              <Field label={`Sale price (${sym})`} hint="optional">
-                <input className={inputCls} inputMode="decimal" placeholder="—" value={form.sale_price}
-                  onChange={(e) => setForm((f) => ({ ...f, sale_price: e.target.value }))} />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Category">
-                <select className={inputCls} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
-                  <option value="">—</option>
-                  {cats.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                </select>
-              </Field>
-              {ctx.brand_taxonomy && (
-                <Field label="Brand">
-                  <select className={inputCls} value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))}>
-                    <option value="">—</option>
-                    {brands.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
-                  </select>
-                </Field>
-              )}
-            </div>
-
-            <Field label="Stock quantity" hint="leave blank for no stock tracking">
-              <input className={inputCls} inputMode="numeric" placeholder="—" value={form.stock}
-                onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} />
-            </Field>
-
-            <Field label={`Photos${photos.length ? ` (${photos.length}/${MAX_PHOTOS})` : ''}`} hint="first is the main image, the rest become the product gallery">
-              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
-                onChange={(e) => pickPhotos(e.target.files)} />
-              <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
-                onChange={(e) => pickPhotos(e.target.files)} />
-
-              {photos.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  {photos.map((p, i) => (
-                    <div key={p.url} className="relative border border-primary/20 aspect-square">
-                      <img src={p.url} alt="" className="w-full h-full object-cover" />
-                      {i === 0 && <span className="absolute bottom-0 left-0 text-[8px] bg-primary text-black px-1">MAIN</span>}
-                      <button onClick={() => setPhotos((ps) => ps.filter((x) => x.url !== p.url))}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-primary/40 text-primary/60 hover:text-red-400 text-[10px] leading-none">×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {photos.length < MAX_PHOTOS && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => cameraRef.current?.click()} disabled={uploading}
-                    className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
-                    {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} {photos.length ? 'Add' : 'Camera'}
-                  </button>
-                  <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                    className="flex items-center justify-center gap-1.5 h-[42px] border border-dashed border-primary/30 text-primary/55 hover:text-primary hover:border-primary/60 text-[12px] disabled:opacity-50">
-                    {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />} Library
-                  </button>
-                </div>
-              )}
-            </Field>
-
-            {photos.length > 0 && (
-              <>
-                <button onClick={analyzeFromPhoto} disabled={analyzing || uploading || generating}
-                  className="w-full flex items-center justify-center gap-2 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
-                  {analyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  {analyzing ? 'MORPHEUS IS LOOKING…' : `AUTO-FILL FROM ${photos.length === 1 ? 'PHOTO' : `${photos.length} PHOTOS`}`}
-                </button>
-                <div className="text-[9px] text-primary/35 -mt-2">
-                  Reads all the photos together — name, category, brand, price, stock, copy. All editable after.
-                </div>
-                {photoNote && (
-                  <div className="text-[10px] text-yellow-500/80 border border-yellow-500/25 px-2.5 py-1.5 leading-relaxed">
-                    <span className="uppercase tracking-wide text-yellow-500/60">Check:</span> {photoNote}
-                  </div>
-                )}
-              </>
-            )}
-
-            <button onClick={generateCopy} disabled={generating || uploading || !form.name.trim()}
-              className="w-full flex items-center justify-center gap-2 h-[42px] border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40">
-              {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-              {generating ? 'MORPHEUS IS WRITING…' : 'WRITE COPY WITH MORPHEUS'}
-            </button>
-            <div className="text-[9px] text-primary/35 -mt-2">
-              Uses the name, category, brand and photo. Type rough notes in the boxes below first and Morpheus will polish them.
-            </div>
-
-            <Field label="Short description" hint="the blurb near the price">
-              <textarea className={areaCls} rows={2} value={form.short_description}
-                onChange={(e) => setForm((f) => ({ ...f, short_description: e.target.value }))} />
-            </Field>
-
-            <Field label="Full description">
-              <textarea className={areaCls} rows={5} value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-            </Field>
-          </div>
-
+          {formBody('add')}
           <div className="p-3 border-t border-primary/20 shrink-0 flex items-center gap-2">
-            <button onClick={() => submit('draft')} disabled={saving || uploading || generating || analyzing || !form.name.trim()}
+            <button onClick={() => submit('draft')} disabled={busy || !form.name.trim()}
               className="flex-1 flex items-center justify-center gap-1.5 h-[44px] border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40">
               {saving ? <Loader2 size={13} className="animate-spin" /> : null} SAVE DRAFT
             </button>
-            <button onClick={() => submit('publish')} disabled={saving || uploading || generating || analyzing || !form.name.trim()}
+            <button onClick={() => submit('publish')} disabled={busy || !form.name.trim()}
               className="flex-1 flex items-center justify-center gap-1.5 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
               {saving ? <Loader2 size={13} className="animate-spin" /> : null} PUBLISH
             </button>
@@ -317,30 +465,86 @@ export default function ShopTab({ store, projectId }) {
         </>
       )}
 
+      {view === 'edit' && (
+        <>
+          {loadingEdit
+            ? <div className="flex items-center gap-2 text-primary/60 text-xs p-4"><Loader2 size={13} className="animate-spin" /> Loading…</div>
+            : formBody('edit')}
+          {!loadingEdit && (
+            <div className="p-3 border-t border-primary/20 shrink-0 space-y-2">
+              {confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-primary/70 flex-1">Move to trash? You can restore it on your site.</span>
+                  <button onClick={() => setConfirmDelete(false)} className="h-[36px] px-3 text-[11px] border border-primary/30 text-primary/70">Cancel</button>
+                  <button onClick={doDelete} disabled={saving}
+                    className="h-[36px] px-3 text-[11px] bg-red-500/80 text-white hover:bg-red-500 disabled:opacity-40 flex items-center gap-1">
+                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Trash
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => saveEdit()} disabled={busy || !form.name.trim()}
+                    className="flex-1 h-[44px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5">
+                    {saving ? <Loader2 size={13} className="animate-spin" /> : null} SAVE CHANGES
+                  </button>
+                  {editStatus === 'publish' ? (
+                    <button onClick={() => saveEdit('draft')} disabled={busy}
+                      className="h-[44px] px-3 border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40 flex items-center gap-1.5">
+                      <EyeOff size={13} /> Unpublish
+                    </button>
+                  ) : (
+                    <button onClick={() => saveEdit('publish')} disabled={busy}
+                      className="h-[44px] px-3 border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-[12px] disabled:opacity-40 flex items-center gap-1.5">
+                      <Eye size={13} /> Publish
+                    </button>
+                  )}
+                  <button onClick={() => setConfirmDelete(true)} disabled={busy}
+                    className="h-[44px] px-3 border border-red-500/30 text-red-400/80 hover:border-red-500/60 hover:text-red-400 disabled:opacity-40">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
       {view === 'list' && (
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] text-primary/40">{products?.length || 0} recent</span>
-            <button onClick={loadProducts} className="text-[10px] text-primary/50 hover:text-primary flex items-center gap-1">
-              <RefreshCw size={10} /> refresh
+          <div className="flex items-center gap-2 mb-2">
+            <input className="flex-1 bg-black/30 border border-primary/20 px-2.5 h-[34px] text-[12px] text-primary focus:outline-none focus:border-primary/50"
+              placeholder="Search products" value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setProducts(null); loadProducts(); } }} />
+            <button onClick={() => { setProducts(null); loadProducts(); }}
+              className="h-[34px] px-2.5 text-[11px] text-primary/60 hover:text-primary border border-primary/20 flex items-center gap-1">
+              <RefreshCw size={11} />
             </button>
           </div>
           {loadingList && <div className="flex items-center gap-2 text-primary/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
-          {!loadingList && products && products.length === 0 && <div className="text-[11px] text-primary/45 py-3">No products yet.</div>}
+          {!loadingList && products && products.length === 0 && <div className="text-[11px] text-primary/45 py-3">No products found.</div>}
           <div className="space-y-1.5">
             {(products || []).map((p) => (
-              <a key={p.id} href={p.edit_url} target="_blank" rel="noreferrer"
-                className="block border border-primary/15 hover:border-primary/40 px-3 py-2 transition-colors">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-primary/85 truncate">{p.name}</span>
-                  <span className={`text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${p.status === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
-                    {p.status === 'publish' ? 'live' : p.status}
-                  </span>
-                </div>
-                <div className="text-[10px] text-primary/40 mt-0.5">
-                  {p.sku ? `${p.sku} · ` : ''}{p.price ? `${sym}${p.price}` : 'no price'}{p.stock != null ? ` · ${p.stock} in stock` : ''}
-                </div>
-              </a>
+              <div key={p.id}
+                className="border border-primary/15 hover:border-primary/40 transition-colors">
+                <button onClick={() => openEdit(p.id)} className="w-full text-left px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12px] text-primary/85 truncate">{p.name}</span>
+                    <span className={`text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${p.status === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
+                      {p.status === 'publish' ? 'live' : p.status}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-primary/40 mt-0.5">
+                    {p.sku ? `${p.sku} · ` : ''}{p.price ? `${sym}${p.price}` : 'no price'}{p.stock != null ? ` · ${p.stock} in stock` : ''}
+                  </div>
+                </button>
+                {p.edit_url && (
+                  <a href={p.edit_url} target="_blank" rel="noreferrer"
+                    className="block px-3 pb-1.5 -mt-1 text-[9px] text-primary/35 hover:text-primary/70 flex items-center gap-1">
+                    <ExternalLink size={9} /> open in WordPress
+                  </a>
+                )}
+              </div>
             ))}
           </div>
         </div>

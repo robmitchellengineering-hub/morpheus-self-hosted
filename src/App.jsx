@@ -35,7 +35,6 @@ const AIDocs = lazy(() => import('@/pages/AIDocs'));
 const UpdatesPlan = lazy(() => import('@/pages/UpdatesPlan'));
 const CostTracker = lazy(() => import('@/pages/CostTracker'));
 const SelfDev = lazy(() => import('@/pages/SelfDev'));
-const StatsAlice = lazy(() => import('@/pages/StatsAlice'));
 const AdminPanel = lazy(() => import('@/pages/AdminPanel'));
 const Embed = lazy(() => import('@/pages/Embed'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
@@ -125,7 +124,6 @@ function AnimatedRoutes() {
             <Route path="/updates-plan" element={<UpdatesPlan />} />
             <Route path="/cost-tracker" element={<CostTracker />} />
             <Route path="/self-dev" element={<SelfDev />} />
-            <Route path="/stats/alice" element={<StatsAlice />} />
             <Route path="/admin" element={<AdminPanel />} />
           </Route>
           <Route path="*" element={<PageNotFound />} />

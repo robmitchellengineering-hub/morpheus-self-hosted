@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Loader2, Plug, Check, Download, ExternalLink } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Loader2, Plug, Check, Download, ExternalLink, ArrowUpCircle } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // SETUP tab of the WEBSITE panel — install the Morpheus plugin on your
@@ -8,6 +8,20 @@ import { base44 } from '@/api/base44Client';
 // static from the app (packed on every build from wp-plugin/morpheus).
 
 const PLUGIN_ZIP = '/morpheus-wordpress-plugin.zip';
+const PLUGIN_MANIFEST = '/plugin-manifest.json';
+
+// "0.4.10" > "0.4.9" — a plain string compare gets that wrong once any part
+// hits double digits, so compare numerically part by part.
+function isNewer(a, b) {
+  if (!a || !b) return false;
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const da = pa[i] || 0, db = pb[i] || 0;
+    if (da !== db) return da > db;
+  }
+  return false;
+}
 const inputCls = 'w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50';
 
 function Step({ n, title, children }) {
@@ -27,8 +41,14 @@ export default function SetupTab({ store, projectId, onChanged }) {
   const [secret, setSecret] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [err, setErr] = useState(null);
+  const [latestVersion, setLatestVersion] = useState(null);
+
+  useEffect(() => {
+    fetch(PLUGIN_MANIFEST).then((r) => (r.ok ? r.json() : null)).then((m) => setLatestVersion(m?.version || null)).catch(() => {});
+  }, []);
 
   const connected = store?.connected;
+  const updateAvailable = connected && store.online && isNewer(latestVersion, store.version);
 
   const connect = async () => {
     setConnecting(true); setErr(null);
@@ -66,6 +86,20 @@ export default function SetupTab({ store, projectId, onChanged }) {
             {store.woocommerce ? ` · WooCommerce ${store.woocommerce}` : store.store_available === false ? ' · WooCommerce not active' : ''}
           </div>
         </div>
+        {updateAvailable && (
+          <div className="border border-yellow-500/35 bg-yellow-500/5 px-3 py-2.5 space-y-2">
+            <div className="flex items-center gap-1.5 text-yellow-500/90 text-[11px]">
+              <ArrowUpCircle size={13} /> Plugin update available — v{store.version} running, v{latestVersion} out
+            </div>
+            <p className="text-[10px] text-primary/50 leading-relaxed">
+              New Morpheus features (page-awareness, in-chat actions) need this. Download the latest zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin → pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
+            </p>
+            <a href={PLUGIN_ZIP} download
+              className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 hover:text-yellow-400">
+              <Download size={12} /> morpheus-wordpress-plugin.zip
+            </a>
+          </div>
+        )}
         <p className="text-[11px] text-primary/45 leading-relaxed">
           Use the <span className="text-primary/70">Deploy</span> tab to ship code changes to the site, and the <span className="text-primary/70">Shop</span> tab to manage products. This connection is private to your account.
         </p>

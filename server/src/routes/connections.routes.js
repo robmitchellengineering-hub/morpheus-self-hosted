@@ -4,10 +4,9 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db.js';
-import { requireAuth } from '../auth.js';
+import { requireAuth, blockWidget } from '../auth.js';
 import { encrypt } from '../crypto.js';
 import { brokerUrl } from '../config/hostedDefaults.js';
-import { logError, sendError } from '../lib/errorLogger.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
@@ -57,7 +56,7 @@ async function persistGithubConnection(uid, { access_token, scope, refresh_token
   return profile.login;
 }
 
-router.get('/github/start', requireAuth, (req, res) => {
+router.get('/github/start', requireAuth, blockWidget, (req, res) => {
   // Tier 1: this deployment has its own GitHub OAuth App — use it directly.
   if (process.env.GITHUB_CLIENT_ID) {
     const state = jwt.sign({ uid: req.user.id }, JWT_SECRET, { expiresIn: '10m' });
@@ -111,7 +110,6 @@ router.get('/github/broker-callback', async (req, res) => {
 
     res.redirect(`${frontendUrl()}/settings?github=connected`);
   } catch (err) {
-    logError('connections:github-broker-callback', err);
     res.status(500).send(`GitHub connection failed: ${err.message}`);
   }
 });
@@ -144,7 +142,6 @@ router.get('/github/callback', async (req, res) => {
 
     res.redirect(`${frontendUrl()}/settings?github=connected`);
   } catch (err) {
-    logError('connections:github-callback', err);
     res.status(500).send(`GitHub connection failed: ${err.message}`);
   }
 });
@@ -168,7 +165,7 @@ router.get('/github/callback', async (req, res) => {
 // expires GitHub-side in ~15 min, and is inert until the user actually
 // approves it. Signing it just stops one user polling another's session.
 
-router.post('/github/device/start', requireAuth, async (req, res) => {
+router.post('/github/device/start', requireAuth, blockWidget, async (req, res) => {
   try {
     // Tier 1: this deployment's own OAuth App.
     if (process.env.GITHUB_CLIENT_ID) {
@@ -209,11 +206,11 @@ router.post('/github/device/start', requireAuth, async (req, res) => {
       error: 'GitHub integration not configured. Set GITHUB_CLIENT_ID/SECRET for your own OAuth App, or MORPHEUS_BROKER_URL to use the Morpheus Cloud default.',
     });
   } catch (err) {
-    sendError(res, 500, 'connections:github-device-start', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-router.post('/github/device/poll', requireAuth, async (req, res) => {
+router.post('/github/device/poll', requireAuth, blockWidget, async (req, res) => {
   try {
     const { poll_token } = req.body || {};
     if (!poll_token) return res.status(400).json({ error: 'missing poll_token', status: 'error' });
@@ -267,12 +264,11 @@ router.post('/github/device/poll', requireAuth, async (req, res) => {
     });
     res.json({ status: 'connected', login });
   } catch (err) {
-    logError('connections:github-device-poll', err);
     res.status(500).json({ error: err.message, status: 'error' });
   }
 });
 
-router.delete('/github', requireAuth, async (req, res) => {
+router.delete('/github', requireAuth, blockWidget, async (req, res) => {
   await prisma.githubConnection.deleteMany({ where: { created_by_id: req.user.id } });
   res.json({ ok: true });
 });
