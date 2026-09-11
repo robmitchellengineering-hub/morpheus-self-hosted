@@ -14,8 +14,8 @@ const ALL_SCOPES = [
 ];
 const HOST = typeof window !== 'undefined' ? window.location.origin : 'https://morpheus.nz';
 
-function snippet(token) {
-  return `<script src="${HOST}/plugin.js" data-token="${token}"></script>`;
+function snippet(token, dock) {
+  return `<script src="${HOST}/plugin.js" data-token="${token}"${dock ? ' data-dock="1"' : ''}></script>`;
 }
 
 export default function EmbedTab({ projectId, connected }) {
@@ -23,6 +23,7 @@ export default function EmbedTab({ projectId, connected }) {
   const [err, setErr] = useState(null);
   const [label, setLabel] = useState('');
   const [scopes, setScopes] = useState(['chat', 'deploy', 'store']);
+  const [dock, setDock] = useState(true);
   const [creating, setCreating] = useState(false);
   const [fresh, setFresh] = useState(null); // { token } shown once
   const [copied, setCopied] = useState(null);
@@ -94,6 +95,14 @@ export default function EmbedTab({ projectId, connected }) {
             </button>
           ))}
         </div>
+        <label className="flex items-start gap-2 text-[10px] cursor-pointer">
+          <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
+            checked={dock} onChange={(e) => setDock(e.target.checked)} />
+          <span className={dock ? 'text-primary/70' : 'text-primary/40'}>
+            Floating widget — a small button in the corner that opens the panel over the page, instead of sitting inline on one page.
+            {dock && ' Put the snippet where it loads for you only (e.g. a PHP snippet gated to logged-in admins) — it carries the token, so anyone the page sends it to can act as you.'}
+          </span>
+        </label>
         <button onClick={create} disabled={creating}
           className="w-full flex items-center justify-center gap-1.5 h-[40px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40">
           {creating ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} CREATE TOKEN
@@ -112,8 +121,8 @@ export default function EmbedTab({ projectId, connected }) {
           </div>
           <div className="text-[10px] text-primary/60 flex items-center gap-1"><Code size={10} /> Embed snippet</div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-primary/80 break-all">{snippet(fresh.token)}</code>
-            <button onClick={() => copy(snippet(fresh.token), 'snip')} className="text-primary/50 hover:text-primary shrink-0">
+            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-primary/80 break-all">{snippet(fresh.token, dock)}</code>
+            <button onClick={() => copy(snippet(fresh.token, dock), 'snip')} className="text-primary/50 hover:text-primary shrink-0">
               {copied === 'snip' ? <Check size={13} /> : <Copy size={13} />}
             </button>
           </div>
