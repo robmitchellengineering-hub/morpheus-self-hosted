@@ -88,3 +88,30 @@ over the *whole* remote tree and would have wiped `base44/`, both lockfiles and
 every binary from `main` on the first real push. **Rule:** deletions are only
 ever computed over paths where `shouldExclude()` is false; a truncated remote
 tree means no deletions at all that push.
+
+## H9 — a PUSH TO PRODUCTION diffs against self-dev's *local* snapshot, not live `main`
+**Incident (2026-09-11, commit `971a1c0`, reverted in `969232a`):**
+`pushSelfDevToGithub.js` builds its diff from `ProjectFile` rows — self-dev's
+own local workspace mirror — not a fresh read of the actual remote tree. While
+one session worked in self-dev, a *separate* Claude Code session was merging
+PRs directly to `main` in the same repo (roughly a dozen, #74 through #86) —
+self-dev's workspace never saw any of them, since nothing had clicked SYNC FROM
+GITHUB since it fell behind. The next PUSH computed a diff against that stale
+snapshot and force-corrected `main` back toward it: `blockWidget` (a real,
+previously-shipped security fix — see the plugin-widget history) deleted along
+with every router's import of it, several other files deleted outright
+(`getChatHistory.js`, `EmbedChat.jsx`, `PagesTab.jsx`, more), several more
+substantially reverted. ~45 files touched in one push, mixed in with legitimate
+new work from the same self-dev turn — nothing in the flow warned that the
+diff's size or shape was unusual for what the operator had actually asked for.
+
+**Rule:** treat self-dev and any other route that writes to this repo's `main`
+(another Claude Code session, a manual push) as sessions that must not overlap
+without a resync in between — **click SYNC FROM GITHUB immediately before any
+BUILD → PUSH turn** if there's any chance `main` moved since self-dev's
+workspace was last opened or synced, especially with another Claude Code
+session active on the same repo. Longer-term, `pushSelfDevToGithub` should
+compare its diff's target base (`ProjectFile`'s last-known commit) against
+`main`'s actual current HEAD before pushing, and refuse or flag a push whose
+diff implies remote drift instead of silently reverting toward a stale
+snapshot — not yet built.
