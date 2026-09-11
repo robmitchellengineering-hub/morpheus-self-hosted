@@ -23,20 +23,29 @@ import {
  *
  * This page builds a complete, explainable report on the Wikimedia editor
  * Aliceinthealice (meta) / Alice_Woods (wikimedia.org.au). It talks directly
- * to the public MediaWiki APIs, no backend or database involved.
+ * to public APIs, no backend or database involved.
  *
  * Data sources:
- *  - meta.wikimedia.org/w/api.php — global account info (total edits, merged
- *    wikis, registration date) via list=globaluserinfo.
- *  - Individual wiki APIs (en.wikipedia, meta, Wikidata, wikimedia.org.au) —
- *    per-wiki user info and the most recent 500 contributions per wiki.
+ *  - XTools (xtools.wmcloud.org) — authoritative all-time statistics for
+ *    Wikimedia Foundation wikis (edit counts, namespace totals, top pages,
+ *    pages created, bytes added/removed, monthly activity).
+ *  - MediaWiki API on wikimedia.org.au — full contribution history for the
+ *    standalone Wikimedia Australia wiki (not covered by XTools), fetched
+ *    with continuation to ensure no edits are missed.
+ *  - Meta-Wiki globaluserinfo — registration date and global account info.
+ *
  * The page is public (brag page for the editor) and admin-friendly:
  * it never requires a login and never stores anything.
  */
 
 const UA = 'MorpheusStatsPage/1.0 (+https://morpheus.nz)';
-const TIMEOUT_MS = 15000;
-const CONTRIB_LIMIT = 500; // number of recent edits fetched per wiki
+const TIMEOUT_MS = 20000;
+const XTOOLS_BASE = 'https://xtools.wmcloud.org/api';
+const AU_API = 'https://wikimedia.org.au/w/api.php';
+const AU_USERNAME = 'Alice_Woods';
+const GLOBAL_USERNAME = 'Aliceinthealice';
+const CONTRIB_LIMIT = 500; // batch size for AU continuation
+const MAX_AU_PAGES = 10000; // safety cap for infinite continuation
 
 async function fetchJson(url, opts = {}) {
   const controller = new AbortController();
@@ -58,39 +67,39 @@ async function fetchJson(url, opts = {}) {
   }
 }
 
-// Wikis where Alice has an account that we can fetch from.
-// `user` is the exact username on that wiki. For wikimedia.org.au the
-// username is Alice_Woods; everywhere else it's Aliceinthealice.
-const WIKIS = [
-  {
-    id: 'enwiki',
-    name: 'English Wikipedia',
-    color: '#39ff14',
-    api: 'https://en.wikipedia.org/w/api.php',
-    user: 'Aliceinthealice',
-  },
-  {
-    id: 'metawiki',
-    name: 'Meta-Wiki',
-    color: '#00e5ff',
-    api: 'https://meta.wikimedia.org/w/api.php',
-    user: 'Aliceinthealice',
-  },
-  {
-    id: 'wikidatawiki',
-    name: 'Wikidata',
-    color: '#ffd700',
-    api: 'https://www.wikidata.org/w/api.php',
-    user: 'Aliceinthealice',
-  },
-  {
-    id: 'mediawiki',
-    name: 'Wikimedia AU',
-    color: '#ff9f40',
-    api: 'https://wikimedia.org.au/w/api.php',
-    user: 'Alice_Woods',
-  },
-];
+// Fetch ALL contributions for the AU wiki (Wikimedia Australia) using
+// MediaWiki continuation. This ensures complete edit history, not just the
+// most recent 500. Returns an array of raw contribution objects.
+async function fetchAllAuContributions() {
+  const all = [];
+  let uccontinue = null;
+  let page = 0;
+  do {
+    const params = new URLSearchParams({
+      action: 'query',
+      list: 'usercontribs',
+      ucuser: AU_USERNAME,
+      uclimit: String(CONTRIB_LIMIT),
+      ucprop: 'title|timestamp|comment|size|sizediff|flags|ns',
+      format: 'json',
+      origin: '*',
+    });
+    if (uccontinue) params.set('uccontinue', uccontinue);
+    const url = `${AU_API}?${params.toString()}`;
+    const data = await fetchJson(url);
+    const items = data?.query?.usercontribs || [];
+    all.push(...items);
+    uccontinue = data?.continue?.uccontinue || null;
+    page++;
+    if (page > MAX_AU_PAGES) break; // safety
+  } while (uccontinue);
+  return all;
+}
+
+// XTools API helper – returns parsed JSON, with defensive extraction
+async function fetchXtools(endpoint) {
+  return fetchJson(`${XTOOLS_BASE}${endpoint}`, { headers: { 'User-Agent': UA } });
+}
 
 const NS_NAMES = {
   0: 'Main',
@@ -113,6 +122,10 @@ const NS_NAMES = {
   101: 'Portal talk',
   828: 'Module',
   829: 'Module talk',
+  120: 'Property',
+  121: 'Property talk',
+  122: 'Lexeme',
+  123: 'Lexeme talk',
 };
 
 function nsName(ns) {
@@ -145,9 +158,59 @@ function monthLabel(key) {
   });
 }
 
+function extractNamespaceTotals(data) {
+  // XTools returns either { namespaces: { "0": n, "1": m, ... } } or an array
+  if (data?.namespaces && typeof data.namespaces === 'object') {
+    return data.namespaces;
+  }
+  if (Array.isArray(data)) {
+    const obj = {};
+    data.forEach((entry) => {
+      if (entry && typeof entry.ns === 'number' && typeof entry.count === 'number') {
+        obj[entry.ns] = entry.count;
+      }
+    });
+    return obj;
+  }
+  return {};
+}
+
+function extractTopPages(data) {
+  // XTools returns { pages: [ { title, count, namespace } ] } or { top_pages: [...] }
+  const list = data?.pages || data?.top_pages || [];
+  return Array.isArray(list) ? list : [];
+}
+
+function extractPagesCreated(data) {
+  const list = data?.pages || data?.pages_created || [];
+  return Array.isArray(list) ? list : [];
+}
+
+function extractMonthCounts(data) {
+  // XTools returns { months: [ { month: 'YYYY-MM', count } ] } or similar
+  const list = data?.months || data?.month_counts || [];
+  if (Array.isArray(list)) {
+    return list.map((entry) => ({
+      month: entry.month || entry.yyyymm,
+      count: entry.count || entry.edits,
+    })).filter((e) => e.month);
+  }
+  return [];
+}
+
+function extractBytes(data) {
+  if (!data) return { added: 0, removed: 0 };
+  return {
+    added: data.added || data.bytes_added || 0,
+    removed: data.removed || data.bytes_removed || 0,
+  };
+}
+
 export default function AliceStats() {
-  const [globalInfo, setGlobalInfo] = useState(null);
-  const [wikiStats, setWikiStats] = useState({}); // { wikiId: { userInfo, contributions, error } }
+  const [globalStats, setGlobalStats] = useState(null); // XTools global stats
+  const [globalInfo, setGlobalInfo] = useState(null); // Meta globaluserinfo
+  const [auContributions, setAuContributions] = useState([]); // all AU edits
+  const [wikiDetails, setWikiDetails] = useState({}); // { wikiId: { monthCounts, topPages, namespaceTotals, pagesCreated, bytesAdded } }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -157,54 +220,57 @@ export default function AliceStats() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Global account info
-      const globalRes = await fetchJson(
-        `https://meta.wikimedia.org/w/api.php?action=query&list=globaluserinfo&format=json&origin=*&guiprop=editcount|groups|merged|registration&guiuser=Aliceinthealice`,
+      // 1. XTools global stats for Aliceinthealice (WMF wikis)
+      const gtData = await fetchXtools(`/user/global_stats/${encodeURIComponent(GLOBAL_USERNAME)}`);
+      const gt = gtData?.global_stats || gtData;
+      setGlobalStats(gt);
+
+      // 2. Meta globaluserinfo for registration date
+      const guiRes = await fetchJson(
+        `https://meta.wikimedia.org/w/api.php?action=query&list=globaluserinfo&format=json&origin=*&guiprop=editcount|groups|merged|registration&guiuser=${encodeURIComponent(GLOBAL_USERNAME)}`,
       );
-      const gui = globalRes?.query?.globaluserinfo || null;
+      const gui = guiRes?.query?.globaluserinfo || null;
       setGlobalInfo(gui);
 
-      // 2. Per-wiki user info + recent contributions (parallel)
-      const results = await Promise.all(
-        WIKIS.map(async (wiki) => {
-          const userParam = encodeURIComponent(wiki.user);
-          const result = {
-            wikiId: wiki.id,
-            userInfo: null,
-            contributions: [],
+      // 3. AU wiki full contributions
+      const auAll = await fetchAllAuContributions();
+      setAuContributions(auAll);
+
+      // 4. For each WMF wiki with edits > 0, fetch detailed XTools data
+      const perWiki = gt?.per_wiki || [];
+      const activeWmfWikis = perWiki.filter((w) => Number(w.total_revisions) > 0);
+      const details = {};
+      await Promise.all(
+        activeWmfWikis.map(async (wikiEntry) => {
+          const wikiId = wikiEntry.wiki;
+          const detail = {
+            monthCounts: [],
+            topPages: [],
+            namespaceTotals: {},
+            pagesCreated: [],
+            bytesAdded: { added: 0, removed: 0 },
             error: null,
           };
           try {
-            const userInfoRes = await fetchJson(
-              `${wiki.api}?action=query&list=users&ususers=${userParam}&usprop=editcount|groups|registration&format=json&origin=*`,
-            );
-            result.userInfo = userInfoRes?.query?.users?.[0] || null;
+            const [monthData, topData, nsData, pagesData, bytesData] = await Promise.all([
+              fetchXtools(`/user/month_counts/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
+              fetchXtools(`/user/top_pages/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
+              fetchXtools(`/user/namespace_totals/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
+              fetchXtools(`/user/pages_created/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
+              fetchXtools(`/user/bytes_added/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
+            ]);
+            if (monthData) detail.monthCounts = extractMonthCounts(monthData);
+            if (topData) detail.topPages = extractTopPages(topData);
+            if (nsData) detail.namespaceTotals = extractNamespaceTotals(nsData);
+            if (pagesData) detail.pagesCreated = extractPagesCreated(pagesData);
+            if (bytesData) detail.bytesAdded = extractBytes(bytesData);
           } catch (err) {
-            result.error = `User info failed: ${err.message}`;
+            detail.error = `XTools detail failed: ${err.message}`;
           }
-          try {
-            const contribRes = await fetchJson(
-              `${wiki.api}?action=query&list=usercontribs&ucuser=${userParam}&uclimit=${CONTRIB_LIMIT}&ucprop=title|timestamp|comment|size|sizediff|flags&format=json&origin=*`,
-            );
-            result.contributions = contribRes?.query?.usercontribs || [];
-          } catch (err) {
-            result.error = result.error
-              ? `${result.error}; contributions failed: ${err.message}`
-              : `Contributions failed: ${err.message}`;
-          }
-          return result;
+          details[wikiId] = detail;
         }),
       );
-
-      const stats = {};
-      results.forEach((r) => {
-        stats[r.wikiId] = {
-          userInfo: r.userInfo,
-          contributions: r.contributions,
-          error: r.error,
-        };
-      });
-      setWikiStats(stats);
+      setWikiDetails(details);
       setLastUpdated(new Date().toISOString());
     } catch (err) {
       setError(err.message || 'Failed to load stats');
@@ -218,170 +284,178 @@ export default function AliceStats() {
   }, [load, retryTrigger]);
 
   // ── Derived data ────────────────────────────────────────────────────────
-  const mergedWikis = useMemo(() => globalInfo?.merged || [], [globalInfo]);
-
-  // Per-wiki edit count. For unified wikis, prefer the count from
-  // globaluserinfo.merged (which includes deleted edits?); for the standalone
-  // AUD wiki, use the local user info if present, else count contributions.
-  const wikiEditCounts = useMemo(() => {
-    const counts = {};
-    WIKIS.forEach((wiki) => {
-      if (wiki.id === 'mediawiki') {
-        const info = wikiStats?.mediawiki?.userInfo;
-        if (info && !info.missing && typeof info.editcount === 'number') {
-          counts[wiki.id] = info.editcount;
-        } else {
-          counts[wiki.id] = wikiStats?.mediawiki?.contributions?.length || 0;
-        }
-      } else {
-        const mergedEntry = mergedWikis.find((m) => m.id === wiki.id);
-        if (mergedEntry && typeof mergedEntry.editcount === 'number') {
-          counts[wiki.id] = mergedEntry.editcount;
-        } else {
-          const info = wikiStats?.[wiki.id]?.userInfo;
-          if (info && !info.missing && typeof info.editcount === 'number') {
-            counts[wiki.id] = info.editcount;
-          } else {
-            counts[wiki.id] = 0;
-          }
-        }
-      }
+  const mergedPerWiki = useMemo(() => {
+    const map = {};
+    (globalStats?.per_wiki || []).forEach((w) => {
+      map[w.wiki] = Number(w.total_revisions) || 0;
     });
-    return counts;
-  }, [mergedWikis, wikiStats]);
+    return map;
+  }, [globalStats]);
+
+  const auTotalEdits = auContributions.length;
+  const auFirstEdit = auContributions.length ? auContributions[auContributions.length - 1].timestamp : null;
+  const auLastEdit = auContributions.length ? auContributions[0].timestamp : null;
 
   const totalEdits = useMemo(() => {
-    const sum = Object.values(wikiEditCounts).reduce((a, b) => a + (Number(b) || 0), 0);
-    // If globalInfo.editcount is available and larger (it should be the sum
-    // across all wikis), prefer that as the headline number; it also counts
-    // wikis not explicitly listed here.
-    if (globalInfo?.editcount && Number(globalInfo.editcount) > sum) {
-      return Number(globalInfo.editcount);
-    }
-    return sum;
-  }, [wikiEditCounts, globalInfo]);
+    const wmfSum = Object.values(mergedPerWiki).reduce((a, b) => a + b, 0);
+    return wmfSum + auTotalEdits;
+  }, [mergedPerWiki, auTotalEdits]);
 
   const activeWikis = useMemo(() => {
-    let count = 0;
-    // Count merged wikis with editcount > 0
-    mergedWikis.forEach((w) => {
-      if (Number(w.editcount) > 0) count += 1;
-    });
-    // Add the AU wiki if it has edits and isn't in the merged list.
-    const auInMerged = mergedWikis.some((w) => w.id === 'mediawiki');
-    if (!auInMerged && (wikiStats?.mediawiki?.contributions?.length > 0 || wikiEditCounts['mediawiki'] > 0)) {
-      count += 1;
-    }
+    let count = Object.values(mergedPerWiki).filter((n) => n > 0).length;
+    if (auTotalEdits > 0) count += 1;
     return count;
-  }, [mergedWikis, wikiStats, wikiEditCounts]);
+  }, [mergedPerWiki, auTotalEdits]);
 
   const registrationDate = useMemo(() => {
     if (globalInfo?.registration) return formatDate(globalInfo.registration);
-    // fallback: earliest registration date from local user infos
-    let earliest = null;
-    Object.values(wikiStats).forEach((v) => {
-      if (v.userInfo && !v.userInfo.missing && v.userInfo.registration) {
-        const d = new Date(v.userInfo.registration);
-        if (!earliest || d < earliest) earliest = d;
-      }
-    });
-    return earliest ? formatDate(earliest) : '—';
-  }, [globalInfo, wikiStats]);
+    return '—';
+  }, [globalInfo]);
 
-  // Combine all contributions into a single array with wiki metadata
-  const allContributions = useMemo(() => {
-    const list = [];
-    Object.entries(wikiStats).forEach(([wikiId, data]) => {
-      const wiki = WIKIS.find((w) => w.id === wikiId);
-      if (!wiki) return;
-      (data.contributions || []).forEach((c) => {
-        list.push({
-          ...c,
-          wikiId,
-          wikiName: wiki.name,
-          wikiColor: wiki.color,
-        });
-      });
-    });
-    return list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  }, [wikiStats]);
-
-  // Edits per month (recent trend). We only have the last 500 per wiki,
-  // so this is the recent activity window, not all-time.
+  // Aggregate monthly edits across WMF wikis + AU
   const monthlyEdits = useMemo(() => {
     const map = {};
-    allContributions.forEach((c) => {
+    // WMF wikis from XTools month_counts
+    Object.values(wikiDetails).forEach((d) => {
+      (d.monthCounts || []).forEach((entry) => {
+        if (entry.month) {
+          map[entry.month] = (map[entry.month] || 0) + (Number(entry.count) || 0);
+        }
+      });
+    });
+    // AU contributions
+    auContributions.forEach((c) => {
       const key = monthKey(c.timestamp);
       map[key] = (map[key] || 0) + 1;
     });
-    return Object.entries(map)
+    const arr = Object.entries(map)
       .map(([month, edits]) => ({ month, edits }))
       .sort((a, b) => a.month.localeCompare(b.month));
-  }, [allContributions]);
+    // Limit to last 24 months for readability
+    return arr.slice(-24);
+  }, [wikiDetails, auContributions]);
 
-  // Namespace distribution on recent edits
+  // Aggregate namespace distribution across all wikis
   const namespaceDistribution = useMemo(() => {
     const map = {};
-    allContributions.forEach((c) => {
+    // WMF wikis namespace totals
+    Object.values(wikiDetails).forEach((d) => {
+      Object.entries(d.namespaceTotals || {}).forEach(([ns, count]) => {
+        const n = Number(ns);
+        map[n] = (map[n] || 0) + Number(count);
+      });
+    });
+    // AU contributions namespace counts
+    auContributions.forEach((c) => {
       const ns = c.ns ?? 0;
       map[ns] = (map[ns] || 0) + 1;
     });
     return Object.entries(map)
       .map(([ns, count]) => ({ ns: Number(ns), name: nsName(Number(ns)), count }))
       .sort((a, b) => b.count - a.count);
-  }, [allContributions]);
+  }, [wikiDetails, auContributions]);
 
-  // Top edited pages (by frequency)
-  const topPages = useMemo(() => {
-    const map = {};
-    allContributions.forEach((c) => {
-      const key = `${c.wikiName}:${c.title}`;
-      map[key] = (map[key] || 0) + 1;
+  // Aggregate bytes added/removed across all wikis
+  const bytesAdded = useMemo(() => {
+    let sum = 0;
+    Object.values(wikiDetails).forEach((d) => {
+      sum += d.bytesAdded?.added || 0;
     });
-    return Object.entries(map)
-      .map(([key, count]) => {
-        const [wikiName, ...titleParts] = key.split(':');
-        return { wikiName, title: titleParts.join(':'), count };
-      })
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [allContributions]);
+    auContributions.forEach((c) => {
+      if (c.sizediff > 0) sum += c.sizediff;
+    });
+    return sum;
+  }, [wikiDetails, auContributions]);
 
-  // Bytes added/removed over recent contributions
-  const bytesAdded = useMemo(
-    () => allContributions.reduce((sum, c) => sum + Math.max(0, c.sizediff || 0), 0),
-    [allContributions],
-  );
-  const bytesRemoved = useMemo(
-    () => allContributions.reduce((sum, c) => sum + Math.max(0, -(c.sizediff || 0)), 0),
-    [allContributions],
-  );
+  const bytesRemoved = useMemo(() => {
+    let sum = 0;
+    Object.values(wikiDetails).forEach((d) => {
+      sum += d.bytesAdded?.removed || 0;
+    });
+    auContributions.forEach((c) => {
+      if (c.sizediff < 0) sum += Math.abs(c.sizediff);
+    });
+    return sum;
+  }, [wikiDetails, auContributions]);
 
-  // Derived stats from recent contributions only (last 500 per wiki).
-  // Note: article edits exclude Wikidata contributions (ns===0 on Wikidata
-  // represents items, not article pages).
-  const articleEdits = useMemo(
-    () => allContributions.filter((c) => c.wikiId !== 'wikidatawiki' && Number(c.ns ?? 0) === 0).length,
-    [allContributions],
-  );
-  const articleCreations = useMemo(
-    () => allContributions.filter((c) => c.wikiId !== 'wikidatawiki' && Number(c.ns ?? 0) === 0 && Array.isArray(c.flags) && c.flags.includes('new')).length,
-    [allContributions],
-  );
-  const wikidataEdits = useMemo(
-    () => allContributions.filter((c) => c.wikiId === 'wikidatawiki').length,
-    [allContributions],
-  );
-  const wikidataItemsCreated = useMemo(
-    () => allContributions.filter((c) => c.wikiId === 'wikidatawiki' && Number(c.ns ?? 0) === 0 && Array.isArray(c.flags) && c.flags.includes('new')).length,
-    [allContributions],
-  );
-  const uniqueWikidataPages = useMemo(
-    () => new Set(allContributions.filter((c) => c.wikiId === 'wikidatawiki' && Number(c.ns ?? 0) === 0).map((c) => c.title)).size,
-    [allContributions],
-  );
+  // Aggregate top pages across all wikis
+  const topPages = useMemo(() => {
+    const list = [];
+    const wikiNames = {
+      enwiki: 'English Wikipedia',
+      metawiki: 'Meta-Wiki',
+      wikidatawiki: 'Wikidata',
+      mediawiki: 'Wikimedia AU',
+    };
+    Object.entries(wikiDetails).forEach(([wikiId, d]) => {
+      (d.topPages || []).forEach((p) => {
+        if (p.title) {
+          list.push({
+            wikiName: wikiNames[wikiId] || wikiId,
+            title: p.title,
+            count: Number(p.count) || 0,
+          });
+        }
+      });
+    });
+    // AU top pages from contributions (aggregate counts)
+    const auMap = {};
+    auContributions.forEach((c) => {
+      auMap[c.title] = (auMap[c.title] || 0) + 1;
+    });
+    Object.entries(auMap).forEach(([title, count]) => {
+      list.push({ wikiName: 'Wikimedia AU', title, count });
+    });
+    return list.sort((a, b) => b.count - a.count).slice(0, 10);
+  }, [wikiDetails, auContributions]);
 
-  const hasData = totalEdits > 0 || allContributions.length > 0;
+  // Article edits: sum of namespace 0 counts across WMF wikis (exclude wikidata)
+  // plus AU namespace 0 contributions
+  const articleEdits = useMemo(() => {
+    let sum = 0;
+    Object.entries(wikiDetails).forEach(([wikiId, d]) => {
+      if (wikiId === 'wikidatawiki') return; // exclude wikidata from article edits
+      if (d.namespaceTotals) {
+        sum += Number(d.namespaceTotals[0] || 0);
+      }
+    });
+    auContributions.forEach((c) => {
+      if (Number(c.ns ?? 0) === 0) sum += 1;
+    });
+    return sum;
+  }, [wikiDetails, auContributions]);
+
+  // Article creations: count of pages created in namespace 0 from XTools
+  // pages_created (excluding wikidata) + AU contributions with flag 'new' and ns 0
+  const articleCreations = useMemo(() => {
+    let sum = 0;
+    Object.entries(wikiDetails).forEach(([wikiId, d]) => {
+      if (wikiId === 'wikidatawiki') return;
+      (d.pagesCreated || []).forEach((p) => {
+        if (Number(p.namespace ?? 0) === 0) sum += 1;
+      });
+    });
+    auContributions.forEach((c) => {
+      if (Number(c.ns ?? 0) === 0 && Array.isArray(c.flags) && c.flags.includes('new')) sum += 1;
+    });
+    return sum;
+  }, [wikiDetails, auContributions]);
+
+  // Wikidata edits: total revisions on wikidatawiki from global stats
+  const wikidataEdits = useMemo(() => {
+    return mergedPerWiki['wikidatawiki'] || 0;
+  }, [mergedPerWiki]);
+
+  // Wikidata items created: pages_created entries for wikidatawiki with namespace 0
+  const wikidataItemsCreated = useMemo(() => {
+    const d = wikiDetails['wikidatawiki'];
+    if (!d?.pagesCreated) return 0;
+    return d.pagesCreated.filter((p) => Number(p.namespace ?? 0) === 0).length;
+  }, [wikiDetails]);
+
+  const hasData = totalEdits > 0 || auTotalEdits > 0;
+
+  const monthFormatter = (label) => monthLabel(label);
 
   return (
     <div className="relative min-h-screen bg-background text-primary font-mono">
@@ -404,7 +478,7 @@ export default function AliceStats() {
           </span>
         </div>
         <p className="text-primary/60 text-sm mb-4">
-          Everything this page shows is pulled live from Wikimedia&#39;s public APIs.
+          Everything this page shows is pulled live from XTools and Wikimedia APIs.
           Hover any chart for exact numbers. Last updated:{' '}
           {lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}
         </p>
@@ -435,40 +509,46 @@ export default function AliceStats() {
           </div>
         ) : (
           <>
-            {/* Stat cards */}
+            {/* Stat cards – all-time accurate */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
               <div className="border border-primary/20 bg-primary/5 p-4 rounded">
                 <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">TOTAL EDITS</p>
                 <p className="text-2xl text-primary neon-glow">{formatNumber(totalEdits)}</p>
+                <p className="text-[10px] text-primary/40 mt-1">all-time, all wikis</p>
               </div>
               <div className="border border-primary/20 bg-primary/5 p-4 rounded">
                 <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ACTIVE WIKIS</p>
                 <p className="text-2xl text-primary neon-glow">{activeWikis}</p>
+                <p className="text-[10px] text-primary/40 mt-1">with at least one edit</p>
               </div>
               <div className="border border-primary/20 bg-primary/5 p-4 rounded">
                 <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">REGISTERED</p>
                 <p className="text-2xl text-primary neon-glow">{registrationDate}</p>
               </div>
               <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT EDITS</p>
-                <p className="text-2xl text-primary neon-glow">{formatNumber(allContributions.length)}</p>
-                <p className="text-[10px] text-primary/40">last {CONTRIB_LIMIT} per wiki</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT ARTICLE EDITS</p>
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ARTICLE EDITS</p>
                 <p className="text-2xl text-primary neon-glow">{formatNumber(articleEdits)}</p>
+                <p className="text-[10px] text-primary/40 mt-1">main namespace, all time</p>
               </div>
               <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT ARTICLE CREATIONS</p>
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ARTICLE CREATIONS</p>
                 <p className="text-2xl text-primary neon-glow">{formatNumber(articleCreations)}</p>
+                <p className="text-[10px] text-primary/40 mt-1">new pages created</p>
               </div>
               <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT WIKIDATA EDITS</p>
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">WIKIDATA EDITS</p>
                 <p className="text-2xl text-primary neon-glow">{formatNumber(wikidataEdits)}</p>
+                <p className="text-[10px] text-primary/40 mt-1">on Wikidata</p>
               </div>
               <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT WIKIDATA ITEMS CREATED</p>
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">WIKIDATA ITEMS</p>
                 <p className="text-2xl text-primary neon-glow">{formatNumber(wikidataItemsCreated)}</p>
+                <p className="text-[10px] text-primary/40 mt-1">items created</p>
+              </div>
+              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">BYTES ADDED</p>
+                <p className="text-2xl text-primary neon-glow">+{formatNumber(bytesAdded)}</p>
+                <p className="text-[10px] text-primary/40 mt-1">all time</p>
               </div>
             </div>
 
@@ -478,34 +558,34 @@ export default function AliceStats() {
                 EDITS BY WIKI
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {WIKIS.map((wiki) => {
-                  const count = wikiEditCounts[wiki.id] || 0;
-                  const wikiError = wikiStats?.[wiki.id]?.error;
+                {Object.entries(mergedPerWiki).map(([wikiId, count]) => {
+                  const names = {
+                    enwiki: 'English Wikipedia',
+                    metawiki: 'Meta-Wiki',
+                    wikidatawiki: 'Wikidata',
+                    mediawiki: 'Wikimedia AU',
+                  };
+                  const name = names[wikiId] || wikiId;
                   return (
                     <div
-                      key={wiki.id}
+                      key={wikiId}
                       className="flex items-center justify-between border border-primary/20 bg-primary/5 px-3 py-2 rounded"
                     >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="inline-block w-2 h-2 rounded-full"
-                          style={{ backgroundColor: wiki.color }}
-                        />
-                        <span className="text-xs text-primary/80">{wiki.name}</span>
-                        {wikiError && (
-                          <span className="text-[10px] text-warning" title={wikiError}>
-                            ⚠
-                          </span>
-                        )}
-                      </div>
+                      <span className="text-xs text-primary/80">{name}</span>
                       <span className="text-sm text-primary font-bold">{formatNumber(count)}</span>
                     </div>
                   );
                 })}
+                {auTotalEdits > 0 && (
+                  <div className="flex items-center justify-between border border-primary/20 bg-primary/5 px-3 py-2 rounded">
+                    <span className="text-xs text-primary/80">Wikimedia AU (Alice_Woods)</span>
+                    <span className="text-sm text-primary font-bold">{formatNumber(auTotalEdits)}</span>
+                  </div>
+                )}
               </div>
               <p className="text-[11px] text-primary/40 mt-2">
-                Counts come from each wiki&#39;s own user info. If a wiki could not be
-                reached, its contribution count is shown instead.
+                Counts for WMF wikis come from XTools global stats; the Wikimedia AU
+                count comes from a complete continuation fetch of her contributions.
               </p>
             </div>
 
@@ -513,12 +593,12 @@ export default function AliceStats() {
             {monthlyEdits.length > 0 && (
               <div className="mb-8">
                 <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                  RECENT EDIT ACTIVITY
+                  MONTHLY EDIT ACTIVITY
                 </h2>
                 <p className="text-xs text-primary/50 mb-3">
-                  Number of edits per month, based on the most recent {CONTRIB_LIMIT}{' '}
-                  edits from each wiki. This reflects her current pace, not her full
-                  history.
+                  Number of edits per month across all wikis. This is the real
+                  all-time activity, not just a recent window. Hover any point for
+                  exact counts.
                 </p>
                 <div className="border border-primary/20 bg-background/50 p-3 rounded">
                   <ResponsiveContainer width="100%" height={280}>
@@ -526,7 +606,7 @@ export default function AliceStats() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2a1f" />
                       <XAxis
                         dataKey="month"
-                        tickFormatter={monthLabel}
+                        tickFormatter={monthFormatter}
                         tick={{ fontSize: 11, fill: '#8f9f8f' }}
                       />
                       <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#8f9f8f' }} />
@@ -559,8 +639,9 @@ export default function AliceStats() {
                     WHERE SHE EDITS
                   </h2>
                   <p className="text-xs text-primary/50 mb-3">
-                    Namespace distribution of her recent edits. Main = article
-                    content, User = user pages, Talk = discussions, etc.
+                    Namespace distribution across all wikis. Main = article content,
+                    User = user pages, Talk = discussions, etc. This is all-time,
+                    not just recent.
                   </p>
                   <div className="border border-primary/20 bg-background/50 p-3 rounded">
                     <ResponsiveContainer width="100%" height={280}>
@@ -576,7 +657,7 @@ export default function AliceStats() {
                           labelLine={false}
                         >
                           {namespaceDistribution.map((entry, i) => (
-                            <Cell key={i} fill={entry.color || ['#39ff14', '#00e5ff', '#ffd700', '#ff9f40'][i % 4]} />
+                            <Cell key={i} fill={['#39ff14', '#00e5ff', '#ffd700', '#ff9f40', '#ff4d4d', '#b366ff'][i % 6]} />
                           ))}
                         </Pie>
                         <Tooltip
@@ -598,8 +679,8 @@ export default function AliceStats() {
                   BYTES MOVED
                 </h2>
                 <p className="text-xs text-primary/50 mb-3">
-                  Net change (added vs removed) across all recent edits. Positive
-                  means she&#39;s expanding content; negative means condensing.
+                  Total bytes added and removed across all wikis (all-time).
+                  Positive means she&#39;s expanding content; negative means condensing.
                 </p>
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="border border-success/30 bg-success/5 p-4 rounded text-center">
@@ -639,21 +720,22 @@ export default function AliceStats() {
               </h2>
               <p className="text-xs text-primary/50 mb-3">
                 Alice also contributes directly to Wikidata — the structured data
-                behind Wikipedia. This counts her item and property edits in the
-                recent {CONTRIB_LIMIT} contributions fetched from Wikidata.
+                behind Wikipedia. These numbers are all-time, sourced from XTools.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT WIKIDATA EDITS</p>
+                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">TOTAL WIKIDATA EDITS</p>
                   <p className="text-xl text-primary neon-glow">{formatNumber(wikidataEdits)}</p>
                 </div>
                 <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT ITEMS CREATED</p>
+                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ITEMS CREATED</p>
                   <p className="text-xl text-primary neon-glow">{formatNumber(wikidataItemsCreated)}</p>
                 </div>
                 <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">RECENT UNIQUE ITEMS TOUCHED</p>
-                  <p className="text-xl text-primary neon-glow">{formatNumber(uniqueWikidataPages)}</p>
+                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">TOP ITEMS EDITED</p>
+                  {wikiDetails['wikidatawiki']?.topPages?.slice(0, 3).map((p, i) => (
+                    <div key={i} className="text-xs text-primary/70 truncate">{p.title}</div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -662,11 +744,12 @@ export default function AliceStats() {
             {topPages.length > 0 && (
               <div className="mb-8">
                 <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                  MOST-EDITED PAGES (RECENT)
+                  MOST-EDITED PAGES (ALL TIME)
                 </h2>
                 <p className="text-xs text-primary/50 mb-3">
-                  The pages she has touched most often in the last {CONTRIB_LIMIT}{' '}
-                  edits per wiki. Titles are prefixed with the wiki name.
+                  The pages she has touched most often across all wikis. Titles are
+                  prefixed with the wiki name. Based on XTools top pages for WMF
+                  wikis and complete AU contribution history.
                 </p>
                 <div className="border border-primary/20 bg-background/50 p-3 rounded overflow-x-auto">
                   <table className="w-full text-xs">
@@ -735,12 +818,12 @@ export default function AliceStats() {
                 </li>
                 <li>
                   <a
-                    href="https://guc.toolforge.org/?user=Aliceinthealice"
+                    href="https://xtools.wmcloud.org/globalcontribs/Aliceinthealice"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-primary/70 hover:text-primary underline"
                   >
-                    Global account contributions <ExternalLink size={12} />
+                    XTools Global Contributions <ExternalLink size={12} />
                   </a>
                 </li>
               </ul>
@@ -749,7 +832,7 @@ export default function AliceStats() {
             {/* Footer note */}
             <p className="text-[10px] text-primary/30 mt-8 border-t border-primary/10 pt-4">
               Data fetched at {lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}. All
-              numbers are live from Wikimedia APIs and may change as she edits.
+              numbers are live from XTools and Wikimedia APIs and may change as she edits.
             </p>
           </>
         )}
