@@ -108,7 +108,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
         { projectId, message: text, mode, webAccess: false, pageUrl: pageUrl || undefined, pageTitle: pageTitle || undefined },
         (evt) => { if (evt.status === 'start') setStage(evt.label || 'Working'); },
       );
-      setMessages((m) => [...m, { role: 'morpheus', content: data?.reply || '…', proposedAction: data?.proposedAction || null }]);
+      setMessages((m) => [...m, { role: 'morpheus', content: data?.reply || '…', proposedAction: data?.proposedAction || null, proposedBulkAction: data?.proposedBulkAction || null }]);
       const changed = (data?.fileOperations || []).filter((op) => op.action !== 'skipped_fake_binary');
       if (mode === 'build' && changed.length) {
         setLastBuild({ paths: changed.map((op) => op.path) });
@@ -158,6 +158,30 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
     } catch (e) {
       setMsgActionState(index, { actionState: 'error', actionError: e?.data?.error || e.message });
     }
+  };
+
+  // Same confirm-then-run pattern as a single proposedAction, but runs each
+  // already-resolved item in the bulk list one at a time so the card can
+  // show live per-item progress instead of one all-or-nothing spinner.
+  const runProposedBulkAction = async (index, bulk) => {
+    const results = bulk.items.map(() => ({ status: 'pending' }));
+    setMsgActionState(index, { bulkState: 'running', bulkResults: results });
+    for (let ii = 0; ii < bulk.items.length; ii++) {
+      results[ii] = { status: 'running' };
+      setMsgActionState(index, { bulkResults: [...results] });
+      try {
+        const { data: res } = await base44.functions.invoke('wordPressStoreAction', { projectId, action: bulk.items[ii].action, data: bulk.items[ii].data });
+        results[ii] = (res && res.ok === false)
+          ? { status: 'error', error: res.message || res.error || 'The site rejected it.' }
+          : { status: 'done' };
+      } catch (e) {
+        results[ii] = { status: 'error', error: e?.data?.error || e.message };
+      }
+      setMsgActionState(index, { bulkResults: [...results] });
+    }
+    const anyError = results.some((r) => r.status === 'error');
+    const allError = results.every((r) => r.status === 'error');
+    setMsgActionState(index, { bulkState: allError ? 'error' : anyError ? 'partial' : 'done' });
   };
 
   const busy = sending || shipping || merge?.phase === 'polling';
@@ -220,6 +244,60 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                   <div className="text-red-400">Failed: {m.actionError || 'unknown error'}</div>
                 )}
                 {m.actionState === 'cancelled' && (
+                  <div className="text-primary/45">Cancelled — nothing changed.</div>
+                )}
+              </div>
+            )}
+
+            {m.proposedBulkAction && (
+              <div className="mt-1.5 border border-yellow-500/35 bg-yellow-500/5 px-3 py-2.5 space-y-2 text-[11px]">
+                {(!m.bulkState || m.bulkState === 'pending') && (
+                  <>
+                    <div className="flex items-center gap-1.5 text-yellow-500/90">
+                      <AlertTriangle size={12} /> Are you sure? <span className="text-primary/80">{m.proposedBulkAction.label}</span>
+                    </div>
+                    <ul className="text-primary/70 space-y-0.5">
+                      {m.proposedBulkAction.items.map((it) => <li key={it.id}>· {it.label}</li>)}
+                    </ul>
+                    {m.proposedBulkAction.unresolved.length > 0 && (
+                      <div className="text-primary/45">
+                        Couldn't match: {m.proposedBulkAction.unresolved.join(', ')} — check the name and ask again.
+                      </div>
+                    )}
+                    {canStore ? (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setMsgActionState(i, { bulkState: 'cancelled' })}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-[30px] border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/60 text-[10px]">
+                          <X size={11} /> Cancel
+                        </button>
+                        <button onClick={() => runProposedBulkAction(i, m.proposedBulkAction)}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-[30px] bg-yellow-500/90 text-black font-bold hover:bg-yellow-500 text-[10px]">
+                          <Check size={11} /> Confirm all
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-primary/45">This widget's token can't run shop actions — do it from the SHOP or PAGES tab instead.</div>
+                    )}
+                  </>
+                )}
+                {(m.bulkState === 'running' || m.bulkState === 'done' || m.bulkState === 'partial' || m.bulkState === 'error') && (
+                  <div className="space-y-1">
+                    {m.proposedBulkAction.items.map((it, ii) => {
+                      const r = m.bulkResults?.[ii];
+                      const status = r?.status;
+                      return (
+                        <div key={it.id} className={`flex items-center gap-1.5 ${status === 'error' ? 'text-red-400' : status === 'done' ? 'text-primary' : 'text-primary/60'}`}>
+                          {status === 'running' && <Loader2 size={11} className="animate-spin shrink-0" />}
+                          {status === 'done' && <Check size={11} className="shrink-0" />}
+                          {status === 'error' && <X size={11} className="shrink-0" />}
+                          {(!status || status === 'pending') && <span className="w-[11px] shrink-0" />}
+                          <span className="truncate">{it.label}{status === 'error' && r.error ? ` — ${r.error}` : ''}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {m.bulkState === 'cancelled' && (
                   <div className="text-primary/45">Cancelled — nothing changed.</div>
                 )}
               </div>
