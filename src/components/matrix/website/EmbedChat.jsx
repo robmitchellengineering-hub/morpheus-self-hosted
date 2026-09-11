@@ -1,40 +1,91 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Loader2, Send, Sparkles } from 'lucide-react';
+import { Loader2, Send, Sparkles, Hammer, MessagesSquare, Rocket, FileDiff, Check, GitPullRequest, ExternalLink } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
-// CHAT tab of the embeddable widget. Talks to chatWithMorpheus in CONTEXT
-// mode only — discuss the site, ask questions, sketch a plan. It never
-// writes code or spends a build: to actually build, the operator opens the
-// full Morpheus workspace. Server-side the turn is still saved to the
-// project's history, so the conversation carries over to the workspace.
+// CHAT tab of the embeddable widget.
+//
+//   DISCUSS mode — chatWithMorpheus in CONTEXT mode. Ask questions, sketch a
+//   plan. Nothing is written, no build is spent.
+//
+//   BUILD mode — the real planner/coder/reviewer pipeline, same as the full
+//   workspace, grounded on whatever page the dock is open over (see
+//   pageUrl/pageTitle). A turn that changes files surfaces a DRY RUN / SHIP
+//   TO SITE bar right here — the same wordPressDeploy calls DeployTab makes
+//   — so an edit made from the dock can go live without switching tabs. The
+//   ship bar only appears when the token actually carries the `deploy`
+//   scope; otherwise the operator sees the change lives in the project and
+//   can ship it from the full DEPLOY tab.
 
-export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle }) {
-  const [messages, setMessages] = useState([]); // [{ role: 'user' | 'morpheus', content }]
+export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, scopes }) {
+  const [mode, setMode] = useState('context'); // 'context' | 'build'
+  const [messages, setMessages] = useState([]); // [{ role, content, build? }]
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [stage, setStage] = useState(null);
   const [err, setErr] = useState(null);
   const scrollRef = useRef(null);
 
+  const canShip = (scopes || []).includes('deploy');
+
+  // The most recent build turn that changed files — its own little
+  // dry-run/ship/merge state, same shape DeployTab.jsx keeps.
+  const [lastBuild, setLastBuild] = useState(null); // { paths }
+  const [diff, setDiff] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [ship, setShip] = useState(null);
+  const [shipping, setShipping] = useState(false);
+  const [merge, setMerge] = useState(null);
+  const pollRef = useRef(null);
+
   const scrollToEnd = useCallback(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, []);
 
-  useEffect(() => { scrollToEnd(); }, [messages, stage, scrollToEnd]);
+  useEffect(() => { scrollToEnd(); }, [messages, stage, diff, ship, merge, scrollToEnd]);
+  useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
+
+  // Poll the PR through to merge, exactly like DeployTab.
+  useEffect(() => {
+    const prNumber = ship?.shipped ? ship.prNumber : null;
+    if (!prNumber || merge?.phase === 'merged' || merge?.phase === 'failed') return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const { data } = await base44.functions.invoke('wordPressDeploy', { projectId, action: 'merge', prNumber });
+        if (cancelled) return;
+        if (data.merged) { setMerge({ phase: 'merged', result: data }); return; }
+        if (['failed', 'conflict', 'merge_failed'].includes(data.state)) { setMerge({ phase: 'failed', result: data }); return; }
+        setMerge({ phase: 'polling', result: data });
+        pollRef.current = setTimeout(poll, 15000);
+      } catch {
+        if (!cancelled) pollRef.current = setTimeout(poll, 20000);
+      }
+    };
+    pollRef.current = setTimeout(poll, 8000);
+    return () => { cancelled = true; if (pollRef.current) clearTimeout(pollRef.current); };
+  }, [ship?.prNumber, merge?.phase, projectId]);
+
+  const clearBuildBar = () => { setLastBuild(null); setDiff(null); setShip(null); setMerge(null); };
 
   const send = async () => {
     const text = input.trim();
     if (!text || sending) return;
     setInput(''); setErr(null); setSending(true); setStage(null);
+    if (mode === 'build') clearBuildBar();
     setMessages((m) => [...m, { role: 'user', content: text }]);
     try {
       const { data } = await base44.functions.invokeStream(
         'chatWithMorpheus',
-        { projectId, message: text, mode: 'context', webAccess: false, pageUrl: pageUrl || undefined, pageTitle: pageTitle || undefined },
+        { projectId, message: text, mode, webAccess: false, pageUrl: pageUrl || undefined, pageTitle: pageTitle || undefined },
         (evt) => { if (evt.status === 'start') setStage(evt.label || 'Working'); },
       );
       setMessages((m) => [...m, { role: 'morpheus', content: data?.reply || '…' }]);
+      const changed = (data?.fileOperations || []).filter((op) => op.action !== 'skipped_fake_binary');
+      if (mode === 'build' && changed.length) {
+        setLastBuild({ paths: changed.map((op) => op.path) });
+      }
     } catch (e) {
       setErr(e?.data?.error || e.message || 'Morpheus could not reply.');
     } finally {
@@ -46,14 +97,35 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
+  const runDryRun = async () => {
+    setRunning(true); setErr(null); setDiff(null);
+    try {
+      const { data } = await base44.functions.invoke('wordPressDeploy', { projectId, action: 'dry_run' });
+      setDiff(data);
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setRunning(false); }
+  };
+  const runShip = async () => {
+    setShipping(true); setErr(null); setShip(null); setMerge(null);
+    try {
+      const { data } = await base44.functions.invoke('wordPressDeploy', { projectId, action: 'ship' });
+      setShip(data);
+      if (data.blocked) setErr('Syntax check failed — fix it and ask again.');
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setShipping(false); }
+  };
+
+  const busy = sending || shipping || merge?.phase === 'polling';
+
   return (
-    <div className="flex flex-col h-[440px]">
+    <div className="flex flex-col h-[520px]">
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-3">
         {messages.length === 0 && !sending && (
           <div className="text-[12px] text-primary/55 leading-relaxed">
             <div className="flex items-center gap-1.5 text-primary/80 mb-1"><Sparkles size={13} /> Ask Morpheus about {projectName || 'your site'}</div>
-            Questions, ideas, a plan for a change — this is a discussion. Nothing here changes the
-            site. When you’re ready to build, open the full Morpheus workspace.
+            {mode === 'context'
+              ? 'Questions, ideas, a plan for a change — this is a discussion. Nothing here changes the site.'
+              : 'Describe a change and Morpheus builds it for real — same pipeline as the full workspace. A turn that changes files gets a SHIP button right here.'}
             {pageUrl && <div className="mt-1.5 text-primary/40">It knows you’re looking at this page — ask about “this” or “here” and it’ll answer for what’s in front of you.</div>}
           </div>
         )}
@@ -72,18 +144,85 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle }
 
         {sending && (
           <div className="flex items-center gap-2 text-[11px] text-primary/50">
-            <Loader2 size={12} className="animate-spin" /> {stage || 'Morpheus is thinking'}…
+            <Loader2 size={12} className="animate-spin" /> {stage || (mode === 'build' ? 'Morpheus is building' : 'Morpheus is thinking')}…
+          </div>
+        )}
+
+        {lastBuild && (
+          <div className="border border-primary/30 bg-primary/5 px-3 py-2.5 space-y-2 text-[11px]">
+            <div className="flex items-center gap-1.5 text-primary/85">
+              <Check size={12} /> {lastBuild.paths.length} file{lastBuild.paths.length === 1 ? '' : 's'} changed
+            </div>
+            <div className="space-y-0.5 max-h-16 overflow-y-auto scrollbar-matrix">
+              {lastBuild.paths.map((p) => <div key={p} className="text-[10px] text-primary/50 font-mono truncate">{p}</div>)}
+            </div>
+
+            {!canShip && (
+              <div className="text-primary/45">Saved to the project. This widget's token can't ship — open the WEBSITE panel's DEPLOY tab to send it live.</div>
+            )}
+
+            {canShip && !ship?.shipped && (
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={runDryRun} disabled={running || busy}
+                  className="flex-1 flex items-center justify-center gap-1.5 h-[32px] border border-primary/40 text-primary/80 hover:border-primary hover:text-primary text-[10px] disabled:opacity-40">
+                  {running ? <Loader2 size={11} className="animate-spin" /> : <FileDiff size={11} />} DRY RUN
+                </button>
+                <button onClick={runShip} disabled={busy}
+                  className="flex-1 flex items-center justify-center gap-1.5 h-[32px] bg-primary text-black font-bold text-[10px] hover:bg-[#39ff14] disabled:opacity-40">
+                  {shipping ? <Loader2 size={11} className="animate-spin" /> : <Rocket size={11} />} SHIP TO SITE
+                </button>
+              </div>
+            )}
+
+            {diff && (
+              diff.changed
+                ? <div className="text-primary/60">{diff.createCount} new · {diff.updateCount} changed · {diff.deleteCount} deleted</div>
+                : <div className="text-primary/45">Nothing to deploy — the site already matches this.</div>
+            )}
+
+            {ship?.shipped === false && ship.reason === 'no-changes' && (
+              <div className="text-primary/45">Nothing to ship — the repo already matches this project.</div>
+            )}
+            {ship?.blocked && <div className="text-red-400">Syntax check failed — nothing was pushed.</div>}
+
+            {ship?.shipped && (
+              <div className="space-y-1.5 pt-1 border-t border-primary/15">
+                <a href={ship.prUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-primary/80 hover:text-primary">
+                  <GitPullRequest size={11} /> PR #{ship.prNumber} <ExternalLink size={10} />
+                </a>
+                {(!merge || merge.phase === 'polling') && (
+                  <div className="flex items-center gap-1.5 text-primary/55">
+                    <Loader2 size={11} className="animate-spin" /> {merge?.result?.note || 'Waiting for checks, then merging…'}
+                  </div>
+                )}
+                {merge?.phase === 'failed' && <div className="text-red-400">{merge.result.message || 'Checks failed — see the PR.'}</div>}
+                {merge?.phase === 'merged' && (
+                  <div className="flex items-center gap-1.5 text-primary"><Check size={12} /> Merged{merge.result.deploy?.triggered ? ' — deployed live.' : '.'}</div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {err && <div className="mx-4 mb-2 text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
 
-      <div className="p-3 border-t border-primary/20 shrink-0 flex items-end gap-2">
+      <div className="flex border-t border-primary/20 shrink-0 text-[10px]">
+        <button onClick={() => setMode('context')} disabled={sending}
+          className={`flex-1 h-[30px] flex items-center justify-center gap-1.5 ${mode === 'context' ? 'text-primary border-b-2 border-primary' : 'text-primary/40'}`}>
+          <MessagesSquare size={11} /> DISCUSS
+        </button>
+        <button onClick={() => setMode('build')} disabled={sending}
+          className={`flex-1 h-[30px] flex items-center justify-center gap-1.5 ${mode === 'build' ? 'text-primary border-b-2 border-primary' : 'text-primary/40'}`}>
+          <Hammer size={11} /> BUILD
+        </button>
+      </div>
+
+      <div className="p-3 flex items-end gap-2">
         <textarea
           className="flex-1 bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50 resize-none"
           rows={2}
-          placeholder="Ask about your site…"
+          placeholder={mode === 'build' ? 'Describe the change…' : 'Ask about your site…'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
