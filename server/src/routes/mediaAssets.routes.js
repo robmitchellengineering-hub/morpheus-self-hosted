@@ -9,7 +9,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { prisma } from '../db.js';
-import { requireAuth } from '../auth.js';
+import { requireAuth, blockWidget } from '../auth.js';
 import { getGithubToken, ghHeaders, ghJson, createOrUpdateFile, deleteFile } from '../lib/github.js';
 import {
   isMissingAssetTable, kindFromType, normalizeKind, slugify, extFromNameOrType,
@@ -19,7 +19,7 @@ const GH_API = 'https://api.github.com';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
 const router = Router();
 
-router.use(requireAuth);
+router.use(requireAuth, blockWidget);
 
 async function ownedProject(userId, projectId) {
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: userId } });

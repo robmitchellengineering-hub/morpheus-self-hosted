@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db.js';
-import { hashPassword, verifyPassword, issueToken, requireAuth, publicUser, generateOtp } from '../auth.js';
+import { hashPassword, verifyPassword, issueToken, requireAuth, blockWidget, publicUser, generateOtp } from '../auth.js';
 import { sendMail } from '../lib/mailer.js';
 import { brokerUrl } from '../config/hostedDefaults.js';
 
@@ -63,7 +63,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/verify-otp', requireAuth, async (req, res) => {
+router.post('/verify-otp', requireAuth, blockWidget, async (req, res) => {
   try {
     const { code } = req.body || {};
     const user = req.user;
@@ -81,7 +81,7 @@ router.post('/verify-otp', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/resend-otp', requireAuth, async (req, res) => {
+router.post('/resend-otp', requireAuth, blockWidget, async (req, res) => {
   try {
     const otp = generateOtp();
     await prisma.user.update({ where: { id: req.user.id }, data: { otp_code: otp, otp_expires: new Date(Date.now() + 15 * 60 * 1000) } });
@@ -107,7 +107,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
+router.get('/me', requireAuth, blockWidget, (req, res) => res.json({ user: publicUser(req.user) }));
 
 router.post('/logout', (_req, res) => res.json({ ok: true })); // stateless JWT — client discards the token
 

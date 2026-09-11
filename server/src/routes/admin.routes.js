@@ -2,7 +2,7 @@
 // server/src/freshness.js for what this checks and — importantly — what it
 // deliberately does NOT do (auto-edit code or auto-upgrade dependencies).
 import express from 'express';
-import { requireAuth, requireAdmin } from '../auth.js';
+import { requireAuth, requireAdmin, blockWidget } from '../auth.js';
 import { runFreshnessCheck, runFreshnessCheckAndNotify } from '../freshness.js';
 import { prisma } from '../db.js';
 import { getAllPlatformSettings, getPlatformSetting, setPlatformSetting } from '../lib/platformSettings.js';
@@ -14,7 +14,7 @@ import { stripeFetch } from '../lib/stripe.js';
 
 const router = express.Router();
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, blockWidget, requireAdmin);
 
 // ── Owner/Admin Control Panel (Feature Backlog #8) ──────────────────
 // Everything below this line is new (2026-09-01), added alongside the

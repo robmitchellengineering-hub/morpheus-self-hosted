@@ -23,6 +23,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
   const [sending, setSending] = useState(false);
   const [stage, setStage] = useState(null);
   const [err, setErr] = useState(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const scrollRef = useRef(null);
 
   const canShip = (scopes || []).includes('deploy');
@@ -44,6 +45,26 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
 
   useEffect(() => { scrollToEnd(); }, [messages, stage, diff, ship, merge, scrollToEnd]);
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
+
+  // The transcript otherwise resets on every page load — a full navigation
+  // destroys and rebuilds the iframe, but chatWithMorpheus.js already saves
+  // every turn and re-loads it as model context regardless, so the AI's own
+  // memory of the conversation was never actually gone. This just shows it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await base44.functions.invoke('getChatHistory', { projectId, limit: 20 });
+        if (cancelled) return;
+        const rows = (data?.messages || [])
+          .filter((m) => m.role === 'user' || m.role === 'morpheus')
+          .map((m) => ({ role: m.role, content: m.content }));
+        if (rows.length) setMessages(rows);
+      } catch { /* best-effort — the widget still works, just starts blank */ }
+      finally { if (!cancelled) setHistoryLoaded(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   // Poll the PR through to merge, exactly like DeployTab.
   useEffect(() => {
@@ -120,7 +141,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
   return (
     <div className="flex flex-col h-[520px]">
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-3">
-        {messages.length === 0 && !sending && (
+        {historyLoaded && messages.length === 0 && !sending && (
           <div className="text-[12px] text-primary/55 leading-relaxed">
             <div className="flex items-center gap-1.5 text-primary/80 mb-1"><Sparkles size={13} /> Ask Morpheus about {projectName || 'your site'}</div>
             {mode === 'context'
