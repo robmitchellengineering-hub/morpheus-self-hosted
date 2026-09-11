@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db.js';
-import { hashPassword, verifyPassword, issueToken, requireAuth, blockWidget, publicUser, generateOtp } from '../auth.js';
+import { hashPassword, verifyPassword, issueToken, requireAuth, publicUser, generateOtp } from '../auth.js';
 import { sendMail } from '../lib/mailer.js';
 import { brokerUrl } from '../config/hostedDefaults.js';
+import { logError, sendError } from '../lib/errorLogger.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
@@ -59,11 +60,11 @@ router.post('/register', async (req, res) => {
     const token = issueToken(user);
     res.status(201).json({ token, user: publicUser(user) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'auth:register', err);
   }
 });
 
-router.post('/verify-otp', requireAuth, blockWidget, async (req, res) => {
+router.post('/verify-otp', requireAuth, async (req, res) => {
   try {
     const { code } = req.body || {};
     const user = req.user;
@@ -77,18 +78,18 @@ router.post('/verify-otp', requireAuth, blockWidget, async (req, res) => {
     });
     res.json({ user: publicUser(updated) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'auth:verify-otp', err);
   }
 });
 
-router.post('/resend-otp', requireAuth, blockWidget, async (req, res) => {
+router.post('/resend-otp', requireAuth, async (req, res) => {
   try {
     const otp = generateOtp();
     await prisma.user.update({ where: { id: req.user.id }, data: { otp_code: otp, otp_expires: new Date(Date.now() + 15 * 60 * 1000) } });
     await sendMail({ to: req.user.email, subject: 'Your Morpheus verification code', text: `Your verification code is ${otp}. It expires in 15 minutes.` });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'auth:resend-otp', err);
   }
 });
 
@@ -103,11 +104,11 @@ router.post('/login', async (req, res) => {
     const token = issueToken(user);
     res.json({ token, user: publicUser(user) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'auth:login', err);
   }
 });
 
-router.get('/me', requireAuth, blockWidget, (req, res) => res.json({ user: publicUser(req.user) }));
+router.get('/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
 
 router.post('/logout', (_req, res) => res.json({ ok: true })); // stateless JWT — client discards the token
 
@@ -128,7 +129,7 @@ router.post('/forgot-password', async (req, res) => {
     }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'auth:forgot-password', err);
   }
 });
 
@@ -155,7 +156,7 @@ router.post('/reset-password', async (req, res) => {
     await prisma.user.update({ where: { id: user.id }, data: { password_hash } });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'auth:reset-password', err);
   }
 });
 
@@ -223,6 +224,7 @@ router.get('/google/callback', async (req, res) => {
 
     res.redirect(await completeGoogleLogin(profile, returnTo));
   } catch (err) {
+    logError('auth:google-callback', err);
     res.status(500).send(`Google login failed: ${err.message}`);
   }
 });
@@ -250,6 +252,7 @@ router.get('/google/broker-callback', async (req, res) => {
 
     res.redirect(await completeGoogleLogin(profile, returnTo));
   } catch (err) {
+    logError('auth:google-broker-callback', err);
     res.status(500).send(`Google login failed: ${err.message}`);
   }
 });

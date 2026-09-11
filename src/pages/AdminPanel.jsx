@@ -1115,6 +1115,9 @@ export default function AdminPanel() {
           <Link to="/self-dev" title="Self-Dev — chat with Morpheus to edit its own codebase, live preview, push to production" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm border border-primary/30 hover:border-primary/60 px-3 py-1.5 transition-colors">
             <Cpu size={13} /> SELF-DEV
           </Link>
+          <Link to="/stats/alice" title="Aliceinthealice Highlights — Wikipedia/Wikidata/pageview stats, admin only" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm border border-primary/30 hover:border-primary/60 px-3 py-1.5 transition-colors">
+            <Activity size={13} /> ALICE STATS
+          </Link>
         </div>
 
         <div className="flex items-center gap-3 mb-2">

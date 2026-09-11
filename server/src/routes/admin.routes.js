@@ -2,7 +2,7 @@
 // server/src/freshness.js for what this checks and — importantly — what it
 // deliberately does NOT do (auto-edit code or auto-upgrade dependencies).
 import express from 'express';
-import { requireAuth, requireAdmin, blockWidget } from '../auth.js';
+import { requireAuth, requireAdmin } from '../auth.js';
 import { runFreshnessCheck, runFreshnessCheckAndNotify } from '../freshness.js';
 import { prisma } from '../db.js';
 import { getAllPlatformSettings, getPlatformSetting, setPlatformSetting } from '../lib/platformSettings.js';
@@ -11,10 +11,11 @@ import { brokerConfigured } from '../config/hostedDefaults.js';
 import { getCachedStatus as getDeepSeekBalanceStatus, isDeepSeekPrimary, hasFallbackConfigured } from '../lib/deepseekBalance.js';
 import { getServiceStatus as getNorthflankServiceStatus, getServiceLogs, isNorthflankConfigured, isNorthflankWriteEnabled, restartService as restartNorthflankService } from '../lib/northflank.js';
 import { stripeFetch } from '../lib/stripe.js';
+import { sendError, logError } from '../lib/errorLogger.js';
 
 const router = express.Router();
 
-router.use(requireAuth, blockWidget, requireAdmin);
+router.use(requireAuth, requireAdmin);
 
 // ── Owner/Admin Control Panel (Feature Backlog #8) ──────────────────
 // Everything below this line is new (2026-09-01), added alongside the
@@ -86,7 +87,7 @@ router.get('/overview', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:overview', err);
   }
 });
 
@@ -108,7 +109,7 @@ router.get('/settings', async (req, res) => {
     };
     res.json({ settings, envDefaults, knownModels: Object.keys(MODEL_PRICING).filter((m) => m !== 'automatic') });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:settings-get', err);
   }
 });
 
@@ -139,7 +140,7 @@ router.post('/settings', async (req, res) => {
 
     res.json({ ok: true, key, value: value || null });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:settings-post', err);
   }
 });
 
@@ -153,7 +154,7 @@ router.get('/model-catalog', async (req, res) => {
     const entries = await prisma.modelCatalogEntry.findMany({ orderBy: { model_id: 'asc' } });
     res.json({ entries, staticFallback: MODEL_PRICING });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:model-catalog-get', err);
   }
 });
 
@@ -192,7 +193,7 @@ router.post('/model-catalog', async (req, res) => {
 
     res.json({ entry });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:model-catalog-post', err);
   }
 });
 
@@ -209,7 +210,7 @@ router.get('/audit-log', async (req, res) => {
     });
     res.json({ entries });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:audit-log', err);
   }
 });
 
@@ -228,7 +229,7 @@ router.get('/freshness', async (_req, res) => {
     }
     res.json(lastReport);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:freshness', err);
   }
 });
 
@@ -244,7 +245,7 @@ router.post('/freshness/refresh', async (req, res) => {
     lastCheckedAt = Date.now();
     res.json({ ...report, summary, changedSinceLastRun });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return sendError(res, 500, 'admin:freshness-refresh', err);
   }
 });
 
@@ -285,6 +286,7 @@ router.get('/ops/northflank/status', async (req, res) => {
   try {
     res.json({ configured: true, writeEnabled: isNorthflankWriteEnabled(), service: await getNorthflankServiceStatus() });
   } catch (err) {
+    logError('admin:northflank-status', err);
     res.status(502).json({ configured: true, writeEnabled: isNorthflankWriteEnabled(), error: err.message });
   }
 });
@@ -303,6 +305,7 @@ router.post('/ops/northflank/restart', async (req, res) => {
   try {
     await restartNorthflankService();
   } catch (err) {
+    logError('admin:northflank-restart', err);
     error = err.message;
   }
   await prisma.adminAuditLog.create({
@@ -331,6 +334,7 @@ router.get('/ops/northflank/logs', async (req, res) => {
     });
     res.json({ configured: true, lines });
   } catch (err) {
+    logError('admin:northflank-logs', err);
     res.status(502).json({ configured: true, error: err.message });
   }
 });
@@ -394,6 +398,7 @@ router.post('/ops/db-query', async (req, res) => {
       result = { rowsAffected };
     }
   } catch (err) {
+    logError('admin:db-query', err);
     error = err.message;
   }
 
@@ -436,6 +441,7 @@ router.get('/ops/stripe-health', async (req, res) => {
       failedCount: recentEvents.filter((e) => e.failed).length,
     });
   } catch (err) {
+    logError('admin:stripe-health', err);
     res.status(502).json({ configured: true, error: err.message });
   }
 });

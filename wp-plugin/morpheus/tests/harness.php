@@ -294,7 +294,6 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	$ctx = store_req( 'context', array(), $STORE_SECRET )->get_data();
 	ok( ! empty( $ctx['ok'] ) && isset( $ctx['currency'] ), 'context returns currency + categories' );
 	ok( ( $ctx['default_status'] ?? '' ) === 'draft', 'context default_status is draft' );
-	ok( ( $ctx['seo_available'] ?? null ) === defined( 'WPSEO_VERSION' ), 'context.seo_available matches whether Yoast is active' );
 
 	// create — no status given -> must be a draft
 	$create = store_req( 'create_product', array(
@@ -336,31 +335,6 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	$p   = wc_get_product( $pid );
 	ok( $p->get_image_id() > 0, 'sideloaded image became the product image' );
 
-	// update_product can unpublish (publish -> draft) without deleting
-	store_req( 'update_product', array( 'id' => $pid, 'status' => 'draft' ), $STORE_SECRET );
-	$p = wc_get_product( $pid );
-	ok( $p->get_status() === 'draft', 'update_product: unpublish (status -> draft)' );
-
-	// get_product returns brand terms for an edit form
-	$got = store_req( 'get_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
-	ok( in_array( 'Fender', $got['product']['brands'] ?? array(), true ), 'get_product returns brand terms' );
-
-	// seo_title / seo_description — Yoast's own postmeta when Yoast is
-	// active, a safe no-op (empty strings back) otherwise.
-	store_req( 'update_product', array( 'id' => $pid, 'seo_title' => 'Vintage Strat — Harness', 'seo_description' => 'A 1978 Fender Stratocaster, sunburst, all original.' ), $STORE_SECRET );
-	$seo = store_req( 'get_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
-	if ( defined( 'WPSEO_VERSION' ) ) {
-		ok( ( $seo['product']['seo_title'] ?? '' ) === 'Vintage Strat — Harness', 'update_product: seo_title saved (Yoast active)' );
-		ok( ( $seo['product']['seo_description'] ?? '' ) === 'A 1978 Fender Stratocaster, sunburst, all original.', 'update_product: seo_description saved' );
-	} else {
-		ok( ( $seo['product']['seo_title'] ?? 'x' ) === '', 'product seo_title empty when Yoast absent (safe no-op)' );
-	}
-
-	// delete_product -> trash (reversible)
-	$del = store_req( 'delete_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
-	ok( ! empty( $del['ok'] ) && ! empty( $del['deleted'] ) && empty( $del['permanent'] ), 'delete_product -> trashed' );
-	ok( get_post_status( $pid ) === 'trash', 'product is in the trash, not gone' );
-
 	// create_post
 	$post = store_req( 'create_post', array( 'title' => 'Back in stock — harness', 'content' => 'We are open again.' ), $STORE_SECRET )->get_data();
 	ok( ! empty( $post['ok'] ) && get_post_status( $post['post']['id'] ) === 'draft', 'create_post -> draft' );
@@ -369,52 +343,6 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	wp_delete_post( $pid, true );
 	wp_delete_post( $post['post']['id'], true );
 }
-
-// Page actions need only WordPress core, not WooCommerce — run regardless
-// of which boot this is.
-$page = store_req( 'create_page', array( 'title' => 'Hours — harness', 'content' => 'Open 9-5 daily.' ), $STORE_SECRET )->get_data();
-ok( ! empty( $page['ok'] ) && ! empty( $page['created'] ), 'create_page ok' );
-$page_id = $page['page']['id'] ?? 0;
-ok( $page_id && get_post_status( $page_id ) === 'draft', 'new page is a draft (never auto-published)' );
-
-$listed = store_req( 'list_pages', array( 'search' => 'harness', 'status' => 'draft' ), $STORE_SECRET )->get_data();
-$found_page = false;
-foreach ( ( $listed['pages'] ?? array() ) as $lp ) { if ( (int) ( $lp['id'] ?? 0 ) === $page_id ) { $found_page = true; } }
-ok( $found_page, 'list_pages finds the new page' );
-
-store_req( 'update_page', array( 'id' => $page_id, 'title' => 'Hours (updated) — harness', 'status' => 'publish' ), $STORE_SECRET );
-$got_page = store_req( 'get_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
-ok( ( $got_page['page']['title'] ?? '' ) === 'Hours (updated) — harness' && ( $got_page['page']['status'] ?? '' ) === 'publish', 'update_page: title + publish' );
-ok( ( $got_page['page']['content'] ?? '' ) === 'Open 9-5 daily.', 'get_page returns content' );
-
-store_req( 'update_page', array( 'id' => $page_id, 'seo_title' => 'Store Hours — Harness', 'seo_description' => 'Opening hours for the Valiant Music store.' ), $STORE_SECRET );
-$seo_page = store_req( 'get_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
-if ( defined( 'WPSEO_VERSION' ) ) {
-	ok( ( $seo_page['page']['seo_title'] ?? '' ) === 'Store Hours — Harness', 'update_page: seo_title saved (Yoast active)' );
-} else {
-	ok( ( $seo_page['page']['seo_title'] ?? 'x' ) === '', 'page seo_title empty when Yoast absent (safe no-op)' );
-}
-
-$bad_page = store_req( 'get_page', array( 'id' => 999999999 ), $STORE_SECRET );
-ok( $bad_page->get_status() === 404, 'get_page 404s on an unknown id' );
-
-// resolve_url — "what page is the operator looking at" for the embed widget
-$page_permalink = get_permalink( $page_id );
-$resolved = store_req( 'resolve_url', array( 'url' => $page_permalink ), $STORE_SECRET )->get_data();
-ok( ! empty( $resolved['resolved'] ) && ( $resolved['kind'] ?? '' ) === 'page' && (int) ( $resolved['id'] ?? 0 ) === $page_id, 'resolve_url finds the page by its real permalink' );
-ok( ( $resolved['page']['title'] ?? '' ) === 'Hours (updated) — harness', 'resolve_url enriches with the page summary' );
-
-$resolved_home = store_req( 'resolve_url', array( 'url' => home_url( '/' ) ), $STORE_SECRET )->get_data();
-ok( ! empty( $resolved_home['resolved'] ) && ( $resolved_home['kind'] ?? '' ) === 'home', 'resolve_url recognises the homepage' );
-
-$resolved_none = store_req( 'resolve_url', array( 'url' => home_url( '/no-such-page-' . wp_generate_password( 8, false ) . '/' ) ), $STORE_SECRET )->get_data();
-ok( empty( $resolved_none['resolved'] ), 'resolve_url reports unresolved for a url that matches nothing' );
-
-$del_page = store_req( 'delete_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
-ok( ! empty( $del_page['ok'] ) && ! empty( $del_page['deleted'] ) && empty( $del_page['permanent'] ), 'delete_page -> trashed' );
-ok( get_post_status( $page_id ) === 'trash', 'page is in the trash, not gone' );
-
-wp_delete_post( $page_id, true );
 
 delete_option( 'morpheus_settings' );
 

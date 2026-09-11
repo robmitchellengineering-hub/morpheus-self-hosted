@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { requireAuth, requireAdmin } from '../auth.js';
 import { widgetMayCall } from '../lib/widgetToken.js';
+import { logError } from '../lib/errorLogger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FUNCTIONS_DIR = path.join(__dirname, '..', 'functions');
@@ -40,7 +41,7 @@ const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downl
 // repo) is admin-only end to end — see chatWithMorpheus.js's matching
 // in-handler check for why that one can't be listed here too (it's shared by
 // every project type, not self-dev-exclusive).
-const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'applySelfDevMigrations']);
+const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'applySelfDevMigrations', 'getAliceStats']);
 
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;
@@ -79,7 +80,7 @@ async function runFunction(name, filePath, req, res, next) {
     if (res.headersSent) return; // handler streamed its own response (e.g. a ZIP)
     res.json(result ?? { ok: true });
   } catch (err) {
-    console.error(`[functions/${name}]`, err);
+    logError(`functions/${name}`, err);
     const body = { error: err.message || 'Internal error' };
     // Forward a typed error's extra machine-readable fields generically
     // (duck-typed, not imported here) so the frontend can react to specific

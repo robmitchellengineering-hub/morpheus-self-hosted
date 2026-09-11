@@ -52,17 +52,8 @@ export function useWorkspace() {
   }, []);
 
   const loadMessages = useCallback(async (projectId) => {
-    // Ascending sort + a limit fetches the OLDEST N rows, not the most
-    // recent — the backend is a plain `orderBy` then `take` (see
-    // entities.js), same as any SQL LIMIT. Past 100 total messages (any
-    // actively-used project, self-dev fastest of all) this was silently
-    // showing a stale, ancient slice of the conversation on every reload
-    // instead of what actually just happened. Sort descending, take the
-    // newest 100, then reverse back to chronological order for display —
-    // same fix already applied server-side in chatWithMorpheus.js's own
-    // history read, and in getChatHistory.js for the widget.
-    const data = await base44.entities.ChatMessage.filter({ project_id: projectId }, '-created_date', 100);
-    setMessages(data.reverse());
+    const data = await base44.entities.ChatMessage.filter({ project_id: projectId }, 'created_date', 100);
+    setMessages(data);
   }, []);
 
   const loadSnapshots = useCallback(async (projectId) => {
@@ -160,24 +151,6 @@ export function useWorkspace() {
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
     setPipelineStages([]);
-    // A dropped connection (the phone's network blipping, a backend redeploy
-    // restarting the API pod mid-request, or — the common real case — the
-    // tab getting backgrounded, which suspends the streaming read and kills
-    // the connection before the final line ever arrives) surfaces as a raw
-    // error with no `.status`/`.data` — invokeStream never got a real
-    // response to parse one from. That's different from the server actually
-    // answering with an error (a real exception, insufficient credits, a
-    // syntax-gate rejection), which always carries one or the other.
-    //
-    // Critically: chatWithMorpheus.js SAVES both messages to the DB (and
-    // writes any files) BEFORE it ever streams the final line back — so a
-    // connection dropped at exactly the wrong moment often means the turn
-    // actually succeeded and only the client never heard about it. Retrying
-    // blind risks a second full build (duplicate PR, doubled credit spend).
-    // So on this failure, check reality first: reload the real message list
-    // from the server, and only retry if it confirms nothing landed.
-    const isBareNetworkFailure = (e) => !e?.status && !e?.data;
-    const sentAt = Date.now();
     try {
       // focusPaths: only meaningful for self-dev projects (which files' full
       // content chatWithMorpheus should show the AI, on top of a whole-repo
@@ -200,34 +173,7 @@ export function useWorkspace() {
             : s);
         });
       };
-      const attempt = () => base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [], mode: chatMode, webAccess }, onStage);
-      let res;
-      try {
-        res = await attempt();
-      } catch (e) {
-        if (!isBareNetworkFailure(e)) throw e;
-        // Ask the server what actually happened rather than guess. A reply
-        // already sitting in the DB, newer than the message we just sent,
-        // means the turn completed — recover it and stop, no retry, no
-        // error shown. `Promise.all` so a build turn's file writes (if any)
-        // come back at the same time as the reply that names them.
-        // Descending + reverse, not ascending + limit — see loadMessages'
-        // comment above for why the latter silently returns the OLDEST
-        // rows once a project passes the limit.
-        const [freshMessagesDesc] = await Promise.all([
-          base44.entities.ChatMessage.filter({ project_id: currentProject.id }, '-created_date', 100),
-          loadFiles(currentProject.id),
-        ]);
-        const recovered = freshMessagesDesc[0];
-        if (recovered?.role === 'morpheus' && new Date(recovered.created_date).getTime() >= sentAt) {
-          setMessages(freshMessagesDesc.reverse());
-          return; // real reply recovered — done, no error, no retry
-        }
-        // Confirmed nothing reached the server — safe to retry once, quiet
-        // (the existing loading/thinking UI already covers the wait).
-        await new Promise(r => setTimeout(r, 1200));
-        res = await attempt();
-      }
+      const res = await base44.functions.invokeStream('chatWithMorpheus', { projectId: currentProject.id, message: text, fileUrls: fileUrls || [], focusPaths: focusPaths || [], mode: chatMode, webAccess }, onStage);
       const morpheusMsg = { id: 'm-' + Date.now(), role: 'morpheus', content: res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
       if (res.data.fileOperations?.length > 0) {
@@ -235,8 +181,7 @@ export function useWorkspace() {
         setLastTouched(prev => ({ paths: res.data.fileOperations.map(op => op.path).filter(Boolean), rev: prev.rev + 1 }));
       }
     } catch (e) {
-      const prefix = isBareNetworkFailure(e) ? '// SYSTEM FAILURE: connection dropped twice — ' : '// SYSTEM FAILURE: ';
-      setMessages(prev => [...prev, { id: 'e-' + Date.now(), role: 'morpheus', content: prefix + e.message, project_id: currentProject.id }]);
+      setMessages(prev => [...prev, { id: 'e-' + Date.now(), role: 'morpheus', content: '// SYSTEM FAILURE: ' + e.message, project_id: currentProject.id }]);
     } finally {
       setLoading(false);
       setPipelineStages([]);
@@ -307,20 +252,16 @@ export function useWorkspace() {
     await loadFiles(currentProject.id);
     await loadSnapshots(currentProject.id);
     setLastTouched({ paths: [], rev: 0 });
-    // Descending + reverse, not ascending + limit — see loadMessages'
-    // comment for why the latter silently fetches the OLDEST 200 once a
-    // project passes that count, which would make this revert act on some
-    // ancient turn instead of the one the operator actually just made.
-    const freshDesc = await base44.entities.ChatMessage.filter({ project_id: currentProject.id }, '-created_date', 200);
-    const lastUserIdxDesc = freshDesc.findIndex(m => m.role === 'user'); // first hit scanning from newest = the most recent user message
-    if (lastUserIdxDesc >= 0) {
-      const toDelete = freshDesc.slice(0, lastUserIdxDesc + 1); // that message and everything newer (its reply)
+    const fresh = await base44.entities.ChatMessage.filter({ project_id: currentProject.id }, 'created_date', 200);
+    const lastUserIdx = fresh.map(m => m.role).lastIndexOf('user');
+    if (lastUserIdx >= 0) {
+      const toDelete = fresh.slice(lastUserIdx);
       for (const m of toDelete) {
         if (m.id) await base44.entities.ChatMessage.delete(m.id);
       }
-      setMessages(freshDesc.slice(lastUserIdxDesc + 1).reverse());
+      setMessages(fresh.slice(0, lastUserIdx));
     } else {
-      setMessages(freshDesc.reverse());
+      setMessages(fresh);
     }
   }, [currentProject, snapshots, loadFiles, loadSnapshots]);
 
