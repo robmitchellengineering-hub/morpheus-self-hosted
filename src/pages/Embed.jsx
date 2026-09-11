@@ -112,7 +112,7 @@ export default function Embed() {
               ? <ShopTab store={store} projectId={ctx.projectId} />
               : <div className="p-4 text-[12px] text-primary/50">The connected store isn’t reachable right now.</div>
           )}
-          {tab === 'pages' && <PagesTab projectId={ctx.projectId} />}
+          {tab === 'pages' && <PagesTab projectId={ctx.projectId} store={store} />}
         </>
       )}
     </div>

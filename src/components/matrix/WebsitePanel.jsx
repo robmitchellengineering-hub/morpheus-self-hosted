@@ -114,7 +114,7 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
 
           {!loading && tab === 'pages' && (
             connected
-              ? <PagesTab projectId={projectId} />
+              ? <PagesTab projectId={projectId} store={store} />
               : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
           )}
 

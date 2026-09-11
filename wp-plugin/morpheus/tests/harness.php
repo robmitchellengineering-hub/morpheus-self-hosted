@@ -294,6 +294,7 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	$ctx = store_req( 'context', array(), $STORE_SECRET )->get_data();
 	ok( ! empty( $ctx['ok'] ) && isset( $ctx['currency'] ), 'context returns currency + categories' );
 	ok( ( $ctx['default_status'] ?? '' ) === 'draft', 'context default_status is draft' );
+	ok( ( $ctx['seo_available'] ?? null ) === defined( 'WPSEO_VERSION' ), 'context.seo_available matches whether Yoast is active' );
 
 	// create — no status given -> must be a draft
 	$create = store_req( 'create_product', array(
@@ -344,6 +345,17 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	$got = store_req( 'get_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
 	ok( in_array( 'Fender', $got['product']['brands'] ?? array(), true ), 'get_product returns brand terms' );
 
+	// seo_title / seo_description — Yoast's own postmeta when Yoast is
+	// active, a safe no-op (empty strings back) otherwise.
+	store_req( 'update_product', array( 'id' => $pid, 'seo_title' => 'Vintage Strat — Harness', 'seo_description' => 'A 1978 Fender Stratocaster, sunburst, all original.' ), $STORE_SECRET );
+	$seo = store_req( 'get_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
+	if ( defined( 'WPSEO_VERSION' ) ) {
+		ok( ( $seo['product']['seo_title'] ?? '' ) === 'Vintage Strat — Harness', 'update_product: seo_title saved (Yoast active)' );
+		ok( ( $seo['product']['seo_description'] ?? '' ) === 'A 1978 Fender Stratocaster, sunburst, all original.', 'update_product: seo_description saved' );
+	} else {
+		ok( ( $seo['product']['seo_title'] ?? 'x' ) === '', 'product seo_title empty when Yoast absent (safe no-op)' );
+	}
+
 	// delete_product -> trash (reversible)
 	$del = store_req( 'delete_product', array( 'id' => $pid ), $STORE_SECRET )->get_data();
 	ok( ! empty( $del['ok'] ) && ! empty( $del['deleted'] ) && empty( $del['permanent'] ), 'delete_product -> trashed' );
@@ -374,6 +386,14 @@ store_req( 'update_page', array( 'id' => $page_id, 'title' => 'Hours (updated) �
 $got_page = store_req( 'get_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
 ok( ( $got_page['page']['title'] ?? '' ) === 'Hours (updated) — harness' && ( $got_page['page']['status'] ?? '' ) === 'publish', 'update_page: title + publish' );
 ok( ( $got_page['page']['content'] ?? '' ) === 'Open 9-5 daily.', 'get_page returns content' );
+
+store_req( 'update_page', array( 'id' => $page_id, 'seo_title' => 'Store Hours — Harness', 'seo_description' => 'Opening hours for the Valiant Music store.' ), $STORE_SECRET );
+$seo_page = store_req( 'get_page', array( 'id' => $page_id ), $STORE_SECRET )->get_data();
+if ( defined( 'WPSEO_VERSION' ) ) {
+	ok( ( $seo_page['page']['seo_title'] ?? '' ) === 'Store Hours — Harness', 'update_page: seo_title saved (Yoast active)' );
+} else {
+	ok( ( $seo_page['page']['seo_title'] ?? 'x' ) === '', 'page seo_title empty when Yoast absent (safe no-op)' );
+}
 
 $bad_page = store_req( 'get_page', array( 'id' => 999999999 ), $STORE_SECRET );
 ok( $bad_page->get_status() === 404, 'get_page 404s on an unknown id' );

@@ -3,7 +3,7 @@ Contributors: morpheus
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.4.3
+Stable tag: 0.4.4
 License: GPLv2 or later
 
 Run your WordPress/WooCommerce site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API.
@@ -62,6 +62,14 @@ the health check fails.
   deploy state, and whether WooCommerce is available.
 
 == Changelog ==
+
+= 0.4.4 =
+* Store: `seo_title` / `seo_description` fields on `create_product`,
+  `update_product`, `create_page`, `update_page` — writes Yoast SEO's own
+  postmeta (`_yoast_wpseo_title` / `_yoast_wpseo_metadesc`) when Yoast is
+  active, no-op otherwise. `get_product` and `get_page` return the current
+  values; `context` reports `seo_available` so the panel knows whether to
+  show the fields.
 
 = 0.4.3 =
 * Store: page actions — `list_pages`, `get_page`, `create_page`, `update_page`,
