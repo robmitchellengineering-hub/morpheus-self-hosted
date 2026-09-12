@@ -16,6 +16,7 @@ import { prisma } from '../db.js';
 import { ghHeaders, ghJson, getGithubToken } from '../lib/github.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { uploadFile } from '../storage.js';
+import https from 'node:https';
 
 const GH_API = 'https://api.github.com';
 
@@ -40,6 +41,35 @@ function contentTypeFor(filename) {
   return (match && CONTENT_TYPES[match[0].toLowerCase()]) || 'application/octet-stream';
 }
 
+// Manual HTTPS download with redirect following. Node's fetch strips the
+// Authorization header on cross-origin redirects (the GitHub asset endpoint
+// redirects to a signed CDN URL), so we use the lower-level https client to
+// keep the header attached across redirects, just as the GitHub API requires.
+// Returns a Promise resolving with the full body Buffer, or rejecting with
+// an error that includes the HTTP status when applicable.
+function downloadWithRedirects(url, headers, redirectsRemaining = 5) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { headers }, (response) => {
+      const { statusCode, headers: resHeaders } = response;
+      if (statusCode >= 300 && statusCode < 400 && resHeaders.location && redirectsRemaining > 0) {
+        response.resume(); // discard any body on redirect
+        const redirectUrl = new URL(resHeaders.location, url).toString();
+        resolve(downloadWithRedirects(redirectUrl, headers, redirectsRemaining - 1));
+      } else if (statusCode >= 200 && statusCode < 300) {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => resolve(Buffer.concat(chunks)));
+        response.on('error', reject);
+      } else {
+        response.resume(); // discard error body
+        reject(new Error(`HTTP ${statusCode} ${response.statusMessage || ''}`));
+      }
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
 export default async function handler({ user, body, res }) {
   const { projectId, repoFullName, target } = body;
   if (!projectId || !repoFullName) {
@@ -56,9 +86,18 @@ export default async function handler({ user, body, res }) {
   const h = ghHeaders(accessToken);
 
   // Fetch latest release
-  const releaseRes = await fetch(`${GH_API}/repos/${repoFullName}/releases/latest`, { headers: h });
+  let releaseRes;
+  try {
+    releaseRes = await fetch(`${GH_API}/repos/${repoFullName}/releases/latest`, { headers: h });
+  } catch (e) {
+    console.error('saveCompiledArtifacts: release fetch failed:', e);
+    throw Object.assign(new Error(`Failed to reach GitHub releases: ${e.message || e}`), { status: 502 });
+  }
   if (!releaseRes.ok) {
-    throw Object.assign(new Error('No release found for this repo'), { status: 404 });
+    let bodyText = '';
+    try { bodyText = await releaseRes.text(); } catch { /* ignore */ }
+    const detail = bodyText ? ` (HTTP ${releaseRes.status}: ${bodyText.slice(0, 200)})` : ` (HTTP ${releaseRes.status})`;
+    throw Object.assign(new Error(`No release found for this repo${detail}`), { status: 404 });
   }
   const release = await ghJson(releaseRes);
   if (!release.assets || release.assets.length === 0) {
@@ -119,21 +158,12 @@ export default async function handler({ user, body, res }) {
       // transient network errors.
       let buffer = null;
       let downloadError = null;
+      const assetUrl = `${GH_API}/repos/${repoFullName}/releases/assets/${asset.id}`;
+      // Three attempts with exponential backoff using manual https to
+      // preserve the Authorization header across redirects.
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          const response = await fetch(`${GH_API}/repos/${repoFullName}/releases/assets/${asset.id}`, {
-            headers: { ...h, Accept: 'application/octet-stream' },
-            redirect: 'follow',
-          });
-          if (!response.ok) {
-            downloadError = new Error(`HTTP ${response.status}`);
-            if (attempt < 3) {
-              await new Promise(r => setTimeout(r, attempt * 1000));
-              continue;
-            }
-            break;
-          }
-          buffer = Buffer.from(await response.arrayBuffer());
+          buffer = await downloadWithRedirects(assetUrl, { ...h, Accept: 'application/octet-stream' });
           break;
         } catch (err) {
           downloadError = err;
@@ -143,8 +173,20 @@ export default async function handler({ user, body, res }) {
         }
       }
 
+      let directDownloadError = null;
+      if (!buffer && asset.browser_download_url) {
+        // Fallback: try the browser_download_url directly, also with auth.
+        try {
+          buffer = await downloadWithRedirects(asset.browser_download_url, { ...h, Accept: 'application/octet-stream' });
+        } catch (err) {
+          directDownloadError = err;
+        }
+      }
+
       if (!buffer) {
-        errors.push(`${asset.name}: download failed after 3 attempts: ${downloadError?.message || 'unknown error'}`);
+        const apiErrMsg = downloadError?.message || 'unknown error';
+        const directErrMsg = directDownloadError ? `; direct download failed: ${directDownloadError.message}` : '';
+        errors.push(`${asset.name}: API download failed after 3 attempts: ${apiErrMsg}${directErrMsg}`);
         continue;
       }
       // Upload keeping the real extension (app.apk, app.exe, ...) — nothing
