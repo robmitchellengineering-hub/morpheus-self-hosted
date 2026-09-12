@@ -17,6 +17,7 @@ import { getActiveFeature, featureContextBlock, createFeature } from '../lib/sel
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
+import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
 import { checkA11y } from '../lib/a11yCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
@@ -53,6 +54,7 @@ const STAGE_LABELS = {
   verify: 'Checking the code parses',
   a11y: 'Checking accessibility',
   polish: 'Polishing the UI',
+  api_check: 'Checking external APIs',
 };
 const STAGE_ROLE = {
   web: 'planner',
@@ -65,6 +67,7 @@ const STAGE_ROLE = {
   verify: 'reviewer',
   a11y: 'reviewer',
   polish: 'coder',
+  api_check: 'reviewer',
 };
 
 // One of these per request. `emit` writes one NDJSON line; `start`/`done`
@@ -225,13 +228,16 @@ MULTI-STEP ESCALATION — if the request genuinely cannot be built well in one p
 - make your plan and plannedFiles cover ONLY THE FIRST STEP — that is what gets built this turn; the remaining steps are tracked and built on later turns.
 Do NOT escalate a single component, a bug fix, a styling change, or a handful of closely-related files — those are one turn. Only escalate when nothing is already being tracked (no active feature is shown in your context).
 
+EXTERNAL APIS — if the plan has the coder call a real external HTTP API (a third-party service, a public data source) and you are not CERTAIN of its exact URL and response shape from something already shown to you in this conversation, list it in externalApis (url + a short why) rather than trusting what you recall. It will actually be called before the coder writes anything, and the coder is handed the real result as ground truth. A URL invented from memory that turns out wrong is a page that silently never loads for the operator — verifying it first costs one HTTP request; not verifying it costs a debugging session days later. Leave this empty for plans that touch no external API.
+
 Return JSON with:
 - reply: Your response to the operator (in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true)
 - needsCode: true if code needs to be written/modified, false for pure conversation
 - needsClarification: true ONLY if a genuine build-blocking ambiguity prevents you from building correctly — reply then contains just the clarifying questions
 - plan: concise file-by-file build plan with implementation notes — 1-3 sentences per file, deeper only where a file genuinely needs it (see KEEP THE PLAN CONCISE above) (only required when needsCode is true AND needsClarification is false); when you set featureSteps, this covers only the first step
 - plannedFiles: ordered array of every file path the plan will touch (only required when needsCode is true AND needsClarification is false) — see PLANNED FILES above
-- featureTitle / featureSteps: only when escalating a multi-step job (see MULTI-STEP ESCALATION above)`;
+- featureTitle / featureSteps: only when escalating a multi-step job (see MULTI-STEP ESCALATION above)
+- externalApis: real endpoint URLs the plan calls that you want verified before the coder writes code against them (see EXTERNAL APIS above) — omit or leave empty otherwise`;
 
 // CONTEXT MODE (Workspace / Self-Dev "CONTEXT ⇄ BUILD" toggle, 2026-09-08 —
 // Rob: "put morpheus into context mode so you can chat and build context
@@ -1012,7 +1018,18 @@ OPERATOR SAYS: ${message}`;
           featureSteps: { type: 'array', items: { type: 'string' }, description: 'MULTI-STEP ESCALATION only: 3-8 ordered, individually shippable step titles. When set, plan/plannedFiles cover only the first.' },
           stepComplete: { type: 'boolean', description: 'When an ACTIVE FEATURE is shown in your context: true if THIS turn fully completes the active step (advance to the next); false if it is a tweak/fix still within the active step.' },
           decisionSummary: { type: 'string', description: 'CODE BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
-          decisionRationale: { type: 'string', description: 'CODE BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' }
+          decisionRationale: { type: 'string', description: 'CODE BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' },
+          externalApis: {
+            type: 'array',
+            description: 'If this plan has the coder call a real external HTTP API (a third-party service, a public data source) whose exact URL/response shape you are not certain of from a source already shown to you in this conversation, list each real endpoint URL here — up to 5 — so it gets actually called and verified before any code is written against it. Leave empty for plans that touch no external API, or that only use one whose shape is already confirmed in your context above.',
+            items: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', description: 'The exact, real URL to test — a GET request will be made to it verbatim.' },
+                why: { type: 'string', description: 'What this call is for, one short phrase.' },
+              },
+            },
+          },
         }
       },
       fileUrls,
@@ -1101,12 +1118,29 @@ OPERATOR SAYS: ${message}`;
         ? '\n\nThis project already has working code. For any "update" to an existing file longer than ~60 lines, use `edits` (exact find/replace copied from the current content shown to you) rather than re-emitting the whole file — it is safer and cannot accidentally drop code you did not mention.'
         : '';
 
+      // ── External API pre-flight (2026-09-12, the Alice-stats incident) ────
+      // The planner flagged real endpoint URLs it's not certain of — actually
+      // call them now, before the coder writes a single line against them.
+      // A hallucinated route or a guessed username shows up here as a real
+      // 404, not a recollection the coder has no way to double-check itself.
+      let apiCheckBlock = '';
+      if (Array.isArray(plannerResult.externalApis) && plannerResult.externalApis.length > 0) {
+        stages.start('api_check');
+        try {
+          const apiResults = await verifyExternalApiCalls(plannerResult.externalApis);
+          apiCheckBlock = formatApiCheckBlock(apiResults);
+        } catch (err) {
+          console.error('[chatWithMorpheus] external API check failed:', err.message);
+        }
+        stages.done('api_check');
+      }
+
       // coderPrompt (the full-plan version, no per-step file scoping) is kept
       // around for reviewAndRetry below — a critical-issue retry re-sends this
       // same base prompt plus the specific files that need fixing, so it needs
       // the complete, unscoped instructions rather than whichever chunk's
       // narrowed prompt happened to run last.
-      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nImplement this plan now. Write the actual code files.`;
+      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nImplement this plan now. Write the actual code files.`;
       const coderSchema = {
         type: 'object',
         properties: {
@@ -1159,7 +1193,7 @@ OPERATOR SAYS: ${message}`;
             .map((f) => `--- ${f.path} (current content) ---\n${f.content}`)
             .join('\n\n');
           const chunkCurrentBlock = chunkCurrent ? `\n\nCURRENT CONTENT OF THE FILE(S) FOR THIS STEP:\n${chunkCurrent}` : '';
-          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
+          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
           const chunkCoder = await invokeAI({
             userId: user.id,
             prompt: chunkPrompt,
