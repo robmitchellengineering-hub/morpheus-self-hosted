@@ -622,6 +622,17 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                 <p className="text-xs text-red-500/80">{error}</p>
               )}
 
+              {status?.assets?.length > 0 && (
+                <div className="space-y-1.5 border border-primary/30 bg-primary/5 p-2">
+                  <div className="text-xs text-primary/70">// DIRECT DOWNLOADS (from GitHub — requires access)</div>
+                  {status.assets.map((a, i) => (
+                    <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-1.5 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
+                      <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
+                    </a>
+                  ))}
+                </div>
+              )}
+
               {status?.logs?.length > 0 && (
                 <details className="border border-primary/20 bg-background">
                   <summary className="text-xs text-primary/60 cursor-pointer px-3 py-1.5 hover:text-primary">BUILD LOGS (click to expand)</summary>
