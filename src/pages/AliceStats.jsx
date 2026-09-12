@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Loader2, ExternalLink, Sparkles } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, ExternalLink, Sparkles, Link2, X } from 'lucide-react';
 import MatrixRain from '@/components/matrix/MatrixRain';
 
 // Styled to match src/pages/CostTracker.jsx's design language (2026-09-12,
@@ -37,6 +37,24 @@ const UA = 'MorpheusStatsPage/1.0 (+https://morpheus.nz)';
 const TIMEOUT_MS = 20000;
 const XTOOLS = 'https://xtools.wmcloud.org/api';
 const USERNAME = 'Aliceinthealice';
+// Wikimedia's Programs & Events Dashboard — the tool edit-a-thon organizers
+// like Alice actually use to track a campaign's real "words added" (it
+// computes this itself server-side from a per-course bytes-per-word ratio,
+// not a guess made here). Scoped per campaign/course, not per lifetime
+// account — there's no single "her all-time total" to fetch, so the page
+// asks for a specific course link rather than guessing one. Real, public,
+// CORS-open JSON endpoints (`/courses/:slug/course.json`,
+// `/courses/:slug/users.json`), confirmed live against a real Wikimedia
+// Australia course before being wired in here — no login required, ever.
+const DASHBOARD = 'https://outreachdashboard.wmflabs.org';
+const CAMPAIGN_STORAGE_KEY = 'aliceStats.campaignSlug';
+
+function parseCampaignSlug(input) {
+  const trimmed = (input || '').trim();
+  if (!trimmed) return null;
+  const afterCourses = trimmed.split('/courses/')[1] || trimmed;
+  return afterCourses.split('?')[0].replace(/\/(home|students|articles|timeline)?\/?$/i, '') || null;
+}
 // The three wikis she's actually active on, confirmed by hitting XTools
 // directly rather than assumed. Order = display order. `tone` is a purely
 // decorative color key (one of the app's real status-* tokens) so each wiki
@@ -110,6 +128,74 @@ export default function AliceStats() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  // Programs & Events Dashboard campaign connection — separate from the
+  // main load(), since it needs a course link nobody can guess. The slug is
+  // remembered in this browser (localStorage) purely as a convenience so it
+  // doesn't need re-pasting on every visit; the actual numbers are always
+  // fetched fresh from the dashboard, never stored.
+  const [campaignInput, setCampaignInput] = useState('');
+  const [campaign, setCampaign] = useState(null); // { title, url, words }
+  const [campaignLoading, setCampaignLoading] = useState(false);
+  const [campaignError, setCampaignError] = useState(null);
+
+  const connectCampaign = useCallback(async (slugArg) => {
+    const slug = slugArg ?? parseCampaignSlug(campaignInput);
+    if (!slug) { setCampaignError('Paste a real Programs & Events Dashboard course link.'); return; }
+    setCampaignLoading(true);
+    setCampaignError(null);
+    try {
+      // articles.json is fetched best-effort (catch → []) — it's extra
+      // color (which articles she touched in this campaign), not required
+      // for the headline numbers, so a slow/odd course shouldn't block those.
+      const [course, users, articles] = await Promise.all([
+        fetchJson(`${DASHBOARD}/courses/${slug}/course.json`).then((r) => r.course),
+        fetchJson(`${DASHBOARD}/courses/${slug}/users.json`).then((r) => r.course.users),
+        fetchJson(`${DASHBOARD}/courses/${slug}/articles.json`).then((r) => r.course.articles).catch(() => []),
+      ]);
+      const her = users.find((u) => u.username?.toLowerCase() === USERNAME.toLowerCase());
+      if (!her) throw new Error(`${USERNAME} isn't enrolled in this course.`);
+      const bytesPerWord = course.home_wiki_bytes_per_word || 5.3;
+      const words = Math.round((her.character_sum_ms || 0) / bytesPerWord);
+      const herArticles = articles
+        .filter((a) => Array.isArray(a.user_ids) && a.user_ids.includes(her.id))
+        .sort((a, b) => (b.view_count || 0) - (a.view_count || 0));
+      setCampaign({
+        title: course.title,
+        url: `${DASHBOARD}/courses/${slug}`,
+        words,
+        references: her.references_count || 0,
+        revisions: her.recent_revisions || 0,
+        uploads: her.total_uploads || 0,
+        namespaces: [
+          { name: 'Mainspace', chars: her.character_sum_ms || 0 },
+          { name: 'Userspace', chars: her.character_sum_us || 0 },
+          { name: 'Draftspace', chars: her.character_sum_draft || 0 },
+        ].filter((n) => n.chars > 0),
+        articles: herArticles,
+      });
+      try { localStorage.setItem(CAMPAIGN_STORAGE_KEY, slug); } catch { /* private browsing etc — fine, just won't persist */ }
+    } catch (err) {
+      setCampaignError(err.message || 'Could not load that course.');
+      setCampaign(null);
+    } finally {
+      setCampaignLoading(false);
+    }
+  }, [campaignInput]);
+
+  const disconnectCampaign = () => {
+    setCampaign(null);
+    setCampaignInput('');
+    setCampaignError(null);
+    try { localStorage.removeItem(CAMPAIGN_STORAGE_KEY); } catch { /* fine */ }
+  };
+
+  useEffect(() => {
+    let saved = null;
+    try { saved = localStorage.getItem(CAMPAIGN_STORAGE_KEY); } catch { /* private browsing etc */ }
+    if (saved) connectCampaign(saved);
+    // Only ever run once on mount — connectCampaign is intentionally not a dependency here.
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -250,6 +336,43 @@ export default function AliceStats() {
           </p>
         </div>
 
+        {/* Connect a campaign — not a login. Edit-a-thon "words added" is
+            tracked per campaign on Wikimedia's Programs & Events Dashboard,
+            not as a lifetime account total, so there's no single number to
+            fetch without knowing which course. Paste the course link once;
+            it's remembered in this browser only, and the real numbers are
+            always fetched fresh, never stored. */}
+        {campaign ? (
+          <div className="flex items-center justify-between gap-3 border border-info/30 bg-info/5 px-4 py-2.5 mb-8 text-xs">
+            <span className="text-ink flex items-center gap-2 min-w-0">
+              <Link2 size={13} className="text-info shrink-0" />
+              <span className="truncate">
+                Connected to <a href={campaign.url} target="_blank" rel="noreferrer" className="underline hover:text-info">{campaign.title}</a>
+              </span>
+            </span>
+            <button onClick={disconnectCampaign} className="text-primary/50 hover:text-primary shrink-0" title="Disconnect campaign">
+              <X size={14} />
+            </button>
+          </div>
+        ) : (
+          <div className="border border-primary/20 bg-primary/5 px-4 py-3 mb-8">
+            <p className="text-xs text-primary/60 mb-2 flex items-center gap-1.5"><Link2 size={12} /> Connect a Programs &amp; Events Dashboard campaign to add her real, sourced "words added" for that edit-a-thon</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                value={campaignInput}
+                onChange={(e) => setCampaignInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') connectCampaign(); }}
+                placeholder="https://outreachdashboard.wmflabs.org/courses/…"
+                className="flex-1 bg-background border border-primary/30 px-3 py-1.5 text-xs text-ink placeholder:text-primary/30"
+              />
+              <button onClick={() => connectCampaign()} disabled={campaignLoading} className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs transition-colors disabled:opacity-40 shrink-0">
+                {campaignLoading ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} CONNECT
+              </button>
+            </div>
+            {campaignError && <p className="text-danger text-[11px] mt-2">{campaignError}</p>}
+          </div>
+        )}
+
         {error && (
           <div className="text-danger text-sm border border-danger/30 px-3 py-2 mb-4">{error}</div>
         )}
@@ -287,6 +410,60 @@ export default function AliceStats() {
                 </div>
               ))}
             </div>
+
+            {/* Campaign detail — only once a real course is connected above.
+                Everything here comes straight from the Programs & Events
+                Dashboard's own real per-course/per-user fields (verified
+                live before this was wired in) — nothing derived beyond the
+                same words-added ratio the dashboard itself uses. */}
+            {campaign && (
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] text-primary/50 tracking-[0.2em]">CAMPAIGN — {campaign.title.toUpperCase()}</p>
+                  <a href={campaign.url} target="_blank" rel="noreferrer" className="text-info text-[10px] hover:underline flex items-center gap-1 shrink-0">
+                    View on Dashboard <ExternalLink size={9} />
+                  </a>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    ['Words added', `~${fmt(campaign.words)}`],
+                    ['References added', fmt(campaign.references)],
+                    ['Revisions', fmt(campaign.revisions)],
+                    ['Uploads', fmt(campaign.uploads)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="border border-info/30 bg-info/5 p-4">
+                      <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">{label.toUpperCase()}</p>
+                      <p className="text-xl text-ink">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {campaign.namespaces.length > 1 && (
+                  <div className="border border-primary/20 bg-primary/5 p-3 mt-4" style={{ height: 140 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={campaign.namespaces} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(57,255,20,0.1)" />
+                        <XAxis type="number" tick={{ fill: 'rgba(57,255,20,0.4)', fontSize: 9 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fill: 'rgba(57,255,20,0.4)', fontSize: 9 }} width={80} />
+                        <Tooltip contentStyle={{ background: '#05130a', border: '1px solid rgba(57,255,20,0.3)', fontSize: 11 }} />
+                        <Bar dataKey="chars" name="Characters" fill="#39ff14" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                {campaign.articles.length > 0 && (
+                  <div className="border border-primary/20 divide-y divide-primary/10 mt-4">
+                    {campaign.articles.slice(0, 8).map((a) => (
+                      <a key={a.id} href={a.url} target="_blank" rel="noreferrer" className="flex items-center justify-between px-3 py-2 text-xs hover:bg-primary/5">
+                        <span className="text-ink truncate">{a.title}</span>
+                        <span className="text-primary/40 shrink-0 ml-3">{a.new_article ? 'created' : 'edited'}{a.view_count ? ` · ${fmt(a.view_count)} views` : ''}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Per-wiki breakdown */}
             <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-2">BY WIKI</p>
