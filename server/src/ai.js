@@ -384,11 +384,15 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   // account to bill. 2026-09-02: compare case-/whitespace-insensitively —
   // 'Admin', ' admin', etc. should still exempt rather than silently falling
   // through to billing just because of how the value was typed into the DB.
+  // 2026-09-12 (Rob: free usage "withought giving full admin access"): a
+  // separate `billing_exempt` flag grants the same exemption without the
+  // rest of what `role === 'admin'` unlocks (Admin Panel, ops console,
+  // etc.) — see the Admin Panel's "FREE USAGE GRANTS" card.
   let isExempt = true;
   let reservedCredits = 0;
   if (userId) {
-    const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } }).catch(() => null);
-    isExempt = !billingUser || String(billingUser.role || '').trim().toLowerCase() === 'admin';
+    const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, billing_exempt: true } }).catch(() => null);
+    isExempt = !billingUser || String(billingUser.role || '').trim().toLowerCase() === 'admin' || billingUser.billing_exempt === true;
     if (!isExempt) {
       reservedCredits = await estimatePreCallCredits(prompt, role, model);
       await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace

@@ -440,4 +440,51 @@ router.get('/ops/stripe-health', async (req, res) => {
   }
 });
 
+// D. Free usage grants — billing exemption for a specific account without
+// handing out the rest of what role === 'admin' unlocks (Admin Panel, ops
+// console, etc.). See schema.prisma's `billing_exempt` column and
+// server/src/ai.js's isExempt check. Audit-logged like every other write
+// on this router.
+router.get('/users/billing-exempt', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { billing_exempt: true },
+      select: { id: true, email: true, full_name: true, role: true, created_date: true },
+      orderBy: { created_date: 'desc' },
+    });
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/users/billing-exempt', async (req, res) => {
+  try {
+    const { email, exempt } = req.body || {};
+    if (!email || typeof email !== 'string') return res.status(400).json({ error: 'email required' });
+    if (typeof exempt !== 'boolean') return res.status(400).json({ error: 'exempt must be true or false' });
+
+    const target = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    if (!target) return res.status(404).json({ error: `No account found for ${email}` });
+
+    const updated = await prisma.user.update({
+      where: { id: target.id },
+      data: { billing_exempt: exempt },
+      select: { id: true, email: true, full_name: true, role: true, billing_exempt: true },
+    });
+
+    await prisma.adminAuditLog.create({
+      data: {
+        admin_id: req.user.id,
+        action: 'set_billing_exempt',
+        details: JSON.stringify({ email: updated.email, exempt }),
+      },
+    });
+
+    res.json({ ok: true, user: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
