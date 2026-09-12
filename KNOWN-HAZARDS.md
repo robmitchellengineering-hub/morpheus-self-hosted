@@ -115,3 +115,24 @@ compare its diff's target base (`ProjectFile`'s last-known commit) against
 `main`'s actual current HEAD before pushing, and refuse or flag a push whose
 diff implies remote drift instead of silently reverting toward a stale
 snapshot — not yet built.
+
+## H10 — a plausible-looking external API call was never actually called
+**Incident (2026-09-11/12, `/stats/alice`):** self-dev built a page against
+`xtools.wmcloud.org/api/user/global_stats/{username}` — a route that does not
+exist (confirmed live: 404, "No route found"; XTools has no such cross-wiki
+shortcut, every real per-wiki endpoint requires a project domain in the path)
+— and a Wikimedia Australia wiki username it invented, which also isn't a real
+account there. Both failures were wrapped in their own try/catch and silently
+swallowed with no fallback path, so the page never reached a terminal state —
+it hung on "Loading..." forever, with no console error pointing at why. Fixed
+in the same change that introduced this file: `lib/externalApiCheck.js` +
+`chatWithMorpheus.js`'s planner `externalApis` field now actually call a
+flagged endpoint before the coder writes a line against it, so a 404 shows up
+as ground truth in the coder's prompt instead of being discovered by the
+operator days later.
+
+**Rule:** never write code against an external API's shape from memory when a
+real, cheap way to check exists. This applies to the coder itself — the
+planner's job is to flag *every* external endpoint it isn't certain of,
+including "I'm probably right about this one" — verifying costs one HTTP
+request; being wrong costs a debugging session.
