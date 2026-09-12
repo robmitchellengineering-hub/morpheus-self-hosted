@@ -2,6 +2,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Loader2, ExternalLink, Sparkles } from 'lucide-react';
 import MatrixRain from '@/components/matrix/MatrixRain';
+
+// Styled to match src/pages/CostTracker.jsx's design language (2026-09-12,
+// Rob: "format the [page] with the same colors and effects and fonts as
+// the cost tracker, it looks better") — font-display/neon-glow heading,
+// the semantic status-* color tokens instead of raw Tailwind colors, and
+// the same bordered/filled card + table conventions, rather than this
+// page's own one-off styling.
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   BarChart, Bar,
@@ -172,25 +179,26 @@ export default function AliceStats() {
     <div className="relative min-h-screen bg-background text-primary font-mono">
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-10 safe-top">
-        <div className="flex items-center justify-between mb-6">
-          <Link to="/workspace" className="flex items-center gap-2 text-primary/60 hover:text-primary text-xs">
-            <ArrowLeft size={14} /> BACK
-          </Link>
-          <button onClick={load} disabled={loading} className="flex items-center gap-1.5 text-primary/50 hover:text-primary text-xs disabled:opacity-40">
+        <Link to="/workspace" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
+          <ArrowLeft size={14} /> BACK
+        </Link>
+
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Sparkles size={24} className="text-primary neon-glow" />
+            <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">ALICEINTHEALICE</h1>
+            <span className="text-[10px] border border-primary/40 text-primary/70 px-2 py-0.5 rounded-full">LIVE EDITOR REPORT</span>
+          </div>
+          <button onClick={load} disabled={loading} className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs transition-colors disabled:opacity-40">
             {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} REFRESH
           </button>
         </div>
-
-        <div className="flex items-center gap-2 mb-1">
-          <h1 className="text-2xl font-bold tracking-wide">ALICEINTHEALICE</h1>
-          <span className="text-[10px] border border-primary/40 text-primary/70 px-2 py-0.5 rounded-full">LIVE EDITOR REPORT</span>
-        </div>
-        <p className="text-primary/50 text-xs mb-1">
-          Everything on this page is pulled live from public Wikimedia APIs, fresh on every load — nothing is stored. Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
+        <p className="text-primary/60 text-sm mb-8">
+          // Everything on this page is pulled live from public Wikimedia APIs, fresh on every load — nothing is stored. Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
         </p>
 
         {/* Bio — real, sourced facts, not invented */}
-        <div className="border border-primary/20 bg-primary/5 rounded px-4 py-3 my-5 text-sm text-primary/85 leading-relaxed">
+        <div className="border border-primary/20 bg-primary/5 px-4 py-3 mb-8 text-sm text-primary/85 leading-relaxed">
           <p className="mb-2">
             <strong className="text-primary">Alice Woods</strong> is the Education &amp; Projects Coordinator at{' '}
             <a href="https://wikimedia.org.au" target="_blank" rel="noreferrer" className="underline hover:text-primary inline-flex items-center gap-1">
@@ -212,47 +220,47 @@ export default function AliceStats() {
         </div>
 
         {error && (
-          <div className="border border-red-500/30 bg-red-500/5 text-red-400 text-xs px-3 py-2 rounded mb-5">{error}</div>
+          <div className="text-danger text-sm border border-danger/30 px-3 py-2 mb-4">{error}</div>
         )}
 
         {loading && !perWiki ? (
-          <div className="flex items-center justify-center gap-2 text-primary/60 py-16 text-sm">
+          <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading live Wikimedia data...
           </div>
         ) : (
           <>
             {/* Headline numbers */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
               {[
-                ['Edits, every wiki', fmt(globalInfo?.editcount ?? totalLive)],
+                ['Edits, every wiki', fmt(globalInfo?.editcount ?? totalLive), true],
                 ['Pages created', fmt(totalCreated)],
                 ['Years editing', yearsActive ? `${yearsActive}y` : '—'],
                 ['Community role', isEventOrganizer ? 'Event Organizer' : '—'],
-              ].map(([label, value]) => (
-                <div key={label} className="border border-primary/20 rounded px-3 py-3 text-center">
-                  <div className="text-xl font-bold text-primary">{value}</div>
-                  <div className="text-primary/40 text-[10px] uppercase tracking-wider mt-1">{label}</div>
+              ].map(([label, value, highlight]) => (
+                <div key={label} className={highlight ? 'border border-success/30 bg-success/5 p-4' : 'border border-primary/20 bg-primary/5 p-4'}>
+                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">{label.toUpperCase()}</p>
+                  <p className={highlight ? 'text-xl text-success neon-glow' : 'text-xl text-primary neon-glow'}>{value}</p>
                 </div>
               ))}
             </div>
 
             {/* Per-wiki breakdown */}
-            <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2 flex items-center gap-1.5"><Sparkles size={12} /> By wiki</h2>
-            <div className="border border-primary/20 rounded overflow-x-auto mb-6">
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-2">BY WIKI</p>
+            <div className="overflow-x-auto border border-primary/20 mb-8">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-primary/40 uppercase text-[10px] border-b border-primary/20">
-                    <th className="text-left px-3 py-2">Wiki</th>
-                    <th className="text-right px-3 py-2">Live edits</th>
-                    <th className="text-right px-3 py-2">Deleted</th>
-                    <th className="text-right px-3 py-2">Pages created</th>
+                  <tr className="border-b border-primary/20 text-primary/50 text-left">
+                    <th className="px-3 py-2 font-normal">Wiki</th>
+                    <th className="px-3 py-2 font-normal text-right">Live edits</th>
+                    <th className="px-3 py-2 font-normal text-right">Deleted</th>
+                    <th className="px-3 py-2 font-normal text-right">Pages created</th>
                   </tr>
                 </thead>
                 <tbody>
                   {WIKIS.map((w) => {
                     const d = perWiki?.[w.id];
                     return (
-                      <tr key={w.id} className="border-b border-primary/10 last:border-0">
+                      <tr key={w.id} className="border-b border-primary/10 last:border-0 align-top">
                         <td className="px-3 py-2">{w.label}</td>
                         <td className="px-3 py-2 text-right text-primary">{d ? fmt(d.live_edit_count) : 'no data'}</td>
                         <td className="px-3 py-2 text-right text-primary/60">{d ? fmt(d.deleted_edit_count) : '—'}</td>
@@ -267,8 +275,8 @@ export default function AliceStats() {
             {/* Monthly activity chart */}
             {monthCounts.length > 1 && (
               <>
-                <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Monthly activity — {namespaceTotals?.wiki || ''}</h2>
-                <div className="border border-primary/20 rounded p-3 mb-6" style={{ height: 220 }}>
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-2">MONTHLY ACTIVITY — {namespaceTotals?.wiki?.toUpperCase() || ''}</p>
+                <div className="border border-primary/20 bg-primary/5 p-3 mb-8" style={{ height: 220 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={monthCounts.slice(-36)}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(57,255,20,0.1)" />
@@ -285,8 +293,8 @@ export default function AliceStats() {
             {/* Namespace split */}
             {namespaceTotals && (
               <>
-                <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Where the edits go — {namespaceTotals.wiki}</h2>
-                <div className="border border-primary/20 rounded p-3 mb-6" style={{ height: 200 }}>
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-2">WHERE THE EDITS GO — {namespaceTotals.wiki.toUpperCase()}</p>
+                <div className="border border-primary/20 bg-primary/5 p-3 mb-8" style={{ height: 200 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={Object.entries(namespaceTotals.totals).map(([ns, count]) => ({ ns: ns === '0' ? 'Main' : `NS ${ns}`, count })).sort((a, b) => b.count - a.count).slice(0, 8)}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(57,255,20,0.1)" />
@@ -303,8 +311,8 @@ export default function AliceStats() {
             {/* Top edited pages */}
             {topEdits.length > 0 && (
               <>
-                <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Most-edited pages — {namespaceTotals?.wiki}</h2>
-                <div className="border border-primary/20 rounded divide-y divide-primary/10 mb-6">
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-2">MOST-EDITED PAGES — {namespaceTotals?.wiki?.toUpperCase()}</p>
+                <div className="border border-primary/20 divide-y divide-primary/10 mb-8">
                   {topEdits.map((p, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
                       <span className="text-primary/80 truncate">{p.page_title || p.full_page_title}</span>
@@ -316,8 +324,8 @@ export default function AliceStats() {
             )}
 
             {/* Live recent activity feed */}
-            <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Right now — most recent activity, any wiki</h2>
-            <div className="border border-primary/20 rounded divide-y divide-primary/10">
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-2">RIGHT NOW — MOST RECENT ACTIVITY, ANY WIKI</p>
+            <div className="border border-primary/20 divide-y divide-primary/10">
               {recentGrouped.length === 0 ? (
                 <div className="px-3 py-4 text-primary/40 text-xs text-center">No recent activity found.</div>
               ) : recentGrouped.map((c) => (
