@@ -117,7 +117,7 @@ export const webApp = {
     const outputDir = detectBuildOutputDir(files);
     // Use the project's declared Node version if specified (.nvmrc or
     // package.json engines.node); fall back to 20 LTS.
-    const nodeVersion = detectNodeVersion(files) || '20';
+    const nodeVersion = detectNodeVersion(files) || '24';
 
     return [
       { uses: 'actions/checkout@v4' },

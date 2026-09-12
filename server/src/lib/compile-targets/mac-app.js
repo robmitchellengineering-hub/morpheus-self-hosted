@@ -243,7 +243,7 @@ export const macApp = {
       // inherently architecture-independent — no lipo needed) that execs
       // whichever one matches `uname -m` at launch time. Each binary keeps
       // its own trailer fully intact since neither is ever byte-merged.
-      const nodeVersion = detectNodeVersion(files) || '20';
+      const nodeVersion = detectNodeVersion(files) || '24';
       const steps = [
         { uses: 'actions/checkout@v4' },
         {
@@ -251,8 +251,8 @@ export const macApp = {
           with: { 'node-version': `'${nodeVersion}'` }
         },
         { run: 'npm install' },
-        { run: 'npx @yao-pkg/pkg . --targets node20-macos-x64 --output app-x64' },
-        { run: 'npx @yao-pkg/pkg . --targets node20-macos-arm64 --output app-arm64' },
+        { run: 'npx @yao-pkg/pkg . --targets node24-macos-x64 --output app-x64' },
+        { run: 'npx @yao-pkg/pkg . --targets node24-macos-arm64 --output app-arm64' },
         {
           name: 'Build .app bundle',
           run: [

@@ -45,7 +45,7 @@ export const linuxBinary = {
 
   buildSteps(files) {
     if (isNodeProject(files)) {
-      const nodeVersion = detectNodeVersion(files) || '20';
+      const nodeVersion = detectNodeVersion(files) || '24';
       return [
         { uses: 'actions/checkout@v4' },
         {
@@ -53,7 +53,7 @@ export const linuxBinary = {
           with: { 'node-version': `'${nodeVersion}'` }
         },
         { run: 'npm install' },
-        { run: 'npx @yao-pkg/pkg . --targets node20-linux-x64 --output app' },
+        { run: 'npx @yao-pkg/pkg . --targets node24-linux-x64 --output app' },
         {
           name: 'Verify binary',
           run: 'test -f app || { echo "pkg produced no binary (does package.json have a bin field?)"; exit 1; }'
