@@ -1,65 +1,48 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Loader2, ExternalLink, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, ExternalLink, Sparkles } from 'lucide-react';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
+  BarChart, Bar,
 } from 'recharts';
 
 /**
- * Aliceinthealice — Live Wikimedia Editor Report
+ * Aliceinthealice — Live Wikimedia Editor Report.
  *
- * This page builds a complete, explainable report on the Wikimedia editor
- * Aliceinthealice (meta) / Alice_Woods (wikimedia.org.au). It talks directly
- * to public APIs, no backend or database involved.
+ * A brag page for Alice Woods (Education & Projects Coordinator, Wikimedia
+ * Australia — https://wikimedia.org.au/wiki/User:Alice_Woods), who edits as
+ * "Aliceinthealice". Talks directly to public Wikimedia APIs on every load —
+ * no backend, no database, nothing cached or stored. What you see is exactly
+ * what her account looks like right now.
  *
- * Data sources:
- *  - XTools (xtools.wmcloud.org) — authoritative all-time statistics for
- *    Wikimedia Foundation wikis (edit counts, namespace totals, top pages,
- *    pages created, bytes added/removed, monthly activity).
- *  - MediaWiki API on wikimedia.org.au — full contribution history for the
- *    standalone Wikimedia Australia wiki (not covered by XTools), fetched
- *    with continuation to ensure no edits are missed.
- *  - Meta-Wiki globaluserinfo — registration date and global account info.
- *
- * The page is public (brag page for the editor) and admin-friendly:
- * it never requires a login and never stores anything.
+ * Rebuilt 2026-09-12 — the first version (built through self-dev) called
+ * XTools endpoints that don't exist (e.g. "/user/global_stats/{username}",
+ * no such route — XTools' real per-wiki endpoints all take a project domain)
+ * and guessed a Wikimedia Australia wiki username ("Alice_Woods") that isn't
+ * a real account there, so it never resolved any data. Every endpoint below
+ * was hit directly and confirmed working, against her real account, before
+ * being wired in here — see XTools' own interactive docs at
+ * https://xtools.wmcloud.org/api for the real route list.
  */
 
 const UA = 'MorpheusStatsPage/1.0 (+https://morpheus.nz)';
 const TIMEOUT_MS = 20000;
-const XTOOLS_BASE = 'https://xtools.wmcloud.org/api';
-const AU_API = 'https://wikimedia.org.au/w/api.php';
-const AU_USERNAME = 'Alice_Woods';
-const GLOBAL_USERNAME = 'Aliceinthealice';
-const CONTRIB_LIMIT = 500; // batch size for AU continuation
-const MAX_AU_PAGES = 10000; // safety cap for infinite continuation
+const XTOOLS = 'https://xtools.wmcloud.org/api';
+const USERNAME = 'Aliceinthealice';
+// The three wikis she's actually active on, confirmed by hitting XTools
+// directly rather than assumed. Order = display order.
+const WIKIS = [
+  { id: 'www.wikidata.org', label: 'Wikidata' },
+  { id: 'commons.wikimedia.org', label: 'Wikimedia Commons' },
+  { id: 'en.wikipedia.org', label: 'English Wikipedia' },
+];
 
-async function fetchJson(url, opts = {}) {
+async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
-      ...opts,
-      signal: controller.signal,
-      headers: {
-        'User-Agent': UA,
-        Accept: 'application/json',
-        ...(opts.headers || {}),
-      },
-    });
+    const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': UA, Accept: 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
@@ -67,818 +50,286 @@ async function fetchJson(url, opts = {}) {
   }
 }
 
-// Fetch ALL contributions for the AU wiki (Wikimedia Australia) using
-// MediaWiki continuation. This ensures complete edit history, not just the
-// most recent 500. Returns an array of raw contribution objects.
-async function fetchAllAuContributions() {
-  const all = [];
-  let uccontinue = null;
-  let page = 0;
-  do {
-    const params = new URLSearchParams({
-      action: 'query',
-      list: 'usercontribs',
-      ucuser: AU_USERNAME,
-      uclimit: String(CONTRIB_LIMIT),
-      ucprop: 'title|timestamp|comment|size|sizediff|flags|ns',
-      format: 'json',
-      origin: '*',
-    });
-    if (uccontinue) params.set('uccontinue', uccontinue);
-    const url = `${AU_API}?${params.toString()}`;
-    const data = await fetchJson(url);
-    const items = data?.query?.usercontribs || [];
-    all.push(...items);
-    uccontinue = data?.continue?.uccontinue || null;
-    page++;
-    if (page > MAX_AU_PAGES) break; // safety
-  } while (uccontinue);
-  return all;
-}
+const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : '—');
 
-// XTools API helper – returns parsed JSON, with defensive extraction
-async function fetchXtools(endpoint) {
-  return fetchJson(`${XTOOLS_BASE}${endpoint}`, { headers: { 'User-Agent': UA } });
-}
-
-const NS_NAMES = {
-  0: 'Main',
-  1: 'Talk',
-  2: 'User',
-  3: 'User talk',
-  4: 'Project',
-  5: 'Project talk',
-  6: 'File',
-  7: 'File talk',
-  8: 'MediaWiki',
-  9: 'MediaWiki talk',
-  10: 'Template',
-  11: 'Template talk',
-  12: 'Help',
-  13: 'Help talk',
-  14: 'Category',
-  15: 'Category talk',
-  100: 'Portal',
-  101: 'Portal talk',
-  828: 'Module',
-  829: 'Module talk',
-  120: 'Property',
-  121: 'Property talk',
-  122: 'Lexeme',
-  123: 'Lexeme talk',
-};
-
-function nsName(ns) {
-  return NS_NAMES[ns] || `Namespace ${ns}`;
-}
-
-function formatNumber(n) {
-  return new Intl.NumberFormat().format(n || 0);
-}
-
-function formatDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-function monthKey(ts) {
-  const d = new Date(ts);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function monthLabel(key) {
-  const [y, m] = key.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, {
-    month: 'short',
-    year: '2-digit',
-  });
-}
-
-function extractNamespaceTotals(data) {
-  // XTools returns either { namespaces: { "0": n, "1": m, ... } } or an array
-  if (data?.namespaces && typeof data.namespaces === 'object') {
-    return data.namespaces;
-  }
-  if (Array.isArray(data)) {
-    const obj = {};
-    data.forEach((entry) => {
-      if (entry && typeof entry.ns === 'number' && typeof entry.count === 'number') {
-        obj[entry.ns] = entry.count;
-      }
-    });
-    return obj;
-  }
-  return {};
-}
-
-function extractTopPages(data) {
-  // XTools returns { pages: [ { title, count, namespace } ] } or { top_pages: [...] }
-  const list = data?.pages || data?.top_pages || [];
-  return Array.isArray(list) ? list : [];
-}
-
-function extractPagesCreated(data) {
-  const list = data?.pages || data?.pages_created || [];
-  return Array.isArray(list) ? list : [];
-}
-
-function extractMonthCounts(data) {
-  // XTools returns { months: [ { month: 'YYYY-MM', count } ] } or similar
-  const list = data?.months || data?.month_counts || [];
-  if (Array.isArray(list)) {
-    return list.map((entry) => ({
-      month: entry.month || entry.yyyymm,
-      count: entry.count || entry.edits,
-    })).filter((e) => e.month);
-  }
-  return [];
-}
-
-function extractBytes(data) {
-  if (!data) return { added: 0, removed: 0 };
-  return {
-    added: data.added || data.bytes_added || 0,
-    removed: data.removed || data.bytes_removed || 0,
-  };
+function timeAgo(iso) {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
 export default function AliceStats() {
-  const [globalStats, setGlobalStats] = useState(null); // XTools global stats
-  const [globalInfo, setGlobalInfo] = useState(null); // Meta globaluserinfo
-  const [auContributions, setAuContributions] = useState([]); // all AU edits
-  const [wikiDetails, setWikiDetails] = useState({}); // { wikiId: { monthCounts, topPages, namespaceTotals, pagesCreated, bytesAdded } }
+  const [perWiki, setPerWiki] = useState(null); // { [wikiId]: simple_editcount response }
+  const [globalInfo, setGlobalInfo] = useState(null); // meta globaluserinfo
+  const [recent, setRecent] = useState([]); // globalcontribs feed
+  const [monthCounts, setMonthCounts] = useState([]); // month_counts for her top wiki
+  const [namespaceTotals, setNamespaceTotals] = useState(null);
+  const [topEdits, setTopEdits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [retryTrigger, setRetryTrigger] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    // Each source is fetched independently; a missing/404 source is treated
-    // as "no data for that source" and must not abort the rest of the page.
-    // Only when every source fails do we show a page-level error.
     try {
-      // 1. XTools global stats (WMF wikis). 404 means no stats yet.
-      let gt = null;
-      try {
-        const gtData = await fetchXtools(`/user/global_stats/${encodeURIComponent(GLOBAL_USERNAME)}`);
-        gt = gtData?.global_stats || gtData;
-      } catch {
-        gt = null;
-      }
-      setGlobalStats(gt);
+      // 1. Per-wiki edit counts — the headline numbers. Each wiki fetched
+      // independently so one failing never blanks the rest.
+      const wikiResults = await Promise.all(
+        WIKIS.map((w) => fetchJson(`${XTOOLS}/user/simple_editcount/${w.id}/${USERNAME}`).catch(() => null)),
+      );
+      const perWikiMap = {};
+      WIKIS.forEach((w, i) => { perWikiMap[w.id] = wikiResults[i]; });
+      setPerWiki(perWikiMap);
 
-      // 2. Meta globaluserinfo for registration date. 404 means unresolved.
-      let gui = null;
-      try {
-        const guiRes = await fetchJson(
-          `https://meta.wikimedia.org/w/api.php?action=query&list=globaluserinfo&format=json&origin=*&guiprop=editcount|groups|merged|registration&guiuser=${encodeURIComponent(GLOBAL_USERNAME)}`,
-        );
-        gui = guiRes?.query?.globaluserinfo || null;
-      } catch {
-        gui = null;
-      }
+      // 2. Global account info (registration date, global rights) from Meta.
+      const gui = await fetchJson(
+        `https://meta.wikimedia.org/w/api.php?action=query&meta=globaluserinfo&format=json&origin=*&guiprop=editcount|groups|merged&guiuser=${encodeURIComponent(USERNAME)}`,
+      ).then((r) => r?.query?.globaluserinfo || null).catch(() => null);
       setGlobalInfo(gui);
 
-      // 3. AU wiki full contributions. A 404 or any API error simply means
-      // no AU data on this request — leave the list empty and keep going.
-      let auAll = [];
-      try {
-        auAll = await fetchAllAuContributions();
-      } catch {
-        auAll = [];
-      }
-      setAuContributions(auAll);
+      // 3. Recent activity across every wiki she edits — the genuinely
+      // "live" part: whatever she did most recently, wherever it was.
+      // No limit param on this endpoint (confirmed against the real API —
+      // a "?limit=" query string is silently ignored); it returns its own
+      // default page size, sliced down for display here.
+      const gc = await fetchJson(`${XTOOLS}/user/globalcontribs/${USERNAME}`)
+        .then((r) => (r?.globalcontribs || []).slice(0, 15))
+        .catch(() => []);
+      setRecent(gc);
 
-      // 4. For each WMF wiki with edits > 0, fetch detailed XTools data.
-      // Individual wiki endpoints are fetched with .catch(() => null)
-      // (and the whole per-wiki block is also caught), so a 404 for one
-      // wiki never aborts the others. If all of a wiki's detail endpoints
-      // come back empty, mark it missing so the UI can show a subtle note.
-      const perWiki = gt?.per_wiki || [];
-      const activeWmfWikis = perWiki.filter((w) => Number(w.total_revisions) > 0);
-      const details = {};
-      await Promise.all(
-        activeWmfWikis.map(async (wikiEntry) => {
-          const wikiId = wikiEntry.wiki;
-          const detail = {
-            monthCounts: [],
-            topPages: [],
-            namespaceTotals: {},
-            pagesCreated: [],
-            bytesAdded: { added: 0, removed: 0 },
-            missing: false,
-          };
-          try {
-            const [monthData, topData, nsData, pagesData, bytesData] = await Promise.all([
-              fetchXtools(`/user/month_counts/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
-              fetchXtools(`/user/top_pages/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
-              fetchXtools(`/user/namespace_totals/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
-              fetchXtools(`/user/pages_created/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
-              fetchXtools(`/user/bytes_added/${encodeURIComponent(GLOBAL_USERNAME)}/${wikiId}`).catch(() => null),
-            ]);
-            if (monthData) detail.monthCounts = extractMonthCounts(monthData);
-            if (topData) detail.topPages = extractTopPages(topData);
-            if (nsData) detail.namespaceTotals = extractNamespaceTotals(nsData);
-            if (pagesData) detail.pagesCreated = extractPagesCreated(pagesData);
-            if (bytesData) detail.bytesAdded = extractBytes(bytesData);
-            // If every detail endpoint for this wiki is empty/null, mark it
-            // missing — its total edit count is still known from global stats.
-            if (!monthData && !topData && !nsData && !pagesData && !bytesData) {
-              detail.missing = true;
-            }
-          } catch {
-            detail.missing = true;
+      // 4/5/6. Deep-dive (month activity, namespace split, top pages) on
+      // whichever wiki actually has the data — XTools gates month_counts /
+      // top_edits behind a per-user on-wiki opt-in (confirmed live: hers is
+      // 401 "has not opted in" on Wikidata, her highest-edit wiki, but
+      // fine on English Wikipedia), so picking purely by edit count can
+      // land on a wiki that 401s every detail call. Try each wiki in
+      // edit-count order and keep the first that actually returns data.
+      const wikisByEdits = WIKIS.map((w) => ({ w, count: perWikiMap[w.id]?.live_edit_count || 0 }))
+        .sort((a, b) => b.count - a.count)
+        .map((x) => x.w);
+      let topWiki = wikisByEdits[0];
+      let mc = null, ns = null, te = null;
+      for (const candidate of wikisByEdits) {
+        const [mcTry, nsTry, teTry] = await Promise.all([
+          fetchJson(`${XTOOLS}/user/month_counts/${candidate.id}/${USERNAME}`).catch(() => null),
+          fetchJson(`${XTOOLS}/user/namespace_totals/${candidate.id}/${USERNAME}`).catch(() => null),
+          fetchJson(`${XTOOLS}/user/top_edits/${candidate.id}/${USERNAME}`).catch(() => null),
+        ]);
+        if (mcTry?.totals) { topWiki = candidate; mc = mcTry; ns = nsTry; te = teTry; break; }
+      }
+      if (mc?.totals) {
+        // totals: { [namespace]: { 'YYYY-MM': count } } — flatten to a
+        // single chronological series across every namespace.
+        const byMonth = {};
+        for (const nsCounts of Object.values(mc.totals)) {
+          for (const [month, count] of Object.entries(nsCounts)) {
+            byMonth[month] = (byMonth[month] || 0) + count;
           }
-          details[wikiId] = detail;
-        }),
-      );
-      setWikiDetails(details);
-
-      // Only show a page-level error when every source failed. Partial
-      // failures (e.g. one wiki 404s) are normal and stay non-fatal.
-      const anyGlobal = gt !== null;
-      const anyGui = gui !== null;
-      const anyAu = auAll.length > 0;
-      const anyWiki = Object.keys(details).length > 0;
-      if (!anyGlobal && !anyGui && !anyAu && !anyWiki) {
-        setError('Could not load any live Wikimedia data. The APIs may be unreachable or the editor account may not exist yet.');
-      } else {
-        setError(null);
+        }
+        setMonthCounts(Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([month, edits]) => ({ month, edits })));
       }
+      if (ns?.namespace_totals) setNamespaceTotals({ wiki: topWiki.label, totals: ns.namespace_totals });
+      const teList = te?.top_edits ? Object.values(te.top_edits).flat() : [];
+      setTopEdits(teList.slice(0, 8));
 
-      setLastUpdated(new Date().toISOString());
+      const gotAnything = wikiResults.some(Boolean) || gui || gc.length > 0;
+      if (!gotAnything) setError('Could not reach any Wikimedia API right now — try refreshing in a moment.');
+      setLastUpdated(new Date());
     } catch (err) {
-      // Only unexpected coding errors land here; API failures were already
-      // handled above and do not trigger the red full-page banner.
       setError(err.message || 'Failed to load stats');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load, retryTrigger]);
+  useEffect(() => { load(); }, [load]);
 
-  // ── Derived data ────────────────────────────────────────────────────────
-  const mergedPerWiki = useMemo(() => {
-    const map = {};
-    (globalStats?.per_wiki || []).forEach((w) => {
-      map[w.wiki] = Number(w.total_revisions) || 0;
-    });
-    return map;
-  }, [globalStats]);
+  // Wikidata referencing work is naturally many small consecutive edits to
+  // the same item (confirmed live: 15 of her last 15 edits were all one
+  // item) — collapse consecutive same-page entries into one row with a
+  // count instead of showing the same line over and over.
+  const recentGrouped = [];
+  for (const c of recent) {
+    const last = recentGrouped[recentGrouped.length - 1];
+    const key = `${c.project}|${c.full_page_title || c.page_title}`;
+    if (last && last.key === key) { last.count += 1; }
+    else recentGrouped.push({ key, project: c.project, title: c.full_page_title || c.page_title, count: 1, timestamp: c.timestamp });
+  }
 
-  const auTotalEdits = auContributions.length;
-  const auFirstEdit = auContributions.length ? auContributions[auContributions.length - 1].timestamp : null;
-  const auLastEdit = auContributions.length ? auContributions[0].timestamp : null;
-
-  const totalEdits = useMemo(() => {
-    const wmfSum = Object.values(mergedPerWiki).reduce((a, b) => a + b, 0);
-    return wmfSum + auTotalEdits;
-  }, [mergedPerWiki, auTotalEdits]);
-
-  const activeWikis = useMemo(() => {
-    let count = Object.values(mergedPerWiki).filter((n) => n > 0).length;
-    if (auTotalEdits > 0) count += 1;
-    return count;
-  }, [mergedPerWiki, auTotalEdits]);
-
-  const registrationDate = useMemo(() => {
-    if (globalInfo?.registration) return formatDate(globalInfo.registration);
-    return '—';
-  }, [globalInfo]);
-
-  // Aggregate monthly edits across WMF wikis + AU
-  const monthlyEdits = useMemo(() => {
-    const map = {};
-    // WMF wikis from XTools month_counts
-    Object.values(wikiDetails).forEach((d) => {
-      (d.monthCounts || []).forEach((entry) => {
-        if (entry.month) {
-          map[entry.month] = (map[entry.month] || 0) + (Number(entry.count) || 0);
-        }
-      });
-    });
-    // AU contributions
-    auContributions.forEach((c) => {
-      const key = monthKey(c.timestamp);
-      map[key] = (map[key] || 0) + 1;
-    });
-    const arr = Object.entries(map)
-      .map(([month, edits]) => ({ month, edits }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-    // Limit to last 24 months for readability
-    return arr.slice(-24);
-  }, [wikiDetails, auContributions]);
-
-  // Aggregate namespace distribution across all wikis
-  const namespaceDistribution = useMemo(() => {
-    const map = {};
-    // WMF wikis namespace totals
-    Object.values(wikiDetails).forEach((d) => {
-      Object.entries(d.namespaceTotals || {}).forEach(([ns, count]) => {
-        const n = Number(ns);
-        map[n] = (map[n] || 0) + Number(count);
-      });
-    });
-    // AU contributions namespace counts
-    auContributions.forEach((c) => {
-      const ns = c.ns ?? 0;
-      map[ns] = (map[ns] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([ns, count]) => ({ ns: Number(ns), name: nsName(Number(ns)), count }))
-      .sort((a, b) => b.count - a.count);
-  }, [wikiDetails, auContributions]);
-
-  // Aggregate bytes added/removed across all wikis
-  const bytesAdded = useMemo(() => {
-    let sum = 0;
-    Object.values(wikiDetails).forEach((d) => {
-      sum += d.bytesAdded?.added || 0;
-    });
-    auContributions.forEach((c) => {
-      if (c.sizediff > 0) sum += c.sizediff;
-    });
-    return sum;
-  }, [wikiDetails, auContributions]);
-
-  const bytesRemoved = useMemo(() => {
-    let sum = 0;
-    Object.values(wikiDetails).forEach((d) => {
-      sum += d.bytesAdded?.removed || 0;
-    });
-    auContributions.forEach((c) => {
-      if (c.sizediff < 0) sum += Math.abs(c.sizediff);
-    });
-    return sum;
-  }, [wikiDetails, auContributions]);
-
-  // Aggregate top pages across all wikis
-  const topPages = useMemo(() => {
-    const list = [];
-    const wikiNames = {
-      enwiki: 'English Wikipedia',
-      metawiki: 'Meta-Wiki',
-      wikidatawiki: 'Wikidata',
-      mediawiki: 'Wikimedia AU',
-    };
-    Object.entries(wikiDetails).forEach(([wikiId, d]) => {
-      (d.topPages || []).forEach((p) => {
-        if (p.title) {
-          list.push({
-            wikiName: wikiNames[wikiId] || wikiId,
-            title: p.title,
-            count: Number(p.count) || 0,
-          });
-        }
-      });
-    });
-    // AU top pages from contributions (aggregate counts)
-    const auMap = {};
-    auContributions.forEach((c) => {
-      auMap[c.title] = (auMap[c.title] || 0) + 1;
-    });
-    Object.entries(auMap).forEach(([title, count]) => {
-      list.push({ wikiName: 'Wikimedia AU', title, count });
-    });
-    return list.sort((a, b) => b.count - a.count).slice(0, 10);
-  }, [wikiDetails, auContributions]);
-
-  // Article edits: sum of namespace 0 counts across WMF wikis (exclude wikidata)
-  // plus AU namespace 0 contributions
-  const articleEdits = useMemo(() => {
-    let sum = 0;
-    Object.entries(wikiDetails).forEach(([wikiId, d]) => {
-      if (wikiId === 'wikidatawiki') return; // exclude wikidata from article edits
-      if (d.namespaceTotals) {
-        sum += Number(d.namespaceTotals[0] || 0);
-      }
-    });
-    auContributions.forEach((c) => {
-      if (Number(c.ns ?? 0) === 0) sum += 1;
-    });
-    return sum;
-  }, [wikiDetails, auContributions]);
-
-  // Article creations: count of pages created in namespace 0 from XTools
-  // pages_created (excluding wikidata) + AU contributions with flag 'new' and ns 0
-  const articleCreations = useMemo(() => {
-    let sum = 0;
-    Object.entries(wikiDetails).forEach(([wikiId, d]) => {
-      if (wikiId === 'wikidatawiki') return;
-      (d.pagesCreated || []).forEach((p) => {
-        if (Number(p.namespace ?? 0) === 0) sum += 1;
-      });
-    });
-    auContributions.forEach((c) => {
-      if (Number(c.ns ?? 0) === 0 && Array.isArray(c.flags) && c.flags.includes('new')) sum += 1;
-    });
-    return sum;
-  }, [wikiDetails, auContributions]);
-
-  // Wikidata edits: total revisions on wikidatawiki from global stats
-  const wikidataEdits = useMemo(() => {
-    return mergedPerWiki['wikidatawiki'] || 0;
-  }, [mergedPerWiki]);
-
-  // Wikidata items created: pages_created entries for wikidatawiki with namespace 0
-  const wikidataItemsCreated = useMemo(() => {
-    const d = wikiDetails['wikidatawiki'];
-    if (!d?.pagesCreated) return 0;
-    return d.pagesCreated.filter((p) => Number(p.namespace ?? 0) === 0).length;
-  }, [wikiDetails]);
-
-  const hasData = totalEdits > 0 || auTotalEdits > 0;
-
-  const monthFormatter = (label) => monthLabel(label);
+  const totalLive = perWiki ? Object.values(perWiki).reduce((sum, w) => sum + (w?.live_edit_count || 0), 0) : 0;
+  const totalCreated = perWiki ? Object.values(perWiki).reduce((sum, w) => sum + (w?.creation_count || 0), 0) : 0;
+  const yearsActive = globalInfo?.registration
+    ? ((Date.now() - new Date(globalInfo.registration).getTime()) / (365.25 * 24 * 3600 * 1000)).toFixed(1)
+    : null;
+  const isEventOrganizer = perWiki && Object.values(perWiki).some((w) => (w?.user_groups || []).includes('event-organizer'));
 
   return (
     <div className="relative min-h-screen bg-background text-primary font-mono">
-      <MatrixRain opacity={0.04} />
-      <div className="relative z-10 max-w-5xl mx-auto px-4 py-8 md:px-6 md:py-12 safe-top">
-        {/* Header */}
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors"
-        >
-          <ArrowLeft size={14} /> BACK
-        </Link>
-
-        <div className="flex items-center gap-3 mb-2 flex-wrap">
-          <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">
-            ALICEINTHEALICE
-          </h1>
-          <span className="text-xs text-primary/60 border border-primary/30 px-2 py-0.5">
-            LIVE EDITOR REPORT
-          </span>
+      <MatrixRain opacity={0.05} />
+      <div className="relative z-10 max-w-4xl mx-auto px-6 py-10 safe-top">
+        <div className="flex items-center justify-between mb-6">
+          <Link to="/workspace" className="flex items-center gap-2 text-primary/60 hover:text-primary text-xs">
+            <ArrowLeft size={14} /> BACK
+          </Link>
+          <button onClick={load} disabled={loading} className="flex items-center gap-1.5 text-primary/50 hover:text-primary text-xs disabled:opacity-40">
+            {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} REFRESH
+          </button>
         </div>
-        <p className="text-primary/60 text-sm mb-4">
-          Everything this page shows is pulled live from XTools and Wikimedia APIs.
-          Hover any chart for exact numbers. Last updated:{' '}
-          {lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}
+
+        <div className="flex items-center gap-2 mb-1">
+          <h1 className="text-2xl font-bold tracking-wide">ALICEINTHEALICE</h1>
+          <span className="text-[10px] border border-primary/40 text-primary/70 px-2 py-0.5 rounded-full">LIVE EDITOR REPORT</span>
+        </div>
+        <p className="text-primary/50 text-xs mb-1">
+          Everything on this page is pulled live from public Wikimedia APIs, fresh on every load — nothing is stored. Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
         </p>
 
-        {/* Error banner */}
+        {/* Bio — real, sourced facts, not invented */}
+        <div className="border border-primary/20 bg-primary/5 rounded px-4 py-3 my-5 text-sm text-primary/85 leading-relaxed">
+          <p className="mb-2">
+            <strong className="text-primary">Alice Woods</strong> is the Education &amp; Projects Coordinator at{' '}
+            <a href="https://wikimedia.org.au" target="_blank" rel="noreferrer" className="underline hover:text-primary inline-flex items-center gap-1">
+              Wikimedia Australia <ExternalLink size={10} />
+            </a>{' '}
+            since September 2023, coming from a library and archives background. She runs real-world edit-a-thons —
+            including a gender-equity-in-art event at the Gallery in February 2024 — and edits under the name{' '}
+            <strong className="text-primary">Aliceinthealice</strong> across Wikipedia, Wikidata, and Commons, where she
+            holds "event organizer" rights recognising exactly that community-building work.
+          </p>
+          <p className="text-primary/50 text-[11px]">
+            Sources:{' '}
+            <a href="https://wikimedia.org.au/wiki/User:Alice_Woods" target="_blank" rel="noreferrer" className="underline hover:text-primary/80">her Wikimedia Australia user page</a>
+            {', '}
+            <a href="https://www.linkedin.com/in/alice-woods-b3b83776/" target="_blank" rel="noreferrer" className="underline hover:text-primary/80">LinkedIn</a>
+            {', '}
+            <a href="https://outreach.wikimedia.org/wiki/GLAM/Newsletter/February_2024/Contents/Australia_report" target="_blank" rel="noreferrer" className="underline hover:text-primary/80">Feb 2024 GLAM newsletter</a>.
+          </p>
+        </div>
+
         {error && (
-          <div className="border border-danger/40 bg-danger/5 text-danger px-4 py-3 mb-6 flex items-center gap-2">
-            <AlertTriangle size={16} />
-            <div>
-              <p className="text-sm">{error}</p>
-              <button
-                onClick={() => setRetryTrigger((t) => t + 1)}
-                className="mt-2 inline-flex items-center gap-1 text-xs underline hover:text-white"
-              >
-                <RefreshCw size={12} /> RETRY
-              </button>
-            </div>
-          </div>
+          <div className="border border-red-500/30 bg-red-500/5 text-red-400 text-xs px-3 py-2 rounded mb-5">{error}</div>
         )}
 
-        {loading ? (
-          <div className="flex items-center gap-2 text-primary/60 text-sm py-20 justify-center">
-            <Loader2 size={18} className="animate-spin" /> Loading Wikimedia data...
-          </div>
-        ) : !hasData ? (
-          <div className="text-center py-16 text-primary/50">
-            No data could be loaded. Please try again later.
+        {loading && !perWiki ? (
+          <div className="flex items-center justify-center gap-2 text-primary/60 py-16 text-sm">
+            <Loader2 size={16} className="animate-spin" /> Loading live Wikimedia data...
           </div>
         ) : (
           <>
-            {/* Stat cards – all-time accurate */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">TOTAL EDITS</p>
-                <p className="text-2xl text-primary neon-glow">{formatNumber(totalEdits)}</p>
-                <p className="text-[10px] text-primary/40 mt-1">all-time, all wikis</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ACTIVE WIKIS</p>
-                <p className="text-2xl text-primary neon-glow">{activeWikis}</p>
-                <p className="text-[10px] text-primary/40 mt-1">with at least one edit</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">REGISTERED</p>
-                <p className="text-2xl text-primary neon-glow">{registrationDate}</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ARTICLE EDITS</p>
-                <p className="text-2xl text-primary neon-glow">{formatNumber(articleEdits)}</p>
-                <p className="text-[10px] text-primary/40 mt-1">main namespace, all time</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ARTICLE CREATIONS</p>
-                <p className="text-2xl text-primary neon-glow">{formatNumber(articleCreations)}</p>
-                <p className="text-[10px] text-primary/40 mt-1">new pages created</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">WIKIDATA EDITS</p>
-                <p className="text-2xl text-primary neon-glow">{formatNumber(wikidataEdits)}</p>
-                <p className="text-[10px] text-primary/40 mt-1">on Wikidata</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">WIKIDATA ITEMS</p>
-                <p className="text-2xl text-primary neon-glow">{formatNumber(wikidataItemsCreated)}</p>
-                <p className="text-[10px] text-primary/40 mt-1">items created</p>
-              </div>
-              <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">BYTES ADDED</p>
-                <p className="text-2xl text-primary neon-glow">+{formatNumber(bytesAdded)}</p>
-                <p className="text-[10px] text-primary/40 mt-1">all time</p>
-              </div>
+            {/* Headline numbers */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+              {[
+                ['Edits, every wiki', fmt(globalInfo?.editcount ?? totalLive)],
+                ['Pages created', fmt(totalCreated)],
+                ['Years editing', yearsActive ? `${yearsActive}y` : '—'],
+                ['Community role', isEventOrganizer ? 'Event Organizer' : '—'],
+              ].map(([label, value]) => (
+                <div key={label} className="border border-primary/20 rounded px-3 py-3 text-center">
+                  <div className="text-xl font-bold text-primary">{value}</div>
+                  <div className="text-primary/40 text-[10px] uppercase tracking-wider mt-1">{label}</div>
+                </div>
+              ))}
             </div>
 
             {/* Per-wiki breakdown */}
-            <div className="mb-8">
-              <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-3">
-                EDITS BY WIKI
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {Object.entries(mergedPerWiki).map(([wikiId, count]) => {
-                  const names = {
-                    enwiki: 'English Wikipedia',
-                    metawiki: 'Meta-Wiki',
-                    wikidatawiki: 'Wikidata',
-                    mediawiki: 'Wikimedia AU',
-                  };
-                  const name = names[wikiId] || wikiId;
-                  return (
-                    <div
-                      key={wikiId}
-                      className="flex items-center justify-between border border-primary/20 bg-primary/5 px-3 py-2 rounded"
-                    >
-                      <span className="text-xs text-primary/80">{name}</span>
-                      <span className="text-sm text-primary font-bold">{formatNumber(count)}</span>
-                    </div>
-                  );
-                })}
-                {auTotalEdits > 0 && (
-                  <div className="flex items-center justify-between border border-primary/20 bg-primary/5 px-3 py-2 rounded">
-                    <span className="text-xs text-primary/80">Wikimedia AU (Alice_Woods)</span>
-                    <span className="text-sm text-primary font-bold">{formatNumber(auTotalEdits)}</span>
-                  </div>
-                )}
-              </div>
-              <p className="text-[11px] text-primary/40 mt-2">
-                Counts for WMF wikis come from XTools global stats; the Wikimedia AU
-                count comes from a complete continuation fetch of her contributions.
-                When XTools is missing detail for a wiki, only its edit count is
-                shown — all charts below draw from the detail that is available.
-              </p>
+            <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2 flex items-center gap-1.5"><Sparkles size={12} /> By wiki</h2>
+            <div className="border border-primary/20 rounded overflow-x-auto mb-6">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-primary/40 uppercase text-[10px] border-b border-primary/20">
+                    <th className="text-left px-3 py-2">Wiki</th>
+                    <th className="text-right px-3 py-2">Live edits</th>
+                    <th className="text-right px-3 py-2">Deleted</th>
+                    <th className="text-right px-3 py-2">Pages created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {WIKIS.map((w) => {
+                    const d = perWiki?.[w.id];
+                    return (
+                      <tr key={w.id} className="border-b border-primary/10 last:border-0">
+                        <td className="px-3 py-2">{w.label}</td>
+                        <td className="px-3 py-2 text-right text-primary">{d ? fmt(d.live_edit_count) : 'no data'}</td>
+                        <td className="px-3 py-2 text-right text-primary/60">{d ? fmt(d.deleted_edit_count) : '—'}</td>
+                        <td className="px-3 py-2 text-right text-primary/60">{d ? fmt(d.creation_count) : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            {/* Monthly trend */}
-            {monthlyEdits.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                  MONTHLY EDIT ACTIVITY
-                </h2>
-                <p className="text-xs text-primary/50 mb-3">
-                  Number of edits per month across all wikis. This is the real
-                  all-time activity, not just a recent window. Hover any point for
-                  exact counts.
-                </p>
-                <div className="border border-primary/20 bg-background/50 p-3 rounded">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={monthlyEdits}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2a1f" />
-                      <XAxis
-                        dataKey="month"
-                        tickFormatter={monthFormatter}
-                        tick={{ fontSize: 11, fill: '#8f9f8f' }}
-                      />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#8f9f8f' }} />
-                      <Tooltip
-                        labelFormatter={(label) => monthLabel(label)}
-                        contentStyle={{
-                          backgroundColor: '#0a0f0a',
-                          border: '1px solid #39ff14',
-                          fontSize: '12px',
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="edits"
-                        stroke="#39ff14"
-                        strokeWidth={2}
-                        dot={{ fill: '#39ff14', r: 3 }}
-                      />
+            {/* Monthly activity chart */}
+            {monthCounts.length > 1 && (
+              <>
+                <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Monthly activity — {namespaceTotals?.wiki || ''}</h2>
+                <div className="border border-primary/20 rounded p-3 mb-6" style={{ height: 220 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={monthCounts.slice(-36)}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(57,255,20,0.1)" />
+                      <XAxis dataKey="month" tick={{ fill: 'rgba(57,255,20,0.4)', fontSize: 9 }} interval={Math.ceil(monthCounts.length / 12)} />
+                      <YAxis tick={{ fill: 'rgba(57,255,20,0.4)', fontSize: 9 }} />
+                      <Tooltip contentStyle={{ background: '#05130a', border: '1px solid rgba(57,255,20,0.3)', fontSize: 11 }} />
+                      <Line type="monotone" dataKey="edits" stroke="#39ff14" strokeWidth={1.5} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-              </div>
+              </>
             )}
 
-            {/* Namespace + bytes */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              {namespaceDistribution.length > 0 && (
-                <div>
-                  <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                    WHERE SHE EDITS
-                  </h2>
-                  <p className="text-xs text-primary/50 mb-3">
-                    Namespace distribution across all wikis. Main = article content,
-                    User = user pages, Talk = discussions, etc. This is all-time,
-                    not just recent.
-                  </p>
-                  <div className="border border-primary/20 bg-background/50 p-3 rounded">
-                    <ResponsiveContainer width="100%" height={280}>
-                      <PieChart>
-                        <Pie
-                          data={namespaceDistribution}
-                          dataKey="count"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={90}
-                          label={(entry) => `${entry.name}: ${entry.count}`}
-                          labelLine={false}
-                        >
-                          {namespaceDistribution.map((entry, i) => (
-                            <Cell key={i} fill={['#39ff14', '#00e5ff', '#ffd700', '#ff9f40', '#ff4d4d', '#b366ff'][i % 6]} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value, name) => [`${value} edits`, name]}
-                          contentStyle={{
-                            backgroundColor: '#0a0f0a',
-                            border: '1px solid #39ff14',
-                            fontSize: '12px',
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                  BYTES MOVED
-                </h2>
-                <p className="text-xs text-primary/50 mb-3">
-                  Total bytes added and removed across all wikis (all-time).
-                  Positive means she&#39;s expanding content; negative means condensing.
-                </p>
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="border border-success/30 bg-success/5 p-4 rounded text-center">
-                    <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ADDED</p>
-                    <p className="text-xl text-success">+{formatNumber(bytesAdded)}</p>
-                  </div>
-                  <div className="border border-danger/30 bg-danger/5 p-4 rounded text-center">
-                    <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">REMOVED</p>
-                    <p className="text-xl text-danger">-{formatNumber(bytesRemoved)}</p>
-                  </div>
-                </div>
-                <div className="border border-primary/20 bg-background/50 p-3 rounded">
-                  <ResponsiveContainer width="100%" height={180}>
-                    <BarChart data={[{ name: 'Added', value: bytesAdded }, { name: 'Removed', value: bytesRemoved }]}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2a1f" />
-                      <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#8f9f8f' }} />
-                      <YAxis tick={{ fontSize: 11, fill: '#8f9f8f' }} />
-                      <Tooltip
-                        cursor={{ fill: 'rgba(57,255,20,0.1)' }}
-                        contentStyle={{
-                          backgroundColor: '#0a0f0a',
-                          border: '1px solid #39ff14',
-                          fontSize: '12px',
-                        }}
-                      />
-                      <Bar dataKey="value" fill="#39ff14" />
+            {/* Namespace split */}
+            {namespaceTotals && (
+              <>
+                <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Where the edits go — {namespaceTotals.wiki}</h2>
+                <div className="border border-primary/20 rounded p-3 mb-6" style={{ height: 200 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={Object.entries(namespaceTotals.totals).map(([ns, count]) => ({ ns: ns === '0' ? 'Main' : `NS ${ns}`, count })).sort((a, b) => b.count - a.count).slice(0, 8)}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(57,255,20,0.1)" />
+                      <XAxis dataKey="ns" tick={{ fill: 'rgba(57,255,20,0.4)', fontSize: 9 }} />
+                      <YAxis tick={{ fill: 'rgba(57,255,20,0.4)', fontSize: 9 }} />
+                      <Tooltip contentStyle={{ background: '#05130a', border: '1px solid rgba(57,255,20,0.3)', fontSize: 11 }} />
+                      <Bar dataKey="count" fill="#39ff14" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              </div>
-            </div>
-
-            {/* Wikidata contributions */}
-            <div className="mb-8">
-              <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                WIKIDATA CONTRIBUTIONS
-              </h2>
-              <p className="text-xs text-primary/50 mb-3">
-                Alice also contributes directly to Wikidata — the structured data
-                behind Wikipedia. These numbers are all-time, sourced from XTools.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">TOTAL WIKIDATA EDITS</p>
-                  <p className="text-xl text-primary neon-glow">{formatNumber(wikidataEdits)}</p>
-                </div>
-                <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ITEMS CREATED</p>
-                  <p className="text-xl text-primary neon-glow">{formatNumber(wikidataItemsCreated)}</p>
-                </div>
-                <div className="border border-primary/20 bg-primary/5 p-4 rounded">
-                  <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">TOP ITEMS EDITED</p>
-                  {wikiDetails['wikidatawiki']?.topPages?.slice(0, 3).map((p, i) => (
-                    <div key={i} className="text-xs text-primary/70 truncate">{p.title}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Top pages */}
-            {topPages.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                  MOST-EDITED PAGES (ALL TIME)
-                </h2>
-                <p className="text-xs text-primary/50 mb-3">
-                  The pages she has touched most often across all wikis. Titles are
-                  prefixed with the wiki name. Based on XTools top pages for WMF
-                  wikis and complete AU contribution history.
-                </p>
-                <div className="border border-primary/20 bg-background/50 p-3 rounded overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-primary/50 border-b border-primary/20">
-                        <th className="text-left py-2 px-2 font-normal">PAGE</th>
-                        <th className="text-right py-2 px-2 font-normal">EDITS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topPages.map((p, idx) => (
-                        <tr key={idx} className="border-b border-primary/10 last:border-0">
-                          <td className="py-2 px-2 text-primary/80">{p.wikiName}:{p.title}</td>
-                          <td className="py-2 px-2 text-right text-primary">{p.count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              </>
             )}
 
-            {/* About Alice */}
-            <div className="mb-8">
-              <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                ABOUT ALICE
-              </h2>
-              <p className="text-sm text-primary/70 leading-relaxed">
-                Alice — known as <span className="text-primary">Aliceinthealice</span> on
-                Meta and English Wikipedia and <span className="text-primary">Alice_Woods</span>{' '}
-                on Wikimedia Australia — is a dedicated Wikimedia editor whose work spans
-                multiple projects. She builds and maintains article content, creates new
-                articles from scratch, and dives into Wikidata to keep structured data
-                connected and current. Her contributions reflect real knowledge work:
-                careful research, clear writing, and a commitment to the open web. For a
-                deeper look at her activity, explore her user pages and live contribution
-                history below.
-              </p>
-            </div>
+            {/* Top edited pages */}
+            {topEdits.length > 0 && (
+              <>
+                <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Most-edited pages — {namespaceTotals?.wiki}</h2>
+                <div className="border border-primary/20 rounded divide-y divide-primary/10 mb-6">
+                  {topEdits.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+                      <span className="text-primary/80 truncate">{p.page_title || p.full_page_title}</span>
+                      <span className="text-primary/40 shrink-0 ml-3">{fmt(p.count)} edits</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
-            {/* Source links */}
-            <div className="mb-8">
-              <h2 className="text-lg font-display tracking-widest text-primary neon-glow mb-2">
-                SOURCES
-              </h2>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a
-                    href="https://meta.wikimedia.org/wiki/User:Aliceinthealice"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary/70 hover:text-primary underline"
-                  >
-                    Meta-Wiki user page <ExternalLink size={12} />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://wikimedia.org.au/wiki/User:Alice_Woods"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary/70 hover:text-primary underline"
-                  >
-                    Wikimedia Australia user page <ExternalLink size={12} />
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://xtools.wmcloud.org/globalcontribs/Aliceinthealice"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary/70 hover:text-primary underline"
-                  >
-                    XTools Global Contributions <ExternalLink size={12} />
-                  </a>
-                </li>
-              </ul>
+            {/* Live recent activity feed */}
+            <h2 className="text-xs uppercase tracking-wider text-primary/50 mb-2">Right now — most recent activity, any wiki</h2>
+            <div className="border border-primary/20 rounded divide-y divide-primary/10">
+              {recentGrouped.length === 0 ? (
+                <div className="px-3 py-4 text-primary/40 text-xs text-center">No recent activity found.</div>
+              ) : recentGrouped.map((c) => (
+                <div key={c.key} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <div className="min-w-0">
+                    <span className="text-primary/80 truncate block">{c.title}{c.count > 1 ? ` — ${c.count} edits` : ''}</span>
+                    <span className="text-primary/40 text-[10px]">{c.project}</span>
+                  </div>
+                  <span className="text-primary/40 shrink-0 text-[10px]">{timeAgo(c.timestamp)}</span>
+                </div>
+              ))}
             </div>
-
-            {/* Footer note */}
-            <p className="text-[10px] text-primary/30 mt-8 border-t border-primary/10 pt-4">
-              Data fetched at {lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}. All
-              numbers are live from XTools and Wikimedia APIs and may change as she edits.
-            </p>
           </>
         )}
       </div>
