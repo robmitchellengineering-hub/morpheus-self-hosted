@@ -38,12 +38,26 @@ const TIMEOUT_MS = 20000;
 const XTOOLS = 'https://xtools.wmcloud.org/api';
 const USERNAME = 'Aliceinthealice';
 // The three wikis she's actually active on, confirmed by hitting XTools
-// directly rather than assumed. Order = display order.
+// directly rather than assumed. Order = display order. `tone` is a purely
+// decorative color key (one of the app's real status-* tokens) so each wiki
+// reads as its own color at a glance in the table and activity feed below —
+// not a severity signal, just variety.
 const WIKIS = [
-  { id: 'www.wikidata.org', label: 'Wikidata' },
-  { id: 'commons.wikimedia.org', label: 'Wikimedia Commons' },
-  { id: 'en.wikipedia.org', label: 'English Wikipedia' },
+  { id: 'www.wikidata.org', label: 'Wikidata', tone: 'info' },
+  { id: 'commons.wikimedia.org', label: 'Wikimedia Commons', tone: 'warning' },
+  { id: 'en.wikipedia.org', label: 'English Wikipedia', tone: 'success' },
 ];
+const WIKI_TONE = Object.fromEntries(WIKIS.map((w) => [w.id, w.tone]));
+const TONE_DOT = {
+  info: 'bg-info shadow-[0_0_6px_hsl(var(--status-info)/0.7)]',
+  warning: 'bg-warning shadow-[0_0_6px_hsl(var(--status-warning)/0.7)]',
+  success: 'bg-success shadow-[0_0_6px_hsl(var(--status-success)/0.7)]',
+};
+const TONE_TEXT = { info: 'text-info', warning: 'text-warning', success: 'text-success' };
+function WikiDot({ id }) {
+  const tone = WIKI_TONE[id] || 'info';
+  return <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${TONE_DOT[tone]}`} />;
+}
 
 async function fetchJson(url) {
   const controller = new AbortController();
@@ -235,11 +249,18 @@ export default function AliceStats() {
                 ['Edits, every wiki', fmt(globalInfo?.editcount ?? totalLive), true],
                 ['Pages created', fmt(totalCreated)],
                 ['Years editing', yearsActive ? `${yearsActive}y` : '—'],
-                ['Community role', isEventOrganizer ? 'Event Organizer' : '—'],
-              ].map(([label, value, highlight]) => (
+                ['Community role', isEventOrganizer ? 'Event Organizer' : '—', false, true],
+              ].map(([label, value, highlight, badge]) => (
                 <div key={label} className={highlight ? 'border border-success/30 bg-success/5 p-4' : 'border border-primary/20 bg-primary/5 p-4'}>
                   <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">{label.toUpperCase()}</p>
-                  <p className={highlight ? 'text-xl text-success neon-glow' : 'text-xl text-primary neon-glow'}>{value}</p>
+                  {badge && value !== '—' ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 border border-success/40 bg-success/10 text-success rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-success shadow-[0_0_6px_hsl(var(--status-success)/0.7)]" />
+                      {value}
+                    </span>
+                  ) : (
+                    <p className={highlight ? 'text-xl text-success neon-glow' : 'text-xl text-primary neon-glow'}>{value}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -261,10 +282,15 @@ export default function AliceStats() {
                     const d = perWiki?.[w.id];
                     return (
                       <tr key={w.id} className="border-b border-primary/10 last:border-0 align-top">
-                        <td className="px-3 py-2">{w.label}</td>
+                        <td className="px-3 py-2">
+                          <span className="inline-flex items-center gap-2">
+                            <WikiDot id={w.id} />
+                            {w.label}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 text-right text-primary">{d ? fmt(d.live_edit_count) : 'no data'}</td>
-                        <td className="px-3 py-2 text-right text-primary/60">{d ? fmt(d.deleted_edit_count) : '—'}</td>
-                        <td className="px-3 py-2 text-right text-primary/60">{d ? fmt(d.creation_count) : '—'}</td>
+                        <td className="px-3 py-2 text-right text-primary/70">{d ? fmt(d.deleted_edit_count) : '—'}</td>
+                        <td className="px-3 py-2 text-right text-primary/70">{d ? fmt(d.creation_count) : '—'}</td>
                       </tr>
                     );
                   })}
@@ -330,9 +356,12 @@ export default function AliceStats() {
                 <div className="px-3 py-4 text-primary/40 text-xs text-center">No recent activity found.</div>
               ) : recentGrouped.map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                  <div className="min-w-0">
-                    <span className="text-primary/80 truncate block">{c.title}{c.count > 1 ? ` — ${c.count} edits` : ''}</span>
-                    <span className="text-primary/40 text-[10px]">{c.project}</span>
+                  <div className="min-w-0 flex items-start gap-2">
+                    <WikiDot id={c.project} />
+                    <div className="min-w-0">
+                      <span className="text-primary/80 truncate block">{c.title}{c.count > 1 ? ` — ${c.count} edits` : ''}</span>
+                      <span className={`text-[10px] ${TONE_TEXT[WIKI_TONE[c.project]] || 'text-primary/50'}`}>{c.project}</span>
+                    </div>
                   </div>
                   <span className="text-primary/40 shrink-0 text-[10px]">{timeAgo(c.timestamp)}</span>
                 </div>
