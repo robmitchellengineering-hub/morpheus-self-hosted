@@ -1,6 +1,7 @@
 // Windows EXE compile target — produces a .exe executable.
 // Detects Node (pkg) vs Python (PyInstaller), bundles icons, data files,
 // and hidden imports for PyInstaller to avoid runtime ModuleNotFoundError.
+// Runs on a Windows runner with PowerShell to produce a genuine .exe.
 
 import {
   isNodeProject, isPythonProject, parsePackageJson, detectPythonEntry,
@@ -11,7 +12,7 @@ import {
 export const windowsExe = {
   id: 'windows-exe',
   label: 'Windows EXE',
-  runner: 'ubuntu-latest',
+  runner: 'windows-latest',
 
   validate(files) {
     const warnings = [];
@@ -66,13 +67,13 @@ export const windowsExe = {
         { run: 'npx @yao-pkg/pkg . --targets node20-win-x64 --output app.exe' },
         {
           name: 'Verify executable',
-          run: 'test -f app.exe || { echo "pkg produced no executable (does package.json have a bin field?)"; exit 1; }'
+          run: 'if (-not (Test-Path app.exe)) { Write-Error "pkg produced no executable (does package.json have a bin field?)"; exit 1 }'
         },
-        { run: 'zip -r release.zip app.exe' }
+        { run: 'Compress-Archive -Path app.exe -DestinationPath release.zip' }
       ];
     }
 
-    // Python — PyInstaller
+    // Python — PyInstaller (Windows runner, PowerShell commands)
     const entry = detectPythonEntry(files) || 'main.py';
     const icon = detectIcon(files, ['.ico']);
     const dataDirs = detectDataDirs(files);
@@ -81,13 +82,19 @@ export const windowsExe = {
 
     const pyinstallerArgs = ['--onefile', '--name', 'app'];
     if (icon) pyinstallerArgs.push(`--icon ${icon}`);
+    // Windows uses ';' as the PyInstaller --add-data separator (not ':')
     for (const dir of dataDirs) {
-      pyinstallerArgs.push(`--add-data "${dir}:${dir}"`);
+      pyinstallerArgs.push(`--add-data "${dir};${dir}"`);
     }
     for (const imp of hiddenImports) {
       pyinstallerArgs.push(`--hidden-import ${imp}`);
     }
     pyinstallerArgs.push(entry);
+
+    // Build a PowerShell array literal and invoke pyinstaller with it.
+    const psArray = pyinstallerArgs
+      .map(a => `'${a.replace(/'/g, "''")}'`)
+      .join(', ');
 
     return [
       { uses: 'actions/checkout@v4' },
@@ -95,17 +102,20 @@ export const windowsExe = {
         uses: 'actions/setup-python@v5',
         with: { 'python-version': `'${pythonVersion}'` }
       },
-      { run: 'pip install -r requirements.txt 2>/dev/null || true' },
+      {
+        name: 'Install dependencies',
+        run: 'if (Test-Path requirements.txt) { pip install -r requirements.txt }'
+      },
       { run: 'pip install pyinstaller' },
       {
         name: 'Build with PyInstaller',
         run: [
-          `pyinstaller ${pyinstallerArgs.join(' ')}`,
-          'ls dist/',
-          'compgen -G "dist/*.exe" > /dev/null || { echo "PyInstaller produced no .exe"; exit 1; }'
+          `$pyinstallerArgs = @(${psArray})`,
+          '& pyinstaller @pyinstallerArgs',
+          'if (-not (Test-Path dist\\app.exe)) { Write-Error "PyInstaller produced no .exe"; exit 1 }',
+          'Compress-Archive -Path dist\\* -DestinationPath release.zip'
         ].join('\n')
-      },
-      { run: 'zip -r release.zip dist/' }
+      }
     ];
   },
 
@@ -113,7 +123,7 @@ export const windowsExe = {
     glob: 'release.zip',
     isGlob: false,
     artifactName: 'app-windows.zip',
-    verifyCommand: 'test -f release.zip || { echo "No executable archive produced"; exit 1; }'
+    verifyCommand: 'if (-not (Test-Path release.zip)) { Write-Error "No executable archive produced"; exit 1 }'
   }
 };
 
