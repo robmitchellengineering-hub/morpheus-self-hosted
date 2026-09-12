@@ -56,7 +56,7 @@ export const windowsExe = {
 
   buildSteps(files) {
     if (isNodeProject(files)) {
-      const nodeVersion = detectNodeVersion(files) || '20';
+      const nodeVersion = detectNodeVersion(files) || '24';
       return [
         { uses: 'actions/checkout@v4' },
         {
@@ -64,7 +64,7 @@ export const windowsExe = {
           with: { 'node-version': `'${nodeVersion}'` }
         },
         { run: 'npm install' },
-        { run: 'npx @yao-pkg/pkg . --targets node20-win-x64 --output app.exe' },
+        { run: 'npx @yao-pkg/pkg . --targets node24-win-x64 --output app.exe' },
         {
           name: 'Verify executable',
           run: 'if (-not (Test-Path app.exe)) { Write-Error "pkg produced no executable (does package.json have a bin field?)"; exit 1 }'
