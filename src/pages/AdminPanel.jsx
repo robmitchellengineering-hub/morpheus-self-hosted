@@ -4,6 +4,7 @@ import {
   ShieldCheck, Loader2, ArrowLeft, Users, Activity, DollarSign,
   Settings2, ListChecks, ScrollText, Plus, Trash2, Check, RefreshCw,
   AlertTriangle, CheckCircle2, XCircle, Terminal, Cpu, FileText, Download, FileDown,
+  Gift,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { base44 } from '@/api/base44Client';
@@ -118,7 +119,97 @@ function OverviewTab() {
       </Card>
 
       {data.deepseekBalance?.deepseekPrimary && <DeepSeekBalanceCard status={data.deepseekBalance} />}
+      <FreeUsageGrantsCard />
     </div>
+  );
+}
+
+// Free-usage grants (2026-09-12, Rob: wanted to give an account free usage
+// "withought giving full admin access") — a `billing_exempt` flag, separate
+// from `role`, checked alongside it in ai.js's isExempt logic. Grants
+// nothing else: no Admin Panel access, no ops console, nothing beyond
+// skipping the credit meter.
+function FreeUsageGrantsCard() {
+  const [users, setUsers] = useState([]);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await base44.admin.listBillingExempt();
+      setUsers(res.users || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const grant = async () => {
+    if (!email.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await base44.admin.setBillingExempt(email.trim(), true);
+      setEmail('');
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const revoke = async (u) => {
+    setError(null);
+    try {
+      await base44.admin.setBillingExempt(u.email, false);
+      setUsers((cur) => cur.filter((x) => x.id !== u.id));
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-primary/60 text-xs mb-2 tracking-wider"><Gift size={13} /> FREE USAGE GRANTS</div>
+      <p className="text-primary/40 text-[11px] mb-3">Billing-exempt, same as an admin account — but no Admin Panel, ops console, or any other admin capability.</p>
+      <div className="flex gap-2 mb-3">
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') grant(); }}
+          placeholder="account@example.com"
+          className="flex-1 bg-background border border-primary/30 px-2 py-1.5 text-xs text-primary placeholder:text-primary/30"
+        />
+        <button onClick={grant} disabled={saving || !email.trim()} className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs transition-colors disabled:opacity-40">
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} GRANT
+        </button>
+      </div>
+      {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
+      {loading ? (
+        <div className="text-primary/40 text-xs italic py-2 text-center">Loading...</div>
+      ) : users.length === 0 ? (
+        <div className="text-primary/40 text-xs italic py-2 text-center">No accounts currently granted free usage.</div>
+      ) : (
+        <div className="divide-y divide-primary/10">
+          {users.map((u) => (
+            <div key={u.id} className="flex items-center justify-between py-1.5 text-xs">
+              <span className="text-primary/80 truncate">{u.email}{u.role === 'admin' && <span className="text-primary/40"> (already admin — this has no extra effect)</span>}</span>
+              <button onClick={() => revoke(u)} className="text-red-500/70 hover:text-red-500 shrink-0 ml-2" title="Revoke">
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

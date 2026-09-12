@@ -352,6 +352,9 @@ const admin = {
   // getFreshness returns the last computed report, refreshFreshness forces one.
   getFreshness: () => apiFetch('/admin/freshness'),
   refreshFreshness: (notify = false) => apiFetch('/admin/freshness/refresh', { method: 'POST', body: { notify } }),
+  // Free usage grants — billing exemption without full admin access.
+  listBillingExempt: () => apiFetch('/admin/users/billing-exempt'),
+  setBillingExempt: (email, exempt) => apiFetch('/admin/users/billing-exempt', { method: 'POST', body: { email, exempt } }),
 };
 
 export const base44 = { entities, functions, integrations, connectors, auth, admin };

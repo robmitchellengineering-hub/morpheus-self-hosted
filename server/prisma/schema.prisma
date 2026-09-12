@@ -42,8 +42,15 @@ model User {
   // a fraction of a credit, and rounding that to 0 would silently undercharge.
   // Scale 4 gives resolution far finer than any real per-call cost. Billing
   // exemption for admins reuses the existing `role` column above (role ===
-  // 'admin') -- no separate exemption flag needed.
+  // 'admin').
   credit_balance  Decimal  @default(200) @db.Decimal(14, 4)
+
+  // Free-usage grant, separate from `role` (2026-09-12, Rob: wanted a way to
+  // give someone free usage "withought giving full admin access" — role
+  // === 'admin' was this app's only billing exemption until now, but it
+  // also grants the full Admin Panel). Checked alongside role in ai.js's
+  // isExempt logic; grants no other admin capability anywhere.
+  billing_exempt  Boolean  @default(false)
 
   projects        Project[]
   project_files   ProjectFile[]

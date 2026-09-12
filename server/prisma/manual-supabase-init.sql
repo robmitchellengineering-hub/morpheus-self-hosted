@@ -32,6 +32,8 @@ create table users (
   -- numeric(14,4), not integer, since Step 3 (server/src/lib/billing.js)
   -- bills in fractional credits -- a cheap chat turn can cost less than 1.
   credit_balance numeric(14,4) not null default 200,
+  -- Free-usage grant separate from `role` — see add-billing-exempt-flag.sql.
+  billing_exempt boolean not null default false,
   created_date timestamp(3) not null default now(),
   updated_date timestamp(3) not null default now()
 );
