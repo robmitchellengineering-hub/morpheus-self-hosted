@@ -393,8 +393,20 @@ export default function AliceStats() {
                 { label: 'Edits, every wiki', value: fmt(globalInfo?.editcount ?? totalLive), tone: 'success', hero: true },
                 { label: 'Pages created', value: fmt(totalCreated), tone: 'info' },
                 { label: 'Years editing', value: yearsActive ? `${yearsActive}y` : '—', tone: 'warning' },
-                { label: 'Community role', value: isEventOrganizer ? 'Event Organizer' : '—', tone: 'danger', badge: true },
-              ].map(({ label, value, tone, hero, badge }) => (
+                {
+                  label: 'Role',
+                  // Her actual professional title (Wikimedia Australia, same
+                  // source as the bio above) — not the wiki-technical
+                  // "Event Organizer" permission group, which is a real,
+                  // separately-verified fact (from live user_groups data)
+                  // shown as a caption underneath instead of standing in for
+                  // her job title.
+                  value: 'Education & Projects Coordinator',
+                  tone: 'danger',
+                  small: true,
+                  caption: isEventOrganizer ? 'verified on-wiki Event Organizer' : null,
+                },
+              ].map(({ label, value, tone, hero, badge, small, caption }) => (
                 <div key={label} className={`border p-4 ${TONE_CARD[tone]}`}>
                   <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">{label.toUpperCase()}</p>
                   {badge && value !== '—' ? (
@@ -404,9 +416,12 @@ export default function AliceStats() {
                     </span>
                   ) : hero ? (
                     <p className={`text-xl neon-glow ${TONE_TEXT[tone]}`}>{value}</p>
+                  ) : small ? (
+                    <p className="text-sm text-ink leading-snug">{value}</p>
                   ) : (
                     <p className="text-xl text-ink">{value}</p>
                   )}
+                  {caption && <p className="text-primary/40 text-[9px] mt-1 leading-tight">{caption}</p>}
                 </div>
               ))}
             </div>
