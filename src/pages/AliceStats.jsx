@@ -107,6 +107,7 @@ export default function AliceStats() {
   const [monthCounts, setMonthCounts] = useState([]); // month_counts for her top wiki
   const [namespaceTotals, setNamespaceTotals] = useState(null);
   const [topEdits, setTopEdits] = useState([]);
+  const [estimatedWords, setEstimatedWords] = useState(null); // en.wikipedia articles she created, by byte length
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -174,6 +175,24 @@ export default function AliceStats() {
       if (ns?.namespace_totals) setNamespaceTotals({ wiki: topWiki.label, totals: ns.namespace_totals });
       const teList = te?.top_edits ? Object.values(te.top_edits).flat() : [];
       setTopEdits(teList.slice(0, 8));
+
+      // 7. Approximate total words written. There's no literal per-user
+      // word-count endpoint (confirmed against XTools' real API surface) —
+      // English Wikipedia only, deliberately, since an article's byte
+      // length there is real prose, unlike Wikidata's structured items or
+      // Commons' file-description pages. XTools' real "pages" endpoint
+      // (confirmed live) lists every non-redirect article she created in
+      // namespace 0 with its current byte length; summed and divided by an
+      // average English word length (~6 chars incl. the trailing space).
+      // This is an ESTIMATE, shown as one — not presented as an exact count,
+      // and it undercounts prose she added to pages she didn't create.
+      const createdPages = await fetchJson(`${XTOOLS}/user/pages/en.wikipedia.org/${USERNAME}`)
+        .then((r) => (r?.pages || []).flat())
+        .catch(() => []);
+      if (createdPages.length > 0) {
+        const totalBytes = createdPages.reduce((sum, p) => sum + (p.length || 0), 0);
+        setEstimatedWords(Math.round(totalBytes / 6));
+      }
 
       const gotAnything = wikiResults.some(Boolean) || gui || gc.length > 0;
       if (!gotAnything) setError('Could not reach any Wikimedia API right now — try refreshing in a moment.');
@@ -271,7 +290,8 @@ export default function AliceStats() {
                 { label: 'Pages created', value: fmt(totalCreated), tone: 'info' },
                 { label: 'Years editing', value: yearsActive ? `${yearsActive}y` : '—', tone: 'warning' },
                 { label: 'Community role', value: isEventOrganizer ? 'Event Organizer' : '—', tone: 'danger', badge: true },
-              ].map(({ label, value, tone, hero, badge }) => (
+                { label: 'Words written', value: estimatedWords ? `~${fmt(estimatedWords)}` : '—', tone: 'success', caption: 'estimated, from en.wikipedia articles she created' },
+              ].map(({ label, value, tone, hero, badge, caption }) => (
                 <div key={label} className={`border p-4 ${TONE_CARD[tone]}`}>
                   <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">{label.toUpperCase()}</p>
                   {badge && value !== '—' ? (
@@ -284,6 +304,7 @@ export default function AliceStats() {
                   ) : (
                     <p className="text-xl text-ink">{value}</p>
                   )}
+                  {caption && <p className="text-primary/40 text-[9px] mt-1 leading-tight">{caption}</p>}
                 </div>
               ))}
             </div>
