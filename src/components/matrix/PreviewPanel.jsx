@@ -156,21 +156,40 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
     return () => { cancelled = true; clearTimeout(timer); };
   }, [fileSig, isNative, isSelfDev, projectId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Self-dev: scoped rapid prototype for whatever the most recent turn
-  // touched. Keyed on selfDevRev (bumped once per completed turn in
-  // useWorkspace.js) rather than fileSig, so this fires exactly once per
-  // turn — no debounce needed, unlike the native effect above, which keys
-  // off every file-list change. A turn that touched no frontend file (or no
-  // turn has happened yet this session) intentionally does nothing here:
-  // no LLM call, no build — see the idle/backend-only render branch below.
+  // Self-dev: scoped rapid prototype for whatever turn's files are loaded
+  // above. Auto-generates exactly ONCE per run of frontend-touching turns —
+  // Rob, 2026-09-12: "rapid prototype needs to only regenerate when asked to
+  // do so, when working on a longer build it keeps spinning away wasting
+  // tokens." Every completed turn used to re-trigger this (keyed on
+  // selfDevRev, bumped once per turn in useWorkspace.js), so a long
+  // multi-turn build burned one LLM call per turn whether or not anyone was
+  // even looking at the preview. Now: the first turn that reaches
+  // 'prototype' state auto-generates (so the panel isn't just empty);
+  // every subsequent turn leaves the existing preview exactly as-is
+  // (see the STALE hint below) until the operator explicitly clicks REFRESH
+  // (rebuild(), which bumps refreshKey and is the only thing that can
+  // trigger a regeneration from here on).
+  const autoGenDoneRef = useRef(false);
+  const prevRefreshKeyRef = useRef(refreshKey);
+  const prevProjectIdRef = useRef(projectId);
+  const [staleRev, setStaleRev] = useState(null); // selfDevRev the current html was generated for
   useEffect(() => {
     if (!isSelfDev || !projectId) return;
+    if (projectId !== prevProjectIdRef.current) {
+      prevProjectIdRef.current = projectId;
+      autoGenDoneRef.current = false; // a different project's turns/paths mean nothing here — earn a fresh auto-generate
+    }
     if (selfDevState !== 'prototype') {
       setHtml('');
       setError(null);
       setBuilding(false);
+      autoGenDoneRef.current = false; // leaving prototype-eligible state — next entry gets one fresh auto-generate
+      setStaleRev(null);
       return;
     }
+    const manualRefresh = refreshKey !== prevRefreshKeyRef.current;
+    prevRefreshKeyRef.current = refreshKey;
+    if (!manualRefresh && autoGenDoneRef.current) return; // a later turn landed, but nobody asked for a new preview
     let cancelled = false;
     (async () => {
       setBuilding(true);
@@ -178,6 +197,8 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
       try {
         const res = await base44.functions.invoke('generateSelfDevPrototype', { projectId, paths: selfDevFrontendPaths });
         if (!cancelled) {
+          autoGenDoneRef.current = true;
+          setStaleRev(selfDevRev);
           if (res.data.truncated) {
             setHtml('');
             setError('This change is too large for a scoped preview — review it in the file editor instead.');
@@ -188,6 +209,8 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
         }
       } catch (e) {
         if (!cancelled) {
+          autoGenDoneRef.current = true;
+          setStaleRev(selfDevRev);
           setError(/OUTPUT_TRUNCATED/.test(e.message || '')
             ? 'This change is too large for a scoped preview — review it in the file editor instead.'
             : (e.message || 'Prototype generation failed'));
@@ -199,9 +222,11 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
     return () => { cancelled = true; };
     // selfDevFrontendSig (not the array itself) is the real dependency — a
     // fresh array reference is built every render regardless of content.
-    // refreshKey is included so the manual refresh button (rebuild(), below)
-    // can force a fresh generation of the exact same paths.
+    // selfDevRev/selfDevFrontendSig still have to stay listed so a later
+    // manual refresh (refreshKey change) reads the LATEST turn's paths —
+    // the guard above is what stops them from ALSO triggering their own run.
   }, [isSelfDev, projectId, selfDevRev, selfDevState, selfDevFrontendSig, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selfDevPreviewStale = isSelfDev && selfDevState === 'prototype' && staleRev !== null && staleRev !== selfDevRev;
 
   const rebuild = useCallback(() => {
     if (isSelfDev) {
@@ -304,6 +329,11 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
         <div className="flex items-start gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 shrink-0 text-[11px] text-primary/60 font-mono">
           <span className="shrink-0 text-primary/40">TOUCHED:</span>
           <span className="truncate">{selfDevFrontendPaths.join(', ')}</span>
+          {selfDevPreviewStale && (
+            <span className="shrink-0 text-primary/40 flex items-center gap-1 ml-auto pl-2">
+              (preview from an earlier turn — click <RefreshCw size={9} className="inline" /> to update)
+            </span>
+          )}
         </div>
       )}
       <div ref={stageRef} className="flex-1 bg-[#0a0a0a] relative overflow-hidden">
