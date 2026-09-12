@@ -16,6 +16,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
+import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { checkA11y } from '../lib/a11yCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
@@ -1084,6 +1085,8 @@ OPERATOR SAYS: ${message}`;
     let appliedOps = [];
     let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
     let syntaxCritical = []; // files that still didn't parse after a fix attempt
+    let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
+    const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
     let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
     let polishCount = 0;
     let coderModel;
@@ -1301,15 +1304,24 @@ OPERATOR SAYS: ${message}`;
       // Deterministic per-file esbuild check over the final fileOps — the
       // same pass-1 the self-dev verify gate runs (lib/syntaxCheck.js), now
       // on every build. A parse error means a half-applied edit or a
-      // malformed generation; one targeted full-content retry, then flag it
-      // so the operator isn't silently handed a white screen. Skips files in
-      // other languages, so it's a no-op for Python / Arduino / etc.
+      // malformed generation.
+      //
+      // 2026-09-12 (Rob: self-dev's output isn't as reliable as Claude
+      // Code's — this is step one of closing that): a single retry
+      // routinely wasn't enough to fully clear a multi-file break, so a
+      // still-broken file just got flagged and shipped anyway. This now
+      // iterates — re-checking and re-fixing with the actual REMAINING
+      // errors each pass — up to MAX_GATE_ATTEMPTS real attempts before
+      // giving up, the same "verify against reality, retry on the real
+      // failure" loop an agent doing this by hand would run. Bounded to
+      // keep cost/latency sane. Skips files in other languages, so it's a
+      // no-op for Python / Arduino / etc.
       if (fileOps.length > 0) {
         const changedCode = () => fileOps
           .filter((op) => op.action !== 'delete' && typeof op.content === 'string')
           .map((op) => ({ path: op.path, content: op.content }));
         let syntaxErrors = await checkSyntax(changedCode());
-        if (syntaxErrors.length > 0) {
+        for (let attempt = 1; syntaxErrors.length > 0 && attempt < MAX_GATE_ATTEMPTS; attempt++) {
           stages.start('verify');
           const badPaths = [...new Set(syntaxErrors.map((e) => e.file))];
           const curBlock = badPaths
@@ -1320,7 +1332,7 @@ OPERATOR SAYS: ${message}`;
           try {
             const fix = await invokeAI({
               userId: user.id,
-              prompt: `${coderPrompt}\n\nThe code you just wrote does not parse:\n${syntaxErrors.map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — fix the syntax error, change nothing else.`,
+              prompt: `${coderPrompt}\n\nThe code you just wrote does not parse (fix attempt ${attempt} of ${MAX_GATE_ATTEMPTS - 1}):\n${syntaxErrors.map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — fix the syntax error, change nothing else.`,
               schema: coderSchema,
               fileUrls,
               role: 'coder',
@@ -1332,13 +1344,87 @@ OPERATOR SAYS: ${message}`;
               const orig = fileOps.find((op) => op.path === fx.path);
               if (orig) orig.content = fx.content;
             }
-            syntaxErrors = await checkSyntax(changedCode());
           } catch (err) {
             console.error('[chatWithMorpheus] syntax-fix retry failed:', err.message);
+            stages.done('verify');
+            break; // the fix call itself is failing — looping again won't help
           }
           stages.done('verify');
+          syntaxErrors = await checkSyntax(changedCode());
         }
         syntaxCritical = syntaxErrors.map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
+      }
+
+      // ── Deep verify gate (self-dev only): bundle from real entry points +
+      // cross-file export check ───────────────────────────────────────────
+      // The syntax gate above checks each changed file in isolation — it
+      // cannot catch a change that parses fine on its own but breaks an
+      // IMPORTER elsewhere in the repo. That's exactly KNOWN-HAZARDS.md's
+      // H1: a self-dev change reshaped github.js and every other importer
+      // broke at import time with "does not provide an export named X" —
+      // undetected until the next compile/deploy hit it, not when it was
+      // introduced. verifySelfDev.js already runs this exact check
+      // (lib/engine/verify.js — a real esbuild bundle from self-dev's real
+      // entry points, plus a cross-file named-export check), but only at
+      // PUSH time. Pulled forward to run on every build turn instead, with
+      // the same iterative fix-and-recheck loop as the syntax gate above,
+      // so a cross-file break is caught and self-corrected the moment it's
+      // introduced. Self-dev only: needs the FULL current repo (not the
+      // scoped context a build turn sends the coder) to resolve real
+      // imports, and its entry points/exclude rules are self-dev-specific.
+      if (isSelfDev && fileOps.length > 0) {
+        const fullFiles = await prisma.projectFile.findMany({
+          where: { project_id: projectId },
+          select: { path: true, content: true },
+        });
+        const applyVirtual = () => {
+          const byPath = new Map(fullFiles.map((f) => [f.path, f.content]));
+          for (const op of fileOps) {
+            if (op.action === 'delete') byPath.delete(op.path);
+            else if (typeof op.content === 'string') byPath.set(op.path, op.content);
+          }
+          return Array.from(byPath, ([path, content]) => ({ path, content }));
+        };
+        const adapter = getDeliveryAdapter('self-dev');
+        let deep = await adapter.verify({ files: applyVirtual() });
+        for (let attempt = 1; !deep.ok && attempt < MAX_GATE_ATTEMPTS; attempt++) {
+          const badPaths = [...new Set(deep.errors.map((e) => e.file).filter(Boolean))];
+          const curBlock = badPaths
+            .map((p) => fileOps.find((op) => op.path === p && typeof op.content === 'string'))
+            .filter(Boolean)
+            .map((op) => `--- ${op.path} ---\n${op.content}`)
+            .join('\n\n');
+          // An error can point at an IMPORTER this turn never touched (the
+          // caller of a changed export) — there's nothing to hand the
+          // coder a "current content" for if fileOps never opened that
+          // file. Surface it as critical straight away rather than asking
+          // it to blindly rewrite a file it was never shown.
+          if (!curBlock) break;
+          stages.start('verify');
+          try {
+            const fix = await invokeAI({
+              userId: user.id,
+              prompt: `${coderPrompt}\n\nThis change breaks the wider repo — a real bundle + cross-file export check found (fix attempt ${attempt} of ${MAX_GATE_ATTEMPTS - 1}):\n${deep.errors.slice(0, 20).map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} [${e.phase}] — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT of the file(s) you touched:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — fix ONLY what breaks the check above (a missing/renamed export a caller still needs, a bad import path). Never remove or rename an export without checking every caller first. Change nothing else.`,
+              schema: coderSchema,
+              fileUrls,
+              role: 'coder',
+              maxTokens: 64000,
+            });
+            const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
+              .filter((op) => op.path && badPaths.includes(op.path) && typeof op.content === 'string');
+            for (const fx of fixOps) {
+              const orig = fileOps.find((op) => op.path === fx.path);
+              if (orig) orig.content = fx.content;
+            }
+          } catch (err) {
+            console.error('[chatWithMorpheus] deep-verify-fix retry failed:', err.message);
+            stages.done('verify');
+            break;
+          }
+          stages.done('verify');
+          deep = await adapter.verify({ files: applyVirtual() });
+        }
+        if (!deep.ok) deepVerifyCritical = deep.errors.slice(0, 10).map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
       }
 
       // ── Accessibility gate (web-app builds) ──────────────────────────────
@@ -1459,7 +1545,10 @@ OPERATOR SAYS: ${message}`;
       fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
     }
     if (syntaxCritical.length > 0) {
-      fullReply += `\n\n// CRITICAL: the code still has a syntax error after a fix attempt — ${syntaxCritical.join('; ')}. The change was applied anyway; ask me to fix ${syntaxCritical.length === 1 ? 'it' : 'them'} or revert.`;
+      fullReply += `\n\n// CRITICAL: the code still has a syntax error after ${MAX_GATE_ATTEMPTS - 1} fix attempts — ${syntaxCritical.join('; ')}. The change was applied anyway; ask me to fix ${syntaxCritical.length === 1 ? 'it' : 'them'} or revert.`;
+    }
+    if (deepVerifyCritical.length > 0) {
+      fullReply += `\n\n// CRITICAL: this still breaks the wider repo after a fix attempt (a real bundle + cross-file export check) — ${deepVerifyCritical.join('; ')}. The change was applied to this workspace anyway; PUSH TO PRODUCTION will re-check and block it, but fix or revert it here first.`;
     }
     if (a11yNotes.length > 0) {
       fullReply += `\n\n// A11Y: ${a11yNotes.length} accessibility issue${a11yNotes.length === 1 ? '' : 's'} left after a fix pass — ${a11yNotes.join('; ')}. The site still works; ask me to fix ${a11yNotes.length === 1 ? 'it' : 'them'}.`;
@@ -1471,7 +1560,7 @@ OPERATOR SAYS: ${message}`;
     // build changed files — the planner's context said to build that step, so
     // it's done; the operator can reopen it from the FEATURE panel to refine.
     // Self-dev advances its steps manually (on push, from the panel).
-    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0;
+    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0;
     if (escalatedFeature && escalatedFeature.activeStep) {
       fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
       if (buildProgressed) {
