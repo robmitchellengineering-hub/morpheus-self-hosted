@@ -440,10 +440,12 @@ export function useWorkspace() {
   // After a successful compile, download the release artifacts and save them
   // as ProjectFile records under _compiled/ so they appear in the file tree
   // as downloadable packages alongside the source code.
-  const saveCompiledArtifacts = useCallback(async (repoFullName) => {
+  const saveCompiledArtifacts = useCallback(async (repoFullName, assets) => {
     if (!currentProject) return;
     try {
-      const res = await base44.functions.invoke('saveCompiledArtifacts', { projectId: currentProject.id, repoFullName, target: currentProject.compile_target });
+      const body = { projectId: currentProject.id, repoFullName, target: currentProject.compile_target };
+      if (assets) body.assets = assets;
+      const res = await base44.functions.invoke('saveCompiledArtifacts', body);
       if (res.data?.saved > 0) {
         await loadFiles(currentProject.id);
       }
