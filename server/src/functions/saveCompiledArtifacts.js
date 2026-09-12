@@ -109,29 +109,44 @@ export default async function handler({ user, body, res }) {
       // keep original names for additional assets (glob targets) or when no
       // artifactName is declared.
       const displayName = (i === 0 && artifactName) ? artifactName : asset.name;
-      // Download the asset binary from the private repo. The API endpoint
-      // returns a 302 redirect to a signed CDN URL — we use manual redirect
-      // to get the Location header, then fetch the signed URL WITHOUT the
-      // Authorization header (the CDN rejects authed requests).
-      const downloadRes = await fetch(`${GH_API}/repos/${repoFullName}/releases/assets/${asset.id}`, {
-        headers: { ...h, Accept: 'application/octet-stream' },
-        redirect: 'manual',
-      });
-      if (downloadRes.status !== 302) {
-        errors.push(`${asset.name}: download HTTP ${downloadRes.status}`);
+      // Download the asset binary from the private repo. Use a single fetch
+      // with redirect:'follow' — Node's fetch strips the Authorization
+      // header on cross-origin redirects, so the signed CDN URL still
+      // receives no auth header (which rejects it), while the initial
+      // request retains the auth that grants access. Overcomes the previous
+      // two-step manual redirect that could fail with a generic "Failed to
+      // fetch". Retries 3 times with exponential backoff to survive
+      // transient network errors.
+      let buffer = null;
+      let downloadError = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const response = await fetch(`${GH_API}/repos/${repoFullName}/releases/assets/${asset.id}`, {
+            headers: { ...h, Accept: 'application/octet-stream' },
+            redirect: 'follow',
+          });
+          if (!response.ok) {
+            downloadError = new Error(`HTTP ${response.status}`);
+            if (attempt < 3) {
+              await new Promise(r => setTimeout(r, attempt * 1000));
+              continue;
+            }
+            break;
+          }
+          buffer = Buffer.from(await response.arrayBuffer());
+          break;
+        } catch (err) {
+          downloadError = err;
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, attempt * 1000));
+          }
+        }
+      }
+
+      if (!buffer) {
+        errors.push(`${asset.name}: download failed after 3 attempts: ${downloadError?.message || 'unknown error'}`);
         continue;
       }
-      const cdnUrl = downloadRes.headers.get('location');
-      if (!cdnUrl) {
-        errors.push(`${asset.name}: no redirect Location`);
-        continue;
-      }
-      const cdnRes = await fetch(cdnUrl, { redirect: 'follow' });
-      if (!cdnRes.ok) {
-        errors.push(`${asset.name}: CDN HTTP ${cdnRes.status}`);
-        continue;
-      }
-      const buffer = Buffer.from(await cdnRes.arrayBuffer());
       // Upload keeping the real extension (app.apk, app.exe, ...) — nothing
       // in storage.js or the upload route actually blocks these, and giving
       // the *stored* file a real extension (not just the ProjectFile path
@@ -163,7 +178,8 @@ export default async function handler({ user, body, res }) {
   }
 
   if (saved.length === 0) {
-    res.status(500).json({ error: 'Failed to download any artifacts', details: errors });
+    const errorDetails = errors.slice(0, 3).map(e => e.replace(/\s+/g, ' ').trim()).join('; ');
+    res.status(500).json({ error: `Failed to download any artifacts. ${errorDetails}`, details: errors });
     return;
   }
 
