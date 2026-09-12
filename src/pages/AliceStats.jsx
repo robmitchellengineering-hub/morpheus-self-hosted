@@ -48,12 +48,29 @@ const WIKIS = [
   { id: 'en.wikipedia.org', label: 'English Wikipedia', tone: 'success' },
 ];
 const WIKI_TONE = Object.fromEntries(WIKIS.map((w) => [w.id, w.tone]));
+// One shared decorative palette (the app's real status-* tokens) reused for
+// wiki dots below AND the headline stat cards — every class string here is a
+// full literal (never templated with the tone variable) so Tailwind's
+// content scanner can actually find and keep it at build time.
 const TONE_DOT = {
   info: 'bg-info shadow-[0_0_6px_hsl(var(--status-info)/0.7)]',
   warning: 'bg-warning shadow-[0_0_6px_hsl(var(--status-warning)/0.7)]',
   success: 'bg-success shadow-[0_0_6px_hsl(var(--status-success)/0.7)]',
+  danger: 'bg-danger shadow-[0_0_6px_hsl(var(--status-danger)/0.7)]',
 };
-const TONE_TEXT = { info: 'text-info', warning: 'text-warning', success: 'text-success' };
+const TONE_TEXT = { info: 'text-info', warning: 'text-warning', success: 'text-success', danger: 'text-danger' };
+const TONE_CARD = {
+  info: 'border-info/30 bg-info/5',
+  warning: 'border-warning/30 bg-warning/5',
+  success: 'border-success/30 bg-success/5',
+  danger: 'border-danger/30 bg-danger/5',
+};
+const TONE_BADGE = {
+  info: 'border-info/40 bg-info/10 text-info',
+  warning: 'border-warning/40 bg-warning/10 text-warning',
+  success: 'border-success/40 bg-success/10 text-success',
+  danger: 'border-danger/40 bg-danger/10 text-danger',
+};
 function WikiDot({ id }) {
   const tone = WIKI_TONE[id] || 'info';
   return <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${TONE_DOT[tone]}`} />;
@@ -212,7 +229,7 @@ export default function AliceStats() {
         </p>
 
         {/* Bio — real, sourced facts, not invented */}
-        <div className="border border-primary/20 bg-primary/5 px-4 py-3 mb-8 text-sm text-primary/85 leading-relaxed">
+        <div className="border border-primary/20 bg-primary/5 px-4 py-3 mb-8 text-sm text-ink leading-relaxed">
           <p className="mb-2">
             <strong className="text-primary">Alice Woods</strong> is the Education &amp; Projects Coordinator at{' '}
             <a href="https://wikimedia.org.au" target="_blank" rel="noreferrer" className="underline hover:text-primary inline-flex items-center gap-1">
@@ -243,23 +260,29 @@ export default function AliceStats() {
           </div>
         ) : (
           <>
-            {/* Headline numbers */}
+            {/* Headline numbers — each card its own accent color (purely
+                decorative, like the wiki dots below) so the row doesn't read
+                as one flat green block. Only the hero figure keeps the neon
+                glow treatment; the rest sit in near-white "ink" so the page
+                isn't wall-to-wall green. */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
               {[
-                ['Edits, every wiki', fmt(globalInfo?.editcount ?? totalLive), true],
-                ['Pages created', fmt(totalCreated)],
-                ['Years editing', yearsActive ? `${yearsActive}y` : '—'],
-                ['Community role', isEventOrganizer ? 'Event Organizer' : '—', false, true],
-              ].map(([label, value, highlight, badge]) => (
-                <div key={label} className={highlight ? 'border border-success/30 bg-success/5 p-4' : 'border border-primary/20 bg-primary/5 p-4'}>
+                { label: 'Edits, every wiki', value: fmt(globalInfo?.editcount ?? totalLive), tone: 'success', hero: true },
+                { label: 'Pages created', value: fmt(totalCreated), tone: 'info' },
+                { label: 'Years editing', value: yearsActive ? `${yearsActive}y` : '—', tone: 'warning' },
+                { label: 'Community role', value: isEventOrganizer ? 'Event Organizer' : '—', tone: 'danger', badge: true },
+              ].map(({ label, value, tone, hero, badge }) => (
+                <div key={label} className={`border p-4 ${TONE_CARD[tone]}`}>
                   <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">{label.toUpperCase()}</p>
                   {badge && value !== '—' ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 border border-success/40 bg-success/10 text-success rounded-full">
-                      <span className="w-1.5 h-1.5 rounded-full bg-success shadow-[0_0_6px_hsl(var(--status-success)/0.7)]" />
+                    <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 border rounded-full ${TONE_BADGE[tone]}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${TONE_DOT[tone]}`} />
                       {value}
                     </span>
+                  ) : hero ? (
+                    <p className={`text-xl neon-glow ${TONE_TEXT[tone]}`}>{value}</p>
                   ) : (
-                    <p className={highlight ? 'text-xl text-success neon-glow' : 'text-xl text-primary neon-glow'}>{value}</p>
+                    <p className="text-xl text-ink">{value}</p>
                   )}
                 </div>
               ))}
@@ -283,12 +306,12 @@ export default function AliceStats() {
                     return (
                       <tr key={w.id} className="border-b border-primary/10 last:border-0 align-top">
                         <td className="px-3 py-2">
-                          <span className="inline-flex items-center gap-2">
+                          <span className="inline-flex items-center gap-2 text-ink">
                             <WikiDot id={w.id} />
                             {w.label}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-right text-primary">{d ? fmt(d.live_edit_count) : 'no data'}</td>
+                        <td className="px-3 py-2 text-right text-ink">{d ? fmt(d.live_edit_count) : 'no data'}</td>
                         <td className="px-3 py-2 text-right text-primary/70">{d ? fmt(d.deleted_edit_count) : '—'}</td>
                         <td className="px-3 py-2 text-right text-primary/70">{d ? fmt(d.creation_count) : '—'}</td>
                       </tr>
@@ -341,7 +364,7 @@ export default function AliceStats() {
                 <div className="border border-primary/20 divide-y divide-primary/10 mb-8">
                   {topEdits.map((p, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-                      <span className="text-primary/80 truncate">{p.page_title || p.full_page_title}</span>
+                      <span className="text-ink truncate">{p.page_title || p.full_page_title}</span>
                       <span className="text-primary/40 shrink-0 ml-3">{fmt(p.count)} edits</span>
                     </div>
                   ))}
@@ -359,7 +382,7 @@ export default function AliceStats() {
                   <div className="min-w-0 flex items-start gap-2">
                     <WikiDot id={c.project} />
                     <div className="min-w-0">
-                      <span className="text-primary/80 truncate block">{c.title}{c.count > 1 ? ` — ${c.count} edits` : ''}</span>
+                      <span className="text-ink truncate block">{c.title}{c.count > 1 ? ` — ${c.count} edits` : ''}</span>
                       <span className={`text-[10px] ${TONE_TEXT[WIKI_TONE[c.project]] || 'text-primary/50'}`}>{c.project}</span>
                     </div>
                   </div>

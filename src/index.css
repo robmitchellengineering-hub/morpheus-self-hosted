@@ -48,6 +48,14 @@
        which theme (Clear or Classic) is active — requested separately from
        the rest of the Clear-theme brightening. */
     --heading: 130 100% 50%;
+    /* Near-white body copy (2026-09-12, Rob: "words are still green" on
+       /stats/alice, comparing against a standalone report artifact whose
+       body text was a pale near-white, reserving saturated color for
+       headings/numbers/badges) — same hue family as --primary so it still
+       reads as "this app", just far lighter, instead of a jarring pure
+       #fff. Use for real reading copy (paragraphs, primary table values);
+       leave headline numbers, H1s and glow effects on --primary/--heading. */
+    --text-ink: 142 35% 90%;
     --radius: 0.25rem;
     --font-heading: 'Share Tech Mono', ui-monospace, monospace;
     --font-body: 'JetBrains Mono', ui-monospace, monospace;
@@ -93,6 +101,7 @@
     --status-info: 199 89% 60%;
     --status-danger: 0 78% 58%;
     --heading: 130 100% 50%;
+    --text-ink: 142 35% 90%;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 142 90% 58%;
     --sidebar-primary: 142 90% 58%;
@@ -137,6 +146,7 @@
     --status-info: 130 100% 45%;
     --status-danger: 0 100% 50%;
     --heading: 130 100% 50%;
+    --text-ink: 130 35% 90%;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 130 100% 50%;
     --sidebar-primary: 130 100% 50%;
@@ -204,6 +214,7 @@
     --status-info: 199 70% 58%;
     --status-danger: 0 72% 50%;
     --heading: 140 60% 68%;
+    --text-ink: 0 0% 90%;
     --radius: 0.6rem;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 0 0% 78%;
@@ -258,6 +269,7 @@
     --status-info: 199 70% 40%;
     --status-danger: 0 72% 50%;
     --heading: 140 60% 28%;
+    --text-ink: 0 0% 10%;
     --radius: 0.6rem;
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 0 0% 12%;
