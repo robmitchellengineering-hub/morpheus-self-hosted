@@ -21,7 +21,7 @@ preserve existing conventions (the doc-comment style at the top of most
 | Frontend | Vite 6 + React 18, react-router-dom, Radix UI, Tailwind 3, framer-motion, three.js | `src/`. Matrix theme. Deployed on Netlify (auto-publishes `main`). |
 | Backend | Node + Express + Prisma, BullMQ worker, S3-compatible storage, Stripe, nodemailer | `server/`. Deployed on Northflank (Alpine container). |
 | Database | PostgreSQL via Prisma | Migrations in `server/prisma/migrations/`. Redis optional (enables the BullMQ worker). |
-| AI | OpenAI-compatible `/chat/completions`, `response_format: json_object` | `server/src/ai.js` `invokeAI()`. Primary `LLM_MODEL=deepseek-v4-flash`, fallback `gemini-flash-latest`. Per-user BYO key supported. |
+| AI | OpenAI-compatible `/chat/completions`, `response_format: json_object` | `server/src/ai.js` `invokeAI()`. Primary `LLM_MODEL=DeepSeek-V4.1-Flash`, fallback `gemini-flash-latest`. Per-user BYO key supported. |
 
 ## Key files
 

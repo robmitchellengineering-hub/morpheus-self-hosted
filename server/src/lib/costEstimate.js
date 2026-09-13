@@ -49,8 +49,8 @@ export const MODEL_PRICING = {
   //   pro:   peak $1.32 in / $3.96 out (real off-peak is exactly half)
   // Source: DeepSeek's own pricing page, cross-checked against
   // aipricing.guru and codersera.com (2026-09-02).
-  'deepseek-v4-flash': { input: 0.44, output: 1.32 },
-  'deepseek-v4-pro': { input: 1.32, output: 3.96 },
+  'DeepSeek-V4.1-Flash': { input: 0.44, output: 1.32 },
+  'DeepSeek-V4-Pro-0813': { input: 1.32, output: 3.96 },
 };
 
 // Fallback for custom-endpoint models we don't recognize (e.g. local Ollama,

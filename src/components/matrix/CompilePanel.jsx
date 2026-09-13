@@ -217,10 +217,9 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
         if (data.conclusion === 'success') {
           setPhase('saving');
           // Save the compiled artifacts back to the project's file tree.
-          // This downloads the binary from GitHub and re-uploads to storage —
-          // it takes a few seconds. We await it so the user sees a saving
-          // state and any error, instead of a silent failure that leaves them
-          // wondering where their app is.
+          // This no longer downloads the binary from GitHub; it creates a
+          // lightweight ProjectFile whose file_url points to the release
+          // asset. We await it so the user sees a saving state and any error.
           try {
             const saveResult = await onCompileSuccess?.(repo);
             if (saveResult?.error) {
@@ -229,11 +228,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               notifyComplete('failed', `Artifact save failed: ${saveResult.error}`);
               return;
             }
-            // Our own re-uploaded (public) URLs — used instead of GitHub's
-            // raw browser_download_url below, which 404s for anyone whose
-            // browser isn't authenticated into the private build repo.
-            if (saveResult?.artifacts?.length > 0) {
-              setStatus((prev) => ({ ...(prev || {}), savedArtifacts: saveResult.artifacts }));
+            // The compiled artifact is not downloaded into ProjectFile
+            // storage. saveCompiledArtifacts creates a lightweight ProjectFile
+            // whose `file_url` points straight at the GitHub Release asset.
+            if (saveResult?.file) {
+              setStatus((prev) => ({ ...(prev || {}), compiledFile: saveResult.file }));
             }
           } catch (saveErr) {
             setPhase('error');
@@ -528,7 +527,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                 <Loader2 size={16} className="animate-spin" /> Saving compiled app to your files...
               </div>
               <p className="text-xs text-primary/50">
-                // Downloading the binary from GitHub and storing it under _compiled/. This takes a few seconds — don't close this panel.
+                // Recording the GitHub Release asset link. This takes a moment — don't close this panel.
               </p>
             </div>
           )}
@@ -540,28 +539,26 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               <p className="text-xs text-primary/50">
                 // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
               </p>
-              {status?.assets?.length === 0 && (
+              {!status?.compiledFile?.file_url && (!status?.assets || status.assets.length === 0) && (
                 <p className="text-xs text-yellow-500/80">
                   // Build succeeded but published no downloadable artifact. Check the release on GitHub.
                 </p>
               )}
-              {/* Prefer our own re-uploaded copy (storage.js) — always a public
-                  URL. GitHub's asset browser_download_url (used as a fallback
-                  below) lives in a private build repo and 404s in the browser
-                  unless it happens to be signed into a GitHub account with
-                  access to that specific repo, so it's not a reliable primary
-                  link. */}
-              {status?.savedArtifacts?.length > 0
-                ? status.savedArtifacts.map((a, i) => (
-                    <a key={i} href={a.url} download={a.name} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
-                      <Download size={14} /> {a.name}{a.size ? ` (${(a.size / 1024 / 1024).toFixed(1)} MB)` : ''}
-                    </a>
-                  ))
-                : status?.assets?.map((a, i) => (
-                    <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
-                      <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
-                    </a>
-                  ))}
+              {/* The artifact now lives on GitHub Releases. The browser
+                  downloads directly from the public release asset URL —
+                  no backend fetch, no storage re-upload, no truncated
+                  70MB buffer. */}
+              {status?.compiledFile?.file_url ? (
+                <a href={status.compiledFile.file_url} download={status.compiledFile.name || 'morpheus-app.exe'} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
+                  <Download size={14} /> {status.compiledFile.name || 'morpheus-app.exe'}
+                </a>
+              ) : status?.assets?.length > 0 ? (
+                status.assets.map((a, i) => (
+                  <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
+                    <Download size={14} /> {a.name} ({a.size != null ? (a.size / 1024 / 1024).toFixed(1) + ' MB' : 'size unknown'})
+                  </a>
+                ))
+              ) : null}
               {status?.releaseUrl && (
                 <a href={status.releaseUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary/50 hover:text-primary">
                   <ExternalLink size={12} /> View release on GitHub (requires GitHub access)
@@ -627,7 +624,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   <div className="text-xs text-primary/70">// DIRECT DOWNLOADS (from GitHub — requires access)</div>
                   {status.assets.map((a, i) => (
                     <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-1.5 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
-                      <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
+                      <Download size={14} /> {a.name} ({a.size != null ? (a.size / 1024 / 1024).toFixed(1) + ' MB' : 'size unknown'})
                     </a>
                   ))}
                 </div>

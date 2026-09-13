@@ -1,141 +1,32 @@
 // Ported from base44/functions/saveCompiledArtifacts/entry.ts.
-// Downloads compiled release artifacts from the GitHub build repo (which is
-// private) and re-uploads them to Morpheus storage so they appear as
-// downloadable files in the project's file tree alongside the source code.
-// Called by the CompilePanel when a build succeeds.
-//
-// Binary handling: the original used base44's asServiceRole UploadFile
-// integration (object storage, not an inline DB column) — per
-// PORTING_GUIDE.md's call-mapping table that's `uploadFile({ buffer,
-// filename, contentType })` from storage.js. We keep that here: binaries
-// are streamed straight to disk/S3 via storage.js and only the returned
-// file_url is stored on the ProjectFile row; `content` stays a small text
-// note (matching the original's placeholder comment), never the binary
-// itself or a base64 blob in the DB.
+// Stores the GitHub Release asset URL of each compiled binary directly on the
+// ProjectFile row — no download, no re-upload to Morpheus storage, no binary
+// in memory. The browser downloads directly from GitHub, which is what
+// GitHub Releases are for. Called by the CompilePanel when a build succeeds.
 import { prisma } from '../db.js';
 import { ghHeaders, ghJson, getGithubToken } from '../lib/github.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
-import { uploadFile } from '../storage.js';
-import https from 'node:https';
 
 const GH_API = 'https://api.github.com';
 
-// Real content-types for the compile-target binaries we produce, keyed by
-// extension. Matters most for the S3 storage driver (stored as object
-// metadata, and some CDNs/browsers use it over the extension); the local
-// driver's express.static already infers Content-Type from the extension
-// itself, so this is a belt-and-suspenders match for both drivers.
-const CONTENT_TYPES = {
-  '.apk': 'application/vnd.android.package-archive',
-  '.exe': 'application/x-msdownload',
-  '.dmg': 'application/x-apple-diskimage',
-  '.zip': 'application/zip',
-  '.deb': 'application/vnd.debian.binary-package',
-  '.img': 'application/octet-stream',
-  '.iso': 'application/x-iso9660-image',
-  '.ipa': 'application/octet-stream',
-};
-
-function contentTypeFor(filename) {
-  const match = /\.[^.]+$/.exec(filename || '');
-  return (match && CONTENT_TYPES[match[0].toLowerCase()]) || 'application/octet-stream';
-}
-
-// Manual HTTPS download with redirect following. Node's fetch strips the
-// Authorization header on cross-origin redirects (the GitHub asset endpoint
-// redirects to a signed CDN URL), so we use the lower-level https client to
-// keep the header attached across redirects, just as the GitHub API requires.
-// Returns a Promise resolving with the full body Buffer, or rejecting with
-// an error that includes the HTTP status when applicable.
-function downloadWithRedirects(url, headers, redirectsRemaining = 5) {
-  return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers }, (response) => {
-      const { statusCode, headers: resHeaders } = response;
-      if (statusCode >= 300 && statusCode < 400 && resHeaders.location && redirectsRemaining > 0) {
-        response.resume(); // discard any body on redirect
-        const redirectUrl = new URL(resHeaders.location, url).toString();
-        resolve(downloadWithRedirects(redirectUrl, headers, redirectsRemaining - 1));
-      } else if (statusCode >= 200 && statusCode < 300) {
-        const chunks = [];
-        response.on('data', (chunk) => chunks.push(chunk));
-        response.on('end', () => resolve(Buffer.concat(chunks)));
-        response.on('error', reject);
-      } else {
-        response.resume(); // discard error body
-        reject(new Error(`HTTP ${statusCode} ${response.statusMessage || ''}`));
-      }
-    });
-    request.on('error', reject);
-    request.end();
-  });
-}
-
-async function processAsset(asset, { userId, projectId, repoFullName, headers, artifactName, isPrimary, releaseTag, bodyAssetsMode }) {
-  const displayName = isPrimary && artifactName ? artifactName : asset.name;
-  let buffer = null;
-  let downloadError = null;
-  let directDownloadError = null;
-
-  if (bodyAssetsMode) {
-    const url = asset.downloadUrl || asset.browser_download_url;
-    if (!url) throw new Error('No download URL provided for asset');
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        buffer = await downloadWithRedirects(url, { ...headers, Accept: 'application/octet-stream' });
-        break;
-      } catch (err) {
-        downloadError = err;
-        if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1000));
-      }
-    }
-    if (!buffer) {
-      throw new Error(`${asset.name}: download failed after 3 attempts: ${downloadError?.message || 'unknown error'}`);
-    }
-  } else {
-    const apiUrl = `${GH_API}/repos/${repoFullName}/releases/assets/${asset.id}`;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        buffer = await downloadWithRedirects(apiUrl, { ...headers, Accept: 'application/octet-stream' });
-        break;
-      } catch (err) {
-        downloadError = err;
-        if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1000));
-      }
-    }
-    if (!buffer && asset.browser_download_url) {
-      try {
-        buffer = await downloadWithRedirects(asset.browser_download_url, { ...headers, Accept: 'application/octet-stream' });
-      } catch (err) {
-        directDownloadError = err;
-      }
-    }
-    if (!buffer) {
-      const apiErrMsg = downloadError?.message || 'unknown error';
-      const directErrMsg = directDownloadError ? `; direct download failed: ${directDownloadError.message}` : '';
-      throw new Error(`${asset.name}: API download failed after 3 attempts: ${apiErrMsg}${directErrMsg}`);
-    }
-  }
-
-  const { file_url } = await uploadFile({ buffer, filename: displayName, contentType: contentTypeFor(displayName) });
-  const sizeMb = (asset.size / 1024 / 1024).toFixed(1);
-  await prisma.projectFile.create({
-    data: {
-      created_by_id: userId,
-      project_id: projectId,
-      path: `_compiled/${displayName}`,
-      content: `// COMPILED ARTIFACT\n// Build: ${releaseTag || 'latest'}\n// Size: ${sizeMb} MB\n// Saved: ${new Date().toISOString()}\n// Download from the file viewer.`,
-      file_url,
-      language: 'binary',
-    },
-  });
-  return { path: `_compiled/${displayName}`, url: file_url, name: displayName, size: asset.size };
-}
-
-export default async function handler({ user, body, res }) {
+export default async function handler({ user, body }) {
   const { projectId, repoFullName, target, assets: bodyAssets } = body;
   if (!projectId || !repoFullName) {
     throw Object.assign(new Error('projectId and repoFullName required'), { status: 400 });
   }
+
+  // OWNERSHIP CHECK — a user may only save compiled artifacts into a project
+  // they own. Without this, a malicious user could pass another user's
+  // projectId and delete that project's existing `_compiled/` rows or create
+  // rows in a project they don't control. (Review #113 fixed missing check.)
+  const projectOwned = await prisma.project.findFirst({
+    where: { id: projectId, created_by_id: user.id },
+    select: { id: true },
+  });
+  if (!projectOwned) {
+    throw Object.assign(new Error('Project not found or does not belong to you'), { status: 404 });
+  }
+
   const useBodyAssets = Array.isArray(bodyAssets) && bodyAssets.length > 0;
 
   // Look up the adapter to get the normalized artifact name (e.g. "app.apk"
@@ -144,7 +35,7 @@ export default async function handler({ user, body, res }) {
   const adapter = target ? getCompileTarget(target) : null;
   const artifactName = adapter?.artifact?.artifactName;
 
-  const accessToken = await getGithubToken(user.id);
+  const accessToken = await getGithubToken(user.id, { projectId });
   const h = ghHeaders(accessToken);
 
   let release = null;
@@ -157,7 +48,7 @@ export default async function handler({ user, body, res }) {
     assetsToSave = bodyAssets.map((a) => ({
       name: a.name,
       size: a.size,
-      downloadUrl: a.downloadUrl || a.url,
+      url: a.downloadUrl || a.url || a.browser_download_url,
     }));
   } else {
     // Fetch latest release
@@ -178,80 +69,83 @@ export default async function handler({ user, body, res }) {
     if (!release.assets || release.assets.length === 0) {
       throw Object.assign(new Error('Release has no downloadable assets'), { status: 404 });
     }
-    assetsToSave = release.assets;
+    assetsToSave = release.assets.map((a) => ({
+      name: a.name,
+      size: a.size,
+      url: a.browser_download_url,
+    }));
   }
 
   const releaseTag = release?.tag_name || 'latest';
 
   // Compiled artifacts already saved for this project — but only short-circuit
   // when they're from THIS SAME release. The tag is embedded in the saved
-  // row's content note (`// Build: <tag>`) precisely so this comparison is
+  // row's content note (`[Build <tag>]`) precisely so this comparison is
   // possible. Before 2026-09-03 this checked existence only, so recompiling
-  // a project (RECOMPILE, "try again", an auto-fix loop's retry, ...) always
-  // silently kept serving the very first build ever saved — every later
-  // compile "succeeded" in the UI but never actually updated the downloadable
-  // app. A same-release re-entry (component remount, a duplicate poll tick
-  // hitting the completed state twice) still short-circuits, avoiding
-  // duplicate rows/re-downloads for no reason.
+  // a project always silently kept serving the very first build ever saved.
   const existing = await prisma.projectFile.findMany({ where: { project_id: projectId, created_by_id: user.id } });
   const alreadySaved = existing.filter((f) => f.path.startsWith('_compiled/'));
-  const savedTag = alreadySaved[0]?.content?.match(/\/\/ Build: (\S+)/)?.[1];
+  const savedTag = alreadySaved[0]?.content?.match(/\[Build (\S+)\]/)?.[1];
   if (!useBodyAssets && alreadySaved.length > 0 && savedTag && release?.tag_name && savedTag === release.tag_name) {
     return {
       saved: alreadySaved.length,
       alreadyExists: true,
       files: alreadySaved.map((f) => f.path),
-      // The frontend's "done" panel needs a working download link right
-      // away, not just the path — without this it fell back to GitHub's raw
-      // browser_download_url, which 404s for anyone whose browser isn't
-      // authenticated into the (private) build repo. See the matching
-      // `artifacts` field built below for a fresh save.
-      artifacts: alreadySaved.map((f) => ({ path: f.path, url: f.file_url, name: f.path.split('/').pop() })),
+      artifacts: alreadySaved.map((f) => ({
+        path: f.path,
+        url: f.file_url,
+        name: f.path.split('/').pop(),
+      })),
     };
   }
-  // A new release supersedes whatever was saved before — clear the stale
-  // rows so the file tree doesn't end up with two _compiled/app.apk entries
-  // (Prisma has no upsert-by-path here; path isn't unique) and so the
-  // FileViewer's download always points at the build that was just made.
-  // For body-assets mode we always clear and re-save: the caller is only
-  // invoking this once per success, and without a release tag we cannot
-  // safely short-circuit.
-  if (alreadySaved.length > 0) {
-    await prisma.projectFile.deleteMany({ where: { id: { in: alreadySaved.map((f) => f.id) } } });
-  }
 
-  const saved = [];
-  const artifacts = [];
-  const errors = [];
-  for (let i = 0; i < assetsToSave.length; i++) {
-    const asset = assetsToSave[i];
-    try {
-      const result = await processAsset(asset, {
-        userId: user.id,
-        projectId,
-        repoFullName,
-        headers: h,
-        artifactName,
-        isPrimary: i === 0 && !!artifactName,
-        releaseTag,
-        bodyAssetsMode: useBodyAssets,
+  // Use a Prisma transaction so either all new _compiled rows are created
+  // and the old rows are deleted atomically, or nothing happens. This
+  // prevents a partial save from wiping out the previous artifact links.
+  let savedRecords;
+  try {
+    savedRecords = await prisma.$transaction(async (tx) => {
+      // Delete previous _compiled rows first so stable artifact names can be
+      // recreated without colliding with the (project_id, path) unique
+      // constraint. The transaction rolls back the delete if a create fails.
+      await tx.projectFile.deleteMany({
+        where: { project_id: projectId, path: { startsWith: '_compiled/' } },
       });
-      saved.push(result.path);
-      artifacts.push(result);
-    } catch (assetErr) {
-      errors.push(`${asset.name || 'asset'}: ${assetErr?.message || String(assetErr)}`);
-    }
+
+      const created = [];
+      const artifactsCreated = [];
+      for (let i = 0; i < assetsToSave.length; i++) {
+        const asset = assetsToSave[i];
+        if (!asset.url) {
+          throw new Error(`${asset.name || 'asset'}: no download URL available`);
+        }
+        const displayName = i === 0 && artifactName ? artifactName : asset.name;
+        const path = `_compiled/${displayName}`;
+        const sizeMb = asset.size ? (asset.size / 1024 / 1024).toFixed(1) : '?';
+        const createdRow = await tx.projectFile.create({
+          data: {
+            created_by_id: user.id,
+            project_id: projectId,
+            path,
+            content: `[Build ${releaseTag}] Compiled binary hosted on GitHub Releases (${sizeMb} MB)`,
+            file_url: asset.url,
+            language: 'binary',
+          },
+        });
+        created.push(createdRow);
+        artifactsCreated.push({ path, url: asset.url, name: displayName, size: asset.size });
+      }
+      return {
+        saved: created.length,
+        files: created.map((f) => f.path),
+        artifacts: artifactsCreated,
+      };
+    });
+  } catch (err) {
+    // If any create fails, the transaction rolls back and old links remain.
+    const message = err?.message || String(err);
+    throw Object.assign(new Error(`Failed to save compiled artifacts: ${message}`), { status: 500 });
   }
 
-  if (saved.length === 0) {
-    const errorDetails = errors.slice(0, 3).map(e => e.replace(/\s+/g, ' ').trim()).join('; ');
-    res.status(500).json({ error: `Failed to download any artifacts. ${errorDetails}`, details: errors });
-    return;
-  }
-
-  // `artifacts` carries our own re-uploaded (public, working) URLs — the
-  // frontend's "done" panel uses these instead of GitHub's raw
-  // browser_download_url, which 404s for anyone not authenticated into the
-  // private build repo (see the alreadySaved branch above for why).
-  return { saved: saved.length, files: saved, artifacts };
+  return savedRecords;
 }

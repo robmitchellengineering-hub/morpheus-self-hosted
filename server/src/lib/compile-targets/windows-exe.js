@@ -64,12 +64,12 @@ export const windowsExe = {
           with: { 'node-version': `'${nodeVersion}'` }
         },
         { run: 'npm install' },
-        { run: 'npx @yao-pkg/pkg . --targets node24-win-x64 --output app.exe' },
+        { run: 'New-Item -ItemType Directory -Force -Path dist; npx @yao-pkg/pkg . --targets node24-win-x64 --output dist/morpheus-app.exe' },
         {
           name: 'Verify executable',
-          run: 'if (-not (Test-Path app.exe)) { Write-Error "pkg produced no executable (does package.json have a bin field?)"; exit 1 }'
+          run: 'if (-not (Test-Path dist/morpheus-app.exe)) { Write-Error "pkg produced no executable (does package.json have a bin field?)"; exit 1 }'
         },
-        { run: 'Compress-Archive -Path app.exe -DestinationPath release.zip' }
+        { name: 'Publish GitHub Release', run: 'gh release create v${{ github.run_number }} dist/morpheus-app.exe --generate-notes', env: { GH_TOKEN: '${{ github.token }}' } }
       ];
     }
 
@@ -80,14 +80,16 @@ export const windowsExe = {
     const hiddenImports = detectHiddenImports(files);
     const pythonVersion = detectPythonVersion(files) || '3.12';
 
-    const pyinstallerArgs = ['--onefile', '--name', 'app'];
-    if (icon) pyinstallerArgs.push(`--icon ${icon}`);
+    const pyinstallerArgs = ['--onefile', '--name', 'morpheus-app'];
+    if (icon) {
+      pyinstallerArgs.push('--icon', icon);
+    }
     // Windows uses ';' as the PyInstaller --add-data separator (not ':')
     for (const dir of dataDirs) {
-      pyinstallerArgs.push(`--add-data "${dir};${dir}"`);
+      pyinstallerArgs.push('--add-data', `${dir};${dir}`);
     }
     for (const imp of hiddenImports) {
-      pyinstallerArgs.push(`--hidden-import ${imp}`);
+      pyinstallerArgs.push('--hidden-import', imp);
     }
     pyinstallerArgs.push(entry);
 
@@ -112,18 +114,22 @@ export const windowsExe = {
         run: [
           `$pyinstallerArgs = @(${psArray})`,
           '& pyinstaller @pyinstallerArgs',
-          'if (-not (Test-Path dist\\app.exe)) { Write-Error "PyInstaller produced no .exe"; exit 1 }',
-          'Compress-Archive -Path dist\\* -DestinationPath release.zip'
+          'if (-not (Test-Path dist\\morpheus-app.exe)) { Write-Error "PyInstaller produced no .exe"; exit 1 }'
         ].join('\n')
+      },
+      {
+        name: 'Publish GitHub Release',
+        run: 'gh release create v${{ github.run_number }} dist/morpheus-app.exe --generate-notes',
+        env: { GH_TOKEN: '${{ github.token }}' }
       }
     ];
   },
 
   artifact: {
-    glob: 'release.zip',
+    glob: 'dist/morpheus-app.exe',
     isGlob: false,
-    artifactName: 'app-windows.zip',
-    verifyCommand: 'if (-not (Test-Path release.zip)) { Write-Error "No executable archive produced"; exit 1 }'
+    artifactName: 'morpheus-app.exe',
+    verifyCommand: 'if (-not (Test-Path dist/morpheus-app.exe)) { Write-Error "No executable produced"; exit 1 }'
   }
 };
 
