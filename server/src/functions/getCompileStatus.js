@@ -180,15 +180,9 @@ export default async function handler({ user, body }) {
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
-    if (!result.assets || result.assets.length === 0) {
-      if (target === 'windows-exe') {
-        const fallbackUrl = `https://github.com/${repoFullName}/releases/download/v${latestRun.run_number}/morpheus-app.exe`;
-        result.assets = [{ name: 'morpheus-app.exe', downloadUrl: fallbackUrl, size: null }];
-        result.message = 'Build complete! Download the app from GitHub Releases.';
-      } else {
-        result.assets = [];
-        result.message = 'Build succeeded but no downloadable artifact was published.';
-      }
+    if (!result.assets) {
+      result.assets = [];
+      result.message = 'Build succeeded but no downloadable artifact was published.';
     }
   }
 

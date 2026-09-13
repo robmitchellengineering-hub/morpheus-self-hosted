@@ -136,7 +136,3 @@ real, cheap way to check exists. This applies to the coder itself — the
 planner's job is to flag *every* external endpoint it isn't certain of,
 including "I'm probably right about this one" — verifying costs one HTTP
 request; being wrong costs a debugging session.
-
-
-## Incident 2026-09-13 — reverted 1891ae6
-A push was reverted from production on 2026-09-13. **Root cause: _(fill this in as part of the fix — what broke, and the rule that stops it recurring)_.**
