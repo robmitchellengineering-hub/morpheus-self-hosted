@@ -1,40 +1,46 @@
-// Model pricing lookup + real cost computation.
+// Token System Build Plan Step 2 (see TOKEN-SYSTEM-BUILD-PLAN.md) — real
+// per-call cost metering. getModelRate() resolves $/M-token pricing for a
+// given model, preferring an admin-edited ModelCatalogEntry row (the table
+// Step 1 added; Step 4's admin pricing UI isn't built yet, but the table
+// already exists so a future admin edit takes effect immediately with no
+// further migration) over the static fallback table in costEstimate.js.
 //
-// The static MODEL_PRICING table lives in costEstimate.js (this file's
-// fallback). Admin-editable prices from ModelCatalogEntry override it.
-// Both layers must use the SAME model identifiers — for DeepSeek the
-// canonical names are now `DeepSeek-V4.1-Flash` and `DeepSeek-V4-Pro-0813`.
+// This module only computes *underlying provider cost* for logging
+// (UsageEvent.cost_usd) — it does not apply markup or touch credit
+// balances. Markup/retail pricing and credit deduction are Step 3/4 work,
+// not yet built.
 import { prisma } from '../db.js';
-import { MODEL_PRICING, DEFAULT_PRICING } from './costEstimate.js';
+import { MODEL_PRICING, DEFAULT_PRICING, LOCAL_MODEL_PATTERNS } from './costEstimate.js';
 
-// Fetch the effective input/output price per 1M tokens for a model.
-// Order: ModelCatalogEntry (admin override) → MODEL_PRICING → DEFAULT_PRICING.
-export async function getModelRate(model) {
-  if (!model) return DEFAULT_PRICING;
-
-  // Admin-editable catalog lookup (by exact model id).
-  try {
-    const entry = await prisma.modelCatalogEntry.findUnique({
-      where: { model_id: model },
-      select: { input_price_per_m: true, output_price_per_m: true, active: true },
-    });
-    if (entry && entry.active && entry.input_price_per_m != null && entry.output_price_per_m != null) {
-      return {
-        input: entry.input_price_per_m,
-        output: entry.output_price_per_m,
-      };
-    }
-  } catch (err) {
-    console.error('modelPricing: catalog lookup failed, falling back to static table:', err);
-  }
-
-  return MODEL_PRICING[model] || DEFAULT_PRICING;
+function isLocalModel(modelId) {
+  const lower = String(modelId || '').toLowerCase();
+  return LOCAL_MODEL_PATTERNS.some((p) => lower.includes(p));
 }
 
-// Compute underlying provider cost (USD) for a single call.
-// `markupMultiplier` is not applied here — that's a retail-layer concern
-// handled by billing.js when converting cost_usd to credits.
-export async function computeCostUsd(model, inputTokens, outputTokens) {
-  const rate = await getModelRate(model);
-  return (inputTokens * rate.input + outputTokens * rate.output) / 1_000_000;
+// Returns { inputPerM, outputPerM } in $ per 1M tokens. Never throws —
+// metering must never break the calling AI request.
+export async function getModelRate(modelId) {
+  if (isLocalModel(modelId)) return { inputPerM: 0, outputPerM: 0 };
+
+  try {
+    const entry = await prisma.modelCatalogEntry.findUnique({ where: { model_id: modelId } });
+    if (entry?.active && entry.input_price_per_m != null && entry.output_price_per_m != null) {
+      return { inputPerM: entry.input_price_per_m, outputPerM: entry.output_price_per_m };
+    }
+  } catch {
+    // ModelCatalogEntry may not exist yet on an older/unmigrated DB, or the
+    // lookup failed for some other reason — fall through to the static
+    // table rather than breaking the AI call over a pricing lookup.
+  }
+
+  const fallback = MODEL_PRICING[modelId] || DEFAULT_PRICING;
+  return { inputPerM: fallback.input, outputPerM: fallback.output };
+}
+
+// Underlying provider cost (not retail/marked-up) from real token counts.
+export function computeCostUsd(inputTokens, outputTokens, rate) {
+  return (
+    (Number(inputTokens || 0) * rate.inputPerM + Number(outputTokens || 0) * rate.outputPerM) /
+    1_000_000
+  );
 }
