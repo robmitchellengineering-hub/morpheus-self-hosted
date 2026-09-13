@@ -18,6 +18,7 @@ import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
+import { getConstructContext } from '../lib/constructContext.js';
 import { checkA11y } from '../lib/a11yCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
@@ -1002,6 +1003,16 @@ OPERATOR SAYS: ${message}`;
     }
 
     // ── Phase 1: Planner reasons about intent and design ────────────────────
+    if (isSelfDev) {
+      const constructMatch = message.match(/(?:about|for|of|regarding)\s+[\"']?([^\"',.!?]+)[\"']?/i);
+      const constructCandidate = constructMatch?.[1]?.trim() || message.trim();
+      if (constructCandidate) {
+        const constructCtx = await getConstructContext(user.id, constructCandidate);
+        if (constructCtx) {
+          contextBlock += `\n\n## Construct Context (auto-fetched)\nThe operator's message references construct/project \"${constructCandidate}\". Here is its recent history and compile attempts:\n${constructCtx}`;
+        }
+      }
+    }
     stages.start('planner');
     const planner = await invokeAI({
       userId: user.id,
