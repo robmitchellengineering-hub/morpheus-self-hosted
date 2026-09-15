@@ -1,11 +1,25 @@
 // Reviewer agent — the third phase of the build pipeline.
 // After the Coder produces fileOperations but BEFORE they are committed,
 // the Reviewer checks them for correctness, security, and performance.
-// If critical issues are found, the Coder gets ONE retry pass with the
-// review feedback. Then the files commit regardless — the review never
-// blocks a build permanently, it just cleans it when it can.
+// If critical issues are found, the Coder gets up to MAX_REVIEW_ATTEMPTS - 1
+// retry passes with the review feedback, re-reviewing after each. Then the
+// files commit regardless — the review never blocks a build permanently, it
+// just cleans it when it can.
+//
+// Rob, 2026-09-15 (Wikidata Batch Uploader build): a single retry pass was
+// routinely not enough — real chat history for that build shows him typing
+// "fix critical issues and continue" five separate times across the build,
+// including twice in a row for what was still the same unresolved issue,
+// because a critical finding that survived the one automatic retry just got
+// printed in the reply text and nothing tried again until he noticed and
+// asked. Bounded to a real loop now, matching the MAX_GATE_ATTEMPTS
+// convention chatWithMorpheus.js already uses for its syntax/deep-verify
+// gates (server/src/functions/chatWithMorpheus.js ~line 1117) — same "never
+// blocks" philosophy, just more real attempts before giving up.
 
 import { invokeAI } from '../ai.js';
+
+const MAX_REVIEW_ATTEMPTS = 3; // real fix-and-recheck attempts, not just one retry
 
 const REVIEWER_PROMPT = `You are Morpheus, the REVIEW agent in the build pipeline.
 
@@ -177,31 +191,32 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
   // Always deduplicate by path (last wins) — the LLM sometimes returns both
   // "package.json" and "backend/package.json" which map to the same path.
   const byPath = new Map(fileOps.map(op => [op.path, op]));
-  const dedupedOps = Array.from(byPath.values());
+  let currentOps = Array.from(byPath.values());
 
-  const review = await reviewFileOperations(userId, dedupedOps, contextBlock, plan, { onProgress, stageName: 'reviewer' });
+  let review = await reviewFileOperations(userId, currentOps, contextBlock, plan, { onProgress, stageName: 'reviewer' });
 
-  if (!review.approved && review.issues.some(i => i.severity === 'critical')) {
-    const retrySchema = {
-      type: 'object',
-      properties: {
-        fileOperations: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              content: { type: 'string' },
-              action: { type: 'string', enum: ['create', 'update', 'delete'] }
-            }
+  const retrySchema = {
+    type: 'object',
+    properties: {
+      fileOperations: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            content: { type: 'string' },
+            action: { type: 'string', enum: ['create', 'update', 'delete'] }
           }
         }
       }
-    };
+    }
+  };
+
+  for (let attempt = 1; !review.approved && review.issues.some(i => i.severity === 'critical') && attempt < MAX_REVIEW_ATTEMPTS; attempt++) {
     onProgress?.({ stage: 'retry_coder', status: 'start' });
     const retry = await invokeAI({
       userId,
-      prompt: `${coderPrompt}\n\n${buildRetryPrompt(dedupedOps, review, plan)}`,
+      prompt: `${coderPrompt}\n\n${buildRetryPrompt(currentOps, review, plan)}\n\n(Fix attempt ${attempt} of ${MAX_REVIEW_ATTEMPTS - 1}.)`,
       schema: retrySchema,
       fileUrls: undefined,
       role: 'coder',
@@ -218,21 +233,14 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
     for (const c of corrected) {
       if (c.path) byPath.set(c.path, c);
     }
-    const finalOps = Array.from(byPath.values());
-    // Re-review after retry so the caller gets an accurate approval status.
-    const reReview = await reviewFileOperations(userId, finalOps, contextBlock, plan, { onProgress, stageName: 'retry_reviewer' });
-    return {
-      fileOps: finalOps,
-      reviewerModel: reReview.model,
-      reviewSummary: reReview.summary,
-      reviewed: true,
-      approved: reReview.approved,
-      issues: reReview.issues
-    };
+    currentOps = Array.from(byPath.values());
+    // Re-review after each retry so the loop (and the caller) knows whether
+    // another pass is actually needed, rather than assuming one fix worked.
+    review = await reviewFileOperations(userId, currentOps, contextBlock, plan, { onProgress, stageName: 'retry_reviewer' });
   }
 
   return {
-    fileOps: dedupedOps,
+    fileOps: currentOps,
     reviewerModel: review.model,
     reviewSummary: review.summary,
     reviewed: true,
