@@ -72,6 +72,7 @@ model User {
   project_assets   ProjectAsset[]
   plugin_connections PluginConnection[]
   widget_tokens    WidgetToken[]
+  device_tokens    DeviceToken[]
   github_connection GithubConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
@@ -778,4 +779,57 @@ model WidgetToken {
 
   @@index([project_id])
   @@map("widget_tokens")
+}
+
+// ── MORPHEUS CONNECT — device login for native/compiled apps ──────
+// A distributable .exe (e.g. Construct's Wikidata Batch Uploader) can't
+// hold a per-user session, and must never embed a static secret tied to
+// whoever built it (anyone running the binary would spend that person's
+// credits). Device flow instead: the app gets a short code, the end user
+// approves it in their own browser while logged into their own account,
+// the app polls until it gets back a DeviceToken scoped to exactly one
+// narrow capability (see lib/deviceToken.js's DEVICE_SCOPE_FUNCTIONS) and
+// billed against that end user's own credits via the normal invokeAI path.
+// Mirrors WidgetToken's hash-at-rest/revocable shape, but personal (no
+// project_id) rather than per-project, and reached via a public
+// start/poll flow rather than an already-authenticated session, since
+// Morpheus itself — not an external device-code holder like GitHub in the
+// existing GitHub Device Flow — is the authority here.
+model DeviceAuthRequest {
+  id              String    @id @default(uuid())
+  device_code     String    @unique // long opaque secret, exe polls with this
+  user_code       String    @unique // short human code, shown on /connect
+  client_label    String    // "Wikidata Batch Uploader" — shown on the approval screen
+  scopes          String    // comma-separated, e.g. "ai_action"
+  status          String    @default("pending") // pending | approved | denied | expired
+  approved_by_id  String?
+  issued_token_id String?   // set once a DeviceToken is minted on approval
+  pending_token   String?   // plaintext secret, held only until the app's next
+                            // poll reads and clears it — the durable DeviceToken
+                            // row only ever stores the hash; this is the one-time
+                            // relay from "approved in a browser" to "the polling
+                            // app finally sees the real token"
+
+  expires_at      DateTime
+  created_date    DateTime  @default(now())
+
+  @@map("device_auth_requests")
+}
+
+model DeviceToken {
+  id            String    @id @default(uuid())
+  created_by_id String    // the end user who approved it — the billing/identity anchor
+  user          User      @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  label         String    // client_label, carried over for a future "connected apps" list
+  token_prefix  String    // "dvc_" + first 8 chars — for display only
+  token_hash    String    @unique // sha256(full token)
+  scopes        String    // comma-separated
+  revoked       Boolean   @default(false)
+  last_used_at  DateTime?
+
+  created_date  DateTime  @default(now())
+
+  @@index([created_by_id])
+  @@map("device_tokens")
 }

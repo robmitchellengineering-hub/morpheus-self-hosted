@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { prisma } from './db.js';
 import { WIDGET_TOKEN_PREFIX, resolveWidgetToken } from './lib/widgetToken.js';
+import { DEVICE_TOKEN_PREFIX, resolveDeviceToken } from './lib/deviceToken.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
@@ -39,8 +40,11 @@ function extractToken(req) {
 
 // Attaches req.user when a valid token is present; does not reject otherwise.
 // A `wgt_` embeddable-widget token resolves to its owner + attaches req.widget
-// ({ projectId, scopes, tokenId }); the functions router narrows what that
-// request may then do.
+// ({ projectId, scopes, tokenId }); a `dvc_` Morpheus Connect device token
+// (see lib/deviceToken.js) resolves to whichever end user approved it +
+// attaches req.device ({ scopes, tokenId }) — no projectId, it's personal,
+// not tied to any one project. The functions router narrows what either kind
+// of request may then do.
 export async function optionalAuth(req, _res, next) {
   const token = extractToken(req);
   if (!token) return next();
@@ -48,6 +52,13 @@ export async function optionalAuth(req, _res, next) {
     try {
       const w = await resolveWidgetToken(token);
       if (w) { req.user = w.user; req.widget = { projectId: w.projectId, scopes: w.scopes, tokenId: w.tokenId }; }
+    } catch { /* ignore — proceeds unauthenticated */ }
+    return next();
+  }
+  if (token.startsWith(DEVICE_TOKEN_PREFIX)) {
+    try {
+      const d = await resolveDeviceToken(token);
+      if (d) { req.user = d.user; req.device = { scopes: d.scopes, tokenId: d.tokenId }; }
     } catch { /* ignore — proceeds unauthenticated */ }
     return next();
   }
@@ -73,19 +84,20 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-// A `wgt_` widget token resolves to its owner's full req.user (see
-// optionalAuth above), so a route that only checks requireAuth — or even
-// requireAdmin, since the owner really is an admin — would otherwise be
-// fully reachable through it: every project's files, account settings,
-// GitHub connections, admin controls, all of it, when the token was only
-// ever supposed to grant one project + a fixed set of functions. The one
-// route that's actually meant to accept a widget token is functions.routes.js,
-// which does its own per-function narrowing (widgetMayCall + forced
-// projectId) — every OTHER authenticated router mounts this right after
-// requireAuth so a widget token 403s there instead of inheriting the
-// owner's full account.
+// A `wgt_` widget token or a `dvc_` device token resolves to its
+// owner/approver's full req.user (see optionalAuth above), so a route that
+// only checks requireAuth — or even requireAdmin, since that person might
+// really be an admin — would otherwise be fully reachable through it: every
+// project's files, account settings, GitHub connections, admin controls,
+// all of it, when the token was only ever supposed to grant one project (or,
+// for a device token, one narrow capability) + a fixed set of functions. The
+// one route that's actually meant to accept either kind of scoped token is
+// functions.routes.js, which does its own per-function narrowing
+// (widgetMayCall/deviceMayCall + forced projectId for widgets) — every OTHER
+// authenticated router mounts this right after requireAuth so a scoped token
+// 403s there instead of inheriting the full account.
 export function blockWidget(req, res, next) {
-  if (req.widget) return res.status(403).json({ error: 'This endpoint is not available to a widget token.' });
+  if (req.widget || req.device) return res.status(403).json({ error: 'This endpoint is not available to a scoped token.' });
   next();
 }
 

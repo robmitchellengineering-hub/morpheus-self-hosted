@@ -325,6 +325,13 @@ const auth = {
     if (provider !== 'google') throw new Error(`Unsupported provider: ${provider}`);
     window.location.href = `${API_BASE}/auth/google/start${qs({ returnTo })}`;
   },
+  // Morpheus Connect — device login for native/compiled apps (server/src/lib/deviceToken.js).
+  // getDevicePending/approveDevice/denyDevice are used by src/pages/ConnectDevice.jsx;
+  // start/poll live server-side only — a standalone .exe calls those directly,
+  // never through this frontend client.
+  getDevicePending: (userCode) => apiFetch(`/auth/device/pending/${encodeURIComponent(userCode)}`),
+  approveDevice: (userCode) => apiFetch('/auth/device/approve', { method: 'POST', body: { user_code: userCode } }),
+  denyDevice: (userCode) => apiFetch('/auth/device/deny', { method: 'POST', body: { user_code: userCode } }),
 };
 
 // Owner/Admin Control Panel (Feature Backlog #8) — bespoke, audited routes
