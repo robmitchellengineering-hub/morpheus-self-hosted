@@ -8,7 +8,8 @@
 import {
   isNodeProject, isPythonProject, parsePackageJson, detectPythonEntry,
   detectDataDirs, detectHiddenImports, detectIcon, detectNodeVersion,
-  detectPythonVersion, detectBuildScript, detectPackageHints, cloneFiles
+  detectPythonVersion, detectBuildScript, detectPackageHints,
+  detectRequirementsFile, requirementsFileIncludesPyinstaller, cloneFiles
 } from './utils.js';
 
 export const windowsExe = {
@@ -83,6 +84,8 @@ export const windowsExe = {
     const packageHints = detectPackageHints(files);
     const pythonVersion = detectPythonVersion(files) || '3.12';
     const buildScript = detectBuildScript(files);
+    const requirementsFile = detectRequirementsFile(files);
+    const pyinstallerAlreadyPinned = requirementsFileIncludesPyinstaller(files, requirementsFile);
 
     const setupSteps = [
       { uses: 'actions/checkout@v4' },
@@ -92,9 +95,15 @@ export const windowsExe = {
       },
       {
         name: 'Install dependencies',
-        run: 'if (Test-Path requirements.txt) { pip install -r requirements.txt }'
+        run: requirementsFile
+          ? `pip install -r ${requirementsFile}`
+          : 'if (Test-Path requirements.txt) { pip install -r requirements.txt }'
       },
-      { run: 'pip install pyinstaller' },
+      // Skip only when the requirements file itself already pins
+      // pyinstaller (see requirementsFileIncludesPyinstaller) — an
+      // unconditional separate install would upgrade past that pin and
+      // defeat the point of a project locking it in the first place.
+      ...(pyinstallerAlreadyPinned ? [] : [{ run: 'pip install pyinstaller' }]),
     ];
 
     // A project that ships its own build.py has already worked out real
