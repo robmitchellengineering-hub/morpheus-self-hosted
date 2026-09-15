@@ -338,8 +338,11 @@ function ModelsTab() {
   // cheaper to actually run (bigger margin), Pro is the higher-quality,
   // higher-cost option (margin compresses to the intended 2.0x).
   const effectiveDefault = (settings.settings.default_model || settings.envDefaults.base || '').trim();
+  // Flash's id updated 2026-09-15: DeepSeek retired "deepseek-v4-flash" on
+  // 2026-09-10 in favor of "deepseek-flash" (V4.1 Flash) — see
+  // costEstimate.js and .env.example for the same rename. Pro is unaffected.
   const DEEPSEEK_VARIANTS = [
-    { id: 'deepseek-v4-flash', label: 'FLASH' },
+    { id: 'deepseek-flash', label: 'FLASH' },
     { id: 'deepseek-v4-pro', label: 'PRO' },
   ];
 

@@ -49,7 +49,20 @@ export const MODEL_PRICING = {
   //   pro:   peak $1.32 in / $3.96 out (real off-peak is exactly half)
   // Source: DeepSeek's own pricing page, cross-checked against
   // aipricing.guru and codersera.com (2026-09-02).
-  'deepseek-v4-flash': { input: 0.44, output: 1.32 },
+  //
+  // Updated 2026-09-15: DeepSeek retired the "deepseek-v4-flash" model id on
+  // 2026-09-10 — it's now a compatibility alias DeepSeek routes to the new
+  // V4.1 Flash model ("deepseek-flash"), which is actually what's serving
+  // the request and what DeepSeek's own billing reflects, regardless of
+  // which id the call used. V4.1 Flash's real peak pricing ($0.30/$1.20) is
+  // lower than old V4 Flash's ($0.44/$1.32) — kept both keys (any call still
+  // using the legacy id gets the same, now-correct, cost basis as the new
+  // id) rather than deleting the old one, since it's still accepted and
+  // still shows up in historical UsageEvent rows. "deepseek-v4-pro" is
+  // unaffected (DeepSeek confirmed continued support past 2026-09-14) —
+  // verified against DeepSeek's current pricing page (2026-09-15).
+  'deepseek-v4-flash': { input: 0.30, output: 1.20 },
+  'deepseek-flash': { input: 0.30, output: 1.20 },
   'deepseek-v4-pro': { input: 1.32, output: 3.96 },
 };
 
