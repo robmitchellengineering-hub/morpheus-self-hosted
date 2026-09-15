@@ -2,15 +2,7 @@
 // Auto-generates pyproject.toml from requirements.txt if missing,
 // detects entry points (console_scripts), and includes data files via MANIFEST.in.
 
-import { hasAny, hasFile, cloneFiles, getFile, detectPythonVersion } from './utils.js';
-
-function parseRequirementsTxt(content) {
-  return content.split('\n')
-    .map(l => l.trim())
-    .filter(l => l && !l.startsWith('#') && !l.startsWith('-'))
-    .map(l => l.split('==')[0].split('>=')[0].split('<=')[0].split('~=')[0].trim())
-    .filter(l => l);
-}
+import { hasAny, hasFile, cloneFiles, getFile, detectPythonVersion, parseRequirementsTxt } from './utils.js';
 
 function detectPackageName(files) {
   // Look for a top-level Python package (dir with __init__.py)

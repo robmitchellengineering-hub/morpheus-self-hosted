@@ -5,7 +5,8 @@
 import {
   isNodeProject, isPythonProject, isSwiftProject, parsePackageJson, detectPythonEntry,
   detectDataDirs, detectHiddenImports, detectIcon, detectNodeVersion,
-  detectPythonVersion, detectSwiftExecutableName, cloneFiles, hasFile, hasPattern
+  detectPythonVersion, detectSwiftExecutableName, detectBuildScript, detectPackageHints,
+  cloneFiles, hasFile, hasPattern
 } from './utils.js';
 
 // 2026-09-04 (Rob: '"MorpheusApp" is damaged and can't be opened. You
@@ -316,7 +317,43 @@ export const macApp = {
     const entry = detectPythonEntry(files) || 'main.py';
     const dataDirs = detectDataDirs(files);
     const hiddenImports = detectHiddenImports(files);
+    const packageHints = detectPackageHints(files);
     const pythonVersion = detectPythonVersion(files) || '3.12';
+    const buildScript = detectBuildScript(files);
+
+    const setupSteps = [
+      { uses: 'actions/checkout@v4' },
+      {
+        uses: 'actions/setup-python@v5',
+        with: { 'python-version': `'${pythonVersion}'` }
+      },
+      { run: 'pip install -r requirements.txt 2>/dev/null || true' },
+      { run: 'pip install pyinstaller' },
+    ];
+
+    // Run the project's own build.py when it has one, instead of silently
+    // overriding it with a weaker reconstructed pyinstaller command — see
+    // utils.js's detectBuildScript. Codesigning below is generic (loops
+    // over whatever .app bundle(s) actually landed in dist/) since we don't
+    // know what name a project's own script chose; the templated Gatekeeper
+    // README (which needs a literal app name baked in) is skipped here —
+    // a project that wrote its own build script has typically also written
+    // its own docs (see the Wikidata Batch Uploader's own README.md).
+    if (buildScript) {
+      return [
+        ...setupSteps,
+        {
+          name: "Build with the project's own build script",
+          run: [
+            `python ${buildScript}`,
+            'ls dist/',
+            'compgen -G "dist/*" > /dev/null || { echo "Build script produced nothing in dist/"; exit 1; }',
+            'for app in dist/*.app; do [ -d "$app" ] && (codesign --force --deep --sign - "$app" || echo "codesign failed for $app -- it will still work, just fully unsigned"); done'
+          ].join('\n')
+        },
+        { run: 'tar -czf app.tar.gz -C dist .' }
+      ];
+    }
 
     const args = ['--onefile', '--windowed', '--osx-bundle-id', 'com.morpheus.app', '--name', 'MorpheusApp'];
     if (icon) args.push(`--icon ${icon}`);
@@ -326,16 +363,13 @@ export const macApp = {
     for (const imp of hiddenImports) {
       args.push(`--hidden-import ${imp}`);
     }
+    // Known-tricky packages (PyQt6, pandas, etc.) — see utils.js's
+    // detectPackageHints/KNOWN_PACKAGE_HINTS.
+    args.push(...packageHints);
     args.push(entry);
 
     return [
-      { uses: 'actions/checkout@v4' },
-      {
-        uses: 'actions/setup-python@v5',
-        with: { 'python-version': `'${pythonVersion}'` }
-      },
-      { run: 'pip install -r requirements.txt 2>/dev/null || true' },
-      { run: 'pip install pyinstaller' },
+      ...setupSteps,
       {
         name: 'Build with PyInstaller',
         run: [

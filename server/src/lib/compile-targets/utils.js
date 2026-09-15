@@ -36,9 +36,22 @@ export function parsePackageJson(files) {
   }
 }
 
-// Detect if the project is Node-based (has package.json)
+// Detect if the project is Node-based. A bare package.json isn't enough —
+// Construct/self-dev sometimes leaves one behind as pure project metadata
+// (2026-09-15, the Wikidata Batch Uploader incident: a package.json with no
+// "main" field, no dependencies, and a scripts.start pointing at an
+// index.js that was never created, on an otherwise 100%-Python PyQt6
+// project — every compile target's Node-vs-Python branch was silently
+// picking Node and trying to bundle main.py with a JS packager). Require
+// actual evidence of real Node code or tooling instead of just the file's
+// existence: a real JS/TS source file present, or a non-empty
+// dependencies/devDependencies list.
 export function isNodeProject(files) {
-  return hasFile(files, 'package.json');
+  if (!hasFile(files, 'package.json')) return false;
+  if (hasPattern(files, /\.(js|mjs|cjs|ts|tsx|jsx)$/)) return true;
+  const pkg = parsePackageJson(files);
+  const depCount = Object.keys(pkg?.dependencies || {}).length + Object.keys(pkg?.devDependencies || {}).length;
+  return depCount > 0;
 }
 
 // Detect if the project is Python-based (has requirements.txt, setup.py, pyproject.toml, or .py files)
@@ -154,6 +167,61 @@ export function detectHiddenImports(files) {
     for (const m of entryMatches) hidden.add(m[1]);
   }
   return Array.from(hidden);
+}
+
+// Does this project ship its own PyInstaller build script? (2026-09-15,
+// the Wikidata Batch Uploader incident — "chat and compile fighting each
+// other" — self-dev had already hand-tuned build.py with the
+// --collect-submodules/--collect-data/--hidden-import flags a real PyQt6 +
+// pandas app needs (see detectPackageHints below for why those can never
+// be found by source-regex scanning), but the compile pipeline silently
+// ignored it and kept regenerating its own weaker pyinstaller invocation
+// every time. When a project has done the work to get its own build right,
+// run THAT instead of overriding it.
+export function detectBuildScript(files) {
+  return hasFile(files, 'build.py') ? 'build.py' : null;
+}
+
+// Parse dependency names out of requirements.txt (also usable for a
+// pyproject.toml-style one-per-line block, same format once extracted).
+// Moved here from python-package.js so every Python-capable target shares
+// one parser instead of each reinventing it.
+export function parseRequirementsTxt(content) {
+  return content.split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#') && !l.startsWith('-'))
+    .map(l => l.split('==')[0].split('>=')[0].split('<=')[0].split('~=')[0].trim())
+    .filter(l => l);
+}
+
+// Extra PyInstaller args a package is known to need, keyed by lowercased
+// dependency name. These exist because PyInstaller's default import-
+// following can't see them: a Qt binding's C-extension internals (PyQt6.sip)
+// and pandas' dynamically-loaded submodules are never spelled out as a
+// literal Python `import` statement anywhere in user source — the same
+// reason detectHiddenImports() above structurally can't catch them no
+// matter how many patterns it grows. Not trying to be exhaustive, just
+// closing the concrete gaps that have actually broken a real build.
+const KNOWN_PACKAGE_HINTS = {
+  pyqt6: ['--collect-submodules', 'PyQt6', '--collect-data', 'PyQt6', '--hidden-import', 'PyQt6.sip'],
+  pyside6: ['--collect-submodules', 'PySide6', '--collect-data', 'PySide6'],
+  pandas: ['--collect-submodules', 'pandas'],
+  numpy: ['--collect-submodules', 'numpy'],
+};
+
+// Detect known-tricky packages from requirements.txt and return the extra
+// PyInstaller args they need, flattened. Only used as a fallback when the
+// project has no build.py of its own (see detectBuildScript above) — a
+// project that already solved this itself doesn't need us guessing too.
+export function detectPackageHints(files) {
+  const req = getFile(files, 'requirements.txt');
+  if (!req) return [];
+  const deps = parseRequirementsTxt(req.content).map((d) => d.toLowerCase());
+  const args = [];
+  for (const dep of deps) {
+    if (KNOWN_PACKAGE_HINTS[dep]) args.push(...KNOWN_PACKAGE_HINTS[dep]);
+  }
+  return args;
 }
 
 // Detect the Node.js version a project targets. Reads .nvmrc or
