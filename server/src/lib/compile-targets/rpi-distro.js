@@ -4,7 +4,7 @@
 // also bundles a flash.sh SD-card writer and OS-README.md so the user can write
 // the image straight to a device.
 
-import { isNodeProject, isPythonProject, detectPythonEntry } from './utils.js';
+import { isNodeProject, isPythonProject, detectPythonEntry, detectNodeEntry } from './utils.js';
 
 // Read the optional morpheus-distro.json from the project file tree — the UI
 // (DistroConfigDialog) writes this so users can customise the image without
@@ -74,7 +74,7 @@ export const rpiDistro = {
     if (isPython) bakeLines.push('pip3 install -r requirements.txt 2>&1 || true');
     if (isNode || isPython) {
       const runtime = isNode ? '/usr/bin/node' : '/usr/bin/python3';
-      const entry = isNode ? 'index.js' : (pythonEntry || 'main.py');
+      const entry = isNode ? detectNodeEntry(files) : (pythonEntry || 'main.py');
       bakeLines.push('cat > /etc/systemd/system/morpheus-app.service <<UNIT');
       bakeLines.push('[Unit]');
       bakeLines.push('Description=Morpheus App');
@@ -272,6 +272,15 @@ export const rpiDistro = {
       {
         name: 'Clone pi-gen (pinned commit)',
         run: [
+          // Defensive: this target bakes the app into the image entirely
+          // from the adapter's own logic below (no AI-authored pi-gen/
+          // content is ever read — see the corrected chatWithMorpheus.js
+          // prompt for this target). But `git checkout FETCH_HEAD` below
+          // hard-fails with "untracked working tree files would be
+          // overwritten" if ANY pi-gen/ path already exists in the checked-
+          // out repo (old output from before that prompt fix, a stray local
+          // file, etc.) — clear it first so the clone can never collide.
+          'rm -rf pi-gen',
           'git init pi-gen',
           'cd pi-gen',
           'git remote add origin https://github.com/RPi-Distro/pi-gen.git',
@@ -393,7 +402,21 @@ export const rpiDistro = {
     /pi-gen.*failed/i,
     /build.*failed/i,
     /No .*img.*produced/i
-  ]
+  ],
+
+  // 2026-09-15: see mac-app.js's matching aiNotes comment for why this
+  // exists. Corrects a real gap: chatWithMorpheus.js used to tell the AI to
+  // hand-author a whole pi-gen project (config, stage3, Dockerfile,
+  // build.sh) — none of which this adapter reads. It always synthesizes its
+  // own pi-gen setup from scratch from the project's plain app files below;
+  // an AI-authored pi-gen/ tree at those same paths only collided with the
+  // fresh pi-gen clone this step does. The prompt is now corrected to match
+  // what this file actually does — this note reinforces it on every turn.
+  aiNotes: `PLATFORM COMPILE PIPELINE NOTES (rpi-distro target) — this is exactly what Morpheus's own compile pipeline will do with your files; write to it, don't guess:
+- Write a normal Node.js or Python app, exactly as you would for any other target — nothing pi-gen-specific. The pipeline detects Node (has package.json + real JS/TS evidence) or Python (requirements.txt/.py files) and automatically clones pi-gen, bakes your app into /opt/morpheus-app on the image, installs your dependencies (npm install --production, or pip install -r requirements.txt into a venv) at build time, and registers a systemd service so it starts on first boot.
+- Node entry point: package.json's "main" field (or the first "bin" command) if set, otherwise index.js.
+- Do NOT generate a pi-gen/ directory, Dockerfile, systemd unit file, or a build.sh — none of it is read, and files at those paths can actively break the build (pi-gen itself gets cloned fresh into pi-gen/ during the build).
+- Distro choice, hostname, timezone, locale, WiFi, SSH keys, and extra apt packages are configured through the operator's Distro Config dialog in the UI (morpheus-distro.json), never through generated files — don't try to set any of that yourself.`,
 };
 
 export default rpiDistro;

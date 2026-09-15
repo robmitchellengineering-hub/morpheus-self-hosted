@@ -160,15 +160,17 @@ For **web-app** (deployable web application):
 - Document deployment options (nginx, Vercel, Netlify, GitHub Pages)
 
 For **rpi-distro** (custom Raspberry Pi Linux distribution / OS image):
-- Generate a pi-gen-based build project (pi-gen is the official Raspberry Pi OS image builder): include config file (pi-gen/config), stage definitions (stage0, stage1, stage2), and a custom stage (stage3) with packages and scripts
-- Include a Dockerfile or document running pi-gen in Docker (recommended): 'docker build -t pi-gen . && docker run --privileged -v $(pwd)/deploy:/pi-gen/deploy pi-gen'
-- Include package-list files (00-packages, 01-packages) listing the custom packages to install (apt packages, Python pip packages, etc.)
-- Include customization scripts in the custom stage (00-run.sh, 01-run.sh, etc.) for post-install configuration (users, services, network, autostart scripts, etc.)
-- Include a build.sh wrapper script that invokes pi-gen with the correct stage list and config
-- Document the full build process: clone pi-gen, copy custom stage, run build (requires Docker on a Linux host or WSL2), flash the resulting .img to an SD card using 'dd' or balenaEtcher or rpi-imager
-- Document target hardware: Raspberry Pi 3/4/5 (arm64) — set IMG_NAME and target architecture in pi-gen config
-- If the operator's project is a Python/Node app, include it in the custom stage's package list and a systemd service file to autostart it on boot
-- Always make the distro self-contained: the operator owns the image, no cloud dependency, boots standalone on the Pi
+- Write a normal Node.js or Python app — exactly as you would for any other target, nothing pi-gen-specific. Morpheus's own compile pipeline automatically clones pi-gen (the official Raspberry Pi OS image builder), bakes your app into the image at /opt/morpheus-app, installs your dependencies at build time, and registers a systemd service so it starts on first boot.
+- Node entry point: package.json's "main" field (or the first "bin" command) if set, otherwise index.js.
+- Do NOT generate a pi-gen/ directory, Dockerfile, systemd unit file, or a build.sh — none of it is read by the pipeline, and files at those paths can actively collide with pi-gen's own fresh clone during the build.
+- Distro choice, hostname, timezone, locale, WiFi, SSH keys, and extra apt packages are configured by the operator through a separate Distro Config dialog in the UI, never through generated files — don't try to set any of that yourself.
+- The image, an SD-card flasher script, a network flasher, and setup docs are all produced automatically — you never need to write any of that.
+
+For **linux-distro** (custom PC/server Linux distribution / bootable disk image — Debian/Ubuntu/Fedora):
+- Write a normal Node.js or Python app — exactly as you would for any other target, nothing distro-build-specific. Morpheus's own compile pipeline automatically bakes your app into a bootable disk image (via mkosi) at /opt/morpheus-app, installs your dependencies at build time, and registers a systemd service so it starts on first boot.
+- Node entry point: package.json's "main" field (or the first "bin" command) if set, otherwise index.js.
+- Do NOT generate a Dockerfile, mkosi config, systemd unit file, ISO/ Yocto/Buildroot tooling, or ANY OS-image-building scaffolding — none of it is read by the pipeline.
+- Base distro (Debian/Ubuntu/Fedora), hostname, timezone, locale, first user, SSH, and extra packages are configured by the operator through a separate Linux Distro Config dialog in the UI, never through generated files — don't try to set any of that yourself.
 
 For **arduino-firmware** (Arduino firmware / sketch):
 - Generate a standard Arduino sketch: a .ino file with setup() and loop() functions, complete and compilable — no placeholders
@@ -765,9 +767,9 @@ export default async function handler({ user, body, res }) {
   // or coder -- BUILD_TARGET_INSTRUCTIONS above only has generic,
   // hand-written guidance per target that can't see the adapter's actual
   // behavior and drifts out of sync with it. An adapter that declares an
-  // `aiNotes` field (currently mac-app, ios-app -- the two behind most of
-  // the recent compile failures; add to more adapters as they accumulate
-  // their own hard-won gotchas) gets that note surfaced here, straight from
+  // `aiNotes` field (mac-app, ios-app, rpi-distro, linux-distro so far --
+  // add to more adapters as they accumulate their own hard-won gotchas)
+  // gets that note surfaced here, straight from
   // the adapter code itself so it can't go stale, on every construct/edit
   // turn for a project on that target -- same mechanism as designBlock above.
   const compileAdapterBlock = (() => {
