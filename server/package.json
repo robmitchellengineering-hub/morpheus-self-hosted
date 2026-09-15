@@ -34,6 +34,7 @@
     "libsodium-wrappers": "^0.7.15",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.15",
+    "puppeteer-core": "^25.11.0",
     "stripe": "^16.12.0",
     "uuid": "^9.0.1"
   },
