@@ -300,7 +300,23 @@ export function useWorkspace() {
   const uploadToGithub = useCallback(async (repoName, isPrivate) => {
     if (!currentProject) return;
     const res = await base44.functions.invoke('uploadToGithub', { projectId: currentProject.id, repoName, isPrivate });
+    // Reflect the new connection immediately (uploadToGithub persisted
+    // Project.github_repo server-side) so the UI can switch into "synced"
+    // state without a reload — every chat turn from now on auto-syncs here.
+    if (res.data?.repoUrl) {
+      const match = res.data.repoUrl.match(/github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/);
+      if (match) setCurrentProject(prev => (prev ? { ...prev, github_repo: match[1] } : prev));
+    }
     return res.data;
+  }, [currentProject]);
+
+  // Detach a project from its synced repo — clears Project.github_repo only
+  // (setProjectGithub.js with repo:'' ), never deletes the actual repo on
+  // GitHub. Reversible: reconnecting is just "push to GitHub" again.
+  const disconnectGithub = useCallback(async () => {
+    if (!currentProject) return;
+    await base44.functions.invoke('setProjectGithub', { projectId: currentProject.id, repo: '' });
+    setCurrentProject(prev => (prev ? { ...prev, github_repo: null } : prev));
   }, [currentProject]);
 
   const emailProjectFiles = useCallback(async (email) => {
@@ -458,5 +474,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
 }

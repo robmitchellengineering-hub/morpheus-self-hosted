@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { X, Github, Mail, Loader2, CheckCircle, AlertCircle, ExternalLink, Bot } from 'lucide-react';
+import { X, Github, Mail, Loader2, CheckCircle, AlertCircle, ExternalLink, Bot, Unlink } from 'lucide-react';
 import GithubGate from '@/components/matrix/GithubGate';
 import DiagnosisPanel, { DiagnosisLoading } from '@/components/matrix/DiagnosisPanel';
 import { useDiagnosis } from '@/hooks/useDiagnosis';
 
-export default function ShareDialog({ open, onClose, project, onUploadGithub, onEmail }) {
+export default function ShareDialog({ open, onClose, project, onUploadGithub, onDisconnectGithub, onEmail }) {
   const [tab, setTab] = useState('github');
   const [repoName, setRepoName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
@@ -12,6 +12,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
+  const [disconnecting, setDisconnecting] = useState(false);
   const { diagnosis, diagnosing, diagnose } = useDiagnosis();
 
   if (!open) return null;
@@ -45,6 +46,17 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
   const handleClose = () => {
     setSuccess(null); setError(null); setRepoName(''); setEmail('');
     onClose();
+  };
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true); setError(null); setSuccess(null);
+    try {
+      await onDisconnectGithub();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDisconnecting(false);
+    }
   };
 
   return (
@@ -96,16 +108,31 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
         {tab === 'github' ? (
           <GithubGate note="Connect your GitHub account to push this construct to your own repo.">
             <div className="space-y-4">
+              {project?.github_repo && (
+                <div className="p-3 border border-primary/40 bg-primary/5 text-sm space-y-2">
+                  <div className="flex items-center gap-2 text-primary">
+                    <CheckCircle size={14} className="shrink-0" />
+                    <span>Synced to</span>
+                    <a href={`https://github.com/${project.github_repo}`} target="_blank" rel="noreferrer" className="underline hover:neon-glow flex items-center gap-1 break-all">
+                      {project.github_repo} <ExternalLink size={11} className="shrink-0" />
+                    </a>
+                  </div>
+                  <p className="text-primary/50 text-xs">Every chat edit pushes here automatically — no need to re-push manually.</p>
+                  <button onClick={handleDisconnect} disabled={disconnecting} className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-red-400 disabled:opacity-30">
+                    {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />} Disconnect (keeps the repo on GitHub)
+                  </button>
+                </div>
+              )}
               <div>
-                <label className="text-xs text-primary/50 uppercase tracking-wider">Repository Name</label>
-                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
+                <label className="text-xs text-primary/50 uppercase tracking-wider">{project?.github_repo ? 'Push to a different repository' : 'Repository Name'}</label>
+                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus={!project?.github_repo} />
               </div>
               <label className="flex items-center gap-2 text-sm text-primary/70 cursor-pointer">
                 <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} className="accent-primary" />
                 Private repository
               </label>
               <button onClick={handleGithub} disabled={loading} className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2">
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Github size={16} />} PUSH TO GITHUB
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Github size={16} />} {project?.github_repo ? 'PUSH TO NEW REPO' : 'PUSH TO GITHUB'}
               </button>
             </div>
           </GithubGate>
