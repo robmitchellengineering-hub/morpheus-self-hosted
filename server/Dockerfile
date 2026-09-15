@@ -12,7 +12,17 @@ WORKDIR /app
 # library libssl.so.1.1: No such file or directory" (seen on first deploy,
 # 2026-08-26). Installing openssl before `prisma generate` fixes detection
 # for both the build and runtime environment (same base image, single stage).
-RUN apk add --no-cache openssl
+#
+# chromium + its runtime libs (2026-09-15, selfDevTools.js's
+# screenshot_preview tool): Puppeteer's own bundled Chromium download
+# doesn't work reliably on Alpine's musl libc, so the server depends on
+# `puppeteer-core` (no bundled download) pointed at Alpine's own `chromium`
+# package instead, via CHROMIUM_PATH below. This adds real image size and,
+# transiently, real memory per screenshot call — a deliberate tradeoff, see
+# selfDevTools.js's own comment for why it's still run in-process rather
+# than via a GitHub Actions runner.
+RUN apk add --no-cache openssl chromium nss freetype harfbuzz ca-certificates font-freefont
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund

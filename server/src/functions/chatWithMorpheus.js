@@ -18,6 +18,7 @@ import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
+import { selfDevToolsPromptBlock, runSelfDevToolCalls, formatSelfDevToolResultsBlock, extractScreenshotUrls } from '../lib/selfDevTools.js';
 import { getConstructContext } from '../lib/constructContext.js';
 import { checkA11y } from '../lib/a11yCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
@@ -56,6 +57,7 @@ const STAGE_LABELS = {
   a11y: 'Checking accessibility',
   polish: 'Polishing the UI',
   api_check: 'Checking external APIs',
+  diagnose: 'Checking production',
 };
 const STAGE_ROLE = {
   web: 'planner',
@@ -69,6 +71,7 @@ const STAGE_ROLE = {
   a11y: 'reviewer',
   polish: 'coder',
   api_check: 'reviewer',
+  diagnose: 'planner',
 };
 
 // One of these per request. `emit` writes one NDJSON line; `start`/`done`
@@ -293,6 +296,11 @@ Return JSON with:
 // max_tokens would avoid it.
 const MAX_FILES_PER_CODER_STEP = 3;
 const CODER_STEP_MAX_TOKENS = 24000; // generous for 1-3 files' full content; small enough to leave huge headroom under any plausible per-call ceiling
+
+// Self-dev diagnostic tool loop (see selfDevTools.js) — bounds how many
+// extra planner rounds an investigation can take before it must finalize.
+const SELF_DEV_TOOL_MAX_ROUNDS = 2;          // investigation rounds beyond the first — 3 planner calls total, worst case
+const SELF_DEV_TOOL_MAX_CALLS_PER_ROUND = 3; // mirrors externalApis' cap-of-5, tighter since log/SQL/command calls are heavier
 
 // Files worth always showing in full so the AI can orient itself, even when
 // nothing points at them. Self-dev (Morpheus's own monorepo) and an ordinary
@@ -1014,66 +1022,105 @@ OPERATOR SAYS: ${message}`;
           contextBlock += `\n\n## Construct Context (auto-fetched)\nThe operator's message references construct/project \"${constructCandidate}\". Here is its recent history and compile attempts:\n${constructCtx}`;
         }
       }
+      // Self-diagnosis tools (2026-09-15): before this, self-dev's AI turn
+      // could only ever reason from static context assembled up front — no
+      // way to actually check production logs, query the DB, run a real
+      // command, or look at a live screenshot itself, even though a human
+      // admin can already do all of that through the Admin Panel. See
+      // selfDevTools.js for the registry (extensible — add a tool there and
+      // it's picked up here automatically) and the investigation loop below.
+      contextBlock += `\n\nSELF-DIAGNOSIS TOOLS AVAILABLE — before finalizing your plan, if this turn is about investigating a live production issue (a crash, an error report, unexpected behavior), you may request one or more of these read-only tools and see real results before deciding your plan:\n${selfDevToolsPromptBlock()}\nRequest them via the \`toolCalls\` field below. Only use these when genuinely diagnosing something live — not for routine feature work you can already reason about from the repo context already shown.`;
     }
+
     stages.start('planner');
-    const planner = await invokeAI({
-      userId: user.id,
-      prompt: `${systemPrompt}${PLANNER_INSTRUCTIONS}\n${contextBlock}${referenceNote}\n\nRespond now.`,
-      schema: {
-        type: 'object',
-        properties: {
-          reply: { type: 'string', description: 'Morpheus response in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true' },
-          needsCode: { type: 'boolean', description: 'true if code needs to be written/modified, false for pure conversation' },
-          needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
-          plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false). When featureSteps is set, this covers only the first step.' },
-          plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' },
-          featureTitle: { type: 'string', description: 'MULTI-STEP ESCALATION only: a 2-5 word name for a job too big for one turn.' },
-          featureSteps: { type: 'array', items: { type: 'string' }, description: 'MULTI-STEP ESCALATION only: 3-8 ordered, individually shippable step titles. When set, plan/plannedFiles cover only the first.' },
-          stepComplete: { type: 'boolean', description: 'When an ACTIVE FEATURE is shown in your context: true if THIS turn fully completes the active step (advance to the next); false if it is a tweak/fix still within the active step.' },
-          decisionSummary: { type: 'string', description: 'CODE BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
-          decisionRationale: { type: 'string', description: 'CODE BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' },
-          externalApis: {
-            type: 'array',
-            description: 'If this plan has the coder call a real external HTTP API (a third-party service, a public data source) whose exact URL/response shape you are not certain of from a source already shown to you in this conversation, list each real endpoint URL here — up to 5 — so it gets actually called and verified before any code is written against it. Leave empty for plans that touch no external API, or that only use one whose shape is already confirmed in your context above.',
-            items: {
-              type: 'object',
-              properties: {
-                url: { type: 'string', description: 'The exact, real URL to test — a GET request will be made to it verbatim.' },
-                why: { type: 'string', description: 'What this call is for, one short phrase.' },
+    let planner;
+    let toolResultsBlock = '';
+    const toolScreenshotUrls = [];
+    for (let round = 0; ; round++) {
+      const allowToolCalls = isSelfDev && round < SELF_DEV_TOOL_MAX_ROUNDS;
+      planner = await invokeAI({
+        userId: user.id,
+        prompt: `${systemPrompt}${PLANNER_INSTRUCTIONS}\n${contextBlock}${referenceNote}${toolResultsBlock}\n\nRespond now.`,
+        schema: {
+          type: 'object',
+          properties: {
+            reply: { type: 'string', description: 'Morpheus response in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true' },
+            needsCode: { type: 'boolean', description: 'true if code needs to be written/modified, false for pure conversation' },
+            needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
+            plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false). When featureSteps is set, this covers only the first step.' },
+            plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' },
+            featureTitle: { type: 'string', description: 'MULTI-STEP ESCALATION only: a 2-5 word name for a job too big for one turn.' },
+            featureSteps: { type: 'array', items: { type: 'string' }, description: 'MULTI-STEP ESCALATION only: 3-8 ordered, individually shippable step titles. When set, plan/plannedFiles cover only the first.' },
+            stepComplete: { type: 'boolean', description: 'When an ACTIVE FEATURE is shown in your context: true if THIS turn fully completes the active step (advance to the next); false if it is a tweak/fix still within the active step.' },
+            decisionSummary: { type: 'string', description: 'CODE BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
+            decisionRationale: { type: 'string', description: 'CODE BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' },
+            externalApis: {
+              type: 'array',
+              description: 'If this plan has the coder call a real external HTTP API (a third-party service, a public data source) whose exact URL/response shape you are not certain of from a source already shown to you in this conversation, list each real endpoint URL here — up to 5 — so it gets actually called and verified before any code is written against it. Leave empty for plans that touch no external API, or that only use one whose shape is already confirmed in your context above.',
+              items: {
+                type: 'object',
+                properties: {
+                  url: { type: 'string', description: 'The exact, real URL to test — a GET request will be made to it verbatim.' },
+                  why: { type: 'string', description: 'What this call is for, one short phrase.' },
+                },
               },
             },
-          },
-        }
-      },
-      fileUrls,
-      role: 'planner',
-      // 2026-09-03 correction: this 3000 cap (set earlier today purely for
-      // latency) turned out to be the ACTUAL cause of the OUTPUT_TRUNCATED
-      // failures Rob kept hitting -- confirmed from the runtime logs, which
-      // showed the throw coming from this exact call, not the Coder. A
-      // detailed file-by-file plan with implementation notes/rationale, now
-      // also carrying the full plannedFiles list the chunked Coder pass
-      // depends on, routinely needs more than 3000 tokens for any real
-      // multi-file build -- so EVERY build was dying here, on the very first
-      // AI call, before the Coder chunking fix below ever got a chance to
-      // run. Raised to a still-bounded but realistic 12000.
-      //
-      // 2026-09-04 (Rob hit OUTPUT_TRUNCATED role=planner maxTokens=12000 on
-      // his original, most mature AnyPDF project — the one with the most
-      // accumulated files/history of the three AnyPDF constructs, so the
-      // most likely to produce a genuinely large plan): 12000 turned out to
-      // be the same story one size up. Unlike the Coder's full file content
-      // (truly unbounded — that's why it's chunked, not capped), the
-      // Planner's own output is a plan description plus a plain path list,
-      // which is naturally far more compressible — so this round pairs the
-      // usual "raise the ceiling" with actually tightening the instructions
-      // (see PLANNER_INSTRUCTIONS' "KEEP THE PLAN CONCISE" rule above) so a
-      // big build doesn't reflexively need a bigger cap next time too. Raised
-      // to 24000, matching CODER_STEP_MAX_TOKENS' scale below — generous
-      // headroom for a real many-file plan without chasing an unbounded
-      // number the way the Coder's is.
-      maxTokens: 24000,
-    });
+            ...(allowToolCalls ? {
+              toolCalls: {
+                type: 'array',
+                description: `SELF-DEV ONLY. Up to ${SELF_DEV_TOOL_MAX_CALLS_PER_ROUND} read-only diagnostic tool calls to make BEFORE finalizing your plan/reply — only when genuinely diagnosing a live issue. Leave empty/omit once you have enough to answer or plan.`,
+                items: {
+                  type: 'object',
+                  properties: {
+                    tool: { type: 'string', description: 'One of the self-diagnosis tool names listed above.' },
+                    args: { type: 'object', description: 'Arguments for that tool, per its description.' },
+                  },
+                },
+              },
+            } : {}),
+          }
+        },
+        fileUrls: toolScreenshotUrls.length ? [...(fileUrls || []), ...toolScreenshotUrls] : fileUrls,
+        role: 'planner',
+        // 2026-09-03 correction: this 3000 cap (set earlier today purely for
+        // latency) turned out to be the ACTUAL cause of the OUTPUT_TRUNCATED
+        // failures Rob kept hitting -- confirmed from the runtime logs, which
+        // showed the throw coming from this exact call, not the Coder. A
+        // detailed file-by-file plan with implementation notes/rationale, now
+        // also carrying the full plannedFiles list the chunked Coder pass
+        // depends on, routinely needs more than 3000 tokens for any real
+        // multi-file build -- so EVERY build was dying here, on the very first
+        // AI call, before the Coder chunking fix below ever got a chance to
+        // run. Raised to a still-bounded but realistic 12000.
+        //
+        // 2026-09-04 (Rob hit OUTPUT_TRUNCATED role=planner maxTokens=12000 on
+        // his original, most mature AnyPDF project — the one with the most
+        // accumulated files/history of the three AnyPDF constructs, so the
+        // most likely to produce a genuinely large plan): 12000 turned out to
+        // be the same story one size up. Unlike the Coder's full file content
+        // (truly unbounded — that's why it's chunked, not capped), the
+        // Planner's own output is a plan description plus a plain path list,
+        // which is naturally far more compressible — so this round pairs the
+        // usual "raise the ceiling" with actually tightening the instructions
+        // (see PLANNER_INSTRUCTIONS' "KEEP THE PLAN CONCISE" rule above) so a
+        // big build doesn't reflexively need a bigger cap next time too. Raised
+        // to 24000, matching CODER_STEP_MAX_TOKENS' scale below — generous
+        // headroom for a real many-file plan without chasing an unbounded
+        // number the way the Coder's is.
+        maxTokens: 24000,
+      });
+
+      const requested = allowToolCalls && Array.isArray(planner.result?.toolCalls)
+        ? planner.result.toolCalls.filter((c) => c && typeof c.tool === 'string').slice(0, SELF_DEV_TOOL_MAX_CALLS_PER_ROUND)
+        : [];
+      if (!requested.length) break; // done investigating, or the cap was already reached
+
+      stages.start('diagnose');
+      const toolResults = await runSelfDevToolCalls(user, project, requested); // never throws
+      toolResultsBlock += formatSelfDevToolResultsBlock(toolResults, round + 1);
+      toolScreenshotUrls.push(...extractScreenshotUrls(toolResults));
+      stages.done('diagnose');
+    }
     stages.done('planner');
 
     const plannerResult = planner.result;
