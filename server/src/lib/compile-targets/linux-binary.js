@@ -4,7 +4,7 @@
 import {
   isNodeProject, isPythonProject, parsePackageJson, detectPythonEntry,
   detectDataDirs, detectHiddenImports, detectNodeVersion, detectPythonVersion,
-  cloneFiles
+  detectBuildScript, detectPackageHints, cloneFiles
 } from './utils.js';
 
 export const linuxBinary = {
@@ -66,7 +66,38 @@ export const linuxBinary = {
     const entry = detectPythonEntry(files) || 'main.py';
     const dataDirs = detectDataDirs(files);
     const hiddenImports = detectHiddenImports(files);
+    const packageHints = detectPackageHints(files);
     const pythonVersion = detectPythonVersion(files) || '3.12';
+    const buildScript = detectBuildScript(files);
+
+    const setupSteps = [
+      { uses: 'actions/checkout@v4' },
+      {
+        uses: 'actions/setup-python@v5',
+        with: { 'python-version': `'${pythonVersion}'` }
+      },
+      { run: 'pip install -r requirements.txt 2>/dev/null || true' },
+      { run: 'pip install pyinstaller' },
+    ];
+
+    // Run the project's own build.py when it has one, instead of silently
+    // overriding it with a weaker reconstructed pyinstaller command — see
+    // utils.js's detectBuildScript for why (GUI/data-heavy packages need
+    // collect-submodules/collect-data flags no source-regex scan can find).
+    if (buildScript) {
+      return [
+        ...setupSteps,
+        {
+          name: "Build with the project's own build script",
+          run: [
+            `python ${buildScript}`,
+            'ls dist/',
+            'compgen -G "dist/*" > /dev/null || { echo "Build script produced nothing in dist/"; exit 1; }'
+          ].join('\n')
+        },
+        { run: 'tar -czf app.tar.gz -C dist .' }
+      ];
+    }
 
     const args = ['--onefile', '--name', 'app'];
     for (const dir of dataDirs) {
@@ -75,16 +106,13 @@ export const linuxBinary = {
     for (const imp of hiddenImports) {
       args.push(`--hidden-import ${imp}`);
     }
+    // Known-tricky packages (PyQt6, pandas, etc.) — see utils.js's
+    // detectPackageHints/KNOWN_PACKAGE_HINTS.
+    args.push(...packageHints);
     args.push(entry);
 
     return [
-      { uses: 'actions/checkout@v4' },
-      {
-        uses: 'actions/setup-python@v5',
-        with: { 'python-version': `'${pythonVersion}'` }
-      },
-      { run: 'pip install -r requirements.txt 2>/dev/null || true' },
-      { run: 'pip install pyinstaller' },
+      ...setupSteps,
       {
         name: 'Build with PyInstaller',
         run: [

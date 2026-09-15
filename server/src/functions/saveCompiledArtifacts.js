@@ -34,6 +34,15 @@ const CONTENT_TYPES = {
   '.img': 'application/octet-stream',
   '.iso': 'application/x-iso9660-image',
   '.ipa': 'application/octet-stream',
+  // Added 2026-09-15 (compile-pipeline packaging fix) — these were falling
+  // through to the generic default below for linux-binary/mac-app's own
+  // .tar.gz archives, python-package's wheel, and arduino-firmware's raw
+  // firmware images, none of which had an entry.
+  '.gz': 'application/gzip', // covers .tar.gz too — contentTypeFor() below only matches the last extension
+  '.whl': 'application/zip', // a wheel is a zip archive under a different extension
+  '.hex': 'text/plain',
+  '.bin': 'application/octet-stream',
+  '.elf': 'application/octet-stream',
 };
 
 function contentTypeFor(filename) {

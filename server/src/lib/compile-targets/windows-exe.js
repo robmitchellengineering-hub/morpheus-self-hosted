@@ -2,11 +2,13 @@
 // Detects Node (pkg) vs Python (PyInstaller), bundles icons, data files,
 // and hidden imports for PyInstaller to avoid runtime ModuleNotFoundError.
 // Runs on a Windows runner with PowerShell to produce a genuine .exe.
+// Python: if the project ships its own build.py, that runs instead of an
+// auto-generated pyinstaller command — see utils.js's detectBuildScript.
 
 import {
   isNodeProject, isPythonProject, parsePackageJson, detectPythonEntry,
   detectDataDirs, detectHiddenImports, detectIcon, detectNodeVersion,
-  detectPythonVersion, cloneFiles
+  detectPythonVersion, detectBuildScript, detectPackageHints, cloneFiles
 } from './utils.js';
 
 export const windowsExe = {
@@ -78,25 +80,11 @@ export const windowsExe = {
     const icon = detectIcon(files, ['.ico']);
     const dataDirs = detectDataDirs(files);
     const hiddenImports = detectHiddenImports(files);
+    const packageHints = detectPackageHints(files);
     const pythonVersion = detectPythonVersion(files) || '3.12';
+    const buildScript = detectBuildScript(files);
 
-    const pyinstallerArgs = ['--onefile', '--name', 'app'];
-    if (icon) pyinstallerArgs.push(`--icon ${icon}`);
-    // Windows uses ';' as the PyInstaller --add-data separator (not ':')
-    for (const dir of dataDirs) {
-      pyinstallerArgs.push(`--add-data "${dir};${dir}"`);
-    }
-    for (const imp of hiddenImports) {
-      pyinstallerArgs.push(`--hidden-import ${imp}`);
-    }
-    pyinstallerArgs.push(entry);
-
-    // Build a PowerShell array literal and invoke pyinstaller with it.
-    const psArray = pyinstallerArgs
-      .map(a => `'${a.replace(/'/g, "''")}'`)
-      .join(', ');
-
-    return [
+    const setupSteps = [
       { uses: 'actions/checkout@v4' },
       {
         uses: 'actions/setup-python@v5',
@@ -107,12 +95,58 @@ export const windowsExe = {
         run: 'if (Test-Path requirements.txt) { pip install -r requirements.txt }'
       },
       { run: 'pip install pyinstaller' },
+    ];
+
+    // A project that ships its own build.py has already worked out real
+    // packaging needs (collect-submodules/collect-data/excludes etc. for
+    // GUI frameworks and data-heavy libraries) our own auto-detection below
+    // structurally can't see — a Qt binding's C-extension internals or
+    // pandas' dynamically-loaded submodules never appear as a literal
+    // `import` statement anywhere in user source. Run the project's own
+    // script instead of silently overriding it with a weaker reconstructed
+    // pyinstaller command — see utils.js's detectBuildScript.
+    if (buildScript) {
+      return [
+        ...setupSteps,
+        {
+          name: "Build with the project's own build script",
+          run: [
+            `python ${buildScript}`,
+            'if (-not (Get-ChildItem dist -ErrorAction SilentlyContinue)) { Write-Error "Build script produced nothing in dist/"; exit 1 }',
+            'Compress-Archive -Path dist\\* -DestinationPath release.zip'
+          ].join('\n')
+        }
+      ];
+    }
+
+    const pyinstallerArgs = ['--onefile', '--name', 'app'];
+    if (icon) pyinstallerArgs.push(`--icon ${icon}`);
+    // Windows uses ';' as the PyInstaller --add-data separator (not ':')
+    for (const dir of dataDirs) {
+      pyinstallerArgs.push(`--add-data "${dir};${dir}"`);
+    }
+    for (const imp of hiddenImports) {
+      pyinstallerArgs.push(`--hidden-import ${imp}`);
+    }
+    // Known-tricky packages (PyQt6, pandas, etc.) get their real PyInstaller
+    // needs added even without a project-authored build.py — see utils.js's
+    // detectPackageHints/KNOWN_PACKAGE_HINTS.
+    pyinstallerArgs.push(...packageHints);
+    pyinstallerArgs.push(entry);
+
+    // Build a PowerShell array literal and invoke pyinstaller with it.
+    const psArray = pyinstallerArgs
+      .map(a => `'${a.replace(/'/g, "''")}'`)
+      .join(', ');
+
+    return [
+      ...setupSteps,
       {
         name: 'Build with PyInstaller',
         run: [
           `$pyinstallerArgs = @(${psArray})`,
           '& pyinstaller @pyinstallerArgs',
-          'if (-not (Test-Path dist\\app.exe)) { Write-Error "PyInstaller produced no .exe"; exit 1 }',
+          'if (-not (Get-ChildItem dist -ErrorAction SilentlyContinue)) { Write-Error "PyInstaller produced nothing in dist/"; exit 1 }',
           'Compress-Archive -Path dist\\* -DestinationPath release.zip'
         ].join('\n')
       }
