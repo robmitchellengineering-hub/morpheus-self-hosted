@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { requireAuth, requireAdmin } from '../auth.js';
 import { widgetMayCall } from '../lib/widgetToken.js';
+import { deviceMayCall } from '../lib/deviceToken.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FUNCTIONS_DIR = path.join(__dirname, '..', 'functions');
@@ -59,6 +60,13 @@ router.all('/:name', async (req, res, next) => {
           return res.status(403).json({ error: `Widget tokens can't call ${name}` });
         }
         req.body = { ...(req.body || {}), projectId: req.widget.projectId };
+      }
+      if (req.device) {
+        // No forced projectId — a device token (Morpheus Connect, for native/
+        // compiled apps) is personal, not tied to any one project.
+        if (ADMIN_FUNCTIONS.has(name) || !deviceMayCall(req.device.scopes, name)) {
+          return res.status(403).json({ error: `Device tokens can't call ${name}` });
+        }
       }
       if (ADMIN_FUNCTIONS.has(name)) {
         return requireAdmin(req, res, () => runFunction(name, filePath, req, res, next));

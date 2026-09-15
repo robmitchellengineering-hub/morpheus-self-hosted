@@ -4,6 +4,10 @@ import { prisma } from '../db.js';
 import { hashPassword, verifyPassword, issueToken, requireAuth, blockWidget, publicUser, generateOtp } from '../auth.js';
 import { sendMail } from '../lib/mailer.js';
 import { brokerUrl } from '../config/hostedDefaults.js';
+import {
+  createPendingDeviceRequest, pollDeviceRequest, approveDeviceRequest, denyDeviceRequest,
+  getPendingDeviceRequest, isMissingDeviceTable,
+} from '../lib/deviceToken.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
@@ -251,6 +255,79 @@ router.get('/google/broker-callback', async (req, res) => {
     res.redirect(await completeGoogleLogin(profile, returnTo));
   } catch (err) {
     res.status(500).send(`Google login failed: ${err.message}`);
+  }
+});
+
+// ── Morpheus Connect — device login for native/compiled apps ──────────
+// See lib/deviceToken.js's header comment for the full design. Unlike every
+// other route in this file, /device/start and /device/poll are deliberately
+// NOT behind requireAuth — the caller is a standalone .exe with no Morpheus
+// session of its own yet. Only /device/approve (and /device/pending, so the
+// approval page can show what it's approving) run inside a real logged-in
+// session, reached from src/pages/ConnectDevice.jsx.
+router.post('/device/start', async (req, res) => {
+  try {
+    const { client_label, scopes } = req.body || {};
+    if (!client_label || typeof client_label !== 'string') {
+      return res.status(400).json({ error: 'client_label required' });
+    }
+    const { device_code, user_code, expires_in } = await createPendingDeviceRequest({ clientLabel: client_label, scopes });
+    res.json({
+      device_code,
+      user_code,
+      verification_uri: `${frontendUrl()}/connect`,
+      verification_uri_complete: `${frontendUrl()}/connect?code=${encodeURIComponent(user_code)}`,
+      interval: 5,
+      expires_in,
+    });
+  } catch (err) {
+    if (isMissingDeviceTable(err)) return res.status(503).json({ error: 'Morpheus Connect is not set up on this deployment yet.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/device/poll', async (req, res) => {
+  try {
+    const { device_code } = req.body || {};
+    const result = await pollDeviceRequest(device_code);
+    res.json(result);
+  } catch (err) {
+    if (isMissingDeviceTable(err)) return res.status(503).json({ error: 'Morpheus Connect is not set up on this deployment yet.', status: 'error' });
+    res.status(500).json({ error: err.message, status: 'error' });
+  }
+});
+
+router.get('/device/pending/:user_code', requireAuth, blockWidget, async (req, res) => {
+  try {
+    const pending = await getPendingDeviceRequest(req.params.user_code);
+    if (!pending) return res.status(404).json({ error: 'This code is invalid or has already been used.' });
+    res.json(pending);
+  } catch (err) {
+    if (isMissingDeviceTable(err)) return res.status(503).json({ error: 'Morpheus Connect is not set up on this deployment yet.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/device/approve', requireAuth, blockWidget, async (req, res) => {
+  try {
+    const { user_code } = req.body || {};
+    if (!user_code || typeof user_code !== 'string') return res.status(400).json({ error: 'user_code required' });
+    const result = await approveDeviceRequest(user_code, req.user.id);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (isMissingDeviceTable(err)) return res.status(503).json({ error: 'Morpheus Connect is not set up on this deployment yet.' });
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/device/deny', requireAuth, blockWidget, async (req, res) => {
+  try {
+    const { user_code } = req.body || {};
+    if (!user_code || typeof user_code !== 'string') return res.status(400).json({ error: 'user_code required' });
+    res.json(await denyDeviceRequest(user_code, req.user.id));
+  } catch (err) {
+    if (isMissingDeviceTable(err)) return res.status(503).json({ error: 'Morpheus Connect is not set up on this deployment yet.' });
+    res.status(500).json({ error: err.message });
   }
 });
 

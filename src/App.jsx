@@ -38,6 +38,7 @@ const SelfDev = lazy(() => import('@/pages/SelfDev'));
 const AdminPanel = lazy(() => import('@/pages/AdminPanel'));
 const Embed = lazy(() => import('@/pages/Embed'));
 const AliceStats = lazy(() => import('@/pages/AliceStats'));
+const ConnectDevice = lazy(() => import('@/pages/ConnectDevice'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
@@ -110,6 +111,11 @@ function AnimatedRoutes() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/embed" element={<Embed />} />
           <Route path="/stats/alice" element={<AliceStats />} />
+          {/* Not wrapped in the generic ProtectedRoute group — that redirects to a
+              bare /login with no returnTo, which would lose the ?code= a device
+              flow needs to survive the login round trip. ConnectDevice checks auth
+              itself and preserves the full URL via redirectToLogin. */}
+          <Route path="/connect" element={<ConnectDevice />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             <Route path="/workspace" element={<Workspace />} />
             <Route path="/workspace/:projectId" element={<Workspace />} />
