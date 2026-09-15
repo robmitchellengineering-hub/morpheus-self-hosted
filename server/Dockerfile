@@ -21,7 +21,15 @@ WORKDIR /app
 # transiently, real memory per screenshot call — a deliberate tradeoff, see
 # selfDevTools.js's own comment for why it's still run in-process rather
 # than via a GitHub Actions runner.
-RUN apk add --no-cache openssl chromium nss freetype harfbuzz ca-certificates font-freefont
+#
+# python3 (2026-09-15, syntaxCheck.js's Python check): every build turn's
+# syntax gate used to be a complete no-op for Python files (esbuild only
+# parses JS/TS) — a truncated or malformed Python file sailed straight
+# through to being committed, only ever caught later when a real compile
+# failed or the operator hit a runtime crash. Real CPython (ast.parse) is
+# the same "use the actual toolchain, don't reimplement a parser" approach
+# already used for JS via esbuild.
+RUN apk add --no-cache openssl chromium nss freetype harfbuzz ca-certificates font-freefont python3
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
 COPY package.json package-lock.json* ./
