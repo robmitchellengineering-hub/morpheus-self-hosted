@@ -323,7 +323,17 @@ export const androidApk = {
       {
         name: 'Generate Gradle wrapper',
         run: [
-          'rm -rf gradlew gradle',
+          // Scoped to the wrapper files only — a bare `rm -rf gradle` deletes
+          // the ENTIRE gradle/ directory, including legitimate non-wrapper
+          // content a real AI-generated "standard Android Studio project
+          // structure" can contain, e.g. a Version Catalog at
+          // gradle/libs.versions.toml. That's a plain text file the AI is
+          // fully entitled to write (only the wrapper subpaths are called
+          // out as dead weight in the prompt) — deleting it here breaks the
+          // build with an unresolved-catalog error that looks like a broken
+          // AI-generated project but is actually this step eating a real
+          // file it was never entitled to touch.
+          'rm -rf gradlew gradlew.bat gradle/wrapper',
           `gradle wrapper --gradle-version ${gradleVersion}`
         ].join('\n')
       },
