@@ -9,7 +9,7 @@
 // network flasher (push over SSH to a remote server), and a README — mirroring
 // the Raspberry Pi distro pipeline so the two flows stay consistent.
 
-import { isNodeProject, isPythonProject, detectPythonEntry } from './utils.js';
+import { isNodeProject, isPythonProject, detectPythonEntry, detectNodeEntry } from './utils.js';
 
 // Read the optional morpheus-linux-distro.json from the project file tree — the
 // UI (LinuxDistroConfigDialog) writes this so users can customise the image
@@ -116,7 +116,7 @@ export const linuxDistro = {
         postinst.push('Description=Morpheus App');
         postinst.push('After=network.target');
         postinst.push('[Service]');
-        postinst.push('ExecStart=/usr/bin/node /opt/morpheus-app/index.js');
+        postinst.push('ExecStart=/usr/bin/node /opt/morpheus-app/' + detectNodeEntry(files));
         postinst.push('WorkingDirectory=/opt/morpheus-app');
         postinst.push('Restart=always');
         postinst.push('[Install]');
@@ -433,7 +433,20 @@ export const linuxDistro = {
     /mkosi.*failed/i,
     /build.*failed/i,
     /No .*img.*produced/i
-  ]
+  ],
+
+  // 2026-09-15: see mac-app.js's matching aiNotes comment for why this
+  // exists. This target previously had NO entry at all in
+  // BUILD_TARGET_INSTRUCTIONS — the AI had zero guidance on what this
+  // adapter actually does and would improvise (a Dockerfile, packaging
+  // scripts, OS-build tooling) based on general knowledge, none of which is
+  // read here. The prompt now has a real section for this target; this note
+  // reinforces it on every turn straight from the adapter itself.
+  aiNotes: `PLATFORM COMPILE PIPELINE NOTES (linux-distro target) — this is exactly what Morpheus's own compile pipeline will do with your files; write to it, don't guess:
+- Write a normal Node.js or Python app, exactly as you would for any other target — nothing OS-image-specific. The pipeline detects Node (has package.json + real JS/TS evidence) or Python (requirements.txt/.py files) and automatically bakes your app into /opt/morpheus-app on a bootable Debian/Ubuntu/Fedora disk image (built with mkosi), installs your dependencies at build time, and registers a systemd service so it starts on first boot.
+- Node entry point: package.json's "main" field (or the first "bin" command) if set, otherwise index.js.
+- Do NOT generate a Dockerfile, mkosi config, systemd unit file, or any ISO/Yocto/Buildroot-style OS-build scaffolding — none of it is read.
+- Base distro, hostname, timezone, locale, first user, SSH, and extra packages are configured through the operator's Linux Distro Config dialog in the UI, never through generated files — don't try to set any of that yourself.`,
 };
 
 export default linuxDistro;

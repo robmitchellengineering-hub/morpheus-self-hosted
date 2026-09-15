@@ -60,6 +60,25 @@ export function isPythonProject(files) {
     hasPattern(files, /\.py$/);
 }
 
+// Resolves a Node project's real entry file from package.json's "main" (or
+// the first "bin" command) — falls back to "index.js" only when neither is
+// set (npm's own default when "main" is omitted). For targets that bake a
+// launcher path directly into a systemd ExecStart/similar (rpi-distro.js,
+// linux-distro.js) rather than running `npm start`: hardcoding "index.js"
+// broke any project whose real entry lived elsewhere (e.g. "main":
+// "src/server.js") — the unit pointed at a file that doesn't exist, and the
+// app crash-loops on first boot with nothing in the compile CI to catch it
+// (the image itself still "builds successfully").
+export function detectNodeEntry(files) {
+  const pkg = parsePackageJson(files);
+  if (pkg?.main && typeof pkg.main === 'string') return pkg.main;
+  if (pkg?.bin) {
+    const bin = typeof pkg.bin === 'string' ? pkg.bin : Object.values(pkg.bin)[0];
+    if (typeof bin === 'string') return bin;
+  }
+  return 'index.js';
+}
+
 // Detect a Swift Package Manager project (Package.swift at the project
 // root). Used by mac-app.js to route real native macOS Swift apps to a
 // `swift build` step instead of the Node/pkg path. This matters because a
