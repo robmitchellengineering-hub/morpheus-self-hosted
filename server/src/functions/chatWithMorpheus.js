@@ -1408,8 +1408,9 @@ OPERATOR SAYS: ${message}`;
       // errors each pass — up to MAX_GATE_ATTEMPTS real attempts before
       // giving up, the same "verify against reality, retry on the real
       // failure" loop an agent doing this by hand would run. Bounded to
-      // keep cost/latency sane. Skips files in other languages, so it's a
-      // no-op for Python / Arduino / etc.
+      // keep cost/latency sane. Also catches Python files now (real
+      // ast.parse, see syntaxCheck.js) — still a no-op for Arduino/Go/etc.,
+      // which have no embeddable real parser available here.
       if (fileOps.length > 0) {
         const changedCode = () => fileOps
           .filter((op) => op.action !== 'delete' && typeof op.content === 'string')
