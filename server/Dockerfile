@@ -21,7 +21,7 @@ WORKDIR /app
 # transiently, real memory per screenshot call — a deliberate tradeoff, see
 # selfDevTools.js's own comment for why it's still run in-process rather
 # than via a GitHub Actions runner.
-RUN apk add --no-cache openssl chromium nss freetype harfbuzz ca-certificates ttf-freefont
+RUN apk add --no-cache openssl chromium nss freetype harfbuzz ca-certificates font-freefont
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
 COPY package.json package-lock.json* ./
