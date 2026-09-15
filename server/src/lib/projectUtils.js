@@ -2,6 +2,9 @@
 // language detection, snapshotting, applying AI file operations.
 import { prisma } from '../db.js';
 import { offloadLargeString } from '../storage.js';
+import { getGithubToken, pushFiles, getFileContent, deleteFile, ghHeaders, ghJson } from './github.js';
+
+const GH_API = 'https://api.github.com';
 
 export const CREDIT_COSTS = {
   chat_build: 2,
@@ -249,4 +252,51 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
     appliedOps.push({ path: op.path, action: op.action || 'create' });
   }
   return appliedOps;
+}
+
+// Best-effort GitHub auto-sync: push this turn's changed/deleted files to
+// the project's connected repo (Project.github_repo), if any. Rob, 2026-09-15:
+// every project should keep an editable, always-current repo the way web
+// projects already iterate turn-by-turn in chat, not just a repo minted
+// (and never updated) at compile time.
+//
+// Uses pushFiles' incremental mode (github.js — Contents API, one commit
+// per changed file, no full-tree read/rebuild) so this is cheap enough to
+// call after every turn regardless of project size. Deletes aren't
+// supported by that mode (by design — see its comment), so they're handled
+// here directly via getFileContent/deleteFile instead.
+//
+// The caller (chatWithMorpheus.js) never awaits this — a slow or failed
+// GitHub call must never delay or break the chat response, only get logged.
+export async function syncProjectFilesToGithub(userId, project, appliedOps) {
+  if (!project?.github_repo) return;
+  const changedPaths = appliedOps.filter((op) => op.action === 'create' || op.action === 'update').map((op) => op.path);
+  const deletedPaths = appliedOps.filter((op) => op.action === 'delete').map((op) => op.path);
+  if (changedPaths.length === 0 && deletedPaths.length === 0) return;
+
+  const token = await getGithubToken(userId, { projectId: project.id });
+  const [owner, repoName] = project.github_repo.split('/');
+
+  // Needed for both pushFiles (targetBranch) and deleteFile (branch) below —
+  // read once rather than assuming "main" (a repo connected via
+  // setProjectGithub.js could be an existing repo on any default branch).
+  const repoRes = await fetch(`${GH_API}/repos/${project.github_repo}`, { headers: ghHeaders(token) });
+  const repoData = await ghJson(repoRes);
+  if (!repoRes.ok) throw new Error(`Could not read ${project.github_repo}: ${repoData.message || repoRes.status}`);
+  const branch = repoData.default_branch || 'main';
+
+  if (changedPaths.length > 0) {
+    const rows = await prisma.projectFile.findMany({ where: { project_id: project.id, path: { in: changedPaths } } });
+    const files = rows.map((f) => ({ path: f.path, content: f.content || '' }));
+    if (files.length > 0) {
+      await pushFiles(token, project.github_repo, files, 'Morpheus auto-sync', { incremental: true, targetBranch: branch });
+    }
+  }
+
+  for (const path of deletedPaths) {
+    const existing = await getFileContent(owner, repoName, path, branch, token).catch(() => null);
+    if (existing) {
+      await deleteFile(owner, repoName, path, branch, existing.sha, token, `Morpheus auto-sync — delete ${path}`);
+    }
+  }
 }

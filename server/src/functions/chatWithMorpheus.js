@@ -6,7 +6,7 @@
 // optional UI polish pass. See PORTING_GUIDE.md for the call-mapping table.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
-import { createSnapshot, applyFileOperations, applyEdits, logUsage } from '../lib/projectUtils.js';
+import { createSnapshot, applyFileOperations, applyEdits, logUsage, syncProjectFilesToGithub } from '../lib/projectUtils.js';
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -1568,6 +1568,17 @@ OPERATOR SAYS: ${message}`;
             polishCount = appliedPolish.length;
           }
         }
+      }
+
+      // GitHub auto-sync (main + polish passes both land here, so this
+      // covers the whole turn in one push) — fire-and-forget, see
+      // syncProjectFilesToGithub's own comment for why this is never
+      // awaited: a slow/failed GitHub call must never delay or break the
+      // chat response.
+      if (appliedOps.length > 0 && project.github_repo) {
+        syncProjectFilesToGithub(user.id, project, appliedOps).catch((err) => {
+          console.error('[chatWithMorpheus] github auto-sync failed:', err.message);
+        });
       }
     }
 

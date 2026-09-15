@@ -94,32 +94,62 @@ export default async function handler({ user, body, res }) {
   const accessToken = await getGithubToken(user.id);
   const h = ghHeaders(accessToken);
 
-  // Create repo using shared helper (handles name collisions). Repo name is
-  // prefixed with COMPILE_BUILD_REPO_PREFIX (see .env.example) + project id
-  // scoping, matching the original's "morpheus-build-<slug>-<timestamp>" shape.
-  const slug = project.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 20) || 'construct';
-  const prefix = process.env.COMPILE_BUILD_REPO_PREFIX || 'morpheus-build-';
-  const repoName = `${prefix}${slug}-${Date.now()}`;
-  // autoInit:false — this repo name is always fresh (timestamped), so there's
-  // no existing content to preserve. Skipping auto_init means pushFiles can
-  // build the first commit directly instead of racing GitHub's eventual
-  // consistency to read back an auto-generated one (see pushFiles' isNewRepo
-  // path) — that race was the actual cause of "compile isn't writing to
-  // GitHub".
-  const repo = await createRepo(accessToken, repoName, true, { autoInit: false });
-  if (!repo || !repo.full_name) {
-    // Surface GitHub's actual reason (e.g. secondary rate limit from
-    // repeated compiles, or a real permissions issue) instead of a bare
-    // "Failed to create repository" — that generic message with no detail
-    // was previously the only thing the user ever saw, making repeated
-    // silent compile failures impossible to self-diagnose.
-    const ghMsg = repo?.message || (repo?.errors ? JSON.stringify(repo.errors) : null);
-    console.error(`[compileProject] createRepo failed for ${repoName}:`, JSON.stringify(repo));
-    res.status(500).json({
-      error: ghMsg ? `Failed to create repository on GitHub: ${ghMsg}` : 'Failed to create repository on GitHub (no further detail returned)',
-      ghError: repo?.message,
-    });
-    return;
+  // Reuse the project's persistent repo (Project.github_repo — set by this
+  // same block below the first time a project compiles, or by
+  // uploadToGithub.js's manual "push to GitHub") instead of minting a fresh,
+  // disposable, never-cleaned-up repo on every single compile. Rob,
+  // 2026-09-15: every project should keep one editable, always-current
+  // repo, the way web projects already iterate turn-by-turn in chat — see
+  // projectUtils.js's syncProjectFilesToGithub for the other half of this.
+  let repo = null;
+  if (project.github_repo) {
+    // Verify it still exists — it could've been deleted outside Morpheus
+    // (or by the cleanupBuildRepos.js sweep, back when this field wasn't
+    // set yet). Self-heal by falling through to create-a-new-one below
+    // rather than failing the whole compile on a stale reference.
+    const checkRes = await fetch(`${GH_API}/repos/${project.github_repo}`, { headers: h });
+    if (checkRes.ok) {
+      repo = { full_name: project.github_repo, _isNewRepo: false };
+    } else {
+      await prisma.project.update({ where: { id: projectId }, data: { github_repo: null } }).catch(() => {});
+    }
+  }
+
+  if (!repo) {
+    // Create repo using shared helper (handles name collisions). Stable
+    // name (no timestamp — this repo is now persistent, reused by every
+    // future compile and by chat auto-sync) under its own prefix,
+    // PROJECT_REPO_PREFIX, deliberately NOT COMPILE_BUILD_REPO_PREFIX
+    // (see .env.example) — keeps cleanupBuildRepos.js's existing
+    // "delete any morpheus-build-* repo older than 24h, no per-project
+    // awareness" sweep from ever touching a live, persistent project repo.
+    const slug = project.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 20) || 'construct';
+    const prefix = process.env.PROJECT_REPO_PREFIX || 'morpheus-project-';
+    const repoName = `${prefix}${slug}-${project.id}`;
+    // autoInit:false — this repo name is always fresh (never created
+    // before), so there's no existing content to preserve. Skipping
+    // auto_init means pushFiles can build the first commit directly
+    // instead of racing GitHub's eventual consistency to read back an
+    // auto-generated one (see pushFiles' isNewRepo path) — that race was
+    // the actual cause of "compile isn't writing to GitHub".
+    repo = await createRepo(accessToken, repoName, true, { autoInit: false });
+    if (!repo || !repo.full_name) {
+      // Surface GitHub's actual reason (e.g. secondary rate limit from
+      // repeated compiles, or a real permissions issue) instead of a bare
+      // "Failed to create repository" — that generic message with no detail
+      // was previously the only thing the user ever saw, making repeated
+      // silent compile failures impossible to self-diagnose.
+      const ghMsg = repo?.message || (repo?.errors ? JSON.stringify(repo.errors) : null);
+      console.error(`[compileProject] createRepo failed for ${repoName}:`, JSON.stringify(repo));
+      res.status(500).json({
+        error: ghMsg ? `Failed to create repository on GitHub: ${ghMsg}` : 'Failed to create repository on GitHub (no further detail returned)',
+        ghError: repo?.message,
+      });
+      return;
+    }
+    // Persist immediately (mirrors uploadToGithub.js) so this compile, every
+    // future one, and chat's auto-sync all reuse the same repo from here on.
+    await prisma.project.update({ where: { id: projectId }, data: { github_repo: repo.full_name } }).catch(() => {});
   }
 
   // Push project files + workflow using shared helper (has retry logic for tree creation)
