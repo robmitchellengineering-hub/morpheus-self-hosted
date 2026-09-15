@@ -319,6 +319,22 @@ export function useWorkspace() {
     setCurrentProject(prev => (prev ? { ...prev, github_repo: null } : prev));
   }, [currentProject]);
 
+  // The reverse of uploadToGithub/auto-sync: pulls the repo's current HEAD
+  // back into this project's files. Chat edits auto-push to GitHub, but
+  // nothing pulls the other way — an edit made directly against the repo
+  // (a manual push, another tool) is invisible to Morpheus until this runs,
+  // and the next compile would otherwise silently overwrite it right back
+  // out to GitHub (compileProject.js always pushes ProjectFile → GitHub).
+  // See KNOWN-HAZARDS.md H9 for the same gap on self-dev's own sync button.
+  const syncFromGithub = useCallback(async () => {
+    if (!currentProject) return;
+    const res = await base44.functions.invoke('syncProjectFromGithub', { projectId: currentProject.id });
+    if (res.data?.fileCount > 0) {
+      await loadFiles(currentProject.id);
+    }
+    return res.data;
+  }, [currentProject, loadFiles]);
+
   const emailProjectFiles = useCallback(async (email) => {
     if (!currentProject) return;
     const allFiles = await base44.entities.ProjectFile.filter({ project_id: currentProject.id });
@@ -474,5 +490,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
 }

@@ -1,4 +1,5 @@
-// macOS App compile target — produces a .app bundle or binary.
+// macOS App compile target — produces a mountable .dmg disk image
+// containing the app bundle (or binary) plus a Gatekeeper README.
 // Node: @yao-pkg/pkg. Python: PyInstaller with --windowed for .app bundle.
 // Wraps raw binaries in a proper .app bundle with Info.plist.
 
@@ -44,7 +45,8 @@ function gatekeeperReadme(appName) {
     '='.repeat(appName.length + 24),
     '',
     "This app is NOT signed with a paid Apple Developer certificate, so after",
-    "you unzip it, macOS will likely refuse to open it -- often with:",
+    "you drag it out of this disk image, macOS will likely refuse to open it --",
+    "often with:",
     '',
     `    "${appName}" is damaged and can't be opened. You should move it`,
     '    to the Bin.',
@@ -66,6 +68,27 @@ function gatekeeperReadme(appName) {
     '(rather than "damaged"), you can also go to System Settings -> Privacy',
     '& Security, scroll down, and click "Open Anyway" after your first',
     'attempt to open the app.',
+  ].join('\n');
+}
+
+// 2026-09-16 (Rob: asked to switch the Wikidata Batch Uploader from
+// windows-exe to mac-app, remembered a .dmg coming out of this target
+// before -- it never actually did. saveCompiledArtifacts.js has carried a
+// '.dmg': 'application/x-apple-diskimage' content-type entry since the very
+// first self-hosted commit, but nothing ever produced one; every branch
+// below just tar'd the .app bundle into app.tar.gz). A real .dmg is the
+// standard way indie/unsigned Mac apps get distributed -- Finder mounts it,
+// the user drags the .app onto the bundled Applications shortcut, then
+// ejects -- so build one for real instead. `hdiutil` is preinstalled on
+// every macos-latest runner (no new dependency). Only adds the Applications
+// shortcut when the staging dir actually contains a .app bundle (a raw
+// binary, from a project's own non-.app build script, has nothing sensible
+// to drag there).
+function dmgBuildStep(stagingDir, volname) {
+  return [
+    `if compgen -G "${stagingDir}/*.app" > /dev/null; then ln -s /Applications "${stagingDir}/Applications"; fi`,
+    `hdiutil create -volname "${volname}" -srcfolder "${stagingDir}" -ov -format UDZO app.dmg`,
+    'test -f app.dmg || { echo "Failed to create .dmg"; exit 1; }'
   ].join('\n');
 }
 
@@ -207,11 +230,12 @@ export const macApp = {
             // Same ad-hoc-signing rationale as the Node/Python paths below
             // — see the comment above gatekeeperReadme().
             'codesign --force --deep --sign - "$APP_NAME.app" || echo "codesign failed -- app will still work, just fully unsigned"',
-            'cat > README.txt <<GATEKEEPER_README',
+            'mkdir -p dmg_staging',
+            'cp -R "$APP_NAME.app" dmg_staging/',
+            'cat > dmg_staging/README.txt <<GATEKEEPER_README',
             gatekeeperReadme(appName),
             'GATEKEEPER_README',
-            'tar -czf app.tar.gz "$APP_NAME.app" README.txt',
-            'test -f app.tar.gz || { echo "Failed to create .app bundle"; exit 1; }'
+            dmgBuildStep('dmg_staging', '$APP_NAME')
           ].join('\n')
         }
       ];
@@ -303,11 +327,12 @@ export const macApp = {
             'codesign --force --sign - "MorpheusApp.app/Contents/MacOS/MorpheusApp-x64" 2>/dev/null || true',
             'codesign --force --sign - "MorpheusApp.app/Contents/MacOS/MorpheusApp-arm64" 2>/dev/null || true',
             'codesign --force --deep --sign - "MorpheusApp.app" || echo "codesign failed -- app will still work, just fully unsigned"',
-            'cat > README.txt <<GATEKEEPER_README',
+            'mkdir -p dmg_staging',
+            'cp -R MorpheusApp.app dmg_staging/',
+            'cat > dmg_staging/README.txt <<GATEKEEPER_README',
             gatekeeperReadme('MorpheusApp'),
             'GATEKEEPER_README',
-            'tar -czf app.tar.gz MorpheusApp.app README.txt',
-            'test -f app.tar.gz || { echo "Failed to create .app bundle"; exit 1; }'
+            dmgBuildStep('dmg_staging', 'MorpheusApp')
           ].join('\n')
         }
       ];
@@ -353,10 +378,20 @@ export const macApp = {
             `python ${buildScript}`,
             'ls dist/',
             'compgen -G "dist/*" > /dev/null || { echo "Build script produced nothing in dist/"; exit 1; }',
-            'for app in dist/*.app; do [ -d "$app" ] && (codesign --force --deep --sign - "$app" || echo "codesign failed for $app -- it will still work, just fully unsigned"); done'
+            'for app in dist/*.app; do [ -d "$app" ] && (codesign --force --deep --sign - "$app" || echo "codesign failed for $app -- it will still work, just fully unsigned"); done',
+            // Volume name: the first .app's own name if the script produced
+            // one, else a generic fallback -- we don't know a raw binary's
+            // preferred display name the way we do MorpheusApp above. Stays
+            // in this same step (not $GITHUB_ENV) since dmgBuildStep runs
+            // right below in the same run block, not a separate step.
+            'VOLNAME=$(basename "$(ls -d dist/*.app 2>/dev/null | head -1)" .app 2>/dev/null)',
+            'VOLNAME="${VOLNAME:-App}"',
+            'mkdir -p dmg_staging',
+            'cp -R dist/. dmg_staging/',
+            'if [ ! -f dmg_staging/README.txt ]; then cat > dmg_staging/README.txt <<GATEKEEPER_README\n' + gatekeeperReadme('the app') + '\nGATEKEEPER_README\nfi',
+            dmgBuildStep('dmg_staging', '$VOLNAME')
           ].join('\n')
-        },
-        { run: 'tar -czf app.tar.gz -C dist .' }
+        }
       ];
     }
 
@@ -390,18 +425,20 @@ export const macApp = {
           'test -d "dist/MorpheusApp.app" && (codesign --force --deep --sign - "dist/MorpheusApp.app" || echo "codesign failed -- app will still work, just fully unsigned") || true',
           'cat > dist/README.txt <<GATEKEEPER_README',
           gatekeeperReadme('MorpheusApp'),
-          'GATEKEEPER_README'
+          'GATEKEEPER_README',
+          'mkdir -p dmg_staging',
+          'cp -R dist/. dmg_staging/',
+          dmgBuildStep('dmg_staging', 'MorpheusApp')
         ].join('\n')
-      },
-      { run: 'tar -czf app.tar.gz -C dist .' }
+      }
     ];
   },
 
   artifact: {
-    glob: 'app.tar.gz',
+    glob: 'app.dmg',
     isGlob: false,
-    artifactName: 'app-macos.tar.gz',
-    verifyCommand: 'test -f app.tar.gz || { echo "No macOS app archive produced"; exit 1; }'
+    artifactName: 'app-macos.dmg',
+    verifyCommand: 'test -f app.dmg || { echo "No macOS .dmg produced"; exit 1; }'
   },
 
   errorPatterns: [
