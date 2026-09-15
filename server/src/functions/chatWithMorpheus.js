@@ -1619,7 +1619,15 @@ OPERATOR SAYS: ${message}`;
     const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0;
     if (escalatedFeature && escalatedFeature.activeStep) {
       fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
-      if (buildProgressed) {
+      // Step 1 having been drafted this turn doesn't mean it actually
+      // landed — self-dev ships via reviewed/mergeable PRs (two of which,
+      // #115/#116, were reverted this same session), so a step being built
+      // is not the same as it being done. Self-dev advances steps manually
+      // from the panel only, same as the ongoing-feature branch below
+      // (!isSelfDev) — this branch was missing that same guard, silently
+      // contradicting the "Self-dev advances its steps manually" comment a
+      // few lines up.
+      if (buildProgressed && !isSelfDev) {
         try {
           const { runUpdateSelfDevFeature } = await import('./updateSelfDevFeature.js');
           await runUpdateSelfDevFeature(user, escalatedFeature.id, 'completeStep', { stepN: escalatedFeature.activeStep.n, silent: true });
