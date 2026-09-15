@@ -7,7 +7,9 @@
 //   Backblaze B2, MinIO). Required once you run more than one API instance
 //   (see SCALING.md) so every instance sees the same files.
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -61,6 +63,48 @@ export async function uploadFile({ buffer, filename, contentType = 'application/
   // separately (e.g. a standalone static host pointed at this backend),
   // set BACKEND_PUBLIC_URL so these links resolve against this backend
   // instead of the frontend's own origin.
+  const base = process.env.BACKEND_PUBLIC_URL ? process.env.BACKEND_PUBLIC_URL.replace(/\/+$/, '') : '';
+  return { file_url: `${base}/uploads/${key}`, key };
+}
+
+// Streams a Readable straight to storage without ever holding the whole
+// file in memory. uploadFile() above stays buffer-only for its existing
+// callers (avatars, offloaded text fields, generated docs) — those are all
+// small and buffering them is harmless. This exists specifically for
+// saveCompiledArtifacts.js, which downloads-then-reuploads compiled
+// binaries that can be 100-200MB+ (a real PyQt6/pandas exe) — buffering
+// both the download and the upload was crashing the backend process
+// outright (repeated OOM-kill "Process terminated" restarts observed in
+// production, with no application log line since the kill leaves no time
+// to log anything).
+export async function uploadFileStream({ stream, filename, contentType = 'application/octet-stream' }) {
+  const key = keyFor(filename);
+
+  if (driver === 's3') {
+    const { Upload } = await import('@aws-sdk/lib-storage');
+    const client = await getS3();
+    const upload = new Upload({
+      client,
+      params: {
+        Bucket: process.env.S3_BUCKET,
+        Key: key,
+        Body: stream,
+        ContentType: contentType,
+      },
+    });
+    await upload.done();
+    const base = process.env.S3_PUBLIC_BASE_URL || `${process.env.S3_ENDPOINT}/${process.env.S3_BUCKET}`;
+    return { file_url: `${base.replace(/\/+$/, '')}/${key}`, key };
+  }
+
+  await mkdir(LOCAL_ROOT, { recursive: true });
+  const destPath = path.join(LOCAL_ROOT, key);
+  try {
+    await pipeline(stream, createWriteStream(destPath));
+  } catch (err) {
+    await unlink(destPath).catch(() => {}); // best-effort cleanup of a partial file
+    throw err;
+  }
   const base = process.env.BACKEND_PUBLIC_URL ? process.env.BACKEND_PUBLIC_URL.replace(/\/+$/, '') : '';
   return { file_url: `${base}/uploads/${key}`, key };
 }

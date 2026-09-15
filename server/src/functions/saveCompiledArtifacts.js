@@ -15,7 +15,7 @@
 import { prisma } from '../db.js';
 import { ghHeaders, ghJson, getGithubToken } from '../lib/github.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
-import { uploadFile } from '../storage.js';
+import { uploadFileStream } from '../storage.js';
 import https from 'node:https';
 
 const GH_API = 'https://api.github.com';
@@ -54,21 +54,22 @@ function contentTypeFor(filename) {
 // Authorization header on cross-origin redirects (the GitHub asset endpoint
 // redirects to a signed CDN URL), so we use the lower-level https client to
 // keep the header attached across redirects, just as the GitHub API requires.
-// Returns a Promise resolving with the full body Buffer, or rejecting with
-// an error that includes the HTTP status when applicable.
-function downloadWithRedirects(url, headers, redirectsRemaining = 5) {
+// Returns a Promise resolving with the readable response stream itself (not
+// a buffered body) — the caller pipes it straight into uploadFileStream, so
+// a compiled binary is never fully materialized in memory. See storage.js's
+// uploadFileStream for why: buffering both the download and the re-upload
+// of a 100-200MB+ compiled app (PyQt6/pandas etc.) was crashing the backend
+// process outright.
+function downloadStreamWithRedirects(url, headers, redirectsRemaining = 5) {
   return new Promise((resolve, reject) => {
     const request = https.get(url, { headers }, (response) => {
       const { statusCode, headers: resHeaders } = response;
       if (statusCode >= 300 && statusCode < 400 && resHeaders.location && redirectsRemaining > 0) {
         response.resume(); // discard any body on redirect
         const redirectUrl = new URL(resHeaders.location, url).toString();
-        resolve(downloadWithRedirects(redirectUrl, headers, redirectsRemaining - 1));
+        resolve(downloadStreamWithRedirects(redirectUrl, headers, redirectsRemaining - 1));
       } else if (statusCode >= 200 && statusCode < 300) {
-        const chunks = [];
-        response.on('data', (chunk) => chunks.push(chunk));
-        response.on('end', () => resolve(Buffer.concat(chunks)));
-        response.on('error', reject);
+        resolve(response);
       } else {
         response.resume(); // discard error body
         reject(new Error(`HTTP ${statusCode} ${response.statusMessage || ''}`));
@@ -81,7 +82,7 @@ function downloadWithRedirects(url, headers, redirectsRemaining = 5) {
 
 async function processAsset(asset, { userId, projectId, repoFullName, headers, artifactName, isPrimary, releaseTag, bodyAssetsMode }) {
   const displayName = isPrimary && artifactName ? artifactName : asset.name;
-  let buffer = null;
+  let stream = null;
   let downloadError = null;
   let directDownloadError = null;
 
@@ -90,42 +91,42 @@ async function processAsset(asset, { userId, projectId, repoFullName, headers, a
     if (!url) throw new Error('No download URL provided for asset');
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        buffer = await downloadWithRedirects(url, { ...headers, Accept: 'application/octet-stream' });
+        stream = await downloadStreamWithRedirects(url, { ...headers, Accept: 'application/octet-stream' });
         break;
       } catch (err) {
         downloadError = err;
         if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1000));
       }
     }
-    if (!buffer) {
+    if (!stream) {
       throw new Error(`${asset.name}: download failed after 3 attempts: ${downloadError?.message || 'unknown error'}`);
     }
   } else {
     const apiUrl = `${GH_API}/repos/${repoFullName}/releases/assets/${asset.id}`;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        buffer = await downloadWithRedirects(apiUrl, { ...headers, Accept: 'application/octet-stream' });
+        stream = await downloadStreamWithRedirects(apiUrl, { ...headers, Accept: 'application/octet-stream' });
         break;
       } catch (err) {
         downloadError = err;
         if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1000));
       }
     }
-    if (!buffer && asset.browser_download_url) {
+    if (!stream && asset.browser_download_url) {
       try {
-        buffer = await downloadWithRedirects(asset.browser_download_url, { ...headers, Accept: 'application/octet-stream' });
+        stream = await downloadStreamWithRedirects(asset.browser_download_url, { ...headers, Accept: 'application/octet-stream' });
       } catch (err) {
         directDownloadError = err;
       }
     }
-    if (!buffer) {
+    if (!stream) {
       const apiErrMsg = downloadError?.message || 'unknown error';
       const directErrMsg = directDownloadError ? `; direct download failed: ${directDownloadError.message}` : '';
       throw new Error(`${asset.name}: API download failed after 3 attempts: ${apiErrMsg}${directErrMsg}`);
     }
   }
 
-  const { file_url } = await uploadFile({ buffer, filename: displayName, contentType: contentTypeFor(displayName) });
+  const { file_url } = await uploadFileStream({ stream, filename: displayName, contentType: contentTypeFor(displayName) });
   const sizeMb = (asset.size / 1024 / 1024).toFixed(1);
   await prisma.projectFile.create({
     data: {
