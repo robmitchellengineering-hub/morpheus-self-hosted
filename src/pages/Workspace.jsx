@@ -323,7 +323,7 @@ export default function Workspace() {
         </PanelGroup>
       )}
       <NewProjectDialog open={showNew} onClose={() => setShowNew(false)} onCreate={async (n, d, t) => { const p = await ws.createProject(n, d, t); setShowNew(false); if (p?.id) navigate('/workspace/' + p.id); }} />
-      <ShareDialog open={showShare} onClose={() => setShowShare(false)} project={ws.currentProject} onUploadGithub={ws.uploadToGithub} onDisconnectGithub={ws.disconnectGithub} onEmail={ws.emailProjectFiles} />
+      <ShareDialog open={showShare} onClose={() => setShowShare(false)} project={ws.currentProject} onUploadGithub={ws.uploadToGithub} onDisconnectGithub={ws.disconnectGithub} onSyncFromGithub={ws.syncFromGithub} onEmail={ws.emailProjectFiles} />
       <HistoryPanel open={showHistory} onClose={() => setShowHistory(false)} snapshots={ws.snapshots} onRestore={ws.restoreSnapshot} project={ws.currentProject} />
       <FeatureModal open={showFeature} onClose={() => setShowFeature(false)} projectId={ws.currentProject?.id} onActiveChange={setActiveFeature} />
       <MediaPanel open={showMedia} onClose={() => setShowMedia(false)} projectId={ws.currentProject?.id} onCountChange={setAssetCount} />

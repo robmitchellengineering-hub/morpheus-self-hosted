@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { X, Github, Mail, Loader2, CheckCircle, AlertCircle, ExternalLink, Bot, Unlink } from 'lucide-react';
+import { X, Github, Mail, Loader2, CheckCircle, AlertCircle, ExternalLink, Bot, Unlink, DownloadCloud } from 'lucide-react';
 import GithubGate from '@/components/matrix/GithubGate';
 import DiagnosisPanel, { DiagnosisLoading } from '@/components/matrix/DiagnosisPanel';
 import { useDiagnosis } from '@/hooks/useDiagnosis';
 
-export default function ShareDialog({ open, onClose, project, onUploadGithub, onDisconnectGithub, onEmail }) {
+export default function ShareDialog({ open, onClose, project, onUploadGithub, onDisconnectGithub, onSyncFromGithub, onEmail }) {
   const [tab, setTab] = useState('github');
   const [repoName, setRepoName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
@@ -13,6 +13,8 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
   const { diagnosis, diagnosing, diagnose } = useDiagnosis();
 
   if (!open) return null;
@@ -56,6 +58,18 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
       setError(e.message);
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleSyncFromGithub = async () => {
+    setSyncing(true); setError(null); setSyncResult(null);
+    try {
+      const res = await onSyncFromGithub();
+      setSyncResult(res);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -118,9 +132,20 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
                     </a>
                   </div>
                   <p className="text-primary/50 text-xs">Every chat edit pushes here automatically — no need to re-push manually.</p>
-                  <button onClick={handleDisconnect} disabled={disconnecting} className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-red-400 disabled:opacity-30">
-                    {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />} Disconnect (keeps the repo on GitHub)
-                  </button>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button onClick={handleSyncFromGithub} disabled={syncing} className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-primary disabled:opacity-30">
+                      {syncing ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />} Sync from GitHub (pull in edits made directly on the repo)
+                    </button>
+                    <button onClick={handleDisconnect} disabled={disconnecting} className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-red-400 disabled:opacity-30">
+                      {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />} Disconnect (keeps the repo on GitHub)
+                    </button>
+                  </div>
+                  {syncResult && (
+                    <p className="text-primary/50 text-xs">
+                      Synced {syncResult.fileCount} file(s) at HEAD ({syncResult.fetched} pulled, {syncResult.fileCount - syncResult.fetched} already current)
+                      {syncResult.removed ? `, ${syncResult.removed} removed (deleted upstream)` : ''}.
+                    </p>
+                  )}
                 </div>
               )}
               <div>
