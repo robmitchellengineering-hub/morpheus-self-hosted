@@ -224,6 +224,32 @@ export function detectPackageHints(files) {
   return args;
 }
 
+// Prefer a pinned lock file over requirements.txt when a project has one —
+// the Wikidata Batch Uploader's own README is explicit that its build is
+// only reproducible via `pip install -r requirements-lock.txt` (which also
+// pins pyinstaller itself), and that build.py assumes that's already been
+// run — build.py itself never installs anything. A generated workflow that
+// only ever installs unpinned requirements.txt + a separately-unpinned
+// `pip install pyinstaller` skips exactly the reproducibility a project
+// went to the trouble of locking down. Falls back to requirements.txt
+// (current behavior) when there's no lock file.
+export function detectRequirementsFile(files) {
+  if (hasFile(files, 'requirements-lock.txt')) return 'requirements-lock.txt';
+  if (hasFile(files, 'requirements.txt')) return 'requirements.txt';
+  return null;
+}
+
+// Does the given requirements file already pin pyinstaller itself? If so,
+// a separate unpinned `pip install pyinstaller` afterward would upgrade
+// past that pin and defeat the point of locking it — check rather than
+// assume, since not every project's lock file necessarily includes it.
+export function requirementsFileIncludesPyinstaller(files, requirementsFile) {
+  if (!requirementsFile) return false;
+  const f = getFile(files, requirementsFile);
+  if (!f) return false;
+  return parseRequirementsTxt(f.content).some((d) => d.toLowerCase() === 'pyinstaller');
+}
+
 // Detect the Node.js version a project targets. Reads .nvmrc or
 // package.json engines.node. Returns a version string (e.g. "18", "20.11.0")
 // or null if not specified. Used to pick the setup-node action version instead

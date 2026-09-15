@@ -6,6 +6,7 @@ import {
   isNodeProject, isPythonProject, isSwiftProject, parsePackageJson, detectPythonEntry,
   detectDataDirs, detectHiddenImports, detectIcon, detectNodeVersion,
   detectPythonVersion, detectSwiftExecutableName, detectBuildScript, detectPackageHints,
+  detectRequirementsFile, requirementsFileIncludesPyinstaller,
   cloneFiles, hasFile, hasPattern
 } from './utils.js';
 
@@ -320,6 +321,8 @@ export const macApp = {
     const packageHints = detectPackageHints(files);
     const pythonVersion = detectPythonVersion(files) || '3.12';
     const buildScript = detectBuildScript(files);
+    const requirementsFile = detectRequirementsFile(files);
+    const pyinstallerAlreadyPinned = requirementsFileIncludesPyinstaller(files, requirementsFile);
 
     const setupSteps = [
       { uses: 'actions/checkout@v4' },
@@ -327,8 +330,10 @@ export const macApp = {
         uses: 'actions/setup-python@v5',
         with: { 'python-version': `'${pythonVersion}'` }
       },
-      { run: 'pip install -r requirements.txt 2>/dev/null || true' },
-      { run: 'pip install pyinstaller' },
+      { run: requirementsFile ? `pip install -r ${requirementsFile}` : 'true' },
+      // Skip only when the requirements file itself already pins
+      // pyinstaller — see requirementsFileIncludesPyinstaller in utils.js.
+      ...(pyinstallerAlreadyPinned ? [] : [{ run: 'pip install pyinstaller' }]),
     ];
 
     // Run the project's own build.py when it has one, instead of silently
