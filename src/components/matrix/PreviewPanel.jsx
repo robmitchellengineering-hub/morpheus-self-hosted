@@ -8,6 +8,34 @@ import SheetSelect from './SheetSelect';
 
 const NATIVE_TARGETS = ['android-apk', 'ios-app', 'windows-exe', 'mac-app', 'linux-binary', 'python-package', 'rpi-distro', 'arduino-firmware'];
 
+// Rob, 2026-09-15: "rapid prototype just keeps running whenever you reload,
+// i need it to save its last known state and only regenerate when asked
+// to." The native-target LLM prototype below used to have no persistence at
+// all (component-local state only, wiped on every remount) and no gating
+// (it fired on mount and on every file edit) — this is the last-known-state
+// half of the fix; the effects further down are the "only when asked" half.
+const NATIVE_PROTOTYPE_STORAGE_PREFIX = 'morpheus:rapidPrototype:';
+
+function loadPersistedPrototype(projectId) {
+  if (!projectId) return null;
+  try {
+    const raw = localStorage.getItem(NATIVE_PROTOTYPE_STORAGE_PREFIX + projectId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedPrototype(projectId, html, fileSig) {
+  if (!projectId) return;
+  try {
+    localStorage.setItem(NATIVE_PROTOTYPE_STORAGE_PREFIX + projectId, JSON.stringify({ html, fileSig }));
+  } catch {
+    // Quota exceeded / private browsing — the prototype just won't survive
+    // a reload this time, not worth surfacing as an error.
+  }
+}
+
 // Self-dev mode (Rob, 2026-09-03): self-dev's "project" is Morpheus's own
 // ~150+ file monorepo, not a small generated app. Running the normal
 // full-project preview below (buildPreviewHtml, or even the native LLM path)
@@ -46,6 +74,11 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
   const [error, setError] = useState(null);
   const [key, setKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Native rapid-prototype: see NATIVE_PROTOTYPE_STORAGE_PREFIX comment above.
+  const nativeGenDoneRef = useRef(false);
+  const nativePrevRefreshKeyRef = useRef(0);
+  const [nativeGenFileSig, setNativeGenFileSig] = useState(null); // fileSig the current html was generated for
 
   // selfDevTouched: { paths, rev } — only ever passed by SelfDev.jsx. Its
   // presence (not compileTarget) is what switches this whole panel into
@@ -125,36 +158,65 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
     }
   }, [fileSig, isNative, isSelfDev, assetMapSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Native: async LLM prototype generation (debounced — rapid edits settle
-  // before triggering the expensive LLM call, and the previous prototype
-  // stays visible during regeneration so the user can keep iterating).
-  // Self-dev projects are never a native compile_target in practice, but
-  // guard anyway — isSelfDev always wins.
+  // Native: restore whatever prototype was last generated for this project
+  // as soon as we know which project we're looking at (covers both a real
+  // page reload and switching projects within the app) — this is the "save
+  // its last known state" half of the fix.
   useEffect(() => {
     if (!isNative || isSelfDev || !projectId) return;
+    const persisted = loadPersistedPrototype(projectId);
+    if (persisted) {
+      setHtml(persisted.html || '');
+      setNativeGenFileSig(persisted.fileSig ?? null);
+      setKey(k => k + 1);
+      nativeGenDoneRef.current = true;
+    } else {
+      setHtml('');
+      setNativeGenFileSig(null);
+      nativeGenDoneRef.current = false;
+    }
+  }, [projectId, isNative, isSelfDev]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Native: async LLM prototype generation — manual only. The restore effect
+  // above already reloaded any previously-generated prototype for this
+  // project; this only calls the (expensive) LLM the first time ever
+  // (nothing was persisted) or when the operator explicitly clicks refresh
+  // (rebuild(), which bumps refreshKey). File edits no longer auto-trigger
+  // a regeneration — see the "only regenerate when asked to" comment above.
+  useEffect(() => {
+    if (!isNative || isSelfDev || !projectId) return;
+    const manualRefresh = refreshKey !== nativePrevRefreshKeyRef.current;
+    nativePrevRefreshKeyRef.current = refreshKey;
+    if (!manualRefresh && nativeGenDoneRef.current) return;
     let cancelled = false;
-    let timer;
     const generate = async () => {
       setBuilding(true);
       setError(null);
       try {
         const res = await base44.functions.invoke('generateNativePrototype', { projectId });
         if (!cancelled) {
-          setHtml(res.data.html || '');
+          const newHtml = res.data.html || '';
+          setHtml(newHtml);
+          setNativeGenFileSig(fileSig);
           setKey(k => k + 1);
+          nativeGenDoneRef.current = true;
+          savePersistedPrototype(projectId, newHtml, fileSig);
         }
       } catch (e) {
-        if (!cancelled) setError(e.message || 'Prototype generation failed');
+        if (!cancelled) {
+          nativeGenDoneRef.current = true;
+          setError(e.message || 'Prototype generation failed');
+        }
       } finally {
         if (!cancelled) setBuilding(false);
       }
     };
-    // 2-second debounce: lets the user make multiple quick edits before
-    // triggering a regeneration. Manual refresh (refreshKey) bypasses it.
-    const delay = refreshKey > 0 && html ? 2000 : 0;
-    timer = setTimeout(generate, delay);
+    const timer = setTimeout(generate, 0);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [fileSig, isNative, isSelfDev, projectId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    // fileSig is read inside generate() (for what to persist against) but is
+    // deliberately NOT a trigger dependency — see the comment above.
+  }, [isNative, isSelfDev, projectId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nativePreviewStale = isNative && !isSelfDev && nativeGenFileSig !== null && nativeGenFileSig !== fileSig;
 
   // Self-dev: scoped rapid prototype for whatever turn's files are loaded
   // above. Auto-generates exactly ONCE per run of frontend-touching turns —
@@ -315,6 +377,11 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
           <span className="text-yellow-500/80 text-xs font-mono leading-tight">
             RAPID PROTOTYPE — Visual mockup only. Not the actual native app. Logic flow is simulated.
           </span>
+          {nativePreviewStale && (
+            <span className="shrink-0 text-yellow-500/60 flex items-center gap-1 ml-auto pl-2 text-[11px]">
+              (from an earlier version — click <RefreshCw size={9} className="inline" /> to regenerate)
+            </span>
+          )}
         </div>
       )}
       {isSelfDev && selfDevState === 'prototype' && html && !building && (
