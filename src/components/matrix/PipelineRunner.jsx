@@ -54,8 +54,18 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-  const pollCompile = async (repoFullName) => {
-    for (let i = 0; i < 120; i++) {
+  // The old flat 120-iteration (10 min) cap gave up on any target whose real
+  // build time exceeds that — which several already do just from their own
+  // estimate (ios-app 780s, rpi-distro 900s, linux-distro 1200s), and a
+  // heavy PyInstaller windows-exe build (PyQt6 + a large dependency tree)
+  // routinely runs 11-14 min in practice despite a 540s estimate. Scale the
+  // cap off the same per-target estimate the ETA already uses, with a 2x
+  // safety margin for real-world variance, instead of one constant for
+  // every target.
+  const pollCompile = async (repoFullName, target) => {
+    const maxSeconds = Math.max(600, getCompileEstimate(target) * 2);
+    const maxIterations = Math.ceil(maxSeconds / 5);
+    for (let i = 0; i < maxIterations; i++) {
       if (stopRef.current) return null;
       await sleep(5000);
       try {
@@ -95,9 +105,10 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
 
         addLog(`[${i + 1}] Polling build status...`);
         setCompileProgress(null);
-        const status = await pollCompile(res.repoFullName);
+        const maxMinutes = Math.round(Math.max(600, getCompileEstimate(project.compile_target) * 2) / 60);
+        const status = await pollCompile(res.repoFullName, project.compile_target);
         if (stopRef.current) break;
-        if (!status) { addLog('Compile timed out (10 min).'); break; }
+        if (!status) { addLog(`Compile timed out (${maxMinutes} min).`); break; }
         if (status.conclusion === 'success') {
           addLog('Compile succeeded! Pipeline complete.');
           setFinalStatus(status);
