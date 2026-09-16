@@ -150,7 +150,7 @@ const ENTITY_NAMES = [
   'Template', 'Purchase', 'UserSettings', 'BackendConfig', 'RebuildDoc', 'SelfDevManual', 'UpdatesPlan', 'CostSnapshot', 'GithubConnection',
   'MaintenanceTask',
   // Command Deck (internal codename "Deck")
-  'DeckDumpItem', 'DeckPerson', 'DeckTask', 'DeckConsignmentItem', 'DeckRepairJob', 'DeckRepairFile',
+  'DeckJarvisMessage', 'DeckDumpItem', 'DeckPerson', 'DeckTask', 'DeckConsignmentItem', 'DeckRepairJob', 'DeckRepairFile',
   'DeckMurbahOpportunity', 'DeckInboxItem', 'DeckStrategyNote', 'DeckKnowledgeNote',
   'DeckLifeStream', 'DeckLifeStreamNote', 'DeckEnergyLogEntry', 'DeckFocusEntry',
 ];

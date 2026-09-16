@@ -77,6 +77,7 @@ model User {
   google_drive_connection GoogleDriveConnection?
 
   // Command Deck (internal codename "Deck" — see the models below)
+  deck_jarvis_messages DeckJarvisMessage[]
   deck_dump_items    DeckDumpItem[]
   deck_people        DeckPerson[]
   deck_tasks         DeckTask[]
@@ -898,6 +899,23 @@ model DeviceToken {
 // Listing Studio (an existing Morpheus WordPress plugin widget already
 // handles retail on valiantmusic.com.au directly; Signal Chain's Retail
 // tile is just a link to wp-admin, no entity needed for it).
+
+// Jarvis (later phase, Command Deck) — a plain conversational log, one row
+// per turn. Deliberately its own model rather than reusing ChatMessage,
+// which is hard-coupled to a Project (project_id is a required FK) and
+// carries build-pipeline baggage (mode, fileOperations context) that has
+// nothing to do with a life/business chat persona.
+model DeckJarvisMessage {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  role          String   // user | jarvis
+  content       String   @db.Text
+
+  created_date  DateTime @default(now())
+  @@map("deck_jarvis_messages")
+}
 
 model DeckDumpItem {
   id            String   @id @default(uuid())

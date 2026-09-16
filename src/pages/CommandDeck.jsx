@@ -209,6 +209,11 @@ export default function CommandDeck() {
   const [lifeStreams, setLifeStreams] = useState({});
   const [lightboxImg, setLightboxImg] = useState(null);
 
+  const [jarvisMessages, setJarvisMessages] = useState([]);
+  const [jarvisInput, setJarvisInput] = useState('');
+  const [jarvisSending, setJarvisSending] = useState(false);
+  const [jarvisErr, setJarvisErr] = useState(false);
+
   const [backupText, setBackupText] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMsg, setBackupMsg] = useState(null);
@@ -236,7 +241,7 @@ export default function CommandDeck() {
         const [
           dumpRows, peopleRows, taskRows, consignRows, repairRows, repairFileRows,
           murbahRows, inboxRows, strategyRows, knowledgeRows, lifeStreamRows,
-          lifeStreamNoteRows, energyRows, focusRows,
+          lifeStreamNoteRows, energyRows, focusRows, jarvisRows,
         ] = await Promise.all([
           base44.entities.DeckDumpItem.list(),
           base44.entities.DeckPerson.list('created_date'),
@@ -252,6 +257,7 @@ export default function CommandDeck() {
           base44.entities.DeckLifeStreamNote.list(),
           base44.entities.DeckEnergyLogEntry.list('-date', 30),
           base44.entities.DeckFocusEntry.list('-date', 10),
+          base44.entities.DeckJarvisMessage.list('created_date', 50),
         ]);
 
         let peopleList = peopleRows;
@@ -292,6 +298,7 @@ export default function CommandDeck() {
           { ...ls, notes: lifeStreamNoteRows.filter((n) => n.life_stream_id === ls.id) },
         ])));
         setEnergyHistory(energyRows);
+        setJarvisMessages(jarvisRows);
 
         const today = todayKey();
         const todayEnergy = energyRows.find((e) => (e.date || '').slice(0, 10) === today);
@@ -651,6 +658,24 @@ export default function CommandDeck() {
     URL.revokeObjectURL(url);
   };
 
+  // ---- jarvis ------------------------------------------------------------
+  const sendJarvisMessage = async () => {
+    const text = jarvisInput.trim();
+    if (!text || jarvisSending) return;
+    const optimisticUser = { id: `local-${Date.now()}`, role: 'user', content: text };
+    setJarvisMessages((prev) => [...prev, optimisticUser]);
+    setJarvisInput('');
+    setJarvisSending(true);
+    setJarvisErr(false);
+    try {
+      const { data } = await base44.functions.invoke('chatWithJarvis', { message: text });
+      setJarvisMessages((prev) => [...prev, { id: `local-${Date.now()}-r`, role: 'jarvis', content: data.reply }]);
+    } catch {
+      setJarvisErr(true);
+    }
+    setJarvisSending(false);
+  };
+
   const energyInfo = ENERGY.find((e) => e.id === energy);
 
   return (
@@ -864,6 +889,60 @@ export default function CommandDeck() {
                 </div>
               );
             })}
+          </div>
+        </Card>
+
+        <Card
+          title="Jarvis"
+          sub="Ask it anything about the shop or your life outside it — it's looking at everything on this deck."
+          style={{ background: C.walnut, color: C.paper }}
+          titleColor={C.brassLight}
+          subColor="rgba(246,240,223,0.65)"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 360, overflowY: 'auto', marginBottom: '0.7rem' }}>
+            {jarvisMessages.length === 0 && (
+              <p style={{ fontSize: '0.82rem', color: 'rgba(246,240,223,0.5)', margin: 0 }}>
+                Nothing yet — ask it what's worth doing today, or what's slipping.
+              </p>
+            )}
+            {jarvisMessages.map((m) => (
+              <div
+                key={m.id}
+                style={{
+                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '88%',
+                  background: m.role === 'user' ? C.brass : 'rgba(246,240,223,0.08)',
+                  border: m.role === 'user' ? 'none' : '1px solid rgba(246,240,223,0.15)',
+                  borderRadius: 10,
+                  padding: '0.55rem 0.7rem',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap',
+                  color: C.paper,
+                }}
+              >
+                {m.content}
+              </div>
+            ))}
+            {jarvisSending && (
+              <div style={{ alignSelf: 'flex-start', fontSize: '0.78rem', color: 'rgba(246,240,223,0.5)' }}>Jarvis is thinking…</div>
+            )}
+          </div>
+          {jarvisErr && (
+            <p style={{ fontSize: '0.75rem', color: '#E8A9A9', marginTop: 0, marginBottom: '0.5rem' }}>
+              Couldn't reach Jarvis that time — give it another go.
+            </p>
+          )}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input
+              value={jarvisInput}
+              onChange={(e) => setJarvisInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendJarvisMessage()}
+              placeholder="Ask Jarvis…"
+              disabled={jarvisSending}
+              style={{ ...inputStyle, background: 'rgba(246,240,223,0.08)', border: '1px solid rgba(246,240,223,0.25)', color: C.paper }}
+            />
+            <IconButton onClick={sendJarvisMessage} color={C.brass}><Plus size={18} color={C.paper} /></IconButton>
           </div>
         </Card>
 
