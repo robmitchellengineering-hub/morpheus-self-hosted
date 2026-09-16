@@ -194,6 +194,12 @@ export function CommandDeckProvider({ children }) {
     return null;
   };
 
+  const flagQuickFile = (msg) => {
+    setQuickFileMsg(msg);
+    window.clearTimeout(quickFileTimeout.current);
+    quickFileTimeout.current = window.setTimeout(() => setQuickFileMsg(null), 2600);
+  };
+
   const addDump = async () => {
     if (!dumpInput.trim()) return;
     const text = dumpInput.trim();
@@ -202,13 +208,40 @@ export function CommandDeckProvider({ children }) {
       if (owner) {
         const created = await base44.entities.DeckTask.create({ text, owner_person_id: owner.id, energy: 'any', done: false });
         setTasks((prev) => [created, ...prev]);
-        setQuickFileMsg(`Filed straight to ${owner.name}'s tasks`);
-        window.clearTimeout(quickFileTimeout.current);
-        quickFileTimeout.current = window.setTimeout(() => setQuickFileMsg(null), 2600);
-      } else {
+        flagQuickFile(`Filed straight to ${owner.name}'s tasks`);
+        setDumpInput('');
+        return;
+      }
+
+      // No name mentioned — let Jarvis classify it and file it directly
+      // (task / strategy / knowledge / a life stream), instead of leaving
+      // it in the unsorted pile waiting on a manual tap.
+      try {
+        const { data } = await base44.functions.invoke('classifyDeckDumpItem', { text });
+        const dest = data?.destination;
+        if (dest === 'task') {
+          const created = await base44.entities.DeckTask.create({ text, owner_person_id: people.find(isYou)?.id, energy: 'any', done: false });
+          setTasks((prev) => [created, ...prev]);
+          flagQuickFile('Filed to your tasks');
+        } else if (dest === 'strategy') {
+          const created = await base44.entities.DeckStrategyNote.create({ text });
+          setStrategy((prev) => [created, ...prev]);
+          flagQuickFile('Filed to Strategy');
+        } else if (dest === 'life_stream' && data?.life_stream_key && lifeStreams[data.life_stream_key]) {
+          await addLifeNote(data.life_stream_key, text);
+          flagQuickFile(`Filed to ${LIFE_STREAMS_META.find((s) => s.id === data.life_stream_key)?.label || data.life_stream_key}`);
+        } else {
+          const created = await base44.entities.DeckKnowledgeNote.create({ text });
+          setKnowledge((prev) => [created, ...prev]);
+          flagQuickFile('Filed to Knowledge');
+        }
+      } catch {
+        // Classification failed — fall back to the unsorted pile so
+        // nothing is lost; the existing promote buttons cover it by hand.
         const created = await base44.entities.DeckDumpItem.create({ text });
         setDump((prev) => [created, ...prev]);
       }
+
       setDumpInput('');
     } catch { flagSaveErr(); }
   };
