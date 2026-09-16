@@ -32,14 +32,15 @@ SUBJECT: ${message.subject}
 MESSAGE:
 ${(message.body || message.snippet || '').slice(0, 3000)}`;
 
-  try {
-    const { result } = await invokeAI({ userId, prompt, schema: CLASSIFY_SCHEMA, maxTokens: 200 });
-    return !!result?.isInquiry;
-  } catch {
-    // Classification failure shouldn't surface a false inquiry — leave it
-    // for Rob to find directly in Gmail rather than risk noise in the Deck.
-    return false;
-  }
+  // Deliberately generous even though the answer is one boolean — this
+  // deployment's model can burn a real chunk of the token budget on hidden
+  // reasoning before it ever emits the JSON (the same lesson chatWithJarvis
+  // learned the hard way at 900 tokens). A too-tight cap here would throw
+  // OUTPUT_TRUNCATED on the classification call itself, which the caller
+  // must NOT silently read as "not an inquiry" — see the caller's own
+  // handling of this throwing.
+  const { result } = await invokeAI({ userId, prompt, schema: CLASSIFY_SCHEMA, maxTokens: 800 });
+  return !!result?.isInquiry;
 }
 
 export default async function handler({ user }) {
@@ -55,9 +56,23 @@ export default async function handler({ user }) {
   const unseen = messages.filter((m) => !seenIds.has(m.id));
 
   let created = 0;
+  let failed = 0;
   for (const { id } of unseen) {
     const full = await getGmailMessage(token, id);
-    const isInquiry = await classifyIsInquiry(user.id, full);
+
+    let isInquiry;
+    try {
+      isInquiry = await classifyIsInquiry(user.id, full);
+    } catch (err) {
+      // A failed classification (truncation, a transient provider error)
+      // must NOT be treated as "not an inquiry" — that would permanently
+      // drop a real customer message the moment DeckGmailSeenMessage marks
+      // it seen below. Skip both the inbox item AND the seen-marker so this
+      // message is simply reclassified on the next sync instead.
+      console.error(`[syncDeckGmailInbox] classification failed for message ${id}:`, err.message);
+      failed++;
+      continue;
+    }
 
     if (isInquiry) {
       await prisma.deckInboxItem.create({
@@ -79,5 +94,5 @@ export default async function handler({ user }) {
     }).catch(() => {}); // already-seen race between concurrent syncs — harmless
   }
 
-  return { checked: messages.length, created, skipped: unseen.length - created };
+  return { checked: messages.length, created, skipped: unseen.length - created - failed, failed };
 }

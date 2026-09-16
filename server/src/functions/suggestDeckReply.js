@@ -1,7 +1,10 @@
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 
-const MAX_REPLY_TOKENS = 800;
+// Generous even for a short reply — this deployment's model can burn a real
+// chunk of the budget on hidden reasoning before the actual text (the same
+// lesson chatWithJarvis.js learned the hard way at 900 tokens).
+const MAX_REPLY_TOKENS = 2000;
 
 export default async function handler({ user, body }) {
   const inboxItemId = body?.inboxItemId;
