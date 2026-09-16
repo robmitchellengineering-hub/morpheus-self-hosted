@@ -335,7 +335,7 @@ router.get('/google-drive/start', requireAuth, blockWidget, (req, res) => {
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
 });
 
-router.get('/google-drive/callback', requireAuth, async (req, res) => {
+router.get('/google-drive/callback', async (req, res) => {
   try {
     const { code, state } = req.query;
     const { uid } = jwt.verify(state, JWT_SECRET);
