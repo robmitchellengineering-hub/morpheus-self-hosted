@@ -839,16 +839,22 @@ function InboxPanel({
           const drafting = replyDraftFor === i.id;
           return (
             <div key={i.id} style={{ ...rowBox, flexDirection: 'column', alignItems: 'stretch', gap: '0.4rem' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {/* minWidth: 0 overrides the flex item's default min-width:auto —
+                    without it, a long unbroken line (a URL, a long word) refuses to
+                    shrink and forces the row wider than the screen, pushing the
+                    stage pill and delete (X) button off-screen on a phone. */}
+                <div style={{ flex: '1 1 160px', minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.04em', color: C.brass, textTransform: 'uppercase' }}>{channelLabel(i.channel)}</span>
                     <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{i.from_name}</span>
                   </div>
-                  <div style={{ fontSize: '0.83rem', marginTop: '0.15rem' }}>{i.message}</div>
+                  <div style={{ fontSize: '0.83rem', marginTop: '0.15rem', overflowWrap: 'break-word', wordBreak: 'break-word' }}>{i.message}</div>
                 </div>
-                <button onClick={() => onCycle(i.id)} style={{ ...pillBtn(stageColor[i.stage]), flexShrink: 0 }}>{inboxStageLabel(i.stage)}</button>
-                <button onClick={() => onRemove(i.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0, marginLeft: 'auto' }}>
+                  <button onClick={() => onCycle(i.id)} style={{ ...pillBtn(stageColor[i.stage]), flexShrink: 0 }}>{inboxStageLabel(i.stage)}</button>
+                  <button onClick={() => onRemove(i.id)} style={{ ...ghostBtn, flexShrink: 0 }}><X size={13} color={C.walnutSoft} /></button>
+                </div>
               </div>
 
               {canReply && !drafting && (
