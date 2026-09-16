@@ -76,6 +76,22 @@ model User {
   github_connection GithubConnection?
   google_drive_connection GoogleDriveConnection?
 
+  // Command Deck (internal codename "Deck" — see the models below)
+  deck_dump_items    DeckDumpItem[]
+  deck_people        DeckPerson[]
+  deck_tasks         DeckTask[]
+  deck_consignment_items DeckConsignmentItem[]
+  deck_repair_jobs   DeckRepairJob[]
+  deck_repair_files  DeckRepairFile[]
+  deck_murbah_opportunities DeckMurbahOpportunity[]
+  deck_inbox_items   DeckInboxItem[]
+  deck_strategy_notes DeckStrategyNote[]
+  deck_knowledge_notes DeckKnowledgeNote[]
+  deck_life_streams  DeckLifeStream[]
+  deck_life_stream_notes DeckLifeStreamNote[]
+  deck_energy_log_entries DeckEnergyLogEntry[]
+  deck_focus_entries DeckFocusEntry[]
+
   // Owner/Admin Control Panel (Feature Backlog #8)
   platform_settings_updated PlatformSetting[]
   admin_audit_logs          AdminAuditLog[]
@@ -870,4 +886,234 @@ model DeviceToken {
 
   @@index([created_by_id])
   @@map("device_tokens")
+}
+
+// ── COMMAND DECK (Valiant Music) ─────────────────────────────────────────
+// User-facing product name is "Command Deck" — internal codename is "Deck"
+// (every model/table/route below), deliberately distinct from self-dev's
+// own "Command Deck 4.0" roadmap/tier system already used throughout this
+// codebase (ROADMAP.md, the SelfDevDecision model's own comment above, etc.)
+// so a grep for one never surfaces the other.
+// V1 is deliberately self-contained — no Jarvis, no Gmail/Square/Xero, no
+// Listing Studio (an existing Morpheus WordPress plugin widget already
+// handles retail on valiantmusic.com.au directly; Signal Chain's Retail
+// tile is just a link to wp-admin, no entity needed for it).
+
+model DeckDumpItem {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+  @@map("deck_dump_items")
+}
+
+model DeckPerson {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  name          String
+  phone         String?
+  color         String
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_people")
+}
+
+model DeckTask {
+  id             String   @id @default(uuid())
+  created_by_id  String
+  user           User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text           String   @db.Text
+  owner_person_id String?
+  energy         String   @default("any") // low | med | high | any
+  done           Boolean  @default(false)
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@map("deck_tasks")
+}
+
+model DeckConsignmentItem {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  item          String
+  consignor     String
+  phone         String?
+  price         Float    @default(0)
+  date_in       DateTime @default(now())
+  sold          Boolean  @default(false)
+  photo_url     String?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_consignment_items")
+}
+
+model DeckRepairJob {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  customer      String
+  phone         String?
+  item          String
+  notes         String?  @db.Text
+  stage         String   @default("waiting") // waiting | in_progress | done
+  photo_url     String?  // primary/identifying thumbnail
+
+  files         DeckRepairFile[]
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_repair_jobs")
+}
+
+model DeckRepairFile {
+  id            String   @id @default(uuid())
+  repair_job_id String
+  repair_job    DeckRepairJob @relation(fields: [repair_job_id], references: [id], onDelete: Cascade)
+
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  name          String
+  file_url      String
+  is_image      Boolean  @default(false)
+
+  created_date  DateTime @default(now())
+
+  @@index([repair_job_id])
+  @@map("deck_repair_files")
+}
+
+model DeckMurbahOpportunity {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  title         String
+  note          String?  @db.Text
+  stage         String   @default("idea") // idea | enquired | booked | active
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_murbah_opportunities")
+}
+
+model DeckInboxItem {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  channel       String   // gmail | website | other (social intentionally excluded — see plan)
+  from_name     String
+  message       String   @db.Text
+  stage         String   @default("new") // new | replied | done
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_inbox_items")
+}
+
+model DeckStrategyNote {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_strategy_notes")
+}
+
+model DeckKnowledgeNote {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_knowledge_notes")
+}
+
+model DeckLifeStream {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  stream_key    String   // health | money | home | people | growth
+  status        String   @default("needs_work") // on | needs_work
+  notes         DeckLifeStreamNote[]
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([created_by_id, stream_key])
+  @@map("deck_life_streams")
+}
+
+// A running, dated note log per life stream — same parent/child shape as
+// DeckRepairJob/DeckRepairFile above.
+model DeckLifeStreamNote {
+  id             String         @id @default(uuid())
+  life_stream_id String
+  life_stream    DeckLifeStream @relation(fields: [life_stream_id], references: [id], onDelete: Cascade)
+  created_by_id  String
+  user           User           @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text           String   @db.Text
+
+  created_date   DateTime @default(now())
+
+  @@index([life_stream_id])
+  @@map("deck_life_stream_notes")
+}
+
+model DeckEnergyLogEntry {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  date          DateTime // date-only, stored at midnight UTC
+  level         String   // low | med | high
+
+  created_date  DateTime @default(now())
+
+  @@unique([created_by_id, date])
+  @@map("deck_energy_log_entries")
+}
+
+model DeckFocusEntry {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  date          DateTime // date-only, stored at midnight UTC
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([created_by_id, date])
+  @@map("deck_focus_entries")
 }
