@@ -201,6 +201,12 @@ model DeckGoogleConnection {
   refresh_token String   // encrypted at rest
   expires_at    DateTime?
 
+  // Drive backup (backupDeckToDrive.js / restoreDeckFromDrive.js) — the
+  // Drive folder holding command-deck-backup.json, created on first backup,
+  // and when that backup last ran, shown as "Data vault status" in Settings.
+  backup_folder_id String?
+  last_backup_at   DateTime?
+
   created_date  DateTime @default(now())
 
   @@map("deck_google_connections")
