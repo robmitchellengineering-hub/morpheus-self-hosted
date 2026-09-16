@@ -10,7 +10,7 @@ import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 
 const HISTORY_TURNS = 12; // recent turns folded into the prompt as conversation context
-const MAX_REPLY_TOKENS = 900;
+const MAX_REPLY_TOKENS = 3000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply
 
 const REPAIR_STAGE_LABEL = { waiting: 'Waiting', in_progress: 'In progress', done: 'Done' };
 const MURBAH_STAGE_LABEL = { idea: 'Idea', enquired: 'Enquired', booked: 'Booked', active: 'Active' };
