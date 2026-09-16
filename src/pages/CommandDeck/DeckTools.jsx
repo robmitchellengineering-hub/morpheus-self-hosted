@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mic, Plus, X } from 'lucide-react';
 import { C } from './deckConstants';
-import { Card, inputStyle, miniInput, rowBox, ghostBtn, pillBtn } from './DeckUI';
+import { Card, inputStyle, miniInput, rowBox, ghostBtn, pillBtn, chipBtn } from './DeckUI';
 import { useTuner } from './tools/useTuner';
+import { useAudioAnalyser } from './tools/useAudioAnalyser';
 import { LENGTH_UNITS, WEIGHT_UNITS, convert } from './tools/units';
 
 const TOOLS = [
@@ -13,6 +14,8 @@ const TOOLS = [
   { id: 'resistance', label: 'Resistance' },
   { id: 'divider', label: 'Voltage divider' },
   { id: 'crossover', label: 'Crossover' },
+  { id: 'tone', label: 'Tone' },
+  { id: 'spectrum', label: 'Spectrum' },
 ];
 
 // Workshop tools — fully client-side, no backend: a guitar tuner (real
@@ -49,6 +52,8 @@ export default function DeckTools() {
       {tool === 'resistance' && <ResistanceTool />}
       {tool === 'divider' && <VoltageDividerTool />}
       {tool === 'crossover' && <CrossoverTool />}
+      {tool === 'tone' && <ToneTool />}
+      {tool === 'spectrum' && <SpectrumTool />}
     </Card>
   );
 }
@@ -294,6 +299,142 @@ function CrossoverTool() {
           <strong>{inductorMh != null ? `${inductorMh.toFixed(2)} mH` : '—'}</strong>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---- tone generator -------------------------------------------------------
+const WAVEFORMS = ['sine', 'square', 'sawtooth', 'triangle'];
+
+function ToneTool() {
+  const [freq, setFreq] = useState(440);
+  const [waveform, setWaveform] = useState('sine');
+  const [volume, setVolume] = useState(0.2);
+  const [playing, setPlaying] = useState(false);
+  const audioCtxRef = useRef(null);
+  const oscRef = useRef(null);
+  const gainRef = useRef(null);
+
+  const stop = () => {
+    try { oscRef.current?.stop(); } catch { /* already stopped */ }
+    audioCtxRef.current?.close().catch(() => {});
+    oscRef.current = null;
+    gainRef.current = null;
+    audioCtxRef.current = null;
+    setPlaying(false);
+  };
+  const start = () => {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = waveform;
+    osc.frequency.value = freq;
+    gain.gain.value = volume;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    audioCtxRef.current = ctx;
+    oscRef.current = osc;
+    gainRef.current = gain;
+    setPlaying(true);
+  };
+
+  // Live-update the running oscillator/gain when its controls change, rather
+  // than requiring a stop/restart to hear a new frequency or waveform.
+  useEffect(() => { if (oscRef.current) oscRef.current.frequency.value = freq; }, [freq]);
+  useEffect(() => { if (oscRef.current) oscRef.current.type = waveform; }, [waveform]);
+  useEffect(() => { if (gainRef.current) gainRef.current.gain.value = volume; }, [volume]);
+  useEffect(() => () => stop(), []);
+
+  return (
+    <div>
+      <p style={{ margin: '0 0 0.7rem', fontSize: '0.8rem', color: C.walnutSoft }}>Generate a test tone — type a frequency or slide. Great for speaker & pickup checks.</p>
+
+      <label style={{ fontSize: '0.68rem', fontWeight: 600, color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Frequency</label>
+      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', margin: '0.3rem 0 0.5rem' }}>
+        <input
+          type="number" value={freq} inputMode="decimal"
+          onChange={(e) => setFreq(Math.max(1, Number(e.target.value) || 0))}
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        <span style={{ fontSize: '0.8rem', color: C.walnutSoft }}>Hz</span>
+      </div>
+      <input
+        type="range" min="20" max="5000" step="1" value={Math.min(5000, freq)}
+        onChange={(e) => setFreq(Number(e.target.value))}
+        style={{ width: '100%', marginBottom: '0.9rem' }}
+      />
+
+      <label style={{ fontSize: '0.68rem', fontWeight: 600, color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Waveform</label>
+      <div style={{ display: 'flex', gap: '0.4rem', margin: '0.3rem 0 0.9rem' }}>
+        {WAVEFORMS.map((w) => (
+          <button key={w} onClick={() => setWaveform(w)} style={chipBtn(waveform === w, C.brass)}>{w}</button>
+        ))}
+      </div>
+
+      <label style={{ fontSize: '0.68rem', fontWeight: 600, color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Volume</label>
+      <input
+        type="range" min="0" max="1" step="0.01" value={volume}
+        onChange={(e) => setVolume(Number(e.target.value))}
+        style={{ width: '100%', margin: '0.3rem 0 1rem' }}
+      />
+
+      <button
+        onClick={() => (playing ? stop() : start())}
+        style={{ ...pillBtn(playing ? C.alert : C.sage), width: '100%', padding: '0.6rem', fontSize: '0.85rem' }}
+      >
+        {playing ? 'Stop' : 'Play tone'}
+      </button>
+    </div>
+  );
+}
+
+// ---- audio analyser / spectrum --------------------------------------------
+function SpectrumTool() {
+  const { listening, error, live, peak, canvasRef, start, stop, resetPeak } = useAudioAnalyser();
+
+  return (
+    <div>
+      <p style={{ margin: '0 0 0.7rem', fontSize: '0.8rem', color: C.walnutSoft }}>Live waterfall spectrum on a log frequency grid — colour intensity scrolls up to show what's just happened. Peak holds until reset.</p>
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.9rem' }}>
+        <button
+          onClick={() => (listening ? stop() : start())}
+          style={{ ...pillBtn(listening ? C.alert : C.sage), flex: 1, padding: '0.55rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+        >
+          <Mic size={15} /> {listening ? 'Stop listening' : 'Start listening'}
+        </button>
+        <button onClick={resetPeak} style={{ ...pillBtn(C.walnutSoft), flex: 1, padding: '0.55rem' }}>Reset peak</button>
+      </div>
+      {error && <p style={{ margin: '0 0 0.7rem', fontSize: '0.78rem', color: C.alert }}>{error}</p>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.9rem' }}>
+        <ReadoutBox label="Live freq" value={live ? `${live.freq} Hz` : '—'} />
+        <ReadoutBox label="Live level" value={live ? `${live.level}` : '—'} />
+        <ReadoutBox label="Peak freq" value={peak ? `${peak.freq} Hz` : '—'} />
+        <ReadoutBox label="Peak level" value={peak ? `${peak.level}` : '—'} />
+      </div>
+
+      <canvas
+        ref={canvasRef}
+        width={320}
+        height={160}
+        style={{ width: '100%', height: 160, borderRadius: 10, background: '#0a0704', display: 'block' }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: C.walnutSoft, marginTop: '0.3rem' }}>
+        <span>20 Hz</span>
+        <span>20 kHz (log scale)</span>
+      </div>
+    </div>
+  );
+}
+
+function ReadoutBox({ label, value }) {
+  return (
+    <div style={{ background: C.tweedDark, borderRadius: 8, padding: '0.5rem 0.6rem' }}>
+      <div style={{ fontSize: '0.62rem', fontWeight: 600, color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: C.walnut }}>{value}</div>
     </div>
   );
 }
