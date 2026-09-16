@@ -8,6 +8,7 @@ import ConnectionsSection from '@/components/matrix/ConnectionsSection';
 import CreditBalance from '@/components/matrix/CreditBalance';
 import CapabilityStatus from '@/components/matrix/CapabilityStatus';
 import GithubConnectionSection from '@/components/matrix/GithubConnectionSection';
+import GoogleDriveConnectionSection from '@/components/matrix/GoogleDriveConnectionSection';
 import SheetSelect from '@/components/matrix/SheetSelect';
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -608,6 +609,10 @@ export default function Settings() {
 
             <div className="mb-8">
               <GithubConnectionSection />
+            </div>
+
+            <div className="mb-8">
+              <GoogleDriveConnectionSection />
             </div>
 
             <ConnectionsSection connections={connections} onChange={setConnections} />
