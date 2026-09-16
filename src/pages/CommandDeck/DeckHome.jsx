@@ -47,7 +47,7 @@ export default function DeckHome() {
 
   return (
     <>
-      <Card title="Brain dump" sub="Whatever's rattling around — get it out. Mention a name and it's filed straight to them.">
+      <Card title="Brain dump" sub="Whatever's rattling around — get it out. Mention a name and it's filed straight to them; otherwise Jarvis files it where it belongs.">
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input
             value={dumpInput}
