@@ -1,8 +1,11 @@
-import { useState } from 'react';
-import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText, UploadCloud, DownloadCloud, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText, UploadCloud, DownloadCloud, AlertTriangle, Coins, X } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useDeckGoogleConnection } from '@/hooks/useDeckGoogleConnection';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
+import { base44 } from '@/api/base44Client';
+import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
+import { startTokenCheckout } from '@/lib/purchaseCredits';
 import { C } from './deckConstants';
 import { Card, pillBtn } from './DeckUI';
 
@@ -36,6 +39,8 @@ export default function DeckSettings() {
           </p>
         )}
       </Card>
+
+      <UsageMeter />
 
       <Card title="Google" sub="Gmail sync, Calendar, Drive backup, and Doc creation — one connection, separate from Morpheus's own Google sign-in.">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
@@ -130,5 +135,120 @@ function ScopeRow({ icon: Icon, label, sub, active }) {
         <div style={{ fontSize: '0.72rem', color: C.walnutSoft }}>{sub}</div>
       </div>
     </div>
+  );
+}
+
+// Same balance/buy-more logic as src/components/matrix/CreditBalance.jsx
+// (that component's own comment already anticipated this exact reuse) —
+// rebuilt with Deck's own Card/pillBtn instead of Morpheus's Matrix styling,
+// but sharing the same credit_balance field, startTokenCheckout(blockIndex),
+// and TOKEN_BLOCKS as the rest of the app. One shared balance across every
+// AI feature (Morpheus builds, Jarvis chat, Gmail classification, etc.) —
+// there's no separate Jarvis-only credit pool.
+const POLL_ATTEMPTS = 5;
+const POLL_INTERVAL_MS = 2000;
+
+function UsageMeter() {
+  const [balance, setBalance] = useState(null);
+  const [loadingBalance, setLoadingBalance] = useState(true);
+  const [buyingIndex, setBuyingIndex] = useState(null);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState(null); // { kind: 'success' | 'cancelled' }
+  const pollRef = useRef(null);
+
+  const fetchBalance = useCallback(async () => {
+    try {
+      const user = await base44.auth.me();
+      setBalance(Number(user?.credit_balance ?? 0));
+    } catch {
+      // Not fatal — balance just won't render; the rest of Settings still works.
+    } finally {
+      setLoadingBalance(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBalance();
+
+    const params = new URLSearchParams(window.location.search);
+    const credits = params.get('credits');
+    if (credits === 'success' || credits === 'cancelled') {
+      setBanner({ kind: credits });
+      params.delete('credits');
+      const cleanUrl = window.location.pathname + (params.toString() ? `?${params}` : '');
+      window.history.replaceState({}, '', cleanUrl);
+    }
+    if (credits === 'success') {
+      let attempts = 0;
+      pollRef.current = setInterval(() => {
+        attempts += 1;
+        fetchBalance();
+        if (attempts >= POLL_ATTEMPTS && pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }, POLL_INTERVAL_MS);
+    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [fetchBalance]);
+
+  const buy = async (blockIndex) => {
+    setError('');
+    setBuyingIndex(blockIndex);
+    try {
+      await startTokenCheckout(blockIndex);
+    } catch (e) {
+      setError(e.message || 'Could not start checkout');
+      setBuyingIndex(null);
+    }
+  };
+
+  return (
+    <Card title="Usage" sub="Every AI action across Morpheus and Jarvis draws from one shared credit balance — no subscription, no expiry.">
+      {banner?.kind === 'success' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: C.tweedDark, borderRadius: 8, padding: '0.5rem 0.6rem', marginBottom: '0.7rem', fontSize: '0.78rem', color: C.sage }}>
+          <Check size={14} /> Payment received — your balance updates within a few seconds.
+        </div>
+      )}
+      {banner?.kind === 'cancelled' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: C.tweedDark, borderRadius: 8, padding: '0.5rem 0.6rem', marginBottom: '0.7rem', fontSize: '0.78rem', color: C.walnutSoft }}>
+          <X size={14} /> Checkout cancelled — no charge was made.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.9rem' }}>
+        <Coins size={16} color={C.brass} />
+        <span style={{ fontSize: '0.72rem', color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Balance</span>
+        {loadingBalance ? (
+          <Loader2 size={14} className="animate-spin" color={C.walnutSoft} />
+        ) : (
+          <span style={{ fontSize: '1.1rem', fontWeight: 700, color: C.walnut }}>{balance != null ? balance.toFixed(2) : '—'} credits</span>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem' }}>
+        {TOKEN_BLOCKS.map((block, i) => (
+          <button
+            key={block.credits}
+            onClick={() => buy(i)}
+            disabled={buyingIndex !== null}
+            style={{
+              textAlign: 'left', background: C.paper, border: `1.5px solid ${C.line}`, borderRadius: 10,
+              padding: '0.6rem 0.7rem', cursor: buyingIndex !== null ? 'default' : 'pointer', opacity: buyingIndex !== null && buyingIndex !== i ? 0.5 : 1,
+            }}
+          >
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: C.walnut }}>{block.credits.toLocaleString()} credits</div>
+            <div style={{ fontSize: '0.68rem', color: C.walnutSoft, marginTop: '0.15rem' }}>~${block.intendedNetUsd.toFixed(2)} + card fees</div>
+            <div style={{ marginTop: '0.4rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', fontWeight: 600, color: C.brass }}>
+              {buyingIndex === i ? <Loader2 size={12} className="animate-spin" /> : null}
+              {buyingIndex === i ? 'Redirecting…' : 'Buy'}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {error && <p style={{ margin: '0.6rem 0 0', fontSize: '0.75rem', color: C.alert }}>{error}</p>}
+      <p style={{ margin: '0.6rem 0 0', fontSize: '0.68rem', color: C.walnutSoft }}>Secure checkout via Stripe.</p>
+    </Card>
   );
 }
