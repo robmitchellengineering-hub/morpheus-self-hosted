@@ -23,7 +23,7 @@ export default function DeckHome() {
     dump, dumpInput, setDumpInput, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
-    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, removePerson,
+    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,
     energy, energyHistory, focusTask, setEnergyLevel, saveFocus,
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, removeConsignment,
@@ -341,7 +341,13 @@ export default function DeckHome() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.6rem' }}>
               {people.map((p) => (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: p.color, flex: '0 0 60px' }}>{p.name}</span>
+                  <input
+                    value={p.name}
+                    onChange={(e) => updatePersonName(p.id, e.target.value)}
+                    placeholder={isYou(p) ? 'Your name' : 'Name'}
+                    style={{ ...miniInput, flex: '0 1 90px', fontWeight: 600, color: p.color }}
+                  />
+                  {isYou(p) && <span style={{ fontSize: '0.62rem', color: C.walnutSoft, flexShrink: 0 }}>(me)</span>}
                   <input placeholder="Phone number" value={p.phone || ''} onChange={(e) => updatePersonPhone(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
                   <input placeholder="Email" value={p.email || ''} onChange={(e) => updatePersonEmail(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
                   {!isYou(p) && <button onClick={() => removePerson(p.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>}

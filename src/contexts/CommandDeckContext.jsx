@@ -187,6 +187,15 @@ export function CommandDeckProvider({ children }) {
   }, []);
 
   // ---- brain dump --------------------------------------------------------
+  // Deliberately name-only, not first-person — this drives the FAST,
+  // unconditional "straight to a task" bypass, and almost every personal
+  // note is phrased in first person ("I need to...", "my amp..."). Matching
+  // "I" here would route nearly everything straight to a task and skip
+  // classifyDeckDumpItem.js's actual strategy/knowledge/life-stream
+  // classification for the common case. Task ownership already defaults to
+  // the self person when the AI classifies something as a task (see
+  // addDump below) — that's where first-person "I said" phrasing already
+  // matters, without this fast path swallowing everything else.
   const detectOwner = (text) => {
     const lower = text.toLowerCase();
     for (const p of people) {
@@ -313,6 +322,12 @@ export function CommandDeckProvider({ children }) {
     setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, email } : p)));
     debouncedSave(`person-email-${id}`, async () => {
       try { await base44.entities.DeckPerson.update(id, { email }); } catch { flagSaveErr(); }
+    });
+  };
+  const updatePersonName = (id, name) => {
+    setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
+    debouncedSave(`person-name-${id}`, async () => {
+      try { await base44.entities.DeckPerson.update(id, { name }); } catch { flagSaveErr(); }
     });
   };
   const removePerson = async (id) => {
@@ -701,7 +716,7 @@ export function CommandDeckProvider({ children }) {
     dump, dumpInput, setDumpInput, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
-    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, removePerson,
+    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,
     energy, energyHistory, focusTask, setEnergyLevel, saveFocus,
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, removeConsignment,

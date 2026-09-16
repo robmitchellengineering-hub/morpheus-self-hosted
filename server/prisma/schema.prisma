@@ -995,6 +995,7 @@ model DeckPerson {
   phone         String?
   email         String?
   color         String
+  is_self       Boolean  @default(false) // the "me" person — a stable identity marker, decoupled from the literal name "You" so it can be renamed freely (see deckConstants.js's isYou())
 
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
