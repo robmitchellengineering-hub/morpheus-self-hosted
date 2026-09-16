@@ -1,11 +1,10 @@
 // Pulls only genuine inquiries into the Inbox card — a customer question, a
 // quote/price request, a repair or consignment enquiry, a submission from
 // the valiantmusic.com.au website contact form, or anyone asking for help —
-// not newsletters, marketing, or automated notifications. Two layers, per
-// Rob's call: Gmail's own category:primary as a cheap first pass, then an
-// AI classification per message as the real filter (category:primary alone
-// still lets through plenty of "Updates"-adjacent mail Gmail doesn't sort
-// away, e.g. a marketplace policy notice).
+// not newsletters, marketing, or automated notifications. Filtering is the
+// AI classification layer alone now — see the 2026-09-17 correction below
+// for why the original "category:primary as a cheap first pass" layer got
+// removed entirely, not just widened.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getDeckGoogleToken, listGmailMessages, getGmailMessage } from '../lib/deckGoogle.js';
@@ -21,7 +20,19 @@ const PAGE_SIZE = 20;
 // bounded so one sync can't run away classifying an entire mailbox's history
 // the first time it's ever run against a huge backlog.
 const MAX_MESSAGES_PER_SYNC = 150;
-const GMAIL_QUERY = 'in:inbox category:primary';
+// 2026-09-17 CORRECTION (Rob: "still not picking up" even after the paging
+// fix above): checked this mailbox's actual Gmail data directly — `category:
+// primary` returns ZERO messages for this account, ever, with no date bound.
+// Every message, including an unambiguous genuine customer email ("Receipt"
+// from a customer chasing an invoice), carries no CATEGORY_PERSONAL label at
+// all; this account's inbox isn't using Gmail's tabbed-category feature the
+// original two-layer design assumed. That "cheap first pass" wasn't cheaply
+// filtering anything — it was silently returning an empty result set and
+// making every sync a no-op from the day it shipped. Dropped entirely; the
+// AI classification pass below is now the ONLY filter, exactly as the
+// original code comment already called it ("the real filter") — it was
+// already meant to carry this weight alone.
+const GMAIL_QUERY = 'in:inbox';
 
 const CLASSIFY_SCHEMA = {
   type: 'object',
