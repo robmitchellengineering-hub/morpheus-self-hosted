@@ -75,6 +75,7 @@ model User {
   device_tokens    DeviceToken[]
   github_connection GithubConnection?
   google_drive_connection GoogleDriveConnection?
+  deck_google_connection DeckGoogleConnection?
 
   // Command Deck (internal codename "Deck" — see the models below)
   deck_jarvis_messages DeckJarvisMessage[]
@@ -177,6 +178,31 @@ model GoogleDriveConnection {
   created_date  DateTime @default(now())
 
   @@map("google_drive_connections")
+}
+
+// Command Deck's own Google connection — deliberately separate from
+// GoogleDriveConnection above (that one is scoped to drive.file for
+// unrelated Project file storage, Feature Backlog #12). This one covers
+// Gmail sync, Calendar sync, a Deck-specific Drive backup, and Jarvis-driven
+// Doc creation — a different purpose with different (more sensitive)
+// scopes, so it gets its own row/table rather than tangling two features'
+// revoke/reconnect behavior together.
+model DeckGoogleConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  google_email  String
+  access_token  String   // encrypted at rest (src/crypto.js)
+  scope         String?
+
+  // Same access_type=offline&prompt=consent requirement as
+  // GoogleDriveConnection — see lib/deckGoogle.js's getDeckGoogleConnection.
+  refresh_token String   // encrypted at rest
+  expires_at    DateTime?
+
+  created_date  DateTime @default(now())
+
+  @@map("deck_google_connections")
 }
 
 // ── PROJECTS ──────────────────────────────────────────────────────
@@ -1039,8 +1065,10 @@ model DeckInboxItem {
 
   channel       String   // gmail | website | other (social intentionally excluded — see plan)
   from_name     String
+  from_email    String?
   message       String   @db.Text
   stage         String   @default("new") // new | replied | done
+  external_id   String?  // Gmail message id — dedup key for syncDeckGmailInbox.js, null for non-synced items
 
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt

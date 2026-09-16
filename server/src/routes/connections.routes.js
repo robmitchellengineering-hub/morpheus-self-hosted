@@ -376,4 +376,98 @@ router.delete('/google-drive', requireAuth, blockWidget, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Command Deck's own Google connection (Gmail + Calendar + Drive backup +
+// Docs) ──────────────────────────────────────────────────────────────────
+// Deliberately separate from google-drive/* above — see schema.prisma's
+// comment above DeckGoogleConnection for why. Structurally identical flow
+// (state JWT, access_type=offline&prompt=consent, its own redirect URI env
+// var so callbacks never collide).
+const DECK_GOOGLE_SCOPE = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/documents',
+  'email',
+].join(' ');
+
+async function persistDeckGoogleConnection(uid, { access_token, refresh_token, scope, expires_in, profile }) {
+  if (!profile) {
+    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    profile = await profileRes.json();
+  }
+  const data = {
+    google_email: profile.email,
+    access_token: encrypt(access_token),
+    scope: scope || DECK_GOOGLE_SCOPE,
+    refresh_token: encrypt(refresh_token),
+    expires_at: expires_in ? new Date(Date.now() + expires_in * 1000) : null,
+  };
+  await prisma.deckGoogleConnection.upsert({
+    where: { created_by_id: uid },
+    create: { created_by_id: uid, ...data },
+    update: data,
+  });
+  return profile.email;
+}
+
+router.get('/deck-google/start', requireAuth, blockWidget, (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    return res.status(501).json({
+      error: 'Command Deck\'s Google connection requires this deployment\'s own GOOGLE_CLIENT_ID/SECRET plus GOOGLE_DECK_REDIRECT_URI — not available via the shared broker.',
+    });
+  }
+  const state = jwt.sign({ uid: req.user.id }, JWT_SECRET, { expiresIn: '10m' });
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: process.env.GOOGLE_DECK_REDIRECT_URI,
+    response_type: 'code',
+    scope: DECK_GOOGLE_SCOPE,
+    access_type: 'offline',
+    prompt: 'consent',
+    state,
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+router.get('/deck-google/callback', async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    const { uid } = jwt.verify(state, JWT_SECRET);
+
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: process.env.GOOGLE_DECK_REDIRECT_URI,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) throw new Error(tokenData.error_description || tokenData.error || 'Google token exchange failed');
+    if (!tokenData.refresh_token) throw new Error('Google did not return a refresh token — disconnect any prior connection and try again.');
+
+    await persistDeckGoogleConnection(uid, {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      scope: tokenData.scope,
+      expires_in: tokenData.expires_in,
+    });
+
+    res.redirect(`${frontendUrl()}/deck/settings?deckGoogle=connected`);
+  } catch (err) {
+    res.status(500).send(`Command Deck Google connection failed: ${err.message}`);
+  }
+});
+
+router.delete('/deck-google', requireAuth, blockWidget, async (req, res) => {
+  await prisma.deckGoogleConnection.deleteMany({ where: { created_by_id: req.user.id } });
+  res.json({ ok: true });
+});
+
 export default router;

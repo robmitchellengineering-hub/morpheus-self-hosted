@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Plus, X, Check, ChevronDown, ChevronRight, ListChecks, Compass, Lightbulb,
-  MessageSquare, Paperclip, FileText, ExternalLink,
+  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2,
 } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import {
@@ -30,6 +30,8 @@ export default function DeckHome() {
     cycleMurbahStage, updateMurbahNote,
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,
+    gmailSyncing, gmailSyncMsg, syncGmailInbox,
+    replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, startReplyDraft, cancelReplyDraft, sendReplyDraft,
     lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
     setLightboxImg,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
@@ -151,7 +153,12 @@ export default function DeckHome() {
       </Card>
 
       <Card title="Inbox" sub="Every inquiry, one place — email, the website, whatever comes in. Log it as it comes.">
-        <InboxPanel items={inbox} form={iForm} setForm={setIForm} onAdd={addInbox} onCycle={cycleInboxStage} onRemove={removeInbox} />
+        <InboxPanel
+          items={inbox} form={iForm} setForm={setIForm} onAdd={addInbox} onCycle={cycleInboxStage} onRemove={removeInbox}
+          gmailSyncing={gmailSyncing} gmailSyncMsg={gmailSyncMsg} onSyncGmail={syncGmailInbox}
+          replyDraftFor={replyDraftFor} replyDraftText={replyDraftText} setReplyDraftText={setReplyDraftText}
+          replyBusy={replyBusy} onStartReply={startReplyDraft} onCancelReply={cancelReplyDraft} onSendReply={sendReplyDraft}
+        />
       </Card>
 
       <Card title="Signal chain" sub="Tap a pedal to open it up.">
@@ -641,7 +648,11 @@ function MurbahPanel({ items, onCycle, onNote, stageLabel }) {
   );
 }
 
-function InboxPanel({ items, form, setForm, onAdd, onCycle, onRemove }) {
+function InboxPanel({
+  items, form, setForm, onAdd, onCycle, onRemove,
+  gmailSyncing, gmailSyncMsg, onSyncGmail,
+  replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, onStartReply, onCancelReply, onSendReply,
+}) {
   const [filter, setFilter] = useState('all');
   const stageColor = { new: C.alert, replied: C.gold, done: C.sage };
   const channelLabel = (id) => (CHANNELS.find((c) => c.id === id) || {}).label || id;
@@ -667,6 +678,20 @@ function InboxPanel({ items, form, setForm, onAdd, onCycle, onRemove }) {
         <IconButton onClick={onAdd} color={C.alert}><Plus size={18} color={C.paper} /></IconButton>
       </div>
 
+      {onSyncGmail && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem' }}>
+          <button
+            onClick={onSyncGmail}
+            disabled={gmailSyncing}
+            style={{ ...pillBtn(C.brass), display: 'inline-flex', alignItems: 'center', gap: '0.35rem', opacity: gmailSyncing ? 0.7 : 1 }}
+          >
+            {gmailSyncing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            {gmailSyncing ? 'Syncing…' : 'Sync Gmail'}
+          </button>
+          {gmailSyncMsg && <span style={{ fontSize: '0.72rem', color: C.walnutSoft }}>{gmailSyncMsg}</span>}
+        </div>
+      )}
+
       {items.length > 0 && (
         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
           <button onClick={() => setFilter('all')} style={chipBtn(filter === 'all', C.walnutSoft)}>All ({openCount} open)</button>
@@ -677,19 +702,61 @@ function InboxPanel({ items, form, setForm, onAdd, onCycle, onRemove }) {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-        {visible.map((i) => (
-          <div key={i.id} style={{ ...rowBox, alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.04em', color: C.brass, textTransform: 'uppercase' }}>{channelLabel(i.channel)}</span>
-                <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{i.from_name}</span>
+        {visible.map((i) => {
+          const canReply = i.channel === 'gmail' && !!i.from_email && !!onStartReply;
+          const drafting = replyDraftFor === i.id;
+          return (
+            <div key={i.id} style={{ ...rowBox, flexDirection: 'column', alignItems: 'stretch', gap: '0.4rem' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.04em', color: C.brass, textTransform: 'uppercase' }}>{channelLabel(i.channel)}</span>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{i.from_name}</span>
+                  </div>
+                  <div style={{ fontSize: '0.83rem', marginTop: '0.15rem' }}>{i.message}</div>
+                </div>
+                <button onClick={() => onCycle(i.id)} style={{ ...pillBtn(stageColor[i.stage]), flexShrink: 0 }}>{inboxStageLabel(i.stage)}</button>
+                <button onClick={() => onRemove(i.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
               </div>
-              <div style={{ fontSize: '0.83rem', marginTop: '0.15rem' }}>{i.message}</div>
+
+              {canReply && !drafting && (
+                <button
+                  onClick={() => onStartReply(i.id)}
+                  style={{ ...ghostBtn, alignSelf: 'flex-start', fontSize: '0.72rem', color: C.brass, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                >
+                  <Reply size={12} /> Jarvis, suggest a reply
+                </button>
+              )}
+
+              {drafting && (
+                <div style={{ background: C.tweed, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.5rem' }}>
+                  {replyBusy && !replyDraftText ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: C.walnutSoft, padding: '0.3rem 0' }}>
+                      <Loader2 size={13} className="animate-spin" /> Drafting a reply…
+                    </div>
+                  ) : (
+                    <textarea
+                      value={replyDraftText}
+                      onChange={(e) => setReplyDraftText(e.target.value)}
+                      rows={4}
+                      style={{ ...inputStyle, width: '100%', resize: 'vertical', fontFamily: 'inherit' }}
+                    />
+                  )}
+                  <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+                    <button
+                      onClick={onSendReply}
+                      disabled={replyBusy || !replyDraftText.trim()}
+                      style={{ ...pillBtn(C.sage), display: 'inline-flex', alignItems: 'center', gap: '0.3rem', opacity: replyBusy || !replyDraftText.trim() ? 0.6 : 1 }}
+                    >
+                      <Send size={12} /> Send
+                    </button>
+                    <button onClick={onCancelReply} disabled={replyBusy} style={{ ...pillBtn(C.walnutSoft) }}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
-            <button onClick={() => onCycle(i.id)} style={{ ...pillBtn(stageColor[i.stage]), flexShrink: 0 }}>{inboxStageLabel(i.stage)}</button>
-            <button onClick={() => onRemove(i.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
-          </div>
-        ))}
+          );
+        })}
         {items.length === 0 && <EmptyNote text="Nothing logged yet — add an inquiry as it comes in." />}
         {items.length > 0 && visible.length === 0 && <EmptyNote text="Nothing in this channel." />}
       </div>
