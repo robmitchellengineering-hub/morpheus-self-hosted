@@ -39,6 +39,7 @@ const AdminPanel = lazy(() => import('@/pages/AdminPanel'));
 const Embed = lazy(() => import('@/pages/Embed'));
 const AliceStats = lazy(() => import('@/pages/AliceStats'));
 const ConnectDevice = lazy(() => import('@/pages/ConnectDevice'));
+const CommandDeck = lazy(() => import('@/pages/CommandDeck'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
@@ -52,6 +53,10 @@ const AuthenticatedApp = () => {
   // (see src/pages/Embed.jsx) — it must never be gated by, or redirected to,
   // the normal user-session login flow, and it has no app chrome.
   const isEmbed = location.pathname === '/embed';
+  // Command Deck (Valiant Music's own board, internal codename "Deck") is a
+  // self-contained "Tweed & Walnut" themed surface with no Morpheus chrome —
+  // same no-tab-bar treatment as /embed.
+  const isDeck = location.pathname === '/deck';
 
   // Show loading spinner while checking app public settings or auth
   if ((isLoadingPublicSettings || isLoadingAuth) && !isEmbed) {
@@ -77,7 +82,7 @@ const AuthenticatedApp = () => {
   return (
     <>
       <AnimatedRoutes />
-      {!isEmbed && <MobileTabBar />}
+      {!isEmbed && !isDeck && <MobileTabBar />}
     </>
   );
 };
@@ -123,6 +128,7 @@ function AnimatedRoutes() {
             <Route path="/architect" element={<Architect />} />
           <Route path="/portable-morpheus" element={<PortableMorpheusDownload />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/deck" element={<CommandDeck />} />
           </Route>
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/" replace />} adminOnly />}>
             <Route path="/backend-docs" element={<BackendDocs />} />

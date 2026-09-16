@@ -149,6 +149,10 @@ const ENTITY_NAMES = [
   'Project', 'ProjectFile', 'ChatMessage', 'FileSnapshot', 'UsageRecord',
   'Template', 'Purchase', 'UserSettings', 'BackendConfig', 'RebuildDoc', 'SelfDevManual', 'UpdatesPlan', 'CostSnapshot', 'GithubConnection',
   'MaintenanceTask',
+  // Command Deck (internal codename "Deck")
+  'DeckDumpItem', 'DeckPerson', 'DeckTask', 'DeckConsignmentItem', 'DeckRepairJob', 'DeckRepairFile',
+  'DeckMurbahOpportunity', 'DeckInboxItem', 'DeckStrategyNote', 'DeckKnowledgeNote',
+  'DeckLifeStream', 'DeckLifeStreamNote', 'DeckEnergyLogEntry', 'DeckFocusEntry',
 ];
 
 const entities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, makeEntity(name)]));

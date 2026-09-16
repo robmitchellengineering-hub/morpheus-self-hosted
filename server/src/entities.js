@@ -38,6 +38,22 @@ const ENTITY_MAP = {
   // NOT in this map — they're served by bespoke, audited routes in
   // admin.routes.js instead (see schema.prisma's AdminAuditLog comment).
   MaintenanceTask: 'maintenanceTask',
+  // Command Deck (internal codename "Deck" — see schema.prisma's comment
+  // above these models for why, and why it's not just "Command Deck").
+  DeckDumpItem: 'deckDumpItem',
+  DeckPerson: 'deckPerson',
+  DeckTask: 'deckTask',
+  DeckConsignmentItem: 'deckConsignmentItem',
+  DeckRepairJob: 'deckRepairJob',
+  DeckRepairFile: 'deckRepairFile',
+  DeckMurbahOpportunity: 'deckMurbahOpportunity',
+  DeckInboxItem: 'deckInboxItem',
+  DeckStrategyNote: 'deckStrategyNote',
+  DeckKnowledgeNote: 'deckKnowledgeNote',
+  DeckLifeStream: 'deckLifeStream',
+  DeckLifeStreamNote: 'deckLifeStreamNote',
+  DeckEnergyLogEntry: 'deckEnergyLogEntry',
+  DeckFocusEntry: 'deckFocusEntry',
 };
 
 export function isKnownEntity(name) {
