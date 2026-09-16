@@ -1084,6 +1084,14 @@ model DeckMurbahOpportunity {
   note          String?  @db.Text
   stage         String   @default("idea") // idea | enquired | booked | active
 
+  // Calendar sync (syncMurbahBooking.js / listMurbahCalendarEvents.js) —
+  // booking_date is deliberately date-only (an all-day Calendar event); Rob
+  // can refine exact times directly in Google Calendar afterward. Both null
+  // until a date is actually set — sync is opt-in per opportunity, not
+  // forced the moment something reaches "booked".
+  booking_date     DateTime?
+  calendar_event_id String?
+
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 

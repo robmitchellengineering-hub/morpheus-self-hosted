@@ -51,6 +51,10 @@ export function CommandDeckProvider({ children }) {
   const [consignment, setConsignment] = useState([]);
   const [repairs, setRepairs] = useState([]);
   const [murbahOpps, setMurbahOpps] = useState([]);
+  const [murbahSyncBusy, setMurbahSyncBusy] = useState(null); // opportunity id currently syncing, or null
+  const [murbahSyncMsg, setMurbahSyncMsg] = useState(null);
+  const [murbahCalendarEvents, setMurbahCalendarEvents] = useState([]);
+  const [murbahEventsLoading, setMurbahEventsLoading] = useState(false);
 
   const [strategy, setStrategy] = useState([]);
   const [knowledge, setKnowledge] = useState([]);
@@ -433,6 +437,35 @@ export function CommandDeckProvider({ children }) {
       try { await base44.entities.DeckMurbahOpportunity.update(id, { note }); } catch { flagSaveErr(); }
     });
   };
+  const updateMurbahDate = (id, dateStr) => {
+    const date = dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : null;
+    setMurbahOpps((prev) => prev.map((m) => (m.id === id ? { ...m, booking_date: date } : m)));
+    debouncedSave(`murbah-date-${id}`, async () => {
+      try { await base44.entities.DeckMurbahOpportunity.update(id, { booking_date: date }); } catch { flagSaveErr(); }
+    });
+  };
+  const syncMurbahCalendar = async (id) => {
+    setMurbahSyncBusy(id);
+    setMurbahSyncMsg(null);
+    try {
+      const { data } = await base44.functions.invoke('syncMurbahBooking', { opportunityId: id });
+      setMurbahOpps((prev) => prev.map((m) => (m.id === id ? { ...m, calendar_event_id: data?.eventId || m.calendar_event_id } : m)));
+      setMurbahSyncMsg('Synced to Calendar.');
+    } catch (err) {
+      setMurbahSyncMsg(err.message || "Couldn't sync to Calendar.");
+    }
+    setMurbahSyncBusy(null);
+  };
+  const loadMurbahCalendarEvents = async () => {
+    setMurbahEventsLoading(true);
+    try {
+      const { data } = await base44.functions.invoke('listMurbahCalendarEvents', {});
+      setMurbahCalendarEvents(data?.events || []);
+    } catch {
+      setMurbahCalendarEvents([]);
+    }
+    setMurbahEventsLoading(false);
+  };
 
   // ---- strategy / knowledge --------------------------------------------
   const addStrategy = async (text) => {
@@ -673,7 +706,8 @@ export function CommandDeckProvider({ children }) {
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, removeConsignment,
     rForm, setRForm, addRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
-    cycleMurbahStage, updateMurbahNote,
+    cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
+    murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
