@@ -24,7 +24,7 @@ export const C = {
 };
 
 export const DEFAULT_PEOPLE = [
-  { name: 'You', phone: '', color: C.oxblood },
+  { name: 'You', phone: '', color: C.oxblood, is_self: true },
   { name: 'Mum', phone: '', color: C.sage },
   { name: 'Dad', phone: '', color: C.gold },
   { name: 'Derek', phone: '', color: C.brass },
@@ -107,7 +107,11 @@ export const nextRepairStage = nextStageFrom(REPAIR_STAGES);
 export const inboxStageLabel = stageLabelFrom(INBOX_STAGES);
 export const nextInboxStage = nextStageFrom(INBOX_STAGES);
 
+// is_self is the real identity marker (so the person can be renamed freely
+// to a real name); the literal-"You" name check is a fallback only for
+// rows created before the is_self migration ran.
 export function isYou(person) {
+  if (person?.is_self === true) return true;
   return (person?.name || '').trim().toLowerCase() === 'you';
 }
 export function smsHref(phone, text) {
