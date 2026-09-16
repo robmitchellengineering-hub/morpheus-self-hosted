@@ -40,6 +40,7 @@ const ENTITY_MAP = {
   MaintenanceTask: 'maintenanceTask',
   // Command Deck (internal codename "Deck" — see schema.prisma's comment
   // above these models for why, and why it's not just "Command Deck").
+  DeckJarvisMessage: 'deckJarvisMessage',
   DeckDumpItem: 'deckDumpItem',
   DeckPerson: 'deckPerson',
   DeckTask: 'deckTask',
