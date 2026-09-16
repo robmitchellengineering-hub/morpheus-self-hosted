@@ -40,6 +40,10 @@ const Embed = lazy(() => import('@/pages/Embed'));
 const AliceStats = lazy(() => import('@/pages/AliceStats'));
 const ConnectDevice = lazy(() => import('@/pages/ConnectDevice'));
 const CommandDeck = lazy(() => import('@/pages/CommandDeck'));
+const DeckHome = lazy(() => import('@/pages/CommandDeck/DeckHome'));
+const DeckJarvis = lazy(() => import('@/pages/CommandDeck/DeckJarvis'));
+const DeckTools = lazy(() => import('@/pages/CommandDeck/DeckTools'));
+const DeckSettings = lazy(() => import('@/pages/CommandDeck/DeckSettings'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
@@ -56,7 +60,7 @@ const AuthenticatedApp = () => {
   // Command Deck (Valiant Music's own board, internal codename "Deck") is a
   // self-contained "Tweed & Walnut" themed surface with no Morpheus chrome —
   // same no-tab-bar treatment as /embed.
-  const isDeck = location.pathname === '/deck';
+  const isDeck = location.pathname.startsWith('/deck');
 
   // Show loading spinner while checking app public settings or auth
   if ((isLoadingPublicSettings || isLoadingAuth) && !isEmbed) {
@@ -128,7 +132,12 @@ function AnimatedRoutes() {
             <Route path="/architect" element={<Architect />} />
           <Route path="/portable-morpheus" element={<PortableMorpheusDownload />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/deck" element={<CommandDeck />} />
+            <Route path="/deck" element={<CommandDeck />}>
+              <Route index element={<DeckHome />} />
+              <Route path="jarvis" element={<DeckJarvis />} />
+              <Route path="tools" element={<DeckTools />} />
+              <Route path="settings" element={<DeckSettings />} />
+            </Route>
           </Route>
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/" replace />} adminOnly />}>
             <Route path="/backend-docs" element={<BackendDocs />} />

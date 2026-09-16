@@ -14,6 +14,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // (see docker-compose.yml), where this proxy is simply unused.
 const BACKEND_URL = process.env.VITE_BACKEND_URL || 'http://localhost:4500'
 
+// Command Deck installs as its own separate PWA (own name/icon/start_url —
+// see deck.html + public/deck-manifest.json), which needs its own static
+// HTML entry point distinct from index.html. In dev, Vite's own server
+// doesn't know about Netlify's public/_redirects rewrite, so this plugin
+// mirrors it: a request under /deck serves deck.html instead of index.html,
+// same as production (see public/_redirects for the matching prod rule).
+function deckHtmlDevMiddleware() {
+  return {
+    name: 'deck-html-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = req.url.split('?')[0];
+        if (path === '/deck' || path.startsWith('/deck/')) req.url = '/deck.html';
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString())
@@ -23,7 +42,15 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  plugins: [react()],
+  plugins: [react(), deckHtmlDevMiddleware()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        deck: path.resolve(__dirname, 'deck.html'),
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': { target: BACKEND_URL, changeOrigin: true },

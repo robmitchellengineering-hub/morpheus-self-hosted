@@ -1,3 +1,11 @@
+# Command Deck installs as its own separate PWA (own manifest/icon/
+# start_url — see deck.html), so any direct/installed/refreshed load under
+# /deck must be served deck.html (which links deck-manifest.json), not
+# index.html — otherwise a deep link straight to e.g. /deck/settings would
+# get the main Morpheus manifest instead.
+/deck  /deck.html  200
+/deck/*  /deck.html  200
+
 # Vite/React SPA: send every path that isn't a real static asset to
 # index.html so client-side routing (react-router) handles it. Without
 # this, a direct load or refresh of any route other than "/" (e.g.
