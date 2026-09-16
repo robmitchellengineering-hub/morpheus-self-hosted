@@ -42,6 +42,7 @@ const ConnectDevice = lazy(() => import('@/pages/ConnectDevice'));
 import { HelpModeProvider } from '@/contexts/HelpModeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GithubConnectionProvider } from '@/contexts/GithubConnectionContext';
+import { GoogleDriveConnectionProvider } from '@/contexts/GoogleDriveConnectionContext';
 
 
 const AuthenticatedApp = () => {
@@ -161,12 +162,14 @@ function App() {
         <HelpModeProvider>
         <QueryClientProvider client={queryClientInstance}>
           <GithubConnectionProvider>
+          <GoogleDriveConnectionProvider>
             <Router>
               <ScrollToTop />
               <AuthenticatedApp />
             </Router>
             <Toaster />
             <InsufficientCreditsModal />
+          </GoogleDriveConnectionProvider>
           </GithubConnectionProvider>
         </QueryClientProvider>
         </HelpModeProvider>
