@@ -82,6 +82,9 @@ export function CommandDeckProvider({ children }) {
   const [jarvisInput, setJarvisInput] = useState('');
   const [jarvisSending, setJarvisSending] = useState(false);
   const [jarvisErr, setJarvisErr] = useState(false);
+  const [docBusy, setDocBusy] = useState(false);
+  const [docErr, setDocErr] = useState(null);
+  const [docResult, setDocResult] = useState(null); // { url, title } | null
 
   const [backupText, setBackupText] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
@@ -720,6 +723,20 @@ export function CommandDeckProvider({ children }) {
     setJarvisSending(false);
   };
 
+  const createDeckDocument = async (instruction) => {
+    if (!instruction.trim() || docBusy) return;
+    setDocBusy(true);
+    setDocErr(null);
+    setDocResult(null);
+    try {
+      const { data } = await base44.functions.invoke('createDeckDocument', { instruction: instruction.trim() });
+      setDocResult({ url: data?.url, title: data?.title });
+    } catch (err) {
+      setDocErr(err.message || "Couldn't create the document.");
+    }
+    setDocBusy(false);
+  };
+
   const value = {
     loaded, saveErr,
     dump, dumpInput, setDumpInput, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
@@ -742,6 +759,7 @@ export function CommandDeckProvider({ children }) {
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt, driveBackup, driveRestore,
     jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
+    docBusy, docErr, docResult, createDeckDocument,
     uploadFile,
   };
 
