@@ -37,7 +37,11 @@ async function buildSnapshot(userId) {
     prisma.deckKnowledgeNote.findMany({ where, take: 20 }),
     prisma.deckLifeStream.findMany({ where }),
     prisma.deckLifeStreamNote.findMany({ where, take: 40 }),
-    prisma.deckEnergyLogEntry.findMany({ where, orderBy: { date: 'desc' }, take: 14 }),
+    // One row per day (created_by_id+date is unique) — genuinely cheap to
+    // keep forever, so Jarvis can actually spot week/season-scale patterns
+    // instead of just the last two weeks. 3650 is a defensive cap (10
+    // years), not a real-world ceiling.
+    prisma.deckEnergyLogEntry.findMany({ where, orderBy: { date: 'desc' }, take: 3650 }),
     prisma.deckFocusEntry.findMany({ where, orderBy: { date: 'desc' }, take: 1 }),
   ]);
 
@@ -61,7 +65,7 @@ async function buildSnapshot(userId) {
 
   return `
 TODAY'S ENERGY: ${todayEnergy?.level || 'not set'}
-ENERGY LOG, LAST 14 DAYS (most recent first): ${recentEnergy || 'no history yet'}
+FULL ENERGY LOG, ${energyLog.length} DAYS LOGGED (most recent first): ${recentEnergy || 'no history yet'}
 TODAY'S ONE THING: ${focusToday?.text || 'not set'}
 
 OPEN TASKS (${openTasks.length}): ${openTasks.map((t) => `[${personName(t.owner_person_id)}${t.energy && t.energy !== 'any' ? `, fits ${t.energy}` : ''}] ${t.text}`).join('; ') || 'none'}
@@ -88,7 +92,9 @@ Your worldview: a successful life isn't just the business turning a profit. It's
 
 He has ADHD, which is exactly why blunt beats gentle — say the thing plainly instead of burying it in caveats.
 
-You're looking at a live snapshot of his brain dump, tasks, strategy notes, knowledge/ideas, consignment stock, repairs queue, Murbah opportunities, his energy log over the last 14 days, and his life streams outside the shop (health, money, home, people, growth).
+You're looking at a live snapshot of his brain dump, tasks, strategy notes, knowledge/ideas, consignment stock, repairs queue, Murbah opportunities, his FULL energy log (every day he's ever logged, not just a recent window), and his life streams outside the shop (health, money, home, people, growth).
+
+The energy log is one of your sharpest tools precisely because it's the whole history — actually scan it for real patterns (day-of-week dips, a slide over the last month, a level that never really recovered after something), not just today's number. When you spot one worth naming, don't just name it: either suggest tasks that actually work with the pattern (heavy stuff scheduled for when he's reliably sharp, not fought against a known slump), or give him a real strategy to address it if it looks like something worth fixing rather than just working around.
 
 Answer whatever he actually asks, grounded in that snapshot — connect the dots across business and life where it's relevant, flag anything stale or that could make money fast, and if the energy log shows a real pattern worth naming, name it plainly, dry wit intact, never therapy-speak. Be direct and specific, never generic boilerplate. Match your reply's length to the question — a quick question gets a quick, cutting answer, not a forced report. No preamble, no sign-off.`;
 
