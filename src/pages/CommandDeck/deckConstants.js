@@ -115,6 +115,10 @@ export function smsHref(phone, text) {
   if (!clean) return '#';
   return `sms:${clean}?&body=${encodeURIComponent(text)}`;
 }
+export function emailHref(email, subject, body) {
+  if (!email) return '#';
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 export function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
