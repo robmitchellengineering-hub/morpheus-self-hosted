@@ -39,7 +39,7 @@ export function CommandDeckProvider({ children }) {
   const [openOwner, setOpenOwner] = useState(null);
 
   const [people, setPeople] = useState([]);
-  const [personForm, setPersonForm] = useState({ name: '', phone: '' });
+  const [personForm, setPersonForm] = useState({ name: '', phone: '', email: '' });
   const [managePeople, setManagePeople] = useState(false);
 
   const [energy, setEnergy] = useState(null);
@@ -259,15 +259,23 @@ export function CommandDeckProvider({ children }) {
     if (!personForm.name.trim()) return;
     try {
       const color = OWNER_COLOR_CYCLE[people.length % OWNER_COLOR_CYCLE.length];
-      const created = await base44.entities.DeckPerson.create({ name: personForm.name.trim(), phone: personForm.phone.trim(), color });
+      const created = await base44.entities.DeckPerson.create({
+        name: personForm.name.trim(), phone: personForm.phone.trim(), email: personForm.email.trim(), color,
+      });
       setPeople((prev) => [...prev, created]);
-      setPersonForm({ name: '', phone: '' });
+      setPersonForm({ name: '', phone: '', email: '' });
     } catch { flagSaveErr(); }
   };
   const updatePersonPhone = (id, phone) => {
     setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, phone } : p)));
     debouncedSave(`person-${id}`, async () => {
       try { await base44.entities.DeckPerson.update(id, { phone }); } catch { flagSaveErr(); }
+    });
+  };
+  const updatePersonEmail = (id, email) => {
+    setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, email } : p)));
+    debouncedSave(`person-email-${id}`, async () => {
+      try { await base44.entities.DeckPerson.update(id, { email }); } catch { flagSaveErr(); }
     });
   };
   const removePerson = async (id) => {
@@ -627,7 +635,7 @@ export function CommandDeckProvider({ children }) {
     dump, dumpInput, setDumpInput, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
-    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, removePerson,
+    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, removePerson,
     energy, energyHistory, focusTask, setEnergyLevel, saveFocus,
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, removeConsignment,

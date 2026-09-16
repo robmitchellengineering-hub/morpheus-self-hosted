@@ -969,6 +969,7 @@ model DeckPerson {
 
   name          String
   phone         String?
+  email         String?
   color         String
 
   created_date  DateTime @default(now())

@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import {
   Plus, X, Check, ChevronDown, ChevronRight, ListChecks, Compass, Lightbulb,
-  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2, Mic,
+  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2, Mic, Mail,
 } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import {
   C, ENERGY, STREAM_META, STREAM_ORDER, STATUS_STYLE, LIFE_STREAMS_META, CHANNELS,
   WP_ADMIN_URL, murbahStageLabel, repairStageLabel, inboxStageLabel,
-  isYou, smsHref, commissionFor, money,
+  isYou, smsHref, emailHref, commissionFor, money,
 } from './deckConstants';
 import {
   Card, RhythmRow, IconButton, EmptyNote, inputStyle, miniInput, rowBox, ghostBtn,
@@ -23,7 +23,7 @@ export default function DeckHome() {
     dump, dumpInput, setDumpInput, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
-    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, removePerson,
+    people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, removePerson,
     energy, energyHistory, focusTask, setEnergyLevel, saveFocus,
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, removeConsignment,
@@ -333,16 +333,18 @@ export default function DeckHome() {
           <div style={{ background: C.tweedDark, borderRadius: 10, padding: '0.65rem 0.7rem', marginBottom: '0.8rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.6rem' }}>
               {people.map((p) => (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.78rem', fontWeight: 600, color: p.color, flex: '0 0 60px' }}>{p.name}</span>
-                  <input placeholder="Phone number" value={p.phone || ''} onChange={(e) => updatePersonPhone(p.id, e.target.value)} style={{ ...miniInput, flex: 1 }} />
+                  <input placeholder="Phone number" value={p.phone || ''} onChange={(e) => updatePersonPhone(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
+                  <input placeholder="Email" value={p.email || ''} onChange={(e) => updatePersonEmail(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
                   {!isYou(p) && <button onClick={() => removePerson(p.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>}
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: '0.4rem' }}>
-              <input placeholder="New person's name" value={personForm.name} onChange={(e) => setPersonForm({ ...personForm, name: e.target.value })} style={{ ...miniInput, flex: 1 }} />
-              <input placeholder="Phone" value={personForm.phone} onChange={(e) => setPersonForm({ ...personForm, phone: e.target.value })} style={{ ...miniInput, flex: 1 }} />
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <input placeholder="New person's name" value={personForm.name} onChange={(e) => setPersonForm({ ...personForm, name: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
+              <input placeholder="Phone" value={personForm.phone} onChange={(e) => setPersonForm({ ...personForm, phone: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
+              <input placeholder="Email" value={personForm.email} onChange={(e) => setPersonForm({ ...personForm, email: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
               <button onClick={addPerson} style={pillBtn(C.brass)}>Add</button>
             </div>
           </div>
@@ -380,6 +382,15 @@ export default function DeckHome() {
                           title={`Send this as a text to ${p.name}`}
                         >
                           <MessageSquare size={12} color={C.paper} /> Text
+                        </a>
+                      )}
+                      {p.email && (
+                        <a
+                          href={emailHref(p.email, `Task: ${t.text.slice(0, 60)}`, t.text)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: C.brass, color: C.paper, borderRadius: 999, padding: '0.3rem 0.55rem', fontSize: '0.68rem', fontWeight: 600, textDecoration: 'none', flexShrink: 0 }}
+                          title={`Email this task to ${p.name}`}
+                        >
+                          <Mail size={12} color={C.paper} /> Email
                         </a>
                       )}
                       <button onClick={() => removeTask(t.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
