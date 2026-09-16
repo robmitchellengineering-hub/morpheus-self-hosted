@@ -706,16 +706,22 @@ export function CommandDeckProvider({ children }) {
   };
 
   // ---- jarvis ------------------------------------------------------------
-  const sendJarvisMessage = async () => {
+  // fileUrls: photos/PDFs/Word/Excel attached via DeckJarvis.jsx's paperclip
+  // button (uploaded through the same uploadFile() every other Deck photo
+  // upload already uses). The optimistic bubble shows the attached filenames
+  // the same lightweight way chatWithJarvis.js itself persists them, so the
+  // UI and the actual saved history never disagree about what was attached.
+  const sendJarvisMessage = async (fileUrls = []) => {
     const text = jarvisInput.trim();
-    if (!text || jarvisSending) return;
-    const optimisticUser = { id: `local-${Date.now()}`, role: 'user', content: text };
+    if ((!text && fileUrls.length === 0) || jarvisSending) return;
+    const attachedNote = fileUrls.length ? `\n[attached: ${fileUrls.map((u) => decodeURIComponent(u.split('/').pop().split('?')[0])).join(', ')}]` : '';
+    const optimisticUser = { id: `local-${Date.now()}`, role: 'user', content: `${text}${attachedNote}`.trim() };
     setJarvisMessages((prev) => [...prev, optimisticUser]);
     setJarvisInput('');
     setJarvisSending(true);
     setJarvisErr(false);
     try {
-      const { data } = await base44.functions.invoke('chatWithJarvis', { message: text });
+      const { data } = await base44.functions.invoke('chatWithJarvis', { message: text, fileUrls });
       setJarvisMessages((prev) => [...prev, { id: `local-${Date.now()}-r`, role: 'jarvis', content: data.reply }]);
     } catch {
       setJarvisErr(true);

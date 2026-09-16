@@ -46,9 +46,29 @@ export default function DeckHome() {
     onResult: (transcript) => setDumpInput((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript)),
   });
 
+  // 2026-09-17 (Rob: "I need all of those fields that the deck creates
+  // collapsible and searchable") — one search term per searchable section,
+  // filtering each section's own list before it renders. Plain
+  // case-insensitive substring match on whatever text field that list uses.
+  const [dumpSearch, setDumpSearch] = useState('');
+  const [taskSearch, setTaskSearch] = useState('');
+  const [strategySearch, setStrategySearch] = useState('');
+  const [knowledgeSearch, setKnowledgeSearch] = useState('');
+  const [inboxSearch, setInboxSearch] = useState('');
+  const matches = (text, term) => !term.trim() || (text || '').toLowerCase().includes(term.trim().toLowerCase());
+
+  const visibleDump = dump.filter((d) => matches(d.text, dumpSearch));
+  const visibleStrategy = strategy.filter((s) => matches(s.text, strategySearch));
+  const visibleKnowledge = knowledge.filter((k) => matches(k.text, knowledgeSearch));
+  const visibleInbox = inbox.filter((i) => matches(`${i.from_name} ${i.message}`, inboxSearch));
+
   return (
     <>
-      <Card title="Brain dump" sub="Whatever's rattling around — get it out. Mention a name and it's filed straight to them; otherwise Jarvis files it where it belongs.">
+      <Card
+        title="Brain dump"
+        sub="Whatever's rattling around — get it out. Mention a name and it's filed straight to them; otherwise Jarvis files it where it belongs."
+        search={dump.length > 0 ? { value: dumpSearch, onChange: setDumpSearch, placeholder: 'Search unsorted dump…' } : undefined}
+      >
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input
             value={dumpInput}
@@ -77,7 +97,8 @@ export default function DeckHome() {
         )}
         {dump.length > 0 && (
           <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-            {dump.map((item) => (
+            {visibleDump.length === 0 && <EmptyNote text="No matches." />}
+            {visibleDump.map((item) => (
               <div key={item.id} style={{ ...rowBox, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ flex: '1 1 100%', fontSize: '0.88rem', marginBottom: '0.3rem' }}>{item.text}</span>
                 <button onClick={() => promoteDump(item, 'task')} style={{ ...pillBtn(C.sage), display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
@@ -166,9 +187,13 @@ export default function DeckHome() {
         />
       </Card>
 
-      <Card title="Inbox" sub="Every inquiry, one place — email, the website, whatever comes in. Log it as it comes.">
+      <Card
+        title="Inbox"
+        sub="Every inquiry, one place — email, the website, whatever comes in. Log it as it comes."
+        search={inbox.length > 0 ? { value: inboxSearch, onChange: setInboxSearch, placeholder: 'Search inbox…' } : undefined}
+      >
         <InboxPanel
-          items={inbox} form={iForm} setForm={setIForm} onAdd={addInbox} onCycle={cycleInboxStage} onRemove={(id) => askToDelete(() => removeInbox(id))}
+          items={visibleInbox} form={iForm} setForm={setIForm} onAdd={addInbox} onCycle={cycleInboxStage} onRemove={(id) => askToDelete(() => removeInbox(id))}
           gmailSyncing={gmailSyncing} gmailSyncMsg={gmailSyncMsg} onSyncGmail={syncGmailInbox}
           replyDraftFor={replyDraftFor} replyDraftText={replyDraftText} setReplyDraftText={setReplyDraftText}
           replyBusy={replyBusy} onStartReply={startReplyDraft} onCancelReply={cancelReplyDraft} onSendReply={sendReplyDraft}
@@ -266,15 +291,27 @@ export default function DeckHome() {
         </div>
       </Card>
 
-      <Card title="Strategy" sub="The long game — where you're steering this, not just running it.">
-        <StreamList items={strategy} onAdd={addStrategy} onRemove={(id) => askToDelete(() => removeStrategy(id))} placeholder="Add a strategic idea…" accent={C.brass} icon={Compass} empty="Nothing filed yet — send items here from the brain dump." />
+      <Card
+        title="Strategy"
+        sub="The long game — where you're steering this, not just running it."
+        search={strategy.length > 0 ? { value: strategySearch, onChange: setStrategySearch, placeholder: 'Search strategy notes…' } : undefined}
+      >
+        <StreamList items={visibleStrategy} onAdd={addStrategy} onRemove={(id) => askToDelete(() => removeStrategy(id))} placeholder="Add a strategic idea…" accent={C.brass} icon={Compass} empty={strategySearch ? 'No matches.' : 'Nothing filed yet — send items here from the brain dump.'} />
       </Card>
 
-      <Card title="Knowledge & ideas" sub="Research, recipes, rabbit holes — whatever might be useful one day.">
-        <StreamList items={knowledge} onAdd={addKnowledge} onRemove={(id) => askToDelete(() => removeKnowledge(id))} placeholder="Add an idea, link, or thought…" accent={C.walnutSoft} icon={Lightbulb} empty="Nothing filed yet — send items here from the brain dump." />
+      <Card
+        title="Knowledge & ideas"
+        sub="Research, recipes, rabbit holes — whatever might be useful one day."
+        search={knowledge.length > 0 ? { value: knowledgeSearch, onChange: setKnowledgeSearch, placeholder: 'Search knowledge & ideas…' } : undefined}
+      >
+        <StreamList items={visibleKnowledge} onAdd={addKnowledge} onRemove={(id) => askToDelete(() => removeKnowledge(id))} placeholder="Add an idea, link, or thought…" accent={C.walnutSoft} icon={Lightbulb} empty={knowledgeSearch ? 'No matches.' : 'Nothing filed yet — send items here from the brain dump.'} />
       </Card>
 
-      <Card title="Task board" sub="Sorted by who owns it — not just you.">
+      <Card
+        title="Task board"
+        sub="Sorted by who owns it — not just you."
+        search={tasks.length > 0 ? { value: taskSearch, onChange: setTaskSearch, placeholder: 'Search tasks…' } : undefined}
+      >
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
           <input
             value={taskInput}
@@ -365,12 +402,14 @@ export default function DeckHome() {
         )}
 
         {people.map((p) => {
-          const ownerTasks = tasks.filter((t) => t.owner_person_id === p.id);
-          const open = openOwner === p.id;
+          const ownerTasks = tasks.filter((t) => t.owner_person_id === p.id && matches(t.text, taskSearch));
+          // While actively searching, force every owner with a match open so
+          // results don't hide behind a collapsed section the search can't see into.
+          const open = taskSearch.trim() ? ownerTasks.length > 0 : openOwner === p.id;
           return (
             <div key={p.id} style={{ marginBottom: '0.5rem' }}>
               <button
-                onClick={() => setOpenOwner(open ? null : p.id)}
+                onClick={() => setOpenOwner(openOwner === p.id ? null : p.id)}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'transparent', border: 'none', padding: '0.4rem 0.1rem', cursor: 'pointer' }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, fontSize: '0.85rem', color: p.color }}>
@@ -381,7 +420,7 @@ export default function DeckHome() {
               </button>
               {open && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingLeft: '1.4rem' }}>
-                  {ownerTasks.length === 0 && <span style={{ fontSize: '0.8rem', color: C.walnutSoft, opacity: 0.6 }}>Nothing here yet.</span>}
+                  {ownerTasks.length === 0 && <span style={{ fontSize: '0.8rem', color: C.walnutSoft, opacity: 0.6 }}>{taskSearch.trim() ? 'No matches.' : 'Nothing here yet.'}</span>}
                   {ownerTasks.map((t) => (
                     <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: C.paper, border: `1px solid ${C.line}`, borderRadius: 8, padding: '0.45rem 0.6rem', opacity: t.done ? 0.5 : 1 }}>
                       <button onClick={() => toggleTask(t.id)} style={checkBtn(t.done, p.color)}>{t.done && <Check size={12} color={C.paper} />}</button>
@@ -669,9 +708,15 @@ function MurbahPanel({
   calendarEvents, eventsLoading, onRefreshEvents,
 }) {
   const stageColor = { idea: C.walnutSoft, enquired: C.gold, booked: C.sage, active: C.alert };
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const visible = q ? items.filter((m) => m.title.toLowerCase().includes(q) || (m.note || '').toLowerCase().includes(q)) : items;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {items.map((m) => {
+      {items.length > 0 && (
+        <input placeholder="Search opportunity or notes…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...miniInput, width: '100%' }} />
+      )}
+      {visible.map((m) => {
         const dateValue = (m.booking_date || '').slice(0, 10);
         return (
           <div key={m.id} style={{ background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.6rem 0.7rem' }}>

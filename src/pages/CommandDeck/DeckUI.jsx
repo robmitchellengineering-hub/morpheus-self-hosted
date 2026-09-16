@@ -1,15 +1,81 @@
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import { C } from './deckConstants';
 
 // Small presentational primitives shared across every Command Deck tab page
 // (DeckHome, DeckJarvis, DeckTools, DeckSettings) — moved out of the old
 // single-file CommandDeck.jsx unchanged.
 
-export function Card({ title, sub, children, style = {}, titleColor = C.walnut, subColor }) {
+function collapseKey(title) {
+  return `deck-section-open:${String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+}
+
+// 2026-09-17 (Rob: "I need all of those fields that the deck creates
+// collapsible and searchable"): every section on the Deck is one of these
+// Card wrappers, so both features live here once instead of being rebuilt
+// per section. Collapse state persists per-title in localStorage (best-effort
+// — a private window or blocked storage just falls back to "always open",
+// never breaks the page) so a section someone collapses stays collapsed
+// across visits. Search is opt-in: pass `search={{value, onChange,
+// placeholder}}` and the caller does its own filtering of what it renders as
+// children — Card only owns the input UI, since every section's data shape
+// (tasks, notes, jobs...) is different.
+export function Card({ title, sub, children, style = {}, titleColor = C.walnut, subColor, collapsible = true, search }) {
+  const [open, setOpen] = useState(() => {
+    if (!collapsible) return true;
+    try {
+      const stored = localStorage.getItem(collapseKey(title));
+      return stored === null ? true : stored === '1';
+    } catch { return true; }
+  });
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(collapseKey(title), next ? '1' : '0'); } catch {}
+      return next;
+    });
+  };
+
   return (
     <section style={{ background: C.paper, border: `1.5px solid ${C.line}`, borderRadius: 16, padding: '1rem 1rem 1.1rem', marginTop: '0.9rem', boxShadow: '0 2px 0 rgba(28,19,11,0.06)', ...style }}>
-      <h2 style={{ fontWeight: 600, fontSize: '1.08rem', margin: 0, color: titleColor }}>{title}</h2>
-      {sub && <p style={{ margin: '0.2rem 0 0.8rem', fontSize: '0.78rem', color: subColor || C.walnutSoft, opacity: subColor ? 1 : 0.85 }}>{sub}</p>}
-      {children}
+      <button
+        onClick={collapsible ? toggle : undefined}
+        disabled={!collapsible}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem',
+          background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: collapsible ? 'pointer' : 'default', textAlign: 'left',
+        }}
+      >
+        <h2 style={{ fontWeight: 600, fontSize: '1.08rem', margin: 0, color: titleColor }}>{title}</h2>
+        {collapsible && (open ? <ChevronDown size={17} color={subColor || C.walnutSoft} /> : <ChevronRight size={17} color={subColor || C.walnutSoft} />)}
+      </button>
+      {sub && open && <p style={{ margin: '0.2rem 0 0.8rem', fontSize: '0.78rem', color: subColor || C.walnutSoft, opacity: subColor ? 1 : 0.85 }}>{sub}</p>}
+      {!sub && open && search && <div style={{ marginTop: '0.5rem' }} />}
+      {open && search && (
+        <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
+          <Search size={14} color={C.walnutSoft} style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', opacity: 0.6, pointerEvents: 'none' }} />
+          <input
+            value={search.value}
+            onChange={(e) => search.onChange(e.target.value)}
+            placeholder={search.placeholder || 'Search…'}
+            style={{
+              width: '100%', boxSizing: 'border-box', padding: '0.45rem 2rem 0.45rem 2rem', borderRadius: 8,
+              border: `1px solid ${C.line}`, background: C.tweedDark, color: C.ink, fontSize: '0.8rem',
+            }}
+          />
+          {search.value && (
+            <button
+              onClick={() => search.onChange('')}
+              style={{ position: 'absolute', right: '0.4rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: '0.15rem' }}
+              title="Clear search"
+            >
+              <X size={13} color={C.walnutSoft} />
+            </button>
+          )}
+        </div>
+      )}
+      {open && children}
     </section>
   );
 }
