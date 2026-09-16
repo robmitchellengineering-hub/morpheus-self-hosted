@@ -8,8 +8,8 @@
 // returns a value gets `res.json(result)` for free).
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
+import { getJarvisMemory, formatMemoryBlock, HISTORY_WINDOW } from '../lib/deckMemory.js';
 
-const HISTORY_TURNS = 12; // recent turns folded into the prompt as conversation context
 const MAX_REPLY_TOKENS = 3000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply
 
 const REPAIR_STAGE_LABEL = { waiting: 'Waiting', in_progress: 'In progress', done: 'Done' };
@@ -96,13 +96,14 @@ export default async function handler({ user, body }) {
   const message = (body?.message || '').trim();
   if (!message) throw Object.assign(new Error('message is required'), { status: 400 });
 
-  const [snapshot, history] = await Promise.all([
+  const [snapshot, history, memory] = await Promise.all([
     buildSnapshot(user.id),
     prisma.deckJarvisMessage.findMany({
       where: { created_by_id: user.id },
       orderBy: { created_date: 'desc' },
-      take: HISTORY_TURNS,
+      take: HISTORY_WINDOW,
     }),
+    getJarvisMemory(user.id),
   ]);
   history.reverse();
 
@@ -113,7 +114,7 @@ export default async function handler({ user, body }) {
     : '(no prior conversation)';
 
   const prompt = `${JARVIS_SYSTEM_PROMPT}
-
+${formatMemoryBlock(memory)}
 DATA SNAPSHOT:
 ${snapshot}
 

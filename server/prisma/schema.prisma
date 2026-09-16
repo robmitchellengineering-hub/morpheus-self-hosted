@@ -79,6 +79,7 @@ model User {
 
   // Command Deck (internal codename "Deck" — see the models below)
   deck_jarvis_messages DeckJarvisMessage[]
+  deck_jarvis_memory   DeckJarvisMemory?
   deck_dump_items    DeckDumpItem[]
   deck_people        DeckPerson[]
   deck_tasks         DeckTask[]
@@ -948,6 +949,29 @@ model DeckJarvisMessage {
 
   created_date  DateTime @default(now())
   @@map("deck_jarvis_messages")
+}
+
+// Jarvis's real long-term memory — not just the rolling recent-turn window
+// chatWithJarvis.js already sends verbatim (see HISTORY_WINDOW in
+// lib/deckMemory.js). As conversation ages out of that window, it gets
+// folded into this single condensed, evolving document (same "fold in what
+// aged out" mechanism lib/contextSummary.js already uses for build chats),
+// so Jarvis keeps real continuity across weeks of use instead of forgetting
+// everything past the last 12 turns. Also mirrored into the user's own
+// Drive backup folder as jarvis-memory.md (see lib/deckMemory.js) so it's
+// durable and genuinely theirs, not just a row in this table.
+model DeckJarvisMemory {
+  id                   String   @id @default(uuid())
+  created_by_id        String   @unique
+  user                 User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  content              String   @db.Text
+  folded_message_count Int      @default(0) // how many DeckJarvisMessage rows are already folded in — mirrors Project.context_summary_message_count's role
+
+  created_date DateTime @default(now())
+  updated_date DateTime @updatedAt
+
+  @@map("deck_jarvis_memory")
 }
 
 model DeckDumpItem {
