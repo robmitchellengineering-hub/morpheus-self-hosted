@@ -284,7 +284,10 @@ router.delete('/github', requireAuth, blockWidget, async (req, res) => {
 // (same credentials login already uses, since sign-in works here) plus a
 // separate GOOGLE_DRIVE_REDIRECT_URI so the two callbacks never collide.
 // No broker path, no device flow — matches this feature's Phase 1 scope.
-const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+// `email` is required alongside drive.file — without it, Google's
+// /oauth2/v2/userinfo returns no email field, and persistGoogleDriveConnection
+// below fails on drive_email (a required column) with no such scope granted.
+const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file email';
 
 async function persistGoogleDriveConnection(uid, { access_token, refresh_token, scope, expires_in, profile }) {
   if (!profile) {
