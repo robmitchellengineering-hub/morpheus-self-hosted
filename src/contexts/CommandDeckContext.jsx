@@ -465,7 +465,8 @@ export function CommandDeckProvider({ children }) {
       const { data } = await base44.functions.invoke('syncDeckGmailInbox', {});
       const rows = await base44.entities.DeckInboxItem.list();
       setInbox(rows);
-      setGmailSyncMsg(data?.created ? `${data.created} new message${data.created === 1 ? '' : 's'}.` : 'Up to date.');
+      const base = data?.created ? `${data.created} new message${data.created === 1 ? '' : 's'}.` : 'Up to date.';
+      setGmailSyncMsg(data?.failed ? `${base} ${data.failed} couldn't be checked — will retry next sync.` : base);
     } catch (err) {
       setGmailSyncMsg(err.message || "Couldn't sync Gmail.");
     } finally {
