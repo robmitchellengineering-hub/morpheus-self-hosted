@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mic, Volume2, VolumeX, Send } from 'lucide-react';
+import { Mic, Volume2, VolumeX, Send, FileText, Loader2, ExternalLink, X } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { C } from './deckConstants';
-import { inputStyle, IconButton } from './DeckUI';
+import { inputStyle, IconButton, pillBtn, ghostBtn } from './DeckUI';
 
 // Jarvis's own full-screen page (its own bottom tab) — voice input via the
 // browser's SpeechRecognition and voice output via Morpheus's own existing
@@ -14,9 +14,14 @@ import { inputStyle, IconButton } from './DeckUI';
 // later phase (see the Command Deck Phase 2 plan) — this page is the full
 // voice+text conversation.
 export default function DeckJarvis() {
-  const { jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage } = useCommandDeck();
+  const {
+    jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
+    docBusy, docErr, docResult, createDeckDocument,
+  } = useCommandDeck();
   const { speak, stop, speakingId, loadingId } = useMorpheusVoice();
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [showDocForm, setShowDocForm] = useState(false);
+  const [docInstruction, setDocInstruction] = useState('Summarize our conversation');
   const listRef = useRef(null);
   const lastSpokenId = useRef(null);
 
@@ -62,14 +67,62 @@ export default function DeckJarvis() {
           <h2 style={{ fontWeight: 600, fontSize: '1.15rem', margin: 0, color: C.walnut }}>Jarvis</h2>
           <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: C.walnutSoft }}>Voice or text — he's got the whole picture.</p>
         </div>
-        <button
-          onClick={() => { setAutoSpeak((v) => !v); if (autoSpeak) stop(); }}
-          title={autoSpeak ? 'Mute Jarvis' : 'Unmute Jarvis'}
-          style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${C.line}`, background: autoSpeak ? C.gold : C.paper, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-        >
-          {autoSpeak ? <Volume2 size={17} color={C.walnut} /> : <VolumeX size={17} color={C.walnutSoft} />}
-        </button>
+        <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+          <button
+            onClick={() => setShowDocForm((v) => !v)}
+            title="Create a document"
+            style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${C.line}`, background: showDocForm ? C.gold : C.paper, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            <FileText size={16} color={C.walnut} />
+          </button>
+          <button
+            onClick={() => { setAutoSpeak((v) => !v); if (autoSpeak) stop(); }}
+            title={autoSpeak ? 'Mute Jarvis' : 'Unmute Jarvis'}
+            style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${C.line}`, background: autoSpeak ? C.gold : C.paper, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            {autoSpeak ? <Volume2 size={17} color={C.walnut} /> : <VolumeX size={17} color={C.walnutSoft} />}
+          </button>
+        </div>
       </div>
+
+      {showDocForm && (
+        <div style={{ background: C.paper, border: `1px solid ${C.line}`, borderRadius: 12, padding: '0.7rem 0.8rem', marginBottom: '0.6rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: C.walnut }}>Create a document</span>
+            <button onClick={() => setShowDocForm(false)} style={ghostBtn}><X size={14} color={C.walnutSoft} /></button>
+          </div>
+          <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: C.walnutSoft }}>
+            Jarvis drafts it from your instruction plus recent conversation — a summary, a letter, a table, research, whatever you need.
+          </p>
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <input
+              value={docInstruction}
+              onChange={(e) => setDocInstruction(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && createDeckDocument(docInstruction)}
+              placeholder="What should this document be?"
+              disabled={docBusy}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <button
+              onClick={() => createDeckDocument(docInstruction)}
+              disabled={docBusy || !docInstruction.trim()}
+              style={{ ...pillBtn(C.brass), display: 'inline-flex', alignItems: 'center', gap: '0.3rem', opacity: docBusy || !docInstruction.trim() ? 0.6 : 1 }}
+            >
+              {docBusy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+              {docBusy ? 'Drafting…' : 'Create'}
+            </button>
+          </div>
+          {docErr && <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: C.alert }}>{docErr}</p>}
+          {docResult?.url && (
+            <a
+              href={docResult.url} target="_blank" rel="noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.6rem', fontSize: '0.78rem', fontWeight: 600, color: C.sage, textDecoration: 'none' }}
+            >
+              <ExternalLink size={13} /> Open "{docResult.title}"
+            </a>
+          )}
+        </div>
+      )}
 
       <div
         ref={listRef}
