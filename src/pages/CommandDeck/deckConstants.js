@@ -91,6 +91,65 @@ export const CHANNELS = [
 
 export const WP_ADMIN_URL = 'https://valiantmusic.com.au/wp-admin/';
 
+// One randomly-picked line shown before any real delete goes through —
+// deliberately not the same dry "Are you sure?" every time. Generic enough
+// to fit deleting a task, a note, a person, a file, whatever.
+export const DELETE_CONFIRM_PHRASES = [
+  "Gone forever, no backsies — still keen?",
+  "This one's not coming back. Sure?",
+  "Last chance to change your mind.",
+  "Delete it? Really-really?",
+  "You sure? Once it's gone, it's gone.",
+  "No undo button here. Proceed?",
+  "This is permanent. You good with that?",
+  "Final answer?",
+  "Are we doing this or are we doing this?",
+  "One more click and it's history.",
+  "Just checking — you meant to hit delete?",
+  "Committing this one to the void. Yes?",
+  "That's a one-way trip. Still going?",
+  "No take-backsies. Confirm?",
+  "Deleted things don't come back from a nap.",
+  "Sure you don't want to just... not?",
+  "This isn't a drill. Delete?",
+  "You've got one job here: confirm or don't.",
+  "Ready to make this disappear?",
+  "Consider this your last warning.",
+  "Poof — gone. That the plan?",
+  "Say the word and it's toast.",
+  "Sending this to the great unknown. OK?",
+  "This isn't the trash can, it's the incinerator.",
+  "You click, it's gone. Deal?",
+  "Double-checking, because I care.",
+  "Sure about this one, chief?",
+  "This decision is final and slightly dramatic. Continue?",
+  "About to make this vanish. Cool?",
+  "You only get one shot at undoing this — and it's not this one.",
+  "Confirm and it ceases to exist.",
+  "Are you REALLY sure, or just clicking things?",
+  "This one's staying gone. You in?",
+  "Yes deletes it. No saves it. Pick wisely.",
+  "One click from oblivion. Proceed?",
+  "This is your villain-origin-story click. Continue?",
+  "Deleting. Permanently. Just so we're clear.",
+  "You've been warned. Once. That's it.",
+  "Sure? Not just fat-fingered it?",
+  "It's your call — but it's a big one.",
+  "This ends here. Confirm?",
+  "No refunds on deleted things.",
+  "Going once, going twice — confirm?",
+  "Say goodbye. Was it a good one?",
+  "This one's not filed away, it's filed OUT.",
+  "You're the boss. Still deleting?",
+  "Sure? I won't judge either way.",
+  "Deleted means deleted. Onward?",
+  "This click has consequences. Continue?",
+  "Yep, still gone after this. Confirm?",
+];
+export function randomDeleteConfirmPhrase() {
+  return DELETE_CONFIRM_PHRASES[Math.floor(Math.random() * DELETE_CONFIRM_PHRASES.length)];
+}
+
 function stageLabelFrom(list) {
   return (key) => (list.find((s) => s.key === key) || {}).label || key;
 }

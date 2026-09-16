@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import {
   DEFAULT_PEOPLE, OWNER_COLOR_CYCLE, LIFE_STREAMS_META, DEFAULT_MURBAH,
   nextMurbahStage, nextRepairStage, nextInboxStage,
-  isYou, todayKey, todayISO,
+  isYou, todayKey, todayISO, randomDeleteConfirmPhrase,
 } from '@/pages/CommandDeck/deckConstants';
 
 // All of Command Deck's shared state, data loading, and CRUD handlers —
@@ -68,6 +68,15 @@ export function CommandDeckProvider({ children }) {
 
   const [lifeStreams, setLifeStreams] = useState({});
   const [lightboxImg, setLightboxImg] = useState(null);
+
+  // A random, not-always-the-same confirm step in front of every real
+  // delete across the Deck — see DELETE_CONFIRM_PHRASES.
+  const [confirmDeleteState, setConfirmDeleteState] = useState(null); // { message, onConfirm } | null
+  const askToDelete = (onConfirm) => setConfirmDeleteState({ message: randomDeleteConfirmPhrase(), onConfirm });
+  const resolveConfirmDelete = (confirmed) => {
+    if (confirmed) confirmDeleteState?.onConfirm?.();
+    setConfirmDeleteState(null);
+  };
 
   const [jarvisMessages, setJarvisMessages] = useState([]);
   const [jarvisInput, setJarvisInput] = useState('');
@@ -729,6 +738,7 @@ export function CommandDeckProvider({ children }) {
     replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, startReplyDraft, cancelReplyDraft, sendReplyDraft,
     lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
     lightboxImg, setLightboxImg,
+    confirmDeleteState, askToDelete, resolveConfirmDelete,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt, driveBackup, driveRestore,
     jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,

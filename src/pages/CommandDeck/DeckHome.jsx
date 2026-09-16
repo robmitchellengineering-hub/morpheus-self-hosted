@@ -35,7 +35,7 @@ export default function DeckHome() {
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
     replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, startReplyDraft, cancelReplyDraft, sendReplyDraft,
     lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
-    setLightboxImg,
+    setLightboxImg, askToDelete,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     uploadFile,
   } = useCommandDeck();
@@ -89,7 +89,7 @@ export default function DeckHome() {
                 <button onClick={() => promoteDump(item, 'knowledge')} style={{ ...pillBtn(C.walnutSoft), display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
                   <Lightbulb size={12} /> Idea
                 </button>
-                <button onClick={() => removeDump(item.id)} style={ghostBtn}><X size={14} color={C.walnutSoft} /></button>
+                <button onClick={() => askToDelete(() => removeDump(item.id))} style={ghostBtn}><X size={14} color={C.walnutSoft} /></button>
               </div>
             ))}
           </div>
@@ -168,7 +168,7 @@ export default function DeckHome() {
 
       <Card title="Inbox" sub="Every inquiry, one place — email, the website, whatever comes in. Log it as it comes.">
         <InboxPanel
-          items={inbox} form={iForm} setForm={setIForm} onAdd={addInbox} onCycle={cycleInboxStage} onRemove={removeInbox}
+          items={inbox} form={iForm} setForm={setIForm} onAdd={addInbox} onCycle={cycleInboxStage} onRemove={(id) => askToDelete(() => removeInbox(id))}
           gmailSyncing={gmailSyncing} gmailSyncMsg={gmailSyncMsg} onSyncGmail={syncGmailInbox}
           replyDraftFor={replyDraftFor} replyDraftText={replyDraftText} setReplyDraftText={setReplyDraftText}
           replyBusy={replyBusy} onStartReply={startReplyDraft} onCancelReply={cancelReplyDraft} onSendReply={sendReplyDraft}
@@ -208,12 +208,13 @@ export default function DeckHome() {
                 {open && (
                   <div style={{ border: `1px solid ${C.line}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '0.8rem 0.75rem', background: C.tweedDark }}>
                     {id === 'consignment' && (
-                      <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onRemove={removeConsignment} uploadFile={uploadFile} />
+                      <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} />
                     )}
                     {id === 'repairs' && (
                       <RepairsPanel
                         items={repairs} form={rForm} setForm={setRForm} onAdd={addRepair} onCycle={cycleRepairStage}
-                        onRemove={removeRepair} onAddFilesToJob={addFilesToJob} onRemoveFileFromJob={removeFileFromJob}
+                        onRemove={(id) => askToDelete(() => removeRepair(id))} onAddFilesToJob={addFilesToJob}
+                        onRemoveFileFromJob={(jobId, fileId) => askToDelete(() => removeFileFromJob(jobId, fileId))}
                         onOpenImage={setLightboxImg} uploadFile={uploadFile}
                       />
                     )}
@@ -259,18 +260,18 @@ export default function DeckHome() {
               data={lifeStreams[s.id] || { status: 'on', notes: [] }}
               onToggleStatus={() => toggleLifeStatus(s.id)}
               onAddNote={(text) => addLifeNote(s.id, text)}
-              onRemoveNote={(noteId) => removeLifeNote(s.id, noteId)}
+              onRemoveNote={(noteId) => askToDelete(() => removeLifeNote(s.id, noteId))}
             />
           ))}
         </div>
       </Card>
 
       <Card title="Strategy" sub="The long game — where you're steering this, not just running it.">
-        <StreamList items={strategy} onAdd={addStrategy} onRemove={removeStrategy} placeholder="Add a strategic idea…" accent={C.brass} icon={Compass} empty="Nothing filed yet — send items here from the brain dump." />
+        <StreamList items={strategy} onAdd={addStrategy} onRemove={(id) => askToDelete(() => removeStrategy(id))} placeholder="Add a strategic idea…" accent={C.brass} icon={Compass} empty="Nothing filed yet — send items here from the brain dump." />
       </Card>
 
       <Card title="Knowledge & ideas" sub="Research, recipes, rabbit holes — whatever might be useful one day.">
-        <StreamList items={knowledge} onAdd={addKnowledge} onRemove={removeKnowledge} placeholder="Add an idea, link, or thought…" accent={C.walnutSoft} icon={Lightbulb} empty="Nothing filed yet — send items here from the brain dump." />
+        <StreamList items={knowledge} onAdd={addKnowledge} onRemove={(id) => askToDelete(() => removeKnowledge(id))} placeholder="Add an idea, link, or thought…" accent={C.walnutSoft} icon={Lightbulb} empty="Nothing filed yet — send items here from the brain dump." />
       </Card>
 
       <Card title="Task board" sub="Sorted by who owns it — not just you.">
@@ -350,7 +351,7 @@ export default function DeckHome() {
                   {isYou(p) && <span style={{ fontSize: '0.62rem', color: C.walnutSoft, flexShrink: 0 }}>(me)</span>}
                   <input placeholder="Phone number" value={p.phone || ''} onChange={(e) => updatePersonPhone(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
                   <input placeholder="Email" value={p.email || ''} onChange={(e) => updatePersonEmail(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
-                  {!isYou(p) && <button onClick={() => removePerson(p.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>}
+                  {!isYou(p) && <button onClick={() => askToDelete(() => removePerson(p.id))} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>}
                 </div>
               ))}
             </div>
@@ -406,7 +407,7 @@ export default function DeckHome() {
                           <Mail size={12} color={C.paper} /> Email
                         </a>
                       )}
-                      <button onClick={() => removeTask(t.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
+                      <button onClick={() => askToDelete(() => removeTask(t.id))} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
                     </div>
                   ))}
                 </div>
