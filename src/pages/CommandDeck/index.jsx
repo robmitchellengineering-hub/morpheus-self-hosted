@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { CommandDeckProvider, useCommandDeck } from '@/contexts/CommandDeckContext';
+import { DeckGoogleConnectionProvider } from '@/contexts/DeckGoogleConnectionContext';
 import DeckTabBar from './DeckTabBar';
 import { C } from './deckConstants';
 
@@ -35,7 +36,9 @@ export default function CommandDeckLayout() {
 
   return (
     <CommandDeckProvider>
-      <CommandDeckShell />
+      <DeckGoogleConnectionProvider>
+        <CommandDeckShell />
+      </DeckGoogleConnectionProvider>
     </CommandDeckProvider>
   );
 }

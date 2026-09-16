@@ -56,6 +56,11 @@ export function CommandDeckProvider({ children }) {
   const [knowledge, setKnowledge] = useState([]);
   const [inbox, setInbox] = useState([]);
   const [iForm, setIForm] = useState({ channel: 'gmail', from: '', message: '' });
+  const [gmailSyncing, setGmailSyncing] = useState(false);
+  const [gmailSyncMsg, setGmailSyncMsg] = useState(null);
+  const [replyDraftFor, setReplyDraftFor] = useState(null);
+  const [replyDraftText, setReplyDraftText] = useState('');
+  const [replyBusy, setReplyBusy] = useState(false);
 
   const [lifeStreams, setLifeStreams] = useState({});
   const [lightboxImg, setLightboxImg] = useState(null);
@@ -453,6 +458,56 @@ export function CommandDeckProvider({ children }) {
     try { await base44.entities.DeckInboxItem.delete(id); } catch { flagSaveErr(); }
   };
 
+  const syncGmailInbox = async () => {
+    setGmailSyncing(true);
+    setGmailSyncMsg(null);
+    try {
+      const { data } = await base44.functions.invoke('syncDeckGmailInbox', {});
+      const rows = await base44.entities.DeckInboxItem.list();
+      setInbox(rows);
+      setGmailSyncMsg(data?.created ? `${data.created} new message${data.created === 1 ? '' : 's'}.` : 'Up to date.');
+    } catch (err) {
+      setGmailSyncMsg(err.message || "Couldn't sync Gmail.");
+    } finally {
+      setGmailSyncing(false);
+    }
+  };
+
+  const startReplyDraft = async (inboxItemId) => {
+    setReplyDraftFor(inboxItemId);
+    setReplyDraftText('');
+    setReplyBusy(true);
+    try {
+      const { data } = await base44.functions.invoke('suggestDeckReply', { inboxItemId });
+      setReplyDraftText(data?.reply || '');
+    } catch (err) {
+      setReplyDraftText('');
+      flagSaveErr();
+      console.error(err);
+    } finally {
+      setReplyBusy(false);
+    }
+  };
+  const cancelReplyDraft = () => {
+    setReplyDraftFor(null);
+    setReplyDraftText('');
+  };
+  const sendReplyDraft = async () => {
+    if (!replyDraftFor || !replyDraftText.trim()) return;
+    setReplyBusy(true);
+    try {
+      const { data } = await base44.functions.invoke('sendDeckEmailReply', { inboxItemId: replyDraftFor, reply: replyDraftText.trim() });
+      if (data?.item) setInbox((prev) => prev.map((i) => (i.id === data.item.id ? data.item : i)));
+      setReplyDraftFor(null);
+      setReplyDraftText('');
+    } catch (err) {
+      flagSaveErr();
+      console.error(err);
+    } finally {
+      setReplyBusy(false);
+    }
+  };
+
   // ---- backup / export ---------------------------------------------------
   const runExport = async () => {
     setBackupBusy(true);
@@ -540,6 +595,8 @@ export function CommandDeckProvider({ children }) {
     cycleMurbahStage, updateMurbahNote,
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,
+    gmailSyncing, gmailSyncMsg, syncGmailInbox,
+    replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, startReplyDraft, cancelReplyDraft, sendReplyDraft,
     lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
     lightboxImg, setLightboxImg,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,

@@ -293,6 +293,10 @@ const connectors = {
   // no device flow (see connections.routes.js's Phase 1 scope note).
   connectGoogleDrive: async () => `${API_BASE}/connections/google-drive/start?token=${encodeURIComponent(getToken() || '')}`,
   disconnectGoogleDrive: async () => apiFetch('/connections/google-drive', { method: 'DELETE' }),
+  // Command Deck's own Google connection (Gmail + Calendar + Drive backup +
+  // Docs) — deliberately separate from connectGoogleDrive above.
+  connectDeckGoogle: async () => `${API_BASE}/connections/deck-google/start?token=${encodeURIComponent(getToken() || '')}`,
+  disconnectDeckGoogle: async () => apiFetch('/connections/deck-google', { method: 'DELETE' }),
 };
 
 const auth = {
