@@ -14,6 +14,13 @@ const CALENDAR_API = 'https://www.googleapis.com/calendar/v3/calendars/primary';
 // Jarvis's long-term memory (lib/deckMemory.js) both live here, one place
 // to look rather than scattered across separate folders.
 export const DECK_BACKUP_FOLDER_NAME = 'Command Deck Backup';
+
+// Tags every Calendar event syncMurbahBooking.js creates so
+// listMurbahCalendarEvents.js can list back exactly (and only) those events
+// server-side via Calendar's privateExtendedProperty filter — never the
+// rest of Rob's actual calendar.
+export const MURBAH_CALENDAR_EXTENDED_PROPERTIES = { private: { morpheusDeckMurbah: '1' } };
+export const MURBAH_CALENDAR_QUERY = 'morpheusDeckMurbah=1';
 const DOCS_API = 'https://docs.googleapis.com/v1/documents';
 
 // ── Per-user connection ──────────────────────────────────────────────────
@@ -158,27 +165,43 @@ export async function sendGmailMessage(token, { to, subject, body, threadId, inR
 
 // ── Calendar (raw fetch, no SDK) ─────────────────────────────────────────
 
-export async function listCalendarEvents(token, { timeMin, maxResults = 20 } = {}) {
+// privateExtendedProperty filters server-side to events carrying a given
+// extendedProperties.private key=value — used to list back only events this
+// integration created (see MURBAH_CALENDAR_TAG below), never the rest of
+// Rob's actual calendar.
+export async function listCalendarEvents(token, { timeMin, maxResults = 20, privateExtendedProperty } = {}) {
   const params = new URLSearchParams({
     timeMin: timeMin || new Date().toISOString(),
     maxResults: String(maxResults),
     singleEvents: 'true',
     orderBy: 'startTime',
   });
+  if (privateExtendedProperty) params.append('privateExtendedProperty', privateExtendedProperty);
   const res = await fetch(`${CALENDAR_API}/events?${params}`, { headers: { Authorization: `Bearer ${token}` } });
   const data = await apiJson(res);
   if (!res.ok) throw new Error(`Calendar list failed: ${data.error?.message || data._error || res.status}`);
   return data.items || [];
 }
 
-export async function insertCalendarEvent(token, { summary, description, start, end }) {
+export async function insertCalendarEvent(token, { summary, description, start, end, extendedProperties }) {
   const res = await fetch(`${CALENDAR_API}/events`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary, description, start, end, extendedProperties }),
+  });
+  const data = await apiJson(res);
+  if (!res.ok) throw new Error(`Calendar insert failed: ${data.error?.message || data._error || res.status}`);
+  return data;
+}
+
+export async function updateCalendarEvent(token, eventId, { summary, description, start, end }) {
+  const res = await fetch(`${CALENDAR_API}/events/${eventId}`, {
+    method: 'PATCH',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ summary, description, start, end }),
   });
   const data = await apiJson(res);
-  if (!res.ok) throw new Error(`Calendar insert failed: ${data.error?.message || data._error || res.status}`);
+  if (!res.ok) throw new Error(`Calendar update failed: ${data.error?.message || data._error || res.status}`);
   return data;
 }
 

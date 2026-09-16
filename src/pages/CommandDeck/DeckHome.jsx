@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Plus, X, Check, ChevronDown, ChevronRight, ListChecks, Compass, Lightbulb,
-  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2, Mic, Mail,
+  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2, Mic, Mail, Calendar,
 } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
@@ -28,7 +28,8 @@ export default function DeckHome() {
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, removeConsignment,
     rForm, setRForm, addRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
-    cycleMurbahStage, updateMurbahNote,
+    cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
+    murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
@@ -234,7 +235,13 @@ export default function DeckHome() {
                         </a>
                       </div>
                     )}
-                    {id === 'murbah' && <MurbahPanel items={murbahOpps} onCycle={cycleMurbahStage} onNote={updateMurbahNote} stageLabel={murbahStageLabel} />}
+                    {id === 'murbah' && (
+                      <MurbahPanel
+                        items={murbahOpps} onCycle={cycleMurbahStage} onNote={updateMurbahNote} stageLabel={murbahStageLabel}
+                        onDate={updateMurbahDate} onSync={syncMurbahCalendar} syncBusy={murbahSyncBusy} syncMsg={murbahSyncMsg}
+                        calendarEvents={murbahCalendarEvents} eventsLoading={murbahEventsLoading} onRefreshEvents={loadMurbahCalendarEvents}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -649,25 +656,74 @@ function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFil
   );
 }
 
-function MurbahPanel({ items, onCycle, onNote, stageLabel }) {
+function MurbahPanel({
+  items, onCycle, onNote, stageLabel,
+  onDate, onSync, syncBusy, syncMsg,
+  calendarEvents, eventsLoading, onRefreshEvents,
+}) {
   const stageColor = { idea: C.walnutSoft, enquired: C.gold, booked: C.sage, active: C.alert };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {items.map((m) => (
-        <div key={m.id} style={{ background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.6rem 0.7rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-            <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.title}</span>
-            <button onClick={() => onCycle(m.id)} style={{ ...pillBtn(stageColor[m.stage]), fontSize: '0.66rem', flexShrink: 0 }}>{stageLabel(m.stage)}</button>
+      {items.map((m) => {
+        const dateValue = (m.booking_date || '').slice(0, 10);
+        return (
+          <div key={m.id} style={{ background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.6rem 0.7rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.title}</span>
+              <button onClick={() => onCycle(m.id)} style={{ ...pillBtn(stageColor[m.stage]), fontSize: '0.66rem', flexShrink: 0 }}>{stageLabel(m.stage)}</button>
+            </div>
+            <textarea
+              value={m.note || ''}
+              onChange={(e) => onNote(m.id, e.target.value)}
+              placeholder="Notes…"
+              rows={2}
+              style={{ ...miniInput, width: '100%', marginTop: '0.4rem', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+              <input
+                type="date"
+                value={dateValue}
+                onChange={(e) => onDate(m.id, e.target.value)}
+                style={{ ...miniInput, flex: '1 1 140px' }}
+              />
+              <button
+                onClick={() => onSync(m.id)}
+                disabled={!dateValue || syncBusy === m.id}
+                style={{ ...pillBtn(C.brass), display: 'inline-flex', alignItems: 'center', gap: '0.3rem', opacity: !dateValue ? 0.5 : syncBusy === m.id ? 0.7 : 1 }}
+                title={dateValue ? 'Push this date to Google Calendar' : 'Set a date first'}
+              >
+                {syncBusy === m.id ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />}
+                {m.calendar_event_id ? 'Re-sync' : 'Sync'}
+              </button>
+            </div>
           </div>
-          <textarea
-            value={m.note || ''}
-            onChange={(e) => onNote(m.id, e.target.value)}
-            placeholder="Notes…"
-            rows={2}
-            style={{ ...miniInput, width: '100%', marginTop: '0.4rem', resize: 'vertical' }}
-          />
+        );
+      })}
+      {items.length === 0 && <EmptyNote text="No opportunities yet." />}
+
+      {syncMsg && <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: C.walnutSoft }}>{syncMsg}</p>}
+
+      <div style={{ borderTop: `1px solid ${C.line}`, marginTop: '0.3rem', paddingTop: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+          <span style={{ fontSize: '0.7rem', fontWeight: 600, color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Upcoming bookings</span>
+          <button onClick={onRefreshEvents} disabled={eventsLoading} style={{ ...ghostBtn, fontSize: '0.7rem', color: C.brass, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+            {eventsLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
+          </button>
         </div>
-      ))}
+        {calendarEvents.length === 0 ? (
+          <EmptyNote text="Nothing synced to Calendar yet." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+            {calendarEvents.map((e) => (
+              <div key={e.id} style={{ ...rowBox }}>
+                <Calendar size={13} color={C.brass} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: '0.78rem' }}>{e.summary}</span>
+                <span style={{ fontSize: '0.68rem', color: C.walnutSoft, flexShrink: 0 }}>{e.start}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
