@@ -74,6 +74,7 @@ model User {
   widget_tokens    WidgetToken[]
   device_tokens    DeviceToken[]
   github_connection GithubConnection?
+  google_drive_connection GoogleDriveConnection?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
   platform_settings_updated PlatformSetting[]
@@ -141,6 +142,26 @@ model GithubConnection {
   @@map("github_connections")
 }
 
+model GoogleDriveConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  drive_email   String
+  access_token  String   // encrypted at rest (src/crypto.js)
+  scope         String?
+
+  // Requested with access_type=offline&prompt=consent (login itself never
+  // sets these) specifically so this exchange returns a refresh_token --
+  // see lib/googleDrive.js's getGoogleDriveConnection for the silent-
+  // refresh logic that uses these, mirroring GithubConnection's shape.
+  refresh_token String   // encrypted at rest
+  expires_at    DateTime?
+
+  created_date  DateTime @default(now())
+
+  @@map("google_drive_connections")
+}
+
 // ── PROJECTS ──────────────────────────────────────────────────────
 
 model Project {
@@ -179,6 +200,15 @@ model Project {
   // prefers this over the global connection.
   github_token   String?  @db.Text
 
+  // User-Choice Cloud Storage (Feature Backlog #12), Phase 1. "postgres" is
+  // every project's existing, unchanged behavior. "drive" means this
+  // project's files are also mirrored to the owner's connected Google
+  // Drive (drive_folder_id, created on first push) -- Postgres still holds
+  // full content for every project regardless of this field in Phase 1;
+  // see server/src/functions/pushProjectToDrive.js / pullProjectFromDrive.js.
+  storage_mode     String  @default("postgres") // postgres | drive
+  drive_folder_id  String?
+
   files          ProjectFile[]
   chat_messages  ChatMessage[]
   snapshots      FileSnapshot[]
@@ -208,6 +238,14 @@ model ProjectFile {
   content       String   @db.Text
   file_url      String?  // storage URL for large/binary files; content holds a text preview only
   language      String   @default("text")
+
+  // Set only for a project with storage_mode="drive" -- the mirrored
+  // Drive file's id and Drive's own modifiedTime, used exactly like
+  // syncProjectFromGithub.js's git-blob-sha comparison for incremental
+  // diffing (pullProjectFromDrive.js only re-fetches a file whose Drive
+  // modifiedTime differs from what's stored here).
+  drive_file_id       String?
+  drive_modified_time DateTime?
 
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt

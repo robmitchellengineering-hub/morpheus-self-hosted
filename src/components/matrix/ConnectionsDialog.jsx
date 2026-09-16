@@ -5,6 +5,7 @@ import { useGithubConnection } from '@/hooks/useGithubConnection';
 import ConnectionsSection, { PLATFORMS } from './ConnectionsSection';
 import CapabilityStatus from './CapabilityStatus';
 import GithubConnectionSection from './GithubConnectionSection';
+import GoogleDriveConnectionSection from './GoogleDriveConnectionSection';
 
 // Platforms grouped by the capability they unlock. A platform counts as
 // "connected" when at least one of its credential fields is filled (same rule
@@ -191,6 +192,10 @@ export default function ConnectionsDialog({ open, onClose }) {
         <div className="overflow-y-auto scrollbar-matrix p-4 space-y-5">
           {/* GitHub (OAuth) — shared with Settings.jsx, see GithubConnectionSection.jsx */}
           <GithubConnectionSection />
+
+          {/* Google Drive (OAuth) — account-level connect; per-project opt-in
+              lives in ShareDialog.jsx's DRIVE tab. Feature Backlog #12. */}
+          <GoogleDriveConnectionSection />
 
           {/* Hosting / infra platforms (reuses the Settings connections UI) */}
           {loading ? (

@@ -335,6 +335,33 @@ export function useWorkspace() {
     return res.data;
   }, [currentProject, loadFiles]);
 
+  // User-Choice Cloud Storage (Feature Backlog #12, Phase 1). setStorageMode
+  // flips Project.storage_mode via a dedicated function (not a raw entity
+  // update, unlike togglePolishUi) since switching to "drive" has a real
+  // precondition (a connected GoogleDriveConnection) and side effect (an
+  // initial push) — see server/src/functions/setProjectStorageMode.js.
+  const setStorageMode = useCallback(async (storageMode) => {
+    if (!currentProject) return;
+    const res = await base44.functions.invoke('setProjectStorageMode', { projectId: currentProject.id, storageMode });
+    setCurrentProject(prev => (prev ? { ...prev, storage_mode: storageMode } : prev));
+    return res.data;
+  }, [currentProject]);
+
+  const pushToDrive = useCallback(async () => {
+    if (!currentProject) return;
+    const res = await base44.functions.invoke('pushProjectToDrive', { projectId: currentProject.id });
+    return res.data;
+  }, [currentProject]);
+
+  const pullFromDrive = useCallback(async () => {
+    if (!currentProject) return;
+    const res = await base44.functions.invoke('pullProjectFromDrive', { projectId: currentProject.id });
+    if (res.data?.fetched > 0 || res.data?.removed > 0) {
+      await loadFiles(currentProject.id);
+    }
+    return res.data;
+  }, [currentProject, loadFiles]);
+
   const emailProjectFiles = useCallback(async (email) => {
     if (!currentProject) return;
     const allFiles = await base44.entities.ProjectFile.filter({ project_id: currentProject.id });
@@ -490,5 +517,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, setStorageMode, pushToDrive, pullFromDrive, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
 }

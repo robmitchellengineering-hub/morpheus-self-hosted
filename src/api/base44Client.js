@@ -285,6 +285,10 @@ const connectors = {
   disconnectAppUser: async () => apiFetch('/connections/github', { method: 'DELETE' }),
   githubDeviceStart: () => apiFetch('/connections/github/device/start', { method: 'POST' }),
   githubDevicePoll: (poll_token) => apiFetch('/connections/github/device/poll', { method: 'POST', body: { poll_token } }),
+  // Google Drive storage (Feature Backlog #12, Phase 1) — redirect-only,
+  // no device flow (see connections.routes.js's Phase 1 scope note).
+  connectGoogleDrive: async () => `${API_BASE}/connections/google-drive/start?token=${encodeURIComponent(getToken() || '')}`,
+  disconnectGoogleDrive: async () => apiFetch('/connections/google-drive', { method: 'DELETE' }),
 };
 
 const auth = {

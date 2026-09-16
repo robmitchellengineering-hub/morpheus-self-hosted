@@ -273,4 +273,104 @@ router.delete('/github', requireAuth, blockWidget, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Google Drive connection (User-Choice Cloud Storage, Feature Backlog
+// #12, Phase 1) ──────────────────────────────────────────────────────────
+// Deliberately its own connect flow, not piggybacked on Google sign-in
+// (auth.routes.js's /google/start): login never requests a refresh token,
+// and on the shared-broker (Tier 2) path other self-hosted deployments use,
+// the broker discards the access/refresh token entirely after reading the
+// profile (see hosted-broker/src/server.js) — there's nothing to hand back.
+// So this only works for a deployment with its own GOOGLE_CLIENT_ID/SECRET
+// (same credentials login already uses, since sign-in works here) plus a
+// separate GOOGLE_DRIVE_REDIRECT_URI so the two callbacks never collide.
+// No broker path, no device flow — matches this feature's Phase 1 scope.
+const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
+async function persistGoogleDriveConnection(uid, { access_token, refresh_token, scope, expires_in, profile }) {
+  if (!profile) {
+    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    profile = await profileRes.json();
+  }
+  const data = {
+    drive_email: profile.email,
+    access_token: encrypt(access_token),
+    scope: scope || GOOGLE_DRIVE_SCOPE,
+    refresh_token: encrypt(refresh_token),
+    expires_at: expires_in ? new Date(Date.now() + expires_in * 1000) : null,
+  };
+  await prisma.googleDriveConnection.upsert({
+    where: { created_by_id: uid },
+    create: { created_by_id: uid, ...data },
+    update: data,
+  });
+  return profile.email;
+}
+
+router.get('/google-drive/start', requireAuth, blockWidget, (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    return res.status(501).json({
+      error: 'Google Drive storage requires this deployment\'s own GOOGLE_CLIENT_ID/SECRET (the same ones Google sign-in uses) plus GOOGLE_DRIVE_REDIRECT_URI — not available via the shared broker.',
+    });
+  }
+  const state = jwt.sign({ uid: req.user.id }, JWT_SECRET, { expiresIn: '10m' });
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: process.env.GOOGLE_DRIVE_REDIRECT_URI,
+    response_type: 'code',
+    scope: GOOGLE_DRIVE_SCOPE,
+    // Login's own /google/start uses prompt=select_account and never sets
+    // access_type — that combination never returns a refresh_token. Both
+    // of these are required here specifically to get one: access_type=
+    // offline asks for a refresh_token at all, and prompt=consent forces
+    // Google to re-show the consent screen (and re-issue a refresh_token)
+    // even for a user who's already granted this exact scope before —
+    // without it, a reconnect after a revoke could silently come back with
+    // no refresh_token and an access-only connection that dies in an hour.
+    access_type: 'offline',
+    prompt: 'consent',
+    state,
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+router.get('/google-drive/callback', requireAuth, async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    const { uid } = jwt.verify(state, JWT_SECRET);
+
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: process.env.GOOGLE_DRIVE_REDIRECT_URI,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) throw new Error(tokenData.error_description || tokenData.error || 'Google token exchange failed');
+    if (!tokenData.refresh_token) throw new Error('Google did not return a refresh token — disconnect any prior Drive connection and try again.');
+
+    await persistGoogleDriveConnection(uid, {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      scope: tokenData.scope,
+      expires_in: tokenData.expires_in,
+    });
+
+    res.redirect(`${frontendUrl()}/settings?googleDrive=connected`);
+  } catch (err) {
+    res.status(500).send(`Google Drive connection failed: ${err.message}`);
+  }
+});
+
+router.delete('/google-drive', requireAuth, blockWidget, async (req, res) => {
+  await prisma.googleDriveConnection.deleteMany({ where: { created_by_id: req.user.id } });
+  res.json({ ok: true });
+});
+
 export default router;
