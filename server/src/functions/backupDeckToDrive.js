@@ -5,10 +5,9 @@
 // getDeckGoogleToken instead of getGoogleDriveToken — see DeckGoogleConnection's
 // schema.prisma comment for why this is a separate connection.
 import { prisma } from '../db.js';
-import { getDeckGoogleToken } from '../lib/deckGoogle.js';
+import { getDeckGoogleToken, DECK_BACKUP_FOLDER_NAME } from '../lib/deckGoogle.js';
 import { createDriveFolder, listDriveFolderFiles, createDriveFile, updateDriveFileContent } from '../lib/googleDrive.js';
 
-const BACKUP_FOLDER_NAME = 'Command Deck Backup';
 const BACKUP_FILE_NAME = 'command-deck-backup.json';
 
 // Same 14-entity set as CommandDeckContext.jsx's existing runExport() — kept
@@ -48,7 +47,7 @@ export default async function handler({ user }) {
 
   let folderId = connection?.backup_folder_id;
   if (!folderId) {
-    folderId = await createDriveFolder(token, BACKUP_FOLDER_NAME);
+    folderId = await createDriveFolder(token, DECK_BACKUP_FOLDER_NAME);
   }
 
   const data = await gatherDeckData(user.id);

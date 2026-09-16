@@ -8,6 +8,12 @@ import { decrypt, encrypt } from '../crypto.js';
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3/calendars/primary';
+
+// Shared Drive folder name for everything Command Deck mirrors into the
+// user's own Drive — the full-data backup (backupDeckToDrive.js) and
+// Jarvis's long-term memory (lib/deckMemory.js) both live here, one place
+// to look rather than scattered across separate folders.
+export const DECK_BACKUP_FOLDER_NAME = 'Command Deck Backup';
 const DOCS_API = 'https://docs.googleapis.com/v1/documents';
 
 // ── Per-user connection ──────────────────────────────────────────────────
