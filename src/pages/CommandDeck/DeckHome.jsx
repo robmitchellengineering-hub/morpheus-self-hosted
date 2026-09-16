@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import {
   Plus, X, Check, ChevronDown, ChevronRight, ListChecks, Compass, Lightbulb,
-  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2,
+  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2, Mic,
 } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import {
   C, ENERGY, STREAM_META, STREAM_ORDER, STATUS_STYLE, LIFE_STREAMS_META, CHANNELS,
   WP_ADMIN_URL, murbahStageLabel, repairStageLabel, inboxStageLabel,
@@ -40,6 +41,10 @@ export default function DeckHome() {
 
   const energyInfo = ENERGY.find((e) => e.id === energy);
 
+  const { listening: dumpListening, start: startDumpMic, stop: stopDumpMic, supported: dumpMicSupported } = useSpeechRecognition({
+    onResult: (transcript) => setDumpInput((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript)),
+  });
+
   return (
     <>
       <Card title="Brain dump" sub="Whatever's rattling around — get it out. Mention a name and it's filed straight to them.">
@@ -51,6 +56,14 @@ export default function DeckHome() {
             placeholder="Type it. Don't think."
             style={inputStyle}
           />
+          {dumpMicSupported && (
+            <IconButton
+              onClick={() => (dumpListening ? stopDumpMic() : startDumpMic())}
+              color={dumpListening ? C.alert : C.walnutSoft}
+            >
+              <Mic size={18} color={C.paper} />
+            </IconButton>
+          )}
           <IconButton onClick={addDump} color={C.oxblood}><Plus size={18} color={C.paper} /></IconButton>
         </div>
         {dumpInput.trim() && detectOwner(dumpInput) && (

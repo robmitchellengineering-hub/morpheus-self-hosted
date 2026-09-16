@@ -11,10 +11,12 @@ export function DeckGoogleConnectionProvider({ children }) {
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastBackupAt, setLastBackupAt] = useState(null);
 
   const check = useCallback(async () => {
     try {
       const res = await base44.functions.invoke('checkDeckGoogleConnection', {});
+      setLastBackupAt(res.data?.lastBackupAt || null);
       if (res.data?.connected) {
         setConnected(true);
         setEmail(res.data.email);
@@ -50,7 +52,7 @@ export function DeckGoogleConnectionProvider({ children }) {
     setEmail(null);
   }, []);
 
-  const value = { connected, email, loading, connect, disconnect, check };
+  const value = { connected, email, loading, lastBackupAt, connect, disconnect, check };
 
   return (
     <DeckGoogleConnectionContext.Provider value={value}>
@@ -63,7 +65,7 @@ export function useDeckGoogleConnectionContext() {
   const ctx = useContext(DeckGoogleConnectionContext);
   if (!ctx) {
     return {
-      connected: false, email: null, loading: false,
+      connected: false, email: null, loading: false, lastBackupAt: null,
       connect: () => {}, disconnect: () => {}, check: () => Promise.resolve(false),
     };
   }

@@ -1,16 +1,23 @@
-import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText } from 'lucide-react';
+import { useState } from 'react';
+import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText, UploadCloud, DownloadCloud, AlertTriangle } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useDeckGoogleConnection } from '@/hooks/useDeckGoogleConnection';
+import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { C } from './deckConstants';
 import { Card, pillBtn } from './DeckUI';
 
-// Install card, and Command Deck's own Google connection (Gmail sync +
-// suggested replies now; Calendar/Drive backup/Docs land in a later
-// phase — see the approved plan). Business details form and Data vault
-// status are still coming.
+// Install card, Command Deck's own Google connection (Gmail sync +
+// suggested replies, Drive backup/restore), and Data vault status. Calendar
+// sync and Doc creation are still coming; so is a Business details form.
 export default function DeckSettings() {
   const { canInstall, installed, promptInstall } = usePwaInstall();
   const google = useDeckGoogleConnection();
+  const {
+    driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt,
+    driveBackup, driveRestore,
+  } = useCommandDeck();
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
+  const backupStamp = lastBackupAt || google.lastBackupAt;
 
   return (
     <>
@@ -58,11 +65,58 @@ export default function DeckSettings() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.8rem' }}>
             <ScopeRow icon={Mail} label="Gmail" sub="Sync into the Inbox card, draft & send replies." active />
             <ScopeRow icon={Calendar} label="Calendar" sub="Coming soon — Murbah booking sync." />
-            <ScopeRow icon={HardDrive} label="Drive backup" sub="Coming soon — one-click backup & restore." />
+            <ScopeRow icon={HardDrive} label="Drive backup" sub="Below — one-click backup & restore." active />
             <ScopeRow icon={FileText} label="Docs" sub="Coming soon — Jarvis-drafted documents." />
           </div>
         )}
       </Card>
+
+      {google.connected && (
+        <Card title="Data vault" sub="A full copy of everything on the Deck, mirrored to your own Google Drive.">
+          <div style={{ fontSize: '0.75rem', color: C.walnutSoft, marginBottom: '0.7rem' }}>
+            {backupStamp ? `Last backed up ${new Date(backupStamp).toLocaleString()}.` : 'No backup yet.'}
+          </div>
+
+          <button
+            onClick={driveBackup}
+            disabled={driveBackupBusy}
+            style={{ ...pillBtn(C.brass), width: '100%', padding: '0.6rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', opacity: driveBackupBusy ? 0.7 : 1 }}
+          >
+            {driveBackupBusy ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
+            {driveBackupBusy ? 'Backing up…' : 'Back up to Drive now'}
+          </button>
+          {driveBackupMsg && <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: C.walnutSoft }}>{driveBackupMsg}</p>}
+
+          <div style={{ height: 1, background: C.line, margin: '0.9rem 0' }} />
+
+          {!confirmingRestore ? (
+            <button
+              onClick={() => setConfirmingRestore(true)}
+              style={{ ...pillBtn(C.walnutSoft), width: '100%', padding: '0.6rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+            >
+              <DownloadCloud size={15} /> Restore from Drive
+            </button>
+          ) : (
+            <div style={{ background: C.tweed, border: `1px solid ${C.alert}`, borderRadius: 10, padding: '0.7rem' }}>
+              <p style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem', margin: 0, fontSize: '0.78rem', color: C.ink }}>
+                <AlertTriangle size={15} color={C.alert} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+                This replaces everything currently on the Deck with the last Drive backup. It cannot be undone.
+              </p>
+              <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem' }}>
+                <button
+                  onClick={async () => { await driveRestore(); setConfirmingRestore(false); }}
+                  disabled={driveRestoreBusy}
+                  style={{ ...pillBtn(C.alert), flex: 1, opacity: driveRestoreBusy ? 0.7 : 1 }}
+                >
+                  {driveRestoreBusy ? 'Restoring…' : 'Yes, replace everything'}
+                </button>
+                <button onClick={() => setConfirmingRestore(false)} disabled={driveRestoreBusy} style={{ ...pillBtn(C.walnutSoft), flex: 1 }}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {driveRestoreMsg && <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: C.walnutSoft }}>{driveRestoreMsg}</p>}
+        </Card>
+      )}
     </>
   );
 }

@@ -74,6 +74,12 @@ export function CommandDeckProvider({ children }) {
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMsg, setBackupMsg] = useState(null);
 
+  const [driveBackupBusy, setDriveBackupBusy] = useState(false);
+  const [driveBackupMsg, setDriveBackupMsg] = useState(null);
+  const [driveRestoreBusy, setDriveRestoreBusy] = useState(false);
+  const [driveRestoreMsg, setDriveRestoreMsg] = useState(null);
+  const [lastBackupAt, setLastBackupAt] = useState(null);
+
   const [cForm, setCForm] = useState({ item: '', consignor: '', phone: '', price: '', photo_url: null });
   const [rForm, setRForm] = useState({ customer: '', phone: '', item: '', notes: '', pendingFiles: [] });
 
@@ -565,6 +571,39 @@ export function CommandDeckProvider({ children }) {
     URL.revokeObjectURL(url);
   };
 
+  // ---- drive backup / restore ---------------------------------------------
+  // A separate mechanism from runExport above (that one's a manual JSON
+  // download); this pushes/pulls the same 14-entity dataset to/from the
+  // user's own connected Google Drive, so it survives even if they never
+  // think to hit "download" themselves.
+  const driveBackup = async () => {
+    setDriveBackupBusy(true);
+    setDriveBackupMsg(null);
+    try {
+      const { data } = await base44.functions.invoke('backupDeckToDrive', {});
+      setLastBackupAt(data?.backedUpAt || null);
+      setDriveBackupMsg(`Backed up ${data?.totalRows ?? 0} rows to Drive.`);
+    } catch (err) {
+      setDriveBackupMsg(err.message || "Couldn't back up to Drive.");
+    }
+    setDriveBackupBusy(false);
+  };
+  const driveRestore = async () => {
+    setDriveRestoreBusy(true);
+    setDriveRestoreMsg(null);
+    try {
+      const { data } = await base44.functions.invoke('restoreDeckFromDrive', { confirm: true });
+      setDriveRestoreMsg(`Restored ${data?.totalRows ?? 0} rows from the ${data?.backedUpAt ? new Date(data.backedUpAt).toLocaleString() : 'last'} backup. Reloading…`);
+      // Every Deck* row just got wiped and replaced server-side — a full
+      // reload is simpler and safer than trying to patch 14 different
+      // pieces of local state back into sync by hand.
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      setDriveRestoreMsg(err.message || "Couldn't restore from Drive.");
+    }
+    setDriveRestoreBusy(false);
+  };
+
   // ---- jarvis ------------------------------------------------------------
   const sendJarvisMessage = async () => {
     const text = jarvisInput.trim();
@@ -601,6 +640,7 @@ export function CommandDeckProvider({ children }) {
     lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
     lightboxImg, setLightboxImg,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
+    driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt, driveBackup, driveRestore,
     jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
     uploadFile,
   };
