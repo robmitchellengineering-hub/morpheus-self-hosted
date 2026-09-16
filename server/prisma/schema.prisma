@@ -87,6 +87,7 @@ model User {
   deck_repair_files  DeckRepairFile[]
   deck_murbah_opportunities DeckMurbahOpportunity[]
   deck_inbox_items   DeckInboxItem[]
+  deck_gmail_seen_messages DeckGmailSeenMessage[]
   deck_strategy_notes DeckStrategyNote[]
   deck_knowledge_notes DeckKnowledgeNote[]
   deck_life_streams  DeckLifeStream[]
@@ -1074,6 +1075,24 @@ model DeckInboxItem {
   updated_date  DateTime @updatedAt
 
   @@map("deck_inbox_items")
+}
+
+// Every Gmail message id syncDeckGmailInbox.js has already classified, kept
+// regardless of the classification's outcome — genuine inquiries become a
+// DeckInboxItem, everything else (newsletters, notifications, marketing) is
+// just recorded here so the sync doesn't re-run the AI classifier on the
+// same message (and the same cost) on every future sync.
+model DeckGmailSeenMessage {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  external_id   String
+
+  created_date  DateTime @default(now())
+
+  @@unique([created_by_id, external_id])
+  @@map("deck_gmail_seen_messages")
 }
 
 model DeckStrategyNote {
