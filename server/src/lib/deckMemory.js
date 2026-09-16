@@ -32,7 +32,7 @@ Produce an UPDATED memory that folds the batch into the existing one. Keep ONLY 
 - Things he said he wanted (goals, changes, intentions) and whether he's since acted on them
 - Anything said once that would be genuinely useful to recall weeks later
 
-Drop small talk, anything already fully reflected in the live Deck snapshot (tasks/notes/etc — Jarvis sees that fresh every turn already), and anything superseded by a later turn in the batch. Be terse — dense notes, no prose padding. Target under ${MAX_MEMORY_WORDS} words total regardless of how large the existing memory or batch is; compress harder, don't just append.
+Drop small talk, anything already fully reflected in the live Deck snapshot (tasks/notes/etc — Jarvis sees that fresh every turn already), and anything superseded by a later turn in the batch. If a turn mentions an attached file (photo, PDF, document — shown as "[attached: filename]"), keep at most a short reference to what it was and why it mattered, never a long description of its contents — Command Deck deliberately keeps this memory small. Be terse — dense notes, no prose padding. Target under ${MAX_MEMORY_WORDS} words total regardless of how large the existing memory or batch is; compress harder, don't just append.
 
 Return JSON with:
 - memory: the complete updated memory text (replaces the existing one entirely)`;

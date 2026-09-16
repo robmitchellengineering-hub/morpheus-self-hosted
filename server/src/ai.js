@@ -249,9 +249,10 @@ async function describeImagesWithConnection(connection, imageUrls) {
 
 // Plain-text-ish files (code, config, data, notes) get their actual content
 // inlined into the prompt — no AI conversion needed, works for every user
-// regardless of what connections they have configured. Binary formats the
-// server can't decode as text (pdf, docx, images handled separately, etc.)
-// still fall back to being listed as a reference URL only.
+// regardless of what connections they have configured. PDF/DOCX/XLSX are a
+// second tier below (readDocumentFileContent) since they need real parsing,
+// not just a fetch-as-text. Anything else still falls back to a reference
+// URL only.
 const TEXT_FILE_EXT = /\.(txt|md|markdown|csv|tsv|json|jsonl|log|js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs|java|c|cpp|h|hpp|cs|php|sh|bash|yaml|yml|toml|ini|env|xml|html?|css|scss|less|sql|graphql|proto|dockerfile)(\?|$)/i;
 const MAX_INLINED_FILE_CHARS = 8000;
 
@@ -269,6 +270,50 @@ async function readTextFileContent(url) {
     }
     return text;
   } catch {
+    return null;
+  }
+}
+
+// 2026-09-17 (Rob: Jarvis needs to accept photos/PDFs/Word/Excel) — a
+// second inline tier for real document formats, same "fetch, extract,
+// truncate, degrade to a reference URL on any failure" shape as
+// readTextFileContent above, just with a format-specific extractor instead
+// of a raw text decode. Kept generic here in ai.js (not Deck-specific) so
+// every invokeAI caller with fileUrls gets this for free, same as the
+// vision-assist path already does for images.
+const DOCUMENT_FILE_EXT = /\.(pdf|docx?|xlsx?)(\?|$)/i;
+
+async function readDocumentFileContent(url) {
+  try {
+    const res = await fetchWithTimeout(url, {}, 20_000);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
+
+    let text;
+    if (ext === 'pdf') {
+      const { default: pdfParse } = await import('pdf-parse');
+      text = (await pdfParse(buf)).text;
+    } else if (ext === 'docx' || ext === 'doc') {
+      const mammoth = await import('mammoth');
+      text = (await mammoth.extractRawText({ buffer: buf })).value;
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(buf, { type: 'buffer' });
+      text = wb.SheetNames.map((name) => `SHEET: ${name}\n${XLSX.utils.sheet_to_csv(wb.Sheets[name])}`).join('\n\n');
+    } else {
+      return null;
+    }
+
+    text = (text || '').trim();
+    if (!text) return null;
+    if (text.length > MAX_INLINED_FILE_CHARS) {
+      text = text.slice(0, MAX_INLINED_FILE_CHARS) + `\n... [truncated, ${text.length} chars total]`;
+    }
+    return text;
+  } catch {
+    // Corrupt file, password-protected, unsupported internal format, etc. —
+    // degrade to a reference URL rather than fail the whole chat turn.
     return null;
   }
 }
@@ -402,7 +447,8 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   const imageUrls = (fileUrls || []).filter((u) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(u));
   const otherUrls = (fileUrls || []).filter((u) => !imageUrls.includes(u));
   const textUrls = otherUrls.filter((u) => TEXT_FILE_EXT.test(u));
-  const opaqueUrls = otherUrls.filter((u) => !textUrls.includes(u));
+  const documentUrls = otherUrls.filter((u) => !textUrls.includes(u) && DOCUMENT_FILE_EXT.test(u));
+  const opaqueUrls = otherUrls.filter((u) => !textUrls.includes(u) && !documentUrls.includes(u));
 
   let effectivePrompt = prompt;
   if (textUrls.length > 0) {
@@ -413,6 +459,17 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
         effectivePrompt += `\n\nCONTENT OF UPLOADED FILE (${url}):\n${text}`;
       } else {
         opaqueUrls.push(url); // couldn't be fetched/read — fall back to just linking it
+      }
+    });
+  }
+  if (documentUrls.length > 0) {
+    const readResults = await Promise.all(documentUrls.map((u) => readDocumentFileContent(u)));
+    readResults.forEach((text, i) => {
+      const url = documentUrls[i];
+      if (text != null) {
+        effectivePrompt += `\n\nEXTRACTED TEXT FROM UPLOADED FILE (${url}):\n${text}`;
+      } else {
+        opaqueUrls.push(url); // couldn't be parsed (corrupt, password-protected, etc.) — fall back to just linking it
       }
     });
   }
@@ -537,7 +594,17 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   // error, JSON-parse failure) since the provider already billed this call.
   recordUsageEvent({ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits }).catch(() => {});
 
-  if (finishReason === 'length') {
+  // A schema call MUST throw here — half a JSON object is unusable and every
+  // caller downstream expects a real parsed value. A plain-text call (no
+  // schema — e.g. chatWithJarvis.js's chat reply, suggestDeckReply.js) is
+  // different: truncated prose is still a real, readable answer, and
+  // discarding it entirely turned "the reply ran a bit long" into "Jarvis
+  // never responds" once the energy log went unbounded and long-term memory
+  // was added to the prompt (2026-09-17, Rob: "javis is not responding") --
+  // both make a long, pattern-spotting reply more likely, which makes hitting
+  // MAX_REPLY_TOKENS more likely. Return the truncated text rather than
+  // throwing; only schema calls still hard-fail on finishReason === 'length'.
+  if (finishReason === 'length' && schema) {
     // 2026-09-03: include which role/maxTokens actually truncated -- three
     // rounds of chasing this same error taught the hard way that "it
     // truncated" alone is nearly useless to debug: the Coder, the Planner,

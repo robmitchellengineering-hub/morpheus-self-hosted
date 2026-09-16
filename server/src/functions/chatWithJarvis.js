@@ -10,7 +10,7 @@ import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock, HISTORY_WINDOW } from '../lib/deckMemory.js';
 
-const MAX_REPLY_TOKENS = 3000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply
+const MAX_REPLY_TOKENS = 6000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply, and the prompt now carries the full energy log + long-term memory, which makes a longer, pattern-spotting reply more likely
 
 const REPAIR_STAGE_LABEL = { waiting: 'Waiting', in_progress: 'In progress', done: 'Done' };
 const MURBAH_STAGE_LABEL = { idea: 'Idea', enquired: 'Enquired', booked: 'Booked', active: 'Active' };
@@ -98,9 +98,25 @@ The energy log is one of your sharpest tools precisely because it's the whole hi
 
 Answer whatever he actually asks, grounded in that snapshot — connect the dots across business and life where it's relevant, flag anything stale or that could make money fast, and if the energy log shows a real pattern worth naming, name it plainly, dry wit intact, never therapy-speak. Be direct and specific, never generic boilerplate. Match your reply's length to the question — a quick question gets a quick, cutting answer, not a forced report. No preamble, no sign-off.`;
 
+// Photo/PDF/Word/Excel attachments (Rob, 2026-09-17: "javis needs to be
+// able to accept file input"). The actual content (a vision description for
+// a photo, extracted text for a PDF/DOCX/XLSX — both handled generically by
+// invokeAI's own fileUrls support, see ai.js) is only ever used for THIS
+// turn's prompt. What gets saved to DeckJarvisMessage — and therefore what
+// deckMemory.js ever sees once this turn ages out of the recent window — is
+// just a short filename reference, never the extracted content: "keep this
+// lite" (Rob) means Command Deck's own persistent storage stays small no
+// matter how large the attached document was.
+function fileRefNote(fileUrls) {
+  if (!fileUrls?.length) return '';
+  const names = fileUrls.map((u) => decodeURIComponent(u.split('/').pop().split('?')[0]));
+  return `\n[attached: ${names.join(', ')}]`;
+}
+
 export default async function handler({ user, body }) {
   const message = (body?.message || '').trim();
-  if (!message) throw Object.assign(new Error('message is required'), { status: 400 });
+  const fileUrls = Array.isArray(body?.fileUrls) ? body.fileUrls.filter((u) => typeof u === 'string' && u) : [];
+  if (!message && fileUrls.length === 0) throw Object.assign(new Error('message is required'), { status: 400 });
 
   const [snapshot, history, memory] = await Promise.all([
     buildSnapshot(user.id),
@@ -113,7 +129,8 @@ export default async function handler({ user, body }) {
   ]);
   history.reverse();
 
-  await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'user', content: message } });
+  const savedUserContent = `${message}${fileRefNote(fileUrls)}`.trim();
+  await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'user', content: savedUserContent } });
 
   const conversationBlock = history.length
     ? history.map((m) => `${m.role === 'user' ? 'Rob' : 'Jarvis'}: ${m.content}`).join('\n')
@@ -127,10 +144,10 @@ ${snapshot}
 RECENT CONVERSATION:
 ${conversationBlock}
 
-Rob: ${message}
+Rob: ${message || '(see attached file)'}
 Jarvis:`;
 
-  const { result: reply } = await invokeAI({ userId: user.id, prompt, maxTokens: MAX_REPLY_TOKENS });
+  const { result: reply } = await invokeAI({ userId: user.id, prompt, fileUrls, maxTokens: MAX_REPLY_TOKENS });
 
   await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'jarvis', content: reply } });
 

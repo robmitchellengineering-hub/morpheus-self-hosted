@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mic, Volume2, VolumeX, Send, FileText, Loader2, ExternalLink, X } from 'lucide-react';
+import { Mic, Volume2, VolumeX, Send, FileText, Loader2, ExternalLink, X, Paperclip, Image as ImageIcon } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
@@ -16,14 +16,33 @@ import { inputStyle, IconButton, pillBtn, ghostBtn } from './DeckUI';
 export default function DeckJarvis() {
   const {
     jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
-    docBusy, docErr, docResult, createDeckDocument,
+    docBusy, docErr, docResult, createDeckDocument, uploadFile,
   } = useCommandDeck();
   const { speak, stop, speakingId, loadingId } = useMorpheusVoice();
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [showDocForm, setShowDocForm] = useState(false);
   const [docInstruction, setDocInstruction] = useState('Summarize our conversation');
+  const [attachments, setAttachments] = useState([]); // [{name, url}] — pending, cleared once sent
+  const [attachBusy, setAttachBusy] = useState(false);
   const listRef = useRef(null);
   const lastSpokenId = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const handleAttach = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // allow attaching the same file again later
+    if (files.length === 0) return;
+    setAttachBusy(true);
+    try {
+      const uploaded = await Promise.all(files.map(async (file) => ({ name: file.name, url: await uploadFile(file) })));
+      setAttachments((prev) => [...prev, ...uploaded]);
+    } catch {
+      // Best-effort — a failed upload just doesn't get attached; the
+      // message can still be sent as plain text.
+    }
+    setAttachBusy(false);
+  };
+  const removeAttachment = (url) => setAttachments((prev) => prev.filter((a) => a.url !== url));
 
   const { listening, start, stop: stopListening, supported: micSupported } = useSpeechRecognition({
     onResult: (transcript) => {
@@ -58,6 +77,11 @@ export default function DeckJarvis() {
   const handleMicClick = () => {
     if (listening) stopListening();
     else start();
+  };
+
+  const handleSend = () => {
+    sendJarvisMessage(attachments.map((a) => a.url));
+    setAttachments([]);
   };
 
   return (
@@ -172,21 +196,49 @@ export default function DeckJarvis() {
         </p>
       )}
 
+      {attachments.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.6rem' }}>
+          {attachments.map((a) => (
+            <span
+              key={a.url}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: C.paper, border: `1px solid ${C.line}`, borderRadius: 999, padding: '0.25rem 0.5rem 0.25rem 0.6rem', fontSize: '0.72rem', color: C.walnut }}
+            >
+              {/\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name) ? <ImageIcon size={12} /> : <FileText size={12} />}
+              {a.name}
+              <button onClick={() => removeAttachment(a.url)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 0 }}>
+                <X size={12} color={C.walnutSoft} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.7rem' }}>
         {micSupported && (
           <IconButton onClick={handleMicClick} color={listening ? C.alert : C.oxblood}>
             <Mic size={18} color={C.paper} />
           </IconButton>
         )}
+        <IconButton onClick={() => fileInputRef.current?.click()} color={attachBusy ? C.walnutSoft : C.walnut} disabled={attachBusy}>
+          {attachBusy ? <Loader2 size={16} className="animate-spin" color={C.paper} /> : <Paperclip size={17} color={C.paper} />}
+        </IconButton>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          onChange={handleAttach}
+          style={{ display: 'none' }}
+        />
         <input
           value={jarvisInput}
           onChange={(e) => setJarvisInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendJarvisMessage()}
-          placeholder={listening ? 'Listening…' : 'Type or tap the mic…'}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          placeholder={listening ? 'Listening…' : 'Type, tap the mic, or attach a file…'}
           disabled={jarvisSending}
           style={inputStyle}
         />
-        <IconButton onClick={sendJarvisMessage} color={C.brass} disabled={jarvisSending || !jarvisInput.trim()}>
+        <IconButton onClick={handleSend} color={C.brass} disabled={jarvisSending || (!jarvisInput.trim() && attachments.length === 0)}>
           <Send size={17} color={C.paper} />
         </IconButton>
       </div>
