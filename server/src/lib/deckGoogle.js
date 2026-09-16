@@ -91,13 +91,20 @@ async function apiJson(res) {
 // ── Gmail (raw fetch, no SDK) ────────────────────────────────────────────
 
 // Lists recent inbox messages (id + threadId only — callers fetch full
-// content per message via getGmailMessage).
-export async function listGmailMessages(token, { maxResults = 20, query = 'in:inbox' } = {}) {
+// content per message via getGmailMessage). 2026-09-17 (Rob: a real inquiry
+// — "a guy about dry hire" — never showed up once the inbox backlog grew):
+// syncDeckGmailInbox.js used to call this with a fixed maxResults and no way
+// to see further back, so once more than maxResults newer primary-category
+// messages piled up, older never-classified mail fell permanently outside
+// the window. Now returns nextPageToken so the caller can page back through
+// backlog instead of only ever seeing "the newest N".
+export async function listGmailMessages(token, { maxResults = 20, query = 'in:inbox', pageToken } = {}) {
   const params = new URLSearchParams({ maxResults: String(maxResults), q: query });
+  if (pageToken) params.set('pageToken', pageToken);
   const res = await fetch(`${GMAIL_API}/messages?${params}`, { headers: { Authorization: `Bearer ${token}` } });
   const data = await apiJson(res);
   if (!res.ok) throw new Error(`Gmail list failed: ${data.error?.message || data._error || res.status}`);
-  return data.messages || [];
+  return { messages: data.messages || [], nextPageToken: data.nextPageToken || null };
 }
 
 function decodeBase64Url(str) {
