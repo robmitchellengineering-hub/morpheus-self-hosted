@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import {
-  DEFAULT_PEOPLE, OWNER_COLOR_CYCLE, LIFE_STREAMS_META, DEFAULT_MURBAH,
+  DEFAULT_PEOPLE, OWNER_COLOR_CYCLE, LIFE_STREAMS_META,
   nextMurbahStage, nextRepairStage, nextInboxStage,
   isYou, todayKey, todayISO, randomDeleteConfirmPhrase,
 } from '@/pages/CommandDeck/deckConstants';
@@ -174,14 +174,6 @@ export function CommandDeckProvider({ children }) {
           }
         }
 
-        let murbahList = murbahRows;
-        if (murbahList.length === 0) {
-          murbahList = [];
-          for (const def of DEFAULT_MURBAH) {
-            murbahList.push(await base44.entities.DeckMurbahOpportunity.create(def));
-          }
-        }
-
         // Lazy-seed one DeckWidgetInstance row per DECK_WIDGETS entry, same
         // pattern as DeckPerson/DeckLifeStream above. A genuinely new
         // account gets each widget's own defaultEnabled; Rob's own account
@@ -202,7 +194,7 @@ export function CommandDeckProvider({ children }) {
         setTasks(taskRows);
         setConsignment(consignRows);
         setRepairs(repairRows.map((r) => ({ ...r, files: repairFileRows.filter((f) => f.repair_job_id === r.id) })));
-        setMurbahOpps(murbahList);
+        setMurbahOpps(murbahRows);
         setInbox(inboxRows);
         setStrategy(strategyRows);
         setKnowledge(knowledgeRows);

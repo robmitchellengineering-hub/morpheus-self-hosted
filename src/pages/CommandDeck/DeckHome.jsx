@@ -318,7 +318,7 @@ export default function DeckHome() {
       ))}
 
       {registerWidget('life_streams', (
-      <Card title="Life streams" sub="The rest of your life, tracked alongside the shop. Tap a status to flag it.">
+      <Card title="Life streams" sub="The rest of your life, tracked alongside everything else. Tap a status to flag it.">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
           {LIFE_STREAMS_META.map((s) => (
             <LifeStreamRow
