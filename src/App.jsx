@@ -92,21 +92,43 @@ const AuthenticatedApp = () => {
   );
 };
 
-// Route outlet with a lightweight CSS fade (see .route-fade in index.css).
-// The fade is skipped on the very first mount so the Suspense load spinner
-// shows at full opacity immediately (no blank black screen on access);
-// only subsequent navigations fade in. overflow-x-hidden guards against
-// any fixed-positioned background layer pushing the viewport wider on mobile.
+// Route outlet with a lightweight CSS fade (see .route-fade in index.css —
+// deliberately a plain CSS animation, not framer-motion: a persistent
+// composited layer on this fixed scroll container is what reversed typed
+// text in the Android WebView IME, so that's staying off the table here).
+//
+// 2026-09-17 (Rob — "page transitions system wide need to be looked at
+// cause its janky as fuck, command colored backgrounds flashing inbetween
+// morphus pages"): the fade-in div used to sit OUTSIDE <Suspense>, so it
+// mounted (and finished its 180ms animation) immediately regardless of how
+// long a lazy chunk took to load. On any not-yet-cached route (Command
+// Deck's own sub-routes are separate chunks from the rest of the app, so
+// easy to hit uncached) the fade was already done by the time the real
+// content replaced the spinner fallback, making that swap an unanimated
+// pop. Moved inside <Suspense> so the div — and its fade — only mounts once
+// the page has actually resolved, whatever that took. The fallback also now
+// has an explicit background instead of being fully transparent, so the
+// wait itself is a deliberate, calm frame rather than a bare spinner
+// floating on whatever's behind it. A true crossfade (the outgoing page
+// fading out under the incoming one, instead of an instant cut) would need
+// something that keeps the old page mounted during its own exit — out of
+// reach without reintroducing the exact composited-layer risk above, so
+// left as a known, scoped-out limitation rather than solved here.
+//
+// The fade is skipped on the very first mount (initial page load) so the
+// destination page shows at full opacity immediately instead of fading up
+// from nothing. overflow-x-hidden guards against any fixed-positioned
+// background layer pushing the viewport wider on mobile.
 function AnimatedRoutes() {
   const location = useLocation();
   const firstRender = useRef(true);
   useEffect(() => { firstRender.current = false; }, []);
   return (
-    <div
-      key={location.pathname}
-      className={`min-h-dvh pb-[3.75rem] md:pb-0 overflow-x-hidden ${firstRender.current ? '' : 'route-fade'}`}
-    >
-      <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+    <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center bg-background"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+      <div
+        key={location.pathname}
+        className={`min-h-dvh pb-[3.75rem] md:pb-0 overflow-x-hidden ${firstRender.current ? '' : 'route-fade'}`}
+      >
         <Routes location={location}>
           {/* Add your page Route elements here */}
           <Route path="/" element={<Landing />} />
@@ -156,8 +178,8 @@ function AnimatedRoutes() {
           </Route>
           <Route path="*" element={<PageNotFound />} />
         </Routes>
-        </Suspense>
-    </div>
+      </div>
+    </Suspense>
   );
 }
 
