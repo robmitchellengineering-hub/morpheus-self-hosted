@@ -5,6 +5,7 @@ import {
   nextMurbahStage, nextRepairStage, nextInboxStage,
   isYou, todayKey, todayISO, randomDeleteConfirmPhrase,
 } from '@/pages/CommandDeck/deckConstants';
+import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
 
 // All of Command Deck's shared state, data loading, and CRUD handlers —
 // lifted out of the old single-file CommandDeck.jsx unchanged, so every tab
@@ -99,6 +100,20 @@ export function CommandDeckProvider({ children }) {
   const [cForm, setCForm] = useState({ item: '', consignor: '', phone: '', price: '', photo_url: null });
   const [rForm, setRForm] = useState({ customer: '', phone: '', item: '', notes: '', pendingFiles: [] });
 
+  // ---- widgets & business profile ----------------------------------------
+  // Rob, 2026-09-17: "I should be able to add custom widgets there too, I
+  // just don't want to lose the tools I already have." widgetInstances
+  // drives which DECK_WIDGETS entries actually render on this account's
+  // Deck, and in what order — see deckWidgets.js for the registry itself.
+  const [widgetInstances, setWidgetInstances] = useState([]); // [{id, widget_key, enabled, sort_order}]
+  const [businessProfile, setBusinessProfile] = useState(null); // {id, shop_name, tagline, contact_email, business_context} | null
+  const [businessProfileBusy, setBusinessProfileBusy] = useState(false);
+
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarForm, setCalendarForm] = useState({ summary: '', date: '' });
+  const [calendarBusy, setCalendarBusy] = useState(false);
+
   // Debounced saves for fields that fire on every keystroke (phone numbers,
   // today's focus, a Murbah note) so typing doesn't hammer the API.
   const debounceTimers = useRef({});
@@ -120,6 +135,7 @@ export function CommandDeckProvider({ children }) {
           dumpRows, peopleRows, taskRows, consignRows, repairRows, repairFileRows,
           murbahRows, inboxRows, strategyRows, knowledgeRows, lifeStreamRows,
           lifeStreamNoteRows, energyRows, focusRows, jarvisRows,
+          widgetRows, businessProfileRows,
         ] = await Promise.all([
           base44.entities.DeckDumpItem.list(),
           base44.entities.DeckPerson.list('created_date'),
@@ -136,6 +152,8 @@ export function CommandDeckProvider({ children }) {
           base44.entities.DeckEnergyLogEntry.list('-date', 30),
           base44.entities.DeckFocusEntry.list('-date', 10),
           base44.entities.DeckJarvisMessage.list('created_date', 50),
+          base44.entities.DeckWidgetInstance.list(),
+          base44.entities.DeckBusinessProfile.list(),
         ]);
 
         let peopleList = peopleRows;
@@ -162,6 +180,21 @@ export function CommandDeckProvider({ children }) {
           }
         }
 
+        // Lazy-seed one DeckWidgetInstance row per DECK_WIDGETS entry, same
+        // pattern as DeckPerson/DeckLifeStream above. A genuinely new
+        // account gets each widget's own defaultEnabled; Rob's own account
+        // was explicitly backfilled with real rows by this feature's own
+        // migration before this code ever shipped, so this branch never
+        // fires for him — his Deck stays exactly as it was.
+        let widgetList = widgetRows;
+        if (widgetList.length === 0) {
+          widgetList = [];
+          for (let i = 0; i < DECK_WIDGETS.length; i++) {
+            const w = DECK_WIDGETS[i];
+            widgetList.push(await base44.entities.DeckWidgetInstance.create({ widget_key: w.key, enabled: w.defaultEnabled, sort_order: i }));
+          }
+        }
+
         setDump(dumpRows);
         setPeople(peopleList);
         setTasks(taskRows);
@@ -177,6 +210,8 @@ export function CommandDeckProvider({ children }) {
         ])));
         setEnergyHistory(energyRows);
         setJarvisMessages(jarvisRows);
+        setWidgetInstances(widgetList);
+        setBusinessProfile(businessProfileRows[0] || null);
 
         const today = todayKey();
         const todayEnergy = energyRows.find((e) => (e.date || '').slice(0, 10) === today);
@@ -705,6 +740,68 @@ export function CommandDeckProvider({ children }) {
     setDriveRestoreBusy(false);
   };
 
+  // ---- widgets & business profile -----------------------------------------
+  const toggleWidget = async (key) => {
+    const row = widgetInstances.find((w) => w.widget_key === key);
+    if (!row) return;
+    const next = !row.enabled;
+    setWidgetInstances((prev) => prev.map((w) => (w.widget_key === key ? { ...w, enabled: next } : w)));
+    try { await base44.entities.DeckWidgetInstance.update(row.id, { enabled: next }); } catch { flagSaveErr(); }
+  };
+  // direction: -1 (move earlier) or 1 (move later) in sort_order.
+  const moveWidget = async (key, direction) => {
+    const sorted = [...widgetInstances].sort((a, b) => a.sort_order - b.sort_order);
+    const idx = sorted.findIndex((w) => w.widget_key === key);
+    const swapIdx = idx + direction;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
+    const updated = sorted.map((w, i) => ({ ...w, sort_order: i }));
+    setWidgetInstances(updated);
+    try {
+      await Promise.all(updated.map((w) => base44.entities.DeckWidgetInstance.update(w.id, { sort_order: w.sort_order })));
+    } catch { flagSaveErr(); }
+  };
+
+  const saveBusinessProfile = async (fields) => {
+    setBusinessProfileBusy(true);
+    try {
+      if (businessProfile?.id) {
+        const updated = await base44.entities.DeckBusinessProfile.update(businessProfile.id, fields);
+        setBusinessProfile(updated);
+      } else {
+        const created = await base44.entities.DeckBusinessProfile.create(fields);
+        setBusinessProfile(created);
+      }
+    } catch { flagSaveErr(); }
+    setBusinessProfileBusy(false);
+  };
+
+  // ---- calendar widget ------------------------------------------------------
+  // The generic "Calendar" widget (Rob, 2026-09-17: alongside Inbox, the two
+  // widgets every account should get by default) — separate from Signal
+  // Chain's own Murbah↔Calendar sync, which stays exactly what it is.
+  const loadCalendarEvents = async () => {
+    setCalendarLoading(true);
+    try {
+      const { data } = await base44.functions.invoke('listUpcomingDeckEvents', {});
+      setCalendarEvents(data?.events || []);
+    } catch {
+      // Best-effort — most likely cause is Google not connected yet; the
+      // widget's own empty state covers that, no separate error banner needed.
+    }
+    setCalendarLoading(false);
+  };
+  const addCalendarEvent = async () => {
+    if (!calendarForm.summary.trim() || !calendarForm.date) return;
+    setCalendarBusy(true);
+    try {
+      await base44.functions.invoke('addDeckCalendarEvent', { summary: calendarForm.summary.trim(), date: calendarForm.date });
+      setCalendarForm({ summary: '', date: '' });
+      await loadCalendarEvents();
+    } catch { flagSaveErr(); }
+    setCalendarBusy(false);
+  };
+
   // ---- jarvis ------------------------------------------------------------
   // fileUrls: photos/PDFs/Word/Excel attached via DeckJarvis.jsx's paperclip
   // button (uploaded through the same uploadFile() every other Deck photo
@@ -767,6 +864,9 @@ export function CommandDeckProvider({ children }) {
     jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
     docBusy, docErr, docResult, createDeckDocument,
     uploadFile,
+    widgetInstances, toggleWidget, moveWidget,
+    businessProfile, businessProfileBusy, saveBusinessProfile,
+    calendarEvents, calendarLoading, calendarForm, setCalendarForm, calendarBusy, loadCalendarEvents, addCalendarEvent,
   };
 
   return <CommandDeckContext.Provider value={value}>{children}</CommandDeckContext.Provider>;

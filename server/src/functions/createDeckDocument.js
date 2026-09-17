@@ -12,6 +12,7 @@
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getDeckGoogleToken, createGoogleDoc, batchUpdateGoogleDoc } from '../lib/deckGoogle.js';
+import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 
 const MAX_HISTORY_MESSAGES = 20;
 
@@ -84,17 +85,21 @@ export default async function handler({ user, body }) {
   const instruction = (body?.instruction || '').trim();
   if (!instruction) throw Object.assign(new Error('instruction is required'), { status: 400 });
 
-  const history = await prisma.deckJarvisMessage.findMany({
-    where: { created_by_id: user.id },
-    orderBy: { created_date: 'desc' },
-    take: MAX_HISTORY_MESSAGES,
-  });
+  const [history, businessContext] = await Promise.all([
+    prisma.deckJarvisMessage.findMany({
+      where: { created_by_id: user.id },
+      orderBy: { created_date: 'desc' },
+      take: MAX_HISTORY_MESSAGES,
+    }),
+    getDeckBusinessContext(user.id),
+  ]);
   history.reverse();
+  const firstName = (user.full_name || '').trim().split(/\s+/)[0] || 'the account owner';
   const conversationBlock = history.length
-    ? history.map((m) => `${m.role === 'user' ? 'Rob' : 'Jarvis'}: ${m.content}`).join('\n')
+    ? history.map((m) => `${m.role === 'user' ? firstName : 'Jarvis'}: ${m.content}`).join('\n')
     : '(no prior conversation)';
 
-  const prompt = `You are Jarvis, drafting a professionally formatted document for Rob, who runs Valiant Music. Given the instruction and recent conversation below, produce the actual finished document content — not a summary of what you're about to write.
+  const prompt = `You are Jarvis, drafting a professionally formatted document for ${firstName}, who runs ${businessContext}. Given the instruction and recent conversation below, produce the actual finished document content — not a summary of what you're about to write.
 
 INSTRUCTION: ${instruction}
 

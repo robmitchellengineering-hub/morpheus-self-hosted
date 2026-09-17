@@ -95,6 +95,8 @@ model User {
   deck_life_stream_notes DeckLifeStreamNote[]
   deck_energy_log_entries DeckEnergyLogEntry[]
   deck_focus_entries DeckFocusEntry[]
+  deck_widget_instances DeckWidgetInstance[]
+  deck_business_profile DeckBusinessProfile?
 
   // Owner/Admin Control Panel (Feature Backlog #8)
   platform_settings_updated PlatformSetting[]
@@ -1221,4 +1223,52 @@ model DeckFocusEntry {
 
   @@unique([created_by_id, date])
   @@map("deck_focus_entries")
+}
+
+// 2026-09-17 (Rob: "I should be able to add custom widgets there too, I
+// just don't want to lose the tools I already have") — the real widget
+// registry behind /deck's configurable sections: one row per (account,
+// widget), controlling whether that widget shows on this account's Deck
+// and where. See src/pages/CommandDeck/deckWidgets.js on the frontend for
+// the actual registry of widget keys this refers to. A missing row for a
+// given widget_key is lazy-seeded on first load (same pattern
+// DeckPerson/DeckLifeStream already use for their own defaults) rather than
+// requiring every account to have every row from creation.
+model DeckWidgetInstance {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  widget_key    String
+  enabled       Boolean  @default(true)
+  sort_order    Int      @default(0)
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([created_by_id, widget_key])
+  @@map("deck_widget_instances")
+}
+
+// 2026-09-17 — closes the earlier-noted "Business details settings form"
+// gap (shop_name/tagline/contact_email, previously hardcoded in the Deck
+// header) and carries the new business_context field: what every
+// Valiant-Music-specific prompt (Jarvis's persona, the Gmail inquiry
+// filter, brain-dump classification, doc drafting, suggested replies) used
+// to hardcode inline now reads from here instead, so the same widget code
+// works for any account's business, not just Rob's.
+model DeckBusinessProfile {
+  id               String   @id @default(uuid())
+  created_by_id    String   @unique
+  user             User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  shop_name        String?
+  tagline          String?
+  contact_email    String?
+  business_context String?  @db.Text
+
+  created_date     DateTime @default(now())
+  updated_date     DateTime @updatedAt
+
+  @@map("deck_business_profiles")
 }

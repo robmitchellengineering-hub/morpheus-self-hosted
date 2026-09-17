@@ -17,25 +17,31 @@ import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getDeckGoogleConnection, DECK_BACKUP_FOLDER_NAME } from './deckGoogle.js';
 import { createDriveFolder, listDriveFolderFiles, createDriveFile, updateDriveFileContent } from './googleDrive.js';
+import { getDeckBusinessContext } from './deckBusinessProfile.js';
 
 export const HISTORY_WINDOW = 12; // must match chatWithJarvis.js's recent-turn window
 const MEMORY_UPDATE_INTERVAL = 8; // fold in a new batch every N messages past the window
 const MAX_MEMORY_WORDS = 400;
 const MEMORY_FILE_NAME = 'jarvis-memory.md';
 
-const MEMORY_PROMPT = `You maintain Jarvis's long-term memory of Rob — someone with ADHD who runs Valiant Music. You will be given the EXISTING MEMORY (may be empty, first pass) and a BATCH OF OLDER CONVERSATION TURNS that have just aged out of Jarvis's recent-context window.
+// 2026-09-17: parameterized (was hardcoded "Rob ... someone with ADHD who
+// runs Valiant Music") so the same memory-folding mechanism works for any
+// account.
+function buildMemoryPrompt({ firstName, businessContext }) {
+  return `You maintain Jarvis's long-term memory of ${firstName}, who runs ${businessContext}. You will be given the EXISTING MEMORY (may be empty, first pass) and a BATCH OF OLDER CONVERSATION TURNS that have just aged out of Jarvis's recent-context window.
 
-Produce an UPDATED memory that folds the batch into the existing one. Keep ONLY what genuinely helps Jarvis connect dots later that Rob, given executive dysfunction, might not connect himself:
-- Real patterns across time (energy/mood cycles, what he avoids and why, what actually works for him)
+Produce an UPDATED memory that folds the batch into the existing one. Keep ONLY what genuinely helps Jarvis connect dots later that ${firstName} might not connect themself:
+- Real patterns across time (energy/mood cycles, what they avoid and why, what actually works for them)
 - Recurring people, commitments, and relationships worth remembering
-- Decisions he's made and the reasoning, so Jarvis doesn't re-litigate settled things
-- Things he said he wanted (goals, changes, intentions) and whether he's since acted on them
+- Decisions they've made and the reasoning, so Jarvis doesn't re-litigate settled things
+- Things they said they wanted (goals, changes, intentions) and whether they've since acted on them
 - Anything said once that would be genuinely useful to recall weeks later
 
 Drop small talk, anything already fully reflected in the live Deck snapshot (tasks/notes/etc — Jarvis sees that fresh every turn already), and anything superseded by a later turn in the batch. If a turn mentions an attached file (photo, PDF, document — shown as "[attached: filename]"), keep at most a short reference to what it was and why it mattered, never a long description of its contents — Command Deck deliberately keeps this memory small. Be terse — dense notes, no prose padding. Target under ${MAX_MEMORY_WORDS} words total regardless of how large the existing memory or batch is; compress harder, don't just append.
 
 Return JSON with:
 - memory: the complete updated memory text (replaces the existing one entirely)`;
+}
 
 const MEMORY_SCHEMA = {
   type: 'object',
@@ -87,12 +93,19 @@ export async function getJarvisMemory(userId) {
   });
   if (batch.length === 0) return existingContent;
 
-  const batchText = batch.map((m) => `${m.role === 'user' ? 'Rob' : 'Jarvis'}: ${m.content}`).join('\n');
+  // Only fetched on the (uncommon) fold path, not the fast-path return above.
+  const [userRow, businessContext] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { full_name: true } }),
+    getDeckBusinessContext(userId),
+  ]);
+  const firstName = (userRow?.full_name || '').trim().split(/\s+/)[0] || 'the account owner';
+
+  const batchText = batch.map((m) => `${m.role === 'user' ? firstName : 'Jarvis'}: ${m.content}`).join('\n');
 
   try {
     const { result } = await invokeAI({
       userId,
-      prompt: `${MEMORY_PROMPT}\n\nEXISTING MEMORY:\n${existingContent || '(none yet — first pass)'}\n\nBATCH OF OLDER TURNS TO FOLD IN:\n${batchText}`,
+      prompt: `${buildMemoryPrompt({ firstName, businessContext })}\n\nEXISTING MEMORY:\n${existingContent || '(none yet — first pass)'}\n\nBATCH OF OLDER TURNS TO FOLD IN:\n${batchText}`,
       schema: MEMORY_SCHEMA,
       role: 'diagnosis', // "analyze, don't build" shape — same reuse as contextSummary.js
       // Deliberately generous even though the target is a compressed 400

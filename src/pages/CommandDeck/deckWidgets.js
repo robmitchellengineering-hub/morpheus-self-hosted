@@ -1,0 +1,36 @@
+// The real widget registry behind /deck's configurable sections (Rob,
+// 2026-09-17: "I should be able to add custom widgets there too, I just
+// don't want to lose the tools I already have"). This is the single source
+// of truth for which widget keys exist, their default enabled state for a
+// brand-new account, and their default display order — DeckHome.jsx builds
+// each widget's actual JSX (it needs closures over DeckHome's own shared
+// state/handlers, so the JSX itself isn't built here) and filters/orders it
+// against this list plus the account's own DeckWidgetInstance rows; the
+// Settings widget manager uses this same list for its enable/reorder UI.
+//
+// `signal_chain` and `week_rhythm` are the two entries that default OFF for
+// a new account — both hardcode Rob's own real content (Signal Chain is his
+// consignment/repair/Murbah workflow; Week rhythm literally names his real
+// employee, "Derek covers the shop") rather than reading from any account's
+// own data, so they're kept as the concrete, working examples of "a custom
+// widget" rather than something every new account gets by default. Every
+// other entry is generic enough — and actually driven by that account's own
+// data — to ship to anyone. Rob's own account is explicitly backfilled with
+// every widget (including these two) enabled by the migration that
+// introduced this table, so nothing on his existing Deck changes.
+export const DECK_WIDGETS = [
+  { key: 'brain_dump', label: 'Brain dump', defaultEnabled: true },
+  { key: 'today_charge', label: "Today's charge", defaultEnabled: true },
+  { key: 'today_one_thing', label: "Today's one thing", defaultEnabled: true },
+  { key: 'inbox', label: 'Inbox', defaultEnabled: true },
+  { key: 'calendar', label: 'Calendar', defaultEnabled: true },
+  { key: 'signal_chain', label: 'Signal chain', defaultEnabled: false },
+  { key: 'life_streams', label: 'Life streams', defaultEnabled: true },
+  { key: 'strategy', label: 'Strategy', defaultEnabled: true },
+  { key: 'knowledge', label: 'Knowledge & ideas', defaultEnabled: true },
+  { key: 'tasks', label: 'Task board', defaultEnabled: true },
+  { key: 'week_rhythm', label: 'Week rhythm', defaultEnabled: false },
+  { key: 'backup', label: 'Backup & export', defaultEnabled: true },
+];
+
+export const DECK_WIDGET_KEYS = DECK_WIDGETS.map((w) => w.key);
