@@ -502,7 +502,14 @@ export function CommandDeckProvider({ children }) {
     });
   };
   const updateMurbahDate = (id, dateStr) => {
-    const date = dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : null;
+    // booking_date is always a string everywhere else (an ISO string, as
+    // every entity read from the API comes back JSON-serialized) —
+    // MurbahPanel's dateValue does `(m.booking_date || '').slice(0, 10)`, a
+    // string method. Setting this to a raw Date object here (Rob,
+    // 2026-09-17: "entering and changing calendar dates in murbah causes a
+    // blank screen needing a refresh") made that .slice() throw on the very
+    // next render — a real crash, not a UI nit.
+    const date = dateStr ? new Date(`${dateStr}T00:00:00.000Z`).toISOString() : null;
     setMurbahOpps((prev) => prev.map((m) => (m.id === id ? { ...m, booking_date: date } : m)));
     debouncedSave(`murbah-date-${id}`, async () => {
       try { await base44.entities.DeckMurbahOpportunity.update(id, { booking_date: date }); } catch { flagSaveErr(); }
