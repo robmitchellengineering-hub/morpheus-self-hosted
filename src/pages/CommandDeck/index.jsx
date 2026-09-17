@@ -47,13 +47,15 @@ export default function CommandDeckLayout() {
 function CommandDeckShell() {
   const { loaded, saveErr, lightboxImg, setLightboxImg, confirmDeleteState, resolveConfirmDelete, businessProfile } = useCommandDeck();
 
-  // Falls back to the original hardcoded header text until a
-  // DeckBusinessProfile exists — every account gets one via this feature's
-  // own migration (Rob's backfilled with exactly this text), so this
-  // fallback only ever matters for a genuinely fresh account mid-onboarding.
+  // 2026-09-17: this used to fall back to Rob's own real business name —
+  // harmless while only Rob's account (backfilled with a real
+  // DeckBusinessProfile via migration) could ever reach /deck, but Command
+  // Deck is now open to every signed-in account, and an empty profile is
+  // exactly the state every brand-new user starts in. Generic placeholder
+  // until they fill in Settings.
   const headerEyebrow = businessProfile?.shop_name
     ? `${businessProfile.shop_name}${businessProfile.tagline ? ` · ${businessProfile.tagline}` : ''}`
-    : 'Valiant Music · Brunswick Heads / Murwillumbah';
+    : 'Set up your business in Settings';
 
   return (
     <div

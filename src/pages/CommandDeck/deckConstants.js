@@ -23,12 +23,13 @@ export const C = {
   gold: '#F0A400',
 };
 
+// 2026-09-17: used to seed Rob's actual family/employee names (Mum, Dad,
+// Derek, Alice) into every brand-new account — harmless while only Rob's
+// own account could ever reach /deck, but Command Deck is now open to
+// every signed-in user. Every new account starts with just themselves;
+// they add whoever else actually matters to their own life from here.
 export const DEFAULT_PEOPLE = [
   { name: 'You', phone: '', color: C.oxblood, is_self: true },
-  { name: 'Mum', phone: '', color: C.sage },
-  { name: 'Dad', phone: '', color: C.gold },
-  { name: 'Derek', phone: '', color: C.brass },
-  { name: 'Alice', phone: '', color: C.walnutSoft },
 ];
 export const OWNER_COLOR_CYCLE = [C.oxblood, C.sage, C.gold, C.brass, C.walnutSoft, C.alert];
 
@@ -53,17 +54,22 @@ export const LIFE_STREAMS_META = [
   { id: 'growth', label: 'Growth & creative', icon: Sprout },
 ];
 
+// 2026-09-17: the notes here used to be Rob's own guitar-shop-specific
+// examples ("Repairs, restock shelves"/"Consignment intake, listings,
+// calls.") — shown to every user regardless of what they actually do,
+// since this is a shared UI constant, not per-user data. Kept generic.
 export const ENERGY = [
-  { id: 'low', label: 'Low', icon: BatteryLow, note: 'Repairs, restock shelves, easy wins only.' },
-  { id: 'med', label: 'Medium', icon: BatteryMedium, note: 'Consignment intake, listings, calls.' },
-  { id: 'high', label: 'High', icon: BatteryFull, note: 'Systems, planning, the stuff you avoid.' },
+  { id: 'low', label: 'Low', icon: BatteryLow, note: 'Easy wins only — nothing that needs real focus.' },
+  { id: 'med', label: 'Medium', icon: BatteryMedium, note: 'Routine work — the steady, doable stuff.' },
+  { id: 'high', label: 'High', icon: BatteryFull, note: 'Systems, planning, the stuff you keep avoiding.' },
 ];
 
-export const DEFAULT_MURBAH = [
-  { title: 'Front room → commercial lease', note: 'Passive once tenanted. Fastest to set up.', stage: 'idea' },
-  { title: 'Rehearsal room → band bookings', note: 'A couple a month, on your terms.', stage: 'idea' },
-  { title: 'Band residency', note: 'Rehearsal + stay, bundled — higher $, low frequency.', stage: 'idea' },
-];
+// 2026-09-17: DEFAULT_MURBAH (Rob's own real Murwillumbah property plan)
+// removed — it used to unconditionally seed those rows into every new
+// account's DeckMurbahOpportunity list regardless of whether signal_chain
+// (the widget that would ever display them) was even enabled — real data
+// pollution, not just hidden-until-opted-in content. DeckMurbahOpportunity
+// now starts empty for every new account, like every other Deck list.
 export const MURBAH_STAGES = [
   { key: 'idea', label: 'Idea' },
   { key: 'enquired', label: 'Enquired' },

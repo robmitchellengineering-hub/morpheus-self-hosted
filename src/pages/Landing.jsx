@@ -83,6 +83,16 @@ export default function Landing() {
     navigate(authed ? '/workspace' : '/login');
   };
 
+  // 2026-09-17: Command Deck opened up to every signed-in account (Rob:
+  // "they see their own customisable command deck for their life") — same
+  // check-auth-on-click pattern as enter() above, rather than a second,
+  // slightly different visibility-gating convention (this used to be
+  // gated on isAdmin, back when /deck itself was admin-only).
+  const enterDeck = async () => {
+    const authed = await base44.auth.isAuthenticated();
+    navigate(authed ? '/deck' : '/login');
+  };
+
   return (
     <div className="relative min-h-screen bg-background overflow-hidden flex items-center justify-center safe-px">
       <DonationThankYouModal />
@@ -101,14 +111,14 @@ export default function Landing() {
             </button>
           </div>
         )}
-        {/* Command Deck's own entry point — admin-only for now, same gate
-            /deck itself enforces (see App.jsx), so this never leads anywhere
-            it would immediately bounce the visitor back out of. */}
-        {showButtons && isAdmin && (
+        {/* Command Deck's own entry point — open to every signed-in account
+            now; unauthenticated visitors are sent to /login on click, same
+            as the main BUILD button above. */}
+        {showButtons && (
           <div className="mt-4 flex justify-center">
-            <Link to="/deck" className="px-8 py-3 border border-primary/40 text-primary/70 hover:bg-primary/90 hover:text-black transition-colors font-display tracking-wider inline-flex items-center gap-2">
+            <button onClick={enterDeck} className="px-8 py-3 border border-primary/40 text-primary/70 hover:bg-primary/90 hover:text-black transition-colors font-display tracking-wider inline-flex items-center gap-2">
               <LayoutDashboard size={16} /> PERSONAL ASSISTANT
-            </Link>
+            </button>
           </div>
         )}
         {showButtons && <DonateWidget />}

@@ -155,6 +155,18 @@ function AnimatedRoutes() {
             <Route path="/architect" element={<Architect />} />
           <Route path="/portable-morpheus" element={<PortableMorpheusDownload />} />
             <Route path="/settings" element={<Settings />} />
+            {/* Command Deck/Jarvis — 2026-09-17: opened up to every signed-in
+                account (Rob: "they dont see my command deck, they see their
+                own customisable command deck for their life"). The data
+                layer was already fully multi-tenant (every Deck* entity is
+                scoped by created_by_id through the generic entity engine);
+                this was the only real gate left. */}
+            <Route path="/deck" element={<CommandDeck />}>
+              <Route index element={<DeckHome />} />
+              <Route path="jarvis" element={<DeckJarvis />} />
+              <Route path="tools" element={<DeckTools />} />
+              <Route path="settings" element={<DeckSettings />} />
+            </Route>
           </Route>
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/" replace />} adminOnly />}>
             <Route path="/backend-docs" element={<BackendDocs />} />
@@ -166,15 +178,6 @@ function AnimatedRoutes() {
             <Route path="/cost-tracker" element={<CostTracker />} />
             <Route path="/self-dev" element={<SelfDev />} />
             <Route path="/admin" element={<AdminPanel />} />
-            {/* Command Deck/Jarvis — Rob's own personal-use build, admin-gated
-                for now while it's Valiant-Music-specific content, not yet the
-                fully customizable per-user assistant it's headed toward. */}
-            <Route path="/deck" element={<CommandDeck />}>
-              <Route index element={<DeckHome />} />
-              <Route path="jarvis" element={<DeckJarvis />} />
-              <Route path="tools" element={<DeckTools />} />
-              <Route path="settings" element={<DeckSettings />} />
-            </Route>
           </Route>
           <Route path="*" element={<PageNotFound />} />
         </Routes>
