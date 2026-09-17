@@ -8,7 +8,7 @@ import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
 import { startTokenCheckout } from '@/lib/purchaseCredits';
 import { DECK_WIDGETS } from './deckWidgets';
 import { C } from './deckConstants';
-import { Card, pillBtn, miniInput } from './DeckUI';
+import { Card, pillBtn, miniInput, MicField, MicTextarea } from './DeckUI';
 
 // Install card, the Connections section (Google today, built to grow),
 // Widgets (what shows on the Deck home tab, and in what order), Business
@@ -194,6 +194,7 @@ function BusinessProfileForm() {
   }, [businessProfile, dirty]);
 
   const update = (field) => (e) => { setForm((f) => ({ ...f, [field]: e.target.value })); setDirty(true); };
+  const updateValue = (field) => (value) => { setForm((f) => ({ ...f, [field]: value })); setDirty(true); };
 
   const save = async () => {
     await saveBusinessProfile(form);
@@ -205,15 +206,15 @@ function BusinessProfileForm() {
   return (
     <Card title="Business profile" sub="Shapes your Deck header and every AI feature — Jarvis, Gmail filtering, brain-dump sorting, drafted replies.">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <input placeholder="Business name" value={form.shop_name} onChange={update('shop_name')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
-        <input placeholder="Tagline (shown under the name)" value={form.tagline} onChange={update('tagline')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
+        <MicField placeholder="Business name" value={form.shop_name} onChange={updateValue('shop_name')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
+        <MicField placeholder="Tagline (shown under the name)" value={form.tagline} onChange={updateValue('tagline')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
         <input placeholder="Contact email" value={form.contact_email} onChange={update('contact_email')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
-        <textarea
+        <MicTextarea
           placeholder="Tell Jarvis about your business — what you do, your goals, anything worth knowing when it's drafting replies or deciding what counts as a real inquiry."
           value={form.business_context}
-          onChange={update('business_context')}
+          onChange={updateValue('business_context')}
           rows={4}
-          style={{ ...miniInput, width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+          style={miniInput}
         />
         <button onClick={save} disabled={businessProfileBusy || !dirty} style={{ ...pillBtn(C.brass), opacity: businessProfileBusy || !dirty ? 0.6 : 1 }}>
           {businessProfileBusy ? 'Saving…' : 'Save'}
