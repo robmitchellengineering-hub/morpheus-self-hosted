@@ -69,8 +69,15 @@ function delegate(name) {
   return prisma[key];
 }
 
-function scope(user, extra = {}) {
-  if (user.role === 'admin') return extra;
+// 2026-09-17: Command Deck entities are strictly private per-account data
+// (life/business data for whichever account owns it, not an
+// admin-manageable platform resource like MaintenanceTask) — confirmed live
+// that the admin bypass below was merging every account's Deck rows into
+// Rob's own /deck view the moment a second real account had any Deck data,
+// since he's the platform's only admin. Deck* entities always scope to the
+// caller, admin or not.
+function scope(user, name, extra = {}) {
+  if (user.role === 'admin' && !name.startsWith('Deck')) return extra;
   return { ...extra, created_by_id: user.id };
 }
 
@@ -83,7 +90,7 @@ function parseSort(sort) {
 
 export async function listEntities(name, user, { sort, limit } = {}) {
   return delegate(name).findMany({
-    where: scope(user),
+    where: scope(user, name),
     orderBy: parseSort(sort),
     take: limit ? Number(limit) : undefined,
   });
@@ -91,14 +98,14 @@ export async function listEntities(name, user, { sort, limit } = {}) {
 
 export async function filterEntities(name, user, { query = {}, sort, limit } = {}) {
   return delegate(name).findMany({
-    where: scope(user, query),
+    where: scope(user, name, query),
     orderBy: parseSort(sort),
     take: limit ? Number(limit) : undefined,
   });
 }
 
 export async function getEntity(name, user, id) {
-  const row = await delegate(name).findFirst({ where: scope(user, { id }) });
+  const row = await delegate(name).findFirst({ where: scope(user, name, { id }) });
   if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
   return row;
 }
@@ -124,7 +131,7 @@ export async function deleteEntity(name, user, id) {
 // frontend call site (useWorkspace.js, Architect.jsx). Scoped by owner like
 // every other entity op.
 export async function deleteManyByQuery(name, user, query = {}) {
-  const result = await delegate(name).deleteMany({ where: scope(user, query) });
+  const result = await delegate(name).deleteMany({ where: scope(user, name, query) });
   return result.count;
 }
 
