@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { X, Home } from 'lucide-react';
 import { CommandDeckProvider, useCommandDeck } from '@/contexts/CommandDeckContext';
 import { DeckGoogleConnectionProvider } from '@/contexts/DeckGoogleConnectionContext';
 import DeckTabBar from './DeckTabBar';
+import DeckWelcomeModal from './DeckWelcomeModal';
 import { C } from './deckConstants';
 import { pillBtn } from './DeckUI';
 
@@ -46,6 +47,11 @@ export default function CommandDeckLayout() {
 
 function CommandDeckShell() {
   const { loaded, saveErr, lightboxImg, setLightboxImg, confirmDeleteState, resolveConfirmDelete, businessProfile } = useCommandDeck();
+  // 2026-09-17: dismiss is session-local, not persisted — reappears on a
+  // genuinely fresh visit until they actually save something, which is the
+  // point (a gentle nudge, never a hard block). See DeckWelcomeModal.jsx.
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  const showWelcome = loaded && !businessProfile && !welcomeDismissed;
 
   // 2026-09-17: this used to fall back to Rob's own real business name —
   // harmless while only Rob's account (backfilled with a real
@@ -145,6 +151,8 @@ function CommandDeckShell() {
           </div>
         </div>
       )}
+
+      {showWelcome && <DeckWelcomeModal onDismiss={() => setWelcomeDismissed(true)} />}
 
       <DeckTabBar />
     </div>
