@@ -95,19 +95,18 @@ WIDGET BUILD CONTRACT — this is a Jarvis-triggered Command Deck widget build, 
 `;
 }
 
-// Progress visibility (Rob, 2026-09-17: "it would be good if it was
-// separate so you can go away do things and come back and check on
-// progress") — this whole build takes ~15 minutes unattended, and the
-// requesting user has no reason to sit in this chat waiting. Every
-// milestone gets written straight into THEIR OWN Jarvis chat (not the
-// self-dev workspace's — a non-admin requesting user can't see that one at
-// all), so DeckJarvis.jsx already renders it with zero frontend changes:
-// they can navigate away and check back on their own Jarvis tab anytime.
-async function announce(userId, text) {
+// Progress visibility (Rob, 2026-09-17, after first being told this posted
+// to Jarvis chat: "wait not in the chat it should be a progress bar with
+// details running in the widgets card") — a build takes ~15 minutes
+// unattended, so DeckWidgetBuild is a plain polled status row (status,
+// step_index/step_count, step_title, message), one per attempt, that the
+// Settings widget manager polls and renders as a progress bar — see
+// deckSettings's WidgetManager(). Not chat-shaped on purpose.
+async function updateBuild(buildId, data) {
   try {
-    await prisma.deckJarvisMessage.create({ data: { created_by_id: userId, role: 'jarvis', content: text } });
+    await prisma.deckWidgetBuild.update({ where: { id: buildId }, data });
   } catch (err) {
-    console.error('[buildDeckWidget] progress announce failed (build continues):', err.message);
+    console.error('[buildDeckWidget] progress update failed (build continues):', err.message);
   }
 }
 
@@ -117,14 +116,26 @@ export async function runBuildDeckWidget(requestingUser, description) {
     throw Object.assign(new Error('Describe the widget in a sentence or two — what should it show or do?'), { status: 400 });
   }
 
-  const { actor: selfDevActor, project } = await resolveSelfDevActor();
+  const build = await prisma.deckWidgetBuild.create({
+    data: { created_by_id: requestingUser.id, description: desc, status: 'planning', message: 'Resolving the build workspace…' },
+  });
+  // Every return path funnels through here so the polled row always ends up
+  // in a terminal state (done/failed) with a real message — never stuck on
+  // an in-progress status forever.
+  const finish = async (result) => {
+    await updateBuild(build.id, { status: result.ok ? 'done' : 'failed', message: result.message });
+    return result;
+  };
+
+  let selfDevActor;
+  let project;
+  try {
+    ({ actor: selfDevActor, project } = await resolveSelfDevActor());
+  } catch (err) {
+    return finish({ ok: false, stage: 'setup', message: err.message });
+  }
   const projectId = project.id;
   const workspaceLink = `/workspace?projectId=${projectId}`;
-  const say = (text) => announce(requestingUser.id, text);
-  // Every return path funnels through here so a walk-away-and-check-back
-  // user always gets a terminal message in their own Jarvis chat, success
-  // or failure — never silence.
-  const finish = async (result) => { await say(`${result.ok ? '✅' : '⚠️'} ${result.message}`); return result; };
 
   const existingFeature = await getActiveFeature(projectId).catch(() => null);
   if (existingFeature) {
@@ -136,7 +147,7 @@ export async function runBuildDeckWidget(requestingUser, description) {
   }
 
   const widgetKey = await pickWidgetKey(projectId, desc);
-  await say(`Building your widget now — I'll post updates here as it goes (this takes roughly 15 minutes end to end).`);
+  await updateBuild(build.id, { widget_key: widgetKey, message: 'Planning the build…' });
   const goal = `Build a new Command Deck widget. What the user asked for: "${desc}"\n${widgetAuthoringContext(widgetKey)}`;
 
   let feature;
@@ -149,7 +160,10 @@ export async function runBuildDeckWidget(requestingUser, description) {
   // set directly (runPlanSelfDevFeature has no param for it; Phase 1 only
   // added the plumbing that reads it, nothing creates one until now).
   await prisma.selfDevFeature.update({ where: { id: feature.id }, data: { scope_policy: 'widget_build' } });
-  await say(`Plan ready — ${feature.steps.length} step${feature.steps.length === 1 ? '' : 's'}: ${feature.steps.map((s) => s.title).join(' → ')}.`);
+  await updateBuild(build.id, {
+    status: 'building', step_count: feature.steps.length, step_index: 0,
+    step_title: feature.steps[0]?.title || null, message: `Plan ready — ${feature.steps.length} step${feature.steps.length === 1 ? '' : 's'}.`,
+  });
 
   const abandon = () => runUpdateSelfDevFeature(selfDevActor, feature.id, 'abandon', { silent: true }).catch(() => {});
 
@@ -191,7 +205,11 @@ export async function runBuildDeckWidget(requestingUser, description) {
     }
 
     await runUpdateSelfDevFeature(selfDevActor, feature.id, 'completeStep', { stepN: step.n, silent: true });
-    await say(`Step ${step.n}/${feature.steps.length} done — ${step.title}.`);
+    const nextStep = feature.steps.find((s) => s.n === step.n + 1);
+    await updateBuild(build.id, {
+      step_index: step.n, step_title: nextStep?.title || step.title,
+      message: `Step ${step.n}/${feature.steps.length} done — ${step.title}.`,
+    });
   }
 
   let pushResult;
@@ -206,15 +224,19 @@ export async function runBuildDeckWidget(requestingUser, description) {
   if (pushResult.fileCount === 0) {
     return finish({ ok: false, stage: 'push', message: 'Nothing to ship — the build produced no real changes.', workspaceLink });
   }
-  await say(pushResult.mode === 'pr'
-    ? `Pushed — PR #${pushResult.prNumber} is open, waiting for checks to go green before it auto-merges.`
-    : `Pushed straight to production.`);
+  await updateBuild(build.id, {
+    status: 'pushing',
+    message: pushResult.mode === 'pr'
+      ? `Pushed — PR #${pushResult.prNumber} is open, waiting for checks to go green before it auto-merges.`
+      : 'Pushed straight to production.',
+  });
 
   // WIDGET_BUILD.allowDirectToMain is false, and this driver never passes
   // force/directToMain, so pushResult.mode is always 'pr' in practice — this
   // branch is defensive, not a real fork.
   let mergeResult = null;
   if (pushResult.mode === 'pr') {
+    await updateBuild(build.id, { status: 'merging', message: `PR #${pushResult.prNumber} opened — waiting for checks.` });
     // Mirrors SelfDev.jsx's own poll cadence (12s, then every 20s, ~40
     // attempts ≈ 13 minutes) so an unattended build waits exactly as long as
     // a human watching the page would.
@@ -231,12 +253,14 @@ export async function runBuildDeckWidget(requestingUser, description) {
           prUrl: pushResult.prUrl, workspaceLink,
         });
       }
+      const pendingCount = (mergeResult.checks || []).filter((c) => c.status !== 'completed').length;
+      await updateBuild(build.id, { message: pendingCount > 0 ? `Waiting on ${pendingCount} check${pendingCount === 1 ? '' : 's'}…` : 'Waiting for checks to register…' });
       await sleep(20000);
     }
     if (!mergeResult?.merged) {
       return finish({ ok: false, stage: 'merge', message: 'The PR checks took too long to go green — check it manually.', prUrl: pushResult.prUrl, workspaceLink });
     }
-    await say(`Merged — Northflank and Netlify are redeploying production now.`);
+    await updateBuild(build.id, { status: 'deploying', message: 'Merged — Northflank and Netlify are redeploying production now.' });
   }
 
   // No reusable server-side Northflank deploy-status poller exists yet — a
@@ -244,6 +268,7 @@ export async function runBuildDeckWidget(requestingUser, description) {
   // simplest first cut (see the plan's "open questions" for a real poller).
   await sleep(75000);
 
+  await updateBuild(build.id, { status: 'verifying', message: 'Deploy should be live — running the post-deploy check.' });
   let smoke;
   try {
     smoke = await runSmokeCheckSelfDev(selfDevActor);

@@ -57,6 +57,7 @@ const ENTITY_MAP = {
   DeckFocusEntry: 'deckFocusEntry',
   DeckWidgetInstance: 'deckWidgetInstance',
   DeckBusinessProfile: 'deckBusinessProfile',
+  DeckWidgetBuild: 'deckWidgetBuild',
 };
 
 export function isKnownEntity(name) {

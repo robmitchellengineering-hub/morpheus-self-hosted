@@ -97,6 +97,7 @@ model User {
   deck_focus_entries DeckFocusEntry[]
   deck_widget_instances DeckWidgetInstance[]
   deck_business_profile DeckBusinessProfile?
+  deck_widget_builds DeckWidgetBuild[]
 
   // Owner/Admin Control Panel (Feature Backlog #8)
   platform_settings_updated PlatformSetting[]
@@ -1256,6 +1257,32 @@ model DeckWidgetInstance {
 
   @@unique([created_by_id, widget_key])
   @@map("deck_widget_instances")
+}
+
+// Progress for a Jarvis-triggered widget build (server/src/functions/
+// buildDeckWidget.js). Rob, 2026-09-17: "it should be a progress bar with
+// details running in the widgets card" — not a chat message, since a build
+// takes ~15 minutes unattended — so this is a plain polled status row, one
+// per build attempt, rather than anything chat-shaped. The Settings widget
+// manager polls the requesting user's own most recent row while its status
+// isn't done/failed.
+model DeckWidgetBuild {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  description   String   @db.Text
+  widget_key    String?
+  status        String   @default("planning") // planning | building | pushing | merging | deploying | verifying | done | failed
+  step_index    Int      @default(0)
+  step_count    Int      @default(0)
+  step_title    String?
+  message       String?  @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_widget_builds")
 }
 
 // 2026-09-17 — closes the earlier-noted "Business details settings form"
