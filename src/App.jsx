@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import InsufficientCreditsModal from '@/components/matrix/InsufficientCreditsModal';
+import RootErrorBoundary from '@/components/RootErrorBoundary';
 // Add page imports here
 import ProtectedRoute from '@/components/ProtectedRoute';
 import MobileTabBar from '@/components/matrix/MobileTabBar';
@@ -183,7 +184,9 @@ function App() {
           <GoogleDriveConnectionProvider>
             <Router>
               <ScrollToTop />
-              <AuthenticatedApp />
+              <RootErrorBoundary>
+                <AuthenticatedApp />
+              </RootErrorBoundary>
             </Router>
             <Toaster />
             <InsufficientCreditsModal />
