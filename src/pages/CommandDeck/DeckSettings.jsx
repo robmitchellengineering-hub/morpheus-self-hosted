@@ -136,6 +136,56 @@ export default function DeckSettings() {
   );
 }
 
+// Jarvis-triggered widget build progress (server/src/functions/
+// buildDeckWidget.js) — Rob, 2026-09-17, after first seeing this land as
+// chat messages instead: "wait not in the chat it should be a progress bar
+// with details running in the widgets card." Polled by CommandDeckContext
+// (widgetBuild) while a build is running; stays visible once done/failed
+// until dismissed so a failure isn't missed by someone who stepped away.
+const BUILD_STAGE_LABEL = {
+  planning: 'Planning', building: 'Building', pushing: 'Pushing',
+  merging: 'Waiting on checks', deploying: 'Deploying', verifying: 'Verifying', done: 'Done', failed: 'Failed',
+};
+// Rough fraction for the stages before/after the per-step progress bar
+// actually applies (no steps planned yet, or already past the build loop) —
+// keeps the bar moving instead of sitting at 0% or 100% for a few minutes.
+const BUILD_STAGE_FLOOR = { planning: 0.05, pushing: 0.9, merging: 0.93, deploying: 0.97, verifying: 0.99, done: 1, failed: 1 };
+
+function WidgetBuildProgress() {
+  const { widgetBuild, dismissWidgetBuild } = useCommandDeck();
+  if (!widgetBuild) return null;
+  const { status, step_index: stepIndex, step_count: stepCount, step_title: stepTitle, message, description } = widgetBuild;
+  const fraction = stepCount > 0
+    ? Math.min(1, Math.max(0.05, stepIndex / stepCount))
+    : (BUILD_STAGE_FLOOR[status] ?? 0.05);
+  const isTerminal = status === 'done' || status === 'failed';
+  const barColor = status === 'failed' ? C.alert : status === 'done' ? C.sage : C.brass;
+
+  return (
+    <div style={{ background: C.paper, border: `1.5px solid ${barColor}`, borderRadius: 10, padding: '0.65rem 0.7rem', marginBottom: '0.6rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+        {!isTerminal && <Loader2 size={14} className="animate-spin" color={barColor} />}
+        {status === 'done' && <Check size={14} color={barColor} />}
+        {status === 'failed' && <AlertTriangle size={14} color={barColor} />}
+        <span style={{ flex: 1, fontSize: '0.8rem', fontWeight: 600 }}>
+          {BUILD_STAGE_LABEL[status] || status}{stepCount > 0 && !isTerminal ? ` — step ${stepIndex}/${stepCount}` : ''}: {description}
+        </span>
+        {isTerminal && (
+          <button onClick={dismissWidgetBuild} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.15rem', display: 'flex' }}>
+            <X size={13} color={C.walnutSoft} />
+          </button>
+        )}
+      </div>
+      <div style={{ height: 6, borderRadius: 3, background: C.line, overflow: 'hidden', marginBottom: message || stepTitle ? '0.4rem' : 0 }}>
+        <div style={{ height: '100%', width: `${Math.round(fraction * 100)}%`, background: barColor, transition: 'width 0.4s ease' }} />
+      </div>
+      {(message || stepTitle) && (
+        <p style={{ margin: 0, fontSize: '0.75rem', color: C.walnutSoft }}>{message || stepTitle}</p>
+      )}
+    </div>
+  );
+}
+
 // 2026-09-17 (Rob: "I should be able to add custom widgets there too, I
 // just don't want to lose the tools I already have") — enable/disable +
 // reorder for every DECK_WIDGETS entry, driving what actually renders on
@@ -148,6 +198,7 @@ function WidgetManager() {
 
   return (
     <Card title="Widgets" sub="What shows on your Deck, and in what order.">
+      <WidgetBuildProgress />
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
         {sorted.map((w, i) => {
           const meta = DECK_WIDGETS.find((d) => d.key === w.widget_key);

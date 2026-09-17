@@ -111,6 +111,13 @@ export function CommandDeckProvider({ children }) {
   const [businessProfile, setBusinessProfile] = useState(null); // {id, shop_name, tagline, contact_email, business_context} | null
   const [businessProfileBusy, setBusinessProfileBusy] = useState(false);
 
+  // Jarvis-triggered widget build in progress (server/src/functions/
+  // buildDeckWidget.js) — Rob, 2026-09-17: "it should be a progress bar
+  // with details running in the widgets card." Polled (not part of the
+  // main load effect below) only while a build is running — see the effect
+  // further down. null once dismissed or when there's nothing to show.
+  const [widgetBuild, setWidgetBuild] = useState(null);
+
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarForm, setCalendarForm] = useState({ summary: '', date: '' });
@@ -226,6 +233,33 @@ export function CommandDeckProvider({ children }) {
       setLoaded(true);
     })();
   }, []);
+
+  // ---- widget build progress ---------------------------------------------
+  // Checks once for a widget build on load, then polls every 5s only while
+  // one exists and isn't done/failed — same "poll while active, stop once
+  // terminal" shape as SelfDev.jsx's own PR-merge watcher, just much
+  // shorter-lived. A terminal row stays visible (with a dismiss button in
+  // the widget manager) until the user clears it or starts another build.
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const poll = async () => {
+      try {
+        const rows = await base44.entities.DeckWidgetBuild.list('-created_date', 1);
+        if (cancelled) return;
+        const latest = rows[0] || null;
+        setWidgetBuild(latest);
+        if (latest && !['done', 'failed'].includes(latest.status)) {
+          timer = window.setTimeout(poll, 5000);
+        }
+      } catch {
+        // transient — the next mount/dismiss/build retries this
+      }
+    };
+    poll();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, []);
+  const dismissWidgetBuild = () => setWidgetBuild(null);
 
   // ---- brain dump --------------------------------------------------------
   // Deliberately name-only, not first-person — this drives the FAST,
@@ -888,6 +922,7 @@ export function CommandDeckProvider({ children }) {
     docBusy, docErr, docResult, createDeckDocument,
     uploadFile,
     widgetInstances, toggleWidget, moveWidget,
+    widgetBuild, dismissWidgetBuild,
     businessProfile, businessProfileBusy, saveBusinessProfile,
     calendarEvents, calendarLoading, calendarForm, setCalendarForm, calendarBusy, loadCalendarEvents, addCalendarEvent,
   };
