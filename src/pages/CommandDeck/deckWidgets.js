@@ -19,6 +19,7 @@
 // every widget (including these two) enabled by the migration that
 // introduced this table, so nothing on his existing Deck changes.
 export const DECK_WIDGETS = [
+  { key: 'jarvis_suggestions', label: "Jarvis's suggestions", defaultEnabled: true },
   { key: 'brain_dump', label: 'Brain dump', defaultEnabled: true },
   { key: 'today_charge', label: "Today's charge", defaultEnabled: true },
   { key: 'today_one_thing', label: "Today's one thing", defaultEnabled: true },
