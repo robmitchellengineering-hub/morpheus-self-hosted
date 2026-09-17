@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { Outlet, Link } from 'react-router-dom';
+import { X, Home } from 'lucide-react';
 import { CommandDeckProvider, useCommandDeck } from '@/contexts/CommandDeckContext';
 import { DeckGoogleConnectionProvider } from '@/contexts/DeckGoogleConnectionContext';
 import DeckTabBar from './DeckTabBar';
@@ -76,10 +76,28 @@ function CommandDeckShell() {
           borderRadius: '0 0 18px 18px',
         }}
       >
-        <div style={{ fontSize: '0.68rem', letterSpacing: '0.18em', color: C.brassLight, textTransform: 'uppercase', marginBottom: '0.35rem' }}>
-          {headerEyebrow}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+          <div>
+            <div style={{ fontSize: '0.68rem', letterSpacing: '0.18em', color: C.brassLight, textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+              {headerEyebrow}
+            </div>
+            <h1 style={{ fontWeight: 600, fontSize: '1.9rem', margin: 0, letterSpacing: '-0.01em' }}>Command Deck</h1>
+          </div>
+          {/* Escape hatch back to Morpheus itself — Command Deck's own themed
+              shell has no other way out otherwise ("everything must be linked
+              and actionable, no dead ends" — Rob, 2026-09-17). */}
+          <Link
+            to="/"
+            title="Back to Morpheus"
+            style={{
+              flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 38, height: 38, borderRadius: 10, border: `1px solid rgba(246,240,223,0.3)`,
+              color: C.paper, textDecoration: 'none',
+            }}
+          >
+            <Home size={17} />
+          </Link>
         </div>
-        <h1 style={{ fontWeight: 600, fontSize: '1.9rem', margin: 0, letterSpacing: '-0.01em' }}>Command Deck</h1>
         <p style={{ margin: '0.35rem 0 0', fontSize: '0.85rem', color: 'rgba(246,240,223,0.75)' }}>
           One thing at a time. Everything else lives here, not in your head.
         </p>
