@@ -16,13 +16,17 @@ import { getJarvisMemory, formatMemoryBlock } from '../lib/deckMemory.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 
-// Live click-testing this against prod (0.1 vCPU / 256 MB compute plan)
-// timed out — the prompt asks for "a tight, sharp few paragraphs" (see
-// below), so there is no reason to carry chatWithJarvis's much higher
-// conversational ceiling here; capping it tighter caps worst-case
-// generation time without touching output quality for what this call
-// actually asks for.
-const MAX_REPLY_TOKENS = 2000;
+// 2026-09-17: tried capping this at 2000 to bound worst-case generation
+// time (see PR #165) — broke correctness instead: this model burns a real
+// chunk of the budget on hidden reasoning before any visible reply text
+// (same behavior chatWithJarvis.js's own MAX_REPLY_TOKENS comment already
+// flags), and 2000 wasn't enough to get past that, so the call returned a
+// 200 with a silently EMPTY reply. Reverted to match chatWithJarvis's own
+// proven ceiling — this call is genuinely slow (~50s live-tested), but
+// that's a real wait, not a bug; the frontend already shows a loading
+// state for it. Fixing the wait time is a separate problem (a bigger
+// compute plan, or trimming the snapshot/prompt itself), not this cap.
+const MAX_REPLY_TOKENS = 6000;
 
 function buildSynthesisPrompt({ firstName, businessContext }) {
   return `You are Jarvis — ${firstName}'s butler, and something like a big brother: fiercely on their side, never soft about it. Dry, devilish wit, understated rather than goofy.
