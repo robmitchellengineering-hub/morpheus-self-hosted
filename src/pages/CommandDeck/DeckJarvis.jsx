@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mic, Volume2, VolumeX, Send, FileText, Loader2, ExternalLink, X, Paperclip, Image as ImageIcon } from 'lucide-react';
+import { Mic, Volume2, VolumeX, Send, FileText, Loader2, ExternalLink, X, Paperclip, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
@@ -181,6 +181,11 @@ export default function DeckJarvis() {
             }}
             title="Tap to hear this"
           >
+            {m.role === 'jarvis_synthesis' && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.gold, marginBottom: '0.3rem' }}>
+                <Sparkles size={11} /> Suggestions
+              </span>
+            )}
             {m.content}
             {loadingId === m.id && <span style={{ opacity: 0.6 }}> …</span>}
           </button>

@@ -83,6 +83,8 @@ export function CommandDeckProvider({ children }) {
   const [jarvisInput, setJarvisInput] = useState('');
   const [jarvisSending, setJarvisSending] = useState(false);
   const [jarvisErr, setJarvisErr] = useState(false);
+  const [synthesisBusy, setSynthesisBusy] = useState(false);
+  const [synthesisErr, setSynthesisErr] = useState(false);
   const [docBusy, setDocBusy] = useState(false);
   const [docErr, setDocErr] = useState(null);
   const [docResult, setDocResult] = useState(null); // { url, title } | null
@@ -826,6 +828,27 @@ export function CommandDeckProvider({ children }) {
     setJarvisSending(false);
   };
 
+  // The Jarvis "Get suggestions" card — a one-shot, self-triggered
+  // synthesis over the same live snapshot chatWithJarvis.js grounds normal
+  // conversation in, but with no question of the user's to answer. Saved
+  // server-side as an ordinary DeckJarvisMessage (role "jarvis_synthesis"),
+  // so it's already in `jarvisMessages` once loaded — lastSynthesis below
+  // just needs to find the newest one, no separate fetch/state to keep in
+  // sync.
+  const runJarvisSynthesis = async () => {
+    if (synthesisBusy) return;
+    setSynthesisBusy(true);
+    setSynthesisErr(false);
+    try {
+      const { data } = await base44.functions.invoke('runJarvisSynthesis', {});
+      setJarvisMessages((prev) => [...prev, { id: `local-${Date.now()}-syn`, role: 'jarvis_synthesis', content: data.reply, created_date: data.createdAt }]);
+    } catch {
+      setSynthesisErr(true);
+    }
+    setSynthesisBusy(false);
+  };
+  const lastSynthesis = [...jarvisMessages].reverse().find((m) => m.role === 'jarvis_synthesis') || null;
+
   const createDeckDocument = async (instruction) => {
     if (!instruction.trim() || docBusy) return;
     setDocBusy(true);
@@ -862,6 +885,7 @@ export function CommandDeckProvider({ children }) {
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt, driveBackup, driveRestore,
     jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
+    synthesisBusy, synthesisErr, runJarvisSynthesis, lastSynthesis,
     docBusy, docErr, docResult, createDeckDocument,
     uploadFile,
     widgetInstances, toggleWidget, moveWidget,
