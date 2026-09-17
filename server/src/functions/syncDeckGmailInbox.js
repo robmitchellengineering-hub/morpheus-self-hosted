@@ -8,6 +8,7 @@
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getDeckGoogleToken, listGmailMessages, getGmailMessage } from '../lib/deckGoogle.js';
+import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 
 const PAGE_SIZE = 20;
 // 2026-09-17 (Rob: "emails are blowing out of their box" — a real inquiry,
@@ -39,16 +40,17 @@ const CLASSIFY_SCHEMA = {
   properties: {
     isInquiry: {
       type: 'boolean',
-      description: 'true only if this needs a personal reply from Rob: a customer question, a quote/price request, a repair or consignment enquiry, a website contact-form submission, or someone asking for help.',
+      description: 'true only if this needs a personal reply from the account owner: a customer question, a quote/price request, a job/booking enquiry, a website contact-form submission, or someone asking for help.',
     },
   },
   required: ['isInquiry'],
 };
 
 async function classifyIsInquiry(userId, message) {
-  const prompt = `You are filtering Gmail for Valiant Music, an instrument sales/repair/consignment shop. Decide whether the message below is a genuine inquiry Rob needs to personally see and reply to — a customer question, a quote/price request, a repair or consignment enquiry, a gear/dry-hire request, a submission from the valiantmusic.com.au website contact form, or someone asking for help — or whether it's a newsletter, marketing email, automated notification, receipt, policy update, or anything else that doesn't need a personal reply.
+  const businessContext = await getDeckBusinessContext(userId);
+  const prompt = `You are filtering Gmail for ${businessContext}. Decide whether the message below is a genuine inquiry the account owner needs to personally see and reply to — a customer question, a quote/price request, a job/booking/service enquiry, a submission from the business's own website contact form, or someone asking for help — or whether it's a newsletter, marketing email, automated notification, receipt, policy update, or anything else that doesn't need a personal reply.
 
-If it's genuinely ambiguous — a real person, not obviously automated, asking about anything shop-related even if loosely worded — lean toward true. Missing a real customer message is a much worse outcome than one extra item Rob just marks done; a false "true" costs him two seconds, a false "false" loses him a customer he never saw.
+If it's genuinely ambiguous — a real person, not obviously automated, asking about anything business-related even if loosely worded — lean toward true. Missing a real customer message is a much worse outcome than one extra item to mark done; a false "true" costs two seconds, a false "false" loses a customer who was never seen.
 
 FROM: ${message.from}${message.fromEmail ? ` <${message.fromEmail}>` : ''}
 SUBJECT: ${message.subject}

@@ -38,6 +38,8 @@ export default function DeckHome() {
     setLightboxImg, askToDelete,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     uploadFile,
+    widgetInstances,
+    calendarEvents, calendarLoading, calendarForm, setCalendarForm, calendarBusy, loadCalendarEvents, addCalendarEvent,
   } = useCommandDeck();
 
   const energyInfo = ENERGY.find((e) => e.id === energy);
@@ -62,8 +64,22 @@ export default function DeckHome() {
   const visibleKnowledge = knowledge.filter((k) => matches(k.text, knowledgeSearch));
   const visibleInbox = inbox.filter((i) => matches(`${i.from_name} ${i.message}`, inboxSearch));
 
+  // 2026-09-17 (Rob: "I should be able to add custom widgets there too, I
+  // just don't want to lose the tools I already have") — each top-level
+  // <Card> below registers its own JSX under its widget key instead of
+  // rendering directly in place, so this page can show/hide/reorder
+  // sections per the account's own DeckWidgetInstance rows (widgetInstances,
+  // from context) without moving any of the section JSX itself. See
+  // deckWidgets.js for the registry of valid keys.
+  const widgetNodes = {};
+  const registerWidget = (key, node) => { widgetNodes[key] = node; return null; };
+  const orderedWidgets = [...widgetInstances]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .filter((w) => w.enabled);
+
   return (
     <>
+      {registerWidget('brain_dump', (
       <Card
         title="Brain dump"
         sub="Whatever's rattling around — get it out. Mention a name and it's filed straight to them; otherwise Jarvis files it where it belongs."
@@ -116,7 +132,9 @@ export default function DeckHome() {
           </div>
         )}
       </Card>
+      ))}
 
+      {registerWidget('today_charge', (
       <Card title="Today's charge" sub="Tap what's honest, not what's ideal.">
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           {ENERGY.map((e) => {
@@ -177,7 +195,9 @@ export default function DeckHome() {
           </div>
         )}
       </Card>
+      ))}
 
+      {registerWidget('today_one_thing', (
       <Card title="Today's one thing" sub="Not the list. Just this." style={{ background: C.walnut, color: C.paper, border: `1.5px solid ${C.gold}` }} titleColor={C.brassLight} subColor="rgba(246,240,223,0.65)">
         <input
           value={focusTask}
@@ -186,7 +206,9 @@ export default function DeckHome() {
           style={{ ...inputStyle, background: 'rgba(246,240,223,0.08)', border: '1px solid rgba(246,240,223,0.25)', color: C.paper }}
         />
       </Card>
+      ))}
 
+      {registerWidget('inbox', (
       <Card
         title="Inbox"
         sub="Every inquiry, one place — email, the website, whatever comes in. Log it as it comes."
@@ -199,7 +221,18 @@ export default function DeckHome() {
           replyBusy={replyBusy} onStartReply={startReplyDraft} onCancelReply={cancelReplyDraft} onSendReply={sendReplyDraft}
         />
       </Card>
+      ))}
 
+      {registerWidget('calendar', (
+      <Card title="Calendar" sub="Your real Google Calendar, right here.">
+        <CalendarWidget
+          events={calendarEvents} loading={calendarLoading} form={calendarForm} setForm={setCalendarForm}
+          busy={calendarBusy} onRefresh={loadCalendarEvents} onAdd={addCalendarEvent}
+        />
+      </Card>
+      ))}
+
+      {registerWidget('signal_chain', (
       <Card title="Signal chain" sub="Tap a pedal to open it up.">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
           {STREAM_ORDER.map((id) => {
@@ -275,7 +308,9 @@ export default function DeckHome() {
           })}
         </div>
       </Card>
+      ))}
 
+      {registerWidget('life_streams', (
       <Card title="Life streams" sub="The rest of your life, tracked alongside the shop. Tap a status to flag it.">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
           {LIFE_STREAMS_META.map((s) => (
@@ -290,7 +325,9 @@ export default function DeckHome() {
           ))}
         </div>
       </Card>
+      ))}
 
+      {registerWidget('strategy', (
       <Card
         title="Strategy"
         sub="The long game — where you're steering this, not just running it."
@@ -298,7 +335,9 @@ export default function DeckHome() {
       >
         <StreamList items={visibleStrategy} onAdd={addStrategy} onRemove={(id) => askToDelete(() => removeStrategy(id))} placeholder="Add a strategic idea…" accent={C.brass} icon={Compass} empty={strategySearch ? 'No matches.' : 'Nothing filed yet — send items here from the brain dump.'} />
       </Card>
+      ))}
 
+      {registerWidget('knowledge', (
       <Card
         title="Knowledge & ideas"
         sub="Research, recipes, rabbit holes — whatever might be useful one day."
@@ -306,7 +345,9 @@ export default function DeckHome() {
       >
         <StreamList items={visibleKnowledge} onAdd={addKnowledge} onRemove={(id) => askToDelete(() => removeKnowledge(id))} placeholder="Add an idea, link, or thought…" accent={C.walnutSoft} icon={Lightbulb} empty={knowledgeSearch ? 'No matches.' : 'Nothing filed yet — send items here from the brain dump.'} />
       </Card>
+      ))}
 
+      {registerWidget('tasks', (
       <Card
         title="Task board"
         sub="Sorted by who owns it — not just you."
@@ -455,7 +496,9 @@ export default function DeckHome() {
           );
         })}
       </Card>
+      ))}
 
+      {registerWidget('week_rhythm', (
       <Card title="Week rhythm" sub="30 hrs, shaped around your energy — not against it.">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
           <RhythmRow day="Tue – Sat, 10–4" what="Shop floor: sales, demos, repairs between customers" tone={C.sage} />
@@ -464,7 +507,9 @@ export default function DeckHome() {
           <RhythmRow day="When sharp" what="The stuff you're avoiding — bureaucracy, planning, calls" tone={C.walnutSoft} />
         </div>
       </Card>
+      ))}
 
+      {registerWidget('backup', (
       <Card title="Backup & export" sub="A real copy of everything on this deck, whenever you want one.">
         <button onClick={runExport} disabled={backupBusy} style={{ ...pillBtn(C.walnutSoft), width: '100%', padding: '0.55rem', fontSize: '0.8rem', opacity: backupBusy ? 0.6 : 1 }}>
           {backupBusy ? 'Working…' : 'Export everything'}
@@ -480,7 +525,50 @@ export default function DeckHome() {
         )}
         {backupMsg && <p style={{ fontSize: '0.75rem', color: C.walnutSoft, marginTop: '0.6rem', marginBottom: 0 }}>{backupMsg}</p>}
       </Card>
+      ))}
+
+      {orderedWidgets.map((w) => (
+        <div key={w.widget_key}>{widgetNodes[w.widget_key]}</div>
+      ))}
     </>
+  );
+}
+
+// The generic Calendar widget (Rob, 2026-09-17: alongside Inbox, the two
+// widgets every account should get by default). Deliberately simple: a
+// refresh-on-demand upcoming-events list (same pattern MurbahPanel's own
+// "Upcoming bookings" section already uses) plus a quick-add form. Separate
+// from Signal Chain's own Murbah↔Calendar sync.
+function CalendarWidget({ events, loading, form, setForm, busy, onRefresh, onAdd }) {
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.7rem' }}>
+        <input placeholder="Event title…" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+        <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ ...miniInput, flex: '0 1 150px' }} />
+        <IconButton onClick={onAdd} color={C.brass} disabled={busy || !form.summary.trim() || !form.date}>
+          {busy ? <Loader2 size={16} className="animate-spin" color={C.paper} /> : <Plus size={18} color={C.paper} />}
+        </IconButton>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Upcoming</span>
+        <button onClick={onRefresh} disabled={loading} style={{ ...ghostBtn, fontSize: '0.7rem', color: C.brass, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+          {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
+        </button>
+      </div>
+      {events.length === 0 ? (
+        <EmptyNote text="Nothing loaded yet — hit Refresh (needs Google connected in Settings)." />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+          {events.map((e) => (
+            <div key={e.id} style={rowBox}>
+              <Calendar size={13} color={C.brass} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: '0.78rem' }}>{e.summary}</span>
+              <span style={{ fontSize: '0.68rem', color: C.walnutSoft, flexShrink: 0 }}>{e.start}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

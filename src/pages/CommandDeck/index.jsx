@@ -45,7 +45,15 @@ export default function CommandDeckLayout() {
 }
 
 function CommandDeckShell() {
-  const { loaded, saveErr, lightboxImg, setLightboxImg, confirmDeleteState, resolveConfirmDelete } = useCommandDeck();
+  const { loaded, saveErr, lightboxImg, setLightboxImg, confirmDeleteState, resolveConfirmDelete, businessProfile } = useCommandDeck();
+
+  // Falls back to the original hardcoded header text until a
+  // DeckBusinessProfile exists — every account gets one via this feature's
+  // own migration (Rob's backfilled with exactly this text), so this
+  // fallback only ever matters for a genuinely fresh account mid-onboarding.
+  const headerEyebrow = businessProfile?.shop_name
+    ? `${businessProfile.shop_name}${businessProfile.tagline ? ` · ${businessProfile.tagline}` : ''}`
+    : 'Valiant Music · Brunswick Heads / Murwillumbah';
 
   return (
     <div
@@ -69,7 +77,7 @@ function CommandDeckShell() {
         }}
       >
         <div style={{ fontSize: '0.68rem', letterSpacing: '0.18em', color: C.brassLight, textTransform: 'uppercase', marginBottom: '0.35rem' }}>
-          Valiant Music · Brunswick Heads / Murwillumbah
+          {headerEyebrow}
         </div>
         <h1 style={{ fontWeight: 600, fontSize: '1.9rem', margin: 0, letterSpacing: '-0.01em' }}>Command Deck</h1>
         <p style={{ margin: '0.35rem 0 0', fontSize: '0.85rem', color: 'rgba(246,240,223,0.75)' }}>

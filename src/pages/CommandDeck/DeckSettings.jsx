@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText, UploadCloud, DownloadCloud, AlertTriangle, Coins, X } from 'lucide-react';
+import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText, UploadCloud, DownloadCloud, AlertTriangle, Coins, X, ChevronUp, ChevronDown, Plug } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useDeckGoogleConnection } from '@/hooks/useDeckGoogleConnection';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { base44 } from '@/api/base44Client';
 import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
 import { startTokenCheckout } from '@/lib/purchaseCredits';
+import { DECK_WIDGETS } from './deckWidgets';
 import { C } from './deckConstants';
-import { Card, pillBtn } from './DeckUI';
+import { Card, pillBtn, miniInput } from './DeckUI';
 
-// Install card, Command Deck's own Google connection (Gmail sync +
-// suggested replies, Drive backup/restore), and Data vault status. Calendar
-// sync and Doc creation are still coming; so is a Business details form.
+// Install card, the Connections section (Google today, built to grow),
+// Widgets (what shows on the Deck home tab, and in what order), Business
+// profile (shapes Jarvis/Gmail-filter/brain-dump prompts instead of them
+// hardcoding one account's business), Data vault status, and Usage.
 export default function DeckSettings() {
   const { canInstall, installed, promptInstall } = usePwaInstall();
   const google = useDeckGoogleConnection();
@@ -42,7 +44,15 @@ export default function DeckSettings() {
 
       <UsageMeter />
 
-      <Card title="Google" sub="Gmail sync, Calendar, Drive backup, and Doc creation — one connection, separate from Morpheus's own Google sign-in.">
+      <WidgetManager />
+
+      <BusinessProfileForm />
+
+      <Card title="Connections" sub="Accounts the Deck can draw from. Google today — more to come.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
+          <Plug size={15} color={C.walnutSoft} />
+          <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Google</span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
             {google.loading ? (
@@ -69,9 +79,9 @@ export default function DeckSettings() {
         {google.connected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.8rem' }}>
             <ScopeRow icon={Mail} label="Gmail" sub="Sync into the Inbox card, draft & send replies." active />
-            <ScopeRow icon={Calendar} label="Calendar" sub="Coming soon — Murbah booking sync." />
+            <ScopeRow icon={Calendar} label="Calendar" sub="Powers the Calendar widget and Signal Chain's Murbah sync." active />
             <ScopeRow icon={HardDrive} label="Drive backup" sub="Below — one-click backup & restore." active />
-            <ScopeRow icon={FileText} label="Docs" sub="Coming soon — Jarvis-drafted documents." />
+            <ScopeRow icon={FileText} label="Docs" sub="Jarvis-drafted documents, from the Jarvis tab." active />
           </div>
         )}
       </Card>
@@ -123,6 +133,94 @@ export default function DeckSettings() {
         </Card>
       )}
     </>
+  );
+}
+
+// 2026-09-17 (Rob: "I should be able to add custom widgets there too, I
+// just don't want to lose the tools I already have") — enable/disable +
+// reorder for every DECK_WIDGETS entry, driving what actually renders on
+// /deck (see DeckHome.jsx's registerWidget/orderedWidgets). A widget with no
+// DeckWidgetInstance row yet just doesn't show here until the load effect's
+// lazy-seed finishes — same load-order every other Deck list already has.
+function WidgetManager() {
+  const { widgetInstances, toggleWidget, moveWidget } = useCommandDeck();
+  const sorted = [...widgetInstances].sort((a, b) => a.sort_order - b.sort_order);
+
+  return (
+    <Card title="Widgets" sub="What shows on your Deck, and in what order.">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        {sorted.map((w, i) => {
+          const meta = DECK_WIDGETS.find((d) => d.key === w.widget_key);
+          if (!meta) return null;
+          return (
+            <div key={w.widget_key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.5rem 0.6rem' }}>
+              <span style={{ flex: 1, fontSize: '0.83rem', fontWeight: 600, opacity: w.enabled ? 1 : 0.5 }}>{meta.label}</span>
+              <button onClick={() => moveWidget(w.widget_key, -1)} disabled={i === 0} style={{ ...pillBtn(C.walnutSoft), padding: '0.3rem', opacity: i === 0 ? 0.3 : 1 }}>
+                <ChevronUp size={13} />
+              </button>
+              <button onClick={() => moveWidget(w.widget_key, 1)} disabled={i === sorted.length - 1} style={{ ...pillBtn(C.walnutSoft), padding: '0.3rem', opacity: i === sorted.length - 1 ? 0.3 : 1 }}>
+                <ChevronDown size={13} />
+              </button>
+              <button onClick={() => toggleWidget(w.widget_key)} style={{ ...pillBtn(w.enabled ? C.sage : C.walnutSoft), minWidth: 62 }}>
+                {w.enabled ? 'On' : 'Off'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// 2026-09-17 — closes the earlier "Business details settings form" gap and
+// carries the new business_context field: what every Valiant-Music-specific
+// prompt (Jarvis, the Gmail filter, brain-dump classification, doc
+// drafting, suggested replies) used to hardcode inline now reads from here.
+function BusinessProfileForm() {
+  const { businessProfile, businessProfileBusy, saveBusinessProfile } = useCommandDeck();
+  const [form, setForm] = useState({ shop_name: '', tagline: '', contact_email: '', business_context: '' });
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (businessProfile && !dirty) {
+      setForm({
+        shop_name: businessProfile.shop_name || '',
+        tagline: businessProfile.tagline || '',
+        contact_email: businessProfile.contact_email || '',
+        business_context: businessProfile.business_context || '',
+      });
+    }
+  }, [businessProfile, dirty]);
+
+  const update = (field) => (e) => { setForm((f) => ({ ...f, [field]: e.target.value })); setDirty(true); };
+
+  const save = async () => {
+    await saveBusinessProfile(form);
+    setDirty(false);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <Card title="Business profile" sub="Shapes your Deck header and every AI feature — Jarvis, Gmail filtering, brain-dump sorting, drafted replies.">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <input placeholder="Business name" value={form.shop_name} onChange={update('shop_name')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
+        <input placeholder="Tagline (shown under the name)" value={form.tagline} onChange={update('tagline')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
+        <input placeholder="Contact email" value={form.contact_email} onChange={update('contact_email')} style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }} />
+        <textarea
+          placeholder="Tell Jarvis about your business — what you do, your goals, anything worth knowing when it's drafting replies or deciding what counts as a real inquiry."
+          value={form.business_context}
+          onChange={update('business_context')}
+          rows={4}
+          style={{ ...miniInput, width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+        />
+        <button onClick={save} disabled={businessProfileBusy || !dirty} style={{ ...pillBtn(C.brass), opacity: businessProfileBusy || !dirty ? 0.6 : 1 }}>
+          {businessProfileBusy ? 'Saving…' : 'Save'}
+        </button>
+        {saved && <span style={{ fontSize: '0.75rem', color: C.sage, fontWeight: 600 }}>✓ Saved</span>}
+      </div>
+    </Card>
   );
 }
 

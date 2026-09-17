@@ -153,6 +153,7 @@ const ENTITY_NAMES = [
   'DeckJarvisMessage', 'DeckDumpItem', 'DeckPerson', 'DeckTask', 'DeckConsignmentItem', 'DeckRepairJob', 'DeckRepairFile',
   'DeckMurbahOpportunity', 'DeckInboxItem', 'DeckStrategyNote', 'DeckKnowledgeNote',
   'DeckLifeStream', 'DeckLifeStreamNote', 'DeckEnergyLogEntry', 'DeckFocusEntry',
+  'DeckWidgetInstance', 'DeckBusinessProfile',
 ];
 
 const entities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, makeEntity(name)]));

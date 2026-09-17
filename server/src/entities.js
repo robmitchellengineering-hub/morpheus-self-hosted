@@ -55,6 +55,8 @@ const ENTITY_MAP = {
   DeckLifeStreamNote: 'deckLifeStreamNote',
   DeckEnergyLogEntry: 'deckEnergyLogEntry',
   DeckFocusEntry: 'deckFocusEntry',
+  DeckWidgetInstance: 'deckWidgetInstance',
+  DeckBusinessProfile: 'deckBusinessProfile',
 };
 
 export function isKnownEntity(name) {
