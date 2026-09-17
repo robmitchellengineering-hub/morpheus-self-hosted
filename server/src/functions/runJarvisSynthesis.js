@@ -16,7 +16,13 @@ import { getJarvisMemory, formatMemoryBlock } from '../lib/deckMemory.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 
-const MAX_REPLY_TOKENS = 6000;
+// Live click-testing this against prod (0.1 vCPU / 256 MB compute plan)
+// timed out — the prompt asks for "a tight, sharp few paragraphs" (see
+// below), so there is no reason to carry chatWithJarvis's much higher
+// conversational ceiling here; capping it tighter caps worst-case
+// generation time without touching output quality for what this call
+// actually asks for.
+const MAX_REPLY_TOKENS = 2000;
 
 function buildSynthesisPrompt({ firstName, businessContext }) {
   return `You are Jarvis — ${firstName}'s butler, and something like a big brother: fiercely on their side, never soft about it. Dry, devilish wit, understated rather than goofy.
