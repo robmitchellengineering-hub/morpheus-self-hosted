@@ -87,10 +87,21 @@ function makeStageEmitter(emit) {
   const start = (stage) => {
     startedAt.set(stage, Date.now());
     emit({ type: 'stage', stage, status: 'start', label: STAGE_LABELS[stage], etaSeconds: Math.round(estimateCallMs(STAGE_ROLE[stage]) / 1000), index: index++ });
+    // 2026-09-17: found live — a build turn can go completely silent for
+    // 15+ minutes with zero server console output, whether it's genuinely
+    // stuck or just slow, because `emit` above only ever writes to the HTTP
+    // response stream, never to the server's own stdout. Nothing here told
+    // Northflank's logs anything was happening at all. This is the one
+    // choke point every stage already passes through, so logging here
+    // covers the whole turn for free — self-dev or not, this build or any
+    // future one that goes quiet.
+    console.log(`[chatWithMorpheus] stage start: ${stage}`);
   };
   const done = (stage) => {
     const t = startedAt.get(stage);
-    emit({ type: 'stage', stage, status: 'done', label: STAGE_LABELS[stage], elapsedSeconds: t ? Math.round((Date.now() - t) / 1000) : undefined });
+    const elapsedSeconds = t ? Math.round((Date.now() - t) / 1000) : undefined;
+    emit({ type: 'stage', stage, status: 'done', label: STAGE_LABELS[stage], elapsedSeconds });
+    console.log(`[chatWithMorpheus] stage done: ${stage}${elapsedSeconds != null ? ` (${elapsedSeconds}s)` : ''}`);
   };
   return {
     start,
@@ -1251,7 +1262,12 @@ OPERATOR SAYS: ${message}`;
         for (let i = 0; i < plannedFiles.length; i += MAX_FILES_PER_CODER_STEP) {
           chunks.push(plannedFiles.slice(i, i + MAX_FILES_PER_CODER_STEP));
         }
-        for (const chunk of chunks) {
+        for (const [chunkIdx, chunk] of chunks.entries()) {
+          // Multiple chunks all share one stages.start/done('coder') pair —
+          // this makes each individual chunk call's timing visible too, not
+          // just "coder started" once for however many chunks there are.
+          console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} starting: ${chunk.join(', ')}`);
+          const chunkStartedAt = Date.now();
           // When context is scoped (large/self-dev project), the shared
           // contextBlock may not carry this chunk's files' content. Give the
           // coder the CURRENT content of every existing file it's about to
@@ -1275,6 +1291,7 @@ OPERATOR SAYS: ${message}`;
           coderModelLast = chunkCoder.model;
           const chunkOps = Array.isArray(chunkCoder.result.fileOperations) ? chunkCoder.result.fileOperations : [];
           fileOps.push(...chunkOps);
+          console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} done (${Math.round((Date.now() - chunkStartedAt) / 1000)}s, ${chunkOps.length} file op(s))`);
         }
       } else {
         // Fallback: the Planner didn't enumerate plannedFiles (shouldn't
