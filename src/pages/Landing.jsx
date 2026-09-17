@@ -94,11 +94,21 @@ export default function Landing() {
         {showButtons && (
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
             <button onClick={enter} className="px-8 py-3 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-display tracking-wider neon-glow enter-pulse">
-              ▣ ENTER THE MATRIX
+              ▣ BUILD... ANYTHING.
             </button>
             <button onClick={takeBluePill} className="px-8 py-3 border border-primary/30 text-primary/50 hover:text-primary/70 transition-colors font-display tracking-wider">
               GO BACK TO SLEEP
             </button>
+          </div>
+        )}
+        {/* Command Deck's own entry point — admin-only for now, same gate
+            /deck itself enforces (see App.jsx), so this never leads anywhere
+            it would immediately bounce the visitor back out of. */}
+        {showButtons && isAdmin && (
+          <div className="mt-4 flex justify-center">
+            <Link to="/deck" className="px-8 py-3 border border-primary/40 text-primary/70 hover:bg-primary/90 hover:text-black transition-colors font-display tracking-wider inline-flex items-center gap-2">
+              <LayoutDashboard size={16} /> PERSONAL ASSISTANT
+            </Link>
           </div>
         )}
         {showButtons && <DonateWidget />}
