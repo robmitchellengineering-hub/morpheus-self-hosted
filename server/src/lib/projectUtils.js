@@ -3,6 +3,7 @@
 import { prisma } from '../db.js';
 import { offloadLargeString } from '../storage.js';
 import { getGithubToken, pushFiles, getFileContent, deleteFile, ghHeaders, ghJson } from './github.js';
+import { assertWritable } from './enginePolicy.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -145,7 +146,15 @@ export function applyEdits(original, edits) {
   return { ok: failed.length === 0, content: failed.length ? original : content, failed };
 }
 
-export async function applyFileOperations(userId, projectId, fileOps, existingFiles) {
+// `policy` (optional, see lib/enginePolicy.js) is the write-scope check for
+// a restricted build — e.g. a Jarvis-triggered widget build, which may only
+// ever touch a narrow allow-list of paths. Every caller of this function
+// (the main build turn and every retry pass: syntax-fix, edit-retry,
+// deep-verify-fix, a11y-fix, polish) funnels through here, so enforcing it
+// once, right before any DB write happens, covers all of them for free.
+// Left undefined/null, behavior is completely unchanged — this only ever
+// adds a restriction, never removes one.
+export async function applyFileOperations(userId, projectId, fileOps, existingFiles, policy = null) {
   const appliedOps = [];
   const seenPaths = new Set();
   const createdIds = new Map();
@@ -154,6 +163,15 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
     if (!op?.path) continue;
     if (seenPaths.has(op.path)) continue; // de-dup a repeated path from the LLM
     seenPaths.add(op.path);
+
+    if (policy) {
+      try {
+        assertWritable(policy, op.path);
+      } catch (err) {
+        appliedOps.push({ path: op.path, action: 'policy_denied', reason: err.message });
+        continue;
+      }
+    }
 
     const existing =
       existingFiles.find((f) => f.path === op.path) ||
