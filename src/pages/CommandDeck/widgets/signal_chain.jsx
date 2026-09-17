@@ -1,0 +1,395 @@
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, ExternalLink, Check, X, Paperclip, FileText, Loader2, RefreshCw, Calendar } from 'lucide-react';
+import { useCommandDeck } from '@/contexts/CommandDeckContext';
+import { C, STREAM_META, STREAM_ORDER, STATUS_STYLE, WP_ADMIN_URL, murbahStageLabel, repairStageLabel, money, commissionFor } from '../deckConstants';
+import { Card, EmptyNote, miniInput, rowBox, ghostBtn, pillBtn, checkBtn, MicField, MicTextarea } from '../DeckUI';
+
+function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, uploadFile }) {
+  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const unsold = items.filter((i) => !i.sold);
+  const totalValue = unsold.reduce((sum, i) => sum + i.price, 0);
+  const q = search.trim().toLowerCase();
+  const visible = q
+    ? items.filter((i) => i.item.toLowerCase().includes(q) || (i.consignor || '').toLowerCase().includes(q) || (i.phone || '').toLowerCase().includes(q))
+    : items;
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      const url = await uploadFile(file);
+      setForm((f) => ({ ...f, photo_url: url }));
+    } catch { /* skip the photo rather than block the entry */ }
+    setBusy(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+        {/* A mic button per field would cram 4 already-tight cells; Enter-to-add
+            on all of them (2026-09-17: "brain dump... needs to send" — same
+            expectation applies to every add-row, not just brain dump) is the
+            part that actually matters here. */}
+        <input placeholder="Item" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 100px' }} />
+        <input placeholder="Consignor" value={form.consignor} onChange={(e) => setForm({ ...form, consignor: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Price $" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '0 1 70px' }} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
+        <label style={{ ...pillBtn(C.walnutSoft), cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+          {form.photo_url ? 'Retake photo' : 'Add photo'}
+          <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display: 'none' }} />
+        </label>
+        {busy && <span style={{ fontSize: '0.72rem', color: C.walnutSoft }}>uploading…</span>}
+        {form.photo_url && !busy && <img src={form.photo_url} alt="preview" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', border: `1px solid ${C.line}` }} />}
+        <button onClick={onAdd} style={{ ...pillBtn(C.oxblood), marginLeft: 'auto' }}>Add</button>
+      </div>
+      {form.price && (
+        <p style={{ fontSize: '0.72rem', color: C.walnutSoft, margin: '0 0 0.5rem' }}>
+          At {money(form.price)}: {Number(form.price) > 2000 ? '20%' : '30%'} rate → your cut {money(commissionFor(form.price))}
+        </p>
+      )}
+      {items.length > 0 && (
+        <>
+          <p style={{ fontSize: '0.75rem', color: C.walnutSoft, margin: '0 0 0.5rem' }}>{unsold.length} unsold · {money(totalValue)} on the floor</p>
+          <MicField placeholder="Search item, consignor, or phone…" value={search} onChange={setSearch} style={{ ...miniInput, width: '100%' }} wrapperStyle={{ marginBottom: '0.5rem' }} />
+        </>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        {visible.map((i) => (
+          <div key={i.id} style={{ ...rowBox, opacity: i.sold ? 0.55 : 1, alignItems: 'center' }}>
+            {i.photo_url ? (
+              <img src={i.photo_url} alt={i.item} style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+            ) : (
+              <div style={{ width: 38, height: 38, borderRadius: 8, background: C.tweedDark, flexShrink: 0 }} />
+            )}
+            <button onClick={() => onToggle(i.id)} style={checkBtn(i.sold, C.sage)}>{i.sold && <Check size={12} color={C.paper} />}</button>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, textDecoration: i.sold ? 'line-through' : 'none' }}>{i.item}</div>
+              <div style={{ fontSize: '0.72rem', color: C.walnutSoft }}>
+                {i.consignor}{i.phone ? ` · ${i.phone}` : ''} · {money(i.price)} · you get {money(commissionFor(i.price))}
+              </div>
+            </div>
+            <button onClick={() => onRemove(i.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
+          </div>
+        ))}
+        {items.length === 0 && <EmptyNote text="No consignment items logged yet." />}
+        {items.length > 0 && visible.length === 0 && <EmptyNote text="No matches." />}
+      </div>
+    </div>
+  );
+}
+
+function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFilesToJob, onRemoveFileFromJob, onOpenImage, uploadFile }) {
+  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const [busyJobId, setBusyJobId] = useState(null);
+  const stageColor = { waiting: C.alert, in_progress: C.gold, done: C.sage };
+
+  const q = search.trim().toLowerCase();
+  const visible = q
+    ? items.filter((r) => r.item.toLowerCase().includes(q) || (r.customer || '').toLowerCase().includes(q) || (r.phone || '').toLowerCase().includes(q) || (r.notes || '').toLowerCase().includes(q))
+    : items;
+
+  const processFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    const added = [];
+    for (const file of files) {
+      if (file.size > 8 * 1024 * 1024) continue; // keep uploads sane on mobile data
+      try {
+        const url = await uploadFile(file);
+        added.push({ id: `${Date.now()}-${Math.random()}`, name: file.name, file_url: url, is_image: file.type.startsWith('image/') });
+      } catch { /* skip files that fail to upload rather than block the entry */ }
+    }
+    return added;
+  };
+
+  const handleFiles = async (e) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    setBusy(true);
+    const added = await processFiles(fileList);
+    setForm((f) => ({ ...f, pendingFiles: [...(f.pendingFiles || []), ...added] }));
+    setBusy(false);
+    e.target.value = '';
+  };
+  const removeFormFile = (id) => setForm((f) => ({ ...f, pendingFiles: (f.pendingFiles || []).filter((x) => x.id !== id) }));
+
+  const handleJobFiles = async (jobId, e) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    setBusyJobId(jobId);
+    const added = await processFiles(fileList);
+    if (added.length > 0) onAddFilesToJob(jobId, added);
+    setBusyJobId(null);
+    e.target.value = '';
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+        <input placeholder="Customer" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Item / job" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 100px' }} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+        <label style={{ ...pillBtn(C.walnutSoft), cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+          <Paperclip size={12} /> Add photo
+          <input type="file" accept="image/*" capture="environment" multiple onChange={handleFiles} style={{ display: 'none' }} disabled={busy} />
+        </label>
+        {busy && <span style={{ fontSize: '0.72rem', color: C.walnutSoft }}>uploading…</span>}
+        <button onClick={onAdd} style={{ ...pillBtn(C.oxblood), marginLeft: 'auto' }}>Add</button>
+      </div>
+
+      {form.pendingFiles?.length > 0 && (
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+          {form.pendingFiles.map((f) => (
+            <div key={f.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.3rem', background: C.paper, border: `1px solid ${C.line}`, borderRadius: 8, padding: '0.3rem 0.5rem' }}>
+              {f.is_image ? <img src={f.file_url} alt={f.name} style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover' }} /> : <FileText size={16} color={C.walnutSoft} />}
+              <span style={{ fontSize: '0.68rem', color: C.walnutSoft, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+              <button onClick={() => removeFormFile(f.id)} style={{ ...ghostBtn, padding: 0 }}><X size={12} color={C.walnutSoft} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <MicField placeholder="Search customer, item, or notes…" value={search} onChange={setSearch} style={{ ...miniInput, width: '100%' }} wrapperStyle={{ marginBottom: '0.5rem' }} />
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        {visible.map((r) => {
+          const primaryImage = (r.files || []).find((f) => f.is_image)?.file_url;
+          return (
+            <div key={r.id} style={{ ...rowBox, alignItems: 'flex-start' }}>
+              {primaryImage ? (
+                <button onClick={() => onOpenImage(primaryImage)} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', flexShrink: 0 }} title="Tap to view bigger">
+                  <img src={primaryImage} alt={r.item} style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', border: `1.5px solid ${C.line}` }} />
+                </button>
+              ) : (
+                <div style={{ width: 48, height: 48, borderRadius: 8, background: C.tweedDark, flexShrink: 0 }} />
+              )}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{r.item}</div>
+                <div style={{ fontSize: '0.72rem', color: C.walnutSoft }}>{r.customer}{r.phone ? ` · ${r.phone}` : ''}</div>
+                {r.files && r.files.length > 0 && (
+                  <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                    {r.files.map((f) => (
+                      <div key={f.id} style={{ display: 'inline-flex', alignItems: 'center', background: C.tweedDark, borderRadius: 6, paddingRight: '0.2rem' }}>
+                        {f.is_image ? (
+                          <button
+                            onClick={() => onOpenImage(f.file_url)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: 'none', borderRadius: 6, padding: '0.2rem 0.4rem', border: 'none', cursor: 'pointer' }}
+                            title={`View ${f.name} bigger`}
+                          >
+                            <img src={f.file_url} alt={f.name} style={{ width: 16, height: 16, borderRadius: 3, objectFit: 'cover' }} />
+                            <span style={{ fontSize: '0.64rem', color: C.walnutSoft, maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                          </button>
+                        ) : (
+                          <a
+                            href={f.file_url}
+                            download={f.name}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.4rem', textDecoration: 'none' }}
+                            title={f.name}
+                          >
+                            <FileText size={12} color={C.walnutSoft} />
+                            <span style={{ fontSize: '0.64rem', color: C.walnutSoft, maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                          </a>
+                        )}
+                        <button onClick={() => onRemoveFileFromJob(r.id, f.id)} style={{ ...ghostBtn, padding: 0 }} title="Remove file">
+                          <X size={11} color={C.walnutSoft} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.4rem', fontSize: '0.66rem', fontWeight: 600, color: C.brass, cursor: 'pointer' }}>
+                  <Paperclip size={11} />
+                  {busyJobId === r.id ? 'adding…' : 'Add files'}
+                  <input type="file" multiple onChange={(e) => handleJobFiles(r.id, e)} style={{ display: 'none' }} disabled={busyJobId === r.id} />
+                </label>
+              </div>
+              <button onClick={() => onCycle(r.id)} style={{ ...pillBtn(stageColor[r.stage]), fontSize: '0.68rem', flexShrink: 0 }}>{repairStageLabel(r.stage)}</button>
+              <button onClick={() => onRemove(r.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
+            </div>
+          );
+        })}
+        {items.length === 0 && <EmptyNote text="No repair jobs queued." />}
+        {items.length > 0 && visible.length === 0 && <EmptyNote text="No matches." />}
+      </div>
+    </div>
+  );
+}
+
+function MurbahPanel({
+  items, onCycle, onNote, stageLabel,
+  onDate, onSync, syncBusy, syncMsg,
+  calendarEvents, eventsLoading, onRefreshEvents,
+}) {
+  const stageColor = { idea: C.walnutSoft, enquired: C.gold, booked: C.sage, active: C.alert };
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const visible = q ? items.filter((m) => m.title.toLowerCase().includes(q) || (m.note || '').toLowerCase().includes(q)) : items;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      {items.length > 0 && (
+        <MicField placeholder="Search opportunity or notes…" value={search} onChange={setSearch} style={{ ...miniInput, width: '100%' }} />
+      )}
+      {visible.map((m) => {
+        const dateValue = (m.booking_date || '').slice(0, 10);
+        return (
+          <div key={m.id} style={{ background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.6rem 0.7rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.title}</span>
+              <button onClick={() => onCycle(m.id)} style={{ ...pillBtn(stageColor[m.stage]), fontSize: '0.66rem', flexShrink: 0 }}>{stageLabel(m.stage)}</button>
+            </div>
+            <div style={{ marginTop: '0.4rem' }}>
+              <MicTextarea
+                value={m.note || ''}
+                onChange={(note) => onNote(m.id, note)}
+                placeholder="Notes…"
+                rows={2}
+                style={miniInput}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+              <input
+                type="date"
+                value={dateValue}
+                onChange={(e) => onDate(m.id, e.target.value)}
+                style={{ ...miniInput, flex: '1 1 140px' }}
+              />
+              <button
+                onClick={() => onSync(m.id)}
+                disabled={!dateValue || syncBusy === m.id}
+                style={{ ...pillBtn(C.brass), display: 'inline-flex', alignItems: 'center', gap: '0.3rem', opacity: !dateValue ? 0.5 : syncBusy === m.id ? 0.7 : 1 }}
+                title={dateValue ? 'Push this date to Google Calendar' : 'Set a date first'}
+              >
+                {syncBusy === m.id ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />}
+                {m.calendar_event_id ? 'Re-sync' : 'Sync'}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      {items.length === 0 && <EmptyNote text="No opportunities yet." />}
+
+      {syncMsg && <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: C.walnutSoft }}>{syncMsg}</p>}
+
+      <div style={{ borderTop: `1px solid ${C.line}`, marginTop: '0.3rem', paddingTop: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+          <span style={{ fontSize: '0.7rem', fontWeight: 600, color: C.walnutSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Upcoming bookings</span>
+          <button onClick={onRefreshEvents} disabled={eventsLoading} style={{ ...ghostBtn, fontSize: '0.7rem', color: C.brass, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+            {eventsLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
+          </button>
+        </div>
+        {calendarEvents.length === 0 ? (
+          <EmptyNote text="Nothing synced to Calendar yet." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+            {calendarEvents.map((e) => (
+              <div key={e.id} style={{ ...rowBox }}>
+                <Calendar size={13} color={C.brass} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: '0.78rem' }}>{e.summary}</span>
+                <span style={{ fontSize: '0.68rem', color: C.walnutSoft, flexShrink: 0 }}>{e.start}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function SignalChainWidget() {
+  const {
+    openStream, setOpenStream, consignment, repairs, murbahOpps,
+    cForm, setCForm, addConsignment, toggleSold, removeConsignment,
+    rForm, setRForm, addRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
+    cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
+    murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
+    setLightboxImg, askToDelete, uploadFile,
+  } = useCommandDeck();
+
+  return (
+    <Card title="Signal chain" sub="Tap a pedal to open it up.">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+        {STREAM_ORDER.map((id) => {
+          const s = STREAM_META[id];
+          const Icon = s.icon;
+          const st = STATUS_STYLE[s.status];
+          const open = openStream === id;
+          return (
+            <div key={id}>
+              <button
+                onClick={() => setOpenStream(open ? null : id)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'flex-start', gap: '0.7rem', background: C.paper,
+                  border: `1px solid ${C.line}`, borderLeft: `5px solid ${st.color}`, borderRadius: open ? '10px 10px 0 0' : 10,
+                  padding: '0.65rem 0.75rem', cursor: 'pointer', textAlign: 'left',
+                }}
+              >
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: C.walnut, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon size={17} color={C.brassLight} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{s.label}</span>
+                    <span style={{ fontSize: '0.62rem', letterSpacing: '0.06em', color: st.color, fontWeight: 600 }}>{st.label}</span>
+                  </div>
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: C.walnutSoft }}>{s.desc}</p>
+                </div>
+                {open ? <ChevronDown size={16} color={C.walnutSoft} /> : <ChevronRight size={16} color={C.walnutSoft} />}
+              </button>
+
+              {open && (
+                <div style={{ border: `1px solid ${C.line}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '0.8rem 0.75rem', background: C.tweedDark }}>
+                  {id === 'consignment' && (
+                    <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} />
+                  )}
+                  {id === 'repairs' && (
+                    <RepairsPanel
+                      items={repairs} form={rForm} setForm={setRForm} onAdd={addRepair} onCycle={cycleRepairStage}
+                      onRemove={(id) => askToDelete(() => removeRepair(id))} onAddFilesToJob={addFilesToJob}
+                      onRemoveFileFromJob={(jobId, fileId) => askToDelete(() => removeFileFromJob(jobId, fileId))}
+                      onOpenImage={setLightboxImg} uploadFile={uploadFile}
+                    />
+                  )}
+                  {id === 'retail' && (
+                    <div>
+                      <p style={{ fontSize: '0.8rem', color: C.walnutSoft, margin: '0 0 0.7rem', lineHeight: 1.5 }}>
+                        Listings themselves are managed on the website — the shop's plugin has its own widget for that, reached through wp-admin.
+                      </p>
+                      <a
+                        href={WP_ADMIN_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem',
+                          borderRadius: 10, background: C.gold, color: C.walnut, fontWeight: 600, fontSize: '0.84rem', textDecoration: 'none',
+                        }}
+                      >
+                        <ExternalLink size={16} /> Open wp-admin
+                      </a>
+                    </div>
+                  )}
+                  {id === 'murbah' && (
+                    <MurbahPanel
+                      items={murbahOpps} onCycle={cycleMurbahStage} onNote={updateMurbahNote} stageLabel={murbahStageLabel}
+                      onDate={updateMurbahDate} onSync={syncMurbahCalendar} syncBusy={murbahSyncBusy} syncMsg={murbahSyncMsg}
+                      calendarEvents={murbahCalendarEvents} eventsLoading={murbahEventsLoading} onRefreshEvents={loadMurbahCalendarEvents}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
