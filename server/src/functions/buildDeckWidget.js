@@ -23,6 +23,7 @@ import { getActiveFeature } from '../lib/selfDevFeature.js';
 import { runPlanSelfDevFeature } from './planSelfDevFeature.js';
 import { runUpdateSelfDevFeature } from './updateSelfDevFeature.js';
 import chatWithMorpheusHandler from './chatWithMorpheus.js';
+import importSelfDevRepoHandler from './importSelfDevRepo.js';
 import pushSelfDevToGithubHandler from './pushSelfDevToGithub.js';
 import { runMergeSelfDevPr } from './mergeSelfDevPr.js';
 import { runSmokeCheckSelfDev } from './smokeCheckSelfDev.js';
@@ -144,6 +145,20 @@ export async function runBuildDeckWidget(requestingUser, description) {
       message: `Self-dev already has a build in progress ("${existingFeature.title}") — it needs to finish before another one can start. Try again shortly.`,
       workspaceLink,
     });
+  }
+
+  // KNOWN-HAZARDS.md H9: a stale self-dev workspace snapshot makes PUSH TO
+  // PRODUCTION diff against old content instead of live main, and can revert
+  // unrelated files. The documented mitigation is "click SYNC FROM GITHUB
+  // before every BUILD -> PUSH turn" — a rule only a human at /self-dev can
+  // remember. This driver has no human in the loop, so it enforces the same
+  // rule itself, every run, instead of trusting whatever the workspace last
+  // happened to have cached.
+  await updateBuild(build.id, { message: 'Syncing the workspace from GitHub…' });
+  try {
+    await importSelfDevRepoHandler({ user: selfDevActor, body: {} });
+  } catch (err) {
+    return finish({ ok: false, stage: 'sync', message: `Couldn't sync the self-dev workspace from GitHub before building: ${err.message}`, workspaceLink });
   }
 
   const widgetKey = await pickWidgetKey(projectId, desc);
