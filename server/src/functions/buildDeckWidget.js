@@ -95,6 +95,22 @@ WIDGET BUILD CONTRACT — this is a Jarvis-triggered Command Deck widget build, 
 `;
 }
 
+// Progress visibility (Rob, 2026-09-17: "it would be good if it was
+// separate so you can go away do things and come back and check on
+// progress") — this whole build takes ~15 minutes unattended, and the
+// requesting user has no reason to sit in this chat waiting. Every
+// milestone gets written straight into THEIR OWN Jarvis chat (not the
+// self-dev workspace's — a non-admin requesting user can't see that one at
+// all), so DeckJarvis.jsx already renders it with zero frontend changes:
+// they can navigate away and check back on their own Jarvis tab anytime.
+async function announce(userId, text) {
+  try {
+    await prisma.deckJarvisMessage.create({ data: { created_by_id: userId, role: 'jarvis', content: text } });
+  } catch (err) {
+    console.error('[buildDeckWidget] progress announce failed (build continues):', err.message);
+  }
+}
+
 export async function runBuildDeckWidget(requestingUser, description) {
   const desc = String(description || '').trim();
   if (desc.length < 10) {
@@ -104,29 +120,36 @@ export async function runBuildDeckWidget(requestingUser, description) {
   const { actor: selfDevActor, project } = await resolveSelfDevActor();
   const projectId = project.id;
   const workspaceLink = `/workspace?projectId=${projectId}`;
+  const say = (text) => announce(requestingUser.id, text);
+  // Every return path funnels through here so a walk-away-and-check-back
+  // user always gets a terminal message in their own Jarvis chat, success
+  // or failure — never silence.
+  const finish = async (result) => { await say(`${result.ok ? '✅' : '⚠️'} ${result.message}`); return result; };
 
   const existingFeature = await getActiveFeature(projectId).catch(() => null);
   if (existingFeature) {
-    return {
+    return finish({
       ok: false, stage: 'busy',
       message: `Self-dev already has a build in progress ("${existingFeature.title}") — it needs to finish before another one can start. Try again shortly.`,
       workspaceLink,
-    };
+    });
   }
 
   const widgetKey = await pickWidgetKey(projectId, desc);
+  await say(`Building your widget now — I'll post updates here as it goes (this takes roughly 15 minutes end to end).`);
   const goal = `Build a new Command Deck widget. What the user asked for: "${desc}"\n${widgetAuthoringContext(widgetKey)}`;
 
   let feature;
   try {
     ({ feature } = await runPlanSelfDevFeature(selfDevActor, projectId, goal));
   } catch (err) {
-    return { ok: false, stage: 'plan', message: `Couldn't plan that widget: ${err.message}`, workspaceLink };
+    return finish({ ok: false, stage: 'plan', message: `Couldn't plan that widget: ${err.message}`, workspaceLink });
   }
   // scope_policy is what restricts every build turn below to widget files —
   // set directly (runPlanSelfDevFeature has no param for it; Phase 1 only
   // added the plumbing that reads it, nothing creates one until now).
   await prisma.selfDevFeature.update({ where: { id: feature.id }, data: { scope_policy: 'widget_build' } });
+  await say(`Plan ready — ${feature.steps.length} step${feature.steps.length === 1 ? '' : 's'}: ${feature.steps.map((s) => s.title).join(' → ')}.`);
 
   const abandon = () => runUpdateSelfDevFeature(selfDevActor, feature.id, 'abandon', { silent: true }).catch(() => {});
 
@@ -140,48 +163,52 @@ export async function runBuildDeckWidget(requestingUser, description) {
       });
     } catch (err) {
       await abandon();
-      return { ok: false, stage: 'build', message: `Build crashed on step ${step.n} ("${step.title}"): ${err.message}`, workspaceLink };
+      return finish({ ok: false, stage: 'build', message: `Build crashed on step ${step.n} ("${step.title}"): ${err.message}`, workspaceLink });
     }
 
     const terminal = events.find((e) => e.type === 'result' || e.type === 'error');
     if (!terminal || terminal.type === 'error') {
       await abandon();
-      return { ok: false, stage: 'build', message: `Build failed on step ${step.n} ("${step.title}"): ${terminal?.message || 'no response from the build pipeline'}`, workspaceLink };
+      return finish({ ok: false, stage: 'build', message: `Build failed on step ${step.n} ("${step.title}"): ${terminal?.message || 'no response from the build pipeline'}`, workspaceLink });
     }
     if (terminal.data?.needsClarification) {
       await abandon();
-      return { ok: false, stage: 'build', message: `Need more detail to build this: ${terminal.data.reply}`, workspaceLink };
+      return finish({ ok: false, stage: 'build', message: `Need more detail to build this: ${terminal.data.reply}`, workspaceLink });
     }
     const fileOps = terminal.data?.fileOperations || [];
     const denied = fileOps.filter((op) => op.action === 'policy_denied');
     if (denied.length > 0) {
       await abandon();
-      return {
+      return finish({
         ok: false, stage: 'scope',
         message: `That build tried to touch files outside a widget's scope (${denied.map((d) => d.path).join(', ')}) — blocked before anything was written.`,
         workspaceLink,
-      };
+      });
     }
     if (fileOps.length === 0) {
       await abandon();
-      return { ok: false, stage: 'build', message: `Step ${step.n} ("${step.title}") didn't produce any file changes.`, workspaceLink };
+      return finish({ ok: false, stage: 'build', message: `Step ${step.n} ("${step.title}") didn't produce any file changes.`, workspaceLink });
     }
 
     await runUpdateSelfDevFeature(selfDevActor, feature.id, 'completeStep', { stepN: step.n, silent: true });
+    await say(`Step ${step.n}/${feature.steps.length} done — ${step.title}.`);
   }
 
   let pushResult;
   try {
     pushResult = await pushSelfDevToGithubHandler({ user: selfDevActor, body: { projectId } });
   } catch (err) {
-    return { ok: false, stage: 'push', message: `Couldn't push the build: ${err.message}`, workspaceLink };
+    return finish({ ok: false, stage: 'push', message: `Couldn't push the build: ${err.message}`, workspaceLink });
   }
   if (pushResult.blocked) {
-    return { ok: false, stage: 'push', message: pushResult.message, workspaceLink };
+    return finish({ ok: false, stage: 'push', message: pushResult.message, workspaceLink });
   }
   if (pushResult.fileCount === 0) {
-    return { ok: false, stage: 'push', message: 'Nothing to ship — the build produced no real changes.', workspaceLink };
+    return finish({ ok: false, stage: 'push', message: 'Nothing to ship — the build produced no real changes.', workspaceLink });
   }
+  await say(pushResult.mode === 'pr'
+    ? `Pushed — PR #${pushResult.prNumber} is open, waiting for checks to go green before it auto-merges.`
+    : `Pushed straight to production.`);
 
   // WIDGET_BUILD.allowDirectToMain is false, and this driver never passes
   // force/directToMain, so pushResult.mode is always 'pr' in practice — this
@@ -198,17 +225,18 @@ export async function runBuildDeckWidget(requestingUser, description) {
       }).catch((err) => ({ merged: false, state: 'error', message: err.message }));
       if (mergeResult.merged) break;
       if (['failed', 'conflict', 'merge_failed', 'error'].includes(mergeResult.state)) {
-        return {
+        return finish({
           ok: false, stage: 'merge',
           message: `The PR didn't merge cleanly (${mergeResult.state}): ${mergeResult.message || (mergeResult.failing || []).join(', ') || 'see the PR'}.`,
           prUrl: pushResult.prUrl, workspaceLink,
-        };
+        });
       }
       await sleep(20000);
     }
     if (!mergeResult?.merged) {
-      return { ok: false, stage: 'merge', message: 'The PR checks took too long to go green — check it manually.', prUrl: pushResult.prUrl, workspaceLink };
+      return finish({ ok: false, stage: 'merge', message: 'The PR checks took too long to go green — check it manually.', prUrl: pushResult.prUrl, workspaceLink });
     }
+    await say(`Merged — Northflank and Netlify are redeploying production now.`);
   }
 
   // No reusable server-side Northflank deploy-status poller exists yet — a
@@ -223,11 +251,11 @@ export async function runBuildDeckWidget(requestingUser, description) {
     smoke = { ok: false, error: err.message };
   }
   if (!smoke.ok) {
-    return {
+    return finish({
       ok: false, stage: 'smoke',
       message: `Shipped, but the post-deploy check found a problem: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}.`,
       workspaceLink,
-    };
+    });
   }
 
   const maxSort = await prisma.deckWidgetInstance.aggregate({
@@ -245,7 +273,7 @@ export async function runBuildDeckWidget(requestingUser, description) {
 
   await logUsage(selfDevActor.id, 'deck_widget_build', projectId, project.name, { widgetKey, requestingUserId: requestingUser.id });
 
-  return { ok: true, widgetKey, instanceId: instance.id, message: `Built and shipped — "${widgetKey}" is live on your Deck now.` };
+  return finish({ ok: true, widgetKey, instanceId: instance.id, message: `Built and shipped — "${widgetKey}" is live on your Deck now. Refresh to see it.` });
 }
 
 // Not yet wired to any frontend call site or to chatWithJarvis.js (that's
