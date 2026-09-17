@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Mic, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Mic, Plus, Search, X } from 'lucide-react';
 import { C } from './deckConstants';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
@@ -168,6 +168,38 @@ export function MicTextarea({ value, onChange, placeholder, rows = 2, style = mi
 
 export function EmptyNote({ text }) {
   return <span style={{ fontSize: '0.78rem', color: C.walnutSoft, opacity: 0.6 }}>{text}</span>;
+}
+
+// 2026-09-17: the one widget-internal helper two different widgets (Strategy,
+// Knowledge & ideas) both used — moved here rather than duplicated or made
+// one widget depend on another's file, since every widget under ./widgets/
+// is meant to be fully independent (a prerequisite for Jarvis being able to
+// build/ship one without touching any other widget's file).
+export function StreamList({ items, onAdd, onRemove, placeholder, accent, icon: Icon, empty }) {
+  const [val, setVal] = useState('');
+  const submit = () => {
+    if (!val.trim()) return;
+    onAdd(val);
+    setVal('');
+  };
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.7rem' }}>
+        <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder={placeholder} style={{ ...inputStyle, flex: 1 }} />
+        <IconButton onClick={submit} color={accent}><Plus size={18} color={C.paper} /></IconButton>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        {items.map((i) => (
+          <div key={i.id} style={{ ...rowBox, borderLeft: `3px solid ${accent}` }}>
+            <Icon size={14} color={accent} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: '0.85rem' }}>{i.text}</span>
+            <button onClick={() => onRemove(i.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
+          </div>
+        ))}
+        {items.length === 0 && <EmptyNote text={empty} />}
+      </div>
+    </div>
+  );
 }
 
 export const inputStyle = {
