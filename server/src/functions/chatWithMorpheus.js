@@ -14,6 +14,7 @@ import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSumm
 import { estimateCallMs } from '../lib/timingStats.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
+import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
@@ -752,6 +753,11 @@ export default async function handler({ user, body, res }) {
     ? await getActiveFeature(projectId).catch(() => null)
     : null;
   const featureBlock = featureContextBlock(activeFeature);
+  // A scoped feature (e.g. a Jarvis-triggered widget build, scope_policy:
+  // 'widget_build') restricts which files this turn's applyFileOperations
+  // calls may write — null for every normal self-dev/project build, which
+  // keeps today's unrestricted behavior unchanged.
+  const engineScopePolicy = activeFeature?.scopePolicy ? resolvePolicy(activeFeature.scopePolicy) : null;
 
   // Decisions log (originally self-dev Tier 2 #7, now every project): the last
   // few "what changed / why" entries, so the planner builds on past decisions
@@ -1574,7 +1580,7 @@ OPERATOR SAYS: ${message}`;
       if (fileOps.length > 0) {
         await createSnapshot(user.id, projectId, 'Operator build request');
       }
-      appliedOps = await applyFileOperations(user.id, projectId, fileOps, files);
+      appliedOps = await applyFileOperations(user.id, projectId, fileOps, files, engineScopePolicy);
 
       // ── Phase 4: Optional UI polish pass (only when operator enabled it) ──
       // A second, lightweight coder call that touches ONLY styling files. It

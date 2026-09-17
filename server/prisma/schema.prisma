@@ -714,6 +714,14 @@ model SelfDevFeature {
   steps         String   @db.Text
   status        String   @default("active") // active | done | abandoned
 
+  // 2026-09-17: null (every existing/normal self-dev feature) = today's
+  // unrestricted behavior, unchanged. Set only for a feature created through
+  // a scoped build path (e.g. a Jarvis-triggered Command Deck widget build)
+  // to name which enginePolicy.js policy restricts what files that build may
+  // touch — see selfDevFeature.js's featureContextBlock() and
+  // chatWithMorpheus.js's write-scope threading.
+  scope_policy  String?
+
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 

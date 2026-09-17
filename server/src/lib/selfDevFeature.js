@@ -6,6 +6,7 @@
 // status ∈ 'pending' | 'active' | 'done'. Exactly one step is 'active' while
 // the feature itself is 'active'.
 import { prisma } from '../db.js';
+import { resolvePolicy } from './enginePolicy.js';
 
 // The self_dev_features table ships ahead of its migration (like
 // self_dev_manuals, template.artifact_files — see lib/templateCompat.js). Any
@@ -69,6 +70,7 @@ export function hydrate(feature) {
     activeStep: active,
     doneCount: steps.filter((s) => s.status === 'done').length,
     totalSteps: steps.length,
+    scopePolicy: feature.scope_policy || null,
     created_date: feature.created_date,
     updated_date: feature.updated_date,
   };
@@ -127,12 +129,24 @@ export function featureContextBlock(feature) {
     const tag = s.status === 'done' ? 'done' : s.status === 'active' ? 'ACTIVE — implement THIS step only' : 'pending';
     return `  ${s.n}. [${tag}] ${s.title}${s.ref ? ` (${s.ref})` : ''}`;
   });
+  let scopeNote = '';
+  if (feature.scopePolicy) {
+    try {
+      const policy = resolvePolicy(feature.scopePolicy);
+      const prefixes = (policy.allowPathPrefixes || []).map((re) => re.source).join(', ') || '(no paths allowed)';
+      scopeNote = `
+SCOPE — "${policy.label}": this build is restricted to that policy. You may ONLY create or edit files whose path matches one of these patterns: ${prefixes}. Any other file (including anything under server/, config, or another widget's own file) is outside this build's scope and will be rejected at push time — design the whole implementation to fit within these paths from the start, don't plan something broader and hope it slips through.
+`;
+    } catch {
+      // Unknown/unresolvable policy id — degrade to no extra note rather than crash the planner context.
+    }
+  }
   return `
 ACTIVE FEATURE — "${feature.title}"
 GOAL: ${feature.goal}
 STEPS:
 ${lines.join('\n')}
-
+${scopeNote}
 You are building this feature one step per turn. Implement ONLY the step marked ACTIVE. Do not start a later step, and do not redo a step marked done. Set stepComplete: true if this turn fully finishes the active step (so the next turn moves on); set it false if the operator is asking for a tweak or fix that's still part of the active step. If the operator's message is clearly a bug fix or a change outside this feature, follow the operator, set stepComplete: false, and leave the feature steps alone.
 `;
 }
