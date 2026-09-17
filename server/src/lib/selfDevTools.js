@@ -51,6 +51,29 @@ function isSingleStatement(sql) {
   return !sql.trim().replace(/;\s*$/, '').includes(';');
 }
 
+// 2026-09-17: found live — a widget-build turn hung indefinitely with zero
+// server log output, and every AI provider call is already wrapped in
+// ai.js's own fetchWithTimeout, so it wasn't stuck there. This raw query had
+// no timeout anywhere in the stack (no statement_timeout on the Prisma
+// client in db.js, nothing here) — a slow scan or a lock wait on a query the
+// investigating AI decided to run could block the whole turn (and, via
+// buildDeckWidget.js, the whole build) forever. Same reasoning as
+// AI_FETCH_TIMEOUT_MS in ai.js: a hard wall-clock cap turns an indefinite
+// hang into a clear, catchable error. This only bounds how long the CALLER
+// waits — Promise.race can't cancel a raw Postgres query already in flight,
+// so a genuinely long-running query keeps running server-side after this
+// gives up; that's an acceptable tradeoff for unblocking the chat turn.
+const QUERY_TIMEOUT_MS = 15_000;
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} did not finish within ${Math.round(ms / 1000)}s — it may be scanning a large table or waiting on a lock. Try a more targeted query (add a WHERE clause, or query fewer rows).`)), ms);
+    }),
+  ]);
+}
+
 // Prisma raw-query results can carry BigInt/Date/Decimal values that
 // JSON.stringify chokes on or mangles — same normalization as
 // admin.routes.js's sanitizeForJson.
@@ -208,7 +231,7 @@ export const SELF_DEV_TOOLS = {
       const wrapped = `SELECT * FROM (${sql.replace(/;\s*$/, '')}) AS _self_dev_tool_sub LIMIT ${SQL_ROW_CAP}`;
       let rows;
       try {
-        rows = sanitizeForJson(await prisma.$queryRawUnsafe(wrapped));
+        rows = sanitizeForJson(await withTimeout(prisma.$queryRawUnsafe(wrapped), QUERY_TIMEOUT_MS, 'Query'));
       } catch (err) {
         await prisma.adminAuditLog.create({
           data: { admin_id: user.id, action: 'self_dev_ai_query_database', details: JSON.stringify({ sql: sql.slice(0, 2000), ok: false, error: err.message }) },
