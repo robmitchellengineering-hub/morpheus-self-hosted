@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Mic, Search, X } from 'lucide-react';
 import { C } from './deckConstants';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
 // Small presentational primitives shared across every Command Deck tab page
 // (DeckHome, DeckJarvis, DeckTools, DeckSettings) — moved out of the old
@@ -101,6 +102,67 @@ export function IconButton({ children, onClick, color, disabled }) {
     >
       {children}
     </button>
+  );
+}
+
+// 2026-09-17 (Rob: "all text input fields need a stt button" + "brain dump,
+// when i press enter it needs to send") — the exact pattern brain dump
+// (DeckHome.jsx) and the Jarvis chat input (DeckJarvis.jsx) already used,
+// pulled out once so every other genuine free-text field gets both for
+// free instead of two separate ad-hoc passes. Not for numeric/date/email/
+// phone fields, read-only fields, or <select> — dictation adds error risk
+// there without real value (see this session's field audit).
+export function MicField({ value, onChange, onSubmit, placeholder, style = inputStyle, micColor = C.walnutSoft, disabled, wrapperStyle }) {
+  const { listening, start, stop, supported } = useSpeechRecognition({
+    onResult: (transcript) => onChange(value?.trim() ? `${value.trim()} ${transcript}` : transcript),
+  });
+  return (
+    <div style={{ display: 'flex', gap: '0.5rem', flex: 1, ...wrapperStyle }}>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && onSubmit) onSubmit(); }}
+        placeholder={placeholder}
+        disabled={disabled}
+        style={style}
+      />
+      {supported && (
+        <IconButton onClick={() => (listening ? stop() : start())} color={listening ? C.alert : micColor} disabled={disabled}>
+          <Mic size={18} color={C.paper} />
+        </IconButton>
+      )}
+    </div>
+  );
+}
+
+// Textarea counterpart — Enter is left alone (newlines are the point in a
+// note/instruction field), so there's no onSubmit here; the mic button sits
+// underneath rather than beside, since a multi-line field is tall enough
+// that a side-by-side button looks stranded at the top.
+export function MicTextarea({ value, onChange, placeholder, rows = 2, style = miniInput, micColor = C.walnutSoft, disabled }) {
+  const { listening, start, stop, supported } = useSpeechRecognition({
+    onResult: (transcript) => onChange(value?.trim() ? `${value.trim()} ${transcript}` : transcript),
+  });
+  return (
+    <div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        disabled={disabled}
+        style={{ ...style, width: '100%', boxSizing: 'border-box', resize: 'vertical', display: 'block' }}
+      />
+      {supported && (
+        <button
+          onClick={() => (listening ? stop() : start())}
+          disabled={disabled}
+          style={{ ...ghostBtn, marginTop: '0.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: listening ? C.alert : C.walnutSoft }}
+        >
+          <Mic size={13} color={listening ? C.alert : C.walnutSoft} /> {listening ? 'Listening…' : 'Dictate'}
+        </button>
+      )}
+    </div>
   );
 }
 

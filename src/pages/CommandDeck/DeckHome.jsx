@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import {
   Plus, X, Check, ChevronDown, ChevronRight, ListChecks, Compass, Lightbulb,
-  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2, Mic, Mail, Calendar, Sparkles,
+  MessageSquare, Paperclip, FileText, ExternalLink, RefreshCw, Reply, Send, Loader2, Mail, Calendar, Sparkles,
 } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
-import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import {
   C, ENERGY, STREAM_META, STREAM_ORDER, STATUS_STYLE, LIFE_STREAMS_META, CHANNELS,
   WP_ADMIN_URL, murbahStageLabel, repairStageLabel, inboxStageLabel,
@@ -12,7 +11,7 @@ import {
 } from './deckConstants';
 import {
   Card, RhythmRow, IconButton, EmptyNote, inputStyle, miniInput, rowBox, ghostBtn,
-  pillBtn, checkBtn, chipBtn,
+  pillBtn, checkBtn, chipBtn, MicField, MicTextarea,
 } from './DeckUI';
 
 // The "Deck" home tab — everything from the original single-file
@@ -44,10 +43,6 @@ export default function DeckHome() {
   } = useCommandDeck();
 
   const energyInfo = ENERGY.find((e) => e.id === energy);
-
-  const { listening: dumpListening, start: startDumpMic, stop: stopDumpMic, supported: dumpMicSupported } = useSpeechRecognition({
-    onResult: (transcript) => setDumpInput((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript)),
-  });
 
   // 2026-09-17 (Rob: "I need all of those fields that the deck creates
   // collapsible and searchable") — one search term per searchable section,
@@ -111,21 +106,7 @@ export default function DeckHome() {
         search={dump.length > 0 ? { value: dumpSearch, onChange: setDumpSearch, placeholder: 'Search unsorted dump…' } : undefined}
       >
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <input
-            value={dumpInput}
-            onChange={(e) => setDumpInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addDump()}
-            placeholder="Type it. Don't think."
-            style={inputStyle}
-          />
-          {dumpMicSupported && (
-            <IconButton
-              onClick={() => (dumpListening ? stopDumpMic() : startDumpMic())}
-              color={dumpListening ? C.alert : C.walnutSoft}
-            >
-              <Mic size={18} color={C.paper} />
-            </IconButton>
-          )}
+          <MicField value={dumpInput} onChange={setDumpInput} onSubmit={addDump} placeholder="Type it. Don't think." style={inputStyle} />
           <IconButton onClick={addDump} color={C.oxblood}><Plus size={18} color={C.paper} /></IconButton>
         </div>
         {dumpInput.trim() && detectOwner(dumpInput) && (
@@ -224,11 +205,12 @@ export default function DeckHome() {
 
       {registerWidget('today_one_thing', (
       <Card title="Today's one thing" sub="Not the list. Just this." style={{ background: C.walnut, color: C.paper, border: `1.5px solid ${C.gold}` }} titleColor={C.brassLight} subColor="rgba(246,240,223,0.65)">
-        <input
+        <MicField
           value={focusTask}
-          onChange={(e) => saveFocus(e.target.value)}
+          onChange={saveFocus}
           placeholder="What's the single most important thing?"
           style={{ ...inputStyle, background: 'rgba(246,240,223,0.08)', border: '1px solid rgba(246,240,223,0.25)', color: C.paper }}
+          micColor="rgba(246,240,223,0.15)"
         />
       </Card>
       ))}
@@ -378,11 +360,11 @@ export default function DeckHome() {
         sub="Sorted by who owns it — not just you."
         search={tasks.length > 0 ? { value: taskSearch, onChange: setTaskSearch, placeholder: 'Search tasks…' } : undefined}
       >
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          <input
+        <div style={{ marginBottom: '0.75rem' }}>
+          <MicField
             value={taskInput}
-            onChange={(e) => setTaskInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addTask()}
+            onChange={setTaskInput}
+            onSubmit={addTask}
             placeholder="Add a task…"
             style={{ ...inputStyle, flex: 1 }}
           />
@@ -459,9 +441,9 @@ export default function DeckHome() {
               ))}
             </div>
             <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-              <input placeholder="New person's name" value={personForm.name} onChange={(e) => setPersonForm({ ...personForm, name: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
-              <input placeholder="Phone" value={personForm.phone} onChange={(e) => setPersonForm({ ...personForm, phone: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
-              <input placeholder="Email" value={personForm.email} onChange={(e) => setPersonForm({ ...personForm, email: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
+              <input placeholder="New person's name" value={personForm.name} onChange={(e) => setPersonForm({ ...personForm, name: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addPerson()} style={{ ...miniInput, flex: '1 1 100px' }} />
+              <input placeholder="Phone" value={personForm.phone} onChange={(e) => setPersonForm({ ...personForm, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addPerson()} style={{ ...miniInput, flex: '1 1 100px' }} />
+              <input placeholder="Email" value={personForm.email} onChange={(e) => setPersonForm({ ...personForm, email: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addPerson()} style={{ ...miniInput, flex: '1 1 100px' }} />
               <button onClick={addPerson} style={pillBtn(C.brass)}>Add</button>
             </div>
           </div>
@@ -568,7 +550,12 @@ function CalendarWidget({ events, loading, form, setForm, busy, onRefresh, onAdd
   return (
     <div>
       <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.7rem' }}>
-        <input placeholder="Event title…" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+        <MicField
+          placeholder="Event title…"
+          value={form.summary}
+          onChange={(summary) => setForm({ ...form, summary })}
+          onSubmit={() => form.summary.trim() && form.date && onAdd()}
+        />
         <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ ...miniInput, flex: '0 1 150px' }} />
         <IconButton onClick={onAdd} color={C.brass} disabled={busy || !form.summary.trim() || !form.date}>
           {busy ? <Loader2 size={16} className="animate-spin" color={C.paper} /> : <Plus size={18} color={C.paper} />}
@@ -622,10 +609,14 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, upl
   return (
     <div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-        <input placeholder="Item" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
-        <input placeholder="Consignor" value={form.consignor} onChange={(e) => setForm({ ...form, consignor: e.target.value })} style={{ ...miniInput, flex: '1 1 90px' }} />
-        <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={{ ...miniInput, flex: '1 1 90px' }} />
-        <input placeholder="Price $" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} style={{ ...miniInput, flex: '0 1 70px' }} />
+        {/* A mic button per field would cram 4 already-tight cells; Enter-to-add
+            on all of them (2026-09-17: "brain dump... needs to send" — same
+            expectation applies to every add-row, not just brain dump) is the
+            part that actually matters here. */}
+        <input placeholder="Item" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 100px' }} />
+        <input placeholder="Consignor" value={form.consignor} onChange={(e) => setForm({ ...form, consignor: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Price $" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '0 1 70px' }} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
         <label style={{ ...pillBtn(C.walnutSoft), cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
@@ -644,7 +635,7 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, upl
       {items.length > 0 && (
         <>
           <p style={{ fontSize: '0.75rem', color: C.walnutSoft, margin: '0 0 0.5rem' }}>{unsold.length} unsold · {money(totalValue)} on the floor</p>
-          <input placeholder="Search item, consignor, or phone…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...miniInput, width: '100%', marginBottom: '0.5rem' }} />
+          <MicField placeholder="Search item, consignor, or phone…" value={search} onChange={setSearch} style={{ ...miniInput, width: '100%' }} wrapperStyle={{ marginBottom: '0.5rem' }} />
         </>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -720,9 +711,9 @@ function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFil
   return (
     <div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-        <input placeholder="Customer" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} style={{ ...miniInput, flex: '1 1 90px' }} />
-        <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={{ ...miniInput, flex: '1 1 90px' }} />
-        <input placeholder="Item / job" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
+        <input placeholder="Customer" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
+        <input placeholder="Item / job" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 100px' }} />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
@@ -747,7 +738,7 @@ function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFil
       )}
 
       {items.length > 0 && (
-        <input placeholder="Search customer, item, or notes…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...miniInput, width: '100%', marginBottom: '0.5rem' }} />
+        <MicField placeholder="Search customer, item, or notes…" value={search} onChange={setSearch} style={{ ...miniInput, width: '100%' }} wrapperStyle={{ marginBottom: '0.5rem' }} />
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
         {visible.map((r) => {
@@ -827,7 +818,7 @@ function MurbahPanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       {items.length > 0 && (
-        <input placeholder="Search opportunity or notes…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...miniInput, width: '100%' }} />
+        <MicField placeholder="Search opportunity or notes…" value={search} onChange={setSearch} style={{ ...miniInput, width: '100%' }} />
       )}
       {visible.map((m) => {
         const dateValue = (m.booking_date || '').slice(0, 10);
@@ -837,13 +828,15 @@ function MurbahPanel({
               <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.title}</span>
               <button onClick={() => onCycle(m.id)} style={{ ...pillBtn(stageColor[m.stage]), fontSize: '0.66rem', flexShrink: 0 }}>{stageLabel(m.stage)}</button>
             </div>
-            <textarea
-              value={m.note || ''}
-              onChange={(e) => onNote(m.id, e.target.value)}
-              placeholder="Notes…"
-              rows={2}
-              style={{ ...miniInput, width: '100%', marginTop: '0.4rem', resize: 'vertical' }}
-            />
+            <div style={{ marginTop: '0.4rem' }}>
+              <MicTextarea
+                value={m.note || ''}
+                onChange={(note) => onNote(m.id, note)}
+                placeholder="Notes…"
+                rows={2}
+                style={miniInput}
+              />
+            </div>
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap' }}>
               <input
                 type="date"

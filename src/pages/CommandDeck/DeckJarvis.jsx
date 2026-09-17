@@ -4,7 +4,7 @@ import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { C } from './deckConstants';
-import { inputStyle, IconButton, pillBtn, ghostBtn } from './DeckUI';
+import { inputStyle, IconButton, pillBtn, ghostBtn, MicField } from './DeckUI';
 
 // Jarvis's own full-screen page (its own bottom tab) — voice input via the
 // browser's SpeechRecognition and voice output via Morpheus's own existing
@@ -119,10 +119,10 @@ export default function DeckJarvis() {
             Jarvis drafts it from your instruction plus recent conversation — a summary, a letter, a table, research, whatever you need.
           </p>
           <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <input
+            <MicField
               value={docInstruction}
-              onChange={(e) => setDocInstruction(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && createDeckDocument(docInstruction)}
+              onChange={setDocInstruction}
+              onSubmit={() => createDeckDocument(docInstruction)}
               placeholder="What should this document be?"
               disabled={docBusy}
               style={{ ...inputStyle, flex: 1 }}
