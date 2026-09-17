@@ -41,7 +41,13 @@ const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downl
 // repo) is admin-only end to end — see chatWithMorpheus.js's matching
 // in-handler check for why that one can't be listed here too (it's shared by
 // every project type, not self-dev-exclusive).
-const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'applySelfDevMigrations']);
+// buildDeckWidget: designed for any signed-in user to trigger eventually
+// (it internally elevates to the self-dev actor for its own privileged
+// calls — see that file's own comment) but gated here as admin-only for
+// now, since chatWithJarvis.js isn't yet the real, guarded caller and this
+// route is reachable directly the moment the file exists. Remove this once
+// Phase 3 (the chat trigger + deckWidgets.js append-only push guard) lands.
+const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'applySelfDevMigrations', 'buildDeckWidget']);
 
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;
