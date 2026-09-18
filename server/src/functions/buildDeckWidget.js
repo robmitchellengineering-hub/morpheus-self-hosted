@@ -37,7 +37,9 @@ function slugify(text) {
   return slug || 'widget';
 }
 
-async function resolveSelfDevActor() {
+// Exported so deleteDeckWidget.js can resolve the same shared actor/project
+// without duplicating this lookup.
+export async function resolveSelfDevActor() {
   const project = await prisma.project.findFirst({ where: { project_type: 'self_dev' } });
   if (!project) throw Object.assign(new Error('No self-dev workspace exists yet.'), { status: 503 });
   const actor = await prisma.user.findUnique({ where: { id: project.created_by_id } });
@@ -85,13 +87,13 @@ function createNdjsonCollector() {
   };
 }
 
-function widgetAuthoringContext(widgetKey) {
+function widgetAuthoringContext(widgetKey, createdById) {
   return `
 WIDGET BUILD CONTRACT — this is a Jarvis-triggered Command Deck widget build, not a normal self-dev change:
 - Create exactly ONE new widget file: ${WIDGETS_DIR}${widgetKey}.jsx, default-exporting a React component that calls useCommandDeck() (from '@/contexts/CommandDeckContext') for whatever data/handlers it needs. Look at existing files in that directory for the pattern — today_one_thing.jsx for a minimal one, tasks.jsx for a fuller one.
 - Reuse the shared presentational primitives already in src/pages/CommandDeck/DeckUI.jsx (Card, MicField, MicTextarea, IconButton, EmptyNote, StreamList, inputStyle, miniInput, rowBox, ghostBtn, pillBtn, checkBtn, chipBtn) and the color/constant tokens in src/pages/CommandDeck/deckConstants.js — don't invent a new visual style.
 - If the widget needs its own backend endpoint, create it at server/src/functions/widget<PascalCase>.js (must start with "widget" + a capital letter). It's free to import and call any existing server/src/lib/deck*.js connection helper (deckGoogle.js, deckBusinessProfile.js, deckMemory.js, deckSnapshot.js) to read or synthesize the installing user's own connected data at runtime — this restriction only governs which files THIS BUILD may create, never what the widget's own code may call once it's running.
-- Add exactly ONE new entry to the DECK_WIDGETS array in src/pages/CommandDeck/deckWidgets.js: { key: '${widgetKey}', label: '<short label>', defaultEnabled: false }. Do not reorder, reformat, or edit any other line in that file — it's shared by every account's widget list.
+- Add exactly ONE new entry to the DECK_WIDGETS array in src/pages/CommandDeck/deckWidgets.js, written EXACTLY on one line (nothing else on that line): { key: '${widgetKey}', label: '<short label>', defaultEnabled: false, createdBy: '${createdById}' }. The createdBy field is load-bearing — it's how Settings knows this widget can later be deleted by the person who asked for it, unlike the built-in widgets. Do not reorder, reformat, or edit any other line in that file — it's shared by every account's widget list.
 - No other file may be touched. No database migration, no infra/config changes, no editing any other widget's file — attempting to will be rejected before anything is written.
 `;
 }
@@ -163,7 +165,7 @@ export async function runBuildDeckWidget(requestingUser, description) {
 
   const widgetKey = await pickWidgetKey(projectId, desc);
   await updateBuild(build.id, { widget_key: widgetKey, message: 'Planning the build…' });
-  const goal = `Build a new Command Deck widget. What the user asked for: "${desc}"\n${widgetAuthoringContext(widgetKey)}`;
+  const goal = `Build a new Command Deck widget. What the user asked for: "${desc}"\n${widgetAuthoringContext(widgetKey, requestingUser.id)}`;
 
   let feature;
   try {

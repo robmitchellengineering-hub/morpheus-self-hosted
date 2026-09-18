@@ -16,13 +16,13 @@
 // to main, the original behaviour.
 import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
-import { SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, isAppendOnlyDiff } from '../lib/selfDevRepo.js';
+import { SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, isAppendOnlyDiff, isSingleLineRemoval } from '../lib/selfDevRepo.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 import { runVerifySelfDev } from './verifySelfDev.js';
 import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
 import { stampDecisionRef } from '../lib/selfDevDecisions.js';
-import { scopeExcludeFor } from '../lib/enginePolicy.js';
+import { scopeExcludeFor, resolvePolicy } from '../lib/enginePolicy.js';
 import { getGithubToken, getFileContent } from '../lib/github.js';
 
 // The one file every widget-build must append itself to — shared across
@@ -58,11 +58,15 @@ export default async function handler({ user, body }) {
 
   const directToMain = !!force || body?.directToMain === true;
 
-  // A scoped push (e.g. a Jarvis-triggered widget build) never diffs or
-  // deletes a path outside its own policy's allow-list — structurally, not
-  // by trusting the local workspace to be fresh (KNOWN-HAZARDS.md H9).
-  // Absent for a normal admin push: full-repo diff, unchanged behaviour.
-  const scopeExclude = scopePolicy ? scopeExcludeFor(scopePolicy) : undefined;
+  // A scoped push (e.g. a Jarvis-triggered widget build, or a widget
+  // deletion) never diffs or deletes a path outside its own policy's
+  // allow-list — structurally, not by trusting the local workspace to be
+  // fresh (KNOWN-HAZARDS.md H9). Absent for a normal admin push: full-repo
+  // diff, unchanged behaviour. `scopePolicy` may be a registered policy id
+  // (e.g. 'widget_build') or, for a per-call scope like a single widget's
+  // deletion, a raw ad-hoc policy object — resolvePolicy() accepts both.
+  const resolvedScopePolicy = scopePolicy ? resolvePolicy(scopePolicy) : null;
+  const scopeExclude = resolvedScopePolicy ? scopeExcludeFor(resolvedScopePolicy) : undefined;
 
   // A2 — a schema.prisma change must ship its migration in the same push.
   // Run as the ship precheck so it fires after the diff, before the push.
@@ -78,21 +82,26 @@ export default async function handler({ user, body }) {
       };
     }
 
-    // deckWidgets.js is in scope for a widget build (it's how a new widget
-    // gets listed), so it's diffed normally, not excluded — meaning its
-    // OWN staleness still matters. Check the new content against the
-    // file's LIVE remote content (not the possibly-stale local copy) so a
-    // build can never silently drop another widget's already-shipped entry.
-    if (scopePolicy === 'widget_build' && changedPaths.includes(DECK_WIDGETS_REGISTRY_PATH)) {
+    // deckWidgets.js is in scope for both a widget build (appending an
+    // entry) and a widget deletion (removing one), so it's diffed
+    // normally, not excluded — meaning its OWN staleness still matters.
+    // Check the new content against the file's LIVE remote content (not
+    // the possibly-stale local copy) so neither operation can ever
+    // silently take another widget's entry along with it.
+    if (changedPaths.includes(DECK_WIDGETS_REGISTRY_PATH) && (resolvedScopePolicy?.id === 'widget_build' || resolvedScopePolicy?.id === 'widget_delete')) {
       const token = await getGithubToken(user.id);
       const remote = await getFileContent(SELF_DEV_OWNER, SELF_DEV_REPO, DECK_WIDGETS_REGISTRY_PATH, SELF_DEV_BRANCH, token);
       const newContent = localFiles.find((f) => f.path === DECK_WIDGETS_REGISTRY_PATH)?.content ?? '';
-      if (remote && !isAppendOnlyDiff(remote.content, newContent)) {
+      const isBuild = resolvedScopePolicy.id === 'widget_build';
+      const ok = !remote || (isBuild ? isAppendOnlyDiff(remote.content, newContent) : isSingleLineRemoval(remote.content, newContent, resolvedScopePolicy.widgetKey));
+      if (!ok) {
         return {
           blocked: true,
-          reason: 'deckwidgets-not-additive',
+          reason: isBuild ? 'deckwidgets-not-additive' : 'deckwidgets-not-pure-removal',
           repoFullName: SELF_DEV_REPO_FULL_NAME,
-          message: `${DECK_WIDGETS_REGISTRY_PATH} changed something other than a pure addition — it's shared by every widget, so a scoped build may only append its own entry. Re-sync the workspace and try again.`,
+          message: isBuild
+            ? `${DECK_WIDGETS_REGISTRY_PATH} changed something other than a pure addition — it's shared by every widget, so a scoped build may only append its own entry. Re-sync the workspace and try again.`
+            : `${DECK_WIDGETS_REGISTRY_PATH} changed something other than removing exactly the '${resolvedScopePolicy.widgetKey}' entry — it's shared by every widget, so a deletion may only remove its own entry. Re-sync the workspace and try again.`,
         };
       }
     }

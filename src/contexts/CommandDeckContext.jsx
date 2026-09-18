@@ -235,30 +235,37 @@ export function CommandDeckProvider({ children }) {
   }, []);
 
   // ---- widget build progress ---------------------------------------------
-  // Checks once for a widget build on load, then polls every 5s only while
-  // one exists and isn't done/failed — same "poll while active, stop once
-  // terminal" shape as SelfDev.jsx's own PR-merge watcher, just much
-  // shorter-lived. A terminal row stays visible (with a dismiss button in
-  // the widget manager) until the user clears it or starts another build.
-  useEffect(() => {
-    let cancelled = false;
-    let timer = null;
-    const poll = async () => {
-      try {
-        const rows = await base44.entities.DeckWidgetBuild.list('-created_date', 1);
-        if (cancelled) return;
-        const latest = rows[0] || null;
-        setWidgetBuild(latest);
-        if (latest && !['done', 'failed'].includes(latest.status)) {
-          timer = window.setTimeout(poll, 5000);
-        }
-      } catch {
-        // transient — the next mount/dismiss/build retries this
+  // Checks once for a widget build/delete job on load, then polls every 5s
+  // only while one exists and isn't done/failed — same "poll while active,
+  // stop once terminal" shape as SelfDev.jsx's own PR-merge watcher, just
+  // much shorter-lived. A terminal row stays visible (with a dismiss
+  // button in the widget manager) until the user clears it or starts
+  // another job.
+  //
+  // Exposed as pollWidgetBuild (not just an effect-local closure) so a
+  // frontend-triggered job — deleteWidget() below — can kick polling off
+  // immediately instead of waiting for the next full page load: the
+  // mount-time effect only decides on its own whether to KEEP polling
+  // based on what it finds at mount, so a job started later in the same
+  // session needs its own explicit kick to be picked up before that.
+  const widgetBuildPollTimer = useRef(null);
+  const pollWidgetBuild = useCallback(async () => {
+    window.clearTimeout(widgetBuildPollTimer.current);
+    try {
+      const rows = await base44.entities.DeckWidgetBuild.list('-created_date', 1);
+      const latest = rows[0] || null;
+      setWidgetBuild(latest);
+      if (latest && !['done', 'failed'].includes(latest.status)) {
+        widgetBuildPollTimer.current = window.setTimeout(pollWidgetBuild, 5000);
       }
-    };
-    poll();
-    return () => { cancelled = true; window.clearTimeout(timer); };
+    } catch {
+      // transient — the next mount/dismiss/trigger retries this
+    }
   }, []);
+  useEffect(() => {
+    pollWidgetBuild();
+    return () => window.clearTimeout(widgetBuildPollTimer.current);
+  }, [pollWidgetBuild]);
   const dismissWidgetBuild = () => setWidgetBuild(null);
 
   // ---- brain dump --------------------------------------------------------
@@ -796,6 +803,26 @@ export function CommandDeckProvider({ children }) {
       await Promise.all(updated.map((w) => base44.entities.DeckWidgetInstance.update(w.id, { sort_order: w.sort_order })));
     } catch { flagSaveErr(); }
   };
+  // Rob, 2026-09-18: "you should be able to delete your own widgets that
+  // you make... with an are you sure confirmation" — the confirmation
+  // itself is askToDelete()'s job, called from Settings before this ever
+  // runs (see WidgetManager()). This just fires the request and clears the
+  // widget from local state immediately: deleteDeckWidget.js's fast phase
+  // removes the DeckWidgetInstance row unconditionally before anything
+  // slower runs, so this optimistic update reflects a guaranteed outcome,
+  // not a guess. Whether the widget's underlying CODE actually disappears
+  // from production is the slower part, surfaced via the same widget-build
+  // progress card (pollWidgetBuild), not by this function.
+  const deleteWidget = async (key) => {
+    setWidgetInstances((prev) => prev.filter((w) => w.widget_key !== key));
+    try {
+      await base44.functions.invoke('deleteDeckWidget', { widgetKey: key });
+    } catch {
+      flagSaveErr();
+    } finally {
+      pollWidgetBuild();
+    }
+  };
 
   const saveBusinessProfile = async (fields) => {
     setBusinessProfileBusy(true);
@@ -921,7 +948,7 @@ export function CommandDeckProvider({ children }) {
     synthesisBusy, synthesisErr, runJarvisSynthesis, lastSynthesis,
     docBusy, docErr, docResult, createDeckDocument,
     uploadFile,
-    widgetInstances, toggleWidget, moveWidget,
+    widgetInstances, toggleWidget, moveWidget, deleteWidget,
     widgetBuild, dismissWidgetBuild,
     businessProfile, businessProfileBusy, saveBusinessProfile,
     calendarEvents, calendarLoading, calendarForm, setCalendarForm, calendarBusy, loadCalendarEvents, addCalendarEvent,
