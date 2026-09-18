@@ -99,8 +99,14 @@ function CommandDeckShell() {
             title="Back to Morpheus"
             style={{
               flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 38, height: 38, borderRadius: 10, border: `1px solid rgba(246,240,223,0.3)`,
-              color: C.paper, textDecoration: 'none',
+              width: 38, height: 38, borderRadius: 10, border: '1px solid transparent',
+              // Morpheus's own brand green (--primary in index.css, #34f47a)
+              // + its paired black foreground — Rob, 2026-09-18: "make the
+              // home button... the morpheus green so people know that's
+              // going to morpheus," since everything else in Command
+              // Deck's own warm cream/brown theme gives no visual hint
+              // this one button leaves it.
+              background: '#34f47a', color: '#000', textDecoration: 'none',
             }}
           >
             <Home size={17} />
