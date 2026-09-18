@@ -16,17 +16,24 @@
 // to main, the original behaviour.
 import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
-import { SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH } from '../lib/selfDevRepo.js';
+import { SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, isAppendOnlyDiff } from '../lib/selfDevRepo.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 import { runVerifySelfDev } from './verifySelfDev.js';
 import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
 import { stampDecisionRef } from '../lib/selfDevDecisions.js';
+import { scopeExcludeFor } from '../lib/enginePolicy.js';
+import { getGithubToken, getFileContent } from '../lib/github.js';
+
+// The one file every widget-build must append itself to — shared across
+// every user's builds, so its OWN staleness matters even under a scoped
+// push (see the precheck below and enginePolicy.js's WIDGET_BUILD).
+const DECK_WIDGETS_REGISTRY_PATH = 'src/pages/CommandDeck/deckWidgets.js';
 
 export default async function handler({ user, body }) {
   if (user.role !== 'admin') throw Object.assign(new Error('Self-dev is admin only'), { status: 403 });
 
-  const { projectId, force } = body || {};
+  const { projectId, force, scopePolicy } = body || {};
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
 
   const project = await prisma.project.findFirst({
@@ -51,9 +58,15 @@ export default async function handler({ user, body }) {
 
   const directToMain = !!force || body?.directToMain === true;
 
+  // A scoped push (e.g. a Jarvis-triggered widget build) never diffs or
+  // deletes a path outside its own policy's allow-list — structurally, not
+  // by trusting the local workspace to be fresh (KNOWN-HAZARDS.md H9).
+  // Absent for a normal admin push: full-repo diff, unchanged behaviour.
+  const scopeExclude = scopePolicy ? scopeExcludeFor(scopePolicy) : undefined;
+
   // A2 — a schema.prisma change must ship its migration in the same push.
   // Run as the ship precheck so it fires after the diff, before the push.
-  const precheck = ({ changedPaths }) => {
+  const precheck = async ({ changedPaths }) => {
     const schemaChanged = changedPaths.includes(SCHEMA_PATH);
     const hasMigration = changedPaths.some((p) => MIGRATION_RE.test(p));
     if (schemaChanged && !hasMigration && !directToMain) {
@@ -64,10 +77,30 @@ export default async function handler({ user, body }) {
         message: 'server/prisma/schema.prisma changed but no server/prisma/selfdev-<slug>.sql migration is included. Ask Morpheus to add the migration file (additive, idempotent DDL) in the same change, then push again — or push with force to skip.',
       };
     }
+
+    // deckWidgets.js is in scope for a widget build (it's how a new widget
+    // gets listed), so it's diffed normally, not excluded — meaning its
+    // OWN staleness still matters. Check the new content against the
+    // file's LIVE remote content (not the possibly-stale local copy) so a
+    // build can never silently drop another widget's already-shipped entry.
+    if (scopePolicy === 'widget_build' && changedPaths.includes(DECK_WIDGETS_REGISTRY_PATH)) {
+      const token = await getGithubToken(user.id);
+      const remote = await getFileContent(SELF_DEV_OWNER, SELF_DEV_REPO, DECK_WIDGETS_REGISTRY_PATH, SELF_DEV_BRANCH, token);
+      const newContent = localFiles.find((f) => f.path === DECK_WIDGETS_REGISTRY_PATH)?.content ?? '';
+      if (remote && !isAppendOnlyDiff(remote.content, newContent)) {
+        return {
+          blocked: true,
+          reason: 'deckwidgets-not-additive',
+          repoFullName: SELF_DEV_REPO_FULL_NAME,
+          message: `${DECK_WIDGETS_REGISTRY_PATH} changed something other than a pure addition — it's shared by every widget, so a scoped build may only append its own entry. Re-sync the workspace and try again.`,
+        };
+      }
+    }
+
     return null;
   };
 
-  const result = await getDeliveryAdapter('self-dev').ship({ user, files: localFiles, directToMain, precheck });
+  const result = await getDeliveryAdapter('self-dev').ship({ user, files: localFiles, directToMain, precheck, scopeExclude });
 
   // Blocked by the precheck.
   if (result.blocked) return result;

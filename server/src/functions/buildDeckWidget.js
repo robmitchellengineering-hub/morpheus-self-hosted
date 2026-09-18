@@ -229,7 +229,7 @@ export async function runBuildDeckWidget(requestingUser, description) {
 
   let pushResult;
   try {
-    pushResult = await pushSelfDevToGithubHandler({ user: selfDevActor, body: { projectId } });
+    pushResult = await pushSelfDevToGithubHandler({ user: selfDevActor, body: { projectId, scopePolicy: 'widget_build' } });
   } catch (err) {
     return finish({ ok: false, stage: 'push', message: `Couldn't push the build: ${err.message}`, workspaceLink });
   }
