@@ -1273,6 +1273,7 @@ model DeckWidgetBuild {
 
   description   String   @db.Text
   widget_key    String?
+  action        String   @default("build") // build | delete
   status        String   @default("planning") // planning | building | pushing | merging | deploying | verifying | done | failed
   step_index    Int      @default(0)
   step_count    Int      @default(0)

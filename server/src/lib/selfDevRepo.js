@@ -60,3 +60,41 @@ export function isAppendOnlyDiff(oldText, newText) {
   }
   return i === oldLines.length;
 }
+
+// The inverse of isAppendOnlyDiff, for deleting a widget's own registry
+// entry: true only if newText is oldText with EXACTLY one line removed
+// (order preserved, nothing else changed), and that one removed line is
+// the target widget's own entry — not some other line that happened to
+// differ. Used by pushSelfDevToGithub.js's delete-scope guard so a
+// widget's own deletion can never silently take someone else's entry (or
+// anything else) with it, regardless of what the local workspace's
+// deckWidgets.js copy looked like going in.
+export function isSingleLineRemoval(oldText, newText, widgetKey) {
+  const oldLines = String(oldText ?? '').split('\n');
+  const newLines = String(newText ?? '').split('\n');
+  let j = 0;
+  const skipped = [];
+  for (const line of oldLines) {
+    if (j < newLines.length && line === newLines[j]) j++;
+    else skipped.push(line);
+  }
+  if (j !== newLines.length) return false;
+  return skipped.length === 1 && skipped[0].includes(`key: '${widgetKey}'`);
+}
+
+// The mechanical (non-AI) edit deleteDeckWidget.js makes to
+// deckWidgets.js's own content — every DECK_WIDGETS entry the build
+// authoring contract produces is exactly one line, so removing a widget's
+// entry is just dropping the one line that names it. Throws rather than
+// guessing if that's not true (zero or more than one match) — the
+// push-time isSingleLineRemoval check above is the real safety net, but
+// this should never even attempt an ambiguous edit.
+export function removeWidgetEntry(content, widgetKey) {
+  const lines = String(content ?? '').split('\n');
+  const marker = `key: '${widgetKey}'`;
+  const matches = lines.filter((l) => l.includes(marker));
+  if (matches.length !== 1) {
+    throw new Error(`Expected exactly one DECK_WIDGETS entry for '${widgetKey}', found ${matches.length}`);
+  }
+  return lines.filter((l) => !l.includes(marker)).join('\n');
+}

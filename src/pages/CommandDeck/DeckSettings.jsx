@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText, UploadCloud, DownloadCloud, AlertTriangle, Coins, X, ChevronUp, ChevronDown, Plug } from 'lucide-react';
+import { Download, Check, XCircle, Loader2, Mail, Calendar, HardDrive, FileText, UploadCloud, DownloadCloud, AlertTriangle, Coins, X, ChevronUp, ChevronDown, Plug, Trash2 } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useDeckGoogleConnection } from '@/hooks/useDeckGoogleConnection';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
@@ -146,6 +146,14 @@ const BUILD_STAGE_LABEL = {
   planning: 'Planning', building: 'Building', pushing: 'Pushing',
   merging: 'Waiting on checks', deploying: 'Deploying', verifying: 'Verifying', done: 'Done', failed: 'Failed',
 };
+// deleteDeckWidget.js reuses the same DeckWidgetBuild row/status shape
+// (action: 'delete') — same stages, worded for a removal instead of a
+// build so "Removing: "widget_key"" reads naturally rather than
+// "Building: "widget_key"" for something being deleted.
+const DELETE_STAGE_LABEL = {
+  planning: 'Preparing', building: 'Removing', pushing: 'Pushing',
+  merging: 'Waiting on checks', deploying: 'Deploying', verifying: 'Verifying', done: 'Deleted', failed: 'Failed',
+};
 // Rough fraction for the stages before/after the per-step progress bar
 // actually applies (no steps planned yet, or already past the build loop) —
 // keeps the bar moving instead of sitting at 0% or 100% for a few minutes.
@@ -154,7 +162,8 @@ const BUILD_STAGE_FLOOR = { planning: 0.05, pushing: 0.9, merging: 0.93, deployi
 function WidgetBuildProgress() {
   const { widgetBuild, dismissWidgetBuild } = useCommandDeck();
   if (!widgetBuild) return null;
-  const { status, step_index: stepIndex, step_count: stepCount, step_title: stepTitle, message, description } = widgetBuild;
+  const { status, step_index: stepIndex, step_count: stepCount, step_title: stepTitle, message, description, action } = widgetBuild;
+  const stageLabel = action === 'delete' ? DELETE_STAGE_LABEL : BUILD_STAGE_LABEL;
   const fraction = stepCount > 0
     ? Math.min(1, Math.max(0.05, stepIndex / stepCount))
     : (BUILD_STAGE_FLOOR[status] ?? 0.05);
@@ -168,7 +177,7 @@ function WidgetBuildProgress() {
         {status === 'done' && <Check size={14} color={barColor} />}
         {status === 'failed' && <AlertTriangle size={14} color={barColor} />}
         <span style={{ flex: 1, fontSize: '0.8rem', fontWeight: 600 }}>
-          {BUILD_STAGE_LABEL[status] || status}{stepCount > 0 && !isTerminal ? ` — step ${stepIndex}/${stepCount}` : ''}: {description}
+          {stageLabel[status] || status}{stepCount > 0 && !isTerminal ? ` — step ${stepIndex}/${stepCount}` : ''}: {description}
         </span>
         {isTerminal && (
           <button onClick={dismissWidgetBuild} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.15rem', display: 'flex' }}>
@@ -193,8 +202,16 @@ function WidgetBuildProgress() {
 // DeckWidgetInstance row yet just doesn't show here until the load effect's
 // lazy-seed finishes — same load-order every other Deck list already has.
 function WidgetManager() {
-  const { widgetInstances, toggleWidget, moveWidget } = useCommandDeck();
+  const { widgetInstances, toggleWidget, moveWidget, deleteWidget, askToDelete } = useCommandDeck();
   const sorted = [...widgetInstances].sort((a, b) => a.sort_order - b.sort_order);
+  // Same base44.auth.me() call UsageMeter() below already uses to know who's
+  // asking — needed here only to gate the delete button's VISIBILITY
+  // (hide a button that would just fail server-side). deleteDeckWidget.js
+  // is the real, only enforcement of "you can only delete what you made."
+  const [currentUserId, setCurrentUserId] = useState(null);
+  useEffect(() => {
+    base44.auth.me().then((u) => setCurrentUserId(u?.id || null)).catch(() => {});
+  }, []);
 
   return (
     <Card title="Widgets" sub="What shows on your Deck, and in what order.">
@@ -203,6 +220,7 @@ function WidgetManager() {
         {sorted.map((w, i) => {
           const meta = DECK_WIDGETS.find((d) => d.key === w.widget_key);
           if (!meta) return null;
+          const isMine = meta.createdBy && meta.createdBy === currentUserId;
           return (
             <div key={w.widget_key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.5rem 0.6rem' }}>
               <span style={{ flex: 1, fontSize: '0.83rem', fontWeight: 600, opacity: w.enabled ? 1 : 0.5 }}>{meta.label}</span>
@@ -215,6 +233,15 @@ function WidgetManager() {
               <button onClick={() => toggleWidget(w.widget_key)} style={{ ...pillBtn(w.enabled ? C.sage : C.walnutSoft), minWidth: 62 }}>
                 {w.enabled ? 'On' : 'Off'}
               </button>
+              {isMine && (
+                <button
+                  onClick={() => askToDelete(() => deleteWidget(w.widget_key))}
+                  title={`Delete "${meta.label}" — this removes it from production entirely, for everyone`}
+                  style={{ ...pillBtn(C.alert), padding: '0.3rem' }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           );
         })}
