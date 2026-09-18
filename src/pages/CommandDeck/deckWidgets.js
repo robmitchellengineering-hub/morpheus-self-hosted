@@ -32,6 +32,7 @@ export const DECK_WIDGETS = [
   { key: 'tasks', label: 'Task board', defaultEnabled: true },
   { key: 'week_rhythm', label: 'Week rhythm', defaultEnabled: false },
   { key: 'backup', label: 'Backup & export', defaultEnabled: true },
+  { key: 'a_simple_counter_widget_a_button_that_in', label: 'Counter', defaultEnabled: false },
 ];
 
 export const DECK_WIDGET_KEYS = DECK_WIDGETS.map((w) => w.key);
