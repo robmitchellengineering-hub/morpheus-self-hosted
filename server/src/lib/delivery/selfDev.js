@@ -72,11 +72,19 @@ export const selfDevDelivery = {
   // `directToMain` (force / hotfix). Returns the engine's ship result; the
   // caller handles self-dev's side effects (chat note, usage log, decision
   // stamp, manual regen, migration apply).
-  async ship({ user, files, directToMain = false, precheck }) {
+  //
+  // `scopeExclude` (optional): an extra exclude predicate composed on top
+  // of the always-applied shouldExclude — for a scoped build (e.g.
+  // WIDGET_BUILD), enginePolicy.js's scopeExcludeFor() makes any path
+  // outside the policy's own allow-list structurally invisible to this
+  // push's diff/deletion computation, independent of the local
+  // workspace's freshness (KNOWN-HAZARDS.md H9). Absent for Rob's own
+  // unscoped pushes — zero behavior change there.
+  async ship({ user, files, directToMain = false, precheck, scopeExclude }) {
     const token = await getGithubToken(user.id);
     return shipChange(token, SELF_DEV_REPO_FULL_NAME, {
       files,
-      exclude: shouldExclude,
+      exclude: (path) => shouldExclude(path) || (scopeExclude ? scopeExclude(path) : false),
       baseBranch: SELF_DEV_BRANCH,
       branchPrefix: 'self-dev/',
       directToMain,

@@ -135,4 +135,20 @@ export function partitionWritable(policy, paths) {
   return { allowed, denied };
 }
 
+// The mirror image of assertWritable's allow-list check, phrased as a
+// ship()-compatible exclude predicate: true for any path a scoped policy
+// does NOT allow writing. An unscoped policy (allowPathPrefixes: null —
+// ADMIN, PLUGIN_TENANT) never excludes anything extra here; its own
+// denyPaths/infra checks are enforced separately at write time.
+//
+// Built for the self-dev push pipeline (KNOWN-HAZARDS.md H9): a scoped
+// build's diff/deletion computation should never even consider a path
+// outside its own scope, regardless of whether the local workspace's copy
+// of that path is fresh or stale — see pushSelfDevToGithub.js.
+export function scopeExcludeFor(policy) {
+  const p = resolvePolicy(policy);
+  if (!Array.isArray(p.allowPathPrefixes) || p.allowPathPrefixes.length === 0) return () => false;
+  return (path) => !p.allowPathPrefixes.some((re) => re.test(path));
+}
+
 export { ADMIN, PLUGIN_TENANT, WIDGET_BUILD };

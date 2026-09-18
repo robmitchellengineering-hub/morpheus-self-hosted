@@ -44,3 +44,19 @@ export function shouldExclude(path) {
   if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(lower)) return true;
   return BINARY_EXTS.some((ext) => lower.endsWith(ext));
 }
+
+// True if every line of `oldText` still appears, unchanged, in the same
+// relative order in `newText` (a line-subsequence check) — i.e. newText is
+// oldText with only insertions, never a removal or edit. Used to guard a
+// shared, append-only file (deckWidgets.js) against a scoped build basing
+// its change on a stale local copy and silently dropping someone else's
+// entry — see pushSelfDevToGithub.js's deckwidgets-not-additive check.
+export function isAppendOnlyDiff(oldText, newText) {
+  const oldLines = String(oldText ?? '').split('\n');
+  const newLines = String(newText ?? '').split('\n');
+  let i = 0;
+  for (const line of newLines) {
+    if (i < oldLines.length && line === oldLines[i]) i++;
+  }
+  return i === oldLines.length;
+}
