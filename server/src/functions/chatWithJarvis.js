@@ -11,8 +11,56 @@ import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock, HISTORY_WINDOW } from '../lib/deckMemory.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
+import { runBuildDeckWidget } from './buildDeckWidget.js';
 
 const MAX_REPLY_TOKENS = 6000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply, and the prompt now carries the full energy log + long-term memory, which makes a longer, pattern-spotting reply more likely
+
+// Phase 3 of the Jarvis-built widgets plan (2026-09-18) — a cheap classifier,
+// same pattern as classifyDeckDumpItem.js, run before the full Jarvis reply
+// so an explicit "build me a widget" request routes straight to
+// runBuildDeckWidget instead of Jarvis just explaining he can't do that.
+// Deliberately narrow: only an unambiguous request to build/make/create a
+// NEW Command Deck widget trips it — never a question about an existing
+// one, a feature idea floated in passing, or ordinary conversation. A false
+// positive here kicks off a real, unattended ~15-minute build against the
+// shared self-dev workspace, so the bar is "unambiguous ask", not "sounds
+// vaguely related".
+const WIDGET_BUILD_INTENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    isWidgetBuildRequest: {
+      type: 'boolean',
+      description: 'true ONLY if the user is explicitly and unambiguously asking to build/create/make a brand NEW Command Deck widget for their dashboard right now. False for everything else — a question, a feature idea floated in passing, feedback about an EXISTING widget, or any normal conversation.',
+    },
+  },
+  required: ['isWidgetBuildRequest'],
+};
+
+async function classifyWidgetBuildIntent(userId, message) {
+  const prompt = `Does this message from a Command Deck user explicitly ask to build/create/make a brand new widget for their dashboard, right now?
+
+MESSAGE: "${message}"
+
+Say true only for an unambiguous build request ("build me a widget that...", "can you make a widget for...", "create a widget to..."). Say false for a question, a vague idea, feedback on an existing widget, or normal conversation.`;
+  // Generous despite the tiny output — same lesson classifyDeckDumpItem.js
+  // and this file's own reply budget both already learned: hidden reasoning
+  // eats the budget before the actual JSON on this deployment's model.
+  const { result } = await invokeAI({ userId, prompt, schema: WIDGET_BUILD_INTENT_SCHEMA, maxTokens: 600 });
+  return result?.isWidgetBuildRequest === true;
+}
+
+// Rob, 2026-09-18: the build should get the same grounding a normal Jarvis
+// reply does (what business/person this is for), not just the bare
+// sentence the user typed — so the planner writes a widget that actually
+// fits their business, not a generic guess. Deliberately just the business
+// context, not the full live Deck snapshot (energy log, tasks, etc.) — that
+// data is personal and ephemeral, irrelevant to widget CODE, and a widget
+// build's own scope_policy already keeps it from reading anything at build
+// time anyway (a widget reads live data at RUNTIME, via lib/deck*.js — see
+// widgetAuthoringContext in buildDeckWidget.js).
+function widgetBuildGoal(message, { firstName, businessContext }) {
+  return `${message}\n\n(For context: this is for ${firstName}, who runs ${businessContext}.)`;
+}
 
 // 2026-09-17: parameterized (was a fixed const hardcoding "Rob"/"Valiant
 // Music"/his exact $100k-on-30hrs goal/his ADHD) so the same persona
@@ -73,6 +121,22 @@ export default async function handler({ user, body }) {
 
   const savedUserContent = `${message}${fileRefNote(fileUrls)}`.trim();
   await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'user', content: savedUserContent } });
+
+  // Phase 3: an explicit widget-build request skips the normal reply
+  // entirely and fires the real, ~15-minute unattended build in the
+  // background — Jarvis stays usable for normal chat while it runs, and the
+  // real progress lives in Settings' widget manager (Rob, 2026-09-18: "if
+  // javis can just tell you where to watch the build that's better cause
+  // then you can still chat and use him while it's working in the
+  // background"), not streamed into this reply.
+  if (message && (await classifyWidgetBuildIntent(user.id, message))) {
+    const reply = `Already building it — plan, code, review, ship, the whole thing, properly. That's a good fifteen minutes, not a parlour trick. Watch it happen in Settings → Widgets if you're itching to look, or just carry on talking to me while it cooks.`;
+    await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'jarvis', content: reply } });
+    runBuildDeckWidget(user, widgetBuildGoal(message, { firstName, businessContext })).catch((err) => {
+      console.error('[chatWithJarvis] widget build crashed:', err.message);
+    });
+    return { reply };
+  }
 
   const conversationBlock = history.length
     ? history.map((m) => `${m.role === 'user' ? firstName : 'Jarvis'}: ${m.content}`).join('\n')
