@@ -1,0 +1,184 @@
+#!/usr/bin/env node
+/**
+ * DSH usage snapshot — tokens processed and estimated cost for a session.
+ *
+ * Reads the harness session projection cache (the same data the Web GUI
+ * renders for its "{percent} of context used" indicator), so no model calls
+ * are made and nothing is billed.
+ *
+ * Usage:
+ *   scripts/usage              # current session ($DSH_SESSION_ID), else newest
+ *   scripts/usage <session-id> # a specific session
+ *   scripts/usage --all        # every cached session, newest first
+ *   scripts/usage --json       # machine-readable
+ *
+ * Prices are DeepSeek `deepseek-flash`, verified 2026-09-19 from
+ * https://api-docs.deepseek.com/quick_start/pricing/ (USD per 1M tokens).
+ * Update them here if DeepSeek changes pricing; they are not fetched live.
+ *
+ * NOTE: output is an ESTIMATE. The authoritative figure is your DeepSeek
+ * dashboard at https://platform.deepseek.com/usage.
+ */
+
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
+
+const PER_MILLION = 1e6
+
+// deepseek-flash, USD per 1M tokens. Off-peak is half of peak.
+// Peak = 01:00-04:00 and 06:00-10:00 UTC, Monday-Friday.
+const RATES = {
+  offpeak: { cacheRead: 0.003, cacheMiss: 0.15, output: 0.6 },
+  peak: { cacheRead: 0.006, cacheMiss: 0.3, output: 1.2 },
+}
+
+const CACHE_DIR = join(
+  process.env.DSH_HOME ?? join(homedir(), '.dsh'),
+  'storages',
+  'session_projcache',
+  'sessions',
+)
+
+const argv = process.argv.slice(2)
+const asJson = argv.includes('--json')
+const showAll = argv.includes('--all')
+const explicit = argv.find((a) => !a.startsWith('--'))
+
+function loadSession(file) {
+  const path = join(CACHE_DIR, file)
+  try {
+    const doc = JSON.parse(readFileSync(path, 'utf8'))
+    const rows = doc?.record?.rows ?? {}
+    const totals = rows.tokenUsage?.val?.totals
+    if (!totals) return null
+    const pressure = rows.contextPressure?.val ?? {}
+    return {
+      id: file.replace(/\.json$/, ''),
+      mtime: statSync(path).mtime,
+      totals,
+      surfaceTokens: pressure.surfaceTokens ?? null,
+      contextWindow: pressure.contextWindow ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+function listSessions() {
+  let files
+  try {
+    files = readdirSync(CACHE_DIR).filter((f) => f.endsWith('.json'))
+  } catch {
+    console.error(`No projection cache at ${CACHE_DIR}`)
+    console.error('Pass a session id, or run after at least one agent turn.')
+    process.exit(1)
+  }
+  return files.map(loadSession).filter(Boolean).sort((a, b) => b.mtime - a.mtime)
+}
+
+function price(totals) {
+  const out = {}
+  for (const [name, r] of Object.entries(RATES)) {
+    const cacheRead = (totals.cacheReadTokens / PER_MILLION) * r.cacheRead
+    const cacheMiss = (totals.uncachedInputTokens / PER_MILLION) * r.cacheMiss
+    const output = (totals.outputTokens / PER_MILLION) * r.output
+    out[name] = { cacheRead, cacheMiss, output, total: cacheRead + cacheMiss + output }
+  }
+  return out
+}
+
+const n = (v) => v.toLocaleString('en-US')
+const money = (v) => '$' + v.toFixed(4)
+const pct = (a, b) => (b > 0 ? ((a / b) * 100).toFixed(1) + '%' : 'n/a')
+
+function report(s, { verbose = false } = {}) {
+  const t = s.totals
+  const inputTotal = t.cacheReadTokens + t.uncachedInputTokens
+  const grand = inputTotal + t.outputTokens
+  const p = price(t)
+  const context =
+    s.surfaceTokens != null && s.contextWindow
+      ? `${n(s.surfaceTokens)} / ${n(s.contextWindow)}  (${pct(s.surfaceTokens, s.contextWindow)} used)`
+      : 'unavailable'
+
+  console.log('')
+  console.log(`DSH usage — ${s.id}`)
+  console.log(`as of ${s.mtime.toLocaleString()}`)
+  console.log('')
+  console.log(`  cache-read (hits)   ${n(t.cacheReadTokens).padStart(14)}   ${pct(t.cacheReadTokens, inputTotal)} of input`)
+  console.log(`  uncached (misses)   ${n(t.uncachedInputTokens).padStart(14)}`)
+  console.log(`  output              ${n(t.outputTokens).padStart(14)}`)
+  console.log('  ' + '─'.repeat(42))
+  console.log(`  total processed     ${n(grand).padStart(14)}`)
+  console.log(`  cache hit rate      ${pct(t.cacheReadTokens, inputTotal).padStart(14)}`)
+  console.log('')
+  console.log(`  context             ${context}`)
+  console.log('')
+  console.log(`  cost  off-peak      ${money(p.offpeak.total).padStart(14)}`)
+  if (verbose) {
+    console.log(`          ├ cache read  ${money(p.offpeak.cacheRead).padStart(14)}`)
+    console.log(`          ├ cache miss  ${money(p.offpeak.cacheMiss).padStart(14)}`)
+    console.log(`          └ output      ${money(p.offpeak.output).padStart(14)}`)
+  }
+  console.log(`        peak          ${money(p.peak.total).padStart(14)}`)
+  if (verbose) {
+    console.log(`          ├ cache read  ${money(p.peak.cacheRead).padStart(14)}`)
+    console.log(`          ├ cache miss  ${money(p.peak.cacheMiss).padStart(14)}`)
+    console.log(`          └ output      ${money(p.peak.output).padStart(14)}`)
+  }
+  console.log('')
+  console.log('  Estimate only — see https://platform.deepseek.com/usage for actuals.')
+  console.log('')
+}
+
+if (asJson) {
+  const sessions = explicit
+    ? [loadSession(explicit + '.json')].filter(Boolean)
+    : showAll
+      ? listSessions()
+      : (() => {
+          const id = process.env.DSH_SESSION_ID
+          const s = id ? loadSession(id + '.json') : null
+          return s ? [s] : listSessions().slice(0, 1)
+        })()
+  console.log(JSON.stringify(sessions.map((s) => ({ ...s, price: price(s.totals) })), null, 2))
+  process.exit(0)
+}
+
+if (showAll) {
+  const sessions = listSessions()
+  if (!sessions.length) {
+    console.log('No cached sessions.')
+    process.exit(0)
+  }
+  let grand = 0
+  for (const s of sessions) {
+    report(s)
+    grand += price(s.totals).offpeak.total
+  }
+  console.log(`Across ${sessions.length} session(s): ${money(grand)} off-peak, ` +
+    `${money(grand * 2)} peak.`)
+  console.log('')
+  process.exit(0)
+}
+
+const target = explicit
+  ? loadSession(explicit + '.json')
+  : (() => {
+      const id = process.env.DSH_SESSION_ID
+      return (id && loadSession(id + '.json')) || listSessions()[0]
+    })()
+
+if (!target) {
+  console.error(`No projection cache for ${explicit ?? process.env.DSH_SESSION_ID ?? 'current session'}.`)
+  console.error(`Looked in ${CACHE_DIR}`)
+  process.exit(1)
+}
+
+report(target, { verbose: true })
+
+if (!process.env.DSH_SESSION_ID) {
+  console.log('  (DSH_SESSION_ID unset — showing the most recently active session)')
+  console.log('')
+}

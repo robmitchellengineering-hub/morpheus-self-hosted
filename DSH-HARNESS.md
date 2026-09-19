@@ -140,6 +140,22 @@ git push -u origin dsh/agent-harness-setup
 gh pr create --fill
 ```
 
+## Watching usage
+
+```bash
+scripts/usage          # current session ($DSH_SESSION_ID)
+scripts/usage --all    # every cached session
+scripts/usage --json   # machine-readable
+```
+
+Reads the harness session projection cache — no model calls, nothing billed —
+and estimates cost at DeepSeek `deepseek-flash` rates verified 2026-09-19. The
+authoritative figure is https://platform.deepseek.com/usage.
+
+The GUI's "{percent} of context used" indicator renders the same data. DSH
+tracks tokens, not money: there is no cost display in the UI, so this script
+is the only local estimate.
+
 ## Verification
 
 ```bash
