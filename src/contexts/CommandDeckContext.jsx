@@ -303,43 +303,73 @@ export function CommandDeckProvider({ children }) {
   const addDump = async () => {
     if (!dumpInput.trim()) return;
     const text = dumpInput.trim();
-    const owner = detectOwner(text);
     try {
-      if (owner) {
-        const created = await base44.entities.DeckTask.create({ text, owner_person_id: owner.id, energy: 'any', done: false });
-        setTasks((prev) => [created, ...prev]);
-        flagQuickFile(`Filed straight to ${owner.name}'s tasks`);
+      // ONE classification call for the whole dump. This used to short-circuit
+      // to a single owner as soon as any person's name appeared anywhere in the
+      // text — which filed every thought in a multi-thought dump to that one
+      // person ("get milk and ask Dave about the trailer" put the milk on
+      // Dave's list). The classifier now assigns a destination and an owner per
+      // item, so a dictated dump lands in several places instead of one.
+      let items;
+      try {
+        const { data } = await base44.functions.invoke('classifyDeckDumpItem', { text });
+        items = Array.isArray(data?.items) && data.items.length
+          ? data.items
+          // A backend still on the previous build (it deploys independently)
+          // answers in the single-destination shape.
+          : [{ text, destination: data?.destination, life_stream_key: data?.life_stream_key, owner_name: null }];
+      } catch {
+        // Classification unavailable — fall back to the name regex, or to the
+        // unsorted pile so nothing is lost; the promote buttons cover it by hand.
+        const owner = detectOwner(text);
+        if (owner) {
+          const created = await base44.entities.DeckTask.create({ text, owner_person_id: owner.id, energy: 'any', done: false });
+          setTasks((prev) => [created, ...prev]);
+          flagQuickFile(`Filed straight to ${owner.name}'s tasks`);
+        } else {
+          const created = await base44.entities.DeckDumpItem.create({ text });
+          setDump((prev) => [created, ...prev]);
+          flagQuickFile('Saved to the unsorted pile');
+        }
         setDumpInput('');
         return;
       }
 
-      // No name mentioned — let Jarvis classify it and file it directly
-      // (task / strategy / knowledge / a life stream), instead of leaving
-      // it in the unsorted pile waiting on a manual tap.
-      try {
-        const { data } = await base44.functions.invoke('classifyDeckDumpItem', { text });
-        const dest = data?.destination;
-        if (dest === 'task') {
-          const created = await base44.entities.DeckTask.create({ text, owner_person_id: people.find(isYou)?.id, energy: 'any', done: false });
+      const selfId = people.find(isYou)?.id;
+      const labels = [];
+      for (const item of items) {
+        const itemText = String(item?.text || text).trim();
+        if (!itemText) continue;
+        const named = item?.owner_name
+          ? people.find((p) => p.name.trim().toLowerCase() === String(item.owner_name).trim().toLowerCase())
+          : null;
+
+        if (item?.destination === 'task') {
+          const created = await base44.entities.DeckTask.create({ text: itemText, owner_person_id: named?.id || selfId, energy: 'any', done: false });
           setTasks((prev) => [created, ...prev]);
-          flagQuickFile('Filed to your tasks');
-        } else if (dest === 'strategy') {
-          const created = await base44.entities.DeckStrategyNote.create({ text });
+          labels.push(named && !isYou(named) ? `${named.name}'s tasks` : 'your tasks');
+        } else if (item?.destination === 'strategy') {
+          const created = await base44.entities.DeckStrategyNote.create({ text: itemText });
           setStrategy((prev) => [created, ...prev]);
-          flagQuickFile('Filed to Strategy');
-        } else if (dest === 'life_stream' && data?.life_stream_key && lifeStreams[data.life_stream_key]) {
-          await addLifeNote(data.life_stream_key, text);
-          flagQuickFile(`Filed to ${LIFE_STREAMS_META.find((s) => s.id === data.life_stream_key)?.label || data.life_stream_key}`);
+          labels.push('Strategy');
+        } else if (item?.destination === 'life_stream' && lifeStreams[item.life_stream_key]) {
+          await addLifeNote(item.life_stream_key, itemText);
+          labels.push(LIFE_STREAMS_META.find((s) => s.id === item.life_stream_key)?.label || item.life_stream_key);
         } else {
-          const created = await base44.entities.DeckKnowledgeNote.create({ text });
+          const created = await base44.entities.DeckKnowledgeNote.create({ text: itemText });
           setKnowledge((prev) => [created, ...prev]);
-          flagQuickFile('Filed to Knowledge');
+          labels.push('Knowledge');
         }
-      } catch {
-        // Classification failed — fall back to the unsorted pile so
-        // nothing is lost; the existing promote buttons cover it by hand.
-        const created = await base44.entities.DeckDumpItem.create({ text });
-        setDump((prev) => [created, ...prev]);
+      }
+
+      // Say where things went — the whole point of auto-filing is that the
+      // capture stays thoughtless, which only holds if it is visible. The count
+      // is per item; the destinations are de-duplicated so three tasks don't
+      // read "your tasks, your tasks, your tasks".
+      if (labels.length === 1) {
+        flagQuickFile(`Filed to ${labels[0]}`);
+      } else if (labels.length > 1) {
+        flagQuickFile(`Filed ${labels.length} items: ${[...new Set(labels)].join(', ')}`);
       }
 
       setDumpInput('');

@@ -13,7 +13,7 @@ export default function BrainDumpWidget() {
   return (
     <Card
       title="Brain dump"
-      sub="Whatever's rattling around — get it out. Mention a name and it's filed straight to them; otherwise Jarvis files it where it belongs."
+      sub="Whatever's rattling around — get it out. One thought or five, Jarvis splits it up and files each piece where it belongs; name someone and their piece goes to them."
       search={dump.length > 0 ? { value: dumpSearch, onChange: setDumpSearch, placeholder: 'Search unsorted dump…' } : undefined}
     >
       <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -22,7 +22,7 @@ export default function BrainDumpWidget() {
       </div>
       {dumpInput.trim() && detectOwner(dumpInput) && (
         <p style={{ fontSize: '0.7rem', fontWeight: 600, color: detectOwner(dumpInput)?.color, marginTop: '0.4rem', marginBottom: 0 }}>
-          → will file straight to {detectOwner(dumpInput)?.name}'s tasks
+          → anything for {detectOwner(dumpInput)?.name} goes to their list
         </p>
       )}
       {quickFileMsg && (

@@ -27,6 +27,43 @@ An earlier revision of this file said `/deck` was still admin-gated. That was
 true when the source memory was written (2026-09-17) and had already changed by
 the time it was committed here.
 
+## How the Deck is fed: dictation → auto-file → synthesis
+
+**This is the product, and getting it backwards leads to building the wrong
+thing.** Rob stated it plainly:
+
+> "brain dump automatically files stuff to those places through dictation it
+> will asign tasks to people etc and all those streams are just so javis can
+> help peice all the life context together and give the best sythisis of the
+> data for holistic life sucsess"
+
+So the loop is: **Rob speaks freely → Jarvis files each thought where it belongs
+→ Jarvis synthesises across all of it.** The five life streams
+(health/money/home/people/growth) are **destinations his own words are filed
+into**, not integrations to be connected.
+
+**Do not build an OAuth/API connector for a life stream.** There is no banking
+sync, no health-app sync, no "connect the things you already use" plumbing to
+add — a stream fills up because Rob talks and the dump files it there. The
+own-data rule below governs connectors that genuinely exist (e.g.
+`DeckGoogleConnection`); it is **not** a mandate to create one per stream. This
+was misread once already, and the near-miss was a proposed banking integration
+that the user had never asked for.
+
+**Everything that threatens capture is a whole-product threat.** Synthesis can
+only reason over what actually got filed, so a dump that loses, merges or
+misfiles a thought doesn't degrade one feature — it starves the synthesis that
+is the entire point. Concretely:
+
+- A dump is usually **several thoughts in one breath** (dictation on a phone is
+  the primary input). It must be split and each piece filed separately, with its
+  own destination **and its own owner**. `lib/deckDumpClassify.js` owns this and
+  `scripts/verify-dump-classify.mjs` asserts it.
+- **Nothing may be silently dropped.** If classification is uncertain, the
+  original text is filed whole rather than summarised — the user's words are the
+  valuable part, the bucket is recoverable.
+- A name in the text must never drag the *whole* dump onto that one person.
+
 ## The own-data rule (standing architectural rule)
 
 Every Deck/Jarvis integration gets its **own data, own connections, own
