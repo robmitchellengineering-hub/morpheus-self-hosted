@@ -66,13 +66,24 @@ gh pr merge <N> --squash --subject "<subject>"
 git switch main && git pull && git branch -d <branch>
 ```
 
-### ⚠ Step 8 is the exception — confirm before merging
+### Merging is yours once checks pass
 
-Rob chose **"Branch + PR only; never push to `main`; you merge"** on
-2026-09-19, which contradicts the merge step above. Until he says otherwise:
-**stop after opening the PR and hand him the merge.** Ask rather than assume —
-this is the one step where the established SOP and his most recent explicit
-instruction disagree.
+Settled 2026-09-19: **the agent merges.** Run `gh pr merge <N> --squash` after
+checks pass, then clean up. (The earlier "hand Rob the merge" note came from a
+badly-framed question — it offered "agent never merges" versus "agent pushes
+straight to `main`", when the real workflow is a third thing: merge *through* the
+PR.)
+
+The protection that matters is that **nothing reaches `main` except through a
+PR** — never `git push` to `main` directly, which `.githooks/pre-push` blocks.
+Merging the PR is the sanctioned path, not a shortcut around it.
+
+**Before merging, check all three:**
+
+1. No runtime code under `src/` or `server/` unless the task called for it
+   (`gh pr view <N> --json files`)
+2. All checks green (`gh pr checks <N>`)
+3. `gh pr view <N> --json mergeable,mergeStateStatus` → `MERGEABLE` / `CLEAN`
 
 ## The verification bar
 
