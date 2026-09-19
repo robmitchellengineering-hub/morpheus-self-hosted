@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, Key, Plus, Copy, Check, Trash2, Loader2, AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react';
+import { Globe, Key, Plus, Copy, Check, Trash2, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import DnsSetupGuide from './DnsSetupGuide';
 

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Store, ArrowLeft } from 'lucide-react';
+import { Store } from 'lucide-react';
 
 // Footer shown on the market and store-item pages. Links to the legal pages
 // and states the seller agreement, so buyers and sellers see the compliance

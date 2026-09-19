@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Brain, Loader2, Download, ArrowLeft, Cpu, Zap, ShieldCheck, Stethoscope, Network } from 'lucide-react';
+import { Brain, Loader2, Download, ArrowLeft, Cpu, Zap, ShieldCheck, Stethoscope } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import MatrixRain from '@/components/matrix/MatrixRain';

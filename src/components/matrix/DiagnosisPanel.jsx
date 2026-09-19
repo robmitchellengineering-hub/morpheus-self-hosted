@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, CheckCircle, XCircle, Wrench, ArrowRight, AlertTriangle, Key, ExternalLink, Link as LinkIcon, MessageSquare, Timer } from 'lucide-react';
+import { Bot, CheckCircle, Wrench, ArrowRight, AlertTriangle, Key, ExternalLink, Link as LinkIcon, MessageSquare, Timer } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatRunTime } from '@/hooks/useRunTimer';
 
