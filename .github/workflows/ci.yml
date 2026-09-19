@@ -90,6 +90,13 @@ jobs:
       - name: Proactive-insight opt-out
         run: node scripts/verify-insight-optout.mjs
 
+      # The guard on the script that holds production DB credentials. A guard
+      # that lets a DROP through is worse than no script at all, because the
+      # operator stops checking by hand — so the refusal rules are asserted,
+      # not assumed. No database needed; the runner itself is never invoked.
+      - name: Production migration guard
+        run: node scripts/verify-prod-sql.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy
