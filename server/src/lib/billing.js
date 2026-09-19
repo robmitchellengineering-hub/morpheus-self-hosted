@@ -182,17 +182,72 @@ export async function reserveCredits(userId, estimatedCredits) {
   }
 }
 
-// Post-call true-up: refunds the difference if the pre-call estimate
-// overshot (the common case, by design), or takes the small remainder if it
-// undershot. Never throws / never re-blocks -- the call already happened and
-// was already paid for by the reservation; this just corrects the amount.
+// Pure half of reconcileCredits: given what the call actually owes beyond the
+// reservation, and what the account actually holds, decide the split. Kept
+// separate and dependency-free so scripts/verify-billing-clamp.mjs can assert
+// the invariant in CI without a database.
+//
+// The invariant is that the balance must never go below zero. The product
+// claims a "hard stop before overspend" and pre-call reservation is that stop;
+// letting a post-call true-up push an account negative made that claim false
+// and left a real account sitting at -3.7712 credits, which is confusing to the
+// user and impossible to state honestly in public. The reservation is the
+// stop, so the true-up may only take what is actually there.
+export function splitOvershoot(owed, available) {
+  const take = Math.min(Math.max(0, owed), Math.max(0, available));
+  return { take, absorb: Math.max(0, owed) - take };
+}
+
+// Post-call true-up: refunds the difference if the pre-call estimate overshot
+// (the common case, by design, since the estimate carries a 1.4x safety
+// multiplier), or takes the small remainder if it undershot.
+//
+// Never throws / never re-blocks -- the call already happened and was paid for
+// by the reservation; this only corrects the amount. But it also never takes
+// the balance below zero: if the account cannot cover the shortfall, the
+// remainder is absorbed as a platform cost and logged, because an honest meter
+// cannot meter what isn't there. The exposure is one partial call per
+// exhaustion, and the next call is hard-blocked anyway.
 export async function reconcileCredits(userId, reservedCredits, actualCredits) {
   const diff = reservedCredits - actualCredits; // positive = refund back to the user
-  if (Math.abs(diff) < 1e-9) return;
-  await prisma.user.update({
-    where: { id: userId },
-    data: { credit_balance: { increment: diff } },
+  if (Math.abs(diff) < 1e-9) return { refunded: 0, absorbed: 0 };
+
+  if (diff > 0) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { credit_balance: { increment: diff } },
+    });
+    return { refunded: diff, absorbed: 0 };
+  }
+
+  const owed = -diff;
+  // Atomic conditional take: succeeds only if the balance genuinely covers it,
+  // so concurrent calls cannot both pass a check only one should.
+  const taken = await prisma.user.updateMany({
+    where: { id: userId, credit_balance: { gte: owed } },
+    data: { credit_balance: { decrement: owed } },
   });
+  if (taken.count === 1) return { refunded: 0, absorbed: 0 };
+
+  // Short. Zero the balance (guarded, so a concurrent top-up is never wiped)
+  // and absorb the remainder rather than carrying a negative balance.
+  const before = Number(
+    (await prisma.user.findUnique({ where: { id: userId }, select: { credit_balance: true } }))?.credit_balance ?? 0,
+  );
+  await prisma.$executeRawUnsafe(
+    'UPDATE users SET credit_balance = 0 WHERE id = $1 AND credit_balance < $2::numeric',
+    userId,
+    owed,
+  );
+  const { absorb } = splitOvershoot(owed, before);
+  if (absorb > 0) {
+    console.warn(
+      `[billing] absorbed ${absorb.toFixed(4)} credits ($${(absorb * CREDIT_RATE_USD).toFixed(4)}) for ${userId}: `
+      + 'the call exceeded its reservation and the balance could not cover the difference. '
+      + 'Balance clamped at 0 rather than going negative.',
+    );
+  }
+  return { refunded: 0, absorbed: absorb };
 }
 
 // Convenience wrapper combining the actual-tokens -> retail-credits
