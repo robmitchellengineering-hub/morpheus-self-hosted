@@ -83,6 +83,12 @@ jobs:
       - name: CORS origin policy
         run: node scripts/verify-cors.mjs
 
+      # Enforced memory: asserts the docs still agree with the code — skill
+      # frontmatter, bootstrap-SQL/schema parity, referenced paths, and
+      # "unbuilt" claims about files that actually exist.
+      - name: Docs still match the code
+        run: node scripts/verify-context.mjs
+
       # Catches a syntax error in any server source. The server tree is ESM
       # ("type": "module"), and server/package-lock.json is intentionally
       # untracked (hazard H4), so this must not require an install.

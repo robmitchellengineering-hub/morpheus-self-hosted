@@ -20,7 +20,7 @@ preserve existing conventions (the doc-comment style at the top of most
 |---|---|---|
 | Frontend | Vite 6 + React 18, react-router-dom, Radix UI, Tailwind 3, framer-motion, three.js | `src/`. Matrix theme. Deployed on Netlify (auto-publishes `main`). |
 | Backend | Node + Express + Prisma, BullMQ worker, S3-compatible storage, Stripe, nodemailer | `server/`. Deployed on Northflank (Alpine container). |
-| Database | PostgreSQL via Prisma | Migrations in `server/prisma/migrations/`. Redis optional (enables the BullMQ worker). |
+| Database | PostgreSQL via Prisma | There is **no** `server/prisma/migrations/` directory — migrations are hand-run SQL in `server/prisma/*.sql` (see `KNOWN-HAZARDS.md` H8). `manual-supabase-init.sql` is the full schema for a fresh database. Redis optional (enables the BullMQ worker). |
 | AI | OpenAI-compatible `/chat/completions`, `response_format: json_object` | `server/src/ai.js` `invokeAI()`. Primary `LLM_MODEL=deepseek-flash`, fallback `gemini-flash-latest`. Per-user BYO key supported. |
 
 ## Key files
