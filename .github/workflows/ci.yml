@@ -1,0 +1,93 @@
+# CI for morpheus-self-hosted.
+#
+# WHY THIS EXISTS
+#
+# Until now the only check on a pull request was a Netlify deploy preview — which
+# builds the frontend and nothing else. That gap has real consequences:
+#
+#   * `npm run lint` was RED on main and nobody noticed, because nothing ran it.
+#     It broke the verify step AGENTS.md requires and the ship SOP in
+#     .dsh/skills/morpheus-dev-protocol.
+#   * Self-dev's PRs auto-squash-merge once checks pass (server/src/lib/engine/
+#     merge.js). "Checks" meant a deploy preview, so a green preview was the only
+#     gate before production.
+#
+# Deliberately dependency-light: the guards job installs nothing, so it is fast
+# and cannot be broken by a flaky registry.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same ref makes an in-flight run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: lint + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # `prebuild` runs scripts/sync-capabilities.mjs, which rewrites this file
+      # (KNOWN-HAZARDS.md H3). A build that dirties it is normal; the warning is
+      # here so a change that *commits* it gets noticed.
+      - name: Note generated-file churn (H3)
+        run: |
+          if ! git diff --quiet -- src/MORPHEUS_DESIGN_PLAN.md; then
+            echo "::warning file=src/MORPHEUS_DESIGN_PLAN.md::npm run build rewrote this file (hazard H3) — do not commit it unless the change is specifically about it."
+          fi
+
+  guards:
+    name: guards (no install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The H9 drift guard's runtime verification — real assertions against the
+      # module, not a syntax check. server/src/lib/selfDevDrift.js is pure, so
+      # this needs no dependencies.
+      - name: Self-dev drift guard (H9)
+        run: node scripts/verify-drift.mjs
+
+      # Catches a syntax error in any server source. The server tree is ESM
+      # ("type": "module"), and server/package-lock.json is intentionally
+      # untracked (hazard H4), so this must not require an install.
+      - name: Syntax-check server sources
+        run: |
+          fail=0
+          count=0
+          while IFS= read -r f; do
+            count=$((count + 1))
+            if ! node --check "$f"; then
+              echo "::error file=$f::syntax check failed"
+              fail=1
+            fi
+          done < <(find server/src -name '*.js' -type f)
+          echo "checked $count server source file(s)"
+          exit $fail
