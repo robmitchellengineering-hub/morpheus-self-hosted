@@ -16,6 +16,7 @@ import adminRoutes from './routes/admin.routes.js';
 import { LOCAL_ROOT } from './storage.js';
 import { startFreshnessSchedule } from './freshnessSchedule.js';
 import { startDeepSeekBalanceSchedule } from './deepseekBalanceSchedule.js';
+import { startDeckInsightSchedule } from './lib/deckInsightSchedule.js';
 import { resolveCors } from './lib/corsOrigin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,4 +71,5 @@ app.listen(port, () => {
   console.log(`[morpheus] server listening on :${port}`);
   startFreshnessSchedule();
   startDeepSeekBalanceSchedule();
+  startDeckInsightSchedule();
 });

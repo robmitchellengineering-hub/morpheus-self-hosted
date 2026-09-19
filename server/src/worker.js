@@ -10,6 +10,7 @@ import 'dotenv/config';
 import { queueEnabled, getQueue, startWorker } from './queue.js';
 import { runFreshnessCheckAndNotify } from './freshness.js';
 import { checkBalanceAndAlert, isDeepSeekPrimary } from './lib/deepseekBalance.js';
+import { runDeckInsights } from './lib/deckInsight.js';
 
 if (!queueEnabled()) {
   console.log('[morpheus-worker] REDIS_URL not set — nothing to do. This process is only needed once you offload work onto queue.js, or once REDIS_URL is set (single-instance self-hosts get the freshness check via freshnessSchedule.js in the API process instead).');
@@ -51,6 +52,23 @@ if (isDeepSeekPrimary() && process.env.DEEPSEEK_BALANCE_CHECK_ENABLED !== 'false
     console.log(`[deepseek-balance] level=${status.level} balance=$${status.totalUsd ?? '?'}`);
   }, 1);
   console.log(`[morpheus-worker] deepseek-balance-check registered — every ${Math.round(DEEPSEEK_INTERVAL_MS / 60000)}m.`);
+}
+
+// Command Deck's proactive Jarvis insight — same exactly-once-across-replicas
+// reasoning as freshness-check above. Skipped when disabled, so a deployment
+// that turned it off does not register a job that does nothing.
+if (process.env.DECK_INSIGHT_ENABLED !== 'false') {
+  const DECK_INSIGHT_INTERVAL_MS = Number(process.env.DECK_INSIGHT_INTERVAL_MS) || 24 * 60 * 60 * 1000;
+  const deckInsightQueue = getQueue('deck-insight');
+  await deckInsightQueue.add(
+    'run',
+    {},
+    { repeat: { every: DECK_INSIGHT_INTERVAL_MS }, jobId: 'deck-insight-repeatable' },
+  );
+  startWorker('deck-insight', async () => {
+    await runDeckInsights();
+  }, 1);
+  console.log(`[morpheus-worker] deck-insight registered — every ${Math.round(DECK_INSIGHT_INTERVAL_MS / 3600000)}h.`);
 }
 
 // Example of how another processor would be registered once a producer
