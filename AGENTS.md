@@ -40,7 +40,12 @@ preserve existing conventions (the doc-comment style at the top of most
 
 ## Working notes
 
-- **Local dev:** backend `cd server && npm install && node src/index.js` (port 4500);
+- **Local dev:** there is no system Postgres on the dev machine, so start one with
+  `cd server && npm install && npm run dev:db` — that initialises a real cluster under
+  `server/data/pg/` (from the `embedded-postgres` devDependency), runs it as a daemon on the
+  port in `server/.env`'s `DATABASE_URL`, and creates the database. `npm run dev:db:schema`
+  then builds all 52 tables from `schema.prisma`; `dev:db:status` / `dev:db:stop` /
+  `dev:db:reset` manage it. Then: backend `cd server && npm install && node src/index.js` (port 4500);
   frontend `npm install && npm run dev` (Vite, port 5173, proxies `/api`). Or
   `docker compose up --build` for the whole stack. There is no `base44 dev`.
 - **Before finishing code changes, run the relevant checks:** frontend

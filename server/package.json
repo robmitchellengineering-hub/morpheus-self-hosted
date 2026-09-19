@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Morpheus self-hosted backend — Express + Prisma/Postgres. Ported 1:1 from the Base44 function/entity source (see PORTING_GUIDE.md).",
+  "description": "Morpheus self-hosted backend \u2014 Express + Prisma/Postgres. Ported 1:1 from the Base44 function/entity source (see PORTING_GUIDE.md).",
   "main": "src/index.js",
   "scripts": {
     "dev": "node --watch src/index.js",
+    "dev:db": "node scripts/dev-db.mjs start",
+    "dev:db:stop": "node scripts/dev-db.mjs stop",
+    "dev:db:status": "node scripts/dev-db.mjs status",
+    "dev:db:reset": "node scripts/dev-db.mjs reset",
+    "dev:db:schema": "node scripts/dev-db.mjs schema",
     "start": "node src/index.js",
     "worker": "node src/worker.js",
     "prisma:generate": "prisma generate",
@@ -42,6 +47,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17",
     "prisma": "^5.20.0"
   },
   "engines": {
