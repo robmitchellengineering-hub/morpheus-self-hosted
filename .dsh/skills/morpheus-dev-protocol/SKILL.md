@@ -135,6 +135,19 @@ A status snapshot is accurate for a day and then quietly misleads. If you need
 to know whether something exists, read the code or run the generator. Do not
 write it down here.
 
+There are four memory sources, and each answers a different question:
+
+| Source | Answers |
+|---|---|
+| `node scripts/context.mjs` | what the system **is** right now — derived from the code |
+| `node scripts/sessions.mjs "<q>"` | what we **did** and why, across past sessions |
+| `scripts/verify-context.mjs` (CI) | whether the docs still **agree** with the code |
+| `KNOWN-HAZARDS.md` | what has already **broken** in production — written by the failure path, not by memory |
+
+`sessions.mjs` is the only one that captures *reasoning*. Docs record
+conclusions; the session logs record what was tried, what was ruled out, and
+why — searchable with `--kind user,assistant,tool,result` and `--reasoning`.
+
 ## Related
 
 - `working-with-rob` — his standing priorities and how he expects results reported.
