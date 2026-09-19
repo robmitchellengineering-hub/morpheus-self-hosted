@@ -45,6 +45,10 @@ const ENV_FILE = resolve(SERVER_ROOT, '.env.prodsql');
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
+// Widens the guard to allow a bounded UPDATE/DELETE — the data-repair channel.
+// Explicit flag only; never inferred from the SQL, so a data write can never
+// ride along unnoticed on a schema change.
+const dataRepair = args.includes('--data-repair');
 const fileArg = args.find((a) => !a.startsWith('--'));
 
 function fail(message) {
@@ -53,7 +57,7 @@ function fail(message) {
 }
 
 if (!fileArg) {
-  fail('usage: node scripts/prod-sql.mjs <path-to.sql> [--dry-run]');
+  fail('usage: node scripts/prod-sql.mjs <path-to.sql> [--dry-run] [--data-repair]');
 }
 
 const sqlPath = resolve(process.cwd(), fileArg);
@@ -91,10 +95,11 @@ if (isLocalDatabaseUrl(url)) {
 }
 
 const sql = readFileSync(sqlPath, 'utf8');
-const review = reviewSql(sql);
+const review = reviewSql(sql, { allowDataRepair: dataRepair });
 
 console.log(`\n  target   ${describeDatabaseUrl(url)}`);
 console.log(`  file     ${fileArg}`);
+console.log(`  mode     ${review.mode || (dataRepair ? 'data-repair' : 'additive')}`);
 console.log(`  statements  ${review.statements.length}`);
 
 if (!review.ok) {

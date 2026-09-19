@@ -117,25 +117,76 @@ export function describeDatabaseUrl(url) {
   return `${info.user || '(no user)'}@${info.host}:${info.port}/${info.database}`;
 }
 
+// Data-repair mode: a deliberately narrow widening.
+//
+// The additive-only rule has no legitimate channel for repairing DATA — only
+// for changing SCHEMA. That gap surfaced on 2026-09-19: a billing bug left an
+// account at -3.7712 credits, and the correct repair is an UPDATE, which this
+// guard refused. The right answer is not to bypass the guard ad hoc; it is to
+// give it a channel narrow enough to be safe.
+//
+// In this mode ONLY a single-table UPDATE or DELETE carrying a WHERE clause is
+// allowed. Everything else — DROP, TRUNCATE, ALTER, INSERT, unbounded writes —
+// is still refused, and the WHERE requirement is the load-bearing one: it makes
+// "which rows?" an explicit, readable part of the statement rather than
+// accidentally everything.
+const BOUNDED_WRITE = /^(update\s|delete\s+from\s)/i;
+const HAS_WHERE = /\swhere\s/i;
+
+function reviewDataRepair(stmts) {
+  const allowed = [];
+  const offenders = [];
+  const unbounded = [];
+  for (const s of stmts) {
+    if (!BOUNDED_WRITE.test(s)) { offenders.push(s); continue; }
+    if (!HAS_WHERE.test(s)) { unbounded.push(s); continue; }
+    allowed.push(s);
+  }
+  if (unbounded.length) {
+    return {
+      ok: false,
+      statements: allowed,
+      riskyStatements: unbounded,
+      reason: `${unbounded.length} write statement(s) have no WHERE clause — an unbounded write is never a repair`,
+    };
+  }
+  if (offenders.length) {
+    return {
+      ok: false,
+      statements: allowed,
+      riskyStatements: offenders,
+      reason: `${offenders.length} statement(s) are outside data-repair scope — only a bounded UPDATE or DELETE is allowed here`,
+    };
+  }
+  return { ok: true, statements: allowed, riskyStatements: [], reason: null, mode: 'data-repair' };
+}
+
 /**
  * Decide whether a block of SQL may be run against production.
  *
  * @param {string} sql
- * @returns {{ok: boolean, statements: string[], riskyStatements: string[], reason: string|null}}
+ * @param {{allowDataRepair?: boolean}} [opts] set only from an explicit
+ *   `--data-repair` flag; never inferred from the SQL itself.
+ * @returns {{ok: boolean, statements: string[], riskyStatements: string[], reason: string|null, mode?: string}}
  */
-export function reviewSql(sql) {
+export function reviewSql(sql, { allowDataRepair = false } = {}) {
   const { additive, stmts, riskyStatements } = classifyMigration(sql);
 
   if (!stmts.length) {
     return { ok: false, statements: [], riskyStatements: [], reason: 'the file contains no statements' };
   }
-  if (!additive) {
-    return {
-      ok: false,
-      statements: stmts,
-      riskyStatements,
-      reason: `${riskyStatements.length} statement(s) are not additive — these need a human, not a script`,
-    };
+  if (additive) {
+    return { ok: true, statements: stmts, riskyStatements: [], reason: null, mode: 'additive' };
   }
-  return { ok: true, statements: stmts, riskyStatements: [], reason: null };
+  if (allowDataRepair) {
+    return reviewDataRepair(stmts);
+  }
+  return {
+    ok: false,
+    statements: stmts,
+    riskyStatements,
+    reason: `${riskyStatements.length} statement(s) are not additive — these need a human, not a script. `
+      + 'If this is a bounded data repair, re-run with --data-repair.',
+    mode: 'refused',
+  };
 }
