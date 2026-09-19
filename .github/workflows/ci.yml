@@ -89,6 +89,12 @@ jobs:
       - name: Docs still match the code
         run: node scripts/verify-context.mjs
 
+      # The fact generator. It exits non-zero if its own extraction breaks —
+      # e.g. a refactor moves what it parses — so a silently-wrong report can
+      # never be the thing you rely on.
+      - name: Context extraction is intact
+        run: node scripts/context.mjs > /dev/null
+
       # Catches a syntax error in any server source. The server tree is ESM
       # ("type": "module"), and server/package-lock.json is intentionally
       # untracked (hazard H4), so this must not require an install.

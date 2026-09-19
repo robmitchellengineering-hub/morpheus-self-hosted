@@ -1,6 +1,6 @@
 ---
 name: morpheus-deck
-description: "Command Deck / Jarvis domain rules — the own-data-architecture rule, self-serve additive migrations against Supabase, and what's shipped vs outstanding. Load before touching anything under /deck."
+description: "Command Deck / Jarvis domain rules — the own-data-architecture rule, self-serve additive migrations against Supabase, and Jarvis's persona. Rules only; the feature inventory is generated. Load before touching anything under /deck."
 whenToUse: "Load before changing any Command Deck or Jarvis code — new widgets, connections, memory/history mechanisms, database migrations, or the /deck surface itself."
 ---
 
@@ -92,45 +92,30 @@ Verify in production that the migration actually landed — an
 `information_schema` read query, or reload the live app and check the console.
 **A migration file sitting in the repo does not mean it was applied.**
 
-## Shipped (as of 2026-09-17)
+## What exists — do not enumerate it here
 
-- Nav restructure: bottom tab bar (Deck/Jarvis/Tools/Settings); separate
-  installable PWA at `/deck` with its own manifest and icon.
-- Jarvis: real persona (butler + big brother, dry cutting wit, cross-domain
-  expert-career framing), grounded in a live Deck data snapshot, perpetual
-  energy log (no day cap), real long-term memory (`lib/deckMemory.js` —
-  condenses conversation as it ages past the recent window, mirrored to the
-  user's own Drive as `jarvis-memory.md`).
-- Workshop Tools: tuner, unit converters, electronics calculators, tone
-  generator, spectrum analyser — parity with the reference prototype.
-- Google integration: `DeckGoogleConnection` (Gmail + Calendar + Drive + Docs),
-  Gmail sync with two-layer AI inquiry classification, AI-suggested replies,
-  Drive backup/restore (wipe-and-replace, behind explicit confirm).
-- Brain dump auto-files (`classifyDeckDumpItem.js`): task / strategy / knowledge /
-  life-stream, classified by actionable-vs-reflection ("get milk" files as a task).
-- Calendar ↔ Murbah two-way sync (`booking_date`/`calendar_event_id` on
-  `DeckMurbahOpportunity`).
-- Jarvis-driven Google Doc creation (`createDeckDocument.js`).
-- Editable "me" person (`is_self` flag, decoupled from the literal name "You");
-  people have an email field; tasks can be texted or emailed to owners.
-- Collapsible sections, searchable lists, file attachments (photo vision +
-  PDF/DOCX/XLSX server-side extraction; only a filename reference is persisted).
-- Admin-gated `/deck` with usage meter and buy-credits (Deck shares one credit
-  pool with Morpheus).
+The feature inventory is **generated**, not remembered:
 
-## Status corrections
+    node scripts/context.mjs
 
-This section previously listed three items as "not yet built". They were
-re-checked against source on 2026-09-19 and **two had already shipped** — the
-hazard of treating a memory file as current state:
+That reports the current Deck/Jarvis function files, `Deck*` models, `/deck`
+pages, widget count, and whether the synthesis card, vault check and long-term
+memory are present — all read from the code.
 
-- ~~Data-vault reachability~~ — **built**: `functions/checkDeckVault.js` live-probes
-  the Deck's own Drive vault and reports `ok` / `folder-missing` / `folder-trashed`
-  / `unreachable`; the Data vault card in Settings shows it.
-- ~~Jarvis "Get suggestions" synthesis card~~ — **built**:
-  `functions/runJarvisSynthesis.js`, wired at `CommandDeckContext.jsx:923`.
-- **Still not built:** the Jarvis↔Morpheus inter-agent vision — see
-  `morpheus-vision`. That one is genuinely unstarted.
+This file used to carry a hand-written list headed *"Shipped (as of 2026-09-17)"*.
+By 2026-09-19 it was already wrong: it listed the data-vault check and the Jarvis
+synthesis card as unbuilt when both had shipped. That is what a status snapshot
+in a curated document always does — it is accurate for a day and then quietly
+misleads. Facts belong in a generator; this file keeps the rules.
+
+What is **not** derivable from code, and is therefore kept here:
+
+- **Jarvis's persona is a product decision, not an accident of the code.** Butler
+  plus big brother, dry cutting wit, cross-domain expert-career framing,
+  holistic-life worldview. He is deliberately *not* a generic business advisor,
+  and replies match the question's length rather than producing a report.
+- **The Jarvis ↔ Morpheus inter-agent vision is genuinely unstarted.** That is a
+  scoping decision, not a status line — see `morpheus-vision`.
 
 ## Reference for feature parity
 

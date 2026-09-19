@@ -114,6 +114,27 @@ scripts/pw close
 
 Never report a user-visible change as working without having observed it render.
 
+## Keeping the docs honest
+
+This project's hand-written memory went stale **eight times in a single day**
+(2026-09-19). Every failure had the same shape: a document held a fact the code
+had moved past. Curation preserves rules well and facts badly, so they are split:
+
+- **Rules and judgement** live in a skill — "never push to `main`", the own-data
+  rule, how Rob works, Jarvis's persona.
+- **Facts** are generated or checked — `node scripts/context.mjs` prints the
+  current inventory from the code, and `scripts/verify-context.mjs` (run in CI)
+  asserts what the docs claim against the code.
+
+The working rule when writing or editing a skill:
+
+> **If a sentence contains a file path, a count, a route, or the words "not yet
+> built", it belongs in `scripts/context.mjs` or in a check — not in a skill.**
+
+A status snapshot is accurate for a day and then quietly misleads. If you need
+to know whether something exists, read the code or run the generator. Do not
+write it down here.
+
 ## Related
 
 - `working-with-rob` — his standing priorities and how he expects results reported.
