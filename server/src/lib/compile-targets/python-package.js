@@ -133,7 +133,33 @@ export const pythonPackage = {
         }
       },
       { run: 'pip install build' },
-      { run: 'python -m build' },
+      {
+        name: 'Build wheel',
+        // Run `build` from OUTSIDE the project directory.
+        //
+        // `python -m build` puts the current working directory on sys.path, so a
+        // project that ships its own `build.py` SHADOWS the `build` package and
+        // `python -m build` executes the project's script instead. That script
+        // usually exits 0, so the step reports success, produces no wheel, and
+        // the target fails later at "No wheel produced" — with nothing in the log
+        // explaining why. Confirmed live 2026-09-19: the step printed the
+        // project's own script output and no dist/ was created.
+        //
+        // This is a real case, not a hypothetical: utils.js explicitly detects
+        // projects that ship their own build script, and both linux-binary and
+        // windows-exe build those. So a project can legitimately contain
+        // build.py and still want a wheel.
+        //
+        // Passing the project as the source directory while standing in
+        // $RUNNER_TEMP keeps build.py off sys.path. Output still lands in
+        // <project>/dist, which is where the verify step and the release glob
+        // below both expect it. Each `run:` step starts in the workspace, so the
+        // `cd` does not leak into the verify step.
+        run: [
+          'cd "$RUNNER_TEMP"',
+          'python -m build "$GITHUB_WORKSPACE"',
+        ].join('\n')
+      },
       {
         name: 'Verify package',
         run: [
