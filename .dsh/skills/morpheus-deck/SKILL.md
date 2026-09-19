@@ -64,6 +64,15 @@ is the entire point. Concretely:
   valuable part, the bucket is recoverable.
 - A name in the text must never drag the *whole* dump onto that one person.
 
+**Proactive insight is per account, and the account can refuse it.** Jarvis
+reading across the Deck unprompted spends an LLM call, so the "Jarvis's
+suggestions" widget is the opt-out: switching it off stops the scheduled
+synthesis for that account, with no AI spend at all (`lib/deckInsightGate.js`).
+Absence of a widget row means **enabled** — rows are lazy-seeded and the
+scheduler can run before an account has ever opened its Deck. Do not add a new
+settings column for this: hazard **H11** is exactly why that would have taken the
+whole Deck down.
+
 ## The own-data rule (standing architectural rule)
 
 Every Deck/Jarvis integration gets its **own data, own connections, own

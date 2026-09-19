@@ -276,7 +276,12 @@ function WidgetManager() {
           const isMine = meta.createdBy && meta.createdBy === currentUserId;
           return (
             <div key={w.widget_key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.5rem 0.6rem' }}>
-              <span style={{ flex: 1, fontSize: '0.83rem', fontWeight: 600, opacity: w.enabled ? 1 : 0.5 }}>{meta.label}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.83rem', fontWeight: 600, opacity: w.enabled ? 1 : 0.5 }}>{meta.label}</div>
+                {meta.note && (
+                  <div style={{ fontSize: '0.7rem', color: C.walnutSoft, marginTop: '0.15rem', lineHeight: 1.4 }}>{meta.note}</div>
+                )}
+              </div>
               <button onClick={() => moveWidget(w.widget_key, -1)} disabled={i === 0} style={{ ...pillBtn(C.walnutSoft), padding: '0.3rem', opacity: i === 0 ? 0.3 : 1 }}>
                 <ChevronUp size={13} />
               </button>

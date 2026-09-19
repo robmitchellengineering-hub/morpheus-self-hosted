@@ -7,8 +7,13 @@
 // already suspect a pattern to go looking for it — which is exactly what every
 // competitor does, and not what the marketing claims.
 //
-// This runs it unprompted. Two brakes make that affordable and non-annoying:
+// This runs it unprompted. Three brakes make that affordable, respectful and
+// non-annoying:
 //
+//   0. THE ACCOUNT CAN SAY NO. Switching the "Jarvis's suggestions" widget off
+//      opts that account out entirely — no probes, no LLM call. See
+//      lib/deckInsightGate.js for why the opt-out is the existing widget toggle
+//      rather than a new settings column.
 //   1. ONLY WHEN SOMETHING CHANGED. If no Deck row has moved since the last
 //      insight, there is no LLM call at all. Cost tracks activity rather than
 //      elapsed time, which is what makes a daily cadence cheap.
@@ -23,6 +28,7 @@
 // long-term memory, and in the DeckHome card with no UI change whatsoever.
 import { prisma } from '../db.js'
 import { synthesizeDeck } from '../functions/runJarvisSynthesis.js'
+import { INSIGHT_WIDGET_KEY, optedOutUserIds } from './deckInsightGate.js'
 
 // The tables whose movement means "there is something new to reason about".
 // Only high-churn, user-authored ones: this decides whether to spend an LLM
@@ -95,23 +101,54 @@ export async function activeDeckUserIds() {
 }
 
 /**
+ * Accounts that have switched proactive insight off, via the "Jarvis's
+ * suggestions" widget. Settled in ONE query for every candidate account, before
+ * any per-account probe runs, so an opted-out account costs a shared read
+ * rather than eight activity queries and an LLM call.
+ *
+ * Never throws: a failure here must fail OPEN (nobody opted out) so a broken
+ * read cannot silently switch the feature off for everyone.
+ */
+async function optedOut(ids) {
+  if (!ids.length) return new Set()
+  try {
+    const rows = await prisma.deckWidgetInstance.findMany({
+      where: { created_by_id: { in: ids }, widget_key: INSIGHT_WIDGET_KEY, enabled: false },
+      select: { created_by_id: true, widget_key: true, enabled: true },
+    })
+    return optedOutUserIds(rows, ids)
+  } catch (err) {
+    console.warn('[deck-insight] opt-out lookup failed, treating every account as opted IN:', err?.message || err)
+    return new Set()
+  }
+}
+
+/**
  * Run the proactive insight for every active Deck account.
  *
  * Never throws: one account failing must not stop the rest, and a scheduled job
  * that dies on the first error would silently stop providing the feature.
  *
  * @param {{now?: Date, log?: (...args: any[]) => void}} [opts]
- * @returns {Promise<{considered: number, raised: number, skipped: number, failed: number}>}
+ * @returns {Promise<{considered: number, raised: number, skipped: number, failed: number, optedOut: number}>}
  */
 export async function runDeckInsights({ now = new Date(), log = console.log } = {}) {
   const ids = await activeDeckUserIds()
-  const result = { considered: ids.length, raised: 0, skipped: 0, failed: 0 }
+  const result = { considered: ids.length, raised: 0, skipped: 0, failed: 0, optedOut: 0 }
   if (!ids.length) {
     log('[deck-insight] no accounts with Deck activity — nothing to do.')
     return result
   }
 
+  const off = await optedOut(ids)
+
   for (const id of ids) {
+    // Checked before the activity probes on purpose: an account that has turned
+    // this off should cost nothing at all, not eight queries and a near-miss.
+    if (off.has(id)) {
+      result.optedOut++
+      continue
+    }
     try {
       const last = await lastInsightAt(id)
       if (last && now.getTime() - new Date(last).getTime() < MIN_GAP_MS) {
@@ -147,7 +184,7 @@ export async function runDeckInsights({ now = new Date(), log = console.log } = 
 
   log(
     `[deck-insight] ${result.considered} account(s): ${result.raised} raised, `
-    + `${result.skipped} skipped, ${result.failed} failed.`,
+    + `${result.skipped} skipped, ${result.optedOut} opted out, ${result.failed} failed.`,
   )
   return result
 }
