@@ -11,6 +11,14 @@
 //     for by the pre-call reservation.
 import { prisma } from '../db.js';
 import { getModelRate, computeCostUsd } from './modelPricing.js';
+import { splitOvershoot } from './billingClamp.js';
+
+// Re-exported so existing importers keep working. The logic lives in
+// billingClamp.js, which imports nothing at all, so the no-install CI guard can
+// assert its invariant without dragging in the Prisma client — importing it
+// from this file instead is what took the guards job down on 2026-09-19
+// (ERR_MODULE_NOT_FOUND: '@prisma/client', reached via db.js).
+export { splitOvershoot };
 
 // Rob's pricing decision, 2026-09-02: for any DeepSeek-served call (this
 // platform's paid-tier default), retail bills at a fixed 2x DeepSeek Pro's
@@ -180,22 +188,6 @@ export async function reserveCredits(userId, estimatedCredits) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { credit_balance: true } });
     throw new InsufficientCreditsError(estimatedCredits, Number(user?.credit_balance ?? 0));
   }
-}
-
-// Pure half of reconcileCredits: given what the call actually owes beyond the
-// reservation, and what the account actually holds, decide the split. Kept
-// separate and dependency-free so scripts/verify-billing-clamp.mjs can assert
-// the invariant in CI without a database.
-//
-// The invariant is that the balance must never go below zero. The product
-// claims a "hard stop before overspend" and pre-call reservation is that stop;
-// letting a post-call true-up push an account negative made that claim false
-// and left a real account sitting at -3.7712 credits, which is confusing to the
-// user and impossible to state honestly in public. The reservation is the
-// stop, so the true-up may only take what is actually there.
-export function splitOvershoot(owed, available) {
-  const take = Math.min(Math.max(0, owed), Math.max(0, available));
-  return { take, absorb: Math.max(0, owed) - take };
 }
 
 // Post-call true-up: refunds the difference if the pre-call estimate overshot
