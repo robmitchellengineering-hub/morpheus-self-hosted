@@ -17,8 +17,15 @@ relationships + growth) is the entire point; it is not a Valiant-Music-specific
 hardcoded build, and everything shipped so far is Rob's own first working
 example of it.
 
-`/deck` is currently **admin-only-gated** in `App.jsx` (in the `adminOnly`
-`ProtectedRoute` group). Revisit once it's ready to be per-user customizable.
+`/deck` is **no longer admin-gated** — it sits in the ordinary authenticated
+route group (`App.jsx:164`, outside the `adminOnly` group at `App.jsx:171`).
+The data layer was already multi-tenant (every `Deck*` entity is scoped by
+`created_by_id` through the generic entity engine), so the route guard was the
+last real gate. Each account sees only its own Deck.
+
+An earlier revision of this file said `/deck` was still admin-gated. That was
+true when the source memory was written (2026-09-17) and had already changed by
+the time it was committed here.
 
 ## The own-data rule (standing architectural rule)
 
@@ -111,11 +118,19 @@ Verify in production that the migration actually landed — an
 - Admin-gated `/deck` with usage meter and buy-credits (Deck shares one credit
   pool with Morpheus).
 
-## Not yet built
+## Status corrections
 
-- Data-vault reachability status beyond the last-backup timestamp.
-- The one-shot Jarvis "connect the dots / Get suggestions" synthesis card.
-- The Jarvis↔Morpheus inter-agent vision — see `morpheus-vision`.
+This section previously listed three items as "not yet built". They were
+re-checked against source on 2026-09-19 and **two had already shipped** — the
+hazard of treating a memory file as current state:
+
+- ~~Data-vault reachability~~ — **built**: `functions/checkDeckVault.js` live-probes
+  the Deck's own Drive vault and reports `ok` / `folder-missing` / `folder-trashed`
+  / `unreachable`; the Data vault card in Settings shows it.
+- ~~Jarvis "Get suggestions" synthesis card~~ — **built**:
+  `functions/runJarvisSynthesis.js`, wired at `CommandDeckContext.jsx:923`.
+- **Still not built:** the Jarvis↔Morpheus inter-agent vision — see
+  `morpheus-vision`. That one is genuinely unstarted.
 
 ## Reference for feature parity
 
