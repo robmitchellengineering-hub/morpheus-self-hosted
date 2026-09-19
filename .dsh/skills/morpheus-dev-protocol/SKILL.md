@@ -78,28 +78,41 @@ The protection that matters is that **nothing reaches `main` except through a
 PR** — never `git push` to `main` directly, which `.githooks/pre-push` blocks.
 Merging the PR is the sanctioned path, not a shortcut around it.
 
-**Before merging, check all three:**
+**Before merging, check all four:**
 
 1. No runtime code under `src/` or `server/` unless the task called for it
    (`gh pr view <N> --json files`)
 2. All checks green (`gh pr checks <N>`)
 3. `gh pr view <N> --json mergeable,mergeStateStatus` → `MERGEABLE` / `CLEAN`
+4. The runtime gate passes locally: `node scripts/verify.mjs` — it boots the real
+   server, resolves every relative import, and runs every pure guard. **If the
+   change touches `server/prisma/schema.prisma`, `scripts/verify-schema-prod.mjs`
+   must exit 0 (no drift).** A missing credential is exit 2 — "not verified",
+   never "passed" — and blocks the merge just as firmly as drift does.
 
 ## The verification bar
 
 "It builds" is not verification. Rob's standard, in his own framing:
 
+- **One command, every time:** `node scripts/verify.mjs`. It runs the pure
+  guards (`verify-drift`, `verify-cors`, `verify-context`, `verify-dump-classify`,
+  `verify-insight-optout`, `verify-prod-sql`, `verify-server-imports`) and
+  `boot-smoke` — which actually boots `server/src/index.js` in production mode
+  and asserts `/api/health` returns 200. The boot step is the one that catches
+  the class of failure (H12) that a syntax check is structurally blind to, and
+  it was exactly the step skipped on 2026-09-19.
 - **Frontend:** `npm run lint` + `npm run build`.
-- **Backend / logic:** `node --check`, plus a build/bundle check.
-- **A real runtime verification script** exercising the actual function against
-  representative or real inputs. Not a syntax check. Not a mock. This is the
-  part most often skipped and the part he actually cares about.
+- **Backend / logic:** `node --check`, plus a real runtime verification script
+  exercising the actual function against representative or real inputs. Not a
+  syntax check. Not a mock.
+- **After any schema change: `node scripts/verify-schema-prod.mjs` must exit 0.**
+  It diffs `schema.prisma` against the live Supabase database and fails if the
+  schema has a column or table production is missing. A migration file in the
+  repo is not proof it ran — this check is. Skipping it caused the multi-hour
+  "constructs disappeared" incident (H11), and missing the column check cost
+  eight hours of a broken Workspace.
 - **Real evidence for real claims:** Northflank or GitHub Actions logs, live DB
   queries, live API calls — instead of reasoning about what probably happened.
-- **After any schema change: verify it landed in production.** A migration file
-  in the repo is not proof it ran. Check `information_schema`, or reload the
-  live app and read the console. Skipping this caused a real multi-hour outage
-  (`deck_people.email does not exist`).
 
 ## Verify a running UI change
 
@@ -151,6 +164,6 @@ why — searchable with `--kind user,assistant,tool,result` and `--reasoning`.
 ## Related
 
 - `working-with-rob` — his standing priorities and how he expects results reported.
-- `morpheus-hazards` — the H1–H10 list to check every change against.
+- `morpheus-hazards` — the H1–H12 list to check every change against.
 - `morpheus-stack` — stack map, commands, key files.
 - `KNOWN-HAZARDS.md` in the repo root is the authoritative, maintained source.
