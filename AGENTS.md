@@ -63,3 +63,32 @@ sync (pull `main`) → plan/code/review → **verify** (esbuild transform + bund
 `server/src/functions/pushSelfDevToGithub.js`) → **watch** (Northflank poll,
 auto-diagnose failed deploys) → **revert** (one-click, `revertSelfDevPush.js`).
 See `ROADMAP.md` for what's built and what's next.
+
+## Agent harness (DSH)
+
+This repo is developed through **DSH** (DeepSeek Harness) via the Web GUI. DSH is
+the **sole writer** — do not run a Claude Code session against this repo at the
+same time. See `KNOWN-HAZARDS.md` H9 for the incident that rule comes from.
+
+Three project skills under `.dsh/skills/` carry the operating rules:
+
+| Skill | Load it when |
+|---|---|
+| `morpheus-dev-protocol` | Before **any** change — branch/PR workflow, never-push-`main`, resync rules |
+| `morpheus-hazards` | Before writing or reviewing a change — the H1–H10 checklist |
+| `morpheus-stack` | When you need the stack map, commands, or verification steps |
+
+**Hard rules:**
+
+- **Never push to `main`.** `main` deploys straight to production (Netlify +
+  Northflank). Every change lands through a PR a human merges. A `pre-push` hook
+  in `.githooks/` enforces this mechanically; do not bypass it with `--no-verify`.
+- **Start every task from a fresh `origin/main`:** `scripts/dsh-new-task.sh <slug>`.
+- **Verify before claiming done.** `npm run lint` + `npm run build` for code, and
+  load user-visible changes in a real browser via the Playwright MCP tools.
+- **Revert build noise.** `npm run build` rewrites `src/MORPHEUS_DESIGN_PLAN.md`
+  (H3) — `git checkout` it if you didn't mean to change it.
+
+Harness state: skills live in `.dsh/skills/`; git hooks are enabled with
+`git config core.hooksPath .githooks`; the Playwright browser MCP server is
+mounted in the harness profile (`~/.dsh/profiles/web/cordis.patch.yml`).
