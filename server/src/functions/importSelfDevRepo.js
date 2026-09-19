@@ -16,6 +16,7 @@ import {
   SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_BRANCH, SELF_DEV_REPO_FULL_NAME,
   shouldExclude as shouldSkip, gitBlobSha,
 } from '../lib/selfDevRepo.js';
+import { isMissingSyncedCommitColumn } from '../lib/selfDevDrift.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -50,6 +51,18 @@ export default async function handler({ user, body }) {
     throw Object.assign(new Error(`Failed to fetch morpheus-self-hosted tree: ${err.message || treeRes.status}`), { status: 500 });
   }
   const treeData = await ghJson(treeRes);
+
+  // The commit SHA this sync represents. The H9 drift guard compares it against
+  // the branch HEAD at push time, so a stale mirror is detectable. Read from the
+  // branch REF, not the tree — treeData.sha is a tree sha, not a commit sha.
+  // Non-fatal on failure: the guard then falls back to its deletion-shape check.
+  let headCommit = null;
+  try {
+    const refRes = await fetch(`${GH_API}/repos/${SELF_DEV_OWNER}/${SELF_DEV_REPO}/git/ref/heads/${SELF_DEV_BRANCH}`, { headers: h });
+    if (refRes.ok) headCommit = (await ghJson(refRes)).object?.sha || null;
+  } catch {
+    headCommit = null;
+  }
   if (treeData.truncated) {
     console.log(`importSelfDevRepo: GitHub truncated the recursive tree for ${SELF_DEV_REPO_FULL_NAME} — repo may be larger than GitHub's non-paginated tree limit.`);
   }
@@ -126,6 +139,19 @@ export default async function handler({ user, body }) {
   const staleIds = existing.filter((f) => !keepPaths.has(f.path)).map((f) => f.id);
   if (staleIds.length > 0) {
     await prisma.projectFile.deleteMany({ where: { id: { in: staleIds } } });
+  }
+
+  // Record the sync point. This is what turns "is my workspace stale?" from an
+  // assumption into a decidable question at push time (KNOWN-HAZARDS.md H9).
+  // Tolerates the column shipping ahead of its migration, exactly as
+  // self_dev_decisions does — the guard degrades, the sync still succeeds.
+  if (headCommit) {
+    try {
+      await prisma.project.update({ where: { id: project.id }, data: { synced_commit: headCommit } });
+    } catch (err) {
+      if (!isMissingSyncedCommitColumn(err)) throw err;
+      console.warn('[importSelfDevRepo] synced_commit column missing — run server/prisma/selfdev-add-synced-commit.sql for the full H9 guard');
+    }
   }
 
   const fetchedCount = fetchedOk.length;
