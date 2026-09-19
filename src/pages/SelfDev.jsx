@@ -640,14 +640,18 @@ export default function SelfDev() {
                   PUSH ANYWAY
                 </button>
               )}
-              {!pushResult.ok && (pushResult.blockReason === 'stale-workspace' || pushResult.blockReason === 'excess-deletions') && (
+              {!pushResult.ok && ['stale-workspace', 'excess-deletions', 'unverifiable-deletions'].includes(pushResult.blockReason) && (
                 <button
                   onClick={() => doPush(false, true)}
                   disabled={pushing}
                   title="Overrides the stale-workspace / large-deletion guard. Only use this when you know the deletions are intended — it skips the check that exists because a stale workspace deleted ~45 files from production (H9)."
                   className="text-[10px] text-red-400 border border-red-500/40 px-2 py-0.5 hover:bg-red-500/10 disabled:opacity-40"
                 >
-                  {pushResult.blockReason === 'stale-workspace' ? 'PUSH ANYWAY (STALE)' : 'PUSH ANYWAY (DELETES)'}
+                  {pushResult.blockReason === 'stale-workspace'
+                    ? 'PUSH ANYWAY (STALE)'
+                    : pushResult.blockReason === 'unverifiable-deletions'
+                      ? 'PUSH ANYWAY (UNVERIFIED)'
+                      : 'PUSH ANYWAY (DELETES)'}
                 </button>
               )}
               <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>
