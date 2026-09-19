@@ -84,6 +84,12 @@ jobs:
       - name: Brain-dump classifier
         run: node scripts/verify-dump-classify.mjs
 
+      # The proactive-insight opt-out gate, plus the cross-boundary contract
+      # that the widget it keys off still exists in the frontend registry with
+      # the copy that makes the control discoverable.
+      - name: Proactive-insight opt-out
+        run: node scripts/verify-insight-optout.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy

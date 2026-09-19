@@ -136,3 +136,39 @@ real, cheap way to check exists. This applies to the coder itself — the
 planner's job is to flag *every* external endpoint it isn't certain of,
 including "I'm probably right about this one" — verifying costs one HTTP
 request; being wrong costs a debugging session.
+
+## H11 — a new column on a *listed* entity breaks the whole feature until the SQL is applied
+
+**Near-miss (2026-09-19, the brain-dump/insight work):** an opt-out setting was
+about to be added as a `deck_insight_enabled` column on `DeckBusinessProfile`.
+That would have been a production outage, not a missing toggle.
+
+`server/src/entities.js` reads with **no `select`**:
+
+    delegate(name).findMany({ where: scope(user, name), orderBy, take })
+
+Prisma with no `select` fetches *every* column, so on a database that hasn't had
+the new column added by hand, that query throws `P2022 — column ... does not
+exist`. `CommandDeckContext.jsx` lists `DeckBusinessProfile` (and every other
+`Deck*` entity) on **every Deck load**, so the blast radius of one unapplied
+column is the entire Deck failing to render — not the new feature being absent.
+This is the documented incident class in `lib/templateCompat.js` and the earlier
+"Command Deck's main data load was silently broken in production" report, where
+`deck_people.email` did not exist.
+
+**Rule:** H8 says ship the migration *with* the change. H11 is the sharper fact:
+**you cannot assume the migration has been applied when the code deploys.**
+Before adding a field to any model the frontend lists via `base44.entities.*`:
+
+- Prefer not to add the column at all. Reuse an existing control or column when
+  the meaning genuinely matches (the proactive-insight opt-out ended up being
+  the existing `DeckWidgetInstance.enabled` flag for the `jarvis_suggestions`
+  widget — no migration, and a control the operator could already see).
+- If a new column is genuinely required, give every read of that model an
+  explicit `select`, and add the defensive read/write pair
+  (`lib/templateCompat.js`'s error classifier and `Settings.jsx`'s
+  "retry without the field" save) **in the same change** — never rely on the
+  migration landing first.
+- Never make the new field's absence fail closed. A missing column must degrade
+  to the old behaviour, not to "feature off for everyone".
+

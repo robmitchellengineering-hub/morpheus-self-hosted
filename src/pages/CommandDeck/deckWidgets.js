@@ -19,7 +19,11 @@
 // every widget (including these two) enabled by the migration that
 // introduced this table, so nothing on his existing Deck changes.
 export const DECK_WIDGETS = [
-  { key: 'jarvis_suggestions', label: "Jarvis's suggestions", defaultEnabled: true },
+  // `note` is shown under the label in Deck Settings → Widgets. This one is
+  // load-bearing copy, not decoration: switching this widget off is also the
+  // per-account opt-out from proactive insight (server/src/lib/
+  // deckInsightGate.js), and nobody would guess that from the label alone.
+  { key: 'jarvis_suggestions', label: "Jarvis's suggestions", defaultEnabled: true, note: 'Off = no proactive insights — Jarvis stops reading across your Deck unprompted, and no AI credit is spent on it.' },
   { key: 'brain_dump', label: 'Brain dump', defaultEnabled: true },
   { key: 'today_charge', label: "Today's charge", defaultEnabled: true },
   { key: 'today_one_thing', label: "Today's one thing", defaultEnabled: true },
