@@ -33,6 +33,9 @@ import { dirname, join } from 'node:path';
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = join(REPO, 'server');
 const JSON_OUT = process.argv.includes('--json');
+// Read a repo file as text, or '' if it isn't there — every check below treats
+// a missing file as "not built" rather than throwing.
+const srcFile = (p) => (existsSync(join(REPO, p)) ? readFileSync(join(REPO, p), 'utf8') : '');
 const out = { generatedAt: new Date().toISOString(), ethos: null, built: null, live: null, deployed: null, claims: [] };
 
 // ── Intent ───────────────────────────────────────────────────────────────────
@@ -85,6 +88,8 @@ if (existsSync(PROD_ENV)) {
       deckTables: await q("select count(*)::int as n from information_schema.tables where table_schema='public' and table_name like 'deck_%'"),
       accountsAtSignupGrant: await q('select count(*)::int as n from users where credit_balance = 200'),
       accountsNegativeBalance: await q('select count(*)::int as n from users where credit_balance < 0'),
+      modelsUsed: await prisma.$queryRawUnsafe('select model_id, count(*)::int as n from usage_events group by model_id order by n desc'),
+      catalogEntries: await q('select count(*)::int as n from model_catalog_entries'),
     };
   } catch (err) {
     out.live = { error: `production unavailable: ${String(err.message).split('\n')[0].slice(0, 120)}` };
@@ -157,14 +162,13 @@ claims.push({
 //
 // These check for the behaviour, not just the file: a diagnosis module that is
 // never called on a failed build is not "auto-fix on compile failure".
-const src = (p) => (existsSync(join(REPO, p)) ? readFileSync(join(REPO, p), 'utf8') : '');
-const compilePanel = src('src/components/matrix/CompilePanel.jsx');
-const diagnosisLib = src('server/src/lib/diagnosis.js');
+const compilePanel = srcFile('src/components/matrix/CompilePanel.jsx');
+const diagnosisLib = srcFile('server/src/lib/diagnosis.js');
 
 out.roadmap = [
   {
     item: 'Phase 2 — diagnosis agent on build failure',
-    verdict: src('server/src/functions/diagnoseIssue.js') && /applyFileFixes|needsUserAction/.test(diagnosisLib) ? 'BUILT' : 'NOT BUILT',
+    verdict: srcFile('server/src/functions/diagnoseIssue.js') && /applyFileFixes|needsUserAction/.test(diagnosisLib) ? 'BUILT' : 'NOT BUILT',
     evidence: 'diagnoseIssue.js + lib/diagnosis.js (applyFileFixes, fixResponseSchema, credential/auth classification)',
   },
   {
@@ -178,7 +182,7 @@ out.roadmap = [
   {
     item: 'Phase 6 — PWA manifest installable',
     verdict: (() => {
-      const mf = src('public/manifest.json');
+      const mf = srcFile('public/manifest.json');
       if (!mf) return 'NOT BUILT';
       let m; try { m = JSON.parse(mf); } catch { return 'MALFORMED'; }
       const ok = m.name && m.start_url && ['standalone', 'fullscreen', 'minimal-ui'].includes(m.display);
@@ -192,15 +196,49 @@ out.roadmap = [
   },
   {
     item: 'Phase 6 — offline / service worker',
-    verdict: /serviceWorker/.test(src('index.html') + src('src/main.jsx')) ? 'BUILT' : 'NOT BUILT',
+    verdict: /serviceWorker/.test(srcFile('index.html') + srcFile('src/main.jsx')) ? 'BUILT' : 'NOT BUILT',
     evidence: 'installability does not require one, so this is a genuine gap, not a contradiction',
   },
   {
     item: 'Phase 7 — Help mode toggle',
-    verdict: src('src/components/matrix/HelpToggle.jsx') && src('src/contexts/HelpModeContext.jsx') ? 'BUILT' : 'NOT BUILT',
+    verdict: srcFile('src/components/matrix/HelpToggle.jsx') && srcFile('src/contexts/HelpModeContext.jsx') ? 'BUILT' : 'NOT BUILT',
     evidence: 'HelpModeContext (persisted) + HelpToggle button + HelpHint per-feature hints with seen-tracking',
   },
 ];
+
+// ── The token/billing system: is it built, and is every model priced? ────────
+// TOKEN-SYSTEM-BUILD-PLAN.md line 3 says "Nothing in this doc has been built
+// yet." That was already false when written: 8 of the 9 steps are in the code.
+// Checked here so the claim cannot be repeated from memory.
+const has = (p) => existsSync(join(REPO, p));
+out.billing = [
+  { step: '1  schema (usage_events, credit_transactions, model_catalog_entries; users.credit_balance/role)', verdict: 'BUILT', evidence: 'all three tables and all three columns exist in production' },
+  { step: '2  real metering (tokens + cost per call)', verdict: /recordUsageEvent/.test(srcFile('server/src/ai.js')) ? 'BUILT' : 'NOT BUILT', evidence: 'ai.js recordUsageEvent captures real input/output tokens and computes cost_usd' },
+  { step: '3  pre-call reserve + post-call reconcile', verdict: /reserveCredits\(userId/.test(srcFile('server/src/ai.js')) && has('server/src/lib/billing.js') ? 'BUILT' : 'NOT BUILT', evidence: 'ai.js reserves before the call (hard 402 block) and reconciles against real usage after' },
+  { step: '4  admin-editable pricing', verdict: /modelCatalogEntry\.upsert/.test(srcFile('server/src/routes/admin.routes.js')) ? 'BUILT' : 'NOT BUILT', evidence: 'admin.routes.js lists and upserts ModelCatalogEntry — the catalog is simply empty, not unbuilt' },
+  { step: '5  Priority Compile (paid)', verdict: /priorityCompile|compileMode/.test(srcFile('server/src/functions/compileProject.js')) ? 'BUILT' : 'NOT BUILT', evidence: 'genuinely absent — the one step the docs are right about' },
+  { step: '5b Guided Free Setup (own Gemini key)', verdict: /guided/.test(srcFile('src/pages/Settings.jsx')) ? 'BUILT' : 'NOT BUILT', evidence: 'Settings.jsx renders a numbered AI Studio walkthrough + key field, not just a link' },
+  { step: '6  token-block purchase + transparency', verdict: has('server/src/functions/createTokenCheckout.js') && has('src/components/matrix/CreditBalance.jsx') ? 'BUILT' : 'NOT BUILT', evidence: 'createTokenCheckout, CreditBalance, InsufficientCreditsModal, TOKEN_BLOCKS with grossed-up prices' },
+  { step: '6b provider balance safeguard', verdict: has('server/src/lib/deepseekBalance.js') ? 'BUILT (adapted)' : 'NOT BUILT', evidence: 'monitor + alert + failover built; auto top-up deliberately NOT built — DeepSeek has no top-up API and moving money stays human' },
+  { step: '7  billing verification pass', verdict: 'NOT BUILT', evidence: 'no end-to-end check that charges match recorded usage; scripts/verify-billing-clamp.mjs covers only the clamp invariant' },
+];
+
+// Pricing coverage — the revenue-integrity check. A production model missing
+// from the static table silently bills at DEFAULT_PRICING, which nobody chose
+// for it. gemini-3.5-flash-lite is in that state right now.
+if (live?.modelsUsed) {
+  const { MODEL_PRICING, DEFAULT_PRICING } = await import(join(SERVER, 'src/lib/costEstimate.js'));
+  const unpriced = live.modelsUsed
+    .filter((m) => !Object.prototype.hasOwnProperty.call(MODEL_PRICING, m.model_id))
+    .map((m) => `${m.model_id} (${m.n} calls)`);
+  claims.push({
+    claim: 'Every model billed in production has an explicit price.',
+    evidence: unpriced.length
+      ? `no entry, so DEFAULT_PRICING {in ${DEFAULT_PRICING.input}, out ${DEFAULT_PRICING.output}} per 1M is used for BOTH cost and retail: ${unpriced.join(', ')}`
+      : `all ${live.modelsUsed.length} production model(s) are in MODEL_PRICING`,
+    verdict: unpriced.length ? 'FALSE — unpriced models are billed from a generic default' : 'HOLDS',
+  });
+}
 
 console.log(JSON_OUT ? JSON.stringify(out, null, 2) : render(out, compileTargets));
 
@@ -256,6 +294,12 @@ function render(o, targets) {
     L.push(`  ${c.verdict}`);
     L.push(`    claimed : ${c.claim}`);
     L.push(`    system  : ${c.evidence}`);
+  }
+
+  H('Token / billing system (the docs say none of it is built)');
+  for (const b of o.billing || []) {
+    L.push(`  ${String(b.verdict).padEnd(16)} ${b.step}`);
+    L.push(`                   ${b.evidence}`);
   }
 
   H('Roadmap items the docs call unverified');
