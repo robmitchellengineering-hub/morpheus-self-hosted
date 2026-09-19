@@ -91,13 +91,17 @@ export function evaluateDrift({ syncedCommit, remoteHead, deleteCount = 0, scope
 }
 
 /**
- * Does this error mean the synced_commit column does not exist yet?
+ * Does this error look like "the synced_commit column does not exist yet"?
  *
  * The column ships ahead of its migration, the same way self_dev_decisions and
  * self_dev_features do (see lib/selfDevFeature.js's isMissingFeaturesTable).
- * Until server/prisma/selfdev-add-synced-commit.sql is run, any Prisma call
- * selecting this field throws — so callers must degrade to "unknown sync point"
- * rather than fail the whole request.
+ *
+ * NOTE — this is deliberately NOT used for control flow any more. It was, until
+ * it became clear that gating a push on an allow-list of guessed error shapes is
+ * a liability: one unrecognised shape and the guard becomes the reason self-dev
+ * cannot push. readSyncedCommitSafely() and recordSyncedCommitSafely() now fail
+ * open on ANY error, and this predicate is kept only as a classification helper
+ * for logging and tests.
  */
 export function isMissingSyncedCommitColumn(err) {
   const m = err && typeof err.message === 'string' ? err.message : '';
@@ -105,4 +109,69 @@ export function isMissingSyncedCommitColumn(err) {
     || /column\s+"?projects"?\.?"?synced_commit"?\s+does not exist/i.test(m)
     || /column\s+`?synced_commit`?\s+does not exist/i.test(m)
     || /The column `projects\.synced_commit` does not exist/i.test(m);
+}
+
+/**
+ * Read a project's recorded sync point, failing OPEN.
+ *
+ * A safety check must never be the reason a legitimate push breaks. If the sync
+ * point cannot be determined — the column is not migrated yet, a transient DB
+ * error, an error shape this module does not recognise — the right answer is
+ * "unknown", not an exception:
+ *
+ *   * the deletion-shape half of the guard is still active without it, and that
+ *     half is what catches the H9 signature (~45 deletions);
+ *   * failing closed would turn a missing migration into "self-dev cannot push
+ *     at all" — a worse outcome than reduced precision.
+ *
+ * Checking the error shape (isMissingSyncedCommitColumn) is not enough on its
+ * own: it is an allow-list of error shapes guessed from Prisma's documented
+ * behaviour and it has not been exercised against a real unmigrated database.
+ * One unrecognised error there would break pushes, so the read fails open
+ * regardless of what the error looks like.
+ *
+ * `lookup` is injected purely so this contract is directly testable.
+ *
+ * @param {() => Promise<string|null|undefined>} lookup
+ * @param {{onError?: (err: unknown) => void}} [opts]
+ * @returns {Promise<string|null>}  a non-empty SHA, or null when unknown
+ */
+export async function readSyncedCommitSafely(lookup, { onError } = {}) {
+  try {
+    const value = await lookup();
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  } catch (err) {
+    const notify = typeof onError === 'function'
+      ? onError
+      : (e) => console.warn('[selfDevDrift] could not read synced_commit — using the deletion-shape check only:', e?.message || e);
+    notify(err);
+    return null;
+  }
+}
+
+/**
+ * Record a project's sync point, failing OPEN.
+ *
+ * Every caller writes this AFTER the operation it records already succeeded — a
+ * sync completed, a commit landed, a PR merged. A write failure here must never
+ * surface as a failure of that operation, or the caller reports an error for
+ * work that actually happened (and, in the merge case, throws after production
+ * has already moved). Log it and carry on; the guard just stays on its
+ * deletion-shape fallback until the marker is next written.
+ *
+ * @param {() => Promise<unknown>} write
+ * @param {{context?: string, onError?: (err: unknown, context: string) => void}} [opts]
+ * @returns {Promise<boolean>}  true when the marker was written
+ */
+export async function recordSyncedCommitSafely(write, { context = 'selfDevDrift', onError } = {}) {
+  try {
+    await write();
+    return true;
+  } catch (err) {
+    const notify = typeof onError === 'function'
+      ? onError
+      : (e, c) => console.warn(`[${c}] could not record synced_commit — the drift guard stays on its deletion-shape fallback:`, e?.message || e);
+    notify(err, context);
+    return false;
+  }
 }

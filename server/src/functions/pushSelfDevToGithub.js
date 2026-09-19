@@ -24,22 +24,19 @@ import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
 import { stampDecisionRef } from '../lib/selfDevDecisions.js';
 import { scopeExcludeFor, resolvePolicy } from '../lib/enginePolicy.js';
 import { getGithubToken, getFileContent } from '../lib/github.js';
-import { evaluateDrift, isMissingSyncedCommitColumn } from '../lib/selfDevDrift.js';
+import { evaluateDrift, readSyncedCommitSafely, recordSyncedCommitSafely } from '../lib/selfDevDrift.js';
 
 const GH_API = 'https://api.github.com';
 
 // The project's recorded sync point, or null when unknown (pre-migration
-// workspace, or the column read failed). Never throws — an unknown sync point
-// degrades to the guard's deletion-shape check.
-async function readSyncedCommit(projectId) {
-  try {
-    const row = await prisma.project.findFirst({ where: { id: projectId }, select: { synced_commit: true } });
-    return row?.synced_commit ?? null;
-  } catch (err) {
-    if (isMissingSyncedCommitColumn(err)) return null;
-    throw err;
-  }
-}
+// workspace, or the read failed). Fails OPEN by design — see
+// readSyncedCommitSafely's contract: an unknown sync point degrades the guard
+// to its deletion-shape half, whereas throwing here would make this guard the
+// reason a legitimate push cannot run at all.
+const readSyncedCommit = (projectId) => readSyncedCommitSafely(async () => {
+  const row = await prisma.project.findFirst({ where: { id: projectId }, select: { synced_commit: true } });
+  return row?.synced_commit ?? null;
+});
 
 // The base branch's current HEAD commit. Null on any failure, which leaves the
 // drift check to the deletion-shape half rather than blocking a legitimate push.
@@ -191,11 +188,12 @@ export default async function handler({ user, body }) {
 
     // The mirror now matches what we just pushed, so record it — otherwise the
     // next push would see drift the moment this commit became main's HEAD.
-    try {
-      await prisma.project.update({ where: { id: projectId }, data: { synced_commit: commitSha } });
-    } catch (err) {
-      if (!isMissingSyncedCommitColumn(err)) throw err;
-    }
+    // Best-effort: the push already landed, so a marker-write failure must not
+    // surface as a failed push.
+    await recordSyncedCommitSafely(
+      () => prisma.project.update({ where: { id: projectId }, data: { synced_commit: commitSha } }),
+      { context: 'pushSelfDevToGithub' },
+    );
 
     if (touchedManualSource) {
       try {
