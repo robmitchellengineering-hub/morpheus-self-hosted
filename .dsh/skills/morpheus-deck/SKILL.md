@@ -124,6 +124,45 @@ typed-and-waiting and never actually ran — Command Deck's main data load was
 silently broken in production (`deck_people.email does not exist`) until it was
 caught from a live console error.
 
+### How to actually run one — `server/scripts/prod-sql.mjs`
+
+Rob's instruction is to run these directly. The runner that does it safely:
+
+    cd server
+    node scripts/prod-sql.mjs prisma/add-deck-<slug>.sql --dry-run   # preview first
+    node scripts/prod-sql.mjs prisma/add-deck-<slug>.sql
+
+It takes a **path to a SQL file**, not ad-hoc SQL, so every migration is in the
+repo and reviewable. `--dry-run` prints the target and every statement and exits
+without connecting.
+
+**The credential lives in `server/.env.prodsql`** (gitignored), as
+`PROD_DATABASE_URL=...` — deliberately *not* `server/.env`, because the dev
+server loads that one and a production URL there would point `npm run dev` at
+production. One-time setup, using the Supabase **Session pooler** URI (the
+direct `db.<ref>.supabase.co` host is IPv6-only on newer projects and may be
+unreachable). If the file is missing the script prints exactly what to create.
+Do not paste the connection string into a chat or a commit; it belongs in that
+file only.
+
+Safety rules it enforces, asserted by `scripts/verify-prod-sql.mjs` in CI rather
+than assumed:
+
+- **Only additive DDL.** It reuses self-dev's own allowlist
+  (`lib/selfDevMigrations.js` — one definition of "additive", not a second
+  opinion), so `DROP`, `TRUNCATE`, `DELETE`, `UPDATE`, `INSERT`, `RENAME` and
+  `ALTER COLUMN TYPE` are all refused, and one bad statement in a file refuses
+  the whole file.
+- **A local target is refused outright.** If `PROD_DATABASE_URL` resolves to
+  loopback (`127.0.0.0/8` in any spelling, IPv6 loopback, `.localhost`, `.local`)
+  the script stops — that is a wrong-paste, not an intent.
+- An unparseable URL is refused rather than guessed at, because a misread URL is
+  how a migration reaches the wrong database. The password is never printed.
+
+**Never run a destructive migration this way, and never widen the allowlist to
+make one fit.** Destructive DDL needs coordinating with the code deploy and goes
+to Rob (H8).
+
 ### Browser-typing gotcha
 
 When typing SQL into the Supabase editor via browser automation: **avoid inline
