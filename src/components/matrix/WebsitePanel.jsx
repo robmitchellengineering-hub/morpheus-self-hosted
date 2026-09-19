@@ -1,16 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode, FileText } from 'lucide-react';
+import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode, FileText, TrendingUp } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import SetupTab from './website/SetupTab';
 import CodeTab from './website/CodeTab';
 import DeployTab from './website/DeployTab';
 import ShopTab from './website/ShopTab';
 import PagesTab from './website/PagesTab';
+import SeoTab from './website/SeoTab';
 import EmbedTab from './website/EmbedTab';
 
 // WEBSITE panel (2026-09-10) — one place to control the Morpheus plugin on
 // your own WordPress site: install + connect it (Setup), ship code changes
-// (Deploy), and run your shop (Shop). One connection per project (construct),
+// (Deploy), run your shop (Shop), manage content (Pages) and own your search
+// presence (SEO — added 2026-09-20). One connection per project (construct),
 // private to your account. Replaces the separate STORE and DEPLOY panels.
 
 const TABS = [
@@ -19,6 +21,7 @@ const TABS = [
   { id: 'deploy', label: 'DEPLOY', icon: Rocket },
   { id: 'shop', label: 'SHOP', icon: ShoppingBag },
   { id: 'pages', label: 'PAGES', icon: FileText },
+  { id: 'seo', label: 'SEO', icon: TrendingUp },
   { id: 'embed', label: 'EMBED', icon: Code },
 ];
 
@@ -68,13 +71,15 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
           <button onClick={onClose} className="text-primary/60 hover:text-primary p-1"><X size={18} /></button>
         </div>
 
-        <div className="flex border-b border-primary/15 shrink-0 text-[11px]">
+        {/* Scrollable, not squeezed: seven tabs do not fit a phone screen at
+            a readable size, and a clipped final tab is a dead end. */}
+        <div className="flex border-b border-primary/15 shrink-0 text-[11px] overflow-x-auto scrollbar-matrix">
           {TABS.map((t) => {
             const Icon = t.icon;
-            const gated = t.id === 'deploy' || t.id === 'shop' || t.id === 'pages' ? !connected : false;
+            const gated = ['deploy', 'shop', 'pages', 'seo'].includes(t.id) ? !connected : false;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
-                className={`flex-1 h-[42px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : gated ? 'text-primary/25' : 'text-primary/45'}`}>
+                className={`shrink-0 px-3 h-[42px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : gated ? 'text-primary/25' : 'text-primary/45'}`}>
                 <Icon size={13} /> {t.label}
               </button>
             );
@@ -115,6 +120,12 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
           {!loading && tab === 'pages' && (
             connected
               ? <PagesTab projectId={projectId} store={store} />
+              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+          )}
+
+          {!loading && tab === 'seo' && (
+            connected
+              ? <SeoTab projectId={projectId} store={store} />
               : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
           )}
 

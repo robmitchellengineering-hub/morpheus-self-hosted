@@ -50,6 +50,16 @@ class Morpheus_REST {
 				'available'   => class_exists( 'WooCommerce' ),
 				'woocommerce' => defined( 'WC_VERSION' ) ? WC_VERSION : null,
 			),
+			// The SEO module is core to this plugin — no third-party SEO
+			// plugin required — so `available` really means "this build has
+			// it", which is how the panel knows whether to offer the SEO tab.
+			// `owns_head` tells the operator whether Morpheus or another SEO
+			// plugin is producing the tags (class-seo.php's duplicate-tag rule).
+			'seo'        => array(
+				'available'     => class_exists( 'Morpheus_SEO' ),
+				'owns_head'     => class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::owns_head() : null,
+				'active_plugin' => class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::active_plugin() : null,
+			),
 			// kept flat for older callers
 			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
 			'armed'      => (bool) $s['armed'],

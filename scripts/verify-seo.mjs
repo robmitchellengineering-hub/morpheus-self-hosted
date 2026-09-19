@@ -1,0 +1,235 @@
+// Runtime verification for the SEO generation path — the rules that decide
+// what a model is allowed to write onto a live website.
+//
+// Dependency-free (server/src/lib/seoPrompts.js imports nothing at all), so it
+// runs in CI's no-install guards job alongside verify-drift.mjs.
+//
+// Run:  node scripts/verify-seo.mjs
+//
+// Three groups, and the last one is the one that rots silently:
+//
+//   1. the prompt — grounding actually reaches it, and it is bounded
+//   2. the normaliser — the model is untrusted input: it may not invent a post
+//      id, may not smuggle a <script> into a stored post, and may not have its
+//      words silently cut to fit a guideline
+//   3. THE CROSS-LANGUAGE CONTRACT — the field names and action names this JS
+//      sends are parsed out of the plugin's PHP and compared. A rename on
+//      either side is a silent no-op at runtime: the plugin ignores an unknown
+//      key, so the write just doesn't happen and nothing errors.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import {
+  buildSeoPrompt, normalizeSuggestions, suggestionWarnings,
+  sanitizeGeneratedHtml, normalizeBlogDraft, buildBlogPrompt,
+  SEO_INPUT_KEYS, TITLE_MAX, DESC_MAX, TITLE_HARD_MAX, MAX_GROUNDING_CHARS,
+} from '../server/src/lib/seoPrompts.js';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (p) => readFileSync(join(REPO, p), 'utf8');
+
+let checks = 0;
+let failures = 0;
+
+function check(name, actual, expected) {
+  checks++;
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(expected);
+  if (a === e) {
+    console.log(`  PASS  ${name}`);
+  } else {
+    console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`);
+    failures++;
+  }
+}
+
+const has = (haystack, needle) => String(haystack).includes(needle);
+
+console.log('\nSEO generation — runtime verification\n');
+
+// ── 1. the prompt ───────────────────────────────────────────────────────────
+console.log('1. the prompt carries real grounding, and is bounded');
+
+const items = [
+  { id: 11, type: 'page', title: 'Guitar repairs', url: 'https://shop.test/repairs', word_count: 420, content_text: 'We repair guitars. '.repeat(40) },
+  { id: 12, type: 'post', title: 'Setup guide', url: 'https://shop.test/setup', existing_description: 'How to set up a guitar.', content_text: 'Setting up a guitar properly takes patience.' },
+];
+const prompt = buildSeoPrompt({
+  business: 'Valiant Music, a vintage guitar shop in Melbourne',
+  brandVoice: 'plain, expert, no hype',
+  site: { site_title: 'Valiant Music', tagline: 'Vintage guitars', owns_head: true },
+  items,
+});
+
+check('business context reaches the prompt', has(prompt, 'Valiant Music, a vintage guitar shop in Melbourne'), true);
+check('brand voice reaches the prompt', has(prompt, 'plain, expert, no hype'), true);
+check('each item id is given to the model', has(prompt, 'id=11') && has(prompt, 'id=12'), true);
+check('each item title is given to the model', has(prompt, 'Guitar repairs') && has(prompt, 'Setup guide'), true);
+check('page text is given to the model', has(prompt, 'Setting up a guitar properly takes patience.'), true);
+check('an existing description is offered as context', has(prompt, 'existing meta description: How to set up a guitar.'), true);
+check('the no-fabrication rule is stated', has(prompt, 'Never invent a fact'), true);
+check('the length guidance is stated', has(prompt, `${TITLE_MAX} characters`) && has(prompt, `${DESC_MAX} characters`), true);
+check('the exact output shape is stated', has(prompt, '"suggestions"') && has(prompt, '"seo_title"'), true);
+
+// A pasted-in 100k-character page must not become a 100k-character prompt.
+const huge = buildSeoPrompt({
+  business: 'x',
+  items: [{ id: 1, title: 'Huge', content_text: 'y'.repeat(100000) }],
+});
+check('grounding is capped per item', huge.length < MAX_GROUNDING_CHARS + 3000, true);
+check('the cap did not drop the item', has(huge, 'id=1'), true);
+
+// Thin grounding must be admitted, not faked.
+const thin = buildSeoPrompt({ business: 'x', items: [{ id: 2, title: 'No body' }] });
+check('an item with no body says so rather than inventing one', has(thin, 'not provided'), true);
+
+const blogPrompt = buildBlogPrompt({
+  business: 'Valiant Music',
+  topic: 'refretting',
+  words: 900,
+  existing: [{ title: 'Repairs', url: 'https://shop.test/repairs', type: 'page' }],
+});
+check('the blog prompt offers the site\'s real URLs', has(blogPrompt, 'https://shop.test/repairs'), true);
+check('the blog prompt asks for the requested length', has(blogPrompt, 'About 900 words'), true);
+
+const noLinks = buildBlogPrompt({ business: 'x', existing: [] });
+check('with no real URLs it forbids links outright', has(noLinks, 'Do not include links'), true);
+
+// ── 2. the normaliser ───────────────────────────────────────────────────────
+console.log('\n2. the model is untrusted input');
+
+const usable = [
+  { id: 11, title: 'Guitar repairs' },
+  { id: 12, title: 'Setup guide' },
+];
+
+// A hallucinated id is the dangerous one: it would write metadata to a page the
+// operator never selected.
+const hall = normalizeSuggestions({ suggestions: [
+  { id: 11, seo_title: 'Guitar Repairs in Melbourne', seo_description: 'x'.repeat(80), focus_keyword: 'guitar repairs' },
+  { id: 999, seo_title: 'Somebody else\'s page', seo_description: 'y'.repeat(80) },
+] }, usable);
+check('a hallucinated id is dropped', hall.map((s) => s.id), [11]);
+
+// Numeric strings are what a model often emits; accept them, but still bounded
+// by the ids we asked about.
+const strId = normalizeSuggestions({ suggestions: [
+  { id: '12', seo_title: 'Setup Guide For Your Guitar', seo_description: 'z'.repeat(80) },
+] }, usable);
+check('a numeric-string id is accepted', strId.map((s) => s.id), [12]);
+
+const dupes = normalizeSuggestions({ suggestions: [
+  { id: 11, seo_title: 'First take on the title here', seo_description: 'a'.repeat(80) },
+  { id: 11, seo_title: 'Second take on the title here', seo_description: 'b'.repeat(80) },
+] }, usable);
+check('the same id twice is applied once', dupes.length, 1);
+check('the first take wins', dupes[0].seo_title, 'First take on the title here');
+
+check('garbage in -> nothing out', normalizeSuggestions('not json', usable), []);
+check('missing id -> nothing out', normalizeSuggestions({ suggestions: [{ seo_title: 'No id at all here' }] }, usable), []);
+check('empty entry -> nothing out', normalizeSuggestions({ suggestions: [{ id: 11, seo_title: '', seo_description: '' }] }, usable), []);
+
+// A too-long value is REPORTED, not trimmed to the guideline — cutting words
+// mid-phrase is not a favour, and the operator is about to review it anyway.
+const long = normalizeSuggestions({ suggestions: [
+  { id: 11, seo_title: 'T'.repeat(TITLE_HARD_MAX + 50), seo_description: 'd'.repeat(DESC_MAX + 30), focus_keyword: 'k' },
+] }, usable);
+check('an absurd title is hard-capped', long[0].seo_title.length, TITLE_HARD_MAX);
+check('an over-guideline description is hard-capped, not guideline-trimmed', long[0].seo_description.length, DESC_MAX + 30);
+check('over-length is reported as a warning', has(long[0].warnings.join(' '), 'title is'), true);
+check('the guideline itself is not exceeded silently', long[0].warnings.some((w) => w.includes(`guideline ${TITLE_MAX}`)), true);
+
+const over = normalizeSuggestions({ suggestions: [
+  { id: 11, seo_title: 'T'.repeat(TITLE_MAX + 5), seo_description: 'Good description '.repeat(8).trim(), focus_keyword: 'guitar repairs' },
+] }, usable);
+check('a mildly long title is left exactly as generated', over[0].seo_title.length, TITLE_MAX + 5);
+
+// Two items with identical metadata is the batch-level failure the plugin's
+// audit only catches later — the operator is looking at the batch now.
+const same = normalizeSuggestions({ suggestions: [
+  { id: 11, seo_title: 'Identical Title For Both', seo_description: 'Identical description for both of them here.', focus_keyword: 'a' },
+  { id: 12, seo_title: 'Identical Title For Both', seo_description: 'Identical description for both of them here.', focus_keyword: 'b' },
+] }, usable);
+check('duplicate titles inside one batch are flagged', same.every((s) => has(s.warnings.join(' '), 'same title as another item')), true);
+
+const warned = suggestionWarnings({ seo_title: 'Short one', seo_description: '', focus_keyword: '' });
+check('a missing description is warned about', has(warned.join(' '), 'no description'), true);
+check('a short title is warned about', has(warned.join(' '), 'guideline'), true);
+const kw = suggestionWarnings({ seo_title: 'Guitar repairs in Melbourne', seo_description: 'x'.repeat(80), focus_keyword: 'banjo' });
+check('a focus keyword absent from the title is warned about', has(kw.join(' '), 'not in the title'), true);
+check('a suggestion carrying the item title is labelled with it', normalizeSuggestions({ suggestions: [
+  { id: 11, seo_title: 'A Fine Title For Repairs', seo_description: 'w'.repeat(80), focus_keyword: 'repairs' },
+] }, usable)[0].title, 'Guitar repairs');
+
+// ── 3. HTML that must never be stored ───────────────────────────────────────
+console.log('\n3. model-authored HTML cannot smuggle script through');
+
+const dirty = sanitizeGeneratedHtml('<p>Read this</p><script>alert(1)</script><iframe src="https://evil.test"></iframe><p onclick="steal()">Click</p><a href="javascript:alert(2)">x</a>');
+check('script and its body are removed', has(dirty, 'alert(1)'), false);
+check('iframe is removed', has(dirty, 'iframe'), false);
+check('inline event handlers are removed', has(dirty, 'onclick'), false);
+check('javascript: URLs are neutralised', has(dirty, 'javascript:'), false);
+check('legitimate markup survives', has(dirty, '<p>Read this</p>') && has(dirty, 'Click'), true);
+
+const okDraft = normalizeBlogDraft({
+  title: 'Refretting a worn guitar',
+  excerpt: 'What refretting is and when it is worth doing.',
+  content: `<p>${'Real sentences about refretting a guitar. '.repeat(20)}</p><h2>When it is worth it</h2><p>More text.</p>`,
+  seo_title: 'Refretting a Worn Guitar',
+  seo_description: 'd'.repeat(90),
+  focus_keyword: 'refretting',
+});
+check('a usable draft normalises', okDraft !== null, true);
+check('the draft keeps its title and body', okDraft.draft.title === 'Refretting a worn guitar' && has(okDraft.draft.content, '<h2>'), true);
+
+check('a draft with no title is refused', normalizeBlogDraft({ title: '', content: '<p>x</p>' }), null);
+check('a draft with no body is refused', normalizeBlogDraft({ title: 'Good title here', content: '<script>alert(1)</script>' }), null);
+check('a draft with no seo_title falls back to the title', normalizeBlogDraft({
+  title: 'A Reasonable Post Title', content: `<p>${'x'.repeat(700)}</p>`, excerpt: 'e', seo_title: '', seo_description: 'd'.repeat(80), focus_keyword: 'k',
+}).draft.seo_title, 'A Reasonable Post Title');
+check('a very short body is flagged for the operator', normalizeBlogDraft({
+  title: 'A Reasonable Post Title', content: '<p>Too short.</p>', excerpt: 'e', seo_title: 'T', seo_description: 'd'.repeat(80), focus_keyword: 'k',
+}).warnings.some((w) => has(w, 'very short')), true);
+
+// ── 4. the cross-language contract ─────────────────────────────────────────
+console.log('\n4. the JS payload and the plugin\'s PHP agree');
+
+const php = read('wp-plugin/morpheus/includes/seo/class-seo.php');
+const jsProxy = read('server/src/functions/wordPressSeoAction.js');
+
+// The input names in Morpheus_SEO::set_fields()'s $map — the values, because
+// the keys are the internal field names and the values are the wire names.
+const mapBlock = php.match(/(?:public|private|protected) static function set_fields[\s\S]*?\$map = array\(([\s\S]*?)\);/);
+const phpInputs = mapBlock ? [...mapBlock[1].matchAll(/=>\s*'([a-z_]+)'/g)].map((m) => m[1]) : [];
+const phpNoindex = /array_key_exists\(\s*'noindex',\s*\$data\s*\)/.test(php);
+
+// A regex that silently matches nothing would make this whole group pass by
+// accident, so the parse itself is asserted first.
+check('the PHP input map was actually parsed', phpInputs.length >= 5, true);
+check('the PHP map lists seo_title + seo_description', phpInputs.includes('seo_title') && phpInputs.includes('seo_description'), true);
+
+const phpAccepted = phpNoindex ? [...phpInputs, 'noindex'].sort() : [...phpInputs].sort();
+check('every field the JS sends is a field the plugin accepts', [...SEO_INPUT_KEYS].sort(), phpAccepted);
+check('noindex is accepted in its own PHP branch', phpNoindex, true);
+
+// The proxy's ALLOWED set vs the plugin's own switch — an action added on one
+// side and not the other is dead on arrival.
+const allowedBlock = jsProxy.match(/const ALLOWED = new Set\(\[([\s\S]*?)\]\)/);
+const jsActions = allowedBlock ? [...allowedBlock[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort() : [];
+const phpActions = [...php.matchAll(/case\s+'([a-z_]+)':\s*\$r\s*=/g)].map((m) => m[1]).sort();
+check('the proxy action list was parsed', jsActions.length >= 6, true);
+check('the plugin action list was parsed', phpActions.length >= 6, true);
+check('every action the proxy allows exists in the plugin', jsActions, phpActions);
+
+// And the write actions must stay on the velocity-gated side of the proxy.
+const writeBlock = jsProxy.match(/const WRITE_ACTIONS = new Set\(\[([\s\S]*?)\]\)/);
+const jsWrites = writeBlock ? [...writeBlock[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]) : [];
+check('set_seo and bulk_set_seo are the gated writes', jsWrites.sort(), ['bulk_set_seo', 'set_seo']);
+
+// ── summary ─────────────────────────────────────────────────────────────────
+console.log(`\n${checks - failures}/${checks} checks passed`);
+if (failures) {
+  console.log('\nSEO generation rules are broken. Fix before merging.\n');
+  process.exit(1);
+}
+console.log('SEO generation rules hold.\n');

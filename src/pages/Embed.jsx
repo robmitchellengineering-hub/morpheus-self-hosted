@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare, FileText } from 'lucide-react';
+import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare, FileText, TrendingUp } from 'lucide-react';
 import { base44, setOverrideToken } from '@/api/base44Client';
 import DeployTab from '@/components/matrix/website/DeployTab';
 import ShopTab from '@/components/matrix/website/ShopTab';
 import PagesTab from '@/components/matrix/website/PagesTab';
+import SeoTab from '@/components/matrix/website/SeoTab';
 import EmbedChat from '@/components/matrix/website/EmbedChat';
 
 // The embeddable-widget surface — loaded in an iframe by public/plugin.js on
@@ -16,6 +17,7 @@ const SCOPE_TABS = [
   { scope: 'deploy', id: 'deploy', label: 'DEPLOY', icon: Rocket },
   { scope: 'store', id: 'shop', label: 'SHOP', icon: ShoppingBag },
   { scope: 'store', id: 'pages', label: 'PAGES', icon: FileText },
+  { scope: 'seo', id: 'seo', label: 'SEO', icon: TrendingUp },
 ];
 
 export default function Embed() {
@@ -44,7 +46,9 @@ export default function Embed() {
         setCtx(data);
         const tabs = SCOPE_TABS.filter((t) => data.scopes.includes(t.scope));
         setTab(tabs[0]?.id || null);
-        if (data.scopes.includes('store')) {
+        // The SEO surface reads the site context through getWordPressStore
+        // too, so it needs the same fetch.
+        if (data.scopes.includes('store') || data.scopes.includes('seo')) {
           try {
             const s = await base44.functions.invoke('getWordPressStore', {});
             setStore(s.data);
@@ -125,6 +129,7 @@ export default function Embed() {
               : <div className="p-4 text-[12px] text-primary/50">The connected store isn’t reachable right now.</div>
           )}
           {tab === 'pages' && <PagesTab projectId={ctx.projectId} store={store} />}
+          {tab === 'seo' && <SeoTab projectId={ctx.projectId} store={store} />}
         </>
       )}
     </div>

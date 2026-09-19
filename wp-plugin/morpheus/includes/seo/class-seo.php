@@ -49,6 +49,9 @@
  *   set_seo       — write fields for one item
  *   bulk_set_seo  — write fields for many at once (AI batches)
  *   list_content  — indexable content with its current SEO state
+ *   read_content  — one item's title/excerpt/plain-text body, the grounding a
+ *                   generator needs to WRITE new fields (bodies stay out of
+ *                   list_content and bulk_set_seo so listings stay small)
  *   audit         — scan for real problems (missing/short/long/duplicate
  *                   titles and descriptions, noindex, thin content)
  */
@@ -105,6 +108,7 @@ class Morpheus_SEO {
 			case 'set_seo':      $r = self::set_action( $data ); break;
 			case 'bulk_set_seo': $r = self::bulk_set_action( $data ); break;
 			case 'list_content': $r = self::list_content( $data ); break;
+			case 'read_content': $r = self::read_content( $data ); break;
 			case 'audit':        $r = self::audit( $data ); break;
 			default:
 				return Morpheus_REST::err( 'unknown_action', "Unknown seo action: {$action}", 400 );
@@ -482,6 +486,50 @@ class Morpheus_SEO {
 	}
 
 	/**
+	 * The text a generator needs in order to WRITE SEO for one item: its title,
+	 * excerpt and a trimmed plain-text body.
+	 *
+	 * Kept out of get_seo() and list_content() on purpose — writing a good
+	 * title needs the body, but nobody wants dozens of post bodies riding back
+	 * on a list or a bulk_set_seo response. The caller asks for this only for
+	 * the items it is actually generating for.
+	 */
+	private static function read_content( $data ) {
+		$id = self::resolve_post( $data );
+		if ( ! $id ) {
+			return new WP_Error( 'not_found', 'Provide an id or a url that resolves to content.', array( 'status' => 404 ) );
+		}
+		$post = get_post( $id );
+		if ( ! $post ) {
+			return new WP_Error( 'not_found', "No post with id {$id}.", array( 'status' => 404 ) );
+		}
+
+		// Block-level tags become a separator BEFORE the tags are stripped.
+		// Without this, "</h2><p>We repair…" collapses to "properlyWe repair…",
+		// which is exactly the kind of mangled text that makes a generator
+		// produce a title about the wrong thing.
+		$raw = preg_replace( '#<(?:h[1-6]|p|li|ul|ol|div|section|article|br|tr|td|th|blockquote|figcaption)(?:\s[^>]*)?/?>#i', "\n", (string) $post->post_content );
+		$raw = preg_replace( '#</(?:h[1-6]|p|li|ul|ol|div|section|article|tr|td|th|blockquote|figcaption)>#i', "\n", $raw );
+		$text  = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( strip_shortcodes( $raw ) ) ) );
+		$limit = isset( $data['chars'] ) ? max( 200, min( 6000, (int) $data['chars'] ) ) : 1500;
+
+		return array(
+			'item' => array(
+				'id'             => (int) $id,
+				'type'           => $post->post_type,
+				'status'         => $post->post_status,
+				'title'          => get_the_title( $id ),
+				'url'            => get_permalink( $id ),
+				'excerpt'        => wp_strip_all_tags( (string) $post->post_excerpt ),
+				'content_text'   => mb_substr( $text, 0, $limit ),
+				'content_length' => mb_strlen( $text ),
+				'word_count'     => str_word_count( $text ),
+				'truncated'      => mb_strlen( $text ) > $limit,
+			),
+		);
+	}
+
+	/**
 	 * Find real, fixable problems. Deliberately limited to things that are
 	 * unambiguous and actionable — a vague "SEO score" that cannot say what to
 	 * change is worse than no score, because it invites optimisation theatre.
@@ -686,7 +734,16 @@ class Morpheus_SEO {
 		echo "\t<script type=\"application/ld+json\">" . wp_json_encode( $node ) . "</script>\n";
 	}
 
-	/** Point robots.txt at WordPress's own sitemap if nothing else has. */
+	/**
+	 * Point robots.txt at WordPress's own sitemap if nothing else has.
+	 *
+	 * A backstop, not the usual source: core has appended its own Sitemap line
+	 * since 5.5, so on a normal site this finds one already there and does
+	 * nothing (asserted in tests/harness-noyoast.php, which removes core's
+	 * filter to test this one on its own). It matters when something else has
+	 * filtered the output — a security or caching plugin that rewrites
+	 * robots.txt would otherwise leave the site's sitemap undiscoverable.
+	 */
 	public static function filter_robots_txt( $output, $public ) {
 		if ( ! $public ) {
 			return $output;

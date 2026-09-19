@@ -72,6 +72,12 @@ $data = $res->get_data();
 ok( $res->get_status() === 200, 'status 200' );
 ok( ( $data['plugin'] ?? '' ) === 'morpheus', 'reports plugin name' );
 ok( ( $data['writes'] ?? null ) === false, 'writes = false when not armed' );
+// /status is what the WEBSITE panel reads to decide whether to offer the SEO
+// tab and to say who is producing the tags. This boot has Yoast, so the module
+// is available and Morpheus is NOT the one emitting.
+ok( ( $data['seo']['available'] ?? null ) === true, 'status reports the SEO module available' );
+ok( ( $data['seo']['owns_head'] ?? null ) === false, 'status: with Yoast active, Morpheus does not own the head' );
+ok( ( $data['seo']['active_plugin'] ?? '' ) === 'yoast', 'status names the active SEO plugin' );
 update_option( 'morpheus_settings', array_merge( Morpheus_Settings::defaults(), array( 'armed' => 1 ) ) );
 $armed = rest_do_request( new WP_REST_Request( 'GET', '/morpheus/v1/status' ) )->get_data();
 ok( ( $armed['writes'] ?? null ) === true && ( $armed['armed'] ?? null ) === true, 'writes = true when armed' );
@@ -294,7 +300,9 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	$ctx = store_req( 'context', array(), $STORE_SECRET )->get_data();
 	ok( ! empty( $ctx['ok'] ) && isset( $ctx['currency'] ), 'context returns currency + categories' );
 	ok( ( $ctx['default_status'] ?? '' ) === 'draft', 'context default_status is draft' );
-	ok( ( $ctx['seo_available'] ?? null ) === defined( 'WPSEO_VERSION' ), 'context.seo_available matches whether Yoast is active' );
+	// True whenever a module that can STORE SEO is present: Morpheus's own SEO
+	// module (any site — added in 0.5) or, on an older build, Yoast.
+	ok( ( $ctx['seo_available'] ?? null ) === true, 'context.seo_available is true (SEO module present)' );
 
 	// create — no status given -> must be a draft
 	$create = store_req( 'create_product', array(
@@ -419,9 +427,11 @@ wp_delete_post( $page_id, true );
 // ── SEO module ─────────────────────────────────────────────────────────────
 //
 // The blueprint ships wordpress-seo, so the LIVE path exercised here is
-// "another SEO plugin is active" — which is the one that must NOT emit
-// duplicate tags. The no-plugin path (Morpheus owning the head) is asserted
-// through keys_for()/owns_head() directly, since it is a pure decision.
+// "another SEO plugin is active" — the one that must NOT emit duplicate tags.
+// The other half of the rule (Morpheus emitting the tags itself when NO SEO
+// plugin is installed) needs a WordPress with no Yoast in it at all, so it
+// lives in tests/harness-noyoast.php on tests/blueprint-noyoast.json —
+// run.sh boots both.
 
 echo "\n-- SEO --\n";
 
@@ -491,6 +501,32 @@ ok( in_array( 'missing_description', $codes, true ), 'seo: audit flags a missing
 
 $list = seo_req( 'list_content', array( 'limit' => 20 ), $STORE_SECRET )->get_data();
 ok( ! empty( $list['ok'] ) && isset( $list['items'] ), 'seo: list_content returns items' );
+// A listing must stay small — the bodies belong to read_content, so the
+// generated-fields pass asks for them one item at a time.
+ok( ! isset( $list['items'][0]['content_text'] ), 'seo: list_content does NOT ship post bodies' );
+
+// read_content — the grounding an AI pass needs to WRITE a title/description.
+$read = seo_req( 'read_content', array( 'id' => $seo_target, 'chars' => 400 ), $STORE_SECRET )->get_data();
+ok( ( $read['item']['title'] ?? '' ) === 'SEO harness target', 'seo: read_content returns the title' );
+ok( mb_strlen( $read['item']['content_text'] ?? '' ) === 400, 'seo: read_content trims content_text to the requested chars' );
+ok( ( $read['item']['truncated'] ?? false ) === true && ( $read['item']['word_count'] ?? 0 ) > 0, 'seo: read_content reports truncation + word count' );
+ok( seo_req( 'read_content', array( 'id' => 99999999 ), $STORE_SECRET )->get_status() === 404, 'seo: read_content 404s on an unknown id' );
+
+$rich = wp_insert_post( array(
+	'post_title'   => 'Markup harness target',
+	'post_content' => '<h2>Heading</h2><p>Body text here.</p>[gallery ids="1,2"]',
+	'post_status'  => 'publish',
+	'post_type'    => 'page',
+) );
+$rich_read = seo_req( 'read_content', array( 'id' => $rich ), $STORE_SECRET )->get_data();
+$rich_text = (string) ( $rich_read['item']['content_text'] ?? '' );
+ok( $rich_text !== '' && strpos( $rich_text, '<' ) === false, 'seo: read_content strips markup' );
+ok( strpos( $rich_text, 'gallery' ) === false, 'seo: read_content strips shortcodes' );
+// Block tags must leave a SEPARATOR. Stripping them bare glues the last word of
+// one block to the first of the next ("properlyWe repair…"), which is the kind
+// of mangled grounding that makes a generator write about the wrong thing.
+ok( strpos( $rich_text, 'Heading Body' ) !== false && strpos( $rich_text, 'HeadingBody' ) === false, 'seo: read_content separates adjacent blocks' );
+wp_delete_post( $rich, true );
 
 // bulk_set_seo applies many and reports per-item failures rather than aborting.
 $bulk = seo_req( 'bulk_set_seo', array( 'items' => array(

@@ -21,10 +21,27 @@ for f in $( cd "$PLUGIN_DIR" && find . -name '*.php' -not -path './tests/*' | se
 done
 
 echo
-echo "== harness (WordPress + WooCommerce + PHP ${PHP_VERSION}) =="
-# The blueprint installs WooCommerce so the Store-module tests run too.
+echo "== harness: WordPress + WooCommerce + Yoast (PHP ${PHP_VERSION}) =="
+# This boot installs WooCommerce so the Store-module tests run, and Yoast so
+# the LIVE path exercised is "another SEO plugin is active" — the one where
+# Morpheus must drive that plugin's keys and emit nothing itself.
 $PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
   --blueprint "$PLUGIN_DIR/tests/blueprint.json" \
   --auto-mount "$PLUGIN_DIR" \
   --mount "$PLUGIN_DIR/tests:/tests" \
   -- /tests/harness.php
+
+echo
+echo "== harness: WordPress + WooCommerce, NO SEO plugin (PHP ${PHP_VERSION}) =="
+# The other half of the duplicate-tag rule. A plugin loaded by a blueprint
+# cannot be un-loaded mid-run, so "Morpheus owns the head outright" needs its
+# own boot — including the rendered <head> assertions and the STORE module's
+# page SEO fields, which used to be a silent no-op without Yoast.
+$PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
+  --blueprint "$PLUGIN_DIR/tests/blueprint-noyoast.json" \
+  --auto-mount "$PLUGIN_DIR" \
+  --mount "$PLUGIN_DIR/tests:/tests" \
+  -- /tests/harness-noyoast.php
+
+echo
+echo "All plugin harnesses passed."
