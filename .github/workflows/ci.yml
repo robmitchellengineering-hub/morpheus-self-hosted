@@ -78,6 +78,12 @@ jobs:
       - name: Self-dev drift guard (H9)
         run: node scripts/verify-drift.mjs
 
+      # Pure function, no database needed — asserts the brain-dump classifier
+      # splits a dictated multi-thought dump into separately-filed items and
+      # never loses what was said when the model summarises or drops an item.
+      - name: Brain-dump classifier
+        run: node scripts/verify-dump-classify.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy
