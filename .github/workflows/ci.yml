@@ -91,6 +91,6 @@ jobs:
               echo "::error file=$f::syntax check failed"
               fail=1
             fi
-          done < <(find server/src -name '*.js' -type f)
+          done < <(find server/src server/scripts -type f \( -name '*.js' -o -name '*.mjs' \) 2>/dev/null)
           echo "checked $count server source file(s)"
           exit $fail
