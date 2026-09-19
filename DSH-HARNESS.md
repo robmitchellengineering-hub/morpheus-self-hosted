@@ -43,17 +43,41 @@ Fetches `origin`, refuses to run on a dirty tree, and creates `dsh/<slug>` from
 `origin/main`. This is the fix for H9's precondition: work can never be based on
 a stale local snapshot.
 
-### 4. Harness profile — `~/.dsh/profiles/web/cordis.patch.yml`
+### 4. Browser automation — Playwright CLI, not MCP
 
-Mounts `@deepseek-ai/dsh-mcp-client` with the Playwright browser MCP server
-(`@playwright/mcp`, driving the installed Chrome channel). Its tools appear to
-the agent as `mcp__playwright__<tool>` — e.g. `mcp__playwright__browser_navigate`,
-`mcp__playwright__browser_snapshot`. This replaces the Claude Code
-`claude-in-chrome` extension for verifying UI changes.
+Browser work goes through the Playwright CLI (`@playwright/cli`), wrapped by
+`scripts/pw`:
 
-Toggles in that file: remove `--headless` to watch runs; add `--isolated` if you
-ever run concurrent sessions (a persistent Chromium profile can only be used by
-one browser at a time).
+```bash
+scripts/pw open http://localhost:5173
+scripts/pw find "Command Deck"
+scripts/pw close
+```
+
+This replaced the Playwright MCP server, which is kept commented out in
+`~/.dsh/profiles/web/cordis.patch.yml` as a fallback.
+
+**Why the CLI:** MCP tool schemas enter every request's prefix, and
+`browser_snapshot` returns an entire accessibility tree inline. The CLI writes
+snapshots to files and `find` returns only matching nodes — tens of thousands of
+tokens saved per page interaction.
+
+**Two sandbox constraints make the wrapper mandatory** (both solved, but a raw
+`playwright-cli` call will still fail):
+
+1. Playwright's daemon and browser registry are hardcoded to
+   `$HOME/Library/Caches/ms-playwright` on macOS, with no env override, and the
+   Seatbelt sandbox denies writes there. `scripts/pw` points `HOME` at
+   `.playwright/home/`.
+2. macOS forbids nested sandboxes, so Chrome cannot initialize its own sandbox
+   inside Seatbelt. `.playwright/cli.config.json` launches it with `--no-sandbox`
+   (Chrome's sandbox, not DSH's) plus a workspace-local profile directory.
+
+Symptoms of bypassing the wrapper: `Target crashed`, or
+`EPERM ... mkdir '.../ms-playwright/daemon'`.
+
+The MCP fallback works under the sandbox *without* these fixes, because the
+harness spawns MCP servers outside the agent's bash sandbox.
 
 ### 5. `AGENTS.md`
 
@@ -131,18 +155,24 @@ ls .dsh/skills/
 dsh --profile web --dump-config | grep -A8 mcp-playwright
 ```
 
-After restarting DSH, the session should expose `mcp__playwright__*` tools;
-`mcp__playwright__browser_navigate` to `http://localhost:5173` with the Vite dev
-server running is the smoke test.
+Browser smoke test (with the Vite dev server running on :5173):
+
+```bash
+scripts/pw open http://localhost:5173
+scripts/pw find "Command Deck"
+scripts/pw close
+```
 
 ## Known environment issues
 
 - **Sandbox vs. tool caches.** The DSH file sandbox denies writes outside the
   workspace. This makes `npm`/`npx` fail with a misleading
-  `EPERM ... root-owned files` message, because they cannot write `~/.npm`. The
-  MCP row pins `npm_config_cache` to `~/.dsh/.npm-cache` to work around it. If
-  you want a wider sandbox generally, launch with `DSH_PERMISSION_MODE` set
-  (see `sandbox-policy` in the profile).
+  `EPERM ... root-owned files` message, because they cannot write `~/.npm`. Use
+  `npm_config_cache` pointed at a writable path (the commented-out MCP row shows
+  the pattern). If you want a wider sandbox generally, launch with
+  `DSH_PERMISSION_MODE` set (see `sandbox-policy` in the profile).
+- **Browser automation needs `scripts/pw`.** See section 4 — the raw
+  `playwright-cli` fails under the sandbox by design, not by misconfiguration.
 - **`pnpm` is not installed**, so `dsh plugin --profile web add <pkg>` cannot
   run yet. It is not needed for this setup — the profile resolves plugin
   packages through the CLI's own `node_modules` fallback. Install pnpm

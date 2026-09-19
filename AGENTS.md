@@ -85,10 +85,12 @@ Three project skills under `.dsh/skills/` carry the operating rules:
   in `.githooks/` enforces this mechanically; do not bypass it with `--no-verify`.
 - **Start every task from a fresh `origin/main`:** `scripts/dsh-new-task.sh <slug>`.
 - **Verify before claiming done.** `npm run lint` + `npm run build` for code, and
-  load user-visible changes in a real browser via the Playwright MCP tools.
+  load user-visible changes in a real browser: `scripts/pw open http://localhost:5173`.
 - **Revert build noise.** `npm run build` rewrites `src/MORPHEUS_DESIGN_PLAN.md`
   (H3) — `git checkout` it if you didn't mean to change it.
 
 Harness state: skills live in `.dsh/skills/`; git hooks are enabled with
-`git config core.hooksPath .githooks`; the Playwright browser MCP server is
-mounted in the harness profile (`~/.dsh/profiles/web/cordis.patch.yml`).
+`git config core.hooksPath .githooks`; browser automation is the Playwright CLI
+via `scripts/pw` (config in `.playwright/cli.config.json`). Load the
+`playwright-cli` skill before browser work — `scripts/pw find` is far cheaper
+than dumping a page tree into context.

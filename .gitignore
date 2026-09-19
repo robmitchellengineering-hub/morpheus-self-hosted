@@ -50,3 +50,10 @@ dist-plugin/
 # Generated on prebuild by scripts/pack-wp-plugin.mjs
 public/morpheus-wordpress-plugin.zip
 public/plugin-manifest.json
+
+# DSH harness: Playwright CLI runtime state (config file is tracked; these are not)
+.playwright/home/
+.playwright/profile/
+.playwright/out/
+.playwright-cli/
+.playwright-mcp/

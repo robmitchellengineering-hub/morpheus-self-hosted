@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# DSH wrapper for playwright-cli.
+#
+# Why this exists: DSH runs agent bash calls inside a macOS `sandbox-exec`
+# (Seatbelt) profile confined to the workspace. Two things break the raw CLI:
+#
+#   1. Playwright's daemon + browser registry live under
+#      `$HOME/Library/Caches/ms-playwright` on macOS, hardcoded with no env
+#      override. Pointing HOME at a workspace-local dir relocates both.
+#   2. Chrome cannot initialize its own sandbox inside Seatbelt (macOS forbids
+#      nested sandboxes), so it must launch with `--no-sandbox`. That, plus a
+#      workspace-local profile dir, is set in .playwright/cli.config.json.
+#
+# Always invoke browser automation through this wrapper, not `playwright-cli`
+# directly. See .dsh/skills/playwright-cli/SKILL.md.
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+export HOME="$REPO/.playwright/home"
+mkdir -p "$HOME" "$REPO/.playwright/profile" "$REPO/.playwright/out"
+
+cd "$REPO"
+exec playwright-cli "$@"
