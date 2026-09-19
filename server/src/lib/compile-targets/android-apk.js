@@ -218,6 +218,22 @@ export const androidApk = {
       const activityName = mainActivity
         ? (mainActivity.path.split('/').pop() || 'MainActivity').replace(/\.(kt|java)$/, '')
         : 'MainActivity';
+
+      // Only reference a launcher icon the project actually ships.
+      //
+      // This branch exists to rescue a project with NO manifest, and it
+      // generates no mipmap of its own — so hardcoding
+      // android:icon="@mipmap/ic_launcher" pointed at a resource that does not
+      // exist and AAPT2 failed the link with "resource mipmap/ic_launcher not
+      // found". A project that brings its own icon keeps it; one that doesn't
+      // gets a valid manifest with no icon reference (Android then uses the
+      // system default) instead of a broken build.
+      const hasLauncherIcon = augmented.some((f) =>
+        /app\/src\/main\/res\/mipmap[^/]*\/ic_launcher\.(png|webp|jpg|jpeg|xml)$/i.test(f.path));
+
+      const appAttrs = ['android:label="Morpheus App"', 'android:allowBackup="true"'];
+      if (hasLauncherIcon) appAttrs.push('android:icon="@mipmap/ic_launcher"');
+
       augmented.push({
         path: 'app/src/main/AndroidManifest.xml',
         content: [
@@ -225,9 +241,8 @@ export const androidApk = {
           `<manifest xmlns:android="http://schemas.android.com/apk/res/android"`,
           `    package="${pkg}">`,
           `    <application`,
-          `        android:label="Morpheus App"`,
-          `        android:allowBackup="true"`,
-          `        android:icon="@mipmap/ic_launcher">`,
+          // The final attribute carries the closing angle bracket.
+          ...appAttrs.map((a, i) => `        ${a}${i === appAttrs.length - 1 ? '>' : ''}`),
           `        <activity`,
           `            android:name=".${activityName}"`,
           `            android:exported="true">`,

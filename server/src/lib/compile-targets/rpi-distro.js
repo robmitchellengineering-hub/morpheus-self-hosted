@@ -70,10 +70,27 @@ export const rpiDistro = {
       'set -e',
       'cd /opt/morpheus-app'
     ];
-    if (isNode) bakeLines.push('npm install --production 2>&1 || true');
-    if (isPython) bakeLines.push('pip3 install -r requirements.txt 2>&1 || true');
+    // Dependencies, installed into an isolated venv for Python.
+    //
+    // Bare `pip3 install` fails on Raspberry Pi OS Bookworm (Debian 12, PEP
+    // 668) with "externally-managed-environment", and the trailing `|| true`
+    // this used to carry swallowed that — so the image built green and the
+    // service then crash-looped on first boot. That is the worst failure shape
+    // available: the operator gets a success and a broken device. The aiNotes
+    // below have always promised a venv; this is that promise kept.
+    // linux-distro.js is the parallel implementation.
+    //
+    // No `|| true` on either: a dependency that will not install means the
+    // image is broken, and a red build says so while it can still be fixed.
+    if (isNode) bakeLines.push('npm install --production');
+    if (isPython) {
+      bakeLines.push('python3 -m venv /opt/morpheus-app/.venv');
+      bakeLines.push('/opt/morpheus-app/.venv/bin/pip install -r /opt/morpheus-app/requirements.txt');
+    }
     if (isNode || isPython) {
-      const runtime = isNode ? '/usr/bin/node' : '/usr/bin/python3';
+      // Point the service at the venv's interpreter — creating a venv and then
+      // running the system python would install the deps and never use them.
+      const runtime = isNode ? '/usr/bin/node' : '/opt/morpheus-app/.venv/bin/python';
       const entry = isNode ? detectNodeEntry(files) : (pythonEntry || 'main.py');
       bakeLines.push('cat > /etc/systemd/system/morpheus-app.service <<UNIT');
       bakeLines.push('[Unit]');

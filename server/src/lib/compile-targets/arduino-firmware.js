@@ -159,7 +159,14 @@ export const arduinoFirmware = {
         // platformio.ini with a custom environment name (which the prompt
         // explicitly permits) silently failed this step and fell back to
         // the weaker generic `pio lib install`.
-        run: 'pio pkg install 2>/dev/null || pio lib install 2>/dev/null || true'
+        //
+        // The trailing `|| true` is gone: it made this step unconditionally
+        // green and discarded stderr, so a library that could not be resolved
+        // was invisible here and only showed up (if at all) as a confusing
+        // failure in the build step. `pio pkg install` is the modern command
+        // and the fallback is kept for older PlatformIO, but if BOTH fail the
+        // firmware genuinely cannot build and should say so now.
+        run: 'pio pkg install || pio lib install'
       },
       {
         name: 'Build firmware',
