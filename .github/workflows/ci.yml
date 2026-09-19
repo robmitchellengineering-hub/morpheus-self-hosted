@@ -110,6 +110,11 @@ jobs:
       # Catches a syntax error in any server source. The server tree is ESM
       # ("type": "module"), and server/package-lock.json is intentionally
       # untracked (hazard H4), so this must not require an install.
+      #
+      # NOTE: `node --check` validates SYNTAX only — it never resolves an import
+      # specifier. A wrong relative path is syntactically perfect and passes
+      # here, which is exactly how H12 (the 2026-09-19 API outage) got through.
+      # The next step is what actually catches that.
       - name: Syntax-check server sources
         run: |
           fail=0
@@ -123,3 +128,13 @@ jobs:
           done < <(find server/src server/scripts -type f \( -name '*.js' -o -name '*.mjs' \) 2>/dev/null)
           echo "checked $count server source file(s)"
           exit $fail
+
+      # Resolves every relative import in the server tree, with exact case.
+      # The missing gate behind H12: the step above only parses files, so a
+      # mis-relative specifier (`./queue.js` from src/lib/, meaning
+      # src/lib/queue.js) is syntactically valid, lint-clean, and kills the
+      # container at module load — which is what served "no healthy upstream"
+      # for the whole API on 2026-09-19. Case matters too: macOS resolves
+      # case-insensitively, the Alpine container does not.
+      - name: Server imports resolve
+        run: node scripts/verify-server-imports.mjs
