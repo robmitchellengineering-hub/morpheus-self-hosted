@@ -88,7 +88,7 @@ export default function GithubConnectionSection() {
         <div className="mt-3 border-t border-primary/15 pt-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <p className="text-[10px] text-primary/50 flex-1 min-w-[180px]">
-              // Every compile attempt creates a fresh <code>morpheus-build-*</code> repo that's never reused. Clean up the ones older than 24h.
+              // Compiles used to create a fresh <code>morpheus-build-*</code> repo per attempt. That's fixed — a project now reuses one repo — so these are leftovers. Clean up the ones older than 24h.
             </p>
             <div className="flex items-center gap-2 shrink-0">
               <button
