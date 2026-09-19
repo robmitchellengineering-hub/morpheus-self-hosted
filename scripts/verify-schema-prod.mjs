@@ -84,23 +84,31 @@ const other = lines.filter((l) => !breaking.includes(l));
 if (!breaking.length) {
   console.log('\n  ✓ no read-breaking drift — schema.prisma has no column or table that production is missing.\n');
   if (other.length) {
+    // `migrate diff` expresses a CHANGED constraint as a DROP+ADD pair, so a
+    // constraint appearing in BOTH is a definition difference, not a missing
+    // one. Counting the ADD half alone is how this reported "61 foreign keys
+    // production lacks" on its first live run — when all 61 existed, with
+    // ON DELETE CASCADE intact — nearly becoming a false alarm about account
+    // deletion orphaning data. Pair them before labelling anything.
+    const cname = (l) => (l.match(/(?:ADD|DROP) CONSTRAINT "([^"]+)"/) || [])[1];
+    const dropNames = new Set(other.filter((l) => /DROP CONSTRAINT/.test(l)).map(cname).filter(Boolean));
     const byKind = {};
     for (const l of other) {
-      const kind = /ADD CONSTRAINT .*FOREIGN KEY/.test(l) ? 'foreign keys production lacks'
-        : /DROP CONSTRAINT .*_fkey/.test(l) ? 'foreign keys that differ in name/shape'
-        : /DROP CONSTRAINT/.test(l) ? 'other constraints that differ'
+      const kind = /ADD CONSTRAINT/.test(l)
+        ? (dropNames.has(cname(l))
+          ? 'constraints that EXIST but differ in definition (typically ON UPDATE — cannot matter for a UUID primary key)'
+          : 'constraints the schema has that production genuinely lacks')
+        : /DROP CONSTRAINT/.test(l) ? 'constraints production has that the schema does not declare'
         : /ADD COLUMN/.test(l) ? 'columns production lacks'
         : /INDEX/.test(l) ? 'indexes that differ'
         : /ALTER COLUMN/.test(l) ? 'column defaults/nullability that differ'
-        : 'unclassified — review';
+        : 'unclassified - review';
       byKind[kind] = (byKind[kind] || 0) + 1;
     }
     console.log(`  ${other.length} non-blocking difference(s), none of which can fail a query:`);
     for (const [kind, n] of Object.entries(byKind)) console.log(`    ${n}  ${kind}`);
-    console.log('\n  These mean production enforces less than the schema declares (e.g. no cascade');
-    console.log('  when a user is deleted), not that anything is unreadable. Reconciling them is a');
-    console.log('  separate, deliberate job: adding a foreign key validates every existing row first,');
-    console.log('  so a pre-existing orphan would make it fail.\n');
+    console.log('\n  Verify any of these against the database before acting on them — report what');
+    console.log('  the database actually says, not what this summary infers.\n');
   }
   process.exit(0);
 }
