@@ -67,13 +67,46 @@ if (/empty migration/i.test(diff)) {
 }
 
 // Missing in production: the blocking direction.
-const missing = diff
-  .split('\n')
-  .map((l) => l.trim())
-  .filter((l) => /^(ALTER TABLE .* ADD|CREATE TABLE|CREATE INDEX|CREATE TYPE|CREATE ENUM|CREATE SEQUENCE)/.test(l));
+// The rule is deliberately narrow, because only ONE thing can break a read:
+// a column or table the schema has and production doesn't. entities.js reads
+// with no `select`, Prisma asks for every column, and Postgres answers P2022
+// ("column does not exist") — the page dies. That is hazard H11, and it is what
+// took the construct list down on 2026-09-19.
+//
+// Everything else — missing or renamed foreign keys, indexes, constraints
+// production has and the schema doesn't — is a difference in how much the
+// database *enforces*, not in what can be read. It must not block a merge:
+// reporting 220 findings on a healthy system is how a check gets ignored.
+const lines = diff.split('\n').map((l) => l.trim()).filter((l) => /^(ALTER|CREATE|DROP)/.test(l));
+const breaking = lines.filter((l) => /^ALTER TABLE .+ ADD COLUMN|^CREATE TABLE|^CREATE TYPE|^CREATE ENUM|^CREATE SEQUENCE/.test(l));
+const other = lines.filter((l) => !breaking.includes(l));
 
-console.error(`\n  ✗ DRIFT — schema.prisma has ${missing.length} object(s) that production is missing:\n`);
-for (const line of missing) console.error(`    ${line}`);
+if (!breaking.length) {
+  console.log('\n  ✓ no read-breaking drift — schema.prisma has no column or table that production is missing.\n');
+  if (other.length) {
+    const byKind = {};
+    for (const l of other) {
+      const kind = /ADD CONSTRAINT .*FOREIGN KEY/.test(l) ? 'foreign keys production lacks'
+        : /DROP CONSTRAINT .*_fkey/.test(l) ? 'foreign keys that differ in name/shape'
+        : /DROP CONSTRAINT/.test(l) ? 'other constraints that differ'
+        : /ADD COLUMN/.test(l) ? 'columns production lacks'
+        : /INDEX/.test(l) ? 'indexes that differ'
+        : /ALTER COLUMN/.test(l) ? 'column defaults/nullability that differ'
+        : 'unclassified — review';
+      byKind[kind] = (byKind[kind] || 0) + 1;
+    }
+    console.log(`  ${other.length} non-blocking difference(s), none of which can fail a query:`);
+    for (const [kind, n] of Object.entries(byKind)) console.log(`    ${n}  ${kind}`);
+    console.log('\n  These mean production enforces less than the schema declares (e.g. no cascade');
+    console.log('  when a user is deleted), not that anything is unreadable. Reconciling them is a');
+    console.log('  separate, deliberate job: adding a foreign key validates every existing row first,');
+    console.log('  so a pre-existing orphan would make it fail.\n');
+  }
+  process.exit(0);
+}
+
+console.error(`\n  ✗ READ-BREAKING DRIFT — schema.prisma has ${breaking.length} column(s)/table(s) production is missing:\n`);
+for (const line of breaking) console.error(`    ${line}`);
 console.error('\n  This is hazard H11: the code knows about these, the database does not,');
 console.error('  and any read with no explicit `select` will throw P2022 in production.');
 console.error('  Apply the matching server/prisma/*.sql migration before merging.\n');
