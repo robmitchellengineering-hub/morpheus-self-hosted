@@ -16,7 +16,7 @@ import {
   SELF_DEV_OWNER, SELF_DEV_REPO, SELF_DEV_BRANCH, SELF_DEV_REPO_FULL_NAME,
   shouldExclude as shouldSkip, gitBlobSha,
 } from '../lib/selfDevRepo.js';
-import { isMissingSyncedCommitColumn } from '../lib/selfDevDrift.js';
+import { recordSyncedCommitSafely } from '../lib/selfDevDrift.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -146,12 +146,12 @@ export default async function handler({ user, body }) {
   // Tolerates the column shipping ahead of its migration, exactly as
   // self_dev_decisions does — the guard degrades, the sync still succeeds.
   if (headCommit) {
-    try {
-      await prisma.project.update({ where: { id: project.id }, data: { synced_commit: headCommit } });
-    } catch (err) {
-      if (!isMissingSyncedCommitColumn(err)) throw err;
-      console.warn('[importSelfDevRepo] synced_commit column missing — run server/prisma/selfdev-add-synced-commit.sql for the full H9 guard');
-    }
+    // Best-effort: the sync itself already succeeded, so failing to write the
+    // marker must not fail the sync.
+    await recordSyncedCommitSafely(
+      () => prisma.project.update({ where: { id: project.id }, data: { synced_commit: headCommit } }),
+      { context: 'importSelfDevRepo' },
+    );
   }
 
   const fetchedCount = fetchedOk.length;
