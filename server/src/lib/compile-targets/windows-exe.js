@@ -129,13 +129,26 @@ export const windowsExe = {
     }
 
     const pyinstallerArgs = ['--onefile', '--name', 'app'];
-    if (icon) pyinstallerArgs.push(`--icon ${icon}`);
+    // Flag and value MUST be separate array elements.
+    //
+    // `& pyinstaller @pyinstallerArgs` splats the array, and PowerShell passes
+    // each element as ONE argv entry. A combined `'--icon app.ico'` therefore
+    // reaches PyInstaller as a single literal argument containing a space —
+    // argparse does not split on whitespace, so it is not recognised as an
+    // option and the build fails. The embedded quotes in
+    // `--add-data "dir;dir"` survive too, so the ';' split yields `"dir` and
+    // `dir"`. mac-app's Python path builds the same flags as one shell string
+    // (where the shell does the splitting) and is unaffected.
+    //
+    // KNOWN_PACKAGE_HINTS are already pre-split pairs, which is why only these
+    // three inline pushes were wrong — see utils.js's detectPackageHints.
+    if (icon) pyinstallerArgs.push('--icon', icon);
     // Windows uses ';' as the PyInstaller --add-data separator (not ':')
     for (const dir of dataDirs) {
-      pyinstallerArgs.push(`--add-data "${dir};${dir}"`);
+      pyinstallerArgs.push('--add-data', `${dir};${dir}`);
     }
     for (const imp of hiddenImports) {
-      pyinstallerArgs.push(`--hidden-import ${imp}`);
+      pyinstallerArgs.push('--hidden-import', imp);
     }
     // Known-tricky packages (PyQt6, pandas, etc.) get their real PyInstaller
     // needs added even without a project-authored build.py — see utils.js's

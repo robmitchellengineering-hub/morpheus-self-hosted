@@ -102,10 +102,14 @@ export const linuxDistro = {
 
     // App dependencies — Python uses an isolated venv (avoids PEP 668
     // "externally-managed-environment" errors on newer distros); Node uses npm.
-    if (isNode) postinst.push('npm install --production 2>&1 || true');
+    //
+    // No `|| true` on either: swallowing a dependency-install failure builds a
+    // green image whose app cannot start, which is worse than a red build —
+    // the operator finds out from a crash-looping device instead of the log.
+    if (isNode) postinst.push('npm install --production');
     if (isPython) {
       postinst.push('python3 -m venv /opt/morpheus-app/.venv');
-      postinst.push('/opt/morpheus-app/.venv/bin/pip install -r /opt/morpheus-app/requirements.txt 2>&1 || true');
+      postinst.push('/opt/morpheus-app/.venv/bin/pip install -r /opt/morpheus-app/requirements.txt');
     }
 
     // systemd service so the app starts on first boot (no network needed).
