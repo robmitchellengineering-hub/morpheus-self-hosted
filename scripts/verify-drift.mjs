@@ -49,8 +49,8 @@ check('blocked as excess-deletions',
   reasonOf(evaluateDrift({ syncedCommit: MAIN, remoteHead: MAIN, deleteCount: 12 })), 'excess-deletions');
 
 console.log('\n6. unknown sync point (pre-migration), H9-scale deletions');
-check('blocked as excess-deletions',
-  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 45 })), 'excess-deletions');
+check('blocked as unverifiable-deletions',
+  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 45 })), 'unverifiable-deletions');
 
 console.log('\n7. unknown sync point, no deletions');
 check('allowed — nothing to delete, so nothing to lose',
@@ -125,15 +125,26 @@ check('record: success -> true', await recordSyncedCommitSafely(async () => 'ok'
 check('record: column-missing error is also swallowed (pre-migration)',
   await recordSyncedCommitSafely(async () => { throw Object.assign(new Error('column does not exist'), { code: 'P2022' }); }), false);
 
-console.log('\n13. the H9 shape is blocked even with NO recorded sync point');
-// This is why the guard is worth shipping before the migration: H9's signature
-// is ~45 deletions, and the deletion-shape half needs no schema change.
+console.log('\n13. with NO sync point, ANY deletion is refused — not just H9-sized ones');
 check('45 deletions, sync point unknown -> blocked',
-  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 45 })), 'excess-deletions');
+  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 45 })), 'unverifiable-deletions');
 check('11 deletions, sync point unknown -> blocked',
-  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 11 })), 'excess-deletions');
-check('a small delete, sync point unknown -> allowed (residual risk, needs the migration)',
-  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 2 })), null);
+  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 11 })), 'unverifiable-deletions');
+// The case a >10 threshold can never see: a workspace ONE commit stale deletes
+// one or two files, which is indistinguishable from a deliberate removal. That
+// is H9's mechanism at a size the count check is blind to.
+check('2 deletions, sync point unknown -> blocked (the small-drift hole)',
+  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 2 })), 'unverifiable-deletions');
+check('1 deletion, sync point unknown -> blocked',
+  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 1 })), 'unverifiable-deletions');
+check('no deletions, sync point unknown -> allowed (nothing to lose)',
+  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 0 })), null);
+check('the message explains WHY, and names the migration',
+  /selfdev-add-synced-commit\.sql/.test(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 1 }).message), true);
+check('a KNOWN-current sync point allows a small deletion again',
+  reasonOf(evaluateDrift({ syncedCommit: MAIN, remoteHead: MAIN, deleteCount: 2 })), null);
+check('acknowledgeDrift overrides the unverifiable case too',
+  reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 2, acknowledgeDrift: true })), null);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

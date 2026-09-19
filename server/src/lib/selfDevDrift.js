@@ -50,6 +50,16 @@ const EXCESS_MESSAGE = (deleteCount) =>
   + `workspace removed ~45 unrelated files. If this is genuinely intended, pass acknowledgeDrift; `
   + `otherwise click SYNC FROM GITHUB and re-apply your change.`;
 
+const UNVERIFIABLE_MESSAGE = (deleteCount) =>
+  `Push blocked — this change would delete ${deleteCount} file(s), and the workspace's sync point is `
+  + `unknown (Project.synced_commit is not populated, because server/prisma/selfdev-add-synced-commit.sql `
+  + `has not been run). Without a sync point there is no way to tell a deliberate deletion from a stale `
+  + `mirror deleting work that landed upstream — and a workspace only ONE commit stale deletes one or `
+  + `two files, which looks exactly like a normal removal. That is incident H9's mechanism, at a size `
+  + `the >10 threshold cannot see. Run that migration to make this verifiable; click SYNC FROM GITHUB `
+  + `to make the workspace current and then pass acknowledgeDrift; or pass acknowledgeDrift now if you `
+  + `know these deletions are intended.`;
+
 /**
  * Decide whether a prospective self-dev push should be refused.
  *
@@ -80,17 +90,41 @@ export function evaluateDrift({ syncedCommit, remoteHead, deleteCount = 0, scope
   // of production, was the single path this guard did not protect.
   if (acknowledgeDrift) return null;
 
-  // 1. Root cause: a recorded sync point that does not match main's current HEAD
-  //    means the mirror is stale.
-  if (syncedCommit && remoteHead && syncedCommit !== remoteHead) {
+  const deletions = Number(deleteCount) || 0;
+  const syncPointKnown =
+    typeof syncedCommit === 'string' && syncedCommit.length > 0
+    && typeof remoteHead === 'string' && remoteHead.length > 0;
+
+  // 1. Sync point known and disagreeing -> the mirror is stale. This is the
+  //    precise, root-cause check.
+  if (syncPointKnown && syncedCommit !== remoteHead) {
     return { reason: 'stale-workspace', message: STALE_MESSAGE(syncedCommit, remoteHead) };
   }
 
-  // 2. Independent net, and the only available check for a workspace whose sync
-  //    point is null (pre-migration, or lost).
-  const deletions = Number(deleteCount) || 0;
-  if (deletions > MAX_UNSCOPED_DELETIONS) {
-    return { reason: 'excess-deletions', message: EXCESS_MESSAGE(deletions) };
+  // 2. Sync point known and current: the mirror matches main's HEAD, so a
+  //    deletion here IS deliberate. Only a disproportionate batch is suspicious.
+  if (syncPointKnown) {
+    if (deletions > MAX_UNSCOPED_DELETIONS) {
+      return { reason: 'excess-deletions', message: EXCESS_MESSAGE(deletions) };
+    }
+    return null;
+  }
+
+  // 3. Sync point UNKNOWN — the column is not migrated yet, or the read failed.
+  //
+  //    We cannot distinguish a deliberate deletion from a stale mirror deleting
+  //    upstream work, and they are genuinely indistinguishable from the diff:
+  //    a workspace ONE commit stale deletes one or two files, which reads
+  //    exactly like a normal removal. The >10 threshold catches H9's 45-file
+  //    signature but is blind to precisely that small variant — and a small
+  //    deletion is what an auto-merging self-dev PR would carry to production
+  //    unnoticed.
+  //
+  //    So refuse ANY deletion until it is verifiable. This is what makes the
+  //    guard effective before the migration rather than a partial net whose
+  //    remaining holes are the hard-to-see ones.
+  if (deletions > 0) {
+    return { reason: 'unverifiable-deletions', message: UNVERIFIABLE_MESSAGE(deletions) };
   }
 
   return null;
