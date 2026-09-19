@@ -72,6 +72,16 @@ jobs:
         with:
           node-version: '22'
 
+      # META-CHECK, deliberately first: every script below must be loadable
+      # WITHOUT an install. verify-billing-clamp.mjs was added here importing
+      # through billing.js → db.js → @prisma/client, which passed locally and
+      # turned this whole job red (H12's module-load class, one level subtler —
+      # every relative import resolved; only a package import failed). This
+      # walks the job's own scripts and fails on any reachable package import,
+      # so a broken guard is diagnosed before the others run and mask it.
+      - name: Guards are install-free
+        run: node scripts/verify-guards-no-install.mjs
+
       # The H9 drift guard's runtime verification — real assertions against the
       # module, not a syntax check. server/src/lib/selfDevDrift.js is pure, so
       # this needs no dependencies.

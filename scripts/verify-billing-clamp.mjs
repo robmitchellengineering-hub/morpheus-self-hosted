@@ -12,7 +12,7 @@
 // sitting at -3.7712 credits, which makes the claim false and is confusing to
 // the user. The invariant asserted here is the one that claim depends on:
 // a true-up may only take what the account actually holds.
-import { splitOvershoot } from '../server/src/lib/billing.js';
+import { splitOvershoot } from '../server/src/lib/billingClamp.js';
 
 let failures = 0;
 let checks = 0;
