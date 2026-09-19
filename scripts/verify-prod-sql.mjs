@@ -113,6 +113,37 @@ console.log('\n10. the credential file is gitignored — asserted, not assumed')
 check('server/.env.prodsql is covered by .gitignore',
   /^\.env\.\*$/m.test(readFileSync(new URL('../.gitignore', import.meta.url), 'utf8')), true);
 
+// The data-repair channel exists because the additive-only rule had no way to
+// repair DATA, only schema — which is what left a billing bug's -3.77 row
+// stranded. It must stay NARROW: the whole risk is that "allow data repairs"
+// quietly becomes "allow anything".
+console.log('\n11. the data-repair channel is narrow and opt-in');
+const write = 'UPDATE users SET credit_balance = 0 WHERE credit_balance < 0;';
+check('without the flag a bounded UPDATE is still refused', reviewSql(write).ok, false);
+check('and the refusal names the flag that would allow it', /--data-repair/.test(reviewSql(write).reason || ''), true);
+check('with the flag a bounded UPDATE is allowed', reviewSql(write, { allowDataRepair: true }).ok, true);
+check('and it reports its mode', reviewSql(write, { allowDataRepair: true }).mode, 'data-repair');
+check('a bounded DELETE is allowed too',
+  reviewSql('DELETE FROM deck_dump_items WHERE created_date < \'2020-01-01\';', { allowDataRepair: true }).ok, true);
+
+console.log('\n12. …and it refuses everything wider');
+for (const [label, sql] of [
+  ['an UPDATE with no WHERE (an unbounded write)', 'UPDATE users SET credit_balance = 0;'],
+  ['a DELETE with no WHERE', 'DELETE FROM users;'],
+  ['DROP TABLE', 'DROP TABLE users;'],
+  ['TRUNCATE', 'TRUNCATE users;'],
+  ['INSERT', "INSERT INTO users (id) VALUES ('x');"],
+  ['ALTER TABLE ... DROP COLUMN', 'ALTER TABLE users DROP COLUMN credit_balance;'],
+  ['a DROP smuggled after a valid repair', `${write}\nDROP TABLE users;`],
+]) {
+  check(`${label} -> refused even with the flag`, reviewSql(sql, { allowDataRepair: true }).ok, false);
+}
+check('an unbounded write is called out as such, not lumped in',
+  /no WHERE clause/.test(reviewSql('UPDATE users SET credit_balance = 0;', { allowDataRepair: true }).reason || ''), true);
+check('additive DDL still works with the flag on', reviewSql('ALTER TABLE projects ADD COLUMN IF NOT EXISTS x TEXT;', { allowDataRepair: true }).ok, true);
+check('and additive DDL reports its own mode',
+  reviewSql('ALTER TABLE projects ADD COLUMN IF NOT EXISTS x TEXT;', { allowDataRepair: true }).mode, 'additive');
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
