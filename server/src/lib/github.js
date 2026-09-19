@@ -723,11 +723,13 @@ export async function deleteBranch(token, repoFullName, branch) {
   return { ok: res.status === 204 || res.status === 422, status: res.status };
 }
 
-// List all repos owned by the authenticated user (paginated, 100/page).
-// Used by cleanupBuildRepos.js to find the throwaway morpheus-build-* repos
-// compileProject.js leaves behind -- one per compile attempt, never reused
-// (see that file's repoName = `${prefix}${slug}-${Date.now()}`), which
-// otherwise just accumulate forever with no built-in cleanup.
+// List all repos owned by the authenticated user (paginated, 100/page, up to
+// 2000 — comfortably above the 370 this account currently holds, and the loop
+// exits early once a page comes back short). Used by cleanupBuildRepos.js to
+// find the LEGACY morpheus-build-* repos the old per-attempt compile scheme
+// left behind (repoName = `${prefix}${slug}-${Date.now()}`). compileProject.js
+// no longer produces them — a project now reuses one persistent
+// morpheus-project-* repo — so this only ever finds history now.
 export async function listUserRepos(token) {
   const h = ghHeaders(token);
   const repos = [];

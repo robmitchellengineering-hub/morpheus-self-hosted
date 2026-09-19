@@ -1,12 +1,18 @@
-// Batch-deletes the throwaway GitHub repos compileProject.js creates on
-// every compile attempt (repoName = `${prefix}${slug}-${Date.now()}`, see
-// that file) -- each compile, including every automatic retry in
-// CompilePanel.jsx's fix loop, spins a brand-new timestamped repo that is
-// never reused and never cleaned up on its own. Rob asked for "a github cli
-// automated interface to batch delete all the old repos that get created
-// trying to compile" -- this is that, exposed as a Morpheus function instead
-// of a local CLI so it works from any device without local GitHub creds,
-// using the same OAuth connection compileProject.js already has.
+// Batch-deletes the LEGACY throwaway GitHub repos that compileProject.js used
+// to create on every compile attempt (repoName = `${prefix}${slug}-${Date.now()}`).
+// That behaviour is fixed: compileProject.js now creates one persistent
+// `morpheus-project-*` repo per project and reuses it forever, so nothing
+// produces new `morpheus-build-*` repos any more. What remains is the backlog —
+// 339 of them at the last count, accumulated across every compile and every
+// retry in CompilePanel.jsx's fix loop before that change — so this function is
+// now a one-off cleanup of history rather than an ongoing sweep.
+//
+// Keeping it is still right: it is the designed two-step (preview, then delete)
+// path, it is prefix-scoped, and it is the only thing that should ever remove
+// these. Rob asked for "a github cli automated interface to batch delete all the
+// old repos that get created trying to compile" -- this is that, exposed as a
+// Morpheus function instead of a local CLI so it works from any device without
+// local GitHub creds, using the same OAuth connection compileProject.js has.
 //
 // Safety model: rather than trying to track which repo is "the current one"
 // for each project (nothing in the schema records that -- see the Prisma
