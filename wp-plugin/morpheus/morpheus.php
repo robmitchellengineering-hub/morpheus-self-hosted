@@ -2,14 +2,14 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.5.0
+ * Version:           0.5.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
  * License:           GPL-2.0-or-later
  *
  * The WordPress side of the Morpheus plugin (see the "Self-Dev as a Plugin"
- * scope doc). One plugin, two modules, one shared signed-request auth
+ * scope doc). One plugin, three modules, one shared signed-request auth
  * (HMAC-SHA256 over the raw body, verified against a secret set here and on
  * the Morpheus side).
  *
@@ -25,13 +25,21 @@
  *            content actions (create a product, set stock, draft a post…),
  *            so the operator can run the shop from their phone through
  *            Morpheus. (Added in 0.4.)
+ *
+ *  SEO     — signed POST to /wp-json/morpheus/v1/seo: read and write every
+ *            SEO field on any page/post/product, list content, and audit for
+ *            real problems. Works with NO third-party SEO plugin (Morpheus
+ *            emits the tags itself) and, when Yoast / Rank Math / AIOSEO /
+ *            SEOPress is active, drives that plugin's own keys instead so
+ *            two plugins never emit competing <title>/description tags.
+ *            (Added in 0.5; read_content added in 0.5.1 for AI generation.)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.5.0' );
+define( 'MORPHEUS_VERSION', '0.5.1' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 

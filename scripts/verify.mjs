@@ -23,6 +23,7 @@ const HARD = [
   'verify-context.mjs',
   'verify-dump-classify.mjs',
   'verify-insight-optout.mjs',
+  'verify-seo.mjs',
   'verify-prod-sql.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',

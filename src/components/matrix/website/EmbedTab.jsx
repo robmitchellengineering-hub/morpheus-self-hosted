@@ -11,6 +11,7 @@ const ALL_SCOPES = [
   { id: 'chat', label: 'Chat (discuss)' },
   { id: 'deploy', label: 'Deploy code' },
   { id: 'store', label: 'Shop & pages' },
+  { id: 'seo', label: 'SEO' },
 ];
 const HOST = typeof window !== 'undefined' ? window.location.origin : 'https://morpheus.nz';
 

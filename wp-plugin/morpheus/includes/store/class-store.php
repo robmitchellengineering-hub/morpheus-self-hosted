@@ -192,11 +192,32 @@ class Morpheus_Store {
 		);
 	}
 
-	/** Yoast SEO title + meta description, on whatever post id. No-op (and
-	 *  reports unavailable via context.seo_available) when Yoast isn't
-	 *  active — the two postmeta keys are Yoast's own, so writing them with
-	 *  Yoast off would just be orphaned data nothing reads. */
+	/** SEO title + meta description for any post id (product, page, post).
+	 *
+	 *  Routed through the SEO module, so the values land in the keys the
+	 *  site's ACTIVE SEO plugin actually reads — Yoast, Rank Math, AIOSEO or
+	 *  SEOPress — or in Morpheus's own keys when no other SEO plugin is
+	 *  active. This is what makes the SHOP and PAGES forms' SEO fields work on
+	 *  a site with no third-party SEO plugin at all; it used to write Yoast's
+	 *  private keys unconditionally and silently do nothing without Yoast.
+	 *
+	 *  Falls back to the old Yoast-only path if Morpheus_SEO is missing (a
+	 *  plugin build older than the module), so an un-updated install behaves
+	 *  exactly as it did rather than erroring. */
 	private static function set_seo_meta( $post_id, $data ) {
+		$fields = array();
+		foreach ( array( 'seo_title', 'seo_description' ) as $k ) {
+			if ( array_key_exists( $k, $data ) ) {
+				$fields[ $k ] = $data[ $k ];
+			}
+		}
+		if ( ! $fields ) {
+			return;
+		}
+		if ( class_exists( 'Morpheus_SEO' ) ) {
+			Morpheus_SEO::set_fields( $post_id, $fields );
+			return;
+		}
 		if ( ! defined( 'WPSEO_VERSION' ) ) {
 			return;
 		}
@@ -209,6 +230,15 @@ class Morpheus_Store {
 	}
 
 	private static function seo_meta( $post_id ) {
+		if ( class_exists( 'Morpheus_SEO' ) ) {
+			$f = Morpheus_SEO::get_fields( $post_id );
+			if ( is_array( $f ) ) {
+				return array(
+					'seo_title'       => (string) $f['seo_title'],
+					'seo_description' => (string) $f['seo_description'],
+				);
+			}
+		}
 		if ( ! defined( 'WPSEO_VERSION' ) ) {
 			return array( 'seo_title' => '', 'seo_description' => '' );
 		}
@@ -257,7 +287,10 @@ class Morpheus_Store {
 			'brands'          => $brands,
 			'product_count'   => (int) wp_count_posts( 'product' )->publish + (int) wp_count_posts( 'product' )->draft,
 			'default_status'  => 'draft',
-			'seo_available'   => defined( 'WPSEO_VERSION' ),
+			// SEO fields are offered whenever a module that can store them is
+			// present — Morpheus's own SEO module (any site) or, on an older
+			// build without it, Yoast.
+			'seo_available'   => class_exists( 'Morpheus_SEO' ) || defined( 'WPSEO_VERSION' ),
 		);
 	}
 

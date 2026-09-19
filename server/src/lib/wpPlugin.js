@@ -109,7 +109,7 @@ export async function wpStatus(siteUrl) {
   });
 }
 
-// Signed POST to one of the plugin's endpoints (store | deploy | rollback).
+// Signed POST to one of the plugin's endpoints (store | deploy | rollback | seo).
 export async function wpCall(conn, endpoint, payload) {
   const raw = JSON.stringify({ ...payload, at: new Date().toISOString() });
   return wpFetch(`${conn.siteUrl}/wp-json/${WP_NS}/${endpoint}`, {
@@ -126,4 +126,12 @@ export async function wpCall(conn, endpoint, payload) {
 // Store-module convenience: wpCall(conn, 'store', { action, data }).
 export async function wpStore(conn, action, data = {}) {
   return wpCall(conn, 'store', { action, data });
+}
+
+// SEO-module convenience: wpCall(conn, 'seo', { action, data }).
+// Actions: context | list_content | read_content | get_seo | set_seo |
+// bulk_set_seo | audit. The plugin decides where a value lives (its own
+// postmeta, or the active SEO plugin's) — see wp-plugin includes/seo/class-seo.php.
+export async function wpSeo(conn, action, data = {}) {
+  return wpCall(conn, 'seo', { action, data });
 }

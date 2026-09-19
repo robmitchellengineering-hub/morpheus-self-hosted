@@ -100,6 +100,14 @@ jobs:
       - name: Proactive-insight opt-out
         run: node scripts/verify-insight-optout.mjs
 
+      # The rules that decide what AI-written SEO is allowed to write onto a
+      # live site (length, no fabricated facts, no script), plus the
+      # cross-language contract between the JS payload and the WordPress
+      # plugin's own PHP input map — a rename on either side is a silent no-op
+      # at runtime, since the plugin ignores keys it does not know.
+      - name: SEO generation rules + plugin contract
+        run: node scripts/verify-seo.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,

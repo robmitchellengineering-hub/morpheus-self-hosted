@@ -110,7 +110,7 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
           </HelpHint>
         )}
         {onWebsite && (
-          <HelpHint id="website" title="Your Website" body="Control the Morpheus plugin on your own WordPress site, all from here: install and connect it (Setup), ship code changes to the live site (Deploy), and run your WooCommerce shop — add products, set stock, publish or draft (Shop). One connection per project, private to your account; Morpheus keeps only the connection, never your content.">
+          <HelpHint id="website" title="Your Website" body="Control the Morpheus plugin on your own WordPress site, all from here: install and connect it (Setup), ship code changes to the live site (Deploy), run your WooCommerce shop — add products, set stock, publish or draft (Shop), edit pages and posts (Pages), and own your search presence (SEO: titles, descriptions, keywords, canonical, noindex, an audit of what is missing, plus AI-written metadata and blog drafts). It works with or without another SEO plugin: with none installed Morpheus writes the tags itself, and if Yoast, Rank Math, All in One SEO or SEOPress is active it drives that plugin's own fields instead, so two plugins never emit competing tags. One connection per project, private to your account; Morpheus keeps only the connection, never your content.">
             <button onClick={onWebsite} className={`${btnBase} ${websiteConnected ? 'text-primary border-primary/60' : ''}`}>
               <Globe size={14} /> WEBSITE
             </button>

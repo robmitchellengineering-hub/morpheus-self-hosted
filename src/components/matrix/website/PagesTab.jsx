@@ -21,7 +21,10 @@ function Field({ label, hint, children }) {
 }
 
 export default function PagesTab({ projectId, store }) {
-  const seoAvailable = !!store?.context?.seo_available;
+  // SEO fields work whether or not Yoast is installed — the plugin's own SEO
+  // module stores them either way (and writes into Yoast's keys when it is
+  // active). Falls back to the store context for pre-0.5 plugin builds.
+  const seoAvailable = !!(store?.seo_available ?? store?.context?.seo_available);
   const [view, setView] = useState('list'); // list | edit
   const [pages, setPages] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
@@ -214,7 +217,7 @@ export default function PagesTab({ projectId, store }) {
               </Field>
               {seoAvailable && (
                 <>
-                  <Field label="SEO title" hint="shown in Google and the browser tab — Yoast">
+                  <Field label="SEO title" hint="shown in Google and the browser tab">
                     <input className={inputCls} value={form.seo_title} onChange={(e) => setForm((f) => ({ ...f, seo_title: e.target.value }))} />
                   </Field>
                   <Field label="SEO description" hint="the blurb under the title in search results">

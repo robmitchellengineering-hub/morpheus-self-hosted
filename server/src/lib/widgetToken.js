@@ -18,6 +18,11 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   chat: ['chatWithMorpheus', 'getChatHistory', 'getProjectFiles', 'getSelfDevFeatures', 'repoFiles'],
   deploy: ['wordPressDeploy'],
   store: ['getWordPressStore', 'wordPressStoreAction', 'generateProductCopy', 'analyzeProductPhoto'],
+  // SEO is its own scope rather than part of `store`: an embed that only runs
+  // the shop shouldn't also be able to rewrite every page's search metadata.
+  // getWordPressStore is needed here because the SEO surface reads the site
+  // context through it before the seo endpoint is called.
+  seo: ['getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost'],
 };
 
 export function isMissingWidgetTable(err) {

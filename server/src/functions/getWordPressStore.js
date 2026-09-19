@@ -34,5 +34,12 @@ export default async function handler({ user, body, query }) {
     woocommerce: online ? (status.data?.store?.woocommerce || null) : null,
     store_available: !!wooOk,
     context, // { currency, currency_symbol, categories, brand_taxonomy, brands, default_status }
+    // SEO (plugin 0.5+). `seo_available` is what the panel keys the SEO tab
+    // off — it means THIS PLUGIN BUILD has the module, not "Yoast is
+    // installed", which is what it used to depend on. `seo_owns_head` is
+    // whether Morpheus or another SEO plugin is producing the tags.
+    seo_available: !!(online && status.data?.seo?.available),
+    seo_owns_head: online && status.data?.seo ? status.data.seo.owns_head : null,
+    seo_active_plugin: online && status.data?.seo ? status.data.seo.active_plugin : null,
   };
 }
