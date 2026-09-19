@@ -15,6 +15,7 @@
 import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
+import { isMissingSyncedCommitColumn } from '../lib/selfDevDrift.js';
 
 export async function runMergeSelfDevPr(user, prNumber, { force = false, projectId = null, touchedManualSource = false, hasMigration = false } = {}) {
   const result = await getDeliveryAdapter('self-dev').merge({ user, prNumber, force });
@@ -40,6 +41,15 @@ export async function runMergeSelfDevPr(user, prNumber, { force = false, project
       },
     });
     await logUsage(user.id, 'self_dev_pr_merge', project.id, project.name, { prNumber, mergeCommitSha, forced: result.forced });
+
+    // The merge moved main to a commit built from this workspace, so the mirror
+    // is current again — record it, or the next push would immediately see
+    // drift against main's new HEAD (KNOWN-HAZARDS.md H9).
+    try {
+      await prisma.project.update({ where: { id: project.id }, data: { synced_commit: mergeCommitSha } });
+    } catch (err) {
+      if (!isMissingSyncedCommitColumn(err)) throw err;
+    }
 
     if (touchedManualSource) {
       try {

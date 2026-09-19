@@ -254,6 +254,15 @@ model Project {
   // prefers this over the global connection.
   github_token   String?  @db.Text
 
+  // Commit SHA of the base branch this project's file mirror was last synced
+  // from (or successfully pushed/merged to). Read by self-dev's H9 drift guard
+  // (lib/selfDevDrift.js) so a push refuses to run against a STALE mirror
+  // instead of deleting whatever landed upstream — see KNOWN-HAZARDS.md H9.
+  // Null means "unknown": pre-migration workspaces, where the guard falls back
+  // to its deletion-shape check. Ships with
+  // server/prisma/selfdev-add-synced-commit.sql (hazard H8).
+  synced_commit  String?
+
   // User-Choice Cloud Storage (Feature Backlog #12), Phase 1. "postgres" is
   // every project's existing, unchanged behavior. "drive" means this
   // project's files are also mirrored to the owner's connected Google

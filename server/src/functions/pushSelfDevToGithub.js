@@ -24,6 +24,37 @@ import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
 import { stampDecisionRef } from '../lib/selfDevDecisions.js';
 import { scopeExcludeFor, resolvePolicy } from '../lib/enginePolicy.js';
 import { getGithubToken, getFileContent } from '../lib/github.js';
+import { evaluateDrift, isMissingSyncedCommitColumn } from '../lib/selfDevDrift.js';
+
+const GH_API = 'https://api.github.com';
+
+// The project's recorded sync point, or null when unknown (pre-migration
+// workspace, or the column read failed). Never throws — an unknown sync point
+// degrades to the guard's deletion-shape check.
+async function readSyncedCommit(projectId) {
+  try {
+    const row = await prisma.project.findFirst({ where: { id: projectId }, select: { synced_commit: true } });
+    return row?.synced_commit ?? null;
+  } catch (err) {
+    if (isMissingSyncedCommitColumn(err)) return null;
+    throw err;
+  }
+}
+
+// The base branch's current HEAD commit. Null on any failure, which leaves the
+// drift check to the deletion-shape half rather than blocking a legitimate push.
+async function readRemoteHead(user) {
+  try {
+    const token = await getGithubToken(user.id);
+    const res = await fetch(`${GH_API}/repos/${SELF_DEV_OWNER}/${SELF_DEV_REPO}/git/ref/heads/${SELF_DEV_BRANCH}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'Morpheus' },
+    });
+    if (!res.ok) return null;
+    return (await res.json()).object?.sha || null;
+  } catch {
+    return null;
+  }
+}
 
 // The one file every widget-build must append itself to — shared across
 // every user's builds, so its OWN staleness matters even under a scoped
@@ -70,7 +101,23 @@ export default async function handler({ user, body }) {
 
   // A2 — a schema.prisma change must ship its migration in the same push.
   // Run as the ship precheck so it fires after the diff, before the push.
-  const precheck = async ({ changedPaths }) => {
+  const precheck = async ({ changedPaths, deletePaths = [] }) => {
+    // ── H9 drift guard ──────────────────────────────────────────────────────
+    // shipChange() diffs the local mirror against the LIVE remote tree and
+    // treats every remote path absent locally as a deletion. A stale workspace
+    // therefore does not just miss upstream work — it DELETES it. Incident H9
+    // removed ~45 files this way, including a shipped security fix.
+    const drift = evaluateDrift({
+      syncedCommit: await readSyncedCommit(projectId),
+      remoteHead: await readRemoteHead(user),
+      deleteCount: deletePaths.length,
+      scoped: !!resolvedScopePolicy,
+      directToMain,
+    });
+    if (drift) {
+      return { blocked: true, ...drift, repoFullName: SELF_DEV_REPO_FULL_NAME };
+    }
+
     const schemaChanged = changedPaths.includes(SCHEMA_PATH);
     const hasMigration = changedPaths.some((p) => MIGRATION_RE.test(p));
     if (schemaChanged && !hasMigration && !directToMain) {
@@ -141,6 +188,14 @@ export default async function handler({ user, body }) {
       mode: 'direct', createCount, updateCount, deleteCount, commitSha,
     });
     await stampDecisionRef(projectId, commitSha.slice(0, 7));
+
+    // The mirror now matches what we just pushed, so record it — otherwise the
+    // next push would see drift the moment this commit became main's HEAD.
+    try {
+      await prisma.project.update({ where: { id: projectId }, data: { synced_commit: commitSha } });
+    } catch (err) {
+      if (!isMissingSyncedCommitColumn(err)) throw err;
+    }
 
     if (touchedManualSource) {
       try {
