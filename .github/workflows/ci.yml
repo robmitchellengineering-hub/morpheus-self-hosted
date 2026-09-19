@@ -78,6 +78,11 @@ jobs:
       - name: Self-dev drift guard (H9)
         run: node scripts/verify-drift.mjs
 
+      # Pure function, no database needed — asserts the CORS policy never
+      # reflects an arbitrary origin while also allowing credentials.
+      - name: CORS origin policy
+        run: node scripts/verify-cors.mjs
+
       # Catches a syntax error in any server source. The server tree is ESM
       # ("type": "module"), and server/package-lock.json is intentionally
       # untracked (hazard H4), so this must not require an install.

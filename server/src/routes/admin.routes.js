@@ -384,9 +384,24 @@ router.post('/ops/db-query', async (req, res) => {
 
   let result = null;
   let error = null;
+  // A statement classified as a read can still turn out to modify data (below),
+  // and the audit trail should record what actually happened, not what the
+  // first keyword suggested.
+  let wasWrite = isWrite;
   try {
     if (isRead) {
-      const rows = sanitizeForJson(await prisma.$queryRawUnsafe(sql));
+      // A data-modifying CTE — `WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d`
+      // — starts with WITH, so it matched READ_SQL above and ran with NO confirm
+      // gate at all. Confirmed against Postgres: it deleted rows unconfirmed and
+      // was audited as a read.
+      //
+      // Spotting that textually is a losing game, so let the database enforce it:
+      // reads run inside a READ ONLY transaction, where Postgres refuses any data
+      // modification itself (SQLSTATE 25006).
+      const rows = sanitizeForJson(await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+        return tx.$queryRawUnsafe(sql);
+      }));
       const rowCount = rows?.length || 0;
       result = { rows: (rows || []).slice(0, 500), rowCount, truncated: rowCount > 500 };
     } else {
@@ -394,7 +409,15 @@ router.post('/ops/db-query', async (req, res) => {
       result = { rowsAffected };
     }
   } catch (err) {
-    error = err.message;
+    const pgCode = err?.meta?.code || err?.code;
+    if (pgCode === '25006' || /read-only transaction/i.test(err?.message || '')) {
+      // Postgres refused a modification inside the read-only transaction: this
+      // was a write wearing a read's clothing.
+      wasWrite = true;
+      error = 'This statement modifies data, so it counts as a write — send it again with confirm: true. (Reads run inside a read-only transaction, which is what caught it.)';
+    } else {
+      error = err.message;
+    }
   }
 
   // Logged regardless of outcome — a failed write attempt is still worth a
@@ -402,7 +425,7 @@ router.post('/ops/db-query', async (req, res) => {
   await prisma.adminAuditLog.create({
     data: {
       admin_id: req.user.id,
-      action: isWrite ? 'ops_db_write' : 'ops_db_read',
+      action: wasWrite ? 'ops_db_write' : 'ops_db_read',
       details: JSON.stringify({
         sql: sql.slice(0, 2000),
         ok: !error,
