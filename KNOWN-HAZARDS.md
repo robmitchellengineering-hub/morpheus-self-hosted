@@ -172,3 +172,45 @@ Before adding a field to any model the frontend lists via `base44.entities.*`:
 - Never make the new field's absence fail closed. A missing column must degrade
   to the old behaviour, not to "feature off for everyone".
 
+## H12 — a wrong relative import passes every gate, then kills the container at boot
+
+**Incident (2026-09-19, ~46 minutes of API downtime):**
+`server/src/lib/deckInsightSchedule.js` was written by mirroring
+`server/src/freshnessSchedule.js`, and the import came across verbatim as
+`./queue.js`. That is correct from `src/`, but this file lives in `src/lib/`, so
+it resolved to `src/lib/queue.js` — a file that does not exist. The real one is
+`server/src/queue.js`, so the specifier needed `../queue.js`.
+
+`index.js` imports that module at boot, so the process died at module load.
+Northflank had zero healthy instances and **every** API request returned
+`503 no healthy upstream` from `istio-envoy`. The frontend stayed up, which is
+what made it read as a backend-only failure.
+
+**Why every gate was green — this is the point of the hazard:**
+
+- CI ran `node --check` over every server source. That validates **syntax** and
+  never resolves an import specifier; a wrong path is syntactically perfect.
+- `npm run lint` does not resolve them either.
+- The integration tests imported `deckInsight.js` directly, so they never loaded
+  `deckInsightSchedule.js` and never traversed the broken edge. Testing a module
+  is not testing everything that imports it.
+- It was never booted locally after the scheduler was registered. The one
+  attempt used `timeout`, which **does not exist on macOS**, so the command
+  failed before `node` ever ran — a "no output" that looked like a pass.
+
+**Rule:** a new module in the server tree is not verified until something has
+actually **loaded** it. `scripts/verify-server-imports.mjs` now resolves every
+relative specifier in `server/src` and `server/scripts` with exact case, and CI
+runs it in the guards job. Case is checked because macOS is case-insensitive
+while the Alpine container is not, so `./DeckMemory.js` for `deckMemory.js`
+works locally and dies in production.
+
+Two corollaries worth keeping:
+
+- **Prefer booting over inspecting.** `NODE_ENV=production node src/index.js`
+  plus an `/api/health` request would have caught this in seconds. Do that after
+  registering anything new in `index.js` or `worker.js`.
+- **Never trust a command that failed to run.** `timeout` not existing produced
+  the same empty output as a clean run.
+
+
