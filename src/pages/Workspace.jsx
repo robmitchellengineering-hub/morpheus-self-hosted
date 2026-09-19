@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Plus, Github, Store, Trash2, Settings as SettingsIcon, Boxes, Plug, Search, Clock, ArrowDownAZ, X, Home as HomeIcon } from 'lucide-react';
+import { Plus, Github, Store, Trash2, Settings as SettingsIcon, Boxes, Plug, Search, Clock, ArrowDownAZ, X, Home as HomeIcon, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -238,7 +238,31 @@ export default function Workspace() {
             </button>
           </div>
           <div className="space-y-3 mb-10">
-            {visibleProjects.length === 0 && (
+            {/* A FAILED load must never render as an empty one. This exact block
+                used to say "The Matrix is empty" while the request was actually
+                throwing (H11), which is indistinguishable from losing everything. */}
+            {ws.loadError && (
+              <div className="border border-red-500/50 bg-red-500/5 px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-red-400 text-sm font-bold">Couldn't load your constructs</p>
+                    <p className="text-primary/70 text-xs mt-1 break-words">{ws.loadError}</p>
+                    <p className="text-primary/50 text-xs mt-2">
+                      Your work has not been deleted — the list simply couldn't be read. Don't create anything to
+                      "replace" it until this clears.
+                    </p>
+                    <button
+                      onClick={() => ws.loadProjects()}
+                      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary text-xs transition-colors"
+                    >
+                      <RefreshCw size={12} /> Retry
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!ws.loadError && visibleProjects.length === 0 && (
               <div className="border border-dashed border-primary/20 px-4 py-8 text-center">
                 <p className="text-primary/60 italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty. Create your first.'}</p>
               </div>

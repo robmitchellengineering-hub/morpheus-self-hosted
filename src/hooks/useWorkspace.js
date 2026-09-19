@@ -4,6 +4,14 @@ import JSZip from 'jszip';
 
 export function useWorkspace() {
   const [projects, setProjects] = useState([]);
+  // A failed project load used to be invisible: loadProjects had no catch, so a
+  // rejected request left `projects` as [] and the Workspace rendered "The
+  // Matrix is empty. Create your first." — which reads as DATA LOSS. That is
+  // exactly how the missing projects.synced_commit column (H11, 2026-09-19)
+  // presented itself to Rob, who reasonably concluded his constructs were gone
+  // when the real problem was a failing SELECT. An empty list and a broken list
+  // must never look the same.
+  const [loadError, setLoadError] = useState(null);
   const [currentProject, setCurrentProject] = useState(null);
   const [files, setFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -42,8 +50,16 @@ export function useWorkspace() {
   const [webAccess, setWebAccessState] = useState(false);
 
   const loadProjects = useCallback(async () => {
-    const data = await base44.entities.Project.list('-created_date', 50);
-    setProjects(data);
+    try {
+      const data = await base44.entities.Project.list('-created_date', 50);
+      setProjects(data);
+      setLoadError(null);
+    } catch (e) {
+      // Deliberately does not rethrow: callers `await loadProjects()` after
+      // creating or importing a construct, and a failed *refresh* should
+      // surface as a banner rather than blow up the action that just succeeded.
+      setLoadError(e?.message || 'Could not load your constructs.');
+    }
   }, []);
 
   const loadFiles = useCallback(async (projectId) => {
@@ -517,5 +533,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, setStorageMode, pushToDrive, pullFromDrive, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, loadError, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, setStorageMode, pushToDrive, pullFromDrive, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
 }
