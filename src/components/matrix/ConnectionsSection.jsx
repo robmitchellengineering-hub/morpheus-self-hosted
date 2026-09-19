@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cloud, Database, Rocket, Globe, Server, Plane, Terminal, Box, Package, Key, HardDrive, Zap, ChevronDown, ChevronRight, ExternalLink, Eye, EyeOff, Check } from 'lucide-react';
+import { Cloud, Database, Rocket, Globe, Server, Plane, Terminal, Box, Key, HardDrive, Zap, ChevronDown, ChevronRight, ExternalLink, Eye, EyeOff, Check } from 'lucide-react';
 
 export const PLATFORMS = [
   // --- API Hosting ---
