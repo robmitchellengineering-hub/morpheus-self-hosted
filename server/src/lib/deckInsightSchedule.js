@@ -13,7 +13,7 @@
 //     would mean duplicate syntheses and duplicate LLM spend, so this backs off
 //     and worker.js registers a single BullMQ repeatable job instead — runs
 //     exactly once no matter how many replicas exist.
-import { queueEnabled } from './queue.js'
+import { queueEnabled } from '../queue.js'
 import { runDeckInsights } from './deckInsight.js'
 
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24h
