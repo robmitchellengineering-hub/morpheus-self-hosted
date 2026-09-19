@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:       Morpheus
- * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API. Two modules: Deploy and Store.
- * Version:           0.4.5
+ * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
+ * Version:           0.5.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -31,7 +31,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.4.5' );
+define( 'MORPHEUS_VERSION', '0.5.0' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -45,6 +45,7 @@ require_once MORPHEUS_DIR . 'includes/class-rest.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-github.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-deploy.php';
 require_once MORPHEUS_DIR . 'includes/store/class-store.php';
+require_once MORPHEUS_DIR . 'includes/seo/class-seo.php';
 
 register_activation_hook( __FILE__, function () {
 	if ( ! is_dir( MORPHEUS_STATE_DIR ) ) {
@@ -64,3 +65,7 @@ add_action( 'admin_menu', array( 'Morpheus_Settings', 'register_menu' ) );
 add_action( 'admin_init', array( 'Morpheus_Settings', 'register_settings' ) );
 add_action( 'rest_api_init', array( 'Morpheus_REST', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_Store', 'register_routes' ) );
+add_action( 'rest_api_init', array( 'Morpheus_SEO', 'register_routes' ) );
+// Tag emission is registered on init and short-circuits when another SEO
+// plugin is active — see Morpheus_SEO::bootstrap() for the duplicate-tag rule.
+add_action( 'init', array( 'Morpheus_SEO', 'bootstrap' ) );

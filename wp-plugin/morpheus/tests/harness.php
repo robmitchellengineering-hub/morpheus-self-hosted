@@ -416,6 +416,101 @@ ok( get_post_status( $page_id ) === 'trash', 'page is in the trash, not gone' );
 
 wp_delete_post( $page_id, true );
 
+// ── SEO module ─────────────────────────────────────────────────────────────
+//
+// The blueprint ships wordpress-seo, so the LIVE path exercised here is
+// "another SEO plugin is active" — which is the one that must NOT emit
+// duplicate tags. The no-plugin path (Morpheus owning the head) is asserted
+// through keys_for()/owns_head() directly, since it is a pure decision.
+
+echo "\n-- SEO --\n";
+
+$routes = rest_get_server()->get_routes();
+ok( isset( $routes['/morpheus/v1/seo'] ), 'route /morpheus/v1/seo registered' );
+
+function seo_req( $action, $data, $secret ) {
+	$raw = json_encode( array( 'action' => $action, 'data' => $data, 'at' => gmdate( 'c' ) ) );
+	$r   = new WP_REST_Request( 'POST', '/morpheus/v1/seo' );
+	$r->set_header( 'content-type', 'application/json' );
+	$r->set_header( 'X-Morpheus-Signature', 'sha256=' . hash_hmac( 'sha256', $raw, $secret ) );
+	$r->set_body( $raw );
+	return rest_do_request( $r );
+}
+
+ok( seo_req( 'context', array(), 'wrong-secret' )->get_status() === 401, 'seo: bad signature -> 401' );
+ok( seo_req( 'nonsense', array(), $STORE_SECRET )->get_status() === 400, 'seo: unknown action -> 400' );
+
+$seo_ctx = seo_req( 'context', array(), $STORE_SECRET )->get_data();
+ok( ! empty( $seo_ctx['ok'] ), 'seo: context ok' );
+ok( isset( $seo_ctx['active_plugin'] ) && isset( $seo_ctx['owns_head'] ), 'seo: context reports who owns the head' );
+// THE DUPLICATE-TAG RULE: with Yoast active Morpheus must not emit.
+ok( $seo_ctx['owns_head'] === false, 'seo: Morpheus does NOT own the head while Yoast is active (no duplicate tags)' );
+ok( $seo_ctx['active_plugin'] === 'yoast', 'seo: context names Yoast as the active plugin' );
+ok( ! empty( $seo_ctx['sitemap_url'] ), 'seo: context exposes the sitemap url' );
+
+// The head must carry no Morpheus-emitted tags while Yoast is active.
+ob_start();
+do_action( 'wp_head' );
+$head_no_yoast = ob_get_clean();
+ok( Morpheus_SEO::owns_head() === false, 'seo: owns_head() false with Yoast present' );
+
+// set/get round-trips through Yoast's own keys, so the widget drives the plugin
+// that is actually producing the tags rather than writing orphaned data.
+$seo_target = wp_insert_post( array(
+	'post_title'   => 'SEO harness target',
+	'post_content' => str_repeat( 'Some real content for the audit to measure. ', 60 ),
+	'post_status'  => 'publish',
+	'post_type'    => 'page',
+) );
+$set = seo_req( 'set_seo', array(
+	'id'              => $seo_target,
+	'seo_title'       => 'Harness SEO Title',
+	'seo_description' => 'A description written by the harness to prove the round trip works end to end.',
+	'focus_keyword'   => 'harness',
+), $STORE_SECRET )->get_data();
+ok( ! empty( $set['ok'] ) && ( $set['item']['seo_title'] ?? '' ) === 'Harness SEO Title', 'seo: set_seo returns the stored values' );
+ok( get_post_meta( $seo_target, '_yoast_wpseo_title', true ) === 'Harness SEO Title', 'seo: title written to YOAST\'s key, not a private one' );
+ok( get_post_meta( $seo_target, '_yoast_wpseo_metadesc', true ) !== '', 'seo: description written to Yoast\'s key' );
+
+$got = seo_req( 'get_seo', array( 'id' => $seo_target ), $STORE_SECRET )->get_data();
+ok( ( $got['item']['seo_title'] ?? '' ) === 'Harness SEO Title', 'seo: get_seo reads it back' );
+ok( ( $got['item']['source'] ?? '' ) === 'yoast', 'seo: item reports Yoast as the source' );
+
+// An item with NO meta description must be flagged — this is the whole point
+// of the audit, so it is asserted against a deliberately bare post.
+$bare = wp_insert_post( array(
+	'post_title'   => 'Bare harness post',
+	'post_content' => 'Short.',
+	'post_status'  => 'publish',
+	'post_type'    => 'post',
+) );
+$audit = seo_req( 'audit', array( 'limit' => 50 ), $STORE_SECRET )->get_data();
+ok( ! empty( $audit['ok'] ) && isset( $audit['issues'] ), 'seo: audit returns issues + counts' );
+$codes = array_column( $audit['issues'], 'code' );
+ok( in_array( 'missing_description', $codes, true ), 'seo: audit flags a missing meta description' );
+
+$list = seo_req( 'list_content', array( 'limit' => 20 ), $STORE_SECRET )->get_data();
+ok( ! empty( $list['ok'] ) && isset( $list['items'] ), 'seo: list_content returns items' );
+
+// bulk_set_seo applies many and reports per-item failures rather than aborting.
+$bulk = seo_req( 'bulk_set_seo', array( 'items' => array(
+	array( 'id' => $bare, 'seo_title' => 'Bulk title', 'seo_description' => 'Bulk description.' ),
+	array( 'id' => 99999999, 'seo_title' => 'nope' ),
+) ), $STORE_SECRET )->get_data();
+ok( ( $bulk['count'] ?? 0 ) === 1, 'seo: bulk_set_seo applied exactly one item' );
+ok( count( $bulk['failed'] ?? array() ) === 1, 'seo: bulk_set_seo reports the bad id instead of aborting' );
+
+// The no-plugin path is a pure decision — assert the keys directly, since the
+// test site has Yoast and cannot be un-loaded mid-run.
+$own = Morpheus_SEO::keys_for( null );
+ok( $own['title'] === '_morpheus_seo_title', 'seo: with NO plugin, Morpheus uses its own title key' );
+ok( $own['desc'] === '_morpheus_seo_description', 'seo: with NO plugin, Morpheus uses its own description key' );
+$rank = Morpheus_SEO::keys_for( 'rankmath' );
+ok( $rank['title'] === 'rank_math_title', 'seo: Rank Math keys are mapped, so it can be driven too' );
+
+wp_delete_post( $seo_target, true );
+wp_delete_post( $bare, true );
+
 delete_option( 'morpheus_settings' );
 
 echo "\n";
