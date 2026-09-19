@@ -102,7 +102,14 @@ UI) pointed at the specific project and step that failed.
 This is the concrete application of his standing UX rule: **"everything must be
 linked and actionable, no dead ends."**
 
-## Still not started
+## What this vision requires (a scope statement, not a status report)
+
+None of the following is designed or built. They are listed as the *work this
+vision entails* so anyone approaching it knows the shape — not as a progress
+tracker. **If you need to know whether one has since been built, check the
+code.** A snapshot here would be wrong within days, which is exactly what
+happened to `morpheus-deck`'s hand-written "shipped" list.
+
 
 - The technical mechanism for the two restricted modes (allow-listed paths passed
   into the coder role, enforced server-side).
