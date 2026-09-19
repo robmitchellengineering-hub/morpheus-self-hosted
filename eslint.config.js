@@ -15,6 +15,11 @@ export default [
       // reference a rule that did not exist in scope — reported as
       // "Definition for rule ... was not found".
       "src/hooks/**/*.{js,mjs,cjs,jsx}",
+      // Siblings of the same gap: these directories matched no config block
+      // either, so nothing inside them was linted at all.
+      "src/contexts/**/*.{js,mjs,cjs,jsx}",
+      "src/api/**/*.{js,mjs,cjs,jsx}",
+      "src/utils/**/*.{js,mjs,cjs,jsx}",
       "src/Layout.jsx",
     ],
     ignores: ["src/lib/**/*", "src/components/ui/**/*"],
