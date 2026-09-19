@@ -98,6 +98,11 @@ export function CommandDeckProvider({ children }) {
   const [driveRestoreBusy, setDriveRestoreBusy] = useState(false);
   const [driveRestoreMsg, setDriveRestoreMsg] = useState(null);
   const [lastBackupAt, setLastBackupAt] = useState(null);
+  // Data-vault reachability. Deliberately separate from lastBackupAt: a
+  // timestamp only proves a backup once SUCCEEDED, not that the vault is still
+  // there. See server/src/functions/checkDeckVault.js.
+  const [vaultStatus, setVaultStatus] = useState(null);
+  const [vaultBusy, setVaultBusy] = useState(false);
 
   const [cForm, setCForm] = useState({ item: '', consignor: '', phone: '', price: '', photo_url: null });
   const [rForm, setRForm] = useState({ customer: '', phone: '', item: '', notes: '', pendingFiles: [] });
@@ -760,12 +765,32 @@ export function CommandDeckProvider({ children }) {
     try {
       const { data } = await base44.functions.invoke('backupDeckToDrive', {});
       setLastBackupAt(data?.backedUpAt || null);
+      // A backup that just succeeded proves the vault is reachable — no point
+      // re-probing Drive to learn what we already know.
+      setVaultStatus((prev) => ({
+        ...(prev || {}),
+        reachable: true,
+        reason: 'ok',
+        lastBackupAt: data?.backedUpAt || null,
+        ageDays: 0,
+      }));
       setDriveBackupMsg(`Backed up ${data?.totalRows ?? 0} rows to Drive.`);
     } catch (err) {
       setDriveBackupMsg(err.message || "Couldn't back up to Drive.");
     }
     setDriveBackupBusy(false);
   };
+  const checkVault = async () => {
+    setVaultBusy(true);
+    try {
+      const { data } = await base44.functions.invoke('checkDeckVault', {});
+      setVaultStatus(data || null);
+    } catch (err) {
+      setVaultStatus({ reachable: false, reason: 'error', error: err.message });
+    }
+    setVaultBusy(false);
+  };
+
   const driveRestore = async () => {
     setDriveRestoreBusy(true);
     setDriveRestoreMsg(null);
@@ -944,6 +969,7 @@ export function CommandDeckProvider({ children }) {
     confirmDeleteState, askToDelete, resolveConfirmDelete,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt, driveBackup, driveRestore,
+    vaultStatus, vaultBusy, checkVault,
     jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
     synthesisBusy, synthesisErr, runJarvisSynthesis, lastSynthesis,
     docBusy, docErr, docResult, createDeckDocument,

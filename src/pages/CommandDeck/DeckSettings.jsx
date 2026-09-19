@@ -14,15 +14,51 @@ import { Card, pillBtn, miniInput, MicField, MicTextarea } from './DeckUI';
 // Widgets (what shows on the Deck home tab, and in what order), Business
 // profile (shapes Jarvis/Gmail-filter/brain-dump prompts instead of them
 // hardcoding one account's business), Data vault status, and Usage.
+// Turns checkDeckVault's reason code into something actionable. A stale
+// timestamp looks healthy; that is exactly the failure this is meant to catch.
+function vaultStatusMessage(s) {
+  const age = s.ageDays;
+  const stale = age != null ? ` Last backup was ${age} day${age === 1 ? '' : 's'} ago.` : '';
+  switch (s.reason) {
+    case 'ok':
+      return `Vault reachable — backup file present in Drive.${stale}`;
+    case 'folder-empty':
+      return `Drive folder "${s.folderName}" is reachable but has no backup file in it yet.${stale}`;
+    case 'folder-missing':
+      return `Drive folder "${s.folderName}" no longer exists — the vault is gone. Back up again to recreate it.${stale}`;
+    case 'folder-trashed':
+      return `Drive folder "${s.folderName}" is in the Drive bin. Empty it there, or back up again to recreate it.${stale}`;
+    case 'never-backed-up':
+      return 'No vault yet — run a backup to create one.';
+    case 'not-connected':
+      return 'Google is not connected, so there is no vault to check.';
+    case 'probe-failed':
+      return `Couldn't check the vault: ${s.error || 'Drive returned an error.'}`;
+    case 'unreachable':
+      return `Vault unreachable: ${s.error || 'Drive could not be reached.'}${stale}`;
+    default:
+      return 'Vault status unknown.';
+  }
+}
+
 export default function DeckSettings() {
   const { canInstall, installed, promptInstall } = usePwaInstall();
   const google = useDeckGoogleConnection();
   const {
     driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt,
     driveBackup, driveRestore,
+    vaultStatus, vaultBusy, checkVault,
   } = useCommandDeck();
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const backupStamp = lastBackupAt || google.lastBackupAt;
+
+  // Probe once per visit. The whole value of this check is noticing a vault
+  // that has quietly become unreachable — nobody clicks a button they have no
+  // reason to press.
+  useEffect(() => {
+    if (google.connected) checkVault();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [google.connected]);
 
   return (
     <>
@@ -88,9 +124,26 @@ export default function DeckSettings() {
 
       {google.connected && (
         <Card title="Data vault" sub="A full copy of everything on the Deck, mirrored to your own Google Drive.">
-          <div style={{ fontSize: '0.75rem', color: C.walnutSoft, marginBottom: '0.7rem' }}>
+          <div style={{ fontSize: '0.75rem', color: C.walnutSoft, marginBottom: '0.5rem' }}>
             {backupStamp ? `Last backed up ${new Date(backupStamp).toLocaleString()}.` : 'No backup yet.'}
           </div>
+
+          {vaultStatus && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem', fontSize: '0.75rem', marginBottom: '0.6rem', color: vaultStatus.reachable ? C.walnutSoft : C.alert }}>
+              {vaultStatus.reachable
+                ? <Check size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                : <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />}
+              <span>{vaultStatusMessage(vaultStatus)}</span>
+            </div>
+          )}
+
+          <button
+            onClick={checkVault}
+            disabled={vaultBusy}
+            style={{ ...pillBtn(C.walnutSoft), width: '100%', padding: '0.5rem', fontSize: '0.8rem', marginBottom: '0.6rem', opacity: vaultBusy ? 0.7 : 1 }}
+          >
+            {vaultBusy ? 'Checking vault…' : 'Check vault reachability'}
+          </button>
 
           <button
             onClick={driveBackup}
