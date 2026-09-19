@@ -306,10 +306,15 @@ export default function SelfDev() {
     try { localStorage.setItem(`morpheus_selfdev_lastpush_${projectId}`, JSON.stringify(entry)); } catch { /* storage off */ }
   };
 
-  const doPush = async (force = false) => {
+  // `force` overrides a failed verify / the schema-needs-a-migration gate.
+  // `acknowledgeDrift` is deliberately separate: it is the ONLY thing that
+  // overrides the stale-workspace / large-deletion guard, because routing a
+  // change straight to main says nothing about whether the workspace is stale
+  // (see server/src/lib/selfDevDrift.js). One button must not silently do both.
+  const doPush = async (force = false, acknowledgeDrift = false) => {
     setPushing(true);
     try {
-      const res = await base44.functions.invoke('pushSelfDevToGithub', { projectId: ws.currentProject.id, force });
+      const res = await base44.functions.invoke('pushSelfDevToGithub', { projectId: ws.currentProject.id, force, acknowledgeDrift });
       if (res.data?.blocked) {
         if (res.data.verify) setVerifyResult(res.data.verify);
         setPushResult({ ok: false, error: res.data.message, blockReason: res.data.reason });
@@ -633,6 +638,16 @@ export default function SelfDev() {
               {!pushResult.ok && ((verifyResult && !verifyResult.ok) || pushResult.blockReason === 'schema-no-migration') && (
                 <button onClick={() => doPush(true)} disabled={pushing} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40">
                   PUSH ANYWAY
+                </button>
+              )}
+              {!pushResult.ok && (pushResult.blockReason === 'stale-workspace' || pushResult.blockReason === 'excess-deletions') && (
+                <button
+                  onClick={() => doPush(false, true)}
+                  disabled={pushing}
+                  title="Overrides the stale-workspace / large-deletion guard. Only use this when you know the deletions are intended — it skips the check that exists because a stale workspace deleted ~45 files from production (H9)."
+                  className="text-[10px] text-red-400 border border-red-500/40 px-2 py-0.5 hover:bg-red-500/10 disabled:opacity-40"
+                >
+                  {pushResult.blockReason === 'stale-workspace' ? 'PUSH ANYWAY (STALE)' : 'PUSH ANYWAY (DELETES)'}
                 </button>
               )}
               <button onClick={() => setPushResult(null)} className="text-primary/50 hover:text-primary shrink-0"><X size={12} /></button>

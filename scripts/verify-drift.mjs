@@ -56,8 +56,25 @@ console.log('\n7. unknown sync point, no deletions');
 check('allowed — nothing to delete, so nothing to lose',
   reasonOf(evaluateDrift({ syncedCommit: null, remoteHead: MAIN, deleteCount: 0 })), null);
 
-console.log('\n8. explicit operator override');
-check('allowed', reasonOf(evaluateDrift({ syncedCommit: OLDER, remoteHead: MAIN, deleteCount: 900, directToMain: true })), null);
+console.log('\n8. explicit override — and the routing flag must NOT be one');
+check('acknowledgeDrift allows a stale, mass-deleting push',
+  reasonOf(evaluateDrift({ syncedCommit: OLDER, remoteHead: MAIN, deleteCount: 900, acknowledgeDrift: true })), null);
+
+// Regression, and the reason this section exists: the guard originally skipped
+// itself on `directToMain`, which is a ROUTING decision and says nothing about
+// staleness. That left the direct-to-main path — the one incident H9 actually
+// took, and the only one with no PR, no review and no deploy preview in front of
+// production — as the single path the guard did not protect.
+check('directToMain alone does NOT bypass staleness',
+  reasonOf(evaluateDrift({ syncedCommit: OLDER, remoteHead: MAIN, deleteCount: 0, directToMain: true })), 'stale-workspace');
+check('directToMain alone does NOT bypass mass deletion',
+  reasonOf(evaluateDrift({ syncedCommit: MAIN, remoteHead: MAIN, deleteCount: 900, directToMain: true })), 'excess-deletions');
+check('H9 exactly, via directToMain -> still blocked',
+  reasonOf(evaluateDrift({ syncedCommit: OLDER, remoteHead: MAIN, deleteCount: 45, directToMain: true })), 'stale-workspace');
+check('force alone does NOT bypass either (force != acknowledgeDrift)',
+  reasonOf(evaluateDrift({ syncedCommit: OLDER, remoteHead: MAIN, deleteCount: 45, force: true })), 'stale-workspace');
+check('the message names the real override, not `force`',
+  /acknowledgeDrift/.test(evaluateDrift({ syncedCommit: OLDER, remoteHead: MAIN, deleteCount: 0 }).message), true);
 
 console.log('\n9. threshold boundary');
 check(`exactly ${MAX_UNSCOPED_DELETIONS} allowed`,
@@ -70,7 +87,7 @@ const h9 = evaluateDrift({ syncedCommit: OLDER, remoteHead: MAIN, deleteCount: 4
 check('blocked', reasonOf(h9), 'stale-workspace');
 check('names the incident', /H9/.test(h9.message), true);
 check('tells the operator to resync', /SYNC FROM GITHUB/.test(h9.message), true);
-check('offers the override', /force/.test(h9.message), true);
+check('offers the override', /acknowledgeDrift/.test(h9.message), true);
 check('shows both SHAs', h9.message.includes(OLDER.slice(0, 7)) && h9.message.includes(MAIN.slice(0, 7)), true);
 
 console.log('\n11. classification helper (logging only — no longer gates control flow)');
