@@ -16,6 +16,7 @@ import adminRoutes from './routes/admin.routes.js';
 import { LOCAL_ROOT } from './storage.js';
 import { startFreshnessSchedule } from './freshnessSchedule.js';
 import { startDeepSeekBalanceSchedule } from './deepseekBalanceSchedule.js';
+import { resolveCors } from './lib/corsOrigin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -24,11 +25,15 @@ app.set('trust proxy', 1); // behind a load balancer/ingress in production — s
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-const allowedOrigins = (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim());
-app.use(cors({
-  origin: allowedOrigins.includes('*') ? true : allowedOrigins,
-  credentials: true,
-}));
+// Was: `(process.env.CORS_ORIGIN || '*')` with `credentials: true` — i.e. an
+// unset CORS_ORIGIN reflected ANY origin AND allowed credentials on it.
+// Now defaults to the dev frontend and never combines a wildcard with
+// credentials; see lib/corsOrigin.js for why credentials are unnecessary here.
+const corsPolicy = resolveCors(process.env.CORS_ORIGIN);
+if (corsPolicy.wildcard) {
+  console.warn('[cors] CORS_ORIGIN includes "*" — any origin is reflected. Credentials are disabled as a result, and this is intended for local development only. Set an explicit comma-separated allowlist in production.');
+}
+app.use(cors({ origin: corsPolicy.origin, credentials: corsPolicy.credentials }));
 
 // Stripe webhooks need the raw body for signature verification — mount
 // before the JSON body parser, scoped to that one route only.
