@@ -22,6 +22,7 @@
 // Run: node scripts/verify-context.mjs
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -131,49 +132,77 @@ const ROOTS = ['', 'server/src', 'server', 'src', '.dsh']
 // Requiring adjacency handles it: "…anywhere in" does not end in a negation.
 const NEGATION_BEFORE = /\b(no|not|never|absent|none|without)$/i
 
-const brokenRefs = []
-const wrongNegations = []
-const checked = new Set()
+// Collect every candidate first, then ask git which of them are ignored.
+//
+// This matters more than it looks. Without it the check is environment-
+// dependent: `server/.env`, `server/data/pg/` and `server/package-lock.json`
+// all exist on a developer's machine (untracked) and are absent in a fresh
+// clone, so the same commit passed locally and FAILED in CI. A documentation
+// check that depends on untracked local files is worse than none — it reports
+// a different answer depending on where it runs.
+//
+// Docs are allowed to reference gitignored runtime artifacts (`npm run dev:db`
+// creates `server/data/pg/`; you create `server/.env` yourself). Those are
+// expected to be absent from a clone, so they are skipped rather than required.
+const candidates = []
 for (const doc of DOCS) {
   for (const line of read(doc.rel).split('\n')) {
     for (const m of line.matchAll(/`([^`\n]+)`/g)) {
       let token = m[1].trim()
-      // Ignore placeholders, globs, URLs, home/absolute paths.
       if (!token.includes('/')) continue
       if (/[<>*?{}[\]\s]/.test(token)) continue
       if (token.includes('://') || token.startsWith('~') || token.startsWith('/')) continue
       if (token.startsWith('.')) continue
-      // Strip a trailing `:line` or `:line:col` suffix — a citation, not a path.
       token = token.replace(/:\d+(?::\d+)?$/, '')
       const hasExt = /\.[A-Za-z0-9]+$/.test(token)
       const first = token.split('/')[0]
       if (!hasExt && !repoTop.includes(first)) continue
       if (!token) continue
-
-      // Markdown emphasis is stripped before the test so `**no**` still reads
-      // as the word "no" sitting immediately before the path.
-      const negated = NEGATION_BEFORE.test(
-        line.slice(0, m.index).replace(/[*_`]/g, '').trimEnd(),
-      )
-
-      const key = `${doc.rel}\0${token}\0${negated}`
-      if (checked.has(key)) continue
-      checked.add(key)
-
-      const roots = [doc.dir, ...ROOTS].filter((r) => r !== undefined)
-      const exists = roots.some((r) => existsSync(join(REPO, r, token)))
-
-      if (negated) {
-        if (exists) wrongNegations.push(`${doc.rel} says "${token}" is absent, but it exists`)
-      } else if (!exists && repoTop.includes(first)) {
-        brokenRefs.push(`${doc.rel} -> ${token}`)
-      }
+      candidates.push({
+        doc,
+        token,
+        negated: NEGATION_BEFORE.test(line.slice(0, m.index).replace(/[*_`]/g, '').trimEnd()),
+      })
     }
+  }
+}
+
+const ignored = new Set()
+try {
+  const out = execFileSync('git', ['check-ignore', '--stdin'], {
+    cwd: REPO,
+    input: candidates.map((c) => c.token).join('\n'),
+    encoding: 'utf8',
+  })
+  for (const l of out.split('\n')) if (l.trim()) ignored.add(l.trim())
+} catch {
+  // git check-ignore exits 1 when nothing matches — that is a normal outcome.
+  // Any other failure means we cannot classify, so nothing is skipped.
+}
+
+const brokenRefs = []
+const wrongNegations = []
+const checked = new Set()
+for (const { doc, token, negated } of candidates) {
+  if (ignored.has(token)) continue // expected absent from a clone
+  const key = `${doc.rel}\0${token}\0${negated}`
+  if (checked.has(key)) continue
+  checked.add(key)
+
+  const roots = [doc.dir, ...ROOTS].filter((r) => r !== undefined)
+  const exists = roots.some((r) => existsSync(join(REPO, r, token)))
+
+  if (negated) {
+    if (exists) wrongNegations.push(`${doc.rel} says "${token}" is absent, but it exists`)
+  } else if (!exists && repoTop.includes(token.split('/')[0])) {
+    brokenRefs.push(`${doc.rel} -> ${token}`)
   }
 }
 check('no doc references a missing repo path', brokenRefs, [])
 check('no doc claims a path is absent when it exists', wrongNegations, [])
-check('the check is actually looking at something', checked.size > 20, true)
+check('gitignore classification ran (guards against an env-dependent pass)',
+  ignored.size >= 1, true)
+check('the check is actually looking at something', checked.size > 15, true)
 
 // ═══ 4. "not yet built" claims are still true ═══════════════════════════════
 // morpheus-deck twice listed shipped features as unbuilt. A claim that a FILE
