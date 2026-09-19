@@ -1,0 +1,14 @@
+{
+  "browser": {
+    "userDataDir": ".playwright/profile",
+    "launchOptions": {
+      "channel": "chrome",
+      "args": [
+        "--no-sandbox",
+        "--disable-crashpad",
+        "--disable-dev-shm-usage"
+      ]
+    }
+  },
+  "outputDir": ".playwright/out"
+}

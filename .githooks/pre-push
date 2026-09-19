@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# DSH guardrail — refuse to push to a production branch.
+#
+# `main` auto-publishes to Netlify and deploys the backend on Northflank.
+# KNOWN-HAZARDS.md incident H9: two concurrent agent writers on `main` caused a
+# stale-snapshot push that reverted ~45 files, deleting a shipped security fix
+# (`blockWidget`). This hook makes the "branch + PR only" rule mechanical.
+#
+# Installed via:  git config core.hooksPath .githooks
+# Bypass (do not): git push --no-verify
+
+protected="main master"
+failed=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      branch="${remote_ref#refs/heads/}"
+      echo "" >&2
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+      echo "  BLOCKED: refusing to push to '$branch'." >&2
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+      echo "" >&2
+      echo "  '$branch' deploys straight to production. Every change must reach" >&2
+      echo "  it through a pull request that a human merges." >&2
+      echo "" >&2
+      echo "  Push a branch and open a PR instead:" >&2
+      echo "    git fetch origin" >&2
+      echo "    git switch -c dsh/<slug> origin/main" >&2
+      echo "    git push -u origin dsh/<slug>" >&2
+      echo "    gh pr create --fill" >&2
+      echo "" >&2
+      echo "  See KNOWN-HAZARDS.md H9, and the 'morpheus-dev-protocol' skill." >&2
+      echo "" >&2
+      failed=1
+      ;;
+  esac
+done
+
+exit "$failed"
