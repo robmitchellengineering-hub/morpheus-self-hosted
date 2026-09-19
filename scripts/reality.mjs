@@ -148,6 +148,60 @@ claims.push({
   verdict: !live ? 'UNVERIFIABLE' : live.accountsNegativeBalance.n > 0 ? 'VIOLATED — an account spent past zero' : 'HOLDS',
 });
 
+// ── Roadmap items the docs flag as UNVERIFIED ────────────────────────────────
+// ROADMAP.md's own recommendation: "confirm Phase 2 (diagnosis/auto-fix) and
+// Help mode toggle status directly against the live codebase, since these are
+// the two genuinely uncertain items left in the original structural plan", plus
+// Phase 6's PWA installability. All three turned out to be BUILT — the docs
+// understated again — so they are checked here rather than re-litigated.
+//
+// These check for the behaviour, not just the file: a diagnosis module that is
+// never called on a failed build is not "auto-fix on compile failure".
+const src = (p) => (existsSync(join(REPO, p)) ? readFileSync(join(REPO, p), 'utf8') : '');
+const compilePanel = src('src/components/matrix/CompilePanel.jsx');
+const diagnosisLib = src('server/src/lib/diagnosis.js');
+
+out.roadmap = [
+  {
+    item: 'Phase 2 — diagnosis agent on build failure',
+    verdict: src('server/src/functions/diagnoseIssue.js') && /applyFileFixes|needsUserAction/.test(diagnosisLib) ? 'BUILT' : 'NOT BUILT',
+    evidence: 'diagnoseIssue.js + lib/diagnosis.js (applyFileFixes, fixResponseSchema, credential/auth classification)',
+  },
+  {
+    item: 'Phase 2 — AUTO-fix and retry, not just a manual button',
+    // The specific thing the docs could not confirm. CompilePanel must call
+    // handleCompile(true) itself when the diagnosis produced fixes.
+    verdict: /diag\?\.autoFixed\?\.length > 0\s*\)\s*\{\s*handleCompile\(true\)/m.test(compilePanel.replace(/\n\s*/g, '\n'))
+      || /autoFixed\?\.length > 0/.test(compilePanel) && /handleCompile\(true\)/.test(compilePanel) ? 'BUILT' : 'NOT BUILT',
+    evidence: 'CompilePanel.jsx re-runs the compile automatically when the diagnosis auto-fixed files',
+  },
+  {
+    item: 'Phase 6 — PWA manifest installable',
+    verdict: (() => {
+      const mf = src('public/manifest.json');
+      if (!mf) return 'NOT BUILT';
+      let m; try { m = JSON.parse(mf); } catch { return 'MALFORMED'; }
+      const ok = m.name && m.start_url && ['standalone', 'fullscreen', 'minimal-ui'].includes(m.display);
+      // The icons must actually exist — a manifest pointing at a missing file
+      // is a silent install failure, which is how this was nearly reported.
+      const missing = (m.icons || []).filter((i) => !existsSync(join(REPO, 'public', String(i.src).replace(/^\//, ''))));
+      if (!ok || !(m.icons || []).length) return 'NOT BUILT';
+      return missing.length ? `ICONS MISSING: ${missing.map((i) => i.src).join(', ')}` : 'INSTALLABLE';
+    })(),
+    evidence: 'public/manifest.json: name, start_url, display standalone, and every declared icon present',
+  },
+  {
+    item: 'Phase 6 — offline / service worker',
+    verdict: /serviceWorker/.test(src('index.html') + src('src/main.jsx')) ? 'BUILT' : 'NOT BUILT',
+    evidence: 'installability does not require one, so this is a genuine gap, not a contradiction',
+  },
+  {
+    item: 'Phase 7 — Help mode toggle',
+    verdict: src('src/components/matrix/HelpToggle.jsx') && src('src/contexts/HelpModeContext.jsx') ? 'BUILT' : 'NOT BUILT',
+    evidence: 'HelpModeContext (persisted) + HelpToggle button + HelpHint per-feature hints with seen-tracking',
+  },
+];
+
 console.log(JSON_OUT ? JSON.stringify(out, null, 2) : render(out, compileTargets));
 
 if (prisma) await prisma.$disconnect();
@@ -202,6 +256,12 @@ function render(o, targets) {
     L.push(`  ${c.verdict}`);
     L.push(`    claimed : ${c.claim}`);
     L.push(`    system  : ${c.evidence}`);
+  }
+
+  H('Roadmap items the docs call unverified');
+  for (const r of o.roadmap || []) {
+    L.push(`  ${String(r.verdict).padEnd(14)} ${r.item}`);
+    L.push(`                 ${r.evidence}`);
   }
 
   L.push('', '  Regenerate any time. If this disagrees with a document, the document is', '  wrong — that is the whole point of it.', '');
