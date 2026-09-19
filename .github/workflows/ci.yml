@@ -97,6 +97,13 @@ jobs:
       - name: Production migration guard
         run: node scripts/verify-prod-sql.mjs
 
+      # The billing promise "hard stop before overspend" depends on a post-call
+      # true-up never taking a balance below zero. Production had an account at
+      # -3.7712 credits, so the invariant is asserted directly — a 41k-case
+      # sweep plus the wiring that uses it. No database needed.
+      - name: Billing clamp (no negative balances)
+        run: node scripts/verify-billing-clamp.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy
