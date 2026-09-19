@@ -9,6 +9,7 @@
     "prebuild": "node scripts/sync-capabilities.mjs && node scripts/pack-wp-plugin.mjs",
     "build": "vite build",
     "lint": "eslint . --quiet",
+    "test": "node --test",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview"
