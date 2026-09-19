@@ -104,12 +104,17 @@ export default async function handler({ user, body }) {
     // treats every remote path absent locally as a deletion. A stale workspace
     // therefore does not just miss upstream work — it DELETES it. Incident H9
     // removed ~45 files this way, including a shipped security fix.
+    //
+    // Note this is passed `acknowledgeDrift`, NOT `directToMain`: whether a
+    // change ships via a PR or straight to main says nothing about whether the
+    // workspace is stale, and the direct path (no PR, no review, no deploy
+    // preview) is precisely where H9 happened. Routing must not disable this.
     const drift = evaluateDrift({
       syncedCommit: await readSyncedCommit(projectId),
       remoteHead: await readRemoteHead(user),
       deleteCount: deletePaths.length,
       scoped: !!resolvedScopePolicy,
-      directToMain,
+      acknowledgeDrift: body?.acknowledgeDrift === true,
     });
     if (drift) {
       return { blocked: true, ...drift, repoFullName: SELF_DEV_REPO_FULL_NAME };

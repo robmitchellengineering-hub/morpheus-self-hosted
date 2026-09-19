@@ -42,18 +42,18 @@ const STALE_MESSAGE = (synced, remote) =>
   `Push blocked — the self-dev workspace mirrors ${String(synced).slice(0, 7)} but main is now at `
   + `${String(remote).slice(0, 7)}. Continuing would diff against a stale snapshot and delete whatever `
   + `landed upstream since (this is incident H9 — KNOWN-HAZARDS.md). Click SYNC FROM GITHUB, re-apply `
-  + `your change, then push again — or push with force to override.`;
+  + `your change, then push again — or pass acknowledgeDrift to override.`;
 
 const EXCESS_MESSAGE = (deleteCount) =>
   `Push blocked — this change would delete ${deleteCount} files from production. That is not a normal `
   + `self-dev change (0-3 deletions is typical) and matches the shape of incident H9, where a stale `
-  + `workspace removed ~45 unrelated files. If this is genuinely intended, push with force; otherwise `
-  + `click SYNC FROM GITHUB and re-apply your change.`;
+  + `workspace removed ~45 unrelated files. If this is genuinely intended, pass acknowledgeDrift; `
+  + `otherwise click SYNC FROM GITHUB and re-apply your change.`;
 
 /**
  * Decide whether a prospective self-dev push should be refused.
  *
- * Pure: no I/O, no Prisma. Callers supply the two facts it needs, which keeps it
+ * Pure: no I/O, no Prisma. Callers supply the facts it needs, which keeps it
  * directly testable against real values.
  *
  * @param {object} input
@@ -61,18 +61,24 @@ const EXCESS_MESSAGE = (deleteCount) =>
  * @param {string|null|undefined} input.remoteHead    current HEAD of the base branch
  * @param {number} [input.deleteCount]                deletions this push would make
  * @param {boolean} [input.scoped]                    the push is policy-scoped (widget build/delete)
- * @param {boolean} [input.directToMain]              the explicit force/direct-to-main path
+ * @param {boolean} [input.acknowledgeDrift]          deliberate "I know it is stale" override
  * @returns {{reason: string, message: string}|null}  null = allow
  */
-export function evaluateDrift({ syncedCommit, remoteHead, deleteCount = 0, scoped = false, directToMain = false } = {}) {
-  // An explicit operator override is not something to second-guess — this
-  // matches the schema gate's existing `force` convention. `directToMain` is
-  // only reachable via force or an explicit body flag.
-  if (directToMain) return null;
-
+export function evaluateDrift({ syncedCommit, remoteHead, deleteCount = 0, scoped = false, acknowledgeDrift = false } = {}) {
   // A policy-scoped push (widget build / widget delete) cannot diff or delete
   // outside its own allow-list, so drift cannot make it remove unrelated files.
   if (scoped) return null;
+
+  // Deliberate acknowledgement, and ONLY that.
+  //
+  // This is deliberately not tied to `directToMain` or to `force`. Those answer
+  // a different question — how the change ships, or whether to override a
+  // failed verify — and neither says anything about whether the workspace is
+  // stale. Coupling them (as this originally did via `if (directToMain) return
+  // null`) meant the DIRECT-TO-MAIN path, which is the one incident H9 actually
+  // took and the only path with no PR, no review and no deploy preview in front
+  // of production, was the single path this guard did not protect.
+  if (acknowledgeDrift) return null;
 
   // 1. Root cause: a recorded sync point that does not match main's current HEAD
   //    means the mirror is stale.
