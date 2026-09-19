@@ -70,7 +70,9 @@ class Morpheus_SEO {
 	const META_CANONICAL = '_morpheus_seo_canonical';
 	const META_ROBOTS    = '_morpheus_seo_robots';
 	const META_OG_IMAGE  = '_morpheus_seo_og_image';
-	const META_SCHEMA    = '_morpheus_seo_schema';
+	// No META_SCHEMA: structured data is GENERATED from each item's own fields
+	// by emit_schema(), so a stored override would be a field the emitter
+	// ignores. Add one only alongside the code that reads it.
 
 	// Content that can be indexed and therefore needs SEO. Attachments and
 	// revisions are deliberately excluded.

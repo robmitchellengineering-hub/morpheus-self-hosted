@@ -92,7 +92,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
               <ArrowUpCircle size={13} /> Plugin update available — v{store.version} running, v{latestVersion} out
             </div>
             <p className="text-[10px] text-primary/50 leading-relaxed">
-              New Morpheus features (page-awareness, in-chat actions) need this. Download the latest zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin → pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
+              The SEO tab (titles, descriptions, keywords, an audit and AI-written metadata) needs this one, and so does the in-chat awareness of the page you are looking at. Download the zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin → pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
             </p>
             <a href={PLUGIN_ZIP} download
               className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 hover:text-yellow-400">

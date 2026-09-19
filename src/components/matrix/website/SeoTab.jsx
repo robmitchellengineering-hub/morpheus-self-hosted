@@ -4,6 +4,7 @@ import {
   FileText, Plus, Save, X, Sparkles, Eye,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { serpPreview } from '@/lib/serpPreview';
 
 // SEO tab of the WEBSITE panel — every SEO field on every page, post and
 // product on the operator's own site, operable from here, plus AI generation
@@ -313,6 +314,15 @@ export default function SeoTab({ projectId, store }) {
   if (view === 'item' && edit) {
     const f = edit.form;
     const set = (k, v) => setEdit((cur) => ({ ...cur, form: { ...cur.form, [k]: v } }));
+    const preview = serpPreview({
+      title: f.seo_title,
+      description: f.seo_description,
+      url: edit.url,
+      titleFallback: edit.effective_title,
+      descriptionFallback: edit.effective_description,
+      titleMax: limits.title_max,
+      descMax: limits.desc_max,
+    });
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-2 border-b border-primary/15 shrink-0 h-[40px] px-3">
@@ -398,6 +408,23 @@ export default function SeoTab({ projectId, store }) {
             hint="the blurb under the headline — it doesn't change your ranking, it decides whether people click">
             <textarea className={areaCls} rows={3} value={f.seo_description} onChange={(e) => set('seo_description', e.target.value)} />
           </Field>
+
+          {/* Seeing the result is the point: two titles that differ by ten
+              characters look the same in a form and different in a search
+              result. Approximate on purpose — Google rewrites snippets and
+              measures in pixels — so it says so. */}
+          <div className="border border-primary/15 px-3 py-2.5">
+            <div className="text-[9px] text-primary/35 uppercase tracking-wider mb-2">Roughly how it will read in a search result</div>
+            <div className="text-[13px] text-[#8ab4f8] leading-snug break-words">{preview.title || '(no title)'}</div>
+            <div className="text-[10px] text-[#5bb974] mt-0.5 truncate">{preview.breadcrumb || edit.url}</div>
+            <div className="text-[11px] text-primary/60 mt-1 leading-relaxed break-words">
+              {preview.description || 'No description — a search engine will invent one from the page.'}
+            </div>
+            {preview.titleTruncated && <div className="text-[9px] text-yellow-500/80 mt-1">The title is cut off at this length.</div>}
+            {preview.descriptionTruncated && <div className="text-[9px] text-yellow-500/80 mt-0.5">The description is cut off at this length.</div>}
+            {preview.usedFallback && <div className="text-[9px] text-primary/35 mt-1">Showing what the site would use on its own where a field is empty.</div>}
+            <div className="text-[9px] text-primary/25 mt-1">An approximation — search engines re-write and re-cut snippets themselves.</div>
+          </div>
 
           <Field label="Focus keyword" hint="the phrase you want this page found for — used by the audit to check it appears in the title">
             <input className={inputCls} value={f.focus_keyword} onChange={(e) => set('focus_keyword', e.target.value)} />
