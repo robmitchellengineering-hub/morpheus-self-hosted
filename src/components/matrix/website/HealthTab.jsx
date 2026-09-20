@@ -576,7 +576,8 @@ export default function HealthTab({ projectId }) {
   // with `ok: false` is the site DECLINING (a guided finding, or nothing
   // registered for that id) — an answer to render as information, never a crash.
   // A rejection carries the server's own message; the page stays on screen.
-  const applyFix = useCallback(async (finding) => {
+  // `opts.rescan: false` is for FIX ALL, which scans once when the whole run ends.
+  const applyFix = useCallback(async (finding, opts = {}) => {
     const id = finding?.id;
     if (!id) return { id: '', rejected: true, message: 'This finding has no id, so no fix could be sent.' };
     setFixResults((r) => ({ ...r, [id]: { state: 'busy' } }));
@@ -591,6 +592,10 @@ export default function HealthTab({ projectId }) {
       // a second round trip. Unsaved edits are never overwritten by it.
       if (payload.policy) { setPolicy(payload.policy); setPolicyErr(null); setDraft((d) => d || editableOf(payload.policy)); }
       setFixResults((r) => ({ ...r, [id]: { state: 'settled', ok: payload.ok === true, fix: payload.fix } }));
+      // A fix that succeeded re-reads the site, so the finding it just resolved
+      // stops being on screen by itself. Leaving a fixed finding sitting there
+      // until someone finds RESCAN is the dead end this panel exists to avoid.
+      if (payload.ok === true && opts.rescan !== false) await run(true);
       return { id, rejected: false, ok: payload.ok === true, fix: payload.fix };
     } catch (e) {
       const message = e?.data?.error || e.message;
@@ -599,7 +604,7 @@ export default function HealthTab({ projectId }) {
     } finally {
       setFixingIds((s) => s.filter((x) => x !== id));
     }
-  }, [projectId]);
+  }, [projectId, run]);
 
   // Take the operator to the Updates section and mark it for a moment, because a
   // scroll with no sign of where you arrived is a dead end of its own.
@@ -672,7 +677,7 @@ export default function HealthTab({ projectId }) {
       for (let i = 0; i < autoFindings.length; i += 1) {
         const f = autoFindings[i];
         setFixAllProgress({ index: i + 1, total, label: f.label || f.id });
-        const r = await applyFix(f);
+        const r = await applyFix(f, { rescan: false });
         if (r?.rejected) tally.rejected += 1;
         else if (r?.ok !== true) tally.declined += 1;
         else if (r?.fix?.verified === false) tally.unverified += 1;
