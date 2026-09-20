@@ -135,6 +135,68 @@ export function partitionWritable(policy, paths) {
   return { allowed, denied };
 }
 
+// ── Which field is enforced where ────────────────────────────────────────────
+// The header used to say only "nothing enforces the whole of this yet", which is
+// true but useless: it does not say which half is real, so a reader cannot tell a
+// guarantee from an intention. This is the honest map.
+//
+//   denyPaths          assertWritable()          every write, all policies
+//   allowPathPrefixes  assertWritable()          every write, scoped policies
+//   allowInfraWrites   assertWritable()          every write (skipped for a path
+//                                                the allow-list already admits)
+//   allowForce         evaluatePushPolicy()      pushSelfDevToGithub
+//   allowDirectToMain  evaluatePushPolicy()      pushSelfDevToGithub
+//   allowMigrations    the schema-needs-a-migration gate in
+//                      pushSelfDevToGithub, which refuses a schema change unless
+//                      the push is directToMain — so a policy forbidding
+//                      directToMain cannot migrate either. It is enforced by
+//                      consequence, not read by name: do not rely on it alone.
+//   maxTurnsPerHour    lib/tenantPolicy.js       the WordPress path only
+//   maxSpendPerDayUsd  lib/tenantPolicy.js       the WordPress path only
+//   repoAllowList      lib/tenantPolicy.js       the WordPress path only
+//
+// The last three are the plugin-tenant story and are NOT enforced on the
+// self-dev path, where the caps are Infinity by design — the only actor there is
+// the workspace owner. If a scoped self-dev caller ever needs them, wire them
+// through tenantPolicy the way the WordPress adapter did rather than inventing a
+// second mechanism.
+
+/**
+ * May this push use `force` / `directToMain`?
+ *
+ * Pure — no I/O, no imports — so the rule is asserted against real values
+ * instead of being read, the same shape as `evaluateDrift()` and for the same
+ * reason (see scripts/verify-push-policy.mjs).
+ *
+ * `force` is the override that skips the esbuild verification gate;
+ * `directToMain` commits straight to the deploy branch instead of opening a PR.
+ * Both are ADMIN affordances. A scoped policy sets them false — and until this
+ * existed, nothing read them: `pushSelfDevToGithub` honoured `body.force`
+ * whatever the policy said, so those two fields documented a safety property
+ * that was not actually enforced. That is the worst state for a policy field to
+ * be in, because the code around it reads as though the check exists.
+ *
+ * @param {string|object} policyOrId
+ * @param {{force?: boolean, directToMain?: boolean}} [request]
+ * @returns {{reason: string, message: string}|null}  null = allowed
+ */
+export function evaluatePushPolicy(policyOrId, { force = false, directToMain = false } = {}) {
+  const p = resolvePolicy(policyOrId);
+  if (force && !p.allowForce) {
+    return {
+      reason: 'force-not-allowed',
+      message: `Policy "${p.id}" does not allow force — the verification gate cannot be skipped on this path. Fix what verification reported, or ask an admin to push it.`,
+    };
+  }
+  if (directToMain && !p.allowDirectToMain) {
+    return {
+      reason: 'direct-to-main-not-allowed',
+      message: `Policy "${p.id}" requires a pull request — this change cannot be committed straight to the deploy branch.`,
+    };
+  }
+  return null;
+}
+
 // The mirror image of assertWritable's allow-list check, phrased as a
 // ship()-compatible exclude predicate: true for any path a scoped policy
 // does NOT allow writing. An unscoped policy (allowPathPrefixes: null —

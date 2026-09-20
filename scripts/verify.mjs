@@ -30,6 +30,7 @@ const HARD = [
   'verify-prod-sql.mjs',
   'verify-billing-clamp.mjs',
   'verify-guards-no-install.mjs',
+  'verify-push-policy.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',
 ];

@@ -62,7 +62,7 @@ Query the thing. "The column is missing" is a hypothesis until
 hypothesis until the health endpoint answers. Four separate false alarms in one
 session came from reading code and assuming its runtime consequence.
 
-## Six more ways a check lies to you
+## Seven more ways a check lies to you
 
 * **A guard is only pure if it is pure *transitively*.** A guard that imported
   `splitOvershoot` from `billing.js` resolved every relative import perfectly and
@@ -91,6 +91,15 @@ session came from reading code and assuming its runtime consequence.
   HTTP 404 never fired for the 422 failure that actually happened; later it was
   found "wired to dead code, never fired". The code existed, was correct, and ran
   never.
+* **A field that is declared and never read is worse than no field.** The engine
+  policy carried `allowForce: false` and `allowDirectToMain: false` on its scoped
+  policies for a week while nothing consulted them, so the push path honoured
+  `force` regardless — and the code around it read as though the check existed,
+  which is what makes this shape dangerous rather than merely useless. Nothing
+  catches it on its own: an unread field fails no test, breaks no build, and looks
+  correct in review. If you add a cap, enforce it in the same change or write
+  "NOT ENFORCED" beside it — and assert **both** halves, because a unit test
+  proves the rule works and cannot see that nothing calls it.
 
 ## Removing behaviour passes every gate
 

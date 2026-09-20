@@ -155,6 +155,16 @@ jobs:
       - name: Docs still match the code
         run: node scripts/verify-context.mjs
 
+      # The engine policy has to be ENFORCED, not just declared. allowForce and
+      # allowDirectToMain sat on the scoped policies for a week while nothing
+      # read them — pushSelfDevToGithub honoured body.force regardless — because
+      # a field that is declared and unread fails no test and looks correct in
+      # review. This asserts the pure decision AND the wiring (the source half
+      # checks the policy gate precedes the verify gate it guards). No database,
+      # no install: enginePolicy.js imports nothing.
+      - name: Engine policy is enforced
+        run: node scripts/verify-push-policy.mjs
+
       # The fact generator. It exits non-zero if its own extraction breaks —
       # e.g. a refactor moves what it parses — so a silently-wrong report can
       # never be the thing you rely on.

@@ -111,14 +111,47 @@ export async function getEntity(name, user, id) {
   return row;
 }
 
+// `project_type` is documented as frontend|backend, and those two are set by the
+// client. `self_dev` is not a project type a client may choose: it is the
+// singleton mirror of this repo, created server-side by importSelfDevRepo, and
+// every self-dev function then resolves it by owner.
+//
+// Allowing a client to write it was a real hole rather than a tidiness issue.
+// `resolveSelfDevActor()` looked a self_dev project up without scoping to an
+// owner, so a user-created row could win the race and break widget builds for
+// everyone; and `updateEntity` could rename the real workspace out of the type,
+// making it unreachable. Both are now defended in depth — the lookup is scoped
+// and ordered too — but refusing the write here is what closes the vector, so a
+// caller that tries is told rather than silently ignored.
+const RESERVED_PROJECT_TYPES = new Set(['self_dev']);
+
+function assertNotReserved(name, data) {
+  if (name !== 'Project' || !data || !RESERVED_PROJECT_TYPES.has(data.project_type)) return;
+  throw Object.assign(
+    new Error(`project_type "${data.project_type}" is reserved for Morpheus's own workspace and cannot be set through the API.`),
+    { status: 403, code: 'RESERVED_PROJECT_TYPE' },
+  );
+}
+
 export async function createEntity(name, user, data) {
   const { id, created_by_id, created_date, updated_date, ...rest } = data || {};
+  assertNotReserved(name, rest);
   return delegate(name).create({ data: { ...rest, created_by_id: user.id } });
 }
 
 export async function updateEntity(name, user, id, data) {
-  await getEntity(name, user, id); // ownership check (throws 404 if not owned/admin)
+  const existing = await getEntity(name, user, id); // ownership check (throws 404 if not owned/admin)
   const { id: _id, created_by_id, created_date, updated_date, ...rest } = data || {};
+  // Setting the reserved type is refused, and so is taking the workspace OUT of
+  // it — the second is the one that would orphan the singleton.
+  assertNotReserved(name, rest);
+  if (name === 'Project' && existing.project_type === 'self_dev'
+    && 'project_type' in rest && rest.project_type !== 'self_dev') {
+    throw Object.assign(
+      new Error("The self-dev workspace's project_type cannot be changed through the API."),
+      { status: 403, code: 'RESERVED_PROJECT_TYPE' },
+    );
+  }
   return delegate(name).update({ where: { id }, data: rest });
 }
 
