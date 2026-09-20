@@ -72,6 +72,22 @@ class Morpheus_Maintenance {
 	 * need the backup directory's path must not get it from here — plan() is
 	 * safe to call on a site nobody has decided to change yet.
 	 */
+	/**
+	 * This plugin, as WordPress identifies it.
+	 *
+	 * Morpheus must never update itself: the request doing the updating is served
+	 * by the code it would replace, so a failure mid-swap could leave the plugin
+	 * half-written and the site without the panel that would fix it. WordPress's
+	 * own updater already offers this plugin its updates from wp-admin, where a
+	 * failure can be reported — so there is nothing to gain and a real way to lose.
+	 */
+	private static function self_basename() {
+		if ( ! function_exists( 'plugin_basename' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		return plugin_basename( MORPHEUS_DIR . 'morpheus.php' );
+	}
+
 	public static function plan() {
 		self::admin_includes();
 
@@ -90,6 +106,19 @@ class Morpheus_Maintenance {
 		foreach ( (array) get_plugin_updates() as $file => $p ) {
 			$new = isset( $p->update->new_version ) ? (string) $p->update->new_version : '';
 			if ( '' === $new ) {
+				continue;
+			}
+			if ( (string) $file === self::self_basename() ) {
+				// Reported, never applied — see self_basename(). The offer is real
+				// and the owner should take it, from wp-admin rather than here.
+				$refused[] = array(
+					'kind'        => 'plugin',
+					'id'          => (string) $file,
+					'name'        => ( isset( $p->Name ) && '' !== (string) $p->Name ) ? (string) $p->Name : 'Morpheus',
+					'version'     => isset( $p->Version ) ? (string) $p->Version : '',
+					'new_version' => $new,
+					'reason'      => 'Morpheus does not update itself. This request is served by the very code the update would replace, so a failure part-way through could leave the plugin half-written — and with it the panel you would use to fix it. Update it from Dashboard → Updates, where WordPress can report a failure and the admin screens stay available.',
+				);
 				continue;
 			}
 			$targets[] = array(
@@ -214,6 +243,9 @@ class Morpheus_Maintenance {
 		foreach ( $targets as $t ) {
 			$kind = ( is_array( $t ) && isset( $t['kind'] ) ) ? (string) $t['kind'] : '';
 			$id   = ( is_array( $t ) && isset( $t['id'] ) ) ? (string) $t['id'] : '';
+			if ( 'plugin' === $kind && $id === self::self_basename() ) {
+				return self::refuse( 'SELF_UPDATE', 'Morpheus will not update itself: this request is served by the code the update would replace. Update Morpheus from Dashboard → Updates. Nothing was changed.' );
+			}
 			if ( ! in_array( $kind, array( 'plugin', 'theme', 'core_minor' ), true ) || '' === $id ) {
 				return self::refuse( 'BAD_TARGET', 'Morpheus can only update a plugin, a theme, or a minor WordPress core release. This request asked for "' . ( '' !== $kind ? $kind : '(no kind)' ) . '", which it will not touch.' );
 			}
