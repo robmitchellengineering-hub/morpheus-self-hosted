@@ -32,11 +32,9 @@ const coreSetting = (v) => (v === 'unset' || v === null || v === undefined ? 'Wo
 const plain = (v) => (typeof v === 'string' ? v : v?.label || v?.description || v?.id);
 
 // --- scheduled checks --------------------------------------------------------
-//
-// Everything derived in `policy` (description, next_run_at, can_apply_unattended,
-// report_only) is the server's and is shown as sent. `allow_core_major_manual` is
-// deliberately NOT editable: it records that a human may be OFFERED a major
-// update, which is not permission to apply one.
+// Every derived value in `policy` is the server's and is shown as sent.
+// `allow_core_major_manual` is NOT editable: it records that a human may be
+// OFFERED a major update, which is not permission to apply one.
 const EDITABLE = ['scan_enabled', 'day_of_month', 'hour_utc', 'apply_plugins', 'apply_themes', 'apply_core_minor'];
 const editableOf = (p) => EDITABLE.reduce((o, k) => { o[k] = p[k]; return o; }, {});
 const sameEditable = (a, b) => !!a && !!b && EDITABLE.every((k) => a[k] === b[k]);
@@ -50,8 +48,8 @@ const sel = 'mt-1 w-full bg-transparent border border-primary/20 px-1.5 py-1 tex
 // the visitor's local time would make the two disagree.
 const utcStamp = (ms) => {
   const d = new Date(Number(ms));
-  if (!(Number(ms) > 0) || Number.isNaN(d.getTime())) return null;
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()} at ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+  return !(Number(ms) > 0) || Number.isNaN(d.getTime()) ? null
+    : `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()} at ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
 };
 const KIND_WORD = { plugin: 'plugin', theme: 'theme', core_minor: 'minor WordPress', core_major: 'major WordPress' };
 const wordList = (k) => { const w = k.map((x) => KIND_WORD[x] || x); return w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]; };
@@ -153,16 +151,13 @@ export default function HealthTab({ projectId }) {
       if (!res?.data) throw new Error('The scan came back empty — try again.');
       setScan(res.data);
       // The scan carries the policy, so there is no second round trip to make.
-      if (res.data.policy) {
-        setPolicy(res.data.policy); setPolicyErr(null);
-        // Seeded once: a later scan must not silently overwrite unsaved edits.
-        setDraft((d) => d || editableOf(res.data.policy));
-      }
+      // It seeds the draft once: a later scan must not overwrite unsaved edits.
+      if (res.data.policy) { setPolicy(res.data.policy); setPolicyErr(null); setDraft((d) => d || editableOf(res.data.policy)); }
     } catch (e) {
       setErr(e?.data?.error || e.message);
       // The schedule is Morpheus's own data, not WordPress's, so a failed scan
       // must not take the one writable control down with it. If this read fails
-      // too the scan error above is already on screen and RESCAN retries both.
+      // too the scan error above is on screen and RESCAN retries both.
       try {
         const res = await base44.functions.invoke('siteHealth', { projectId, action: 'policy' });
         if (res?.data) { setPolicy(res.data); setDraft((d) => d || editableOf(res.data)); }
@@ -192,8 +187,7 @@ export default function HealthTab({ projectId }) {
   ];
   const updateTotal = plan ? Math.max(0, plan.total || 0) : null;
 
-  // Dirty is judged only over the fields this panel can change, so a
-  // server-computed value can never make the form look unsaved.
+  // Dirty covers only the fields this panel can change, never a server-computed value.
   const dirty = !!policy && !!draft && !sameEditable(draft, editableOf(policy));
   const nextRun = policy?.scan_enabled ? utcStamp(policy.next_run_at) : null;
   const canApply = policy?.can_apply_unattended || [];
@@ -213,7 +207,6 @@ export default function HealthTab({ projectId }) {
       setPolicy(res.data); setDraft(editableOf(res.data));
       setPolicySaved('Saved. The description above is what is now stored for this site.');
     } catch (e) {
-      // The attempted values stay in the form, so nothing looks saved that is not.
       setPolicyErr(`Not saved — ${e?.data?.error || e.message}`);
     } finally { setSaving(false); }
   };
@@ -383,8 +376,7 @@ export default function HealthTab({ projectId }) {
           </>
         )}
 
-        {/* Last on purpose: everything above is what the scan found; this is the
-            one part of the tab that changes what Morpheus will do. */}
+        {/* Last on purpose: the scan above is read-only; this part changes what Morpheus will do. */}
         {policy && (
           <div className="border-t border-primary/10 pt-3">
             <Section title="SCHEDULED CHECKS" icon={<CalendarClock size={11} className="text-primary/45" />}>
@@ -392,8 +384,7 @@ export default function HealthTab({ projectId }) {
                 hint="Morpheus looks at the site and reports what it finds. On its own this changes nothing."
                 onChange={(v) => setField('scan_enabled', v)} />
               {!draft?.scan_enabled ? (
-                // Off means off: no day, no hour and no apply switches, because
-                // showing them would imply a run that is not scheduled.
+                // Off means off: no day, no hour and no apply switches — they would imply a run that is not scheduled.
                 <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-primary/60 leading-relaxed">
                   Monthly checks are off, so Morpheus will only look at this site when you ask it to — with RESCAN above. Nothing runs on a schedule and nothing is changed.
                 </div>
@@ -418,14 +409,12 @@ export default function HealthTab({ projectId }) {
                   </div>
                   <div className="border border-primary/15 px-2.5 py-2">
                     <div className={micro}>Next check{dirty ? ' · from the saved policy' : ''}</div>
-                    {/* next_run_at is the server's; when it is absent, say so. */}
                     {nextRun ? <div className="text-[11px] text-primary/85 break-words">{nextRun}</div>
                       : policy.scan_enabled
                         ? <div className="text-[10px] text-primary/50">Not known — the server did not report a next run time for this policy.</div>
                         : <div className="text-[10px] text-primary/55">None yet — the saved policy has the schedule off. Save and the server works out the next run.</div>}
                   </div>
-                  {/* Yellow and away from the scan switch: these three change the
-                      live site; the scan above does not. */}
+                  {/* Yellow and away from the scan switch: these three change the live site; the scan does not. */}
                   <div className="border border-yellow-500/30 px-2.5 py-2.5 space-y-2">
                     <div className={`${micro} text-yellow-500/85`}>A scheduled check could also change the site</div>
                     <div className="text-[9px] text-primary/45 leading-relaxed">Each switch below changes the live site with nobody watching. Off means it is only reported.</div>
@@ -435,8 +424,7 @@ export default function HealthTab({ projectId }) {
                       hint="Morpheus would install theme updates on its own, with nobody watching." />
                     <Toggle label="Minor WordPress updates" disabled={saving} on={!!draft?.apply_core_minor} onChange={(v) => setField('apply_core_minor', v)}
                       hint="Morpheus would install minor and security WordPress updates on its own, with nobody watching." />
-                    {/* A rule, not a setting: there is no switch for it, and a major
-                        core update is never applied unattended. */}
+                    {/* A rule, not a setting: there is no switch for it, and a major core update is never applied unattended. */}
                     <div className="flex items-start gap-1.5 border-t border-yellow-500/20 pt-2">
                       <ShieldCheck size={11} className="mt-[1px] shrink-0 text-yellow-500/85" />
                       <span className="text-[9px] text-yellow-500/85 leading-relaxed">Major WordPress updates are reported, never applied.</span>
@@ -444,12 +432,10 @@ export default function HealthTab({ projectId }) {
                   </div>
                 </>
               )}
-              {/* The server's own lists, as sent — never recomputed from the draft. */}
               <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-primary/65 leading-relaxed">
                 {canApply.length === 0
                   ? 'Scheduled checks are report-only on this site — Morpheus looks and tells you what it finds, and nothing is changed.'
                   : `With nobody watching, Morpheus may apply ${wordList(canApply)} updates${reportOnly.length ? `, and reports ${wordList(reportOnly)} updates without applying them` : ''}.`}
-                <span className={`${faint} block mt-0.5`}>From the saved policy{dirty ? ' — save to update it' : ''}.</span>
               </div>
               <div className="border border-primary/15 px-2.5 py-2">
                 <div className={micro}>What this policy says{dirty ? ' · from the saved policy' : ''}</div>
@@ -465,8 +451,6 @@ export default function HealthTab({ projectId }) {
                 {policySaved ? <div className="flex items-start gap-1.5 text-[10px] text-primary/70"><Check size={11} className="mt-[1px] shrink-0" /> {policySaved}</div> : null}
               </div>
             </Section>
-          </div>
-        )}
           </div>
         )}
       </div>
