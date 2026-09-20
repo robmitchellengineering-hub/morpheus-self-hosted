@@ -73,13 +73,19 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
 
         {/* Scrollable, not squeezed: seven tabs do not fit a phone screen at
             a readable size, and a clipped final tab is a dead end. */}
-        <div className="flex border-b border-primary/15 shrink-0 text-[11px] overflow-x-auto scrollbar-matrix">
+        {/* WRAPS rather than scrolls. Seven tabs do not fit a phone screen, and
+            `overflow-x-auto` alone does not solve that: it hides the later tabs
+            (PAGES, SEO, EMBED) off the right edge with no visible clue they are
+            there, so on a phone the panel reads as having four tabs. A tab you
+            cannot see is a tab you do not have. `shrink-0` each button and let
+            the row wrap to a second line instead. */}
+        <div className="flex flex-wrap border-b border-primary/15 shrink-0 text-[11px]">
           {TABS.map((t) => {
             const Icon = t.icon;
             const gated = ['deploy', 'shop', 'pages', 'seo'].includes(t.id) ? !connected : false;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
-                className={`shrink-0 px-3 h-[42px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : gated ? 'text-primary/25' : 'text-primary/45'}`}>
+                className={`shrink-0 basis-[96px] px-3 h-[42px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : gated ? 'text-primary/25' : 'text-primary/45'}`}>
                 <Icon size={13} /> {t.label}
               </button>
             );

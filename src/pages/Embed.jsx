@@ -106,12 +106,21 @@ export default function Embed() {
       {ctx && tabs.length > 0 && (
         <>
           {tabs.length > 1 && (
-            <div className="flex border-b border-primary/15 text-[11px]">
+            // WRAPS rather than scrolls, and every tab keeps a minimum width.
+            //
+            // This used to be `flex` with `flex-1` buttons and no wrap. A flex
+            // item's min-width is auto, so the buttons could not shrink below
+            // their icon+label; the row grew wider than the dock and the later
+            // tabs were clipped off the right edge with NO way to reach them —
+            // PAGES was simply unreachable in the floating widget. Horizontal
+            // scrolling would also have worked but is invisible on a phone: a
+            // tab you cannot see is a tab you do not have, so the row wraps.
+            <div className="flex flex-wrap border-b border-primary/15 text-[11px]">
               {tabs.map((t) => {
                 const Icon = t.icon;
                 return (
                   <button key={t.id} onClick={() => setTab(t.id)}
-                    className={`flex-1 h-[40px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : 'text-primary/45'}`}>
+                    className={`shrink-0 basis-[84px] h-[40px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : 'text-primary/45'}`}>
                     <Icon size={13} /> {t.label}
                   </button>
                 );
