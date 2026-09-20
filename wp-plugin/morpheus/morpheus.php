@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.5.1
+ * Version:           0.5.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -27,19 +27,30 @@
  *            Morpheus. (Added in 0.4.)
  *
  *  SEO     — signed POST to /wp-json/morpheus/v1/seo: read and write every
- *            SEO field on any page/post/product, list content, and audit for
- *            real problems. Works with NO third-party SEO plugin (Morpheus
- *            emits the tags itself) and, when Yoast / Rank Math / AIOSEO /
- *            SEOPress is active, drives that plugin's own keys instead so
- *            two plugins never emit competing <title>/description tags.
- *            (Added in 0.5; read_content added in 0.5.1 for AI generation.)
+ *            SEO field on any page/post/product, list content, read one item's
+ *            text, and audit for real problems. Works with NO third-party SEO
+ *            plugin (Morpheus emits the tags itself) and, when Yoast / Rank
+ *            Math / AIOSEO / SEOPress is active, drives that plugin's own keys
+ *            instead so two plugins never emit competing <title>/description
+ *            tags.
+ *
+ *            Site-wide title/description templates (%title%, %sitename%,
+ *            %tagline%, %excerpt%, %content%) fill the gap for content nobody
+ *            has set by hand, with per-post-type overrides; bulk_apply_defaults
+ *            writes them into items that have nothing set, which is the path
+ *            that also works on a site where another SEO plugin owns the head.
+ *            bulk_add_links proposes internal links and wraps a phrase that
+ *            already exists in an item's text, dry-run first.
+ *
+ *            Version history: module added in 0.5, read_content in 0.5.1,
+ *            templates + internal links + the shared page-cache purge in 0.5.2.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.5.1' );
+define( 'MORPHEUS_VERSION', '0.5.2' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
