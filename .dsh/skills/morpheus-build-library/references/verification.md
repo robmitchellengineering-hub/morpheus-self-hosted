@@ -62,6 +62,32 @@ Query the thing. "The column is missing" is a hypothesis until
 hypothesis until the health endpoint answers. Four separate false alarms in one
 session came from reading code and assuming its runtime consequence.
 
+## Proving a deploy actually landed
+
+Two traps, both hit while verifying the Search Console release, and both produce a
+confident wrong answer:
+
+* **An SPA answers 200 for every path.** Netlify serves `index.html` for anything
+  it does not have, so fetching an asset URL and seeing `200` proves nothing — the
+  new `SeoTab-<hash>.js` "existed" and was actually the HTML shell. Check
+  `content-type` (`text/html` means the fallback) or the byte size, and prefer
+  asking the deployed bundle **what it ships**: fetch its *main* chunk, grep the
+  dynamic-import map for the lazy chunk's real filename, then fetch that. Local
+  build output cannot answer this, because a lazy chunk is not referenced by the
+  page.
+* **Local and production bundle hashes legitimately differ.** Netlify injects
+  `VITE_*` env at build time, so identical source produces a different `main-*.js`
+  hash in production. Comparing your local `dist` filename to production's index
+  and concluding "not deployed" is a false alarm — the check that works is
+  content-based, from production's own chunk names.
+
+And the timing one, which is H12's lesson in another costume: a build and its
+**deployment** are two transitions. Probing 15 seconds after `build=SUCCESS` still
+reached the old container and answered `404` for routes that were in the image
+being rolled out. Wait for `deployment=COMPLETED`, then probe. For a backend, a
+`401` on a new route is the healthy answer (registered, auth required); `404`
+means the old container is still serving.
+
 ## Seven more ways a check lies to you
 
 * **A guard is only pure if it is pure *transitively*.** A guard that imported
