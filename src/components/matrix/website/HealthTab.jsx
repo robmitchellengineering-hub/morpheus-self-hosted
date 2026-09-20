@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Loader2, RefreshCw, ExternalLink, AlertTriangle, Check, ShieldCheck, Server, Package, Clock,
-  Save, CalendarClock,
+  Save, CalendarClock, X,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
@@ -14,7 +14,9 @@ import { base44 } from '@/api/base44Client';
 //
 // The server derives everything judgeable (`summary`, `attention`, `freshness`,
 // `can_apply`, `update_plan`); this file renders those values and never recounts
-// a severity. Read-only by design — applying updates is not built yet.
+// a severity. The scan itself stays read-only; changing the live site is a
+// separate, twice-confirmed APPLY NOW below, and every outcome it reports is
+// rendered as sent.
 
 const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
 const faint = 'text-[9px] text-primary/30';
@@ -131,6 +133,124 @@ function Finding({ t, quiet = false }) {
   );
 }
 
+// --- what a run actually did ------------------------------------------------
+// The server sends the outcome already grouped; this renders those groups as
+// sent. `applied` is the only group allowed to say anything was done, a dry run
+// is labelled as one wherever it could be mistaken for a change, and an empty
+// group is never rendered — a heading with nothing under it reads as a result.
+const TONE_BOX = {
+  green: 'border-green-500/30 bg-green-500/5',
+  yellow: 'border-yellow-500/30',
+  red: 'border-red-500/30 bg-red-500/5',
+  loud: 'border-red-500/50 bg-red-500/10',
+};
+const TONE_TEXT = {
+  green: 'text-green-400/90',
+  yellow: 'text-yellow-500/85',
+  red: 'text-red-300/90',
+  loud: 'text-red-300',
+};
+
+function OutcomeGroup({ tone = 'yellow', title, note, items, icon }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className={`border px-3 py-2 space-y-1 ${TONE_BOX[tone] || TONE_BOX.yellow}`}>
+      <div className="flex items-center gap-1.5">
+        {icon}
+        <span className={`text-[9px] uppercase tracking-wider ${TONE_TEXT[tone] || TONE_TEXT.yellow}`}>{title}</span>
+      </div>
+      {note ? <div className="text-[9px] text-primary/45 leading-relaxed">{note}</div> : null}
+      {items.map((it, i) => (
+        <div key={`${it}-${i}`} className="flex items-start gap-1.5 text-[11px] text-primary/80">
+          <span className="mt-[5px] shrink-0 w-[3px] h-[3px] bg-primary/40" />
+          <span className="min-w-0 flex-1 break-words">{it}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The server's own report of a manual run — every group it sent, and nothing inferred. */
+function ApplyReport({ outcome: o }) {
+  const dry = o.dryRun === true;
+  const applied = o.applied || [];
+  const restored = o.restored || [];
+  const restoreFailed = o.restoreFailed || [];
+  const failed = o.failed || [];
+  const skipped = o.skipped || [];
+  const nothingHappened = o.attempted !== false && !o.error
+    && applied.length === 0 && failed.length === 0 && restored.length === 0 && restoreFailed.length === 0;
+  return (
+    <div className="border border-primary/15 px-3 py-2.5 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-primary/80">
+          {dry ? 'CHECK FIRST · dry run' : 'APPLY NOW · result'}
+        </span>
+        <span className={`${faint} shrink-0`}>{dry ? 'nothing changed' : 'live site'}</span>
+      </div>
+
+      {dry ? (
+        <div className="border border-yellow-500/30 px-2.5 py-2 text-[10px] text-yellow-500/85 leading-relaxed">
+          Dry run — nothing was changed. Everything below is only what the site said it would do.
+        </div>
+      ) : null}
+
+      {o.error ? (
+        <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+          <div className="text-[11px] text-red-300/90 leading-relaxed break-words">
+            {o.error || o.message}
+          </div>
+          {o.code ? <div className={faint}>{o.code}</div> : null}
+        </div>
+      ) : null}
+
+      {o.attempted === false && !o.error ? (
+        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-primary/60 leading-relaxed">
+          {o.message || 'There was nothing for Morpheus to apply.'}
+        </div>
+      ) : null}
+
+      {/* Nothing is put back silently, and a put-back that failed outranks the rest. */}
+      <OutcomeGroup tone="loud" items={restoreFailed} icon={<AlertTriangle size={11} className="shrink-0 text-red-300" />}
+        title={dry ? 'Would need attention now — could not be put back' : 'Needs attention now — could not be put back'}
+        note={dry
+          ? 'On a real run these would be left on the new version, so the site could be left in a state that does not work.'
+          : 'These are not on the version they were on before this run, and Morpheus could not put them back. Check this site now.'} />
+
+      <OutcomeGroup tone="red" items={failed}
+        title={dry ? 'Would fail' : 'Failed'}
+        note={dry
+          ? 'On a real run these would not install, or would not verify after installing.'
+          : 'These did not install, or installed without verifying. They are not updated.'} />
+
+      <OutcomeGroup tone="yellow" items={restored}
+        title={dry ? 'Would be put back — the update did not verify' : 'Put back — the update did not verify'}
+        note={dry
+          ? 'Morpheus would reinstall these from the snapshot taken before they were touched.'
+          : 'Morpheus put these back from the snapshot taken before they were touched.'} />
+
+      <OutcomeGroup tone="green" items={applied}
+        title={dry ? 'Would update and verify' : 'Done — updated and verified'} />
+
+      {/* The owner's own policy limits, not failures — so they are muted, never red. */}
+      {skipped.length > 0 ? (
+        <div className="border-t border-primary/10 pt-1.5 space-y-1">
+          <div className={micro}>Skipped · your policy, not an error</div>
+          {skipped.map((s, i) => (
+            <div key={`${s}-${i}`} className="text-[10px] text-primary/45 break-words">{s}</div>
+          ))}
+        </div>
+      ) : null}
+
+      {nothingHappened ? (
+        <div className="text-[10px] text-primary/55 leading-relaxed">
+          {dry ? 'The site reported no update it would apply.' : 'No updates were applied.'}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function HealthTab({ projectId }) {
   const [scan, setScan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -141,6 +261,10 @@ export default function HealthTab({ projectId }) {
   const [saving, setSaving] = useState(false);
   const [policyErr, setPolicyErr] = useState(null);
   const [policySaved, setPolicySaved] = useState(null);
+  const [applying, setApplying] = useState(null);     // null | 'check' | 'apply' — which request is in flight
+  const [confirming, setConfirming] = useState(false); // APPLY NOW clicked once; nothing sent yet
+  const [outcome, setOutcome] = useState(null);        // the server's own report of the last run
+  const [runErr, setRunErr] = useState(null);          // { message, dryRun }
 
   const run = useCallback(async (force) => {
     // The previous scan stays on screen while this one runs. Blanking the tab
@@ -167,6 +291,29 @@ export default function HealthTab({ projectId }) {
 
   useEffect(() => { run(false); }, [run]);
 
+  // A manual run, in one of two modes. `confirm: true` is required per
+  // invocation — the policy says what MAY happen on a schedule, this says a
+  // person asked for it now — and the dry run sends the same call with
+  // `dry_run: true`, which asks the site to report without writing.
+  const runApply = async (dryRun) => {
+    if (applying) return;
+    setRunErr(null); setOutcome(null);
+    setApplying(dryRun ? 'check' : 'apply');
+    try {
+      const res = await base44.functions.invoke('siteHealth', {
+        projectId, action: 'apply', confirm: true, dry_run: dryRun,
+      });
+      const out = res?.data?.outcome;
+      if (!out) throw new Error('The server returned no result, so nothing can be shown as done.');
+      setOutcome(out);
+      // A real apply changes the live site, so the update list on screen is now
+      // stale. The report stays up while the fresh scan replaces the list.
+      if (!dryRun) await run(true);
+    } catch (e) {
+      setRunErr({ message: e?.data?.error || e.message, dryRun });
+    } finally { setApplying(null); setConfirming(false); }
+  };
+
   const { site, summary, freshness, host, auto_updates: auto, can_apply: apply, update_plan: plan } = scan || {};
   const attention = scan?.attention || [];
   // The collapsed list is the payload's own findings, filtered to the two non-problem statuses.
@@ -192,6 +339,20 @@ export default function HealthTab({ projectId }) {
   const nextRun = policy?.scan_enabled ? utcStamp(policy.next_run_at) : null;
   const canApply = policy?.can_apply_unattended || [];
   const reportOnly = policy?.report_only || [];
+
+  // What a manual run would actually target: the intersection of what the saved
+  // policy allows (`can_apply_unattended`) and what the scan found. The server
+  // applies exactly that intersection, so counting anything else — the plan
+  // total, for instance — would promise more than the run can do.
+  const applyTargets = plan
+    ? (canApply.includes('plugin') ? (plan.plugins?.length || 0) : 0)
+      + (canApply.includes('theme') ? (plan.themes?.length || 0) : 0)
+      + (canApply.includes('core_minor') ? (plan.core?.length || 0) : 0)
+    : 0;
+  // A button the site or the policy would refuse is a dead end, so the control
+  // is offered only when there is work AND permission AND a writable site.
+  const showApplyControl = updateTotal > 0 && !!policy && applyTargets > 0 && apply?.ok !== false;
+  const siteName = site?.name || site?.url || 'this site';
 
   const setField = (key, value) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -316,9 +477,82 @@ export default function HealthTab({ projectId }) {
                       {otherRows.map((r) => <UpdateRow key={r.key} name={r.name} kind={r.kind} from={r.from} to={r.to} />)}
                     </div>
                   )}
-                  {/* Applying updates is not built. One line saying so is honest;
-                      a button that cannot work would be a dead end. */}
-                  <div className={faint}>Applying these from Morpheus is coming next.</div>
+                  {showApplyControl ? (
+                    <>
+                      {applying ? (
+                        <div className="flex items-center gap-1.5 text-[10px] text-primary/55">
+                          <Loader2 size={12} className="animate-spin shrink-0" />
+                          {applying === 'check'
+                            ? 'Checking what the site would do — nothing is being changed.'
+                            : 'Applying updates now — the site is being changed. Leave this panel open.'}
+                        </div>
+                      ) : null}
+
+                      {confirming ? (
+                        // Step two of two. Nothing has been sent: APPLY is the only
+                        // thing that calls the server, and the policy's own limits
+                        // still apply to what it will actually touch.
+                        <div className="border border-yellow-500/30 px-3 py-2.5 space-y-2">
+                          <div className="text-[11px] text-primary/85 leading-relaxed">
+                            Apply {applyTargets} update{applyTargets === 1 ? '' : 's'} to {siteName}? WordPress will restore anything that fails.
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button className={`${btn} border-yellow-500/40`} onClick={() => runApply(false)} disabled={!!applying}>
+                              {applying === 'apply' ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                              {applying === 'apply' ? 'APPLYING' : 'APPLY'}
+                            </button>
+                            <button className={btn} onClick={() => setConfirming(false)} disabled={!!applying}>
+                              <X size={12} /> CANCEL
+                            </button>
+                          </div>
+                          <div className="text-[9px] text-primary/45 leading-relaxed">
+                            Nothing has been sent yet. Morpheus applies only the update kinds this site&apos;s policy allows, and snapshots each one before it starts.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button className={btn} onClick={() => runApply(true)} disabled={!!applying}>
+                            {applying === 'check' ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />} CHECK FIRST
+                          </button>
+                          <button className={btn} onClick={() => setConfirming(true)} disabled={!!applying}>
+                            <AlertTriangle size={12} /> APPLY NOW
+                          </button>
+                        </div>
+                      )}
+
+                      {runErr ? (
+                        <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+                          <div className="text-[11px] text-red-300/90 break-words">{runErr.message}</div>
+                          <div className="text-[9px] text-primary/45 leading-relaxed">
+                            {runErr.dryRun
+                              ? 'The check did not finish. A check changes nothing, so the site is exactly as it was.'
+                              : 'Morpheus cannot say from here whether the site was changed. RESCAN above to see the site as it is now before trying again.'}
+                          </div>
+                        </div>
+                      ) : null}
+                      {outcome ? <ApplyReport outcome={outcome} /> : null}
+                    </>
+                  ) : updateTotal > 0 && !policy ? (
+                    <div className={faint}>
+                      This scan did not carry the site&apos;s policy, so Morpheus cannot say what it may apply. RESCAN to try again.
+                    </div>
+                  ) : updateTotal > 0 && apply?.ok === false ? (
+                    // The site says it cannot write its own files, so an apply button
+                    // could only fail. Say why, and point at the reason.
+                    <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 text-[10px] text-red-300/90 leading-relaxed">
+                      WordPress says it cannot write to this site&apos;s own files, so Morpheus will not offer to apply these. The section below, Can Morpheus update this site?, says why.
+                    </div>
+                  ) : (
+                    <div className="border border-primary/15 px-3 py-2 text-[10px] text-primary/60 leading-relaxed">
+                      {canApply.length === 0
+                        ? 'Applying updates is switched off for this site, so the updates above can only be reported. Switch on plugin, theme or minor WordPress updates in SCHEDULED CHECKS below and save the policy.'
+                        : 'The updates above are all of a kind this site\u2019s policy only reports, so there is nothing here Morpheus may apply. Change that in SCHEDULED CHECKS below and save the policy.'}
+                    </div>
+                  )}
+                  {/* Said once, here, at the point where applying is offered. */}
+                  <div className="text-[9px] text-primary/40 leading-relaxed">
+                    Every plugin and theme update is snapshotted before it is touched, and put back automatically if the new version does not install cleanly. A major WordPress update is never applied from here — it is listed in the findings above for you to run from wp-admin.
+                  </div>
                 </div>
               )}
             </Section>

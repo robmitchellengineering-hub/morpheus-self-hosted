@@ -13,8 +13,10 @@
  *   1. plan() reports without writing — no backup directory, no new files
  *   2. a MAJOR core release is refused, with a reason, and never listed as a
  *      target (injected through WordPress's own core-update transient filter)
- *   3. a minor core release on the same major version IS a target
- *   4. apply( dry_run ) changes nothing and says so
+ *   3. a minor core release on the same major version IS a target, and
+ *      apply( dry_run ) gates it on WordPress's own temporary-backup Site
+ *      Health test — reading that verdict out of the scan, not reimplementing it
+ *   4. apply( dry_run ) changes nothing and says so, for a plugin and a theme
  *   5. one real snapshot() + restore() round-trip on a fixture plugin: the
  *      snapshot is taken, data.txt is modified, restore() puts the known bytes
  *      back — including a file in a subdirectory
@@ -227,6 +229,34 @@ $inject_core = function ( $pre, $transient ) use ( $installed, $next_major, $nex
 };
 add_filter( 'pre_site_transient_update_core', $inject_core, 99, 2 );
 $plan = Morpheus_Maintenance::plan();
+
+// The same offer through apply( dry_run ), which is the path that reads
+// WordPress's OWN "temporary backup directory is writable" Site Health test
+// before it would touch core. It must find that test in the scan, and the test
+// must be good — otherwise a core update would be refused here, and the
+// assertion below would fail.
+$core_dry = Morpheus_Maintenance::apply( array( array( 'kind' => 'core_minor', 'id' => 'core' ) ), array( 'dry_run' => true ) );
+
+// And the refusal side of that gate: give the health scan an unwritable
+// temporary-backup verdict and the core update must not be attempted.
+$real_scan          = get_transient( 'morpheus_health_scan' );
+$seeded             = is_array( $real_scan ) ? $real_scan : array();
+$seeded['host']     = array( 'can_update_files' => true, 'blockers' => array() );
+$seeded['tests']    = array(
+	array(
+		'id'          => 'update_temp_backup_writable',
+		'label'       => 'Plugin and theme temporary backup directory is writable',
+		'status'      => 'critical',
+		'description' => 'simulated: WordPress could not create wp-content/upgrade-temp-backup',
+	),
+);
+set_transient( 'morpheus_health_scan', $seeded, 60 );
+$core_blocked = Morpheus_Maintenance::apply( array( array( 'kind' => 'core_minor', 'id' => 'core' ) ), array( 'dry_run' => true ) );
+if ( false === $real_scan ) {
+	delete_transient( 'morpheus_health_scan' );
+} else {
+	set_transient( 'morpheus_health_scan', $real_scan, 300 );
+}
 remove_filter( 'pre_site_transient_update_core', $inject_core, 99 );
 
 $core_targets = array();
@@ -249,6 +279,13 @@ ok( count( $core_refused ) === 1 && $next_major === $core_refused[0]['new_versio
 $reason = count( $core_refused ) === 1 ? (string) $core_refused[0]['reason'] : '';
 ok( '' !== $reason && false !== stripos( $reason, 'major' ), 'the refusal says why, in words a site owner can read' );
 ok( '' !== $reason && false !== stripos( $reason, $next_major ), 'the refusal names the version it will not apply' );
+
+$core_row = ( isset( $core_dry['results'][0] ) && is_array( $core_dry['results'][0] ) ) ? $core_dry['results'][0] : array();
+ok( isset( $core_row['to'] ) && $next_minor === $core_row['to'], 'a core dry run reads the minor offer back through apply()' );
+ok( array_key_exists( 'error', $core_row ) && null === $core_row['error'], 'and is not refused: WordPress\'s own temporary-backup test reports good — ' . ( isset( $core_row['error'] ) ? (string) $core_row['error'] : 'no error, as expected' ) );
+$blocked_row = ( isset( $core_blocked['results'][0] ) && is_array( $core_blocked['results'][0] ) ) ? $core_blocked['results'][0] : array();
+ok( ! empty( $blocked_row['error'] ) && false !== stripos( (string) $blocked_row['error'], 'temporary backup' ), 'a core update is refused when WordPress\'s own temp-backup test is not good' );
+ok( empty( $blocked_row['updated'] ) && empty( $blocked_row['verified'] ), 'the refused core update claims no update and no verification' );
 
 // ── 4. dry run writes nothing ───────────────────────────────────────────────
 section( '4. apply( dry_run ) reports without writing' );
@@ -273,11 +310,50 @@ $inject_plugin = function ( $pre, $transient ) use ( $fixture_base ) {
 	);
 	return $fake;
 };
+// A theme offer as well, so plan()'s theme branch and the theme half of a dry
+// run are exercised too. Neither this nor the plugin offer is real — both are
+// read out of the same transient fields WordPress fills from wordpress.org.
+$inject_theme = function ( $pre, $transient ) {
+	if ( 'update_themes' !== $transient ) {
+		return $pre;
+	}
+	$fake               = new stdClass();
+	$fake->last_checked = time();
+	$fake->checked      = array();
+	$fake->translations = array();
+	$fake->response     = array(
+		get_stylesheet() => array(
+			'theme'       => get_stylesheet(),
+			'new_version' => '99.0.0',
+			'package'     => 'https://example.invalid/theme-99.0.0.zip',
+		),
+	);
+	return $fake;
+};
 add_filter( 'pre_site_transient_update_plugins', $inject_plugin, 99, 2 );
+add_filter( 'pre_site_transient_update_themes', $inject_theme, 99, 2 );
 $before = morpheus_tree_list( WP_PLUGIN_DIR );
 $result = Morpheus_Maintenance::apply( array( array( 'kind' => 'plugin', 'id' => $fixture_base ) ), array( 'dry_run' => true ) );
 $after  = morpheus_tree_list( WP_PLUGIN_DIR );
+
+// plan(), reading the same offers, must list them — and a dry run for a theme
+// must resolve the theme on disk and report the offer.
+$plan_offers = Morpheus_Maintenance::plan();
+$theme_dry   = Morpheus_Maintenance::apply( array( array( 'kind' => 'theme', 'id' => get_stylesheet() ) ), array( 'dry_run' => true ) );
 remove_filter( 'pre_site_transient_update_plugins', $inject_plugin, 99 );
+remove_filter( 'pre_site_transient_update_themes', $inject_theme, 99 );
+
+$plugin_rows = array();
+$theme_rows  = array();
+foreach ( (array) $plan_offers['targets'] as $t ) {
+	if ( isset( $t['kind'] ) && 'plugin' === $t['kind'] ) { $plugin_rows[] = $t; }
+	if ( isset( $t['kind'] ) && 'theme' === $t['kind'] ) { $theme_rows[] = $t; }
+}
+ok( count( $plugin_rows ) === 1 && $fixture_base === $plugin_rows[0]['id'] && '1.0.0' === $plugin_rows[0]['version'] && '9.9.9' === $plugin_rows[0]['new_version'], 'plan() lists the offered plugin update with its installed and offered versions' );
+ok( count( $theme_rows ) === 1 && get_stylesheet() === $theme_rows[0]['id'] && '99.0.0' === $theme_rows[0]['new_version'], 'plan() lists the offered theme update too' );
+$theme_row = ( isset( $theme_dry['results'][0] ) && is_array( $theme_dry['results'][0] ) ) ? $theme_dry['results'][0] : array();
+ok( isset( $theme_row['to'] ) && '99.0.0' === $theme_row['to'], 'a theme dry run resolves the theme on disk and reports the offered version' );
+ok( ! file_exists( $backup_dir ), 'the theme dry run did not create the backup directory either' );
 
 $row = ( is_array( $result ) && isset( $result['results'][0] ) && is_array( $result['results'][0] ) ) ? $result['results'][0] : array();
 ok( is_array( $result ) && ! empty( $result['ok'] ), 'apply() ran; per-target problems live in results' );
