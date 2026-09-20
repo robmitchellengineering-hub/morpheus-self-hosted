@@ -57,6 +57,12 @@ that reaches it never was. After any scripted edit, prove the change is in the
 file (grep) and in the rendered output (the DOM), not just in the console output
 that said it worked.
 
+**Beware look-alike characters in identifiers.** A Cyrillic `с` typed into the
+word "Alice" in a commit message survived several read-throughs here; it renders
+identically, and `grep Alice` would silently miss it in code. If a name is not
+found where you are certain it exists, check the bytes before you doubt the
+code — this is the same class as H12's case-sensitivity trap, one layer subtler.
+
 ## Sandbox and toolchain
 
 * **Browser automation goes through `scripts/pw`, not a raw `playwright-cli`.**
