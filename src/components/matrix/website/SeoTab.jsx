@@ -113,6 +113,9 @@ export default function SeoTab({ projectId, store }) {
   const [saving, setSaving] = useState(false);
   const [genOne, setGenOne] = useState(false);
   const [links, setLinks] = useState(null); // { links, dropped, title }
+  const [kw, setKw] = useState(null);          // { keywords, competitors, disclosure }
+  const [kwBusy, setKwBusy] = useState(false);
+  const [competitors, setCompetitors] = useState('');
   const [loadingLinks, setLoadingLinks] = useState(false);
   const [linkPlan, setLinkPlan] = useState(null); // dry-run result awaiting APPLY
   const [applyingLinks, setApplyingLinks] = useState(false);
@@ -156,6 +159,21 @@ export default function SeoTab({ projectId, store }) {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
 
+  // Competitor addresses are per project and remembered — they are the same
+  // three shops every time, and retyping them is the kind of friction that
+  // stops a feature being used.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`morpheus_seo_competitors_${projectId}`);
+      if (saved) setCompetitors(saved);
+    } catch { /* storage is a convenience */ }
+  }, [projectId]);
+
+  const rememberCompetitors = (value) => {
+    setCompetitors(value);
+    try { localStorage.setItem(`morpheus_seo_competitors_${projectId}`, value); } catch { /* ignore */ }
+  };
+
   const runAudit = async () => {
     setAuditing(true); setErr(null);
     try {
@@ -170,7 +188,7 @@ export default function SeoTab({ projectId, store }) {
   };
 
   const openItem = (it) => {
-    setErr(null); setNote(null); setBatch(null); setGenOne(false); setLinks(null); setLinkPlan(null);
+    setErr(null); setNote(null); setBatch(null); setGenOne(false); setLinks(null); setLinkPlan(null); setKw(null);
     setEdit({
       id: it.id, title: it.title, type: it.type, url: it.url, status: it.status,
       form: {
@@ -246,6 +264,19 @@ export default function SeoTab({ projectId, store }) {
       setLinkPlan(null); setLinks(null);
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setApplyingLinks(false); }
+  };
+
+  const runKeywords = async () => {
+    setKwBusy(true); setErr(null); setNote(null); setKw(null);
+    try {
+      const list = competitors.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+      const r = await base44.functions.invoke('researchKeywords', {
+        projectId, id: edit.id, competitors: list,
+      }).then((x) => x.data);
+      setKw(r);
+      if (!r?.keywords?.length) setNote('No keyword signals came back — try again, or add a competitor address.');
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setKwBusy(false); }
   };
 
   const save = async () => {
@@ -478,6 +509,20 @@ export default function SeoTab({ projectId, store }) {
               className="h-[32px] px-2.5 text-[10px] border border-primary/40 text-primary hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
               {loadingLinks ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />} LINK IDEAS
             </button>
+            <button onClick={runKeywords} disabled={kwBusy} title="What people actually search for, and what competing pages target"
+              className="h-[32px] px-2.5 text-[10px] border border-primary/40 text-primary hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
+              {kwBusy ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} KEYWORD IDEAS
+            </button>
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-[9px] text-primary/35 uppercase tracking-wider">Competitor pages to compare (optional, up to 3)</div>
+            <input className={inputCls} value={competitors} onChange={(e) => rememberCompetitors(e.target.value)}
+              placeholder="rival1.com/repairs, rival2.com" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+            <div className="text-[9px] text-primary/30">
+              Morpheus reads what those pages say about themselves — their title, description and headings. It does not guess at
+              their traffic, and there are no invented search volumes anywhere in this panel.
+            </div>
           </div>
 
           {edit.suggestion && (
@@ -501,6 +546,72 @@ export default function SeoTab({ projectId, store }) {
                 <Btn onClick={() => setEdit((cur) => ({ ...cur, suggestion: null }))}>
                   <X size={12} /> Discard
                 </Btn>
+              </div>
+            </div>
+          )}
+
+          {kw && (
+            <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
+              <div className="text-[10px] text-primary/60 uppercase tracking-wider flex items-center gap-1.5">
+                <Search size={10} /> keyword ideas · {kw.count}
+              </div>
+
+              {/* Competitors, as they describe themselves. Read-only: this is
+                  someone else's page, and the point is to see what they target. */}
+              {(kw.competitors || []).length > 0 && (
+                <div className="space-y-1.5 border border-primary/15 px-2.5 py-2">
+                  <div className="text-[9px] text-primary/40 uppercase tracking-wider">What they target</div>
+                  {(kw.competitors || []).map((c) => (
+                    <div key={c.url} className="text-[10px]">
+                      {c.error ? (
+                        <span className="text-yellow-500/80">{c.url.replace(/^https?:\/\//, '')} — {c.error}</span>
+                      ) : (
+                        <>
+                          <div className="text-primary/75 truncate">{c.title || c.url.replace(/^https?:\/\//, '')}</div>
+                          {c.headings?.length > 0 && (
+                            <div className="text-primary/40 text-[9px] truncate">{c.headings.join(' · ')}</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-1 max-h-[40vh] overflow-y-auto scrollbar-matrix">
+                {(kw.keywords || []).map((row) => (
+                  <div key={row.phrase} className="border border-primary/15 px-2.5 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[11px] text-primary/85 break-words">{row.display || row.phrase}</div>
+                        <div className="text-[9px] text-primary/40 mt-0.5 flex flex-wrap gap-1.5">
+                          {row.sources.map((src) => (
+                            <span key={src} className="border border-primary/20 px-1 py-0.5">
+                              {src === 'autocomplete' ? 'people type this'
+                                : src.startsWith('competitor') ? 'competing page'
+                                : src === 'model' ? 'AI idea'
+                                : src.startsWith('page') ? 'this page'
+                                : 'your input'}
+                            </span>
+                          ))}
+                          {row.details?.length > 0 && <span className="text-primary/30">from: {row.details.join(', ')}</span>}
+                        </div>
+                      </div>
+                      <button onClick={() => {
+                        setEdit((cur) => ({ ...cur, form: { ...cur.form, focus_keyword: row.phrase } }));
+                        setKw(null);
+                        setNote('Loaded as the focus keyword — SAVE to apply it.');
+                      }} className="shrink-0 text-[9px] px-2 py-1 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary">
+                        USE
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-[9px] text-primary/40 leading-relaxed border-t border-primary/10 pt-2">{kw.disclosure}</div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setKw(null)} className="text-[10px] text-primary/45 hover:text-primary/80">Close</button>
               </div>
             </div>
           )}

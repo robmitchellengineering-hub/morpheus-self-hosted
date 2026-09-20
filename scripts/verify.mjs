@@ -26,6 +26,7 @@ const HARD = [
   'verify-seo.mjs',
   'verify-pairing.mjs',
   'verify-working-copy.mjs',
+  'verify-keywords.mjs',
   'verify-prod-sql.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',

@@ -123,6 +123,13 @@ jobs:
       - name: Site working copy rules + plugin contract
         run: node scripts/verify-working-copy.mjs
 
+      # Keyword research: the autocomplete payload and competitor-page parsing,
+      # plus the rule that makes the feature honest — every keyword carries the
+      # signal that produced it, and the response has nowhere to put a search
+      # volume or difficulty score (a model asked for one invents it).
+      - name: Keyword research rules
+        run: node scripts/verify-keywords.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,
