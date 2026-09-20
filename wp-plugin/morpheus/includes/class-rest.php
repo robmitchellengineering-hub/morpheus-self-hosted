@@ -60,6 +60,13 @@ class Morpheus_REST {
 				'owns_head'     => class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::owns_head() : null,
 				'active_plugin' => class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::active_plugin() : null,
 			),
+			// How the connect wizard knows this build supports pairing codes,
+			// and whether the site is already connected. No code is exposed —
+			// the code is the credential and only wp-admin shows it.
+			'pairing'    => array(
+				'available' => true,
+				'paired'    => Morpheus_Pairing::is_paired(),
+			),
 			// kept flat for older callers
 			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
 			'armed'      => (bool) $s['armed'],

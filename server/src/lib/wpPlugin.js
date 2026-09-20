@@ -92,7 +92,13 @@ async function wpFetch(url, opts) {
     const text = await res.text();
     let data;
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text.slice(0, 500) }; }
-    return { status: res.status, ok: res.ok, data };
+    return {
+      status: res.status,
+      ok: res.ok,
+      data,
+      // Needed by callers that follow redirects themselves (see wpStatus).
+      location: res.headers?.get ? res.headers.get('location') : null,
+    };
   } catch (err) {
     return { status: 0, ok: false, data: null, error: err.name === 'AbortError' ? 'timed out' : err.message };
   } finally {
@@ -100,13 +106,56 @@ async function wpFetch(url, opts) {
   }
 }
 
-// GET /status — unauthenticated; confirms the plugin is installed and which
-// modules are live.
-export async function wpStatus(siteUrl) {
-  return wpFetch(`${siteUrl}/wp-json/${WP_NS}/status`, {
-    method: 'GET',
-    headers: { 'User-Agent': 'Morpheus', Accept: 'application/json' },
-  });
+/**
+ * GET /status — unauthenticated; confirms the plugin is installed and which
+ * modules are live.
+ *
+ * Redirects are followed BY HAND (at most three) rather than by fetch, because
+ * the two most common reasons a real site does not answer are both visible in
+ * the redirect chain, and both used to be reported as the useless "fetch
+ * failed":
+ *
+ *   * a site behind a login wall or a "coming soon" mode redirects everything
+ *     to wp-login.php — including the REST route Morpheus needs;
+ *   * a redirect loop (http↔https, www↔non-www misconfiguration) never lands.
+ *
+ * `finalUrl` and `redirects` are reported so the connect wizard can say which
+ * of those it is instead of asking the operator to check their spelling.
+ */
+export async function wpStatus(siteUrl, { maxRedirects = 3 } = {}) {
+  let url = `${siteUrl}/wp-json/${WP_NS}/status`;
+  const chain = [];
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const res = await wpFetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { 'User-Agent': 'Morpheus', Accept: 'application/json' },
+    });
+    if (res.status === 0) return { ...res, finalUrl: url, redirects: chain };
+    // 3xx with a Location we can resolve against the current URL.
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.location;
+      if (!loc) return { ...res, finalUrl: url, redirects: chain };
+      let next;
+      try {
+        next = new URL(loc, url).toString();
+      } catch {
+        return { ...res, finalUrl: url, redirects: chain };
+      }
+      chain.push(next);
+      url = next;
+      continue;
+    }
+    return { ...res, finalUrl: url, redirects: chain };
+  }
+  return {
+    status: 0,
+    ok: false,
+    data: null,
+    error: `too many redirects (${chain.length})`,
+    finalUrl: url,
+    redirects: chain,
+  };
 }
 
 // Signed POST to one of the plugin's endpoints (store | deploy | rollback | seo).
@@ -121,6 +170,54 @@ export async function wpCall(conn, endpoint, payload) {
     },
     body: raw,
   });
+}
+
+/**
+ * Trade a pairing code for the shared secret this site will accept.
+ *
+ * The one call that is NOT signed — there is no secret yet; the code is the
+ * credential (single use, 20 minutes, five wrong attempts cancel it). The
+ * response carries the secret, so this refuses a non-https site: sending a
+ * secret in clear text across the open internet is worse than asking the
+ * operator to connect over https.
+ */
+export async function wpPair(siteUrl, code) {
+  if (!/^https:\/\//i.test(siteUrl) && !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(siteUrl)) {
+    return {
+      status: 0,
+      ok: false,
+      data: null,
+      error: 'Pairing needs an https site — the connection secret is sent in the response, so it must not travel in clear text.',
+    };
+  }
+  const raw = JSON.stringify({ code: String(code || '').trim() });
+  return wpFetch(`${siteUrl}/wp-json/${WP_NS}/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Morpheus', Accept: 'application/json' },
+    body: raw,
+  });
+}
+
+/**
+ * Does the secret we hold actually match the one set on the site?
+ *
+ * /status is unauthenticated, so it can only say *a* secret is set — not that
+ * it is ours. The cheapest signed call that exists on every plugin version is
+ * a deploy request with a deliberately invalid commit: the signature is checked
+ * before the commit is, so a verified signature comes back 400 "commit must be
+ * a git SHA" and a wrong one comes back 401. Nothing is deployed (the commit
+ * never reaches the deployer), and the operator learns the truth at connect
+ * time instead of on their first real action.
+ */
+export async function wpVerifySecret(conn) {
+  const res = await wpCall(conn, 'deploy', { commit: '0', dry_run: true });
+  if (res.status === 0) return { ok: false, reason: 'unreachable', error: res.error };
+  if (res.status === 401) return { ok: false, reason: 'mismatch' };
+  // 400 is the expected answer: the signature passed, the commit was rejected.
+  if (res.status === 400 && res.data?.error === 'bad_request') return { ok: true };
+  // Anything else (200 from a plugin that skipped the commit check, 403 from a
+  // site-level block) is not a signature failure, so it is not treated as one.
+  return { ok: true, note: `unexpected ${res.status}` };
 }
 
 // Store-module convenience: wpCall(conn, 'store', { action, data }).

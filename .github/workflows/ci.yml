@@ -108,6 +108,14 @@ jobs:
       - name: SEO generation rules + plugin contract
         run: node scripts/verify-seo.mjs
 
+      # The WordPress pairing flow: the code is a credential that mints the
+      # shared secret, so the security rules (constant-time compare, expiry,
+      # single use, failure and rate limits, no look-alike characters) and the
+      # JS/PHP wire contract are asserted rather than assumed — a rename on
+      # either side is a silent 403 at runtime.
+      - name: WordPress pairing rules + plugin contract
+        run: node scripts/verify-pairing.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,

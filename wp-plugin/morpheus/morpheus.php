@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.5.3
+ * Version:           0.5.4
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -42,16 +42,20 @@
  *            bulk_add_links proposes internal links and wraps a phrase that
  *            already exists in an item's text, dry-run first.
  *
+ *            One-time pairing codes (Settings → Morpheus) replace inventing and
+ *            retyping a shared secret in 0.5.4.
+ *
  *            Version history: module added in 0.5, read_content in 0.5.1,
  *            templates + internal links + the shared page-cache purge in 0.5.2,
- *            one-click updates (with a verified package hash) in 0.5.3.
+ *            one-click updates (with a verified package hash) in 0.5.3,
+ *            pairing codes in 0.5.4.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.5.3' );
+define( 'MORPHEUS_VERSION', '0.5.4' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -63,6 +67,7 @@ require_once MORPHEUS_DIR . 'includes/helpers.php';
 require_once MORPHEUS_DIR . 'includes/class-settings.php';
 require_once MORPHEUS_DIR . 'includes/class-rest.php';
 require_once MORPHEUS_DIR . 'includes/class-updates.php';
+require_once MORPHEUS_DIR . 'includes/class-pairing.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-github.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-deploy.php';
 require_once MORPHEUS_DIR . 'includes/store/class-store.php';
@@ -84,9 +89,11 @@ register_activation_hook( __FILE__, function () {
 
 add_action( 'admin_menu', array( 'Morpheus_Settings', 'register_menu' ) );
 add_action( 'admin_init', array( 'Morpheus_Settings', 'register_settings' ) );
+add_action( 'admin_init', array( 'Morpheus_Settings', 'handle_pair_action' ) );
 add_action( 'rest_api_init', array( 'Morpheus_REST', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_Store', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_SEO', 'register_routes' ) );
+add_action( 'rest_api_init', array( 'Morpheus_Pairing', 'register_routes' ) );
 // Tag emission is registered on init and short-circuits when another SEO
 // plugin is active — see Morpheus_SEO::bootstrap() for the duplicate-tag rule.
 add_action( 'init', array( 'Morpheus_SEO', 'bootstrap' ) );
