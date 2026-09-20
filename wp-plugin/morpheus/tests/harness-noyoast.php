@@ -290,6 +290,89 @@ ok( get_post_meta( $id, '_morpheus_seo_robots', true ) === '', 'noindex cleared 
 
 wp_reset_query();
 
+// ── internal links ─────────────────────────────────────────────────────────
+//
+// This writes to live content, so the refusals matter more than the success:
+// each assertion here is a case that must NOT touch the page.
+
+echo "\n-- SEO internal links --\n";
+
+$link_original = '<p>We repair electric and acoustic guitars in Melbourne, and every setup covers the truss rod and the intonation.</p><p><a href="https://example.com/already">An existing link about setups</a> sits here.</p>';
+$link_target = wp_insert_post( array(
+	'post_title'   => 'Guitar Repairs',
+	'post_content' => $link_original,
+	'post_status'  => 'publish',
+	'post_type'    => 'page',
+) );
+$link_other = wp_insert_post( array( 'post_title' => 'Setup Guide', 'post_content' => 'Body.', 'post_status' => 'publish', 'post_type' => 'page' ) );
+$other_url  = get_permalink( $link_other );
+
+// A dry run reports the exact sentence and writes NOTHING.
+$dry = seo_req( 'bulk_add_links', array(
+	'dry_run' => true,
+	'items'   => array( array( 'id' => $link_target, 'anchor' => 'truss rod', 'url' => $other_url ) ),
+), $SECRET )->get_data();
+ok( ( $dry['would'] ?? 0 ) === 1 && ( $dry['count'] ?? -1 ) === 0, 'links: a dry run reports what it would do and writes nothing' );
+ok( strpos( (string) get_post_field( 'post_content', $link_target ), '<a href="' . $other_url . '">' ) === false, 'links: the dry run left the content alone' );
+ok( strpos( (string) ( $dry['added'][0]['context'] ?? '' ), 'truss rod' ) !== false, 'links: the dry run shows the sentence the link lands in' );
+ok( ( $dry['added'][0]['anchor'] ?? '' ) === 'truss rod', 'links: it reports the matched phrase' );
+
+// Refusals: none of these may modify the page.
+$publish = function ( $r ) { return ( $r['added'] ?? array() ); };
+$refuse = seo_req( 'bulk_add_links', array( 'items' => array(
+	array( 'id' => $link_target, 'anchor' => 'pink elephants juggling', 'url' => $other_url ),
+) ), $SECRET )->get_data();
+ok( count( $refuse['skipped'] ?? array() ) === 1 && strpos( $refuse['skipped'][0]['reason'], 'not in the item text' ) !== false, 'links: a phrase that is not in the text is refused' );
+
+$inlink = seo_req( 'bulk_add_links', array( 'items' => array(
+	array( 'id' => $link_target, 'anchor' => 'existing link about setups', 'url' => $other_url ),
+) ), $SECRET )->get_data();
+ok( count( $inlink['skipped'] ?? array() ) === 1, 'links: a phrase that is already inside a link is refused' );
+
+$self = seo_req( 'bulk_add_links', array( 'items' => array(
+	array( 'id' => $link_target, 'anchor' => 'Melbourne', 'url' => get_permalink( $link_target ) ),
+) ), $SECRET )->get_data();
+ok( strpos( $self['skipped'][0]['reason'], 'this page' ) !== false, 'links: a self link is refused' );
+
+// Apply for real, then check the content, the dupe guard and the undo.
+$applied_links = seo_req( 'bulk_add_links', array( 'items' => array(
+	array( 'id' => $link_target, 'anchor' => 'electric and acoustic guitars', 'url' => $other_url ),
+) ), $SECRET )->get_data();
+ok( ( $applied_links['count'] ?? 0 ) === 1, 'links: the link is added' );
+$new_content = (string) get_post_field( 'post_content', $link_target );
+ok( strpos( $new_content, '<a href="' . $other_url . '">electric and acoustic guitars</a>' ) !== false, 'links: the existing phrase was wrapped, keeping its own casing' );
+// Wrapping a phrase inserts tags INTO the sentence, so the contiguous text is
+// gone by design — what must be unchanged is the READER-VISIBLE text.
+ok( wp_strip_all_tags( $new_content ) === wp_strip_all_tags( $link_original ), 'links: the visible text is unchanged — only a tag was added' );
+ok( strlen( $new_content ) > strlen( $link_original ), 'links: nothing was removed' );
+ok( substr_count( $new_content, '<a ' ) === 2, 'links: the pre-existing link is untouched and exactly one was added' );
+
+$again = seo_req( 'bulk_add_links', array( 'items' => array(
+	array( 'id' => $link_target, 'anchor' => 'truss rod', 'url' => $other_url ),
+) ), $SECRET )->get_data();
+ok( count( $again['skipped'] ?? array() ) === 1 && strpos( $again['skipped'][0]['reason'], 'already links' ) !== false, 'links: the same target is not linked twice' );
+
+// The undo the UI promises must actually exist.
+$revisions = wp_get_post_revisions( $link_target );
+ok( count( $revisions ) >= 1, 'links: WordPress kept a revision, so the edit can be undone' );
+ok( ( $applied_links['added'][0]['revision'] ?? 0 ) >= 1, 'links: the response reports the revision count' );
+
+// Markup, not text, must never be wrapped: a phrase in an attribute is refused.
+$attr = wp_insert_post( array(
+	'post_title'   => 'Attribute case',
+	'post_content' => '<p><img src="https://example.com/photo.jpg" alt="truss rod adjustment" />Text about setups here.</p>',
+	'post_status'  => 'publish',
+	'post_type'    => 'page',
+) );
+$attr_res = seo_req( 'bulk_add_links', array( 'items' => array(
+	array( 'id' => $attr, 'anchor' => 'truss rod adjustment', 'url' => $other_url ),
+) ), $SECRET )->get_data();
+ok( count( $attr_res['skipped'] ?? array() ) === 1, 'links: a phrase inside an HTML attribute is refused (markup is never rewritten)' );
+
+wp_delete_post( $link_target, true );
+wp_delete_post( $link_other, true );
+wp_delete_post( $attr, true );
+
 echo "\n== no-Yoast boot: robots.txt ==\n";
 // WordPress core has filtered robots_txt since 5.5 and appends a Sitemap line
 // for its own sitemap — so an un-isolated call here would pass on CORE's
@@ -335,11 +418,24 @@ ok( ( $store_ctx['seo_available'] ?? null ) === true, 'store context: seo_availa
 $same = seo_req( 'get_seo', array( 'id' => $page_id ), $SECRET )->get_data();
 ok( ( $same['item']['seo_title'] ?? '' ) === 'Store SEO Title', 'the SEO module reads what the Store module wrote' );
 
-wp_delete_post( $page_id, true );
 wp_delete_post( $id, true );
 wp_delete_post( $bare_id, true );
 wp_delete_post( $post_id_t, true );
 delete_option( 'morpheus_seo_defaults' );
+// A write must clear the page cache: a cached page embeds the very title,
+// description and links the module just changed, so without this the operator
+// sees "Saved" and is still served the old HTML.
+$log_before = @file_get_contents( MORPHEUS_STATE_DIR . '/deploy.log' );
+@file_put_contents( MORPHEUS_STATE_DIR . '/deploy.log', '' );
+seo_req( 'set_seo', array( 'id' => $page_id, 'seo_title' => 'Cache purge probe' ), $SECRET );
+$log_after = (string) @file_get_contents( MORPHEUS_STATE_DIR . '/deploy.log' );
+ok( strpos( $log_after, 'cache_purge' ) !== false, 'writes clear the page cache so the change is actually served' );
+seo_req( 'get_seo', array( 'id' => $page_id ), $SECRET );
+$probe_log = (string) @file_get_contents( MORPHEUS_STATE_DIR . '/deploy.log' );
+ok( substr_count( $probe_log, 'cache_purge' ) === 1, 'a READ does not purge the cache' );
+if ( $log_before !== false ) { @file_put_contents( MORPHEUS_STATE_DIR . '/deploy.log', $log_before ); }
+wp_delete_post( $page_id, true );
+
 delete_option( 'morpheus_settings' );
 
 echo "\n";

@@ -14,9 +14,9 @@ import { SEO_INPUT_KEYS } from '../lib/seoPrompts.js';
 
 const ALLOWED = new Set([
   'context', 'list_content', 'read_content', 'get_seo', 'set_seo', 'bulk_set_seo', 'audit',
-  'get_defaults', 'set_defaults', 'bulk_apply_defaults',
+  'get_defaults', 'set_defaults', 'bulk_apply_defaults', 'bulk_add_links',
 ]);
-const WRITE_ACTIONS = new Set(['set_seo', 'bulk_set_seo', 'set_defaults', 'bulk_apply_defaults']);
+const WRITE_ACTIONS = new Set(['set_seo', 'bulk_set_seo', 'set_defaults', 'bulk_apply_defaults', 'bulk_add_links']);
 
 // A bulk write is one signed call the plugin loops over. 100 is well above any
 // real generation batch (lib/seoPrompts.js caps a batch at 25) but low enough

@@ -101,23 +101,11 @@ class Morpheus_Store {
 	// ── helpers ────────────────────────────────────────────────────────────
 
 	/** Clear WooCommerce product transients + any page cache, so a new/
-	 *  changed product appears on the shop and category archives right away. */
+	 *  changed product appears on the shop and category archives right away.
+	 *  The implementation is shared with the SEO module (helpers.php) — a
+	 *  cached page embeds the title, description and links it writes too. */
 	private static function purge_caches() {
-		if ( function_exists( 'wc_delete_product_transients' ) ) {
-			wc_delete_product_transients();
-		}
-		if ( class_exists( 'WC_Cache_Helper' ) && method_exists( 'WC_Cache_Helper', 'get_transient_version' ) ) {
-			WC_Cache_Helper::get_transient_version( 'product', true );
-		}
-		// Page-cache plugins — call whatever's present. Each is a no-op if absent.
-		if ( function_exists( 'rocket_clean_domain' ) )        { rocket_clean_domain(); }        // WP Rocket
-		if ( function_exists( 'w3tc_flush_all' ) )             { w3tc_flush_all(); }             // W3 Total Cache
-		if ( function_exists( 'wp_cache_clear_cache' ) )       { wp_cache_clear_cache(); }       // WP Super Cache
-		if ( function_exists( 'sg_cachepress_purge_cache' ) )  { sg_cachepress_purge_cache(); }  // SiteGround
-		if ( has_action( 'litespeed_purge_all' ) )             { do_action( 'litespeed_purge_all' ); } // LiteSpeed
-		if ( function_exists( 'wpo_cache_flush' ) )            { wpo_cache_flush(); }            // WP-Optimize
-		wp_cache_flush(); // object cache
-		morpheus_log( 'cache_purge', array() );
+		morpheus_purge_caches();
 	}
 
 

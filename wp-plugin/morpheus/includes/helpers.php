@@ -127,3 +127,30 @@ function morpheus_log( $event, array $data = array() ) {
 		FILE_APPEND | LOCK_EX
 	);
 }
+
+/**
+ * Clear every page/object cache we can find.
+ *
+ * A REST-context write does not invalidate a cached page by itself, and a
+ * cached page contains the title, the meta description and the links — so the
+ * operator would change something, see "Saved", and still be served the old
+ * HTML. The store module needed this first; the SEO module needs it for exactly
+ * the same reason. Every call is guarded by function_exists/has_action, so this
+ * is a no-op on a site with no caching plugin.
+ */
+function morpheus_purge_caches() {
+	if ( function_exists( 'wc_delete_product_transients' ) ) {
+		wc_delete_product_transients();
+	}
+	if ( class_exists( 'WC_Cache_Helper' ) && method_exists( 'WC_Cache_Helper', 'get_transient_version' ) ) {
+		WC_Cache_Helper::get_transient_version( 'product', true );
+	}
+	if ( function_exists( 'rocket_clean_domain' ) )        { rocket_clean_domain(); }        // WP Rocket
+	if ( function_exists( 'w3tc_flush_all' ) )             { w3tc_flush_all(); }             // W3 Total Cache
+	if ( function_exists( 'wp_cache_clear_cache' ) )       { wp_cache_clear_cache(); }       // WP Super Cache
+	if ( function_exists( 'sg_cachepress_purge_cache' ) )  { sg_cachepress_purge_cache(); }  // SiteGround
+	if ( has_action( 'litespeed_purge_all' ) )             { do_action( 'litespeed_purge_all' ); } // LiteSpeed
+	if ( function_exists( 'wpo_cache_flush' ) )            { wpo_cache_flush(); }            // WP-Optimize
+	wp_cache_flush(); // object cache
+	morpheus_log( 'cache_purge', array() );
+}

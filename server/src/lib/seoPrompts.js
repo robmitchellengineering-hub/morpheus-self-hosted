@@ -115,6 +115,15 @@ export function suggestionWarnings(s) {
   return w;
 }
 
+
+/**
+ * Drop the entries that mean "this line does not apply" (null/undefined) while
+ * KEEPING the empty strings, which are deliberate blank lines between sections.
+ * `filter(Boolean)` silently deleted them, so every prompt ran its sections
+ * together with no visual break for the model to read.
+ */
+const lines = (parts) => parts.filter((p) => p != null);
+
 // ── SEO metadata for existing content ───────────────────────────────────────
 
 function siteLines(site = {}) {
@@ -125,7 +134,7 @@ function siteLines(site = {}) {
       : site.active_plugin
         ? `These fields are stored in ${site.active_plugin}'s own fields, which is what produces the tags on this site.`
         : null,
-  ].filter(Boolean);
+  ].filter(Boolean); // no blank lines intended here — every entry is a real line
 }
 
 function itemLines(item, i) {
@@ -153,7 +162,7 @@ function itemLines(item, i) {
  * and match the site's own voice rather than inventing a new one.
  */
 export function buildSeoPrompt({ business, brandVoice, site, items = [] } = {}) {
-  const header = [
+  const header = lines([
     'You write SEO metadata for pages that are ALREADY PUBLISHED on a real website. You are given the page text; your job is the title and description that appear in search results.',
     '',
     `BUSINESS: ${oneLine(business, 600) || 'a small business'}`,
@@ -170,7 +179,7 @@ export function buildSeoPrompt({ business, brandVoice, site, items = [] } = {}) 
     `7. If the page text is thin or you were given only a title, keep every claim general enough to be true.`,
     '',
     'CONTENT TO WRITE FOR:',
-  ].filter(Boolean);
+  ]);
 
   const body = items.map(itemLines).join('\n\n');
 
@@ -266,7 +275,7 @@ export function buildBlogPrompt({ business, brandVoice, site, topic, keywords, t
     .map((e) => `- ${oneLine(e.title, 90)} (${e.type || 'page'}) ${e.url}`)
     .join('\n');
 
-  return `${[
+  return `${lines([
     'You write a blog post for a real business website. It will be reviewed by the owner before it is published, so write the piece, not a proposal for the piece.',
     '',
     `BUSINESS: ${oneLine(business, 600) || 'a small business'}`,
@@ -284,7 +293,7 @@ export function buildBlogPrompt({ business, brandVoice, site, topic, keywords, t
     links ? '5. Where it genuinely helps the reader, link to the site\'s own existing pages using the exact URLs listed below. Never invent a URL. At most 3 links, and only where a reader would want them.' : '5. Do not include links — no internal URLs were provided, and inventing one would be a broken link on a live site.',
     '6. Ordinary punctuation and Australian English. No emoji.',
     '',
-  ].filter(Boolean).join('\n')}${links ? `EXISTING PAGES YOU MAY LINK TO:\n${links}\n\n` : ''}Return JSON:
+  ]).join('\n')}${links ? `EXISTING PAGES YOU MAY LINK TO:\n${links}\n\n` : ''}Return JSON:
 {
   "title": "the post title, under 70 characters",
   "excerpt": "one sentence for previews, under 200 characters",
@@ -337,4 +346,110 @@ export function normalizeBlogDraft(raw) {
     },
     warnings,
   };
+}
+
+// ── internal links ─────────────────────────────────────────────────────────
+
+// An anchor has to be cast-iron plain: it is matched against the item's real
+// text and then inserted into live HTML, so quotes, brackets, ampersands or
+// entities would either miss or mangle the sentence. Plain words only.
+const ANCHOR_OK = /^[\p{L}\p{N}][\p{L}\p{N} '\-]{1,60}$/u;
+export const MAX_LINKS = 5;
+
+export function buildLinkPrompt({ business, title, url, content, candidates = [] } = {}) {
+  const list = candidates
+    .slice(0, 40)
+    .map((c) => `- ${oneLine(c.title, 90)} (${c.type || 'page'}) ${c.url}`)
+    .join('\n');
+  return `${lines([
+    'You suggest INTERNAL LINKS for one page on a real website. You are given that page\'s own text and the other pages on the site. You do not write anything new — you point out where the existing text should link to another page.',
+    '',
+    `PAGE: ${oneLine(title, 200)}`,
+    url ? `PAGE URL: ${url}` : null,
+    business ? `BUSINESS: ${oneLine(business, 400)}` : null,
+    '',
+    'RULES — a suggestion that breaks any of these is discarded:',
+    '1. The anchor must be a phrase that ALREADY APPEARS, character for character, in the page text below. Copy it exactly: same words, same order, same spelling. Do not invent a phrase, do not reword, and do not use a phrase that only appears in the page title.',
+    '2. The anchor must be 2-6 words of ordinary prose — letters, numbers, spaces, apostrophes and hyphens only. No punctuation, no HTML, no "%", no quotes.',
+    `3. Pick at most ${MAX_LINKS} links, and only where a reader would genuinely want to follow one. Fewer good ones beat five thin ones.`,
+    '4. Each link must point at a DIFFERENT page from the list. Never link to this page itself.',
+    '5. Use the URL exactly as given in the list. Never invent or shorten a URL.',
+    '',
+    'THE PAGE\'S OWN TEXT:',
+    blockText(content, MAX_GROUNDING_CHARS),
+    '',
+    'OTHER PAGES ON THE SITE THAT COULD BE LINKED TO:',
+    list || '(none — return an empty list)',
+  ]).join('\n')}
+
+Return JSON: { "links": [ { "anchor": "exact phrase from the page text", "url": "one of the URLs above", "why": "one short sentence" } ] }`;
+}
+
+export const LINK_SCHEMA = {
+  type: 'object',
+  properties: {
+    links: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          anchor: { type: 'string', description: 'A phrase copied exactly from the page text.' },
+          url: { type: 'string' },
+          why: { type: 'string' },
+        },
+        required: ['anchor', 'url', 'why'],
+      },
+    },
+  },
+  required: ['links'],
+};
+
+/**
+ * Keep only the links that could actually be applied.
+ *
+ * Every one of these checks exists because the alternative is a live site
+ * edit: an anchor the model invented would either do nothing (best case) or
+ * wrap the wrong words (worst case), and a URL it invented is a 404 in a
+ * customer's face. `dropped` carries the reason so the panel can be honest
+ * about what was thrown away rather than silently showing fewer suggestions.
+ */
+export function normalizeLinkSuggestions(raw, { content = '', pageUrl = '', candidates = [] } = {}) {
+  const allowed = new Map();
+  for (const c of candidates) {
+    if (c && typeof c.url === 'string' && c.url) allowed.set(c.url.replace(/\/+$/, ''), c);
+  }
+  const text = String(content || '');
+  const lower = text.toLowerCase();
+  const self = String(pageUrl || '').replace(/\/+$/, '');
+
+  const list = Array.isArray(raw?.links) ? raw.links : Array.isArray(raw) ? raw : [];
+  const out = [];
+  const dropped = [];
+  const usedUrls = new Set();
+  const usedAnchors = new Set();
+
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const anchor = String(entry.anchor ?? '').replace(/\s+/g, ' ').trim();
+    const url = String(entry.url ?? '').trim().replace(/\/+$/, '');
+    const why = oneLine(entry.why, 200);
+
+    const key = anchor.toLowerCase();
+    if (!anchor) { dropped.push({ anchor, url, reason: 'no anchor' }); continue; }
+    if (!ANCHOR_OK.test(anchor)) { dropped.push({ anchor, url, reason: 'anchor has punctuation or markup in it' }); continue; }
+    if (!lower.includes(key)) { dropped.push({ anchor, url, reason: 'that phrase is not in the page text' }); continue; }
+    if (usedAnchors.has(key)) { dropped.push({ anchor, url, reason: 'the same phrase was suggested twice' }); continue; }
+    // The self check comes first so the reason names the real problem — a page
+    // linking to itself is not "not one of this site's pages", and a clear
+    // reason is the whole point of reporting the drops.
+    if (url === self) { dropped.push({ anchor, url, reason: 'links to the page itself' }); continue; }
+    if (!allowed.has(url)) { dropped.push({ anchor, url, reason: 'not one of this site\'s pages' }); continue; }
+    if (usedUrls.has(url)) { dropped.push({ anchor, url, reason: 'two links to the same page' }); continue; }
+
+    usedAnchors.add(key);
+    usedUrls.add(url);
+    out.push({ anchor, url, why, target: oneLine(allowed.get(url).title, 120), type: allowed.get(url).type || 'page' });
+    if (out.length >= MAX_LINKS) break;
+  }
+  return { links: out, dropped };
 }
