@@ -77,9 +77,13 @@ const AuthenticatedApp = () => {
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
     } else if (authError.type === 'auth_required') {
-      // Redirect to login automatically
+      // Redirect to login automatically — but ONLY from somewhere else. Doing
+      // this while already on a sign-in page navigates /login to /login
+      // forever (see src/lib/authRedirect.js), which is exactly what an expired
+      // token used to do: an app that never opens and a form nobody can reach.
+      // `navigateToLogin()` now returns without navigating in that case, so
+      // falling through renders the login form.
       navigateToLogin();
-      return null;
     }
   }
 

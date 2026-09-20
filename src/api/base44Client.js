@@ -15,6 +15,10 @@
 // runtime choice, not a build-time one. So: a `?api_base=` query param sets
 // and persists it (localStorage), which beats rebuilding for every test
 // backend; visiting again without the param reuses whatever was last set.
+
+// Where a rejected session may be sent — pure, tested (src/lib/authRedirect.test.js).
+import { loginRedirectTarget, cleanReturnTo } from '@/lib/authRedirect';
+
 const API_BASE_KEY = 'morpheus_api_base';
 
 function resolveApiBase() {
@@ -32,6 +36,7 @@ function resolveApiBase() {
 }
 
 const API_BASE = resolveApiBase();
+
 const TOKEN_KEY = 'morpheus_token';
 
 // In-memory bearer override — set by the embeddable-widget surface (/embed)
@@ -332,7 +337,14 @@ const auth = {
     if (redirectUrl) window.location.href = redirectUrl;
   },
   redirectToLogin: (returnTo) => {
-    window.location.href = '/login' + (returnTo && returnTo !== '/' ? `?returnTo=${encodeURIComponent(returnTo)}` : '');
+    // The single place a login redirect is built, so the loop guard lives here
+    // too: a returnTo pointing at a sign-in page (or another origin) is
+    // dropped, and a redirect FROM a sign-in page is not performed at all.
+    const target = loginRedirectTarget(window.location.pathname, window.location.search);
+    if (!target) return;
+    const base = target.split('?')[0];
+    const safe = cleanReturnTo(returnTo);
+    window.location.href = base + (safe ? `?returnTo=${encodeURIComponent(safe)}` : '');
   },
   loginWithProvider: (provider, returnTo) => {
     if (provider !== 'google') throw new Error(`Unsupported provider: ${provider}`);
