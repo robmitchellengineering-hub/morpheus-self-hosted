@@ -60,4 +60,14 @@ $PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
   -- /tests/harness-updates.php
 
 echo
+echo "== harness: site maintenance — snapshot, update, verify, restore (PHP ${PHP_VERSION}) =="
+# Its own boot because it manipulates a fixture plugin and a backup directory;
+# sharing a WordPress with the assertions above would leave state behind.
+$PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
+  --blueprint "$PLUGIN_DIR/tests/blueprint.json" \
+  --auto-mount "$PLUGIN_DIR" \
+  --mount "$PLUGIN_DIR/tests:/tests" \
+  -- /tests/harness-maintenance.php
+
+echo
 echo "All plugin harnesses passed."
