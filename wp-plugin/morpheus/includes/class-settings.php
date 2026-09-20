@@ -32,6 +32,30 @@ class Morpheus_Settings {
 		return isset( $opt[ $key ] ) ? $opt[ $key ] : null;
 	}
 
+	/**
+	 * The Connect panel's buttons: issue a fresh code, or disconnect.
+	 *
+	 * Both are nonce-checked and capability-checked — a code is a credential,
+	 * so only an administrator may mint one.
+	 */
+	public static function handle_pair_action() {
+		if ( ! isset( $_GET['morpheus_pair_action'] ) ) {
+			return;
+		}
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed.' );
+		}
+		$action = sanitize_key( wp_unslash( $_GET['morpheus_pair_action'] ) );
+		check_admin_referer( 'morpheus_pair_' . $action );
+		if ( 'rotate' === $action ) {
+			Morpheus_Pairing::rotate();
+		} elseif ( 'disconnect' === $action ) {
+			Morpheus_Pairing::disconnect();
+		}
+		wp_safe_redirect( admin_url( 'options-general.php?page=morpheus&morpheus_done=' . $action ) );
+		exit;
+	}
+
 	public static function register_menu() {
 		add_options_page(
 			'Morpheus',
@@ -113,9 +137,41 @@ class Morpheus_Settings {
 		$o        = self::get();
 		$endpoint = esc_url( rest_url( MORPHEUS_REST_NS . '/deploy' ) );
 		$last     = get_option( 'morpheus_deploy_last', array() );
+		$paired   = Morpheus_Pairing::is_paired();
+		$code     = $paired ? '' : Morpheus_Pairing::current_code();
+		$left     = $paired ? 0 : Morpheus_Pairing::seconds_left();
+		$done     = isset( $_GET['morpheus_done'] ) ? sanitize_key( wp_unslash( $_GET['morpheus_done'] ) ) : '';
 		?>
 		<div class="wrap">
 			<h1>Morpheus <span style="font-size:13px;color:#888;">v<?php echo esc_html( MORPHEUS_VERSION ); ?></span></h1>
+
+			<?php if ( 'rotate' === $done ) : ?>
+				<div class="notice notice-success is-dismissible"><p>New code issued. It is valid for 20 minutes and can be used once.</p></div>
+			<?php elseif ( 'disconnect' === $done ) : ?>
+				<div class="notice notice-warning is-dismissible"><p>Disconnected. Morpheus can no longer reach this site until you connect it again.</p></div>
+			<?php endif; ?>
+
+			<h2>Connect to Morpheus</h2>
+			<?php if ( $paired ) : ?>
+				<p style="color:#1f7a4d;"><strong>Connected.</strong> This site answers Morpheus requests signed with the shared secret set when it was paired.</p>
+				<p>
+					<a class="button" href="<?php echo esc_url( wp_nonce_url( admin_url( 'options-general.php?page=morpheus&morpheus_pair_action=rotate' ), 'morpheus_pair_rotate' ) ); ?>">Issue a new code</a>
+					<a class="button" href="<?php echo esc_url( wp_nonce_url( admin_url( 'options-general.php?page=morpheus&morpheus_pair_action=disconnect' ), 'morpheus_pair_disconnect' ) ); ?>" onclick="return confirm('Disconnect this site from Morpheus? Deploys and the Store/SEO panels stop working until you connect again.');">Disconnect</a>
+				</p>
+				<p class="description">Issuing a new code does not break the existing connection — the secret only changes when a code is actually used. Disconnecting clears the secret immediately.</p>
+			<?php else : ?>
+				<p>Type this code into Morpheus to connect this site. It is valid for <strong>20 minutes</strong>, can be used <strong>once</strong>, and five wrong attempts cancel it.</p>
+				<p style="margin:18px 0;">
+					<span id="morpheus-pair-code" style="font-family:Menlo,Consolas,monospace;font-size:30px;letter-spacing:4px;background:#f6f7f4;border:1px solid #dde3dd;border-radius:6px;padding:12px 18px;display:inline-block;"><?php echo esc_html( $code ); ?></span>
+					<button type="button" class="button" style="margin-left:10px;vertical-align:middle;"
+						onclick="navigator.clipboard.writeText('<?php echo esc_js( str_replace( '-', '', $code ) ); ?>').then(function(){this.textContent='Copied';}.bind(this));">Copy</button>
+				</p>
+				<p class="description">
+					Expires in about <?php echo (int) ceil( $left / 60 ); ?> minute<?php echo $left > 60 ? 's' : ''; ?>.
+					<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'options-general.php?page=morpheus&morpheus_pair_action=rotate' ), 'morpheus_pair_rotate' ) ); ?>">Issue a new one</a>
+					if it runs out — the code above is the only thing Morpheus needs from this screen.
+				</p>
+			<?php endif; ?>
 			<p>Deploys code to this site from a connected GitHub repo — no FTP. Morpheus opens a pull request, and once its checks pass and it merges, it calls this endpoint:</p>
 			<p><code><?php echo $endpoint; ?></code></p>
 			<p style="color:<?php echo $o['armed'] ? '#1f7a4d' : '#b26a00'; ?>;">
@@ -149,10 +205,13 @@ class Morpheus_Settings {
 						</td>
 					</tr>
 					<tr>
-						<th><label for="md-secret">Deploy secret</label></th>
+						<th><label for="md-secret">Shared secret</label></th>
 						<td>
 							<input name="<?php echo self::OPTION; ?>[webhook_secret]" id="md-secret" type="password" class="regular-text" value="<?php echo esc_attr( self::mask( $o['webhook_secret'] ) ); ?>" autocomplete="off">
-							<p class="description">Shared with Morpheus. Every deploy request is HMAC-SHA256 signed with this.</p>
+							<p class="description">
+								Normally set for you by the pairing code above — you only need this field if you are matching a secret that was entered by hand on the Morpheus side.
+								Every request is HMAC-SHA256 signed with it.
+							</p>
 						</td>
 					</tr>
 					<tr>

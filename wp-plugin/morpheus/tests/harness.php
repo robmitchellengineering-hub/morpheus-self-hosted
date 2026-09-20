@@ -574,6 +574,143 @@ ok( $rank['title'] === 'rank_math_title', 'seo: Rank Math keys are mapped, so it
 wp_delete_post( $seo_target, true );
 wp_delete_post( $bare, true );
 
+// ── pairing ────────────────────────────────────────────────────────────────
+//
+// The code is a credential that unlocks the shared secret, so the interesting
+// assertions are the refusals: expired, reused, guessed, and ground down.
+
+echo "\n-- pairing --\n";
+
+$routes = rest_get_server()->get_routes();
+ok( isset( $routes['/morpheus/v1/pair'] ), 'pairing: route /morpheus/v1/pair registered' );
+
+function pair_req( $code ) {
+	$raw = json_encode( array( 'code' => $code ) );
+	$r   = new WP_REST_Request( 'POST', '/morpheus/v1/pair' );
+	$r->set_header( 'content-type', 'application/json' );
+	$r->set_body( $raw );
+	return rest_do_request( $r );
+}
+
+delete_option( 'morpheus_settings' );
+delete_option( Morpheus_Pairing::OPTION );
+delete_option( 'morpheus_pairing_rate' );
+
+ok( Morpheus_Pairing::is_paired() === false, 'pairing: a fresh site is not paired' );
+
+$code = Morpheus_Pairing::current_code();
+ok( (bool) preg_match( '/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/', $code ), 'pairing: the code avoids look-alike characters and reads in two groups' );
+ok( Morpheus_Pairing::current_code() === $code, 'pairing: the same code is shown until it is used or expires' );
+
+// A code with no live state, and a wrong code against a live one.
+delete_option( Morpheus_Pairing::OPTION );
+$no_code = pair_req( 'ABCD-2345' );
+ok( $no_code->get_status() === 403, 'pairing: with no live code, a guess is refused' );
+
+Morpheus_Pairing::rotate();
+$wrong = pair_req( 'ZZZZ-9999' );
+ok( $wrong->get_status() === 403, 'pairing: a wrong code is refused' );
+ok( strpos( (string) ( $wrong->get_data()['message'] ?? '' ), 'not right' ) !== false, 'pairing: the refusal says what to do about it' );
+ok( Morpheus_Pairing::is_paired() === false, 'pairing: a wrong code never sets a secret' );
+
+// Five wrong attempts BURN the code — an attacker cannot keep grinding.
+$live = Morpheus_Pairing::current_code();
+for ( $i = 0; $i < 4; $i++ ) {
+	delete_transient( 'morpheus_pair_rl_' . substr( md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) ), 0, 16 ) );
+	pair_req( 'QQQQ-7777' );
+}
+ok( Morpheus_Pairing::code_is_live() === false, 'pairing: five wrong attempts cancel the code' );
+$after_burn = pair_req( $live );
+ok( $after_burn->get_status() === 403, 'pairing: the burnt code no longer works even when guessed exactly' );
+
+// An expired code is refused even if it is correct.
+Morpheus_Pairing::rotate();
+$expired_state = Morpheus_Pairing::current_code();
+$s = get_option( Morpheus_Pairing::OPTION );
+$s['created'] = time() - ( Morpheus_Pairing::TTL + 60 );
+update_option( Morpheus_Pairing::OPTION, $s );
+ok( Morpheus_Pairing::code_is_live() === false, 'pairing: an old code is not live' );
+delete_transient( 'morpheus_pair_rl_' . substr( md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) ), 0, 16 ) );
+ok( pair_req( $expired_state )->get_status() === 403, 'pairing: an expired code is refused' );
+
+// The real thing: a live code trades for a secret, once.
+Morpheus_Pairing::rotate();
+$good = Morpheus_Pairing::current_code();
+delete_transient( 'morpheus_pair_rl_' . substr( md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) ), 0, 16 ) );
+$paired = pair_req( $good );
+$pdata  = $paired->get_data();
+ok( $paired->get_status() === 200 && ! empty( $pdata['ok'] ), 'pairing: a live code pairs' );
+ok( strlen( (string) ( $pdata['secret'] ?? '' ) ) === 48, 'pairing: the site returns a 48-character secret' );
+ok( ( $pdata['site']['url'] ?? '' ) !== '', 'pairing: the response names the site it paired' );
+ok( Morpheus_Settings::get( 'webhook_secret' ) === ( $pdata['secret'] ?? 'x' ), 'pairing: the returned secret is the one now stored on the site' );
+ok( Morpheus_Pairing::is_paired() === true, 'pairing: the site reports itself paired' );
+
+// The secret actually signs requests now — asserted through the real endpoint.
+$status_after = rest_do_request( new WP_REST_Request( 'GET', '/morpheus/v1/status' ) )->get_data();
+ok( ( $status_after['pairing']['paired'] ?? false ) === true, 'pairing: /status reports paired' );
+ok( ( $status_after['pairing']['available'] ?? false ) === true, 'pairing: /status reports pairing available' );
+$signed = store_req( 'context', array(), $pdata['secret'] );
+ok( $signed->get_status() !== 401, 'pairing: a request signed with the paired secret is accepted (not 401)' );
+
+// Single use: the same code cannot mint a second secret.
+delete_transient( 'morpheus_pair_rl_' . substr( md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) ), 0, 16 ) );
+$reuse = pair_req( $good );
+ok( $reuse->get_status() === 403, 'pairing: the code cannot be used twice' );
+ok( Morpheus_Settings::get( 'webhook_secret' ) === ( $pdata['secret'] ?? 'x' ), 'pairing: a refused reuse does not change the secret' );
+
+// Reconnecting rotates the secret rather than leaving the old one valid.
+Morpheus_Pairing::rotate();
+$second = pair_req( Morpheus_Pairing::current_code() )->get_data();
+ok( ( $second['secret'] ?? '' ) !== ( $pdata['secret'] ?? '' ), 'pairing: pairing again issues a NEW secret' );
+ok( Morpheus_Settings::get( 'webhook_secret' ) === ( $second['secret'] ?? 'x' ), 'pairing: the new secret is the stored one' );
+
+// The wp-admin panel is the operator's half of this flow, so it is asserted
+// too — including the thing that must NEVER appear on it: the shared secret.
+//
+// wp-admin's own template functions are not loaded in a CLI context, so they
+// are pulled in the way an admin page would have them; without this the render
+// call dies on submit_button() and proves nothing.
+require_once ABSPATH . 'wp-admin/includes/template.php';
+wp_set_current_user( 1 );
+delete_option( Morpheus_Settings::OPTION );
+Morpheus_Pairing::rotate();
+$shown_code = Morpheus_Pairing::current_code();
+ob_start();
+Morpheus_Settings::render();
+$panel_unpaired = ob_get_clean();
+// Match the ELEMENT that shows the code, not "any four-and-four pattern in the
+// page" — the loose version of this assertion passed on the prose "HMAC-SHA256"
+// and so could never have caught the code going missing.
+preg_match( '/id="morpheus-pair-code"[^>]*>\s*([A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})\s*</', $panel_unpaired, $code_hit );
+ok( ( $code_hit[1] ?? '' ) === $shown_code, 'pairing: the settings panel shows the live code in the code element' );
+ok( strpos( $panel_unpaired, '20 minutes' ) !== false, 'pairing: it says how long the code lasts' );
+ok( strpos( $panel_unpaired, 'Connect to Morpheus' ) !== false, 'pairing: the panel is titled for the operator, not for a developer' );
+ok( strpos( $panel_unpaired, 'morpheus_pair_action=rotate' ) !== false, 'pairing: there is a way to issue a new code' );
+ok( strpos( $panel_unpaired, '_wpnonce=' ) !== false, 'pairing: the admin actions are nonce-protected' );
+
+// Pair, then look at the same screen again.
+$panel_secret = '';
+delete_transient( 'morpheus_pair_rl_' . substr( md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) ), 0, 16 ) );
+$panel_pair = pair_req( Morpheus_Pairing::current_code() )->get_data();
+$panel_secret = (string) ( $panel_pair['secret'] ?? '' );
+ob_start();
+Morpheus_Settings::render();
+$panel_paired = ob_get_clean();
+ok( strpos( $panel_paired, 'Connected' ) !== false, 'pairing: a connected site says so' );
+ok( $panel_secret !== '' && strpos( $panel_paired, $panel_secret ) === false, 'pairing: the panel NEVER prints the shared secret' );
+ok( strpos( $panel_paired, 'morpheus-pair-code' ) === false, 'pairing: no code is shown once the site is connected' );
+ok( strpos( $panel_paired, 'morpheus_pair_action=disconnect' ) !== false, 'pairing: there is a way to disconnect' );
+
+// Disconnect clears both the code and the secret.
+Morpheus_Pairing::disconnect();
+ok( Morpheus_Pairing::is_paired() === false, 'pairing: disconnect clears the secret' );
+ok( Morpheus_Settings::get( 'webhook_secret' ) === '', 'pairing: the stored secret is gone after disconnect' );
+
+// Put the harness secret back for the sections that follow.
+delete_transient( 'morpheus_pair_rl_' . substr( md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) ), 0, 16 ) );
+delete_option( Morpheus_Pairing::OPTION );
+update_option( 'morpheus_settings', array_merge( Morpheus_Settings::defaults(), array( 'webhook_secret' => $STORE_SECRET ) ) );
+
 // ── one-click plugin updates ───────────────────────────────────────────────
 //
 // The update channel is what stops every user having to re-upload a zip. The
