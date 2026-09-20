@@ -14,13 +14,13 @@
 // "apply" and quietly did less than its name would be worse than one that
 // refuses.
 import { prisma } from '../db.js';
-import { getWpConnection } from '../lib/wpPlugin.js';
+import { getWpConnection, wpFix } from '../lib/wpPlugin.js';
 import { scanSite } from '../lib/siteScan.js';
 import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
 import { applyAllowedUpdates } from '../lib/siteApply.js';
 import { describePolicy, nextRunAt, allowedKinds, runSummary, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
 
-const ACTIONS = new Set(['scan', 'policy', 'apply']);
+const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix']);
 
 export default async function handler({ user, body, req }) {
   const { projectId, action } = body || {};
@@ -50,6 +50,33 @@ export default async function handler({ user, body, req }) {
       }
     }
     return policyPayload(await getPolicy(projectId));
+  }
+
+  if (action === 'fix') {
+    const finding = String(body?.finding || body?.id || '');
+    if (!finding) throw Object.assign(new Error('finding id required'), { status: 400 });
+
+    const conn = await getWpConnection(projectId, user.id);
+    if (!conn) throw Object.assign(new Error('No WordPress site connected.'), { status: 400, code: 'NOT_CONNECTED' });
+
+    const res = await wpFix(conn, finding);
+    if (res.status === 0) {
+      throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || 'no response'}`), { status: 502, code: 'UNREACHABLE' });
+    }
+    const old = isPluginTooOld(res, null);
+    if (old.tooOld) throw Object.assign(new Error(old.message), { status: 409, code: 'PLUGIN_TOO_OLD' });
+    // 409 is the site declining (a guided finding, or nothing registered) — that
+    // is a real answer, not a failure to report as one.
+    if (res.status !== 200 && res.status !== 409) {
+      throw Object.assign(new Error(res.data?.error || `The site answered HTTP ${res.status} to a fix.`), { status: 502, code: 'FIX_FAILED' });
+    }
+    return {
+      ok: res.data?.ok === true,
+      fix: res.data || null,
+      // The caller re-scans after this; the policy travels so the panel does not
+      // need a second round trip to stay right.
+      policy: policyPayload(await getPolicy(projectId)),
+    };
   }
 
   if (action === 'apply') {

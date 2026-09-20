@@ -199,7 +199,11 @@ check('an invalid policy is refused, not clamped', /INVALID_POLICY/.test(fn), tr
 check('the policy payload does not echo row plumbing', /created_by_id: policy\.created_by_id|id: policy\.id/.test(fn), false);
 check('…and the last run is exposed for the panel', /last_result: lastResult/.test(fn), true);
 // Applying is explicitly confirmed per invocation.
-check('the handler offers an apply action', /ACTIONS = new Set\(\['scan', 'policy', 'apply'\]\)/.test(fn), true);
+// Parsed rather than pinned: this set has grown twice since it was written, and a
+// literal assertion made each addition fail for the wrong reason. What matters is
+// that 'apply' is declared and has a branch.
+check('the handler offers an apply action', /const ACTIONS = new Set\(\[[^\]]*'apply'[^\]]*\]\)/.test(fn), true);
+check('…and the apply branch exists', fn.includes("action === 'apply'"), true);
 // A widget token MAY apply and MAY change the policy — the owner's decision on
 // 2026-09-21, on the grounds that the dock only renders for a logged-in
 // administrator. What keeps that safe is the conditions, not the token holder,
