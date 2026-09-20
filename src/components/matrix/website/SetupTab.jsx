@@ -24,6 +24,12 @@ function isNewer(a, b) {
 }
 const inputCls = 'w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50';
 
+// The version that first registers WordPress's own update channel (0.5.3). A
+// site on anything older cannot hear about an update except through this panel,
+// so the two cases need different instructions — telling someone on 0.4.5 to
+// "just use Update now" would be a dead end.
+const UPDATE_CHANNEL_VERSION = '0.5.3';
+
 function Step({ n, title, children }) {
   return (
     <div className="flex gap-3">
@@ -91,13 +97,30 @@ export default function SetupTab({ store, projectId, onChanged }) {
             <div className="flex items-center gap-1.5 text-yellow-500/90 text-[11px]">
               <ArrowUpCircle size={13} /> Plugin update available — v{store.version} running, v{latestVersion} out
             </div>
-            <p className="text-[10px] text-primary/50 leading-relaxed">
-              The SEO tab (titles, descriptions, keywords, an audit and AI-written metadata) needs this one, and so does the in-chat awareness of the page you are looking at. Download the zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin → pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
-            </p>
-            <a href={PLUGIN_ZIP} download
-              className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 hover:text-yellow-400">
-              <Download size={12} /> morpheus-wordpress-plugin.zip
-            </a>
+            {isNewer(store.version, UPDATE_CHANNEL_VERSION) ? (
+              <>
+                <p className="text-[10px] text-primary/50 leading-relaxed">
+                  Update it from WordPress itself: <span className="text-primary/70">wp-admin → Plugins</span> — the Morpheus row shows
+                  “update now”. One tap, no zip, no upload, and the download is checksum-verified before it installs.
+                </p>
+                <a href={`${store.siteUrl?.replace(/\/+$/, '')}/wp-admin/plugins.php`} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 hover:text-yellow-400">
+                  <ExternalLink size={12} /> Open your Plugins screen
+                </a>
+              </>
+            ) : (
+              <>
+                <p className="text-[10px] text-primary/50 leading-relaxed">
+                  This build ({store.version}) predates the update channel, so it has to be replaced by hand — once. After that,
+                  WordPress updates it for you. Download the zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin →
+                  pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
+                </p>
+                <a href={PLUGIN_ZIP} download
+                  className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 hover:text-yellow-400">
+                  <Download size={12} /> morpheus-wordpress-plugin.zip
+                </a>
+              </>
+            )}
           </div>
         )}
         <p className="text-[11px] text-primary/45 leading-relaxed">

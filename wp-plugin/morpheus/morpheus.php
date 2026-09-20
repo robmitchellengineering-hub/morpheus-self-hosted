@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.5.2
+ * Version:           0.5.3
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -43,14 +43,15 @@
  *            already exists in an item's text, dry-run first.
  *
  *            Version history: module added in 0.5, read_content in 0.5.1,
- *            templates + internal links + the shared page-cache purge in 0.5.2.
+ *            templates + internal links + the shared page-cache purge in 0.5.2,
+ *            one-click updates (with a verified package hash) in 0.5.3.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.5.2' );
+define( 'MORPHEUS_VERSION', '0.5.3' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -61,6 +62,7 @@ define( 'MORPHEUS_STATE_DIR', WP_CONTENT_DIR . '/morpheus-state' );
 require_once MORPHEUS_DIR . 'includes/helpers.php';
 require_once MORPHEUS_DIR . 'includes/class-settings.php';
 require_once MORPHEUS_DIR . 'includes/class-rest.php';
+require_once MORPHEUS_DIR . 'includes/class-updates.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-github.php';
 require_once MORPHEUS_DIR . 'includes/deploy/class-deploy.php';
 require_once MORPHEUS_DIR . 'includes/store/class-store.php';
@@ -88,3 +90,7 @@ add_action( 'rest_api_init', array( 'Morpheus_SEO', 'register_routes' ) );
 // Tag emission is registered on init and short-circuits when another SEO
 // plugin is active — see Morpheus_SEO::bootstrap() for the duplicate-tag rule.
 add_action( 'init', array( 'Morpheus_SEO', 'bootstrap' ) );
+// The update channel: lets WordPress offer this plugin's own updates (checked
+// and hash-verified) instead of the operator re-uploading a zip — see
+// includes/class-updates.php.
+Morpheus_Updates::init();
