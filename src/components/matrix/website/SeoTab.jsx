@@ -4,6 +4,7 @@ import {
   FileText, Plus, Save, X, Sparkles, Eye, Settings2, Link2,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import SearchConsolePanel from './SearchConsolePanel';
 import { serpPreview } from '@/lib/serpPreview';
 import { TEMPLATE_TOKENS, TOKEN_HELP, resolveTemplate, insertToken } from '@/lib/seoTemplate';
 
@@ -615,6 +616,12 @@ export default function SeoTab({ projectId, store }) {
               </div>
             </div>
           )}
+
+          {/* Search Console sits beside keyword research but is the opposite kind of
+              number: keyword research shows what people type with no volume, this
+              shows Google's own figures for your own property. Both say where they
+              came from — see SearchConsolePanel.jsx. */}
+          <SearchConsolePanel onNote={setNote} />
 
           {links && (
             <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
