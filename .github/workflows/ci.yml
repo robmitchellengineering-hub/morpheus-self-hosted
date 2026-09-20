@@ -165,6 +165,16 @@ jobs:
       - name: Engine policy is enforced
         run: node scripts/verify-push-policy.mjs
 
+      # Search Console puts real numbers in front of someone who will act on
+      # them, so the rules are asserted rather than eyeballed: every figure is
+      # Google's for the account's own property and the payload has no field for
+      # an estimate, "low CTR" is judged against the site's OWN median at that
+      # position rather than an industry table, and an aggregate position is
+      # impression-weighted. It also asserts the OAuth return path cannot be an
+      # open redirect. Both imported modules are pure, so this needs no install.
+      - name: Search Console rules
+        run: node scripts/verify-search-console.mjs
+
       # The fact generator. It exits non-zero if its own extraction breaks —
       # e.g. a refactor moves what it parses — so a silently-wrong report can
       # never be the thing you rely on.

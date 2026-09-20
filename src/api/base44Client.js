@@ -303,6 +303,13 @@ const connectors = {
   // Docs) — deliberately separate from connectGoogleDrive above.
   connectDeckGoogle: async () => `${API_BASE}/connections/deck-google/start?token=${encodeURIComponent(getToken() || '')}`,
   disconnectDeckGoogle: async () => apiFetch('/connections/deck-google', { method: 'DELETE' }),
+  // Google Search Console (read-only search performance). Its own connection
+  // rather than a scope on the Drive one — see connections.routes.js. `returnTo`
+  // is where the browser lands after consent, and the server accepts only a
+  // same-origin path (lib/safeRedirect.js).
+  connectSearchConsole: async (returnTo = '/workspace') =>
+    `${API_BASE}/connections/search-console/start?token=${encodeURIComponent(getToken() || '')}&returnTo=${encodeURIComponent(returnTo)}`,
+  disconnectSearchConsole: async () => apiFetch('/connections/search-console', { method: 'DELETE' }),
 };
 
 const auth = {

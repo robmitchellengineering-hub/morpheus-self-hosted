@@ -118,6 +118,22 @@ CREATE TABLE "deck_google_connections" (
 );
 
 -- CreateTable
+CREATE TABLE "search_console_connections" (
+    "id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "gsc_email" TEXT NOT NULL,
+    "access_token" TEXT NOT NULL,
+    "scope" TEXT,
+    "refresh_token" TEXT NOT NULL,
+    "expires_at" TIMESTAMP(3),
+    "property" TEXT,
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_date" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "search_console_connections_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "projects" (
     "id" TEXT NOT NULL,
     "created_by_id" TEXT NOT NULL,
@@ -810,6 +826,7 @@ CREATE UNIQUE INDEX "google_drive_connections_created_by_id_key" ON "google_driv
 
 -- CreateIndex
 CREATE UNIQUE INDEX "deck_google_connections_created_by_id_key" ON "deck_google_connections"("created_by_id");
+CREATE UNIQUE INDEX "search_console_connections_created_by_id_key" ON "search_console_connections"("created_by_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "project_files_project_id_path_key" ON "project_files"("project_id", "path");
@@ -897,6 +914,7 @@ ALTER TABLE "google_drive_connections" ADD CONSTRAINT "google_drive_connections_
 
 -- AddForeignKey
 ALTER TABLE "deck_google_connections" ADD CONSTRAINT "deck_google_connections_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "search_console_connections" ADD CONSTRAINT "search_console_connections_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "projects" ADD CONSTRAINT "projects_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

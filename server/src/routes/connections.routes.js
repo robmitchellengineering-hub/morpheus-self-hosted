@@ -7,6 +7,8 @@ import { prisma } from '../db.js';
 import { requireAuth, blockWidget } from '../auth.js';
 import { encrypt } from '../crypto.js';
 import { brokerUrl } from '../config/hostedDefaults.js';
+import { GSC_SCOPE } from '../lib/searchConsole.js';
+import { safeReturnTo } from '../lib/safeRedirect.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
@@ -341,7 +343,7 @@ router.get('/google-drive/start', requireAuth, blockWidget, (req, res) => {
 router.get('/google-drive/callback', async (req, res) => {
   try {
     const { code, state } = req.query;
-    const { uid } = jwt.verify(state, JWT_SECRET);
+    const { uid, purpose, returnTo } = jwt.verify(state, JWT_SECRET);
 
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -356,7 +358,24 @@ router.get('/google-drive/callback', async (req, res) => {
     });
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) throw new Error(tokenData.error_description || tokenData.error || 'Google token exchange failed');
-    if (!tokenData.refresh_token) throw new Error('Google did not return a refresh token — disconnect any prior Drive connection and try again.');
+    if (!tokenData.refresh_token) {
+      throw new Error(purpose === 'search_console'
+        ? 'Google did not return a refresh token — remove Morpheus\'s existing access at https://myaccount.google.com/permissions, then connect Search Console again.'
+        : 'Google did not return a refresh token — disconnect any prior Drive connection and try again.');
+    }
+
+    // This callback serves more than one Google purpose — see /search-console/start
+    // for why they share a redirect URI. `purpose` comes from the SIGNED state, so
+    // it cannot be set by whoever holds the callback URL.
+    if (purpose === 'search_console') {
+      await persistSearchConsoleConnection(uid, {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        scope: tokenData.scope,
+        expires_in: tokenData.expires_in,
+      });
+      return res.redirect(`${frontendUrl()}${safeReturnTo(returnTo, '/settings')}?searchConsole=connected`);
+    }
 
     await persistGoogleDriveConnection(uid, {
       access_token: tokenData.access_token,
@@ -373,6 +392,89 @@ router.get('/google-drive/callback', async (req, res) => {
 
 router.delete('/google-drive', requireAuth, blockWidget, async (req, res) => {
   await prisma.googleDriveConnection.deleteMany({ where: { created_by_id: req.user.id } });
+  res.json({ ok: true });
+});
+
+// ── Google Search Console (read-only: the account's own search performance) ──
+//
+// Same consent screen and client as the Drive connection above, and deliberately
+// its own row (schema.prisma's SearchConsoleConnection): the scope is unrelated
+// to file storage, it is useful to someone with no Drive connection at all, and
+// folding it in would make every Drive user re-consent for a scope their feature
+// does not use.
+//
+// IT REUSES GOOGLE_DRIVE_REDIRECT_URI ON PURPOSE. Google requires an exact match
+// between the redirect_uri sent here and one registered on the OAuth client, so a
+// third URI would mean a manual trip to the Cloud Console — for the operator, a
+// step with no benefit. Instead the signed `state` carries `purpose`, and the
+// shared callback dispatches on it. If GOOGLE_SEARCH_CONSOLE_REDIRECT_URI is ever
+// set, it is preferred, so a deployment can separate them without a code change.
+function searchConsoleRedirectUri() {
+  return process.env.GOOGLE_SEARCH_CONSOLE_REDIRECT_URI || process.env.GOOGLE_DRIVE_REDIRECT_URI;
+}
+
+// Where the browser lands after consent. The rule itself lives in
+// lib/safeRedirect.js — pure and directly asserted, because an open redirect is a
+// real vulnerability and this value arrives in a query string.
+
+async function persistSearchConsoleConnection(uid, { access_token, refresh_token, scope, expires_in }) {
+  const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${access_token}` },
+  });
+  const profile = await profileRes.json();
+  // `email` is requested alongside the Search Console scope for the same reason
+  // the Drive flow needs it: without it Google's userinfo returns no email, and
+  // gsc_email is a required column — which is how that bug announced itself on
+  // the Drive connection (a silent upsert failure, no row ever created).
+  if (!profile?.email) {
+    throw new Error('Google returned no email for this account — the connection cannot be identified without it.');
+  }
+  const data = {
+    gsc_email: profile.email,
+    access_token: encrypt(access_token),
+    scope: scope || GSC_SCOPE,
+    refresh_token: encrypt(refresh_token),
+    expires_at: expires_in ? new Date(Date.now() + expires_in * 1000) : null,
+  };
+  // `property` is deliberately not touched: reconnecting must not silently
+  // discard a property the operator already chose.
+  await prisma.searchConsoleConnection.upsert({
+    where: { created_by_id: uid },
+    create: { created_by_id: uid, ...data },
+    update: data,
+  });
+  return profile.email;
+}
+
+router.get('/search-console/start', requireAuth, blockWidget, (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    return res.status(501).json({
+      error: 'Search Console requires this deployment\'s own GOOGLE_CLIENT_ID/SECRET (the same ones Google sign-in uses) plus GOOGLE_DRIVE_REDIRECT_URI — not available via the shared broker.',
+    });
+  }
+  const state = jwt.sign(
+    { uid: req.user.id, purpose: 'search_console', returnTo: safeReturnTo(req.query.returnTo) },
+    JWT_SECRET,
+    { expiresIn: '10m' },
+  );
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: searchConsoleRedirectUri(),
+    response_type: 'code',
+    scope: GSC_SCOPE,
+    // Identical reasoning to the Drive flow: access_type=offline is what returns
+    // a refresh token at all, and prompt=consent is what returns one for someone
+    // who has already granted this scope — search performance is read long after
+    // the connect, so an access-only connection would die within the hour.
+    access_type: 'offline',
+    prompt: 'consent',
+    state,
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+router.delete('/search-console', requireAuth, blockWidget, async (req, res) => {
+  await prisma.searchConsoleConnection.deleteMany({ where: { created_by_id: req.user.id } });
   res.json({ ok: true });
 });
 

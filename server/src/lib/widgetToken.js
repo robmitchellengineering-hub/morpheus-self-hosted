@@ -22,7 +22,13 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   // the shop shouldn't also be able to rewrite every page's search metadata.
   // getWordPressStore is needed here because the SEO surface reads the site
   // context through it before the seo endpoint is called.
-  seo: ['getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost', 'suggestInternalLinks', 'researchKeywords'],
+  //
+  // searchConsoleAction is READ-ONLY on Google's side — it returns the account's
+  // own search performance and can select which property to read. It is in this
+  // scope because the SEO tab is where the numbers are useful, and it is safe
+  // there for the same reason the other five are: none of them writes to a
+  // repository or a third-party account outside the site the widget owns.
+  seo: ['getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost', 'suggestInternalLinks', 'researchKeywords', 'searchConsoleAction'],
 };
 
 export function isMissingWidgetTable(err) {

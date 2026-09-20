@@ -76,6 +76,7 @@ model User {
   github_connection GithubConnection?
   google_drive_connection GoogleDriveConnection?
   deck_google_connection DeckGoogleConnection?
+  search_console_connection SearchConsoleConnection?
 
   // Command Deck (internal codename "Deck" — see the models below)
   deck_jarvis_messages DeckJarvisMessage[]
@@ -214,6 +215,46 @@ model DeckGoogleConnection {
   created_date  DateTime @default(now())
 
   @@map("deck_google_connections")
+}
+
+// Google Search Console access — the account's own verified properties, so the
+// SEO surface can show REAL queries, clicks, impressions, CTR and average
+// position instead of estimates. Read-only (`webmasters.readonly`).
+//
+// Deliberately its own connection rather than another scope on
+// GoogleDriveConnection: the consent is unrelated to file storage, it is useful
+// to someone with no Drive connection at all, and folding it in would force
+// every Drive user to re-consent for a scope their feature does not use. Same
+// reasoning as DeckGoogleConnection below it.
+//
+// The public API exposes Search Analytics, Sitemaps, Sites and URL Inspection —
+// there is NO links/backlinks resource, so "who links to you" cannot be answered
+// from here and must not be faked; the UI deep-links to Search Console's own
+// Links report instead.
+model SearchConsoleConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  gsc_email     String
+  access_token  String   // encrypted at rest (src/crypto.js)
+  scope         String?
+
+  // access_type=offline&prompt=consent, as with the other Google connections —
+  // search performance is read long after the connect, so this needs a refresh
+  // token and the silent-refresh handling that goes with it.
+  refresh_token String   // encrypted at rest
+  expires_at    DateTime?
+
+  // The property this account chose to read: a URL-prefix property
+  // ("https://valiantmusic.com.au/") or a Domain property
+  // ("sc-domain:valiantmusic.com.au"). Null is a real state — a verified account
+  // can hold several properties, and a freshly connected one has chosen none.
+  property      String?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("search_console_connections")
 }
 
 // ── PROJECTS ──────────────────────────────────────────────────────

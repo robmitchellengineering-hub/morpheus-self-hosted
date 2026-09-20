@@ -38,6 +38,31 @@ page itself. Labelled per row (`people type this`, `competing page`, `this page`
 from the page and the model only — scraping a competitor's headings as seeds fed a
 form label to Google and dragged back "form name meaning in hindi".
 
+## Search Console is where the real numbers come from
+
+Keyword research deliberately shows no volume, and the honest way to compensate is
+not to guess one — it is the operator's own Google Search Console, which is free
+and authoritative for their own property: real queries, clicks, impressions, CTR
+and average position. Three rules make those numbers usable rather than
+misleading, and all three are asserted in `scripts/verify-search-console.mjs`:
+
+* **Aggregates are the quantities Google reports.** CTR comes from the totals
+  (clicks ÷ impressions), never the mean of the rows' CTRs; an average position is
+  **impression-weighted**, or a site ranking #1 for a term nobody searches makes a
+  #40 term look average.
+* **"Low CTR" is judged against the site's own median at that position**, and a
+  band needs enough of its own rows before it is used at all. A generic
+  CTR-by-position table is fabricated precision the operator cannot check.
+* **An empty window returns empty lists and a null CTR, not zeros** — "no data"
+  and "nobody clicked" must not look the same.
+
+**There is no backlinks method in the API.** Google's reference lists Search
+Analytics, Sitemaps, Sites and URL Inspection — so "who links to you" cannot be
+answered from here. The panel says that plainly and deep-links to Search
+Console's own Links report; it must never imply a figure it cannot fetch. Real
+backlink data in-product needs a paid index, which is a commercial decision, not
+an API one.
+
 ## What is still missing here
 A redirects manager (404 → target) is the one standard SEO capability absent. It
 matters once a site has traffic; nothing else in the module depends on it.
