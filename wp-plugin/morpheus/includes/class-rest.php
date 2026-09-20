@@ -41,11 +41,33 @@ class Morpheus_REST {
 			'permission_callback' => '__return_true',
 			'callback'            => array( __CLASS__, 'handle_maintenance' ),
 		) );
+		// One registered fix, by finding id. Signed like /maintenance: it WRITES.
+		register_rest_route( MORPHEUS_REST_NS, '/fix', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_fix' ),
+		) );
 		register_rest_route( MORPHEUS_REST_NS, '/status', array(
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => array( __CLASS__, 'handle_status' ),
 		) );
+	}
+
+	public static function handle_fix( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( ! class_exists( 'Morpheus_Fixes' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin cannot apply fixes. Update the plugin.', 501 );
+		}
+		$id = isset( $body['id'] ) ? sanitize_key( $body['id'] ) : '';
+		if ( '' === $id ) {
+			return self::err( 'bad_request', 'Body needs the finding "id" to fix.', 400 );
+		}
+		$result = Morpheus_Fixes::apply( $id );
+		return new WP_REST_Response( $result, empty( $result['ok'] ) ? 409 : 200 );
 	}
 
 	public static function handle_maintenance( WP_REST_Request $request ) {

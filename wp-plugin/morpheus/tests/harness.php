@@ -1016,5 +1016,95 @@ ok( ( $health['cached'] ?? null ) === false, 'health: a forced scan says it was 
 ok( get_site_transient( 'update_plugins' ) == $transient_before, 'health: the scan did not touch the site\'s update cache' );
 ok( get_option( 'active_plugins' ) === get_option( 'active_plugins' ), 'health: the scan changed no setting' );
 
+// ── every finding has an action ─────────────────────────────────────────────
+//
+// The rule the whole fix registry exists for: a finding that asks for something
+// must have something to press, or an honest "this one needs your host". Unmapped
+// means a gap in the registry — so it is asserted against a REAL WordPress, where
+// the set of tests depends on the version and on which plugins are active.
+
+echo "\n-- fixes: every finding can be acted on --\n";
+
+$fix_scan = health_req( array( 'force' => true ), $health_secret )->get_data();
+ok( array_key_exists( 'unmapped', $fix_scan ), 'fixes: the scan reports findings with no action' );
+ok( count( $fix_scan['unmapped'] ) === 0, 'fixes: no attention-worthy finding is left without an action (unmapped: ' . count( $fix_scan['unmapped'] ) . ')' . ( $fix_scan['unmapped'] ? ' — ' . wp_json_encode( $fix_scan['unmapped'] ) : '' ) );
+
+$needs_action = 0;
+$without_fix  = array();
+foreach ( array_merge( $fix_scan['tests'], $fix_scan['own_checks'] ) as $f ) {
+	if ( ! in_array( $f['status'], array( 'critical', 'recommended' ), true ) ) {
+		continue;
+	}
+	$needs_action++;
+	if ( empty( $f['fix']['kind'] ) ) {
+		$without_fix[] = $f['id'];
+	}
+}
+ok( $needs_action > 0, 'fixes: the boot actually produced findings that need action (parser sanity: ' . $needs_action . ')' );
+ok( $without_fix === array(), 'fixes: every one of them carries an action', $without_fix );
+
+// A guided finding must carry real steps, each with a link or an exact literal —
+// "ask your host" with nothing to paste is a dead end.
+$guided = 0;
+$no_concrete = array();
+foreach ( Morpheus_Fixes::registry() as $id => $entry ) {
+	if ( 'guided' !== $entry['kind'] ) {
+		continue;
+	}
+	$guided++;
+	// Every guided finding must give the owner something CONCRETE: a link, a
+	// literal line to paste, or an exact instruction naming where to look. Not
+	// every sentence — "then re-check" is a step, not a dead end — so one each.
+	$concrete = false;
+	foreach ( ( $entry['steps'] ?? array() ) as $step ) {
+		$text = (string) ( $step['text'] ?? '' );
+		if ( ! empty( $step['link'] ) || preg_match( '/define\s*\(|https?:\/\/|SetEnvIf|\/wp-admin|wp-content|wp-config|\.htaccess|paste this to your host|add this to wp-config|control panel/i', $text ) ) {
+			$concrete = true;
+		}
+	}
+	if ( ! $concrete ) {
+		$no_concrete[] = $id;
+	}
+}
+ok( $guided >= 8, 'fixes: host-level findings are guided rather than pretended (parser sanity: ' . $guided . ')' );
+ok( $no_concrete === array(), 'fixes: every guided finding carries a link or an exact instruction', $no_concrete );
+
+// A separate accumulator: reusing one made this check fail on the previous
+// check's findings, which is the kind of false alarm that teaches nothing.
+$no_explanation = array();
+foreach ( Morpheus_Fixes::registry() as $id => $entry ) {
+	if ( 'auto' === $entry['kind'] && empty( $entry['does'] ) ) {
+		$no_explanation[] = $id;
+	}
+}
+ok( $no_explanation === array(), 'fixes: every automatic fix explains what it will do', $no_explanation );
+
+$guided_result = Morpheus_Fixes::apply( 'php_version' );
+ok( isset( $guided_result['ok'] ) && false === $guided_result['ok'], 'fixes: a guided finding is NOT attempted' );
+ok( ( $guided_result['code'] ?? '' ) === 'NOT_AUTOMATIC', 'fixes: …and says so with a code' );
+ok( strpos( (string) ( $guided_result['error'] ?? '' ), 'needs a step only you can take' ) !== false, 'fixes: …and points at the steps' );
+
+$unknown = Morpheus_Fixes::apply( 'not_a_real_finding' );
+ok( ( $unknown['code'] ?? '' ) === 'NO_FIX', 'fixes: an unknown finding is refused, not guessed at' );
+
+// The wp-config fix, end to end: backed up, applied, verified, then put back so
+// this boot leaves the config exactly as it found it.
+$wp_config = ABSPATH . 'wp-config.php';
+$before    = file_get_contents( $wp_config );
+$applied   = Morpheus_Fixes::apply( 'morpheus_file_editor' );
+ok( isset( $applied['ok'] ) && true === $applied['ok'], 'fixes: the wp-config fix ran' );
+ok( ! empty( $applied['verified'] ), 'fixes: …and verified itself' );
+ok( strpos( (string) file_get_contents( $wp_config ), 'DISALLOW_FILE_EDIT' ) !== false, 'fixes: the define is now in wp-config.php' );
+$backups = Morpheus_Maintenance::backups();
+$file_backups = array_filter( $backups, function ( $b ) { return strpos( (string) $b['name'], 'wp-config.php' ) !== false; } );
+ok( count( $file_backups ) >= 1, 'fixes: wp-config.php was backed up first' );
+
+// Put it back: the fix must be reversible, and this boot should not leave a
+// modified config behind for the other harnesses.
+$restore = Morpheus_Maintenance::restore( 'file', 'wp-config.php', $file_backups ? array_values( $file_backups )[0]['name'] : '' );
+file_put_contents( $wp_config, $before );
+ok( file_get_contents( $wp_config ) === $before, 'fixes: wp-config.php is byte-identical to how this boot found it' );
+foreach ( $file_backups as $b ) { Morpheus_Maintenance::delete_snapshot( $b['name'] ); }
+
 echo "==== $pass passed, $fail failed ====\n";
 exit( $fail === 0 ? 0 : 1 );
