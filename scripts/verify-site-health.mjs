@@ -256,6 +256,23 @@ check('a declined fix is not reported as an error', /res\.status !== 200 && res\
 check('a plugin too old is named', /PLUGIN_TOO_OLD/.test(fn), true);
 check('the client sends nothing but the id', /wpCall\(conn, 'fix', \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
 
+// A fix that worked must not leave its own finding sitting on the screen. The
+// panel re-reads the site after a successful fix and only FIX ALL opts out,
+// because FIX ALL scans once when the whole run is over. Without this the
+// finding stays there until an operator happens to find RESCAN, which is the
+// dead end this screen exists to remove. Scoped to the two functions, so a
+// scan elsewhere in the file cannot satisfy these.
+const ui = read('src/components/matrix/website/HealthTab.jsx');
+const fixBody = ui.slice(ui.indexOf('const applyFix = useCallback'), ui.indexOf('const jumpToUpdates'));
+const fixAllBody = ui.slice(ui.indexOf('const runFixAll = async'), ui.indexOf('const setField ='));
+check('the fix body was found to assert against', fixBody.length > 0, true);
+check('a fix that worked re-reads the site itself', /if \(payload\.ok === true && opts\.rescan !== false\) await run\(true\);/.test(fixBody), true);
+check('…exactly once, so the page does not scan in a loop', (fixBody.match(/await run\(true\)/g) || []).length, 1);
+check('…and a declined or rejected fix re-checks nothing', /if \(payload\.ok === true &&/.test(fixBody) && !/^\s*await run\(true\);$/m.test(fixBody), true);
+check('the rescan is a real dependency of the callback', /\}, \[projectId, run\]\)/.test(fixBody), true);
+check('FIX ALL opts out of the per-item scan', /applyFix\(f, \{ rescan: false \}\)/.test(fixAllBody), true);
+check('…so nothing scans inside the loop', /applyFix\(f\)(?!,)/.test(fixAllBody), false);
+
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {
   console.log('\nA health screen is believed. A wrong verdict here is worse than no screen.\n')
