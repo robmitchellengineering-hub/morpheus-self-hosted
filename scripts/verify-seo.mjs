@@ -294,6 +294,58 @@ check('the write list was actually parsed', jsWrites.length >= 1, true);
 check('every mutating action is velocity-gated', jsActions.filter((a) => MUTATING.test(a)).sort(), [...jsWrites].sort());
 check('no read-only action is gated as a write', jsActions.filter((a) => READ_ONLY.test(a)).some((a) => jsWrites.includes(a)), false);
 
+// ═══ THE WIDGET PARITY CONTRACT ═════════════════════════════════════════════
+// This app renders the SAME SEO tab inside an embed, under a widget token
+// (src/pages/Embed.jsx). A widget token may only call the functions its scope
+// lists (server/src/lib/widgetToken.js, enforced in routes/functions.routes.js);
+// anything else answers 403 "Widget tokens can't call <name>".
+//
+// So a function the SEO surface calls and the `seo` scope omits is a dead end
+// that appears ONLY inside the widget, at whatever click needs it — which is how
+// the blog flow shipped able to compose a post and unable to save it, because
+// saving went through wordPressStoreAction, a `store`-scope name. Nothing failed
+// until a user pressed the last button.
+//
+// The rule: every function the SEO surface invokes is in the `seo` scope.
+const seoTabSrc = readFileSync(join(REPO, 'src/components/matrix/website/SeoTab.jsx'), 'utf8');
+const panelSrc = readFileSync(join(REPO, 'src/components/matrix/website/SearchConsolePanel.jsx'), 'utf8');
+const invoked = new Set(
+  [...`${seoTabSrc}\n${panelSrc}`.matchAll(/functions\.invoke\(\s*'([A-Za-z][A-Za-z0-9]*)'/g)].map((m) => m[1]),
+);
+const scopeBlock = readFileSync(join(REPO, 'server/src/lib/widgetToken.js'), 'utf8').match(/seo:\s*\[([\s\S]*?)\]/);
+const seoScope = scopeBlock ? [...scopeBlock[1].matchAll(/'([A-Za-z][A-Za-z0-9]*)'/g)].map((m) => m[1]) : [];
+check('the SEO surface invokes functions (parser sanity)', invoked.size >= 5, true);
+check('the seo widget scope was parsed (parser sanity)', seoScope.length >= 5, true);
+check('the widget can call every function the SEO surface uses',
+  [...invoked].filter((f) => !seoScope.includes(f)).sort(), []);
+// getWordPressStore is listed because the SEO surface reads the site context
+// through it before the seo endpoint is called, even where a given tab does not
+// name it directly.
+check('the scope grants nothing the surface does not use (no silent widening)',
+  seoScope.filter((f) => !invoked.has(f) && f !== 'getWordPressStore').sort(), []);
+
+// The tempting fix for that dead end was to grant the whole store dispatcher to
+// the SEO scope, which would hand an SEO-only embed `delete_product` and
+// `delete_page`. Assert the narrow choice, both ways round.
+check('the broad store dispatcher is NOT in the seo scope', seoScope.includes('wordPressStoreAction'), false);
+check('the narrow post writer is', seoScope.includes('createSitePost'), true);
+const createSitePostSrc = readFileSync(join(REPO, 'server/src/functions/createSitePost.js'), 'utf8');
+// Strip comments BEFORE asserting on source. Without this, `it forces the post to
+// a draft` passed against the file's own header comment ("forces `status:
+// 'draft'`") even when the code said `status: 'publish'` — the mutation test is
+// what caught it, and it is the same trap this library records: a check that
+// matches the prose describing a rule instead of the rule.
+const code = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const createSitePostCode = code(createSitePostSrc);
+check('it performs exactly the one plugin action', (createSitePostCode.match(/wpStore\(conn, '/g) || []).length, 1);
+check('…and that action is create_post', /wpStore\(conn, 'create_post'/.test(createSitePostCode), true);
+// A widget-scoped write must not be able to publish: the status comes from the
+// handler, never from the caller.
+check('it forces the post to a draft', /status: 'draft'/.test(createSitePostCode), true);
+check('…and never reads status from the request body', /body\?\.status|body\.status/.test(createSitePostCode), false);
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

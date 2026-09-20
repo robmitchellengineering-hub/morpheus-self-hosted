@@ -98,7 +98,11 @@ function SuggestionRow({ s, checked, onToggle }) {
   );
 }
 
-export default function SeoTab({ projectId, store }) {
+// `widget` is true when this renders inside an embed (src/pages/Embed.jsx) with a
+// widget token rather than the owner's session. It matters because some actions
+// are owner-only by design — connecting a Google account is `blockWidget` on the
+// server — and the UI must say so instead of offering a button that 403s.
+export default function SeoTab({ projectId, store, widget = false }) {
   const [view, setView] = useState('list'); // list | item | blog
   const [ctx, setCtx] = useState(null);
   const [items, setItems] = useState(null);
@@ -397,9 +401,13 @@ export default function SeoTab({ projectId, store }) {
     setPosting(true); setErr(null); setNote(null);
     try {
       const d = blog.draft;
-      const created = await base44.functions.invoke('wordPressStoreAction', {
-        projectId, action: 'create_post',
-        data: { title: d.title, content: d.content, excerpt: d.excerpt, status: 'draft' },
+      // createSitePost, not wordPressStoreAction: the store dispatcher lives in
+      // the `store` widget scope, so an SEO-only embed composed a post and then
+      // could not save it. This function does exactly this one write and forces
+      // the post to a draft; see server/src/functions/createSitePost.js.
+      const created = await base44.functions.invoke('createSitePost', {
+        projectId,
+        title: d.title, content: d.content, excerpt: d.excerpt, status: 'draft',
       }).then((x) => x.data);
       if (created?.ok === false) throw new Error(created.message || 'The site rejected the post.');
       const postId = created?.post?.id;
@@ -621,7 +629,7 @@ export default function SeoTab({ projectId, store }) {
               number: keyword research shows what people type with no volume, this
               shows Google's own figures for your own property. Both say where they
               came from — see SearchConsolePanel.jsx. */}
-          <SearchConsolePanel onNote={setNote} />
+          <SearchConsolePanel onNote={setNote} widget={widget} />
 
           {links && (
             <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">

@@ -129,7 +129,9 @@ export default function Embed() {
               : <div className="p-4 text-[12px] text-primary/50">The connected store isn’t reachable right now.</div>
           )}
           {tab === 'pages' && <PagesTab projectId={ctx.projectId} store={store} />}
-          {tab === 'seo' && <SeoTab projectId={ctx.projectId} store={store} />}
+          {/* widget: this render is driven by a widget token, so owner-only actions
+              (connecting a Google account, for one) must not be offered here. */}
+          {tab === 'seo' && <SeoTab projectId={ctx.projectId} store={store} widget />}
         </>
       )}
     </div>

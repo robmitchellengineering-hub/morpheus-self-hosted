@@ -24,11 +24,19 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   // context through it before the seo endpoint is called.
   //
   // searchConsoleAction is READ-ONLY on Google's side — it returns the account's
-  // own search performance and can select which property to read. It is in this
-  // scope because the SEO tab is where the numbers are useful, and it is safe
-  // there for the same reason the other five are: none of them writes to a
-  // repository or a third-party account outside the site the widget owns.
-  seo: ['getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost', 'suggestInternalLinks', 'researchKeywords', 'searchConsoleAction'],
+  // own search performance and can select which property to read.
+  //
+  // createSitePost is the ONE write, and it is a narrow function rather than
+  // wordPressStoreAction for a reason: the SEO tab's POST flow saves its draft
+  // through the store action, which lives in the `store` scope, so an SEO-only
+  // embed composed a post and then got 403 at the final click. Adding the whole
+  // store dispatcher here would have granted `delete_product` and `delete_page`
+  // to an SEO embed; createSitePost performs exactly one plugin action and forces
+  // status=draft. See server/src/functions/createSitePost.js.
+  seo: [
+    'getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost',
+    'suggestInternalLinks', 'researchKeywords', 'searchConsoleAction', 'createSitePost',
+  ],
 };
 
 export function isMissingWidgetTable(err) {
