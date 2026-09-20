@@ -92,6 +92,41 @@ export async function listWidgetTokens(projectId, userId) {
   }
 }
 
+/**
+ * Change an existing token's scopes, IN PLACE.
+ *
+ * The token string is deliberately not reissued: it is already pasted into a
+ * snippet on the owner's site, so reissuing would mean a new token AND a new
+ * snippet — which is exactly the friction that made "the SEO page never appears"
+ * a site-editing job rather than a tick box. Same secret, new scopes.
+ *
+ * Two things this must not do, and does not:
+ *
+ *   * hand out a scope that does not exist — the list is filtered against
+ *     WIDGET_SCOPE_FUNCTIONS, so an unknown name is dropped rather than stored;
+ *   * revive a revoked token — revoked rows are excluded, so editing scopes
+ *     cannot quietly bring a credential back to life.
+ *
+ * A widget token cannot reach this at all: the function is not in any scope's
+ * allow-list, so `widgetMayCall` refuses it. That is the point — a token must
+ * never be able to widen its own permissions.
+ */
+export async function updateWidgetTokenScopes(tokenId, projectId, userId, scopes) {
+  const clean = (Array.isArray(scopes) ? scopes : [])
+    .filter((s) => Object.prototype.hasOwnProperty.call(WIDGET_SCOPE_FUNCTIONS, s));
+  if (!clean.length) {
+    throw Object.assign(new Error('Pick at least one scope.'), { status: 400, code: 'NO_SCOPES' });
+  }
+  const res = await prisma.widgetToken.updateMany({
+    where: { id: tokenId, project_id: projectId, created_by_id: userId, revoked: false },
+    data: { scopes: clean.join(',') },
+  });
+  if (!res.count) {
+    throw Object.assign(new Error("That token is not one of this project's active tokens."), { status: 404, code: 'NO_SUCH_TOKEN' });
+  }
+  return { id: tokenId, scopes: clean };
+}
+
 export async function revokeWidgetToken(tokenId, projectId, userId) {
   await prisma.widgetToken.updateMany({
     where: { id: tokenId, project_id: projectId, created_by_id: userId },

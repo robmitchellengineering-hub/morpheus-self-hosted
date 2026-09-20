@@ -33,6 +33,16 @@ export default function EmbedTab({ projectId, connected }) {
   const [creating, setCreating] = useState(false);
   const [fresh, setFresh] = useState(null); // { token } shown once
   const [copied, setCopied] = useState(null);
+  // In-place scope editing. The token string is never reissued, so the snippet
+  // already pasted on the owner's site keeps working — that is the whole reason
+  // this exists. One editor at a time: `editing` is the token id, and opening
+  // another discards the first one's unsaved selection.
+  const [editing, setEditing] = useState(null);
+  const [editScopes, setEditScopes] = useState([]);
+  const [editOriginal, setEditOriginal] = useState([]);
+  const [editErr, setEditErr] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -48,7 +58,7 @@ export default function EmbedTab({ projectId, connected }) {
 
   const create = async () => {
     if (!scopes.length) { setErr('Pick at least one scope.'); return; }
-    setCreating(true); setErr(null); setFresh(null);
+    setCreating(true); setErr(null); setFresh(null); setNotice(null);
     try {
       const { data } = await base44.functions.invoke('createWidgetToken', { projectId, label: label.trim() || null, scopes });
       setFresh(data);
@@ -59,11 +69,54 @@ export default function EmbedTab({ projectId, connected }) {
   };
 
   const revoke = async (id) => {
-    setErr(null);
+    setErr(null); setNotice(null);
+    if (editing === id) closeEditor();
     try {
       await base44.functions.invoke('revokeWidgetToken', { projectId, tokenId: id });
       load();
     } catch (e) { setErr(e?.data?.error || e.message); }
+  };
+
+  // Only known scopes are tickable; anything unknown stored on the row is
+  // dropped (the server filters the same way before it saves).
+  const knownScopes = (list) => (list || []).filter((s) => ALL_SCOPES.some((a) => a.id === s));
+
+  const openEditor = (t) => {
+    const current = knownScopes(t.scopes);
+    setEditing(t.id);
+    setEditScopes(current);
+    setEditOriginal(current);
+    setEditErr(null);
+    setNotice(null);
+  };
+
+  const closeEditor = () => {
+    setEditing(null);
+    setEditScopes([]);
+    setEditOriginal([]);
+    setEditErr(null);
+  };
+
+  const toggleEditScope = (s) => setEditScopes((cur) => cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]);
+
+  const sameScopes = (a, b) => [...a].sort().join(',') === [...b].sort().join(',');
+
+  const saveScopes = async (id) => {
+    // The button is disabled for an empty list; this guard means no empty list
+    // can ever reach the server even if that changes.
+    if (!editScopes.length) { setEditErr('Pick at least one scope.'); return; }
+    setSaving(true); setEditErr(null); setNotice(null);
+    try {
+      const { data } = await base44.functions.invoke('updateWidgetToken', { projectId, tokenId: id, scopes: editScopes });
+      const next = knownScopes(data?.scopes || editScopes);
+      setTokens((cur) => (cur || []).map((t) => (t.id === id ? { ...t, scopes: next } : t)));
+      closeEditor();
+      setNotice('Scopes saved — the snippet already on your site keeps working.');
+    } catch (e) {
+      // Keep the editor open with the user's selection intact — changing it
+      // here would make a retry guess at what they meant.
+      setEditErr(e?.data?.error || e.message);
+    } finally { setSaving(false); }
   };
 
   const copy = async (text, key) => {
@@ -138,21 +191,70 @@ export default function EmbedTab({ projectId, connected }) {
       {/* list */}
       <div className="space-y-1.5">
         <div className="text-[10px] text-primary/40 uppercase tracking-wider">Tokens</div>
+        {notice && <div className="text-[10px] text-primary/70 border border-primary/15 bg-primary/5 px-3 py-2">{notice}</div>}
         {tokens == null && <div className="text-[11px] text-primary/40 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> loading…</div>}
         {tokens?.length === 0 && <div className="text-[11px] text-primary/40">None yet.</div>}
-        {(tokens || []).map((t) => (
-          <div key={t.id} className={`border px-3 py-2 flex items-center justify-between gap-2 ${t.revoked ? 'border-primary/10 opacity-50' : 'border-primary/15'}`}>
-            <div className="min-w-0">
-              <div className="text-[11px] text-primary/80 truncate">{t.label || 'unlabelled'} {t.revoked && <span className="text-red-400/70">· revoked</span>}</div>
-              <div className="text-[9px] text-primary/35 font-mono">{t.prefix}… · {t.scopes.join(' · ')}{t.last_used_at ? ' · used' : ' · never used'}</div>
+        {(tokens || []).map((t) => {
+          const open = editing === t.id;
+          const dirty = open && !sameScopes(editScopes, editOriginal);
+          const canSave = dirty && editScopes.length > 0 && !saving;
+          // Explains whichever disabled control is on screen — an empty list and
+          // an unchanged selection are both refused, and a save in flight is the
+          // only reason CANCEL is held.
+          const hint = saving ? 'Saving…' : (!editScopes.length ? 'Pick at least one scope.' : (!dirty ? 'Tick a scope to enable saving.' : null));
+          return (
+            <div key={t.id} className={`border ${t.revoked ? 'border-primary/10' : 'border-primary/15'}`}>
+              <div className={`px-3 py-2 flex items-center justify-between gap-2 ${t.revoked ? 'opacity-50' : ''}`}>
+                <div className="min-w-0">
+                  <div className="text-[11px] text-primary/80 truncate">{t.label || 'unlabelled'} {t.revoked && <span className="text-red-400/70">· revoked</span>}</div>
+                  <div className="text-[9px] text-primary/35 font-mono">{t.prefix}… · {t.scopes.join(' · ')}{t.last_used_at ? ' · used' : ' · never used'}</div>
+                </div>
+                {!t.revoked && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => (open ? closeEditor() : openEditor(t))}
+                      className={`text-[9px] px-1.5 py-0.5 border ${open ? 'text-primary border-primary/60 bg-primary/10' : 'text-primary/50 border-primary/15'}`}>
+                      EDIT SCOPES
+                    </button>
+                    <button onClick={() => revoke(t.id)} className="text-primary/30 hover:text-red-400" title="Revoke">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {t.revoked && (
+                <div className="px-3 pb-2 text-[9px] text-primary/40">Revoked — its scopes can no longer be changed.</div>
+              )}
+
+              {open && !t.revoked && (
+                <div className="px-3 pb-3 pt-2 border-t border-primary/15 space-y-2">
+                  <div className="text-[9px] text-primary/35">This keeps the same token, so the snippet already pasted on your site keeps working.</div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                    {ALL_SCOPES.map((s) => (
+                      <label key={s.id} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+                        <input type="checkbox" className="accent-[color:var(--primary,#4f8cff)]"
+                          checked={editScopes.includes(s.id)} onChange={() => toggleEditScope(s.id)} />
+                        <span className={editScopes.includes(s.id) ? 'text-primary/70' : 'text-primary/40'}>{s.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {editErr && <div className="text-red-400 text-[10px] border border-red-500/30 px-2 py-1.5">{editErr}</div>}
+                  {hint && <div className="text-[9px] text-primary/35">{hint}</div>}
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => saveScopes(t.id)} disabled={!canSave}
+                      className="flex items-center justify-center gap-1.5 h-[32px] px-3 bg-primary text-black font-bold text-[10px] hover:bg-[#39ff14] disabled:opacity-40">
+                      {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} SAVE SCOPES
+                    </button>
+                    <button onClick={closeEditor} disabled={saving}
+                      className="h-[32px] px-3 border border-primary/15 text-primary/50 text-[10px] hover:text-primary disabled:opacity-40">
+                      CANCEL
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            {!t.revoked && (
-              <button onClick={() => revoke(t.id)} className="text-primary/30 hover:text-red-400 shrink-0" title="Revoke">
-                <Trash2 size={12} />
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
