@@ -475,5 +475,56 @@ echo "\n";
 if ( $skipped > 0 ) {
 	echo "  ($skipped skipped — see the SKIP lines above)\n";
 }
+// ── Morpheus must never update itself ───────────────────────────────────────
+//
+// The request that would apply this update is served by the code being replaced,
+// so a failure part-way through could leave the plugin half-written — and take
+// with it the panel the owner would use to fix it. WordPress's own updater
+// already offers it, from wp-admin, where a failure can be reported.
+
+echo "\n-- self-update --\n";
+
+$self_file = 'morpheus/morpheus.php';
+
+// Offer this plugin a release through WordPress's own transient, exactly as a
+// published update would: a real offer, via the real seam.
+$inject_plugin = function ( $pre, $transient ) use ( $self_file ) {
+	if ( 'update_plugins' !== $transient ) {
+		return $pre;
+	}
+	if ( ! is_object( $pre ) ) {
+		$pre           = new stdClass();
+		$pre->response = array();
+	}
+	$pre->response[ $self_file ] = (object) array(
+		'slug'        => 'morpheus',
+		'plugin'      => $self_file,
+		'new_version' => '99.0.0',
+		'package'     => 'https://example.invalid/morpheus.zip',
+	);
+	return $pre;
+};
+add_filter( 'pre_site_transient_update_plugins', $inject_plugin, 99, 2 );
+
+$self_plan    = Morpheus_Maintenance::plan();
+$self_targets = array_column( $self_plan['targets'], 'id' );
+$self_refused = array_values( array_filter( $self_plan['refused'], function ( $r ) use ( $self_file ) {
+	return isset( $r['id'] ) && $r['id'] === $self_file;
+} ) );
+
+ok( in_array( $self_file, array_merge( $self_targets, array_column( $self_plan['refused'], 'id' ) ), true ), 'self: the injected offer was actually seen (so this is not a vacuous pass)' );
+ok( ! in_array( $self_file, $self_targets, true ), 'self: Morpheus is NOT a target of its own maintenance' );
+ok( count( $self_refused ) === 1, 'self: it is reported as refused instead' );
+ok( strpos( (string) ( $self_refused[0]['reason'] ?? '' ), 'does not update itself' ) !== false, 'self: the refusal explains why' );
+ok( strpos( (string) ( $self_refused[0]['reason'] ?? '' ), 'Dashboard' ) !== false, 'self: …and sends the owner to wp-admin' );
+
+// And if a caller sends it anyway, apply() refuses rather than obliging.
+$self_apply = Morpheus_Maintenance::apply( array( array( 'kind' => 'plugin', 'id' => $self_file ) ), array( 'dry_run' => true ) );
+ok( isset( $self_apply['ok'] ) && false === $self_apply['ok'], 'self: apply() refuses it outright' );
+ok( ( $self_apply['code'] ?? '' ) === 'SELF_UPDATE', 'self: with code SELF_UPDATE' );
+ok( strpos( (string) ( $self_apply['error'] ?? '' ), 'will not update itself' ) !== false, 'self: and a sentence that says so' );
+
+remove_filter( 'pre_site_transient_update_plugins', $inject_plugin, 99 );
+
 echo "==== $pass passed, $fail failed ====\n";
 exit( $fail === 0 ? 0 : 1 );

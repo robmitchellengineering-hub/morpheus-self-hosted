@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.6.1
+ * Version:           0.6.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -59,7 +59,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.6.1' );
+define( 'MORPHEUS_VERSION', '0.6.2' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 

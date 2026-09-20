@@ -227,6 +227,15 @@ const store = read('server/src/lib/siteMaintenanceStore.js');
 check('the policy row is validated before it is written', /validatePolicy\(input, current\)/.test(store), true);
 check('recording a run cannot fail the run', /could not record the run/.test(store), true);
 
+// The engine must never target itself: the request that would apply the update
+// is served by the code being replaced, so a failure mid-swap could leave the
+// plugin half-written and take the panel with it.
+const maint = read('wp-plugin/morpheus/includes/class-maintenance.php');
+check('the engine excludes Morpheus from its own targets', /self_basename/.test(maint), true);
+check('…and refuses it outright if a caller sends it', /SELF_UPDATE/.test(maint), true);
+check('…with a sentence that sends the owner to wp-admin', /does not update itself/.test(maint), true);
+check('it reports the offer rather than hiding it', /Reported, never applied/.test(maint.split('self_basename')[0].length ? maint : ''), true);
+
 const schema = read('server/prisma/schema.prisma');
 check('the policy model exists', /^model SiteMaintenancePolicy \{/m.test(schema), true);
 check('there is no automatic major-core column', /apply_core_major\s+Boolean/.test(schema), false);

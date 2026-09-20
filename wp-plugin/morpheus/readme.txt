@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.6.1
+Stable tag: 0.6.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,14 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.6.2 =
+* Morpheus no longer appears as a target of its own maintenance engine. The
+  request that would apply the update is served by the code being replaced, so a
+  failure part-way through could leave the plugin half-written — and take with it
+  the panel you would use to fix it. It is reported as available with that
+  explanation, and `apply` refuses it outright; update it from Dashboard →
+  Updates, as with any other plugin.
 
 = 0.6.1 =
 * New: a signed `/maintenance` endpoint. `plan` reports what could be updated
