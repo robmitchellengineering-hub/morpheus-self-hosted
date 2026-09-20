@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe, FileJson } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { generateManual } from '@/lib/generateManual';
@@ -8,7 +9,16 @@ import SheetSelect from './SheetSelect';
 
 const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
-export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onWebsite, websiteConnected, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+export default function ProjectBar({ project, onRename, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onWebsite, websiteConnected, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(project?.name || '');
+
+  const saveName = async () => {
+    const next = nameDraft.trim();
+    setRenaming(false);
+    if (!next || next === project?.name || !onRename) return;
+    await onRename(next);
+  };
   return (
     <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
       {/* Row 1: project identity + primary action */}
@@ -18,7 +28,29 @@ export default function ProjectBar({ project, onExport, onNew, onBack, onUpdateT
             <ArrowLeft size={18} />
           </button>
           <Terminal size={18} className="text-primary shrink-0" />
-          <span className="text-primary font-display tracking-wider truncate neon-glow">{project.name}</span>
+          {/* Tap the name to rename it. A new account's website construct is
+              named from their own name, so this is the first thing they may
+              want to change — and it is a plain field update. */}
+          {renaming ? (
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={() => saveName()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); saveName(); }
+                if (e.key === 'Escape') { setRenaming(false); setNameDraft(project.name || ''); }
+              }}
+              maxLength={80}
+              className="bg-black/40 border border-primary/40 px-2 py-1 text-primary font-display tracking-wider text-sm focus:outline-none focus:border-primary min-w-0 flex-1"
+            />
+          ) : (
+            <button onClick={() => { setNameDraft(project.name || ''); setRenaming(true); }}
+              title="Tap to rename"
+              className="text-primary font-display tracking-wider truncate neon-glow text-left hover:text-primary/80 min-w-0">
+              {project.name}
+            </button>
+          )}
           <span className="text-xs text-primary/75 uppercase border border-primary/30 px-2 py-0.5 shrink-0">{project.status}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
