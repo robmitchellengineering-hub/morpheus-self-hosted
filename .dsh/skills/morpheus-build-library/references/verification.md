@@ -61,3 +61,48 @@ Query the thing. "The column is missing" is a hypothesis until
 `verify-schema-prod.mjs` or a real query says so; "the deploy worked" is a
 hypothesis until the health endpoint answers. Four separate false alarms in one
 session came from reading code and assuming its runtime consequence.
+
+## Six more ways a check lies to you
+
+* **A guard is only pure if it is pure *transitively*.** A guard that imported
+  `splitOvershoot` from `billing.js` resolved every relative import perfectly and
+  still killed CI's no-install guards job, because `billing.js` reaches
+  `@prisma/client` through `db.js` — and `server/package-lock.json` is untracked
+  (H4), so CI cannot install. Extract the pure half into a dependency-free
+  module; that is exactly why `lib/billingClamp.js` exists.
+  `verify-guards-no-install.mjs` walks the guards job's own scripts and fails on
+  any reachable package import.
+* **A red check is a stop, not a formality.** One PR was merged with the guards
+  job red because it passed locally, where `node_modules` was present. The local
+  pass was the anomaly, not the CI failure.
+* **Audit the list, not just the members.** Every individual claim in `AGENTS.md`
+  was true while its *table* said "Three project skills" and there were nine, and
+  stopped at H10 when twelve hazards existed. A short list that reads as complete
+  is worse than no list, because nothing prompts you to look further — so the
+  count and the membership are asserted in `verify-context.mjs`.
+* **Test both branches of a third-party conditional.** The SEO duplicate-tag rule
+  has two halves, so the plugin harness boots WordPress **twice** — once with
+  Yoast, once without — because the no-plugin half was never testable in one boot.
+* **A safety check must fail *open* on the path you cannot test.** The H9 drift
+  guard had to be built so that an unrecognised error shape does not refuse every
+  push: "one unrecognised shape there and the H9 guard becomes the reason self-dev
+  cannot push at all — a safety check turned into an outage."
+* **Assert the mechanism is on the live path.** A retry loop that only retried on
+  HTTP 404 never fired for the 422 failure that actually happened; later it was
+  found "wired to dead code, never fired". The code existed, was correct, and ran
+  never.
+
+## Removing behaviour passes every gate
+
+H1 covers a shared module losing an **export**. The quieter and worse case is a
+module that keeps its shape and loses its *behaviour*: `server/src/ai.js` was
+rewritten from 585 lines to 153 in a self-dev push — dropping `fetchWithTimeout`,
+model auto-discovery, the platform temperature override, `reserveCredits` /
+`reconcileCredits`, the provider-balance fallback and truncation handling — while
+`node --check`, lint and build all stayed green, because none of them read
+behaviour. It was reverted twice and the reason was never written down.
+
+**Rule:** when a shared module changes, diff what it *does*, not only what it
+exports. A deleted `// WHY` comment is the cheapest signal that a behaviour left
+with it.
+

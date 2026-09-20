@@ -63,3 +63,36 @@ Every WP REST response carries `Link: <…/wp-json/>; rel="https://api.w.org/"`,
 including the 404 for a route that is not there. That header is the reliable
 signature; guessing from the response body told a real WordPress site it was "not
 a WordPress site".
+
+## Never update the plugin through Deploy
+
+The Deploy module writes files on the site — but only files that exist in the
+site's GitHub repo. Using it to make the plugin overwrite **its own source**
+mid-request is how you get a half-updated plugin and a white screen, with a
+manual upload as the only recovery. The plugin's own signed update channel
+exists for this; Deploy is for the site's theme and content.
+
+## Do not gate a feature on a third-party plugin's presence
+
+The SEO module briefly rendered its fields behind `defined('WPSEO_VERSION')`, so
+a site without Yoast showed **no SEO UI at all** — not a degraded one. The
+correct shape is the one in `owns_head()`: detect the other plugin, then *drive
+it* or *emit nothing*, and always render the panel (reporting who owns the head).
+A hard gate on someone else's plugin turns "that integration is missing" into
+"the feature does not exist", which is structural, not cosmetic.
+
+## The JS↔PHP contract must be parsed, not assumed
+
+Both halves are untyped and each ignores what it does not recognise: rename a
+field on the JS side and the plugin silently no-ops; rename an action and it is a
+silent `403`. So `verify-seo.mjs`, `verify-pairing.mjs` and
+`verify-working-copy.mjs` **parse the field and action names out of the plugin's
+PHP** and compare them with what the JS sends. A rename on either side now fails
+a check instead of surfacing as a mystery at runtime.
+
+## A stale opcode cache reports the old version
+
+If Plugins shows `0.5.6` while the site's `/status` still says `0.4.5`, that is a
+stale PHP opcode cache on the host, not a failed install — a cache clear fixes
+it. The fix is on the host's side, so do not go looking for a plugin bug.
+

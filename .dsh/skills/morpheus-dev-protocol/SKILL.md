@@ -94,13 +94,20 @@ Merging the PR is the sanctioned path, not a shortcut around it.
 
 "It builds" is not verification. Rob's standard, in his own framing:
 
-- **One command, every time:** `node scripts/verify.mjs`. It runs the pure
-  guards (`verify-drift`, `verify-cors`, `verify-context`, `verify-dump-classify`,
-  `verify-insight-optout`, `verify-prod-sql`, `verify-server-imports`) and
-  `boot-smoke` — which actually boots `server/src/index.js` in production mode
-  and asserts `/api/health` returns 200. The boot step is the one that catches
-  the class of failure (H12) that a syntax check is structurally blind to, and
-  it was exactly the step skipped on 2026-09-19.
+- **One command, every time:** `node scripts/verify.mjs`. It runs **every**
+  guard in `scripts/verify-*.mjs`, then `boot-smoke` — which actually boots
+  `server/src/index.js` in production mode and asserts `/api/health` returns 200
+  — and finally `verify-schema-prod.mjs` on its own, because that one needs a
+  production credential and reports "not verified" (exit 2) rather than pass/fail.
+  The boot step is the one that catches the class of failure (H12) that a syntax
+  check is structurally blind to, and it was exactly the step skipped on
+  2026-09-19.
+
+  **The list is not repeated here on purpose** — it went stale the moment a
+  guard was added. `verify-context.mjs` asserts that every guard on disk is run
+  by the gate and that CI runs each of them, so a new guard cannot be added and
+  silently not run. A guard you only meet in CI is a guard that surprises you
+  after you have decided the change was fine.
 - **Frontend:** `npm run lint` + `npm run build`.
 - **Backend / logic:** `node --check`, plus a real runtime verification script
   exercising the actual function against representative or real inputs. Not a
@@ -176,7 +183,7 @@ why — searchable with `--kind user,assistant,tool,result` and `--reasoning`.
 ## Related
 
 - `working-with-rob` — his standing priorities and how he expects results reported.
-- `morpheus-hazards` — the H1–H12 list to check every change against.
+- `morpheus-hazards` — the H1–H16 list to check every change against.
 - `morpheus-stack` — stack map, commands, key files.
 - `morpheus-build-library` — the index of build knowledge, one short card per
   topic. Load it when the task touches something unfamiliar, and add to it when

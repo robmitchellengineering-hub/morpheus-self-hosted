@@ -67,7 +67,9 @@ sync (pull `main`) → plan/code/review → **verify** (esbuild transform + bund
 `server/src/functions/verifySelfDev.js`) → **push** (one diff-only commit,
 `server/src/functions/pushSelfDevToGithub.js`) → **watch** (Northflank poll,
 auto-diagnose failed deploys) → **revert** (one-click, `revertSelfDevPush.js`).
-See `ROADMAP.md` for what's built and what's next.
+`ROADMAP.md` is the last written plan of record (2026-09-09) — read it as
+history, not as status. For what is built and what is next right now, run
+`node scripts/reality.mjs`.
 
 ## Agent harness (DSH)
 
@@ -82,20 +84,23 @@ catalog is the source of truth for what exists; the table below is the map, and
 | Skill | Load it when |
 |---|---|
 | `morpheus-dev-protocol` | Before **any** change — branch/PR workflow, never-push-`main`, resync rules |
-| `morpheus-hazards` | Before writing or reviewing a change — the H1–H12 checklist of self-inflicted breakage |
+| `morpheus-hazards` | Before writing or reviewing a change — the H1–H16 checklist of self-inflicted breakage |
 | `morpheus-stack` | When you need the stack map, commands, or verification steps |
 | `morpheus-architecture` | When you need to know how a request reaches a handler, or how the build loop and self-dev engine work |
 | `morpheus-deck` | Before touching anything under `/deck` — own-data architecture, additive migrations, Jarvis persona |
 | `morpheus-vision` | Before any Jarvis-driven build or inter-agent work — the deferred vision, so it is not implemented opportunistically |
-| `morpheus-build-library` | **The index of build knowledge.** When the task touches something you have not done here before, read the one card it points at (verification, WordPress, AI features, onboarding UX, SEO, tooling) instead of guessing |
+| `morpheus-build-library` | **The index of build knowledge.** When the task touches something you have not done here before, read the one card it points at (verification, WordPress, AI features, onboarding UX, SEO, compile targets, reality, observability, connections, tooling) instead of guessing |
 | `playwright-cli` | Before browser work — `scripts/pw` navigation, snapshots, console/network reads |
 | `working-with-rob` | Before planning work or reporting results — how Rob works and what he expects verified |
 
 **Hard rules:**
 
 - **Never push to `main`.** `main` deploys straight to production (Netlify +
-  Northflank). Every change lands through a PR a human merges. A `pre-push` hook
-  in `.githooks/` enforces this mechanically; do not bypass it with `--no-verify`.
+  Northflank). Every change lands through a PR, which the agent opens and — once
+  checks are green — squash-merges (settled 2026-09-19; see
+  `morpheus-dev-protocol`). What is never allowed is pushing to `main` directly.
+  A `pre-push` hook in `.githooks/` enforces that mechanically; do not bypass it
+  with `--no-verify`.
 - **Start every task from a fresh `origin/main`:** `scripts/dsh-new-task.sh <slug>`.
 - **Verify before claiming done.** `npm run lint` + `npm run build` for code, and
   load user-visible changes in a real browser: `scripts/pw open http://localhost:5173`.

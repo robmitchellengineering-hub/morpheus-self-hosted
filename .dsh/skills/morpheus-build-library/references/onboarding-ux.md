@@ -37,3 +37,18 @@ Every audit finding appears on the item it belongs to; every proposal has a
 reason when it is rejected; every list row goes somewhere. If a control cannot
 act, it is disabled *and* the screen says why — a disabled button with no
 explanation is a dead end wearing a different hat.
+
+**A failed load is the worst dead end, because it looks like an empty account.**
+The Workspace rendered "No constructs found. The Matrix is empty." when a Prisma
+read threw — text indistinguishable from "your work is gone", and it stayed that
+way for hours. A load that fails must render as an error *with a retry*, never as
+the empty state. See `observability.md`.
+
+## Identify people, don't guess them
+
+Do not derive an account from an email address or a search. GitHub's user search
+is a fuzzy match over public profile text — one probe returned 13 loose matches —
+and most people keep their email private, so the "obvious" account is often not
+theirs. Ask for the username, or use the identity the OAuth connection already
+authenticated as. Acting on a guessed account is worse than asking once.
+

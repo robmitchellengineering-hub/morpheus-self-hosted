@@ -119,8 +119,10 @@ These are the ones a plausible-looking change breaks.
   not the `{error}` JSON the client expects.
 - `ProtectedRoute adminOnly` is a **UI** guard only; the server re-checks.
 - The reviewer's verdict does not block a commit — only the deterministic gates produce criticals.
-- `server/prisma/manual-supabase-init.sql` covers only 25 of 52 models, and
-  `add-project-documents-table.sql` creates a table no model references.
+- `server/prisma/manual-supabase-init.sql` matched `schema.prisma` table-for-table as of
+  2026-09-20; `verify-context.mjs` asserts that parity, so it cannot drift again.
+- `add-project-documents-table.sql` creates `project_documents`, which no model references — the
+  `ProjectDocument` model was dropped by an unrelated commit (2026-09-01) and never restored.
 - `docker compose` runs `prisma migrate deploy` with no migrations directory, so it is a no-op.
 - The self-dev mirror excludes `base44/`, but a frontend file imports from it — verify marks that
   import external to avoid a false failure.

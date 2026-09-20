@@ -111,7 +111,21 @@ check(
 // that was deleted.
 console.log('\n3. paths the docs reference exist (or are correctly documented as absent)')
 const DOCS = skills.map((s) => ({ rel: s.rel, dir: `.dsh/skills/${s.dir}` }))
-DOCS.unshift({ rel: 'AGENTS.md', dir: '' })
+// Root documents are scanned too, and this list is the point of the exercise.
+// Until 2026-09-20 the scan covered ONLY the skills and AGENTS.md — so the same
+// staleness survived unchecked in exactly the documents that carry the most
+// weight. KNOWN-HAZARDS.md still said H9's fix was "not yet built" a day after
+// it was built (and that file is handed to the self-dev planner and reviewer on
+// every build turn); ROADMAP.md still described a delivery loop that had
+// changed; DSH-HARNESS.md still listed three skills when nine existed. Curating
+// the rules while the authoritative documents drift freely is half a memory.
+DOCS.unshift(
+  { rel: 'AGENTS.md', dir: '' },
+  { rel: 'KNOWN-HAZARDS.md', dir: '' },
+  { rel: 'DSH-HARNESS.md', dir: '' },
+  { rel: 'ROADMAP.md', dir: '' },
+  { rel: 'docs/README.md', dir: 'docs' },
+)
 
 // Docs legitimately use shorthand, so a reference resolves if it exists under
 // ANY of these roots. Only when it resolves under none of them — AND its first
@@ -131,6 +145,25 @@ const ROOTS = ['', 'server/src', 'server', 'src', '.dsh']
 // whole-line test reads that backwards and reports the directory as absent.
 // Requiring adjacency handles it: "…anywhere in" does not end in a negation.
 const NEGATION_BEFORE = /\b(no|not|never|absent|none|without)$/i
+// …and the same claim is often written the other way round: "it resolved to
+// `src/lib/queue.js` — a file that does not exist". Reading only backwards
+// reported that (correct, useful) sentence as a broken reference.
+//
+// The two directions are deliberately NOT symmetric, because the grammar is not.
+// "does not exist" AFTER a path describes the path just named, so it gets a
+// generous window ("— a file that …" is a long way to say it). A negation BEFORE
+// a path is the risky direction: in "it resolved to `src/lib/queue.js` — a file
+// that does not exist. The real one is `server/src/queue.js`", a wide backwards
+// window attributes that phrase to the *real* file and reports a correct
+// sentence as a false claim. So the prefix window is short: "no `x`", "removed
+// `x`", "never `x`".
+const NEGATION_PREFIX = /\b(no|not|never|absent|none|without|removed|deleted|dropped)\s*$/i
+const NEGATION_AFTER = /\b(not yet built|unbuilt|never built|not been built|does ?n[o']?t exist|doesn'?t exist|is absent|never existed|no such file|removed|deleted|dropped|was lost)\b/i
+const negationNear = (context, index, length) => {
+  const before = context.slice(Math.max(0, index - 12), index).replace(/[*_`]/g, '').trimEnd()
+  const after = context.slice(index + length, index + length + 32).replace(/[*_`]/g, '')
+  return NEGATION_PREFIX.test(before) || NEGATION_AFTER.test(after)
+}
 
 // Collect every candidate first, then ask git which of them are ignored.
 //
@@ -145,8 +178,18 @@ const NEGATION_BEFORE = /\b(no|not|never|absent|none|without)$/i
 // creates `server/data/pg/`; you create `server/.env` yourself). Those are
 // expected to be absent from a clone, so they are skipped rather than required.
 const candidates = []
+// A claim can wrap. Markdown prose here is wrapped at ~80 columns, so "…the
+// revert also removed" can end one line and the path it removed begin the next —
+// which is exactly how the first version of this proximity rule reported a
+// correctly-documented deletion as a broken reference. So the text a claim is
+// judged against is the previous line's tail joined to the current line, with
+// the current line's start offset recorded.
+const withWrap = (lines) => lines.map((line, i) => {
+  const context = (lines[i - 1] || '').slice(-60) + line
+  return { line, context, offset: context.length - line.length }
+})
 for (const doc of DOCS) {
-  for (const line of read(doc.rel).split('\n')) {
+  for (const { line, context, offset } of withWrap(read(doc.rel).split('\n'))) {
     for (const m of line.matchAll(/`([^`\n]+)`/g)) {
       let token = m[1].trim()
       if (!token.includes('/')) continue
@@ -161,7 +204,8 @@ for (const doc of DOCS) {
       candidates.push({
         doc,
         token,
-        negated: NEGATION_BEFORE.test(line.slice(0, m.index).replace(/[*_`]/g, '').trimEnd()),
+        negated: NEGATION_BEFORE.test(context.slice(0, offset + m.index).replace(/[*_`]/g, '').trimEnd())
+          || negationNear(context, offset + m.index, m[0].length),
       })
     }
   }
@@ -211,20 +255,42 @@ check('the check is actually looking at something', checked.size > 15, true)
 console.log('\n4. "not yet built" claims about files are still true')
 const UNBUILT = /not yet built|unbuilt|does not exist|doesn't exist|not been built/i
 const falseClaims = []
-for (const skill of skills) {
-  for (const line of read(skill.rel).split('\n')) {
-    if (!UNBUILT.test(line)) continue
+for (const doc of DOCS) {
+  for (const { line, context, offset } of withWrap(read(doc.rel).split('\n'))) {
+    if (!UNBUILT.test(context)) continue
     // A path in backticks that also names a source file.
     for (const m of line.matchAll(/`([^`\n]+\.(?:js|jsx|ts|tsx|sql|md))`/g)) {
       const token = m[1].trim()
       if (/[<>*?{}[\]]/.test(token)) continue
-      if (existsSync(join(REPO, token))) {
-        falseClaims.push(`${skill.dir} says "${token}" is unbuilt, but it exists`)
-      }
+      // A bare filename is not specific enough to be a claim about a file: prose
+      // about a *column* or a *route* that "does not exist" sits on the same line
+      // as the model or route it is about, and resolving `entities.js` against
+      // source roots turned those into false positives. A path with a separator
+      // is unambiguous, so only those are judged.
+      if (!token.includes('/')) continue
+      // …and the "unbuilt" phrase has to be about THIS path. The hazard skills
+      // are tables whose rows are single very long lines, so a rule reading
+      // "a route that does not exist" shares a line with the fix that replaced
+      // it. Proximity, not the line, decides what a claim is about.
+      if (!negationNear(context, offset + m.index, m[0].length)) continue
+      // Bare filenames are how this drifted before: KNOWN-HAZARDS.md names
+      // `lib/selfDevDrift.js`, which resolves from server/src, while
+      // `server/prisma/selfdev-<slug>.sql` is a template and is skipped above.
+      const hit = [doc.dir, ...ROOTS].filter(Boolean).map((r) => join(REPO, r, token)).find((p) => existsSync(p))
+      if (hit) falseClaims.push(`${doc.rel} says "${token}" is unbuilt, but ${hit.replace(REPO + '/', '')} exists`)
     }
   }
 }
-check('no skill calls an existing file unbuilt', falseClaims, [])
+check('no doc calls an existing file unbuilt', falseClaims, [])
+
+// KNOWN-HAZARDS.md is read by self-dev's planner and reviewer on EVERY build
+// turn, so a status claim in it is an instruction the next build acts on. H9's
+// said its own fix was "not yet built" for a day after `lib/selfDevDrift.js`
+// shipped — the skill was corrected, the hazard file was not, and because this
+// file was outside the scan nothing noticed. It is a list of rules; a claim
+// about what exists belongs in a check, not here.
+check('KNOWN-HAZARDS.md makes no "not yet built" status claim',
+  /not yet built|unbuilt|never built/i.test(read('KNOWN-HAZARDS.md')), false)
 
 // ═══ 5. Verification scripts referenced by CI exist ═════════════════════════
 console.log('\n5. every verification script CI runs exists')
@@ -272,6 +338,66 @@ const agentsDoc = read('AGENTS.md')
 // must count, but the substring "stack" inside a sentence must not.
 const agentsWords = agentsDoc.split(/[^A-Za-z0-9_-]+/).filter(Boolean)
 check('every skill on disk is named in AGENTS.md', diff(skillDirs, agentsWords), [])
+
+// ═══ 8. The one gate runs every guard ══════════════════════════════════════
+// verify.mjs's own header says it exists "so no step can be skipped or
+// forgotten". Two guards were not in it — verify-billing-clamp and
+// verify-guards-no-install — and nothing failed, because CI ran them anyway.
+// That is exactly how a "run this before merging" command quietly stops being
+// the whole gate, and a guard you only meet in CI is a guard that surprises you
+// after you have already decided the change was fine.
+console.log('\n8. every guard is run by the one gate')
+const verifySrc = read('scripts/verify.mjs')
+const hardBlock = verifySrc.match(/const HARD = \[([\s\S]*?)\]/)
+const hardListed = hardBlock ? [...hardBlock[1].matchAll(/'([\w.-]+\.mjs)'/g)].map((m) => m[1]) : []
+const guardFiles = readdirSync(join(REPO, 'scripts')).filter((f) => /^verify-.*\.mjs$/.test(f)).sort()
+// verify.mjs runs this one on its own, not in the HARD loop, because it needs a
+// production credential and reports "not verified" (exit 2) rather than failing.
+const RUN_SEPARATELY = ['verify-schema-prod.mjs']
+check('the guard list parsed (parser sanity)', hardListed.length >= 8, true)
+check('every guard is run by the one gate',
+  guardFiles.filter((f) => !hardListed.includes(f) && !RUN_SEPARATELY.includes(f)), [])
+check('every entry in the gate is a real script',
+  hardListed.filter((f) => !existsSync(join(REPO, 'scripts', f))), [])
+// CI is the second list, and two lists drift the same way one does.
+const ciRuns = new Set([...ci.matchAll(/node (scripts\/[\w.-]+\.mjs)/g)].map((m) => m[1].replace('scripts/', '')))
+// boot-smoke boots the real server, so it needs the server's own dependencies —
+// and server/package-lock.json is untracked (H4), so CI cannot install them.
+const CI_CANNOT = ['boot-smoke.mjs', 'verify-schema-prod.mjs']
+check('CI runs every hard gate', hardListed.filter((f) => !ciRuns.has(f) && !CI_CANNOT.includes(f)), [])
+
+// ═══ 9. The archive indexes list every file ════════════════════════════════
+// docs/planning and docs/audits hold point-in-time snapshots kept so this
+// knowledge cannot be lost with a folder. The index is what makes them findable;
+// a file nobody listed is a file nobody reads. Same contract as the library.
+console.log('\n9. the archive indexes match their files')
+const archiveIndex = read('docs/README.md')
+for (const dir of ['docs/planning', 'docs/audits']) {
+  const files = readdirSync(join(REPO, dir)).filter((f) => f.endsWith('.md')).sort()
+  check(`${dir} has files (parser sanity)`, files.length >= 4, true)
+  check(`every file in ${dir} is listed in docs/README.md`, files.filter((f) => !archiveIndex.includes(`${dir}/${f}`)), [])
+  const dangling = [...archiveIndex.matchAll(new RegExp(`${dir}/[\\w.-]+\\.md`, 'g'))]
+    .map((m) => m[0]).filter((p) => !existsSync(join(REPO, p)))
+  check(`every ${dir} path named in docs/README.md exists`, dangling, [])
+}
+
+// ═══ 10. The quoted hazard range is the real one ═══════════════════════════
+// Adding H13–H16 instantly made five documents wrong: AGENTS.md, DSH-HARNESS.md,
+// the hazards skill's own description, the dev protocol's "Related" list and the
+// library index all still said "H1–H12". That is the same stale-list failure as
+// "Three project skills", so it gets the same treatment — the range a document
+// quotes is checked against the last hazard that actually exists.
+console.log('\n10. the quoted hazard range matches KNOWN-HAZARDS.md')
+const hazardNums = [...read('KNOWN-HAZARDS.md').matchAll(/^## H(\d+)\b/gm)].map((m) => Number(m[1]))
+check('hazards parsed (parser sanity)', hazardNums.length >= 12, true)
+const hMax = Math.max(...hazardNums)
+const staleRanges = []
+for (const doc of DOCS) {
+  for (const m of read(doc.rel).matchAll(/H1[–-]H(\d+)/g)) {
+    if (Number(m[1]) !== hMax) staleRanges.push(`${doc.rel} quotes H1–H${m[1]}, but the newest hazard is H${hMax}`)
+  }
+}
+check(`every quoted hazard range ends at H${hMax}`, staleRanges, [])
 
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${pass}/${pass + fail} checks passed`)

@@ -17,17 +17,21 @@ than none.
 
 | If you are about to… | Read | It covers |
 |---|---|---|
-| write or review a **test, harness or CI guard** | `references/verification.md` | the bar ("it builds" is not verification), designing a guard that can actually fail, mutation testing, harness fidelity, shell traps |
-| touch the **WordPress plugin** or its endpoints | `references/wordpress.md` | plugin lifecycle and the update channel, install quirks, "too old" answers two ways, proven secrets, the theme export, cache and content rules |
-| add or change an **AI-backed feature** | `references/ai-features.md` | model output as untrusted input, response shapes with no field for an invented number, grounding from the system, billing and prompt hygiene |
-| build **onboarding, a wizard or a first-run path** | `references/onboarding-ux.md` | probe-driven steps, idempotent "ensure" functions, preserving intent through login, checklists with live state, being honest about platform limits |
+| write or review a **test, harness or CI guard** | `references/verification.md` | the bar ("it builds" is not verification), designing a guard that can actually fail, mutation testing, transitive purity, removing behaviour that passes every gate |
+| touch the **WordPress plugin** or its endpoints | `references/wordpress.md` | plugin lifecycle and the update channel, install quirks, "too old" answers two ways, proven secrets, never self-updating through Deploy, the parsed JS↔PHP contract, the theme export |
+| add or change an **AI-backed feature** | `references/ai-features.md` | model output as untrusted input, response shapes with no field for an invented number, silent truncation read as a negative answer, grounding, billing and prompt hygiene |
+| build **onboarding, a wizard or a first-run path** | `references/onboarding-ux.md` | probe-driven steps, idempotent "ensure" functions, preserving intent through login, live-state checklists, a failed load never rendering as an empty account |
 | change **SEO behaviour or metadata** | `references/seo.md` | the duplicate-tag rule, who owns the head, templates, what an audit is allowed to claim, safe internal linking |
-| fight the **environment or tooling** | `references/tooling.md` | background-job and pkill traps, browser-automation traps, GitHub token scopes, Playground boot timing, macOS gaps, edits that abort partway |
+| touch a **compile target or native delivery** | `references/compile-targets.md` | why a paper audit is not evidence, `\|\| true` on a dependency install, PowerShell argv splatting, artifacts keyed on the wrong thing, macOS signing |
+| **decide whether something is actually true** | `references/reality.md` | rules vs facts vs claims, `scripts/reality.mjs`, the 13 drifted planning docs, checking a punch-list item before acting on it |
+| **work out what the system is doing right now** | `references/observability.md` | the container's own log vs the app's log reader, failed-read-vs-empty-state, counter semantics, what a session costs |
+| **connect a third party** (Google, GitHub, pairing) | `references/connections.md` | OAuth callbacks outside `requireAuth`, requesting the scope that returns the data you persist, never guessing an account, scope boundaries |
+| fight the **environment or tooling** | `references/tooling.md` | background-job and pkill traps, browser-automation and sandbox traps, GitHub token scopes, Playground boot timing, macOS gaps, edits that abort partway |
 
 Two things that are not cards, because they already exist and are maintained
 elsewhere:
 
-* **What has already broken in production** — `KNOWN-HAZARDS.md` (H1–H12) and the
+* **What has already broken in production** — `KNOWN-HAZARDS.md` (H1–H16) and the
   `morpheus-hazards` skill. Read that before proposing anything risky; this
   library is about how to build, that list is about what has already cost us a
   night.

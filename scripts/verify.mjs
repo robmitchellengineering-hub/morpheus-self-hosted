@@ -28,6 +28,8 @@ const HARD = [
   'verify-working-copy.mjs',
   'verify-keywords.mjs',
   'verify-prod-sql.mjs',
+  'verify-billing-clamp.mjs',
+  'verify-guards-no-install.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',
 ];
