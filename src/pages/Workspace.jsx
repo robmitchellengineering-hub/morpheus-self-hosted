@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Plus, Github, Store, Trash2, Settings as SettingsIcon, Boxes, Plug, Search, Clock, ArrowDownAZ, X, Home as HomeIcon, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Plus, Github, Store, Trash2, Settings as SettingsIcon, Boxes, Plug, Search, Clock, ArrowDownAZ, X, Home as HomeIcon, AlertTriangle, RefreshCw, Globe } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -263,8 +263,20 @@ export default function Workspace() {
               </div>
             )}
             {!ws.loadError && visibleProjects.length === 0 && (
-              <div className="border border-dashed border-primary/20 px-4 py-8 text-center">
-                <p className="text-primary/60 italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty. Create your first.'}</p>
+              <div className="border border-dashed border-primary/20 px-4 py-8 text-center space-y-3">
+                <p className="text-primary/60 italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty.'}</p>
+                {!search && (
+                  <button onClick={() => navigate('/start')}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors text-[12px] tracking-wider">
+                    <Globe size={14} /> SET UP MY WORDPRESS SITE
+                  </button>
+                )}
+                {!search && (
+                  <p className="text-[10px] text-primary/35 leading-relaxed max-w-xs mx-auto">
+                    For a site you already have: connect it, and Morpheus runs the deploys, the shop, the content and the SEO
+                    from here. It opens a construct for it.
+                  </p>
+                )}
               </div>
             )}
             {visibleProjects.map(p => (
