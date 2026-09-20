@@ -574,6 +574,107 @@ ok( $rank['title'] === 'rank_math_title', 'seo: Rank Math keys are mapped, so it
 wp_delete_post( $seo_target, true );
 wp_delete_post( $bare, true );
 
+// ── theme export (the working copy) ────────────────────────────────────────
+//
+// This endpoint reads files off someone's live server, so the refusals matter
+// more than the contents: a path outside the active theme must never be read,
+// whatever it looks like.
+
+echo "\n-- theme export --\n";
+
+$routes = rest_get_server()->get_routes();
+ok( isset( $routes['/morpheus/v1/export'] ), 'export: route /morpheus/v1/export registered' );
+
+function export_req( $action, $data, $secret ) {
+	$raw = json_encode( array( 'action' => $action, 'data' => $data, 'at' => gmdate( 'c' ) ) );
+	$r   = new WP_REST_Request( 'POST', '/morpheus/v1/export' );
+	$r->set_header( 'content-type', 'application/json' );
+	$r->set_header( 'X-Morpheus-Signature', 'sha256=' . hash_hmac( 'sha256', $raw, $secret ) );
+	$r->set_body( $raw );
+	return rest_do_request( $r );
+}
+
+ok( export_req( 'theme_tree', array(), 'wrong-secret' )->get_status() === 401, 'export: bad signature -> 401' );
+ok( export_req( 'nonsense', array(), $STORE_SECRET )->get_status() === 400, 'export: unknown action -> 400' );
+
+$active = Morpheus_Export::active_theme();
+$theme_dir = $active['dir'];
+// Fixtures inside the active theme: one binary, one oversized, one nested file,
+// and a batch bigger than the per-call cap.
+wp_mkdir_p( $theme_dir . '/morpheus-harness/deep' );
+wp_mkdir_p( $theme_dir . '/node_modules' );
+file_put_contents( $theme_dir . '/morpheus-harness/hello.php', "<?php\n// harness fixture\n" );
+file_put_contents( $theme_dir . '/morpheus-harness/deep/note.txt', "nested fixture\n" );
+file_put_contents( $theme_dir . '/morpheus-harness/picture.png', "\x89PNG\x00\x00binary" );
+file_put_contents( $theme_dir . '/morpheus-harness/big.txt', str_repeat( 'x', 1048576 + 10 ) );
+file_put_contents( $theme_dir . '/node_modules/ignored.js', "// never copied\n" );
+for ( $i = 0; $i < 210; $i++ ) {
+	file_put_contents( $theme_dir . '/morpheus-harness/batch-' . $i . '.txt', "file {$i}\n" );
+}
+
+$tree = export_req( 'theme_tree', array(), $STORE_SECRET )->get_data();
+ok( ! empty( $tree['ok'] ) && ! empty( $tree['theme']['slug'] ), 'export: theme_tree names the active theme' );
+ok( ( $tree['theme']['slug'] ?? '' ) === get_stylesheet(), 'export: it exports the ACTIVE theme (the child, when there is one)' );
+$paths = array_column( $tree['files'], 'path' );
+$prefix = 'wp-content/themes/' . get_stylesheet() . '/';
+$outside = array_filter( $paths, function ( $p ) use ( $prefix ) { return strpos( $p, $prefix ) !== 0; } );
+ok( $outside === array(), 'export: every path is inside the active theme' );
+ok( in_array( $prefix . 'morpheus-harness/hello.php', $paths, true ), 'export: it includes a theme file' );
+ok( in_array( $prefix . 'morpheus-harness/deep/note.txt', $paths, true ), 'export: it walks subdirectories' );
+ok( ! in_array( $prefix . 'morpheus-harness/picture.png', $paths, true ), 'export: a binary file is not listed' );
+ok( ! in_array( $prefix . 'morpheus-harness/big.txt', $paths, true ), 'export: an oversized file is not listed' );
+ok( ! in_array( $prefix . 'node_modules/ignored.js', $paths, true ), 'export: node_modules is not listed' );
+
+$skipped_paths = array_column( $tree['skipped'], 'path' );
+ok( in_array( 'morpheus-harness/picture.png', $skipped_paths, true ), 'export: the binary file is REPORTED as skipped, not silently dropped' );
+ok( in_array( 'morpheus-harness/big.txt', $skipped_paths, true ), 'export: so is the oversized one' );
+$hash_ok = true;
+foreach ( $tree['files'] as $f ) {
+	if ( ! preg_match( '/^[a-f0-9]{64}$/', (string) $f['hash'] ) ) { $hash_ok = false; }
+}
+ok( $hash_ok, 'export: every file carries a sha256 the app can diff against' );
+
+// Contents, verified against the manifest hash.
+$one = export_req( 'theme_files', array( 'paths' => array( $prefix . 'morpheus-harness/deep/note.txt' ) ), $STORE_SECRET )->get_data();
+ok( ( $one['files'][0]['content'] ?? '' ) === "nested fixture\n", 'export: theme_files returns the contents' );
+ok( ( $one['files'][0]['hash'] ?? '' ) === hash( 'sha256', "nested fixture\n" ), 'export: the returned hash matches the manifest' );
+
+// The refusals.
+$refusals = array(
+	'../../wp-config.php'                                  => 'a relative traversal',
+	'/etc/passwd'                                         => 'an absolute path',
+	'wp-content/themes/some-other-theme/style.css'         => 'another theme',
+	'wp-content/uploads/secret.txt'                        => 'the uploads directory',
+	"wp-content/themes/" . get_stylesheet() . "/a\\b.txt" => 'a backslash',
+	'wp-content/themes/' . get_stylesheet() . '/../x.txt'  => 'a traversal after the prefix',
+	'wp-content/themes/' . get_stylesheet() . '/node_modules/x.js' => 'a skipped directory',
+);
+foreach ( $refusals as $bad => $label ) {
+	$r = export_req( 'theme_files', array( 'paths' => array( $bad ) ), $STORE_SECRET )->get_data();
+	$got_content = false;
+	foreach ( ( $r['files'] ?? array() ) as $f ) { $got_content = true; }
+	ok( ! $got_content && count( $r['failed'] ?? array() ) === 1, "export: refuses {$label}" );
+}
+
+// The caps: 210 extra files exist, so one call cannot return them all.
+$batch_paths = array();
+foreach ( $paths as $p ) {
+	if ( strpos( $p, 'morpheus-harness/batch-' ) !== false ) { $batch_paths[] = $p; }
+}
+ok( count( $batch_paths ) === 210, 'export: the batch fixtures are all in the tree' );
+$batch = export_req( 'theme_files', array( 'paths' => $batch_paths ), $STORE_SECRET )->get_data();
+ok( ( $batch['count'] ?? 0 ) === Morpheus_Export::MAX_BATCH_FILES, 'export: a batch is capped at 200 files' );
+ok( ( $batch['complete'] ?? true ) === false, 'export: it reports that the batch was not everything asked for' );
+ok( ( $batch['count'] ?? 0 ) < count( $batch_paths ), 'export: the caller is expected to ask again for the rest' );
+
+// Clean up every fixture.
+foreach ( glob( $theme_dir . '/morpheus-harness/*' ) ?: array() as $f ) { is_dir( $f ) ? @rmdir( $f ) : @unlink( $f ); }
+foreach ( glob( $theme_dir . '/morpheus-harness/deep/*' ) ?: array() as $f ) { @unlink( $f ); }
+@rmdir( $theme_dir . '/morpheus-harness/deep' );
+@rmdir( $theme_dir . '/morpheus-harness' );
+@unlink( $theme_dir . '/node_modules/ignored.js' );
+@rmdir( $theme_dir . '/node_modules' );
+
 // ── pairing ────────────────────────────────────────────────────────────────
 //
 // The code is a credential that unlocks the shared secret, so the interesting

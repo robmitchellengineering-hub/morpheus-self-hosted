@@ -67,6 +67,11 @@ class Morpheus_REST {
 				'available' => true,
 				'paired'    => Morpheus_Pairing::is_paired(),
 			),
+			// Whether this build can hand its theme over as a working copy —
+			// the wizard offers to create the repo only when it can.
+			'export'     => array(
+				'theme' => true,
+			),
 			// kept flat for older callers
 			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
 			'armed'      => (bool) $s['armed'],

@@ -25,6 +25,7 @@ const HARD = [
   'verify-insight-optout.mjs',
   'verify-seo.mjs',
   'verify-pairing.mjs',
+  'verify-working-copy.mjs',
   'verify-prod-sql.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',

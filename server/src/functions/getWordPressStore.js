@@ -3,6 +3,7 @@
 // dropdowns.
 import { prisma } from '../db.js';
 import { getWpConnection, wpStatus, wpStore } from '../lib/wpPlugin.js';
+import { repoNameForSite } from '../lib/siteWorkingCopy.js';
 
 export default async function handler({ user, body, query }) {
   const projectId = body?.projectId || query?.projectId;
@@ -38,6 +39,11 @@ export default async function handler({ user, body, query }) {
     // off — it means THIS PLUGIN BUILD has the module, not "Yoast is
     // installed", which is what it used to depend on. `seo_owns_head` is
     // whether Morpheus or another SEO plugin is producing the tags.
+    // The repo name a working copy would get — shown BEFORE the operator taps
+    // the button, because creating a repo under a name they did not expect is
+    // not something to discover afterwards.
+    suggested_repo_name: repoNameForSite(conn.siteUrl, project.name),
+    existing_repo: conn.repo || project.github_repo || null,
     seo_available: !!(online && status.data?.seo?.available),
     seo_owns_head: online && status.data?.seo ? status.data.seo.owns_head : null,
     seo_active_plugin: online && status.data?.seo ? status.data.seo.active_plugin : null,
