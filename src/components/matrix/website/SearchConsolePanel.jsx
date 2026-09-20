@@ -36,7 +36,11 @@ function Row({ children, cols = 'grid-cols-[1fr_auto]' }) {
   return <div className={`grid ${cols} gap-2 border-b border-primary/10 py-1.5 last:border-b-0`}>{children}</div>;
 }
 
-export default function SearchConsolePanel({ onNote }) {
+// `widget` means this is running under a widget token inside an embed. The
+// connect route is deliberately `blockWidget` on the server (an OAuth handshake
+// from an embedded page is not something the owner consented to), so offering the
+// button here would be a dead end that 403s after the click.
+export default function SearchConsolePanel({ onNote, widget = false }) {
   const [status, setStatus] = useState(null);   // { connected, email, property, needsProperty }
   const [busy, setBusy] = useState(null);       // 'status' | 'overview' | 'properties' | 'select' | 'disconnect'
   const [properties, setProperties] = useState(null);
@@ -148,7 +152,14 @@ export default function SearchConsolePanel({ onNote }) {
                 position for your site. Read-only: Morpheus is asking to <span className="text-primary/80">view</span> your
                 search performance and nothing else.
               </div>
-              <button className={btn} onClick={connect}><ExternalLink size={11} /> CONNECT SEARCH CONSOLE</button>
+              {widget ? (
+                <div className="text-[10px] text-primary/60 border border-primary/20 px-2.5 py-2">
+                  Search Console is not connected for this site yet. Connecting needs your Google account, so it has
+                  to be done from Morpheus itself (WEBSITE → SEO → SEARCH CONSOLE) — not from an embedded page.
+                </div>
+              ) : (
+                <button className={btn} onClick={connect}><ExternalLink size={11} /> CONNECT SEARCH CONSOLE</button>
+              )}
               <div className={faint}>
                 Your site has to be a property in Search Console already. If it is not, add and verify it there first —
                 Morpheus cannot verify it for you.
