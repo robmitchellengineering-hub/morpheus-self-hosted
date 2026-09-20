@@ -1,6 +1,6 @@
 ---
 name: morpheus-hazards
-description: "The H1–H12 list of self-inflicted breakage already suffered by morpheus-self-hosted, each with its detection rule. Check every proposed change against this list; a violation is a critical issue, not a nitpick."
+description: "The H1–H16 list of self-inflicted breakage already suffered by morpheus-self-hosted, each with its detection rule. Check every proposed change against this list; a violation is a critical issue, not a nitpick."
 whenToUse: "Load before reviewing or writing any change to morpheus-self-hosted, especially changes touching server/src/lib/github.js, prisma/schema.prisma, applyEdits/diff-mode edits, invokeAI calls, self-dev push/sync paths, or external API integrations."
 ---
 

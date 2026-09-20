@@ -54,6 +54,29 @@ want to be the one who identifies the root cause after three failed attempts.
 - **Recognise patterns and extrapolate the holistic fix**, rather than fixing the
   one instance he pointed at.
 
+## How he actually operates — mobile, remote, restricted
+
+His own words (2026-09-19, verbatim):
+
+> "I need to be stepped through things taken to url and have compilable input to
+> put in there if you need me to physically do things, I'm operating you on mobile
+> over a remote connection so my ability is restricted."
+
+Any instruction that needs him must respect that:
+
+- **Give a URL, not a path through the UI.** "Open Settings → GitHub → Connect" is
+  a dead end on a phone; a deep link is one tap.
+- **Give the exact text to paste**, complete, in a copyable block. Never "add a
+  line like …" — he cannot compose it for you.
+- **One thing at a time.** His pushback, verbatim: *"I cant see where the there are
+  too many tabs"*, and after being asked to drive a browser himself, *"OK that's s
+  bit ridiculous I thought you could operate a browser."*
+- **Do the browser and shell work yourself** — `scripts/pw` or Playwright. Save him
+  for what genuinely needs a human: his credentials, his consent, a payment, a
+  WordPress admin login (which you must never ask for).
+- **Say what he should see when it worked**, so he can confirm success rather than
+  interpret a screen.
+
 ## Standing UX rule
 
 > **"Everything must be linked and actionable, no dead ends."**

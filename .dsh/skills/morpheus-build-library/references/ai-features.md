@@ -46,3 +46,31 @@ title/description/headings, the page itself. Paid and therefore absent:
 volumes, difficulty, competitor rankings and competitor backlinks. Google Search
 Console is the free authoritative source for *your own* queries, positions, CTR
 and backlinks — OAuth, property verified.
+
+## Three ways a model call fails while looking like it succeeded
+
+* **A truncated call reads as a negative answer.** The deployed model spends real
+  budget on hidden reasoning *before* any visible text, so a small `maxTokens`
+  returns `200` with an empty or short body — and a classification of
+  `isInquiry: false` looks exactly like a confident "not an inquiry". Ask for the
+  tokens you mean against the model that is actually deployed, and treat
+  `OUTPUT_TRUNCATED` as a failure rather than a result.
+* **Never mark work done before the work succeeded.** The Gmail flow marked a
+  message as seen regardless of whether its classification ran, so a transient
+  failure excluded that message from ever being reclassified — permanently.
+* **An external query can succeed and return nothing, forever.** A Gmail filter
+  of `category:primary` returned **zero messages, ever, with no date bound**; the
+  sync reported success on every run since the feature shipped and dropped every
+  real inquiry that came in. Prove a query returns non-empty against a
+  known-populated account *before* building a feature that depends on it. H10
+  covers a 404; this is the quieter failure — a 200 with an empty set.
+
+## Billing: the true-up must have a floor
+
+`reconcileCredits` added the post-call difference unconditionally, so a call
+whose real cost exceeded its reservation could take an account below zero —
+production had one at **−3.7712 credits**, which makes the product's "hard stop
+before overspend" claim false. The fix takes only what the account actually
+holds and absorbs the remainder as platform cost, logged rather than swallowed.
+`verify-billing-clamp.mjs` asserts the invariant with a 41,205-case sweep.
+

@@ -5,9 +5,15 @@ doesn't happen again. **Self-dev's planner and reviewer are given this file on
 every build turn** — the reviewer must check each proposed change against every
 item here and flag a violation as a **critical** issue.
 
-New incidents are appended by `revertSelfDevPush` and by the deploy-failure
-auto-diagnose flow. When you fix a production break, add the root cause here as
-part of the same change.
+One thing appends here automatically, and it is only a placeholder:
+`revertSelfDevPush` writes a stub when it reverts a push, and filling in the root
+cause is a job for a human or an agent — the deploy-failure auto-diagnose flow
+does **not** write to this file, whatever an earlier version of this header
+claimed. That stub is also fragile: it is appended to self-dev's own `ProjectFile`
+mirror, so it reaches the repo only on the *next* push, and is destroyed if that
+push is reverted. The only `## Incident` stub ever written here was lost exactly
+that way. When you fix a production break, add the root cause here as part of the
+same change.
 
 ---
 
@@ -110,11 +116,16 @@ diff's size or shape was unusual for what the operator had actually asked for.
 without a resync in between — **click SYNC FROM GITHUB immediately before any
 BUILD → PUSH turn** if there's any chance `main` moved since self-dev's
 workspace was last opened or synced, especially with another Claude Code
-session active on the same repo. Longer-term, `pushSelfDevToGithub` should
-compare its diff's target base (`ProjectFile`'s last-known commit) against
-`main`'s actual current HEAD before pushing, and refuse or flag a push whose
-diff implies remote drift instead of silently reverting toward a stale
-snapshot — not yet built.
+session active on the same repo.
+
+The longer-term fix this entry used to describe as outstanding is **built**:
+`server/src/lib/selfDevDrift.js` compares the push's target base against `main`'s
+actual HEAD and refuses a push whose diff implies remote drift, instead of
+silently reverting toward a stale snapshot. `verify-drift.mjs` asserts it, and
+`Project.synced_commit` is what it compares against. Two things it does *not*
+cover, and both stay the operator's job: a push with `force`/`directToMain`
+bypasses the check, and so does a scoped push (see
+`docs/audits/selfdev-pipeline-audit.md`).
 
 ## H10 — a plausible-looking external API call was never actually called
 **Incident (2026-09-11/12, `/stats/alice`):** self-dev built a page against
@@ -212,5 +223,80 @@ Two corollaries worth keeping:
   registering anything new in `index.js` or `worker.js`.
 - **Never trust a command that failed to run.** `timeout` not existing produced
   the same empty output as a clean run.
+
+## H13 — an external query can succeed, return nothing, and stay that way forever
+
+**Incident (2026-09-17, commit `6dc8c1e`):** the Gmail inquiry sync filtered on
+`category:primary` with no date bound. That query returns **zero messages, ever**
+— so the sync logged success on every run since the feature shipped and dropped
+every real inquiry that ever arrived. It was not a classifier miss: the messages
+were never fetched, and nothing anywhere said so. H10 covers a 404 from an
+endpoint that does not exist; this is the quieter shape — a `200` with an empty
+set.
+
+**Rule:** before shipping a feature that depends on an external query, prove that
+the query returns **non-empty against a known-populated account**. "The call
+succeeded" is not evidence that it returned anything. A filter you have not seen
+return a row is a filter you do not yet know works.
+
+## H14 — a green build can ship an artifact that cannot run
+
+**Incident (2026-09-20, commit `2bc0a05` and the fixes around it):** a class of
+compile failures that each report **success**:
+
+- `pip3 install -r requirements.txt … || true` with no venv — on Raspberry Pi OS
+  Bookworm (PEP 668) pip aborts with `externally-managed-environment`, `|| true`
+  eats it, and the workflow passes while releasing an image whose service
+  crash-loops on first boot.
+- PowerShell array splatting passes each element as **one** argv entry, so
+  PyInstaller receives the literal token `--add-data "templates;templates"` and
+  argparse cannot split it on the space.
+- An artifact lookup keyed on the *project* rather than the *build* means every
+  recompile silently keeps serving the first build ever saved.
+- Buffering a compiled artifact in memory produced 3 backend crash-restarts in a
+  47-minute window with no app-level error — a hard OOM kill.
+
+**Rule:** never `|| true` a dependency install, and never let a step's exit code
+be the only evidence it worked. `node scripts/compile-smoke.mjs` runs the real
+workflow on GitHub Actions and reports the runner's own conclusion — a paper
+audit of the adapters came up clean twice while `python-package` was failing on
+every run.
+
+## H15 — a shared module can lose its *behaviour* and pass every gate
+
+**Incident (2026-09-13/14, commits `1891ae6` and `4e8ed1e`, both reverted; and
+`969232a`):** `server/src/ai.js` was rewritten from **585 lines to 153** in a
+self-dev push, dropping `fetchWithTimeout`, model auto-discovery, the platform
+temperature override, `reserveCredits`/`reconcileCredits`, the provider-balance
+fallback and truncation handling — with `node --check`, lint and build all
+green, because none of them read behaviour. It happened twice and the revert
+messages never recorded why.
+
+The same emergency revert deleted `server/src/lib/errorLogger.js` as **named
+collateral** — the secret-redacting `logError` / `sendError` helper, wired into 46
+call sites across 7 route files — and it was never restored. Six of the seven
+route files still log nothing at all, so a route handler can answer `500` without
+recording anything anywhere. (The other collateral from that revert, the Alice
+stats work, *was* redone.)
+
+**Rule:** H1 covers dropping an **export**; this is the case where the shape is
+untouched and the substance is gone. When a shared module changes, diff what it
+*does*, not only what it exports — and read a deleted `// WHY` comment as the
+signal that a behaviour left with it. No guard sees this yet; review it by eye.
+
+## H16 — an admin-scoped read can expose another account's private data
+
+**Incident (2026-09-17, commit `71c6bbd`):** `scope()` lets admins see all rows.
+Rob is the platform's only admin, so his own `/deck` silently merged **another
+account's** Deck rows — tasks, brain-dump items, widget preferences — into his
+view. Private data crossed accounts and nothing failed; the pages simply showed
+more than they should. The fix is now the standing own-data rule in the
+`morpheus-deck` skill, but the incident itself had no number.
+
+**Rule:** for any personal-data model (`Deck*` especially), an admin-scoped read
+must be a deliberate, explicit widening — never the default that `scope()`
+happens to produce. Assert that `scope()` cannot return another account's rows
+for these models, and treat "the admin can see everything" as a disclosure
+decision, not a convenience.
 
 

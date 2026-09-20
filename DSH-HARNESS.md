@@ -12,13 +12,23 @@ DSH auto-discovers skills at `<projectRoot>/.dsh/skills/<name>/SKILL.md`, where
 `projectRoot` is the nearest ancestor containing `.git`. They are catalogued at
 session start and loaded on demand, so they cost nothing until relevant.
 
-| Skill | Purpose |
+The skill list is **not repeated here** — it went stale here first (this table
+said three skills when there were nine, and stopped at H10 when there were
+twelve), and `AGENTS.md` now carries the maintained map with a check behind it.
+
+| Where | What |
 |---|---|
-| `morpheus-dev-protocol` | Branch/PR workflow, never-push-`main`, resync rules, the single-writer constraint |
-| `morpheus-hazards` | The H1–H10 checklist, condensed with each rule |
-| `morpheus-stack` | Stack map, key files, commands, verification requirements |
+| `AGENTS.md` — "Agent harness (DSH)" | the maintained skill table and the hard rules; `verify-context.mjs` fails if a skill on disk is missing from it |
+| `.dsh/skills/morpheus-hazards` | the H1–H16 checklist, condensed with each rule |
 
 `KNOWN-HAZARDS.md` remains the authoritative hazard source — the skill mirrors it.
+
+**One limitation worth knowing:** skills are catalogued **at session start**, so a
+skill added during a session is not loadable until the next one — `skill <name>`
+answers "unknown or no longer available" even though the file is on disk and
+already merged. For this session, read the file directly; for the next, it is in
+the catalog.
+
 
 ### 2. Push guardrail — `.githooks/pre-push`
 
@@ -86,30 +96,29 @@ Gained an "Agent harness (DSH)" section stating the hard rules. DSH reads
 
 ## Manual steps that remain
 
-These need you — they cannot be done by the agent.
+Written on 2026-09-19. Most were done within a day; the statuses are below
+because a list of "steps that remain" that is never updated is how a setup
+document turns into a lie.
 
-### a. Re-authenticate `gh` (blocking all PR work)
+### a. ~~Re-authenticate `gh`~~ — DONE
 
-The token for `robmitchellengineering-hub` is invalid:
+`gh auth status` reports a valid token for `robmitchellengineering-hub` with
+scopes `gist, read:org, repo, workflow`. Note it does **not** include
+`delete_repo`, so a repo created by a browser test cannot be deleted from the
+shell — the app's own OAuth connection has that scope.
 
-```bash
-gh auth login -h github.com
-gh auth status
-```
+### b. ~~Open the repo as the DSH workspace~~ — SUPERSEDED
 
-Until this is done, no branch can be pushed and no PR opened.
+The workspace is still `/Users/mac/Documents/DeepSeek`, but the file policy is now
+`danger-full-access`, so writes to the repo no longer need a per-operation
+escalation. Opening the repo as the workspace would still be tidier; it is no
+longer required to work.
 
-### b. Open the repo as the DSH workspace
+### c. ~~Restart DSH to activate the MCP server~~ — DONE
 
-The agent's sandbox root is its workspace (`workspaceRoot: process.cwd()`). It
-was `/Users/mac/Documents/DeepSeek`, so every write to this repo needed a manual
-escalation approval. Open **`/Users/mac/code/morpheus-self-hosted`** as the
-workspace in the DSH Web GUI (directory picker) for normal friction-free work.
-
-### c. Restart DSH to activate the MCP server
-
-Profile plugins load at boot. Until DSH is restarted, the Playwright tools do
-not exist. Restarting ends the current chat session.
+The Playwright MCP tools are present in the session. Note that browser work
+normally goes through the `scripts/pw` CLI instead — see section 4 for why the
+wrapper exists.
 
 ### d. Server-side enforcement (strongly recommended)
 

@@ -124,5 +124,6 @@ happened to `morpheus-deck`'s hand-written "shipped" list.
 
 - `morpheus-deck` — what's actually shipped, and the own-data architectural rule.
 - `morpheus-dev-protocol` — how changes ship.
-- `FEATURE-BACKLOG.md` #9 — the original "Command Deck Marketplace / Jarvis↔Morpheus
-  inter-agent communication" note this whole feature traces back to.
+- `docs/planning/FEATURE-BACKLOG.md` #9 — the original "Command Deck Marketplace / Jarvis↔Morpheus
+  inter-agent communication" note this whole feature traces back to. The planning corpus is
+  archived in `docs/` (`docs/README.md`) because it used to live only outside the repo.

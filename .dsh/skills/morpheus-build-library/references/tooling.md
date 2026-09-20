@@ -56,3 +56,31 @@ replaced the file, a later block raised, and the state was written while the UI
 that reaches it never was. After any scripted edit, prove the change is in the
 file (grep) and in the rendered output (the DOM), not just in the console output
 that said it worked.
+
+## Sandbox and toolchain
+
+* **Browser automation goes through `scripts/pw`, not a raw `playwright-cli`.**
+  Two constraints make the wrapper mandatory, and both were solved there rather
+  than configured: Playwright hardcodes its daemon and browser registry to
+  `$HOME/Library/Caches/ms-playwright` with no env override, so `scripts/pw`
+  points `HOME` at `.playwright/home/`; and macOS forbids nested sandboxes, so
+  Chrome cannot start its own sandbox inside DSH's and must be launched with
+  `--no-sandbox` (Chrome's sandbox, not DSH's) plus a workspace-local profile.
+  Symptoms of bypassing it: `Target crashed`, or
+  `EPERM … mkdir '…/ms-playwright/daemon'`. Playwright MCP works without these
+  fixes only because the harness spawns MCP servers outside the bash sandbox.
+* **`npm`/`npx` can fail with a misleading `EPERM … root-owned files`.** That is
+  the file sandbox denying writes to `~/.npm`, not a corrupt cache. Point
+  `npm_config_cache` at a writable path.
+* **`pnpm` is not installed**, which is why the profile resolves plugin packages
+  through the CLI's own `node_modules` fallback. `corepack enable pnpm` only if
+  you actually need to add packages.
+* **Session logs are compressed** (`.jsonl.zstd`) — read them with
+  `scripts/sessions.mjs`, not `zcat`-and-grep guesswork.
+* **The push guardrail is local and bypassable.** `git config core.hooksPath
+  .githooks` installs a `pre-push` hook that refuses any push to `main`; verify
+  it with `echo "refs/heads/main a b c d" | ./.githooks/pre-push origin x` →
+  exit 1. `git push --no-verify` skips it. Never use it — the hook is the
+  mechanical form of the rule, and server-side branch protection is deliberately
+  not enabled because self-dev's own delivery flow writes to `main` through the
+  GitHub API and hooks cannot see it.
