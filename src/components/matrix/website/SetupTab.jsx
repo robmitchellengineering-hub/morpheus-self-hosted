@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Loader2, Plug, Check, Download, ExternalLink, ArrowUpCircle, Globe, KeyRound,
-  RefreshCw, ShieldCheck, Settings,
+  RefreshCw, ShieldCheck, Settings, FolderPlus,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
@@ -55,6 +55,19 @@ function Step({ n, title, children, done }) {
   );
 }
 
+/**
+ * One line about what was copied. Deliberately mirrors server/src/lib/
+ * siteWorkingCopy.js's describeWorkingCopy() so the panel and the API cannot
+ * describe the same result differently.
+ */
+function copySummary({ files = 0, bytes = 0, reused = false, theme = {} } = {}) {
+  const size = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const parts = [`${files} file${files === 1 ? '' : 's'} (${size})`];
+  if (theme?.name) parts.push(theme.name);
+  if (reused) parts.push('added to the repo you already had with that name');
+  return parts.join(' · ');
+}
+
 /** Opens a wp-admin page on the operator's own site — one tap, no typing. */
 function OpenButton({ href, children, tone = 'default' }) {
   const cls = tone === 'primary'
@@ -78,10 +91,32 @@ export default function SetupTab({ store, projectId, onChanged }) {
   const [err, setErr] = useState(null);
   const [latestVersion, setLatestVersion] = useState(null);
   const [manual, setManual] = useState(false); // "use a shared secret instead"
+  const [copying, setCopying] = useState(false);
+  const [copy, setCopy] = useState(null);      // the working-copy result
+  const [repoName, setRepoName] = useState(''); // what the repo will be called
 
   useEffect(() => {
     fetch(PLUGIN_MANIFEST).then((r) => (r.ok ? r.json() : null)).then((m) => setLatestVersion(m?.version || null)).catch(() => {});
   }, []);
+
+  // The name comes from the server's own helper (repoNameForSite) so the panel
+  // and the API can never propose different names.
+  useEffect(() => {
+    if (store?.suggested_repo_name) setRepoName(store.suggested_repo_name);
+  }, [store?.suggested_repo_name]);
+
+  const createWorkingCopy = async () => {
+    setCopying(true); setErr(null); setCopy(null);
+    try {
+      const { data } = await base44.functions.invoke('createSiteWorkingCopy', {
+        projectId,
+        repoName: repoName.trim() || undefined,
+      });
+      setCopy(data);
+    } catch (e) {
+      setErr(e?.data?.error || e.message);
+    } finally { setCopying(false); }
+  };
 
   const connected = store?.connected;
   const updateAvailable = connected && store.online && isNewer(latestVersion, store.version);
@@ -165,6 +200,65 @@ export default function SetupTab({ store, projectId, onChanged }) {
             )}
           </div>
         )}
+        {/* The step that used to be a wall: Morpheus deploys through a GitHub
+            repo, and a site that was never in one had nowhere to start. */}
+        {!store?.existing_repo && !copy && (
+          <div className="border border-primary/30 px-3 py-3 space-y-2">
+            <div className="text-[12px] text-primary/85">Turn on code changes</div>
+            <p className="text-[10px] text-primary/50 leading-relaxed">
+              Morpheus ships changes through a GitHub repo — it opens a pull request, checks run, and the plugin applies
+              the merged commit. Your site's theme is not in one, so Morpheus can make you a private one to work from.
+              Deploy, Code and the AI build loop all start working after this.
+            </p>
+            <div className="space-y-1">
+              <div className="text-[9px] text-primary/40 uppercase tracking-wider">Repository name</div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-primary/40 shrink-0">{store?.github_login ? `${store.github_login}/` : ''}</span>
+                <input className="flex-1 bg-black/30 border border-primary/20 px-2 h-[36px] text-[12px] text-primary font-mono focus:outline-none focus:border-primary/50"
+                  value={repoName} onChange={(e) => setRepoName(e.target.value)}
+                  autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+              </div>
+            </div>
+            <button onClick={createWorkingCopy} disabled={copying || !repoName.trim()}
+              className="w-full flex items-center justify-center gap-2 h-[42px] bg-primary text-black font-bold text-[12px] hover:bg-[#39ff14] disabled:opacity-40 transition-colors">
+              {copying ? <Loader2 size={13} className="animate-spin" /> : <FolderPlus size={13} />}
+              {copying ? 'COPYING YOUR THEME…' : `CREATE ${repoName.trim() || 'MY WORKING COPY'}`}
+            </button>
+            <div className="text-[9px] text-primary/35 leading-relaxed">
+              Copies the active theme's code only — never WordPress core, other plugins, or your media. Nothing on your
+              site changes.
+            </div>
+          </div>
+        )}
+
+        {copy && (
+          <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-primary text-[12px]"><Check size={13} /> Working copy created</div>
+            <a href={copy.url} target="_blank" rel="noreferrer"
+              className="text-[10px] text-primary/70 hover:text-primary inline-flex items-center gap-1 break-all">
+              <ExternalLink size={10} /> {copy.repo}
+            </a>
+            <div className="text-[10px] text-primary/55 leading-relaxed">{copySummary(copy)}</div>
+            {copy.theme?.is_child && (
+              <div className="text-[9px] text-primary/40">
+                Child theme copied; its parent ({copy.theme.parent_slug}) is a third-party theme Morpheus leaves alone.
+              </div>
+            )}
+            {copy.skipped_count > 0 && (
+              <div className="text-[9px] text-primary/40">
+                {copy.skipped_count} image{copy.skipped_count === 1 ? '' : 's'}, font{''} or large file{copy.skipped_count === 1 ? '' : 's'} stayed
+                on your site — Morpheus manages code, and WordPress keeps serving those.
+              </div>
+            )}
+            {copy.truncated && (
+              <div className="text-[9px] text-yellow-500/80">
+                The theme was larger than one copy — the rest is still on your site. Deploy still works for the files that came across.
+              </div>
+            )}
+            <div className="text-[9px] text-primary/40">{copy.next}</div>
+          </div>
+        )}
+
         <p className="text-[11px] text-primary/45 leading-relaxed">
           Use the <span className="text-primary/70">Deploy</span> tab to ship code changes to the site, and the{' '}
           <span className="text-primary/70">Shop</span>, <span className="text-primary/70">Pages</span> and{' '}

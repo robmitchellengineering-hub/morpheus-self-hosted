@@ -116,6 +116,13 @@ jobs:
       - name: WordPress pairing rules + plugin contract
         run: node scripts/verify-pairing.mjs
 
+      # Putting a live site into a repo: the export endpoint reads files off
+      # someone's server, so "inside the active theme only, text only, capped,
+      # and everything skipped is reported" is asserted against the source, as
+      # is the JS/PHP contract for it.
+      - name: Site working copy rules + plugin contract
+        run: node scripts/verify-working-copy.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,

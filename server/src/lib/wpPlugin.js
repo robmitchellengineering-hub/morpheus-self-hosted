@@ -220,6 +220,16 @@ export async function wpVerifySecret(conn) {
   return { ok: true, note: `unexpected ${res.status}` };
 }
 
+// Export-module convenience: the active theme as a working copy. See the
+// plugin's includes/class-export.php — text files only, capped, hashed.
+export async function wpExportThemeTree(conn) {
+  return wpCall(conn, 'export', { action: 'theme_tree', data: {} });
+}
+
+export async function wpExportThemeFiles(conn, paths) {
+  return wpCall(conn, 'export', { action: 'theme_files', data: { paths } });
+}
+
 // Store-module convenience: wpCall(conn, 'store', { action, data }).
 export async function wpStore(conn, action, data = {}) {
   return wpCall(conn, 'store', { action, data });
