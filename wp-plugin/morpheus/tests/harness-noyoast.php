@@ -104,7 +104,12 @@ $id = wp_insert_post( array(
 // WordPress would emit on its own — the widget shows that rather than a blank
 // box that hides a live value.
 $before = seo_req( 'get_seo', array( 'id' => $id ), $SECRET )->get_data();
-ok( ( $before['item']['seo_title'] ?? 'x' ) === '' && ( $before['item']['effective_title'] ?? '' ) === 'No-Yoast harness page', 'unset title falls back to the derived one' );
+// Nothing is set on the item, so the site-wide template supplies the title
+// (templates ship ON) and the panel is told the value is inherited rather than
+// implying an operator wrote it.
+ok( ( $before['item']['seo_title'] ?? 'x' ) === '', 'unset title stores nothing on the item' );
+ok( ( $before['item']['effective_title'] ?? '' ) === 'No-Yoast harness page | ' . get_bloginfo( 'name' ), 'unset title falls back to the site template' );
+ok( ( $before['item']['inherited_title'] ?? false ) === true, 'unset title is reported as inherited' );
 ok( ( $before['item']['source'] ?? '' ) === 'morpheus', 'item reports Morpheus as the source' );
 
 $set = seo_req( 'set_seo', array(
@@ -131,6 +136,109 @@ seo_req( 'set_seo', array( 'id' => $id, 'seo_description' => '' ), $SECRET );
 ok( get_post_meta( $id, '_morpheus_seo_description', true ) === '', 'emptying a field deletes our meta' );
 $cleared = seo_req( 'get_seo', array( 'id' => $id ), $SECRET )->get_data();
 ok( strpos( (string) $cleared['item']['effective_description'], 'A short excerpt' ) === 0, 'effective_description falls back to the excerpt' );
+
+// ── site-wide templates ────────────────────────────────────────────────────
+//
+// The whole point of a template is that content nobody has set by hand still
+// gets a sensible title and description — so these assertions are about a
+// SECOND, bare item, and about what actually renders for it.
+
+echo "\n-- SEO templates --\n";
+
+$bare_id = wp_insert_post( array(
+	'post_title'   => 'Bare template target',
+	'post_content' => 'Opening line of the body copy that a template may use as a description. ' . str_repeat( 'More body text here. ', 40 ),
+	'post_status'  => 'publish',
+	'post_type'    => 'page',
+) );
+
+$shipped = seo_req( 'get_defaults', array(), $SECRET )->get_data();
+ok( ! empty( $shipped['defaults'] ) && ! empty( $shipped['defaults']['enabled'] ), 'templates: shipped defaults exist and are on' );
+ok( ( $shipped['defaults']['title'] ?? '' ) === '%title% | %sitename%', 'templates: the shipped title template names the site' );
+
+$ctx_t = seo_req( 'context', array(), $SECRET )->get_data();
+ok( ! empty( $ctx_t['tokens'] ) && in_array( '%excerpt%', $ctx_t['tokens'], true ), 'templates: context publishes the token list' );
+
+// A bare page inherits BOTH values from the template.
+$bare = seo_req( 'get_seo', array( 'id' => $bare_id ), $SECRET )->get_data();
+ok( ( $bare['item']['seo_title'] ?? 'x' ) === '', 'templates: nothing is stored on the item itself' );
+ok( ( $bare['item']['effective_title'] ?? '' ) === 'Bare template target | ' . get_bloginfo( 'name' ), 'templates: the title comes from the template' );
+ok( ( $bare['item']['inherited_title'] ?? false ) === true, 'templates: the value is reported as inherited' );
+ok( strpos( (string) $bare['item']['effective_description'], 'Opening line of the body copy' ) === 0, 'templates: the description comes from the body when there is no excerpt' );
+ok( ( $bare['item']['inherited_description'] ?? false ) === true, 'templates: the description is reported as inherited' );
+
+// And it is what the <head> actually prints.
+$q2 = new WP_Query( array( 'page_id' => $bare_id, 'post_type' => 'page' ) );
+$GLOBALS['wp_the_query'] = $q2;
+$GLOBALS['wp_query']     = $q2;
+$q2->the_post();
+ok( apply_filters( 'pre_get_document_title', 'Derived' ) === 'Bare template target | ' . get_bloginfo( 'name' ), 'templates: the rendered document title uses the template' );
+ob_start();
+do_action( 'wp_head' );
+$tpl_head = ob_get_clean();
+ok( strpos( $tpl_head, 'name="description" content="Opening line of the body copy' ) !== false, 'templates: the rendered head carries the templated description' );
+wp_reset_query();
+
+// A per-item value always wins over the template.
+seo_req( 'set_seo', array( 'id' => $bare_id, 'seo_title' => 'Written By Hand' ), $SECRET );
+$written = seo_req( 'get_seo', array( 'id' => $bare_id ), $SECRET )->get_data();
+ok( ( $written['item']['effective_title'] ?? '' ) === 'Written By Hand' && ( $written['item']['inherited_title'] ?? true ) === false, 'templates: an item value overrides the template' );
+seo_req( 'set_seo', array( 'id' => $bare_id, 'seo_title' => '' ), $SECRET );
+
+// Per-post-type overrides, and the site-wide one underneath.
+$setd = seo_req( 'set_defaults', array( 'defaults' => array(
+	'title'       => '%title% — %sitename%',
+	'description' => '%excerpt%',
+	'post_types'  => array( 'post' => array( 'title' => '%title% (blog)' ) ),
+) ), $SECRET )->get_data();
+ok( ( $setd['defaults']['title'] ?? '' ) === '%title% — %sitename%', 'templates: set_defaults returns what it stored' );
+
+$bare2 = seo_req( 'get_seo', array( 'id' => $bare_id ), $SECRET )->get_data();
+ok( ( $bare2['item']['effective_title'] ?? '' ) === 'Bare template target — ' . get_bloginfo( 'name' ), 'templates: a changed site-wide template takes effect' );
+
+$post_id_t = wp_insert_post( array( 'post_title' => 'A Blog Post', 'post_content' => 'Body.', 'post_status' => 'publish', 'post_type' => 'post' ) );
+$post_t = seo_req( 'get_seo', array( 'id' => $post_id_t ), $SECRET )->get_data();
+ok( ( $post_t['item']['effective_title'] ?? '' ) === 'A Blog Post (blog)', 'templates: a per-post-type template wins for its type' );
+
+// Tokens that do not exist are REMOVED — a literal %category% in a live <title>
+// is worse than the word simply not being there.
+$unknown = seo_req( 'set_defaults', array( 'defaults' => array( 'title' => '%title% %category% %nope%' ) ), $SECRET )->get_data();
+ok( ( $unknown['defaults']['title'] ?? 'x' ) === '%title%', 'templates: unknown tokens are stripped' );
+ok( ( seo_req( 'get_seo', array( 'id' => $bare_id ), $SECRET )->get_data()['item']['effective_title'] ?? '' ) === 'Bare template target', 'templates: the stripped template still renders cleanly' );
+
+// Markup and over-long values are cleaned, not trusted.
+$dirty = seo_req( 'set_defaults', array( 'defaults' => array(
+	'title'       => '<script>alert(1)</script>%title% | %sitename%',
+	'description' => str_repeat( 'long ', 100 ),
+) ), $SECRET )->get_data();
+ok( strpos( $dirty['defaults']['title'], 'alert' ) === false && strpos( $dirty['defaults']['title'], '<' ) === false, 'templates: markup is stripped on write' );
+ok( mb_strlen( $dirty['defaults']['description'] ) <= 200, 'templates: an over-long template is capped' );
+
+// Turning templates off restores WordPress's own derived values.
+$off = seo_req( 'set_defaults', array( 'defaults' => array( 'enabled' => false ) ), $SECRET )->get_data();
+ok( ( $off['defaults']['enabled'] ?? true ) === false, 'templates: they can be switched off' );
+ok( ( seo_req( 'get_seo', array( 'id' => $bare_id ), $SECRET )->get_data()['item']['effective_title'] ?? '' ) === 'Bare template target', 'templates: switched off, the raw post title is back' );
+
+// An empty template for a field is a deliberate "do not template this".
+seo_req( 'set_defaults', array( 'defaults' => array( 'enabled' => true, 'title' => '%title% | %sitename%', 'description' => '' ) ), $SECRET );
+$nodesc = seo_req( 'get_seo', array( 'id' => $bare_id ), $SECRET )->get_data();
+ok( ( $nodesc['item']['inherited_description'] ?? true ) === false, 'templates: a blank description template means no templated description' );
+
+// With a template supplying both, the audit must NOT call it missing — the
+// audit measures what actually goes out.
+seo_req( 'set_defaults', array( 'defaults' => array( 'enabled' => true, 'title' => '%title% | %sitename%', 'description' => '%excerpt%' ) ), $SECRET );
+$audit_t = seo_req( 'audit', array( 'limit' => 100 ), $SECRET )->get_data();
+$codes_t = array_column( $audit_t['issues'], 'code' );
+$bare_missing = false;
+foreach ( $audit_t['issues'] as $iss ) {
+	if ( (int) $iss['id'] === $bare_id && in_array( $iss['code'], array( 'missing_title', 'missing_description' ), true ) ) {
+		$bare_missing = true;
+	}
+}
+ok( $bare_missing === false, 'templates: a templated title/description is not reported as missing' );
+
+// Back to the shipped state for the sections below.
+seo_req( 'set_defaults', array( 'defaults' => Morpheus_SEO::defaults() ), $SECRET );
 
 echo "\n== no-Yoast boot: the tags actually render ==\n";
 // The clearing test above deliberately emptied the description, so set the
@@ -229,6 +337,9 @@ ok( ( $same['item']['seo_title'] ?? '' ) === 'Store SEO Title', 'the SEO module 
 
 wp_delete_post( $page_id, true );
 wp_delete_post( $id, true );
+wp_delete_post( $bare_id, true );
+wp_delete_post( $post_id_t, true );
+delete_option( 'morpheus_seo_defaults' );
 delete_option( 'morpheus_settings' );
 
 echo "\n";

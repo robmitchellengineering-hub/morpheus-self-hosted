@@ -486,6 +486,33 @@ $got = seo_req( 'get_seo', array( 'id' => $seo_target ), $STORE_SECRET )->get_da
 ok( ( $got['item']['seo_title'] ?? '' ) === 'Harness SEO Title', 'seo: get_seo reads it back' );
 ok( ( $got['item']['source'] ?? '' ) === 'yoast', 'seo: item reports Yoast as the source' );
 
+// Site-wide templates are stored on a Yoast site, but they must NOT be reported
+// as the effective value — Yoast's own templates decide what goes out, so
+// claiming ours would tell the operator something false about their live site.
+seo_req( 'set_defaults', array( 'defaults' => array( 'enabled' => true, 'title' => 'TEMPLATED %title% | %sitename%' ) ), $STORE_SECRET );
+$tpl_stored = seo_req( 'get_defaults', array(), $STORE_SECRET )->get_data();
+ok( ( $tpl_stored['defaults']['title'] ?? '' ) === 'TEMPLATED %title% | %sitename%', 'seo: templates save on a Yoast site' );
+$bare_yoast = wp_insert_post( array( 'post_title' => 'Bare with Yoast', 'post_content' => 'Body text that is long enough to be a description in its own right, honestly.', 'post_status' => 'publish', 'post_type' => 'page' ) );
+$bf = seo_req( 'get_seo', array( 'id' => $bare_yoast ), $STORE_SECRET )->get_data();
+ok( ( $bf['item']['effective_title'] ?? '' ) === 'Bare with Yoast', 'seo: with Yoast active, the effective title stays the derived one (our template is NOT claimed)' );
+ok( ( $bf['item']['inherited_title'] ?? true ) === false, 'seo: with Yoast active, nothing is reported as inherited from us' );
+
+// The explicit path still works there: apply the template into items that have
+// nothing set (this is what makes templates useful on a Yoast site).
+$dry = seo_req( 'bulk_apply_defaults', array( 'dry_run' => true, 'limit' => 10 ), $STORE_SECRET )->get_data();
+$dry_ids = array_column( $dry['preview'] ?? array(), 'id' );
+ok( in_array( $bare_yoast, $dry_ids, true ), 'seo: bulk_apply_defaults dry-run lists an item with nothing set' );
+ok( ( $dry['count'] ?? -1 ) === 0, 'seo: a dry run writes nothing' );
+ok( get_post_meta( $bare_yoast, '_yoast_wpseo_title', true ) === '' , 'seo: a dry run leaves the item alone' );
+
+$applied = seo_req( 'bulk_apply_defaults', array( 'limit' => 10 ), $STORE_SECRET )->get_data();
+ok( ( $applied['count'] ?? 0 ) >= 1, 'seo: bulk_apply_defaults writes' );
+$after = seo_req( 'get_seo', array( 'id' => $bare_yoast ), $STORE_SECRET )->get_data();
+ok( ( $after['item']['seo_title'] ?? '' ) === 'TEMPLATED Bare with Yoast | ' . get_bloginfo( 'name' ), 'seo: the applied value went into YOAST\'s key with the tokens resolved' );
+ok( get_post_meta( $seo_target, '_yoast_wpseo_title', true ) === 'Harness SEO Title', 'seo: an item that already had a title was NOT overwritten' );
+wp_delete_post( $bare_yoast, true );
+delete_option( 'morpheus_seo_defaults' );
+
 // An item with NO meta description must be flagged — this is the whole point
 // of the audit, so it is asserted against a deliberately bare post.
 $bare = wp_insert_post( array(
