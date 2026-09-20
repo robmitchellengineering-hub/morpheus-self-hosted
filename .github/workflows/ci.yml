@@ -191,6 +191,13 @@ jobs:
       - name: Site maintenance policy rules
         run: node scripts/verify-site-maintenance.mjs
 
+      # What makes a merge verified at all: the named gates must have RUN, not
+      # merely have failed to fail. A green deploy preview with no CI run behind
+      # it reads as "passing" to the merge engine — which is how #258 and #259
+      # nearly merged with nothing having checked them (hazard H17). Pure module.
+      - name: Merge gate rules
+        run: node scripts/verify-merge-gates.mjs
+
       # The fact generator. It exits non-zero if its own extraction breaks —
       # e.g. a refactor moves what it parses — so a silently-wrong report can
       # never be the thing you rely on.
