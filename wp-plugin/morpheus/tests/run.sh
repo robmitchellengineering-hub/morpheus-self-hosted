@@ -44,4 +44,14 @@ $PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
   -- /tests/harness-noyoast.php
 
 echo
+echo "== harness: one-click update through WordPress's own upgrader (PHP ${PHP_VERSION}) =="
+# A third boot on purpose: this one runs Plugin_Upgrader for real, which needs
+# a writable plugins directory it can install into, and it must never run
+# against the same WordPress instance as the assertions above.
+$PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
+  --auto-mount "$PLUGIN_DIR" \
+  --mount "$PLUGIN_DIR/tests:/tests" \
+  -- /tests/harness-updates.php
+
+echo
 echo "All plugin harnesses passed."

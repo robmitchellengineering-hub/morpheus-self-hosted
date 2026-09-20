@@ -3,13 +3,16 @@
 // the source. Runs on every build via the `prebuild` npm script. Excludes
 // tests/. Uses the `zip` CLI (present on macOS, Linux, and the CI image).
 //
-// Also writes public/plugin-manifest.json ({version}) — SetupTab.jsx fetches
-// it to compare against the live site's `/wp-json/morpheus/v1/status`
-// version and prompt "update available" once they drift, rather than a user
-// being stuck on an old plugin build with no way back to the download step
-// (SetupTab only shows the install flow pre-connect).
+// Also writes public/plugin-manifest.json — SetupTab.jsx fetches it to compare
+// against the live site's `/wp-json/morpheus/v1/status` version, and the PLUGIN
+// itself fetches it (see includes/class-updates.php) to offer a one-click update
+// inside WordPress. The manifest therefore carries the package URL and its
+// SHA-256 as well as the version, because the plugin verifies the download
+// against that hash before installing it — a self-updating component should not
+// accept whatever arrives on the wire.
 import { execSync } from 'node:child_process';
-import { rmSync, mkdirSync, cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { rmSync, mkdirSync, cpSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -38,8 +41,22 @@ try {
   const m = header.match(/^\s*\*\s*Version:\s*([\d.]+)/m);
   const version = m ? m[1] : null;
   if (!version) throw new Error('could not read Version: from morpheus.php header');
-  writeFileSync(outManifest, JSON.stringify({ version }), 'utf8');
-  console.log(`[pack-wp-plugin] wrote ${outManifest} (v${version})`);
+
+  // The hash is computed over the zip we just wrote, so the manifest can never
+  // describe a different package than the one being served.
+  const bytes = statSync(outZip).size;
+  const sha256 = createHash('sha256').update(readFileSync(outZip)).digest('hex');
+  writeFileSync(outManifest, JSON.stringify({
+    version,
+    sha256,
+    bytes,
+    // Where the plugin downloads it from. Absolute on purpose: the plugin runs
+    // on someone else's server and has no idea what host this build was made on.
+    url: 'https://morpheus.nz/morpheus-wordpress-plugin.zip',
+    requires: (header.match(/^\s*\*\s*Requires at least:\s*([\d.]+)/m) || [, null])[1],
+    requires_php: (header.match(/^\s*\*\s*Requires PHP:\s*([\d.]+)/m) || [, null])[1],
+  }), 'utf8');
+  console.log(`[pack-wp-plugin] wrote ${outManifest} (v${version}, ${bytes} bytes, sha256 ${sha256.slice(0, 12)}…)`);
 } catch (err) {
   console.error(`[pack-wp-plugin] failed: ${err.message}`);
   process.exit(1);

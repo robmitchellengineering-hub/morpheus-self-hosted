@@ -574,6 +574,133 @@ ok( $rank['title'] === 'rank_math_title', 'seo: Rank Math keys are mapped, so it
 wp_delete_post( $seo_target, true );
 wp_delete_post( $bare, true );
 
+// ── one-click plugin updates ───────────────────────────────────────────────
+//
+// The update channel is what stops every user having to re-upload a zip. The
+// manifest is supplied as a fixture (the plugin's own filter is the seam)
+// rather than reaching the real morpheus.nz, so this tests OUR logic — the
+// version comparison, the shape WordPress needs, and above all the refusal when
+// a downloaded package does not match its published hash.
+
+echo "\n-- one-click updates --\n";
+
+define( 'MORPHEUS_TEST_MANIFEST', 'morpheus_test_manifest' );
+$fixture = new stdClass();
+$GLOBALS[ MORPHEUS_TEST_MANIFEST ] = null;
+add_filter( 'morpheus_update_manifest_url', function () { return 'https://morpheus.test/plugin-manifest.json'; } );
+add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
+	if ( strpos( $url, 'morpheus.test' ) === false ) { return $pre; }
+	$body = $GLOBALS[ MORPHEUS_TEST_MANIFEST ];
+	if ( ! $body ) { return new WP_Error( 'no_fixture', 'no manifest fixture set' ); }
+	return array( 'headers' => array(), 'body' => json_encode( $body ), 'response' => array( 'code' => 200, 'message' => 'OK' ), 'cookies' => array(), 'filename' => null );
+}, 10, 3 );
+
+$manifest_with = function ( $version, $sha = 'deadbeef' ) {
+	$GLOBALS[ MORPHEUS_TEST_MANIFEST ] = array(
+		'version'      => $version,
+		'sha256'       => $sha,
+		'url'          => 'https://morpheus.nz/morpheus-wordpress-plugin.zip',
+		'requires'     => '6.0',
+		'requires_php' => '7.4',
+	);
+	delete_transient( Morpheus_Updates::CACHE_KEY );
+};
+
+$basename = Morpheus_Updates::basename();
+ok( $basename === 'morpheus/morpheus.php', 'updates: the plugin basename is recognised' );
+ok( Morpheus_Updates::is_newer( '0.5.4', '0.5.3' ) === true, 'updates: 0.5.4 is newer than 0.5.3' );
+ok( Morpheus_Updates::is_newer( '0.5.3', '0.5.3' ) === false, 'updates: the same version is not an update' );
+ok( Morpheus_Updates::is_newer( '0.4.9', '0.5.3' ) === false, 'updates: an older version is not an update' );
+ok( Morpheus_Updates::is_newer( '0.5.10', '0.5.9' ) === true, 'updates: version_compare handles double digits' );
+
+// Nothing newer -> WordPress is left exactly as it was.
+$manifest_with( MORPHEUS_VERSION );
+$t = new stdClass();
+$t->response = array();
+$out = Morpheus_Updates::offer_update( $t );
+ok( ! isset( $out->response[ $basename ] ), 'updates: no offer when the running version is current' );
+
+// Newer -> the offer WordPress needs, with the package and its hash.
+$manifest_with( '9.9.9', str_repeat( 'a', 64 ) );
+$t2 = new stdClass();
+$t2->response = array( 'other/other.php' => (object) array( 'new_version' => '1.0' ) );
+$t2->no_update = array( $basename => (object) array( 'new_version' => MORPHEUS_VERSION ) );
+$out2 = Morpheus_Updates::offer_update( $t2 );
+ok( isset( $out2->response[ $basename ] ), 'updates: a newer manifest is offered to WordPress' );
+ok( ( $out2->response[ $basename ]->new_version ?? '' ) === '9.9.9', 'updates: the offered version is the manifest\'s' );
+ok( ( $out2->response[ $basename ]->package ?? '' ) === 'https://morpheus.nz/morpheus-wordpress-plugin.zip', 'updates: the offered package is the manifest URL' );
+ok( ( $out2->response[ $basename ]->slug ?? '' ) === 'morpheus', 'updates: the slug WordPress matches on' );
+ok( ! isset( $out2->no_update[ $basename ] ), 'updates: the stale no_update entry is cleared (or the update is hidden)' );
+ok( isset( $out2->response['other/other.php'] ), 'updates: another plugin\'s update entry is untouched' );
+
+// A manifest that is missing or unreachable must never invent an update.
+$GLOBALS[ MORPHEUS_TEST_MANIFEST ] = null;
+delete_transient( Morpheus_Updates::CACHE_KEY );
+$t3 = new stdClass();
+$t3->response = array();
+ok( ! isset( Morpheus_Updates::offer_update( $t3 )->response[ $basename ] ), 'updates: an unreachable manifest offers nothing' );
+
+// The details modal.
+$manifest_with( '9.9.9' );
+$info = Morpheus_Updates::plugin_info( null, 'plugin_information', (object) array( 'slug' => 'morpheus' ) );
+ok( ( $info->version ?? '' ) === '9.9.9' && ( $info->download_link ?? '' ) !== '', 'updates: the details modal names the version and package' );
+ok( Morpheus_Updates::plugin_info( 'untouched', 'plugin_information', (object) array( 'slug' => 'someone-else' ) ) === 'untouched', 'updates: another plugin\'s details are untouched' );
+
+// THE REFUSAL THAT MATTERS: a package whose bytes do not match the published
+// hash must never reach the upgrader.
+$tmp_zip = trailingslashit( get_temp_dir() ) . 'morpheus-test-package.zip';
+file_put_contents( $tmp_zip, 'not the real plugin, just some bytes' );
+$real_sha = hash_file( 'sha256', $tmp_zip );
+
+$tmp_glob = trailingslashit( get_temp_dir() ) . '*morpheus*';
+$count_tmp = function () use ( $tmp_glob ) { return count( glob( $tmp_glob ) ?: array() ); };
+
+$manifest_with( '9.9.9', str_repeat( 'b', 64 ) ); // a hash that is NOT this file
+$upgrader = new stdClass();
+$upgrader->skin = new stdClass();
+$before_refusal = $count_tmp();
+$refused = Morpheus_Updates::verify_download( false, 'https://morpheus.nz/morpheus-wordpress-plugin.zip', $upgrader );
+ok( is_wp_error( $refused ), 'updates: a package whose hash does not match is REFUSED' );
+ok( strpos( $refused->get_error_message(), 'checksum' ) !== false, 'updates: the refusal explains itself' );
+ok( $count_tmp() === $before_refusal, 'updates: the refused download is deleted, not left on disk' );
+
+// NO HASH IS NOT "NO PROBLEM": a package that cannot be verified is refused.
+// This replaced a fall-through to WordPress's own download, which meant that
+// anything able to stop the plugin reading the manifest (a blocked request, a
+// DNS failure, a tampered mirror) downgraded the site to installing an
+// unchecked package.
+$manifest_with( '9.9.9', '' );
+$unverifiable = Morpheus_Updates::verify_download( false, 'https://morpheus.nz/morpheus-wordpress-plugin.zip', $upgrader );
+ok( is_wp_error( $unverifiable ), 'updates: a package with no published checksum is REFUSED' );
+ok( strpos( $unverifiable->get_error_message(), 'could not be verified' ) !== false, 'updates: that refusal tells the operator how to recover' );
+
+// Someone else's package is never intercepted.
+$manifest_with( '9.9.9', $real_sha );
+$other = Morpheus_Updates::verify_download( false, 'https://downloads.wordpress.org/plugin/akismet.zip', $upgrader );
+ok( $other === false, 'updates: another plugin\'s download is left alone' );
+
+// And the real path: matching hash -> the file is handed to WordPress.
+// NOTE: download_url() asks for a STREAMED download ('stream' => true with a
+// 'filename'), and the real transport writes the body to that file. A
+// short-circuiting filter has to do the same or it is not testing the same
+// thing — the first version of this stub returned the bytes without writing
+// them, so the "downloaded" file was empty and the hash could never match.
+add_filter( 'pre_http_request', function ( $pre, $args, $url ) use ( $tmp_zip ) {
+	if ( strpos( $url, 'morpheus-wordpress-plugin.zip' ) === false ) { return $pre; }
+	$body = file_get_contents( $tmp_zip );
+	if ( ! empty( $args['filename'] ) ) {
+		file_put_contents( $args['filename'], $body );
+	}
+	return array( 'headers' => array(), 'body' => $body, 'response' => array( 'code' => 200, 'message' => 'OK' ), 'cookies' => array(), 'filename' => null );
+}, 10, 3 );
+$manifest_with( '9.9.9', $real_sha );
+$verified = Morpheus_Updates::verify_download( false, 'https://morpheus.nz/morpheus-wordpress-plugin.zip', $upgrader );
+ok( is_string( $verified ) && file_exists( $verified ), 'updates: a matching hash hands the verified file to the upgrader' );
+ok( is_string( $verified ) && hash_file( 'sha256', $verified ) === $real_sha, 'updates: the handed-over file is the verified one' );
+if ( is_string( $verified ) ) { @unlink( $verified ); }
+@unlink( $tmp_zip );
+delete_transient( Morpheus_Updates::CACHE_KEY );
+
 delete_option( 'morpheus_settings' );
 
 echo "\n";
