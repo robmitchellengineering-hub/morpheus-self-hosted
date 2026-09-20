@@ -346,6 +346,40 @@ check('…and that action is create_post', /wpStore\(conn, 'create_post'/.test(c
 check('it forces the post to a draft', /status: 'draft'/.test(createSitePostCode), true);
 check('…and never reads status from the request body', /body\?\.status|body\.status/.test(createSitePostCode), false);
 
+// ── the tab strips must WRAP, not scroll tabs out of reach ──────────────────
+// A tab you cannot see is a tab you do not have. The SEO tab is 6th of 7 in the
+// website panel and 5th of 5 in the widget, so it is the first casualty when the
+// strip runs off the screen — which is what happened on a phone: with
+// `overflow-x-auto` the panel put PAGES/SEO/EMBED outside the visible area at
+// 390px and four tabs out at 260px, with nothing on screen saying they existed.
+// Measured in a real browser at 390/340/300/260px. Both strips now wrap to a
+// second line, so every tab is reachable without a gesture nobody knows about.
+const panelSrc2 = readFileSync(join(REPO, 'src/components/matrix/WebsitePanel.jsx'), 'utf8');
+const embedSrc = readFileSync(join(REPO, 'src/pages/Embed.jsx'), 'utf8');
+const stripClass = (src, marker) => {
+  const at = src.indexOf(marker);
+  if (at < 0) return '';
+  const m = [...src.slice(0, at).matchAll(/className="([^"]+)"/g)].pop();
+  return m ? m[1] : '';
+};
+const panelStrip = stripClass(panelSrc2, '{TABS.map(');
+const widgetStrip = stripClass(embedSrc, '{tabs.map(');
+check('the panel tab strip was found (parser sanity)', panelStrip.includes('flex'), true);
+check('the widget tab strip was found (parser sanity)', widgetStrip.includes('flex'), true);
+check('the panel tab strip wraps', /flex-wrap/.test(panelStrip), true);
+check('…and no longer scrolls tabs out of view', /overflow-x-auto/.test(panelStrip), false);
+check('the widget tab strip wraps', /flex-wrap/.test(widgetStrip), true);
+// Tabs need a minimum width or they squeeze into unreadable slivers rather than
+// wrapping — which is what `flex-1` did: 50px buttons at 260px. The width lives
+// on the BUTTON (a template literal inside the map), so assert the region after
+// the marker rather than the container's own className.
+const stripRegion = (src, marker) => {
+  const at = src.indexOf(marker);
+  return at < 0 ? '' : src.slice(at, at + 900);
+};
+check('panel tabs keep their minimum width', /basis-\[96px\]/.test(stripRegion(panelSrc2, '{TABS.map(')), true);
+check('widget tabs keep their minimum width', /basis-\[84px\]/.test(stripRegion(embedSrc, '{tabs.map(')), true);
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
