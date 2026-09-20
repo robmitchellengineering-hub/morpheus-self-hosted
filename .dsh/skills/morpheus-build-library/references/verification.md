@@ -106,3 +106,15 @@ behaviour. It was reverted twice and the reason was never written down.
 exports. A deleted `// WHY` comment is the cheapest signal that a behaviour left
 with it.
 
+## Assert the property, not the configuration
+
+`verify-cors.mjs` does not check a list of allowed origins — it asserts the thing
+that actually matters: **no input can produce `Access-Control-Allow-Origin: *`
+together with `Allow-Credentials: true`.** A list is a snapshot of a decision
+someone made; the property is the decision. The same shape works for any security
+rule: name the forbidden combination, then try to produce it.
+
+Build the test out of the *inputs that matter*, too. The billing clamp's guard is a
+41,205-case sweep rather than a handful of examples, because the bug it catches
+lived in the combinations nobody thought to try.
+

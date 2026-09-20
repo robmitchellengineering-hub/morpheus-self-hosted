@@ -63,6 +63,12 @@ identically, and `grep Alice` would silently miss it in code. If a name is not
 found where you are certain it exists, check the bytes before you doubt the
 code — this is the same class as H12's case-sensitivity trap, one layer subtler.
 
+**Never run `eslint --fix` on a file whose diff you have not read.** It silently
+*deleted* deliberate `react-hooks/exhaustive-deps` directives here, erasing the
+record of 15 dependency arrays that had been chosen on purpose. A linter that
+removes the comment explaining a decision is destroying information, not tidying
+code.
+
 ## Sandbox and toolchain
 
 * **Browser automation goes through `scripts/pw`, not a raw `playwright-cli`.**
