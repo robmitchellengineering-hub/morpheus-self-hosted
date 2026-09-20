@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck, Sparkles, DollarSign, Rocket, LayoutDashboard } from 'lucide-react';
+import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck, Sparkles, DollarSign, Rocket, LayoutDashboard, Globe } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import DonateWidget from '@/components/matrix/DonateWidget';
@@ -88,6 +88,14 @@ export default function Landing() {
   // check-auth-on-click pattern as enter() above, rather than a second,
   // slightly different visibility-gating convention (this used to be
   // gated on isAdmin, back when /deck itself was admin-only).
+  // The WordPress path: this flow is specifically for people whose site
+  // Morpheus is going to operate, so it has its own entry point that goes
+  // straight there (and straight back here after signing in).
+  const startWebsite = async () => {
+    const authed = await base44.auth.isAuthenticated();
+    navigate(authed ? '/start' : '/login?returnTo=%2Fstart');
+  };
+
   const enterDeck = async () => {
     const authed = await base44.auth.isAuthenticated();
     navigate(authed ? '/deck' : '/login');
@@ -105,6 +113,9 @@ export default function Landing() {
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
             <button onClick={enter} className="px-8 py-3 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-display tracking-wider neon-glow enter-pulse">
               ▣ BUILD... ANYTHING.
+            </button>
+            <button onClick={startWebsite} className="px-8 py-3 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors font-display tracking-wider inline-flex items-center justify-center gap-2">
+              <Globe size={16} /> SET UP MY WEBSITE
             </button>
             <button onClick={takeBluePill} className="px-8 py-3 border border-primary/30 text-primary/50 hover:text-primary/70 transition-colors font-display tracking-wider">
               GO BACK TO SLEEP

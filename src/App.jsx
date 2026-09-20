@@ -19,6 +19,7 @@ import ResetPassword from '@/pages/ResetPassword';
 import AuthCallback from '@/pages/AuthCallback';
 // Code-split the heavier top-level routes so the mobile WebView boots fast.
 const Landing = lazy(() => import('@/pages/Landing'));
+const Start = lazy(() => import('@/pages/Start'));
 const Workspace = lazy(() => import('@/pages/Workspace'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Market = lazy(() => import('@/pages/Market'));
@@ -153,6 +154,11 @@ function AnimatedRoutes() {
               flow needs to survive the login round trip. ConnectDevice checks auth
               itself and preserves the full URL via redirectToLogin. */}
           <Route path="/connect" element={<ConnectDevice />} />
+          {/* Same reason as /connect: the generic group redirects to a bare
+              /login, and someone who pressed "set up my website" must land back
+              on THIS page after signing in, not on the workspace list. Start
+              checks auth itself and sends them to /login?returnTo=/start. */}
+          <Route path="/start" element={<Start />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             <Route path="/workspace" element={<Workspace />} />
             <Route path="/workspace/:projectId" element={<Workspace />} />
