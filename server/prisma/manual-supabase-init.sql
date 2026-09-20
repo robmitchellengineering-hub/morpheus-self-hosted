@@ -134,6 +134,26 @@ CREATE TABLE "search_console_connections" (
 );
 
 -- CreateTable
+CREATE TABLE "site_maintenance_policies" (
+    "id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "project_id" TEXT NOT NULL,
+    "scan_enabled" BOOLEAN NOT NULL DEFAULT false,
+    "day_of_month" INTEGER NOT NULL DEFAULT 1,
+    "hour_utc" INTEGER NOT NULL DEFAULT 3,
+    "apply_plugins" BOOLEAN NOT NULL DEFAULT false,
+    "apply_themes" BOOLEAN NOT NULL DEFAULT false,
+    "apply_core_minor" BOOLEAN NOT NULL DEFAULT false,
+    "allow_core_major_manual" BOOLEAN NOT NULL DEFAULT true,
+    "last_scan_at" TIMESTAMP(3),
+    "last_result" TEXT,
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_date" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "site_maintenance_policies_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "projects" (
     "id" TEXT NOT NULL,
     "created_by_id" TEXT NOT NULL,
@@ -827,6 +847,7 @@ CREATE UNIQUE INDEX "google_drive_connections_created_by_id_key" ON "google_driv
 -- CreateIndex
 CREATE UNIQUE INDEX "deck_google_connections_created_by_id_key" ON "deck_google_connections"("created_by_id");
 CREATE UNIQUE INDEX "search_console_connections_created_by_id_key" ON "search_console_connections"("created_by_id");
+CREATE UNIQUE INDEX "site_maintenance_policies_project_id_key" ON "site_maintenance_policies"("project_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "project_files_project_id_path_key" ON "project_files"("project_id", "path");
@@ -915,6 +936,8 @@ ALTER TABLE "google_drive_connections" ADD CONSTRAINT "google_drive_connections_
 -- AddForeignKey
 ALTER TABLE "deck_google_connections" ADD CONSTRAINT "deck_google_connections_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "search_console_connections" ADD CONSTRAINT "search_console_connections_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "site_maintenance_policies" ADD CONSTRAINT "site_maintenance_policies_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "site_maintenance_policies" ADD CONSTRAINT "site_maintenance_policies_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "projects" ADD CONSTRAINT "projects_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

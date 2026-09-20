@@ -33,6 +33,7 @@ const HARD = [
   'verify-push-policy.mjs',
   'verify-search-console.mjs',
   'verify-site-health.mjs',
+  'verify-site-maintenance.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',
 ];

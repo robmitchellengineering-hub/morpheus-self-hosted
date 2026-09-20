@@ -77,6 +77,7 @@ model User {
   google_drive_connection GoogleDriveConnection?
   deck_google_connection DeckGoogleConnection?
   search_console_connection SearchConsoleConnection?
+  site_maintenance_policies SiteMaintenancePolicy[]
 
   // Command Deck (internal codename "Deck" — see the models below)
   deck_jarvis_messages DeckJarvisMessage[]
@@ -257,6 +258,44 @@ model SearchConsoleConnection {
   @@map("search_console_connections")
 }
 
+// What Morpheus may do to a site unprompted, and when.
+//
+// Everything here is OFF until the owner turns it on, and applying is separate
+// from scanning on purpose: an owner who asked to be TOLD what is wrong has not
+// asked us to change their site. Nothing may infer the second from the first.
+//
+// Core MAJOR updates are never automatic. `allow_core_major_manual` exists so
+// that is stated rather than merely absent — the code refuses to treat it as an
+// automatic action whatever it is set to, and scripts/verify-site-maintenance.mjs
+// asserts that.
+model SiteMaintenancePolicy {
+  id            String   @id @default(uuid())
+  created_by_id String
+  owner         User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String   @unique
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  scan_enabled  Boolean  @default(false)
+  // 1-28: a day every month has, so a monthly run cannot skip February.
+  day_of_month  Int      @default(1)
+  hour_utc      Int      @default(3)
+
+  apply_plugins    Boolean @default(false)
+  apply_themes     Boolean @default(false)
+  apply_core_minor Boolean @default(false)
+  // Never automatic — see the note above.
+  allow_core_major_manual Boolean @default(true)
+
+  last_scan_at  DateTime?
+  // JSON: what the last run found, and what it did.
+  last_result   String?  @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("site_maintenance_policies")
+}
+
 // ── PROJECTS ──────────────────────────────────────────────────────
 
 model Project {
@@ -312,6 +351,8 @@ model Project {
   // see server/src/functions/pushProjectToDrive.js / pullProjectFromDrive.js.
   storage_mode     String  @default("postgres") // postgres | drive
   drive_folder_id  String?
+
+  maintenance_policy SiteMaintenancePolicy?
 
   files          ProjectFile[]
   chat_messages  ChatMessage[]

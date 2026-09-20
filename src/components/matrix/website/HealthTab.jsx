@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Loader2, RefreshCw, ExternalLink, AlertTriangle, Check, ShieldCheck, Server, Package, Clock,
+  Save, CalendarClock,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
@@ -29,6 +30,46 @@ const statusWord = (s) => (s === 'critical' ? 'needs attention' : s === 'recomme
 const coreSetting = (v) => (v === 'unset' || v === null || v === undefined ? 'WordPress default'
   : v === true ? 'On' : v === false ? 'Off' : String(v));
 const plain = (v) => (typeof v === 'string' ? v : v?.label || v?.description || v?.id);
+
+// --- scheduled checks --------------------------------------------------------
+// Every derived value in `policy` is the server's and is shown as sent.
+// `allow_core_major_manual` is NOT editable: it records that a human may be
+// OFFERED a major update, which is not permission to apply one.
+const EDITABLE = ['scan_enabled', 'day_of_month', 'hour_utc', 'apply_plugins', 'apply_themes', 'apply_core_minor'];
+const editableOf = (p) => EDITABLE.reduce((o, k) => { o[k] = p[k]; return o; }, {});
+const sameEditable = (a, b) => !!a && !!b && EDITABLE.every((k) => a[k] === b[k]);
+const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => i + 1);
+const HOURS_UTC = Array.from({ length: 24 }, (_, h) => h);
+const pad2 = (n) => String(n).padStart(2, '0');
+const ORD = (d) => `${d}${d % 10 === 1 && d !== 11 ? 'st' : d % 10 === 2 && d !== 12 ? 'nd' : d % 10 === 3 && d !== 13 ? 'rd' : 'th'}`;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const sel = 'mt-1 w-full bg-transparent border border-primary/20 px-1.5 py-1 text-[11px] text-primary/85 outline-none focus:border-primary/50 disabled:opacity-40';
+// The schedule runs in UTC, so its own date is shown in UTC too — rendering it in
+// the visitor's local time would make the two disagree.
+const utcStamp = (ms) => {
+  const d = new Date(Number(ms));
+  return !(Number(ms) > 0) || Number.isNaN(d.getTime()) ? null
+    : `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()} at ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+};
+const KIND_WORD = { plugin: 'plugin', theme: 'theme', core_minor: 'minor WordPress', core_major: 'major WordPress' };
+const wordList = (k) => { const w = k.map((x) => KIND_WORD[x] || x); return w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]; };
+
+/** A switch that says, under its own label, what it would do. */
+function Toggle({ label, hint, on, onChange, disabled }) {
+  return (
+    <button type="button" onClick={() => onChange(!on)} disabled={disabled}
+      className={`w-full text-left flex items-start gap-2 border px-2.5 py-2 disabled:opacity-40 ${on ? 'border-primary/40' : 'border-primary/15'}`}>
+      <span className={`mt-[3px] shrink-0 w-[26px] h-[14px] border relative ${on ? 'border-primary/60 bg-primary/20' : 'border-primary/30'}`}>
+        <span className={`absolute top-[2px] w-[8px] h-[8px] ${on ? 'right-[2px] bg-primary/80' : 'left-[2px] bg-primary/35'}`} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11px] text-primary/85 break-words">{label}</span>
+        {hint ? <span className="block text-[9px] text-primary/40 leading-relaxed">{hint}</span> : null}
+      </span>
+      <span className={`shrink-0 text-[9px] uppercase tracking-wider ${on ? 'text-primary/80' : 'text-primary/35'}`}>{on ? 'On' : 'Off'}</span>
+    </button>
+  );
+}
 
 function KV({ k, v }) {
   return (
@@ -95,6 +136,11 @@ export default function HealthTab({ projectId }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  const [policy, setPolicy] = useState(null);       // the saved policy + the server's own wording
+  const [draft, setDraft] = useState(null);         // what the owner has changed but not saved
+  const [saving, setSaving] = useState(false);
+  const [policyErr, setPolicyErr] = useState(null);
+  const [policySaved, setPolicySaved] = useState(null);
 
   const run = useCallback(async (force) => {
     // The previous scan stays on screen while this one runs. Blanking the tab
@@ -104,8 +150,19 @@ export default function HealthTab({ projectId }) {
       const res = await base44.functions.invoke('siteHealth', { projectId, action: 'scan', force: !!force });
       if (!res?.data) throw new Error('The scan came back empty — try again.');
       setScan(res.data);
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setLoading(false); }
+      // The scan carries the policy, so there is no second round trip to make.
+      // It seeds the draft once: a later scan must not overwrite unsaved edits.
+      if (res.data.policy) { setPolicy(res.data.policy); setPolicyErr(null); setDraft((d) => d || editableOf(res.data.policy)); }
+    } catch (e) {
+      setErr(e?.data?.error || e.message);
+      // The schedule is Morpheus's own data, not WordPress's, so a failed scan
+      // must not take the one writable control down with it. If this read fails
+      // too the scan error above is on screen and RESCAN retries both.
+      try {
+        const res = await base44.functions.invoke('siteHealth', { projectId, action: 'policy' });
+        if (res?.data) { setPolicy(res.data); setDraft((d) => d || editableOf(res.data)); }
+      } catch { /* the scan error above is the message that matters */ }
+    } finally { setLoading(false); }
   }, [projectId]);
 
   useEffect(() => { run(false); }, [run]);
@@ -129,6 +186,30 @@ export default function HealthTab({ projectId }) {
     ...(plan?.themes || []).map((t, i) => ({ key: `theme-${t.stylesheet || i}`, kind: 'theme', name: t.name, from: t.version, to: t.new_version })),
   ];
   const updateTotal = plan ? Math.max(0, plan.total || 0) : null;
+
+  // Dirty covers only the fields this panel can change, never a server-computed value.
+  const dirty = !!policy && !!draft && !sameEditable(draft, editableOf(policy));
+  const nextRun = policy?.scan_enabled ? utcStamp(policy.next_run_at) : null;
+  const canApply = policy?.can_apply_unattended || [];
+  const reportOnly = policy?.report_only || [];
+
+  const setField = (key, value) => {
+    setDraft((d) => ({ ...d, [key]: value }));
+    setPolicySaved(null); setPolicyErr(null);
+  };
+
+  const savePolicyDraft = async () => {
+    if (!draft || !dirty || saving) return;
+    setSaving(true); setPolicyErr(null); setPolicySaved(null);
+    try {
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'policy', policy: draft });
+      if (!res?.data) throw new Error('the server returned no policy, so what was stored cannot be confirmed.');
+      setPolicy(res.data); setDraft(editableOf(res.data));
+      setPolicySaved('Saved. The description above is what is now stored for this site.');
+    } catch (e) {
+      setPolicyErr(`Not saved — ${e?.data?.error || e.message}`);
+    } finally { setSaving(false); }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -293,6 +374,84 @@ export default function HealthTab({ projectId }) {
               </div>
             )}
           </>
+        )}
+
+        {/* Last on purpose: the scan above is read-only; this part changes what Morpheus will do. */}
+        {policy && (
+          <div className="border-t border-primary/10 pt-3">
+            <Section title="SCHEDULED CHECKS" icon={<CalendarClock size={11} className="text-primary/45" />}>
+              <Toggle label="Monthly check" on={!!draft?.scan_enabled} disabled={saving}
+                hint="Morpheus looks at the site and reports what it finds. On its own this changes nothing."
+                onChange={(v) => setField('scan_enabled', v)} />
+              {!draft?.scan_enabled ? (
+                // Off means off: no day, no hour and no apply switches — they would imply a run that is not scheduled.
+                <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-primary/60 leading-relaxed">
+                  Monthly checks are off, so Morpheus will only look at this site when you ask it to — with RESCAN above. Nothing runs on a schedule and nothing is changed.
+                </div>
+              ) : (
+                <>
+                  <div className="border border-primary/15 px-2.5 py-2 space-y-1.5">
+                    <div className={micro}>When it runs · UTC</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className={`${faint} block`}>Day of the month (1–28)</span>
+                        <select className={sel} value={draft?.day_of_month ?? 1} disabled={saving} onChange={(e) => setField('day_of_month', Number(e.target.value))}>
+                          {DAYS_OF_MONTH.map((d) => <option key={d} value={d} className="bg-black">{ORD(d)}</option>)}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className={`${faint} block`}>Hour (UTC)</span>
+                        <select className={sel} value={draft?.hour_utc ?? 0} disabled={saving} onChange={(e) => setField('hour_utc', Number(e.target.value))}>
+                          {HOURS_UTC.map((h) => <option key={h} value={h} className="bg-black">{pad2(h)}:00 UTC</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="border border-primary/15 px-2.5 py-2">
+                    <div className={micro}>Next check{dirty ? ' · from the saved policy' : ''}</div>
+                    {nextRun ? <div className="text-[11px] text-primary/85 break-words">{nextRun}</div>
+                      : policy.scan_enabled
+                        ? <div className="text-[10px] text-primary/50">Not known — the server did not report a next run time for this policy.</div>
+                        : <div className="text-[10px] text-primary/55">None yet — the saved policy has the schedule off. Save and the server works out the next run.</div>}
+                  </div>
+                  {/* Yellow and away from the scan switch: these three change the live site; the scan does not. */}
+                  <div className="border border-yellow-500/30 px-2.5 py-2.5 space-y-2">
+                    <div className={`${micro} text-yellow-500/85`}>A scheduled check could also change the site</div>
+                    <div className="text-[9px] text-primary/45 leading-relaxed">Each switch below changes the live site with nobody watching. Off means it is only reported.</div>
+                    <Toggle label="Plugin updates" disabled={saving} on={!!draft?.apply_plugins} onChange={(v) => setField('apply_plugins', v)}
+                      hint="Morpheus would install plugin updates on its own, with nobody watching." />
+                    <Toggle label="Theme updates" disabled={saving} on={!!draft?.apply_themes} onChange={(v) => setField('apply_themes', v)}
+                      hint="Morpheus would install theme updates on its own, with nobody watching." />
+                    <Toggle label="Minor WordPress updates" disabled={saving} on={!!draft?.apply_core_minor} onChange={(v) => setField('apply_core_minor', v)}
+                      hint="Morpheus would install minor and security WordPress updates on its own, with nobody watching." />
+                    {/* A rule, not a setting: there is no switch for it, and a major core update is never applied unattended. */}
+                    <div className="flex items-start gap-1.5 border-t border-yellow-500/20 pt-2">
+                      <ShieldCheck size={11} className="mt-[1px] shrink-0 text-yellow-500/85" />
+                      <span className="text-[9px] text-yellow-500/85 leading-relaxed">Major WordPress updates are reported, never applied.</span>
+                    </div>
+                  </div>
+                </>
+              )}
+              <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-primary/65 leading-relaxed">
+                {canApply.length === 0
+                  ? 'Scheduled checks are report-only on this site — Morpheus looks and tells you what it finds, and nothing is changed.'
+                  : `With nobody watching, Morpheus may apply ${wordList(canApply)} updates${reportOnly.length ? `, and reports ${wordList(reportOnly)} updates without applying them` : ''}.`}
+              </div>
+              <div className="border border-primary/15 px-2.5 py-2">
+                <div className={micro}>What this policy says{dirty ? ' · from the saved policy' : ''}</div>
+                <div className="text-[10px] text-primary/65 leading-relaxed break-words">{policy.description || 'The server sent no description for this policy.'}</div>
+              </div>
+              {policy.exists === false ? <div className={faint}>No policy saved for this site yet — these are the safe defaults.</div> : null}
+              <div className="space-y-1.5">
+                <button className={`${btn} w-full`} onClick={savePolicyDraft} disabled={!dirty || saving}>
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} SAVE POLICY
+                </button>
+                {dirty && !saving ? <div className={faint}>Unsaved changes — the next run and description above still describe the saved policy.</div> : null}
+                {policyErr ? <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 text-[10px] text-red-300/90 break-words">{policyErr}</div> : null}
+                {policySaved ? <div className="flex items-start gap-1.5 text-[10px] text-primary/70"><Check size={11} className="mt-[1px] shrink-0" /> {policySaved}</div> : null}
+              </div>
+            </Section>
+          </div>
         )}
       </div>
     </div>

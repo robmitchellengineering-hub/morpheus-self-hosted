@@ -171,15 +171,23 @@ check('a successful response is not an old plugin', isPluginTooOld({ status: 200
 
 console.log('\n7. the wiring')
 
+// The scan moved into lib/siteScan.js so the panel and the monthly schedule
+// share ONE definition of a scan; the handler is now a dispatcher and the policy
+// action lives beside it. The invariants are asserted where the code is, not
+// where it used to be — but every one of them still holds.
 const fn = read('server/src/functions/siteHealth.js');
-check('the handler only accepts actions it implements', /ACTIONS = new Set\(\['scan'\]\)/.test(fn), true);
+check('the handler only accepts actions it implements', /ACTIONS = new Set\(\['scan', 'policy'\]\)/.test(fn), true);
 check('…and refuses anything else rather than ignoring it', /Unknown health action/.test(fn), true);
-check('the scan is forced only when asked', /force: body\?\.force === true/.test(fn), true);
-check('the site is asked for its version before blaming the plugin', /wpStatus\(conn\.siteUrl\)/.test(fn), true);
-check('the derivations are computed server-side and travel with the payload', /summary: summarise\(scan\)/.test(fn) && /attention: attention\(scan\)/.test(fn), true);
 // Applying updates writes to a live site and does not exist yet; a handler that
-// silently accepts 'apply' and does nothing would be worse than no action.
+// silently accepted 'apply' and did nothing would be worse than no action.
 check('there is no apply action that does less than its name', /'apply'|'fix'|'update_all'/.test(fn), false);
+check('the scan itself is a shared helper, not inlined twice', /scanSite\(user, projectId/.test(fn), true);
+
+const scanLib = read('server/src/lib/siteScan.js');
+check('the scan is forced only when asked', /wpHealth\(conn, \{ force \}\)/.test(scanLib), true);
+check('the site is asked for its version before blaming the plugin', /wpStatus\(conn\.siteUrl\)/.test(scanLib), true);
+check('the derivations are computed server-side and travel with the payload', /summary: summarise\(scan\)/.test(scanLib) && /attention: attention\(scan\)/.test(scanLib), true);
+check('the derivations travel with EVERY scan, including a scheduled one', /findings: findings\(scan\)/.test(scanLib) && /can_apply: canApply\(scan\)/.test(scanLib), true);
 
 const client = read('server/src/lib/wpPlugin.js');
 check('the health endpoint is a signed POST, not a public GET', /wpCall\(conn, 'health'/.test(client), true);

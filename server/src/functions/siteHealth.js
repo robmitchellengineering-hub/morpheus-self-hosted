@@ -3,74 +3,85 @@
 // One function with an `action` because the widget scope is a function-name
 // allow-list: one name to grant, one name to audit.
 //
-// `scan` is read-only and is all that exists so far. Applying fixes is a
-// separate change on purpose — it writes to someone's live site, and it needs a
-// pre-update snapshot and a post-update check before it can be offered at all.
-// There is deliberately no "apply" action here that quietly does less than the
-// name promises.
-import { prisma } from '../db.js';
-import { getWpConnection, wpHealth, wpStatus } from '../lib/wpPlugin.js';
-import {
-  findings, summarise, attention, dataFreshness, canApply, updatePlan, isPluginTooOld,
-} from '../lib/siteHealth.js';
+//   scan   — read the site and report (via lib/siteScan.js, shared with the
+//            monthly schedule so there is one definition of a scan)
+//   policy — read or write what the owner allows, and when
+//
+// There is deliberately NO apply action. Applying updates writes to a live site
+// and needs a pre-update snapshot and a post-update check first; the policy that
+// will gate it is already settled and asserted (lib/siteMaintenance.js), so the
+// rules are in place before the ability arrives. A handler that accepted
+// "apply" and quietly did less than its name would be worse than one that
+// refuses.
+import { scanSite } from '../lib/siteScan.js';
+import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
+import { describePolicy, nextRunAt, allowedKinds, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
 
-const ACTIONS = new Set(['scan']);
+const ACTIONS = new Set(['scan', 'policy']);
 
-export default async function handler({ user, body }) {
+export default async function handler({ user, body, req }) {
   const { projectId, action } = body || {};
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
   if (!ACTIONS.has(action)) throw Object.assign(new Error(`Unknown health action: ${action}`), { status: 400 });
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, created_by_id: user.id },
-    select: { id: true, name: true },
-  });
-  if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
-
-  const conn = await getWpConnection(projectId, user.id);
-  if (!conn) {
-    throw Object.assign(new Error('No WordPress site connected. Connect one in the WEBSITE panel first.'), { status: 400, code: 'NOT_CONNECTED' });
-  }
-
-  const res = await wpHealth(conn, { force: body?.force === true });
-  if (res.status === 0) {
-    throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || 'no response'}`), { status: 502, code: 'UNREACHABLE' });
-  }
-
-  if (res.status !== 200) {
-    // Ask the site what it is running so the message can name the version —
-    // /status exists in every plugin version and needs no signature. Best
-    // effort: if it fails, the message just omits the version.
-    let runningVersion = conn.meta?.pluginVersion || null;
-    try {
-      const status = await wpStatus(conn.siteUrl);
-      if (status?.status === 200 && status.data?.version) runningVersion = status.data.version;
-    } catch { /* the message is still useful without it */ }
-
-    const old = isPluginTooOld(res, runningVersion);
-    if (old.tooOld) {
-      throw Object.assign(new Error(old.message), { status: 409, code: 'PLUGIN_TOO_OLD' });
+  if (action === 'policy') {
+    if (body?.policy && typeof body.policy === 'object') {
+      // Turning scheduled checks or unattended updates ON is an owner decision,
+      // so it takes the owner's own session and not a widget token. The dock
+      // widget is admin-gated today, but a token is a bearer credential: if one
+      // ever leaks or the snippet is pasted somewhere public, the difference
+      // between "read what is switched on" and "switch on unattended updates"
+      // is the difference between an annoyance and someone else's site being
+      // changed. Reading the policy from a widget stays allowed — the panel has
+      // to be able to show it.
+      if (req?.widget) {
+        throw Object.assign(
+          new Error('Scheduled checks and unattended updates have to be set from Morpheus itself, not from an embedded page.'),
+          { status: 403, code: 'OWNER_ONLY' },
+        );
+      }
+      const saved = await savePolicy(user, projectId, body.policy);
+      if (!saved.ok) {
+        throw Object.assign(new Error(saved.errors.join('; ')), { status: 400, code: 'INVALID_POLICY' });
+      }
     }
-    throw Object.assign(
-      new Error(res.data?.message || `The site answered HTTP ${res.status} to a health scan.`),
-      { status: 502, code: 'SCAN_FAILED' },
-    );
+    return policyPayload(await getPolicy(projectId));
   }
 
-  const scan = res.data || {};
+  const scan = await scanSite(user, projectId, { force: body?.force === true });
+  // The policy travels with the scan so the panel can say what is switched on
+  // without a second round trip — and so it cannot show stale switches.
+  return { ...scan, policy: policyPayload(await getPolicy(projectId)) };
+}
 
-  // The derivations travel WITH the findings: the panel must not re-decide what
-  // "needs attention" means, or the rule ends up in two places that disagree.
-  // Everything here is pure and asserted by scripts/verify-site-health.mjs.
+/**
+ * The policy, plus the sentences and dates the UI must not compute for itself.
+ *
+ * Row plumbing (`id`, `created_by_id`, timestamps) is stripped: the client has no
+ * use for it, and last_result is parsed so the panel can show what the last
+ * scheduled run actually found without a second round trip.
+ */
+function policyPayload(policy) {
+  const { applicable, reported } = allowedKinds(policy);
+  let lastResult = null;
+  if (policy.last_result) {
+    try { lastResult = JSON.parse(policy.last_result); } catch { lastResult = null; }
+  }
   return {
-    ok: true,
-    ...scan,
-    site: { url: conn.siteUrl, name: project.name },
-    summary: summarise(scan),
-    findings: findings(scan),
-    attention: attention(scan),
-    freshness: dataFreshness(scan),
-    can_apply: canApply(scan),
-    update_plan: updatePlan(scan),
+    ...POLICY_DEFAULTS,
+    scan_enabled: policy.scan_enabled,
+    day_of_month: policy.day_of_month,
+    hour_utc: policy.hour_utc,
+    apply_plugins: policy.apply_plugins,
+    apply_themes: policy.apply_themes,
+    apply_core_minor: policy.apply_core_minor,
+    allow_core_major_manual: policy.allow_core_major_manual,
+    exists: policy.exists === true,
+    last_scan_at: policy.last_scan_at || null,
+    last_result: lastResult,
+    description: describePolicy(policy),
+    next_run_at: nextRunAt(policy),
+    can_apply_unattended: applicable,
+    report_only: reported,
   };
 }
