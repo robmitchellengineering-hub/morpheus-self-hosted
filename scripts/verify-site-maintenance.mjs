@@ -151,15 +151,29 @@ const did = runSummary({ scan, policy: { ...scanOnly, apply_plugins: true }, app
 check('an apply run names what it applied', /Applied: Akismet 5.0→5.1/.test(did), true);
 check('…and names what failed', /FAILED and left alone: WooCommerce/.test(did), true);
 check('…and what it only reported', /Reported but not applied: WordPress 7.2/.test(did), true);
+// A report that contradicts itself makes every line of it suspect.
+const contradictory = runSummary({ scan, policy: scanOnly, applied: ['Akismet'] });
+check('a report never claims work AND says nothing changed', /nothing was changed/.test(contradictory), false);
+check('…while a run that changed nothing still says so', /nothing was changed/.test(quiet), true);
+// The restore belongs to a run that actually restored something.
+const withRestore = runSummary({ scan, policy: { ...scanOnly, apply_plugins: true }, applied: ['Akismet'], failed: ['WooCommerce'], restored: ['WooCommerce'], at: march });
+check('a restore is reported, and named', /Put back from the pre-update backup after a failed update: WooCommerce/.test(withRestore), true);
+check('…and the restore line comes before the failure it recovered from', withRestore.indexOf('Put back') < withRestore.indexOf('FAILED and left alone'), true);
+check('a restore that itself failed is shouted about', /COULD NOT put these back/.test(runSummary({ scan, policy: scanOnly, applied: ['X'], restoreFailed: ['X'] })), true);
 check('a site that cannot be written to says so', /cannot have its files written/.test(runSummary({ scan: { ...scan, can_apply: { ok: false, reasons: ['not writable'] } }, policy: scanOnly })), true);
 
 console.log('\n8. the wiring cannot apply anything yet')
 
 const schedule = read('server/src/siteMaintenanceSchedule.js');
-// The whole point of this slice: the schedule scans and reports, nothing more.
+// The schedule now applies — but ONLY through kindsToApply, so the policy is what
+// decides, and a scan-only policy (the default) reaches the site with nothing.
 check('the schedule scans', /scanSite\(/.test(schedule), true);
-check('the schedule does not apply updates', /applyMaintenance|applyUpdates|runUpdates|wpMaintenance/.test(schedule), false);
-check('…and says so in its own words', /applies NOTHING/.test(schedule), true);
+check('the schedule applies through the policy decision, not its own rule',
+  /applyAllowedUpdates\(\{ conn, policy, scan \}\)/.test(schedule), true);
+check('…and never calls the site itself with a hand-built update list',
+  /wpMaintenance\(/.test(schedule), false);
+check('a run records what it applied, restored and failed', /restored: outcome\?\.restored/.test(schedule) && /failed: outcome\?\.failed/.test(schedule), true);
+check('the report names a restore', /restored: outcome\?\.restored \|\| \[\]/.test(schedule), true);
 check('a failed scan still tells the owner', /could not run/.test(schedule), true);
 check('the report goes to the construct chat', /chatMessage\.create/.test(schedule), true);
 check('the tick is hourly and asks what is due', /TICK_MS = 60 \* 60 \* 1000/.test(schedule) && /isDue\(policy, now\)/.test(schedule), true);
@@ -176,8 +190,6 @@ check('…and runs the same due-policy function, so there is one definition', /r
 check('…on an hourly tick, not a monthly interval', /every: 60 \* 60 \* 1000/.test(worker), true);
 
 const fn = read('server/src/functions/siteHealth.js');
-check('the handler offers scan and policy only', /ACTIONS = new Set\(\['scan', 'policy'\]\)/.test(fn), true);
-check('there is no apply action', /'apply'|'fix'|'update_all'/.test(fn), false);
 check('the policy travels with the scan', /policy: policyPayload/.test(fn), true);
 check('an invalid policy is refused, not clamped', /INVALID_POLICY/.test(fn), true);
 // A widget token is a bearer credential. Reading the policy from the dock is
@@ -186,8 +198,25 @@ check('an invalid policy is refused, not clamped', /INVALID_POLICY/.test(fn), tr
 // cannot leak to the browser by accident.
 check('the policy payload does not echo row plumbing', /created_by_id: policy\.created_by_id|id: policy\.id/.test(fn), false);
 check('…and the last run is exposed for the panel', /last_result: lastResult/.test(fn), true);
+// Applying is owner-only and explicitly confirmed per invocation.
+check('the handler offers an apply action', /ACTIONS = new Set\(\['scan', 'policy', 'apply'\]\)/.test(fn), true);
+check('a widget token cannot apply updates', /Applying updates has to be done from Morpheus itself/.test(fn), true);
+check('…and confirmation is required, not inferred from the policy', /CONFIRM_REQUIRED/.test(fn), true);
+check('a manual apply takes a FRESH scan, so it cannot act on an old plan', /action === 'apply'[\s\S]{0,2000}?scanSite\(user, projectId, \{ force: true \}\)/.test(fn), true);
+check('a manual apply writes the same report a scheduled run does', /runSummary\(\{/.test(fn), true);
+
 check('a widget token cannot change the policy', /req\?\.widget/.test(fn) && /OWNER_ONLY/.test(fn), true);
 check('…and is told why, not just refused', /not from an embedded page/.test(fn), true);
+
+const apply = read('server/src/lib/siteApply.js');
+// The allowed kinds come from the pure decision, so the policy gates the apply.
+check('the apply path consults the policy decision', /kindsToApply\(policy, scan\)/.test(apply), true);
+// Targets are built from a fixed mapping of three kinds. A future 'core_major'
+// would have to be added there deliberately — it cannot arrive from the scan.
+check('only plugin, theme and core_minor can be targeted', /'core_major'/.test(apply), false);
+check('…and each is mapped explicitly', ['plugin', 'theme', 'core_minor'].every((k) => apply.includes(`'${k}'`)), true);
+check('the site re-checks its own offer, so a stale scan cannot install', /action: dryRun \? 'plan' : 'apply'/.test(apply), true);
+check('a refusal from the site is passed through, not swallowed', /code: res\?\.data\?\.code \|\| null/.test(apply), true);
 
 const store = read('server/src/lib/siteMaintenanceStore.js');
 check('the policy row is validated before it is written', /validatePolicy\(input, current\)/.test(store), true);

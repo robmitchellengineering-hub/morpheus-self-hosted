@@ -13,11 +13,14 @@
 // rules are in place before the ability arrives. A handler that accepted
 // "apply" and quietly did less than its name would be worse than one that
 // refuses.
+import { prisma } from '../db.js';
+import { getWpConnection } from '../lib/wpPlugin.js';
 import { scanSite } from '../lib/siteScan.js';
 import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
-import { describePolicy, nextRunAt, allowedKinds, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
+import { applyAllowedUpdates } from '../lib/siteApply.js';
+import { describePolicy, nextRunAt, allowedKinds, runSummary, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
 
-const ACTIONS = new Set(['scan', 'policy']);
+const ACTIONS = new Set(['scan', 'policy', 'apply']);
 
 export default async function handler({ user, body, req }) {
   const { projectId, action } = body || {};
@@ -46,6 +49,44 @@ export default async function handler({ user, body, req }) {
       }
     }
     return policyPayload(await getPolicy(projectId));
+  }
+
+  if (action === 'apply') {
+    // Changing a live site is an owner decision, so it takes the owner's own
+    // session — the same reasoning as writing the policy (see below).
+    if (req?.widget) {
+      throw Object.assign(new Error('Applying updates has to be done from Morpheus itself, not from an embedded page.'), { status: 403, code: 'OWNER_ONLY' });
+    }
+    // Explicit, per-invocation confirmation. Not a default, not inferred from the
+    // policy: the policy says what MAY happen on a schedule, this says a person
+    // asked for it now.
+    if (body?.confirm !== true) {
+      throw Object.assign(new Error('Confirmation required: pass confirm: true to apply updates.'), { status: 400, code: 'CONFIRM_REQUIRED' });
+    }
+
+    const policy = await getPolicy(projectId);
+    const scan = await scanSite(user, projectId, { force: true });
+    const conn = await getWpConnection(projectId, user.id);
+    if (!conn) throw Object.assign(new Error('No WordPress site connected.'), { status: 400, code: 'NOT_CONNECTED' });
+
+    const outcome = await applyAllowedUpdates({ conn, policy, scan, dryRun: body?.dry_run === true });
+
+    // The same report a scheduled run writes, so the two cannot read differently.
+    if (body?.dry_run !== true) {
+      const content = runSummary({
+        scan, policy,
+        applied: outcome.applied,
+        failed: outcome.failed,
+        restored: outcome.restored,
+        restoreFailed: outcome.restoreFailed,
+        skipped: outcome.skipped,
+      });
+      try {
+        await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content } });
+      } catch { /* the result is returned either way; the report is best-effort */ }
+    }
+
+    return { ok: outcome.ok, outcome, scan, policy: policyPayload(policy) };
   }
 
   const scan = await scanSite(user, projectId, { force: body?.force === true });

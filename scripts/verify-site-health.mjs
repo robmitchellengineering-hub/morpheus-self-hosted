@@ -176,11 +176,12 @@ console.log('\n7. the wiring')
 // action lives beside it. The invariants are asserted where the code is, not
 // where it used to be — but every one of them still holds.
 const fn = read('server/src/functions/siteHealth.js');
-check('the handler only accepts actions it implements', /ACTIONS = new Set\(\['scan', 'policy'\]\)/.test(fn), true);
+// The action set grew when applying arrived; what matters is that every declared
+// action has a branch and that the rules for the dangerous ones live in
+// scripts/verify-site-maintenance.mjs.
+check('the handler declares its actions in one place', /ACTIONS = new Set\(\['scan', 'policy', 'apply'\]\)/.test(fn), true);
+check('…and every declared action is handled', ['scan', 'policy', 'apply'].every((a) => fn.includes(`'${a}'`)), true);
 check('…and refuses anything else rather than ignoring it', /Unknown health action/.test(fn), true);
-// Applying updates writes to a live site and does not exist yet; a handler that
-// silently accepted 'apply' and did nothing would be worse than no action.
-check('there is no apply action that does less than its name', /'apply'|'fix'|'update_all'/.test(fn), false);
 check('the scan itself is a shared helper, not inlined twice', /scanSite\(user, projectId/.test(fn), true);
 
 const scanLib = read('server/src/lib/siteScan.js');

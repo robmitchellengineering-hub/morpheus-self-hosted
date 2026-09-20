@@ -157,6 +157,41 @@ export function mayApply(policy, kind, { manual = false } = {}) {
   return { allowed: true, reason: null };
 }
 
+/**
+ * Which update kinds a run should actually apply, in the order it should do them.
+ *
+ * The intersection of two things, and both are required: what the OWNER allowed
+ * (`mayApply`) and what is actually AVAILABLE (`scan.update_plan`). A kind the
+ * owner allowed but has no update for is not a target; a kind with updates that
+ * the owner did not allow is not a target either — it is reported.
+ *
+ * Plugins and themes first, core last: a WordPress core update can change
+ * behaviour the plugins depend on, so it is the one most worth doing after the
+ * rest of the site is known to still work. (And only ever a MINOR core update —
+ * `mayApply` refuses major by construction, so it cannot appear here even if a
+ * caller passes it.)
+ */
+export function kindsToApply(policy, scan = {}) {
+  const plan = scan.update_plan || {};
+  const available = {
+    plugin: Array.isArray(plan.plugins) ? plan.plugins.length : 0,
+    theme: Array.isArray(plan.themes) ? plan.themes.length : 0,
+    core_minor: Array.isArray(plan.core) ? plan.core.length : 0,
+  };
+  const apply = [];
+  const skipped = [];
+  for (const kind of ['plugin', 'theme', 'core_minor']) {
+    const decision = mayApply(policy, kind);
+    if (!available[kind]) continue;
+    if (decision.allowed) apply.push(kind);
+    else skipped.push({ kind, count: available[kind], reason: decision.reason });
+  }
+  // Anything the plan can hold that is not in the list above is reported, never
+  // applied — this is where a future "core_major" would end up if something ever
+  // put one in the plan.
+  return { apply, skipped };
+}
+
 /** Which kinds an unattended run would be allowed to apply, and which it would merely report. */
 export function allowedKinds(policy) {
   const applicable = [];
@@ -193,7 +228,7 @@ export function describePolicy(policy) {
  * Written for someone reading it on a phone a month later, so it leads with what
  * needs them, and it never claims more than the run actually did.
  */
-export function runSummary({ scan = {}, policy = {}, applied = [], failed = [], skipped = [], at = Date.now() } = {}) {
+export function runSummary({ scan = {}, policy = {}, applied = [], failed = [], skipped = [], restored = [], restoreFailed = [], at = Date.now() } = {}) {
   const critical = Number(scan?.summary?.critical || 0);
   const recommended = Number(scan?.summary?.recommended || 0);
   const updates = Number(scan?.update_plan?.total || 0);
@@ -206,11 +241,19 @@ export function runSummary({ scan = {}, policy = {}, applied = [], failed = [], 
   lines.push(`${updates} update${updates === 1 ? '' : 's'} available.`);
 
   if (applied.length) lines.push(`Applied: ${applied.join(', ')}.`);
+  // A restore is the safety net firing: the update broke something and the
+  // backup was put back. It belongs above the failures, not buried with them.
+  if (restored && restored.length) lines.push(`Put back from the pre-update backup after a failed update: ${restored.join(', ')}.`);
   if (failed.length) lines.push(`FAILED and left alone: ${failed.join(', ')}.`);
+  if (restoreFailed && restoreFailed.length) lines.push(`COULD NOT put these back, and they need attention now: ${restoreFailed.join(', ')}.`);
   if (skipped.length) lines.push(`Reported but not applied: ${skipped.join(', ')}.`);
 
   const p = { ...POLICY_DEFAULTS, ...policy };
-  if (!p.apply_plugins && !p.apply_themes && !p.apply_core_minor) {
+  // Only when it is TRUE of this run. Saying "nothing was changed" in the same
+  // message that lists what was applied makes the whole report untrustworthy —
+  // and the flags are not the authority on what happened, the results are.
+  const changed = applied.length + failed.length + restored.length + (restoreFailed || []).length;
+  if (!changed && !p.apply_plugins && !p.apply_themes && !p.apply_core_minor) {
     lines.push('Applying updates is switched off for this site, so nothing was changed.');
   }
   if (scan?.can_apply && scan.can_apply.ok === false) {
