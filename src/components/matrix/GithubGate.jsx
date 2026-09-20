@@ -4,7 +4,7 @@ import HelpHint from './HelpHint';
 
 // Wraps GitHub-dependent UI. Shows a Connect button if the user hasn't linked
 // their GitHub account yet, and only renders children once connected.
-export default function GithubGate({ children, note }) {
+export default function GithubGate({ children, note, showSignup = false }) {
   const { connected, login, loading, connect, disconnect } = useGithubConnection();
 
   if (loading) {
@@ -29,6 +29,17 @@ export default function GithubGate({ children, note }) {
         <p className="text-[10px] text-primary/50 pt-2 border-t border-primary/15">
           // A code appears — enter it at github.com/login/device to authorize. Nothing to install or paste.
         </p>
+        {showSignup && (
+          <p className="text-[10px] text-primary/45 leading-relaxed">
+            No GitHub account yet?{' '}
+            <a href="https://github.com/signup" target="_blank" rel="noreferrer"
+              className="text-primary/75 hover:text-primary underline underline-offset-2">
+              Create one free
+            </a>{' '}
+            — it takes a minute, then come back to this screen and tap CONNECT GITHUB. Your code lives in your own account;
+            Morpheus never holds it.
+          </p>
+        )}
       </div>
     );
   }

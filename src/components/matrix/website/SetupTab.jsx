@@ -4,6 +4,7 @@ import {
   RefreshCw, ShieldCheck, Settings, FolderPlus, Copy, Upload, UserCog,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import GithubGate from '@/components/matrix/GithubGate';
 
 // SETUP tab of the WEBSITE panel — install the Morpheus plugin on your
 // WordPress site and connect this project to it. One connection per project
@@ -267,15 +268,19 @@ export default function SetupTab({ store, projectId, onChanged }) {
           </div>
         )}
         {/* The step that used to be a wall: Morpheus deploys through a GitHub
-            repo, and a site that was never in one had nowhere to start. */}
+            repo, and a site that was never in one had nowhere to start. It needs
+            a GitHub account first, so that is asked for HERE, as a step — the
+            button used to fail with "GitHub not connected" and leave the
+            operator to find the connection somewhere else. */}
         {!store?.existing_repo && !copy && (
-          <div className="border border-primary/30 px-3 py-3 space-y-2">
-            <div className="text-[12px] text-primary/85">Turn on code changes</div>
+          <Step n={2} title="Turn on code changes">
+          <div className="space-y-2">
             <p className="text-[10px] text-primary/50 leading-relaxed">
               Morpheus ships changes through a GitHub repo — it opens a pull request, checks run, and the plugin applies
               the merged commit. Your site's theme is not in one, so Morpheus can make you a private one to work from.
               Deploy, Code and the AI build loop all start working after this.
             </p>
+            <GithubGate showSignup note="Morpheus creates the working copy as a private repo in your own GitHub account.">
             <div className="space-y-1">
               <div className="text-[9px] text-primary/40 uppercase tracking-wider">Repository name</div>
               <div className="flex items-center gap-1.5">
@@ -294,7 +299,9 @@ export default function SetupTab({ store, projectId, onChanged }) {
               Copies the active theme's code only — never WordPress core, other plugins, or your media. Nothing on your
               site changes.
             </div>
+            </GithubGate>
           </div>
+          </Step>
         )}
 
         {copy && (
