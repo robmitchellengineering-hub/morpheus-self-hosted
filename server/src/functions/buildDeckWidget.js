@@ -39,8 +39,31 @@ function slugify(text) {
 
 // Exported so deleteDeckWidget.js can resolve the same shared actor/project
 // without duplicating this lookup.
+//
+// Scoped to an ADMIN owner, and deterministic — both of which it was not.
+//
+// This used to be `findFirst({ where: { project_type: 'self_dev' } })`, the only
+// self-dev lookup in the codebase without the owning account in its filter (push,
+// verify, revert, merge, apply-migrations and the manual all scope by
+// `created_by_id`). Two things were wrong with that:
+//
+//   * `project_type` is client-writable through `/api/entities`, so any signed-in
+//     user could create a Project with `project_type: 'self_dev'` and win an
+//     unspecified `findFirst` race. The build then resolved THAT row, found an
+//     owner who is not an admin, and returned 500 — one user could break widget
+//     builds for everyone.
+//   * with more than one row the winner was whatever the database felt like
+//     returning, so a build could target the wrong mirror entirely.
+//
+// `owner: { role: 'admin' }` makes a shadow row ineligible, and the ordering makes
+// the original singleton authoritative if a second one ever exists: oldest wins.
+// entities.js now refuses to set the reserved type at all, so this is the second
+// line of defence rather than the only one.
 export async function resolveSelfDevActor() {
-  const project = await prisma.project.findFirst({ where: { project_type: 'self_dev' } });
+  const project = await prisma.project.findFirst({
+    where: { project_type: 'self_dev', owner: { role: 'admin' } },
+    orderBy: { created_date: 'asc' },
+  });
   if (!project) throw Object.assign(new Error('No self-dev workspace exists yet.'), { status: 503 });
   const actor = await prisma.user.findUnique({ where: { id: project.created_by_id } });
   if (!actor || actor.role !== 'admin') throw Object.assign(new Error('The self-dev workspace owner is not an admin.'), { status: 500 });

@@ -22,7 +22,7 @@ import { SELF_DEV_ADMIN_MANUAL_SOURCES } from './generateSelfDevManual.js';
 import { runVerifySelfDev } from './verifySelfDev.js';
 import { SCHEMA_PATH, MIGRATION_RE } from '../lib/selfDevMigrations.js';
 import { stampDecisionRef } from '../lib/selfDevDecisions.js';
-import { scopeExcludeFor, resolvePolicy } from '../lib/enginePolicy.js';
+import { scopeExcludeFor, resolvePolicy, evaluatePushPolicy } from '../lib/enginePolicy.js';
 import { getGithubToken, getFileContent } from '../lib/github.js';
 import { evaluateDrift, readSyncedCommitSafely, recordSyncedCommitSafely } from '../lib/selfDevDrift.js';
 
@@ -69,6 +69,22 @@ export default async function handler({ user, body }) {
   });
   if (!project) throw Object.assign(new Error('Self-dev project not found'), { status: 404 });
 
+  // Which policy governs this push? A scoped push names its own ('widget_build'
+  // from buildDeckWidget, or an ad-hoc object from deleteDeckWidget); an
+  // unscoped push is the admin one. Resolved BEFORE the verify gate, because
+  // `force` IS that gate's override: a policy that forbids force has to refuse it
+  // rather than let it skip verification and then be refused for some other
+  // reason. Both fields are read here and nowhere else — see the enforcement map
+  // in lib/enginePolicy.js.
+  const governingPolicy = resolvePolicy(scopePolicy || 'admin');
+  const policyRefusal = evaluatePushPolicy(governingPolicy, {
+    force: !!force,
+    directToMain: body?.directToMain === true,
+  });
+  if (policyRefusal) {
+    return { blocked: true, ...policyRefusal, repoFullName: SELF_DEV_REPO_FULL_NAME };
+  }
+
   // Verify gate (esbuild syntax + cross-file import/export). `force` overrides.
   if (!force) {
     const verify = await runVerifySelfDev(user);
@@ -93,7 +109,10 @@ export default async function handler({ user, body }) {
   // diff, unchanged behaviour. `scopePolicy` may be a registered policy id
   // (e.g. 'widget_build') or, for a per-call scope like a single widget's
   // deletion, a raw ad-hoc policy object — resolvePolicy() accepts both.
-  const resolvedScopePolicy = scopePolicy ? resolvePolicy(scopePolicy) : null;
+  //
+  // Same object the push-policy check above used; resolved once so the scope
+  // this push is held to and the scope it is exempted by cannot disagree.
+  const resolvedScopePolicy = scopePolicy ? governingPolicy : null;
   const scopeExclude = resolvedScopePolicy ? scopeExcludeFor(resolvedScopePolicy) : undefined;
 
   // A2 — a schema.prisma change must ship its migration in the same push.

@@ -60,18 +60,38 @@ Copied 2026-09-20 from the session workspace. Dated 2026-09-19 → 2026-09-20.
 | `docs/audits/morpheus-compile-target-audit.md` | a paper audit of all six native compile targets, and the ranked list of which are most likely to break |
 | `docs/audits/selfdev-pipeline-audit.md` | the self-dev delivery engine's safety gates, and the **gaps in them** — several are unenforced policy fields, listed with file and line |
 
-### Open findings in the audits that are not fixed by anything
+### Open findings in the audits
 
-These are recorded here rather than acted on, and they should not be lost again:
+Recorded here rather than acted on, so they cannot be lost again. Each says what
+is still true, and what has since been fixed — a findings list that is never
+updated becomes the next stale document.
 
-- **`docs/audits/selfdev-pipeline-audit.md`** — `enginePolicy.js` declares
-  `allowDirectToMain`, `allowMigrations`, `allowInfraWrites` and
-  `maxSpendPerDayUsd` and **nothing reads them**; `pushSelfDevToGithub` accepts
-  `body.force` with no policy check; `resolveSelfDevActor` picks any `self_dev`
-  project rather than the caller's.
+- **`docs/audits/selfdev-pipeline-audit.md`** — the delivery-policy gaps.
+  - **FIXED (2026-09-20):** `pushSelfDevToGithub` honoured `body.force` (and
+    `directToMain`) without consulting the policy, so `allowForce: false` and
+    `allowDirectToMain: false` on the scoped policies enforced nothing.
+    `evaluatePushPolicy()` now refuses both, before the verify gate that `force`
+    would otherwise skip.
+  - **FIXED (2026-09-20):** `resolveSelfDevActor` was the only self-dev lookup
+    not scoped to the owning account, and `project_type: 'self_dev'` was
+    client-writable through `/api/entities` — so any signed-in user could create
+    a row that shadowed the real workspace. The lookup is now owner-scoped and
+    deterministically ordered, and the reserved type is refused by the entity API.
+  - **STILL OPEN:** `maxTurnsPerHour`, `maxSpendPerDayUsd` and `repoAllowList` are
+    enforced only on the WordPress path (`lib/tenantPolicy.js`), not on the
+    self-dev path. `lib/enginePolicy.js` now carries a map of which field is
+    enforced where, so this is documented rather than implied. It matters only if
+    a scoped self-dev caller is ever exposed to a non-admin trigger.
+  - **STILL OPEN:** `buildDeckWidget` is admin-gated as a route pending Phase 3;
+    when that gate comes off, the widget build still runs as the elevated
+    self-dev actor. `evaluatePushPolicy` is what limits what it can do with that
+    actor.
 - **`docs/audits/morpheus-compile-target-audit.md`** — `windows-exe` (malformed
   PyInstaller argv) and `rpi-distro` (a dependency install whose failure is
-  swallowed) were the two highest-confidence defects.
+  swallowed) were the two highest-confidence defects. Both were fixed on main
+  before this archive was made; the *lessons* are in
+  `references/compile-targets.md`, and the check that keeps them fixed is
+  `scripts/compile-smoke.mjs` (a real run, not a paper audit).
 - **One account sits at −3.77 credits** — a one-row repair, blocked on Rob
   because the migration runner deliberately refuses `UPDATE`.
 
