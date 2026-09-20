@@ -267,3 +267,16 @@ export async function wpHealth(conn, { force = false } = {}) {
   return wpCall(conn, 'health', force ? { force: true } : {});
 }
 
+/**
+ * Site maintenance (plugin 0.6.0+): report what could be updated, or update it.
+ *
+ * `targets` are (kind, id) pairs and nothing else — no versions, no URLs. The
+ * SITE re-reads its own update offer and decides, so a scan Morpheus took minutes
+ * ago can never cause an install of something the site no longer offers. The site
+ * also refuses outright when it cannot take a backup first; that refusal arrives
+ * as `{ ok: false, code, error }` and is passed through, not swallowed.
+ */
+export async function wpMaintenance(conn, { action = 'plan', targets = [], dryRun = false } = {}) {
+  return wpCall(conn, 'maintenance', { action, targets, dry_run: !!dryRun });
+}
+

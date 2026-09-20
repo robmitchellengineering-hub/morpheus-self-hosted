@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.6.0
+Stable tag: 0.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,21 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.6.1 =
+* New: a signed `/maintenance` endpoint. `plan` reports what could be updated
+  (and refuses anything it cannot do safely); `apply` updates the targets it is
+  given, one at a time.
+* Every update is reversible or it does not happen: a plugin or theme is zipped
+  into `wp-content/uploads/morpheus-backups/` before it is touched, the new
+  version is verified afterwards, and a failed or unverified update is restored
+  from that snapshot. If the host has no zip extension, or the backup directory
+  cannot be written, Morpheus updates nothing and says why.
+* A MAJOR WordPress version update is never applied — it is reported for a human.
+  Minor and security updates are applied only when the owner has allowed them,
+  and only when WordPress's own temporary-backup directory is writable.
+* Snapshot paths are resolved and checked against their plugin/theme root, so a
+  crafted target cannot read or write outside it.
 
 = 0.6.0 =
 * New: a signed `/health` endpoint that runs WordPress's own Site Health tests

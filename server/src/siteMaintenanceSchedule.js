@@ -1,15 +1,15 @@
-// The monthly site check — the SAFE half of site maintenance.
+// The monthly site check: scan, then apply what the owner allowed.
 //
-// This runs a scan and writes a report. It applies NOTHING. That is not a
-// limitation of effort: applying updates writes to someone's live site and needs
-// a pre-update snapshot and a post-update check before it can be offered, and the
-// owner's policy for it has not been set. A scheduled job that changed sites
-// without those would be the worst thing this feature could do.
+// What it may apply is decided by `kindsToApply(policy, scan)` — the intersection
+// of the owner's permission and what the site actually has — and the site itself
+// refuses to update anything it cannot first snapshot. Three things are therefore
+// true by construction rather than by care:
 //
-// `mayApply` in lib/siteMaintenance.js already encodes the policy that will gate
-// applying when it exists, including the one rule that is not configurable — a
-// major core update is never automatic — so the rules are settled before the
-// ability arrives, not after.
+//   * a scan-only policy (the default) applies nothing;
+//   * a major core update is never applied, because `mayApply` refuses it and so
+//     it can never reach `kindsToApply`'s output;
+//   * an update that fails verification is put back from its pre-update backup,
+//     and a restore that itself fails is reported as needing attention NOW.
 //
 // WHY AN HOURLY TICK FOR A MONTHLY JOB
 //
@@ -23,6 +23,8 @@ import { prisma } from './db.js';
 import { enabledPolicies, recordRun } from './lib/siteMaintenanceStore.js';
 import { isDue, runSummary } from './lib/siteMaintenance.js';
 import { scanSite } from './lib/siteScan.js';
+import { applyAllowedUpdates } from './lib/siteApply.js';
+import { getWpConnection } from './lib/wpPlugin.js';
 
 const TICK_MS = 60 * 60 * 1000;
 const FIRST_TICK_DELAY_MS = 90 * 1000; // let the server finish booting first
@@ -51,9 +53,19 @@ export async function runDueSiteMaintenance(now = Date.now(), { log = console } 
     }
 
     let scan = null;
+    let outcome = null;
     let error = null;
     try {
       scan = await scanSite({ id: policy.created_by_id }, policy.project_id, { force: true });
+      // Apply only what the policy allows AND the site has. `kindsToApply`
+      // returns an empty list for a scan-only policy, and `applyAllowedUpdates`
+      // then does not call the site at all.
+      const conn = await getWpConnection(policy.project_id, policy.created_by_id);
+      if (conn) {
+        outcome = await applyAllowedUpdates({ conn, policy, scan });
+      } else {
+        error = 'the site is no longer connected';
+      }
     } catch (err) {
       error = err.message;
     }
@@ -62,7 +74,15 @@ export async function runDueSiteMaintenance(now = Date.now(), { log = console } 
     // an unattended run that reports nowhere is not a report.
     const content = error
       ? `Scheduled site check for ${project.name} could not run: ${error}`
-      : runSummary({ scan, policy, applied: [], failed: [], skipped: scan.update_plan.total ? ['all available updates (applying is off)'] : [] });
+      : runSummary({
+        scan,
+        policy,
+        applied: outcome?.applied || [],
+        failed: outcome?.failed || [],
+        restored: outcome?.restored || [],
+        restoreFailed: outcome?.restoreFailed || [],
+        skipped: outcome?.skipped || [],
+      });
     try {
       await prisma.chatMessage.create({
         data: { created_by_id: policy.created_by_id, project_id: project.id, role: 'morpheus', content },
@@ -81,14 +101,27 @@ export async function runDueSiteMaintenance(now = Date.now(), { log = console } 
           recommended: scan.summary.recommended,
           updates: scan.update_plan.total,
           canApply: scan.can_apply.ok,
-          // Spelled out so a later reader can tell a scan-only run from an
-          // apply run without reading the code.
-          applied: [],
+          // Spelled out so a later reader can tell a scan-only run from an apply
+          // run, and can see a restore, without reading the code.
+          applied: outcome?.applied || [],
+          failed: outcome?.failed || [],
+          restored: outcome?.restored || [],
+          restoreFailed: outcome?.restoreFailed || [],
+          skipped: outcome?.skipped || [],
         },
     });
 
-    outcomes.push({ projectId: policy.project_id, status: error ? 'error' : 'scanned', error });
-    log.log?.(`[site-maintenance] ${project.name}: ${error ? `failed — ${error}` : `scanned: ${scan.summary.headline}`}`);
+    outcomes.push({
+      projectId: policy.project_id,
+      status: error ? 'error' : 'scanned',
+      error,
+      applied: outcome?.applied || [],
+      failed: outcome?.failed || [],
+      restored: outcome?.restored || [],
+    });
+    log.log?.(`[site-maintenance] ${project.name}: ${error
+      ? `failed — ${error}`
+      : `scanned: ${scan.summary.headline}${outcome?.applied?.length ? ` Applied ${outcome.applied.length}.` : ''}${outcome?.restored?.length ? ` Restored ${outcome.restored.length}.` : ''}`}`);
   }
 
   return outcomes;
@@ -117,5 +150,5 @@ export function startSiteMaintenanceSchedule() {
   const timer = setInterval(tick, TICK_MS);
   // Do not hold the process open for a job that runs once a month.
   if (timer.unref) timer.unref();
-  console.log('[site-maintenance] monthly per-site checks registered (hourly check for due policies, scan only).');
+  console.log('[site-maintenance] monthly per-site checks registered (hourly check for due policies; applies only what each site\'s policy allows).');
 }

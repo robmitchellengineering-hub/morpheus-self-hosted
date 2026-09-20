@@ -34,11 +34,44 @@ class Morpheus_REST {
 			'permission_callback' => '__return_true',
 			'callback'            => array( __CLASS__, 'handle_health' ),
 		) );
+		// Site maintenance: report what could be updated, or update it. Signed,
+		// like /health and for the same reason — and because this one WRITES.
+		register_rest_route( MORPHEUS_REST_NS, '/maintenance', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_maintenance' ),
+		) );
 		register_rest_route( MORPHEUS_REST_NS, '/status', array(
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => array( __CLASS__, 'handle_status' ),
 		) );
+	}
+
+	public static function handle_maintenance( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( ! class_exists( 'Morpheus_Maintenance' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin cannot apply updates. Update the plugin.', 501 );
+		}
+		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : 'plan';
+
+		if ( 'plan' === $action ) {
+			return new WP_REST_Response( Morpheus_Maintenance::plan(), 200 );
+		}
+		if ( 'apply' !== $action ) {
+			return self::err( 'unknown_action', 'action must be plan or apply.', 400 );
+		}
+
+		// The caller decides WHAT, having consulted the owner's policy; this end
+		// decides whether it can be done safely and does it. A refusal (no zip
+		// extension, unwritable backup directory, a path that escapes its root)
+		// comes back as ok=false with a reason, not as a broken site.
+		$targets = isset( $body['targets'] ) && is_array( $body['targets'] ) ? $body['targets'] : array();
+		$result  = Morpheus_Maintenance::apply( $targets, array( 'dry_run' => ! empty( $body['dry_run'] ) ) );
+		return new WP_REST_Response( $result, empty( $result['ok'] ) ? 409 : 200 );
 	}
 
 	public static function handle_health( WP_REST_Request $request ) {
