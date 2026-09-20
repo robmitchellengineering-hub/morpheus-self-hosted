@@ -23,6 +23,7 @@ import {
   buildSeoPrompt, normalizeSuggestions, suggestionWarnings,
   sanitizeGeneratedHtml, normalizeBlogDraft, buildBlogPrompt,
   SEO_INPUT_KEYS, TITLE_MAX, DESC_MAX, TITLE_HARD_MAX, MAX_GROUNDING_CHARS,
+  buildLinkPrompt, normalizeLinkSuggestions, MAX_LINKS,
 } from '../server/src/lib/seoPrompts.js';
 import { TEMPLATE_TOKENS } from '../src/lib/seoTemplate.js';
 
@@ -71,6 +72,11 @@ check('an existing description is offered as context', has(prompt, 'existing met
 check('the no-fabrication rule is stated', has(prompt, 'Never invent a fact'), true);
 check('the length guidance is stated', has(prompt, `${TITLE_MAX} characters`) && has(prompt, `${DESC_MAX} characters`), true);
 check('the exact output shape is stated', has(prompt, '"suggestions"') && has(prompt, '"seo_title"'), true);
+// The blank lines between sections are deliberate, and were silently deleted
+// once by a filter(Boolean) — a prompt that reads as one wall of text is
+// measurably worse for the model than one with its parts separated.
+check('sections are separated by blank lines', (prompt.match(/\n\n/g) || []).length >= 4, true);
+check('the link prompt separates its sections too', (buildLinkPrompt({ business: 'x', title: 'T', url: 'u', content: 'c', candidates: [{ title: 'A', url: 'https://a.test', type: 'page' }] }).match(/\n\n/g) || []).length >= 3, true);
 
 // A pasted-in 100k-character page must not become a 100k-character prompt.
 const huge = buildSeoPrompt({
@@ -191,6 +197,51 @@ check('a draft with no seo_title falls back to the title', normalizeBlogDraft({
 check('a very short body is flagged for the operator', normalizeBlogDraft({
   title: 'A Reasonable Post Title', content: '<p>Too short.</p>', excerpt: 'e', seo_title: 'T', seo_description: 'd'.repeat(80), focus_keyword: 'k',
 }).warnings.some((w) => has(w, 'very short')), true);
+
+// ── 3b. internal links ──────────────────────────────────────────────────────
+console.log('\n3b. internal links can only wrap a phrase that already exists');
+
+const pageText = 'We repair electric and acoustic guitars in Melbourne, and every setup covers the truss rod and the intonation.';
+const candidates = [
+  { title: 'Setup Guide', url: 'https://shop.test/setup', type: 'page' },
+  { title: 'Vintage Guide', url: 'https://shop.test/vintage', type: 'post' },
+];
+const linkArgs = { content: pageText, pageUrl: 'https://shop.test/repairs/', candidates };
+
+const linkPrompt = buildLinkPrompt({ business: 'Valiant Music', title: 'Repairs', url: 'https://shop.test/repairs/', content: pageText, candidates });
+check('the link prompt carries the page text to copy anchors from', has(linkPrompt, 'truss rod and the intonation'), true);
+check('the link prompt lists the real target URLs', has(linkPrompt, 'https://shop.test/setup'), true);
+check('the link prompt forbids inventing an anchor', has(linkPrompt, 'ALREADY APPEARS, character for character'), true);
+check('the link prompt forbids inventing a URL', has(linkPrompt, 'Never invent or shorten a URL'), true);
+check('the link prompt caps the number of links', has(linkPrompt, `at most ${MAX_LINKS} links`), true);
+
+// The dangerous cases, all of which must be discarded rather than applied.
+const linkResult = normalizeLinkSuggestions({ links: [
+  { anchor: 'electric and acoustic guitars', url: 'https://shop.test/setup', why: 'relevant' },
+  { anchor: 'pink elephants juggling', url: 'https://shop.test/vintage', why: 'invented phrase' },
+  { anchor: 'truss rod', url: 'https://evil.test/x', why: 'invented url' },
+  { anchor: 'Melbourne', url: 'https://shop.test/vintage', why: 'ok' },
+  { anchor: 'truss rod', url: 'https://shop.test/setup', why: 'same page twice' },
+  { anchor: 'intonation', url: 'https://shop.test/repairs/', why: 'self link' },
+  { anchor: '<b>setup</b>', url: 'https://shop.test/setup', why: 'markup in the anchor' },
+  { anchor: 'setup', url: 'https://shop.test/vintage', why: 'ok but the URL is taken' },
+] }, linkArgs);
+check('the usable links are kept, in order', linkResult.links.map((l) => l.anchor), ['electric and acoustic guitars', 'Melbourne']);
+check('every kept link names its target page', linkResult.links.map((l) => l.target), ['Setup Guide', 'Vintage Guide']);
+check('an invented phrase is dropped', linkResult.dropped.some((d) => has(d.reason, 'not in the page text')), true);
+check('an invented URL is dropped', linkResult.dropped.some((d) => has(d.reason, "not one of this site's pages")), true);
+check('a self link is dropped', linkResult.dropped.some((d) => has(d.reason, 'page itself')), true);
+check('markup in an anchor is dropped', linkResult.dropped.some((d) => has(d.reason, 'punctuation or markup')), true);
+check('two links to the same page are dropped to one', linkResult.dropped.some((d) => has(d.reason, 'same page')), true);
+check('every dropped suggestion says why', linkResult.dropped.every((d) => typeof d.reason === 'string' && d.reason.length > 0), true);
+check('the anchor is matched case-insensitively but returned as written', normalizeLinkSuggestions(
+  { links: [{ anchor: 'MELBOURNE', url: 'https://shop.test/vintage', why: 'x' }] }, linkArgs).links[0].anchor, 'MELBOURNE');
+check('an empty candidate list yields no links', normalizeLinkSuggestions({ links: [{ anchor: 'Melbourne', url: 'https://shop.test/x', why: 'x' }] }, { content: pageText, pageUrl: '', candidates: [] }).links, []);
+check('garbage in -> nothing out', normalizeLinkSuggestions('nope', linkArgs).links, []);
+// The anchor goes into live HTML, so a quote or an ampersand must never survive.
+for (const bad of ['say "hello"', 'a&b', 'trailing,', 'semi;colon', '<i>x</i>']) {
+  check(`anchor refused: ${bad}`, normalizeLinkSuggestions({ links: [{ anchor: bad, url: 'https://shop.test/setup', why: 'x' }] }, { ...linkArgs, content: `text with ${bad} inside it` }).links.length, 0);
+}
 
 // ── 4. the cross-language contract ─────────────────────────────────────────
 console.log('\n4. the JS payload and the plugin\'s PHP agree');

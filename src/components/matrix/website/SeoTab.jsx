@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Loader2, RefreshCw, Check, ExternalLink, ChevronLeft, Wand2, Search, AlertTriangle,
-  FileText, Plus, Save, X, Sparkles, Eye, Settings2,
+  FileText, Plus, Save, X, Sparkles, Eye, Settings2, Link2,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { serpPreview } from '@/lib/serpPreview';
@@ -112,6 +112,10 @@ export default function SeoTab({ projectId, store }) {
   const [edit, setEdit] = useState(null); // the item being edited + form
   const [saving, setSaving] = useState(false);
   const [genOne, setGenOne] = useState(false);
+  const [links, setLinks] = useState(null); // { links, dropped, title }
+  const [loadingLinks, setLoadingLinks] = useState(false);
+  const [linkPlan, setLinkPlan] = useState(null); // dry-run result awaiting APPLY
+  const [applyingLinks, setApplyingLinks] = useState(false);
 
   const [batch, setBatch] = useState(null); // { suggestions, ... } pending review
   const [genBatch, setGenBatch] = useState(false);
@@ -166,7 +170,7 @@ export default function SeoTab({ projectId, store }) {
   };
 
   const openItem = (it) => {
-    setErr(null); setNote(null); setBatch(null); setGenOne(false);
+    setErr(null); setNote(null); setBatch(null); setGenOne(false); setLinks(null); setLinkPlan(null);
     setEdit({
       id: it.id, title: it.title, type: it.type, url: it.url, status: it.status,
       form: {
@@ -200,6 +204,48 @@ export default function SeoTab({ projectId, store }) {
         edit_url: f.edit_url || null,
       } : cur);
     }).catch(() => { /* the form still works with what the list gave us */ });
+  };
+
+  const suggestLinks = async () => {
+    setLoadingLinks(true); setErr(null); setNote(null); setLinkPlan(null);
+    try {
+      const r = await base44.functions.invoke('suggestInternalLinks', { projectId, id: edit.id }).then((x) => x.data);
+      if (!r) throw new Error('No suggestion came back — try again.');
+      setLinks({ ...r, checked: Object.fromEntries((r.links || []).map((l, i) => [i, true])) });
+      if (r.note) setNote(r.note);
+      else if (!r.links?.length) setNote('Nothing worth linking from that page yet.');
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setLoadingLinks(false); }
+  };
+
+  // Dry run first: the plugin shows the exact sentence each link would land in,
+  // and refuses anything whose phrase is not really in the text.
+  const planLinks = async () => {
+    const chosen = (links?.links || []).map((l, i) => ({ l, i })).filter(({ i }) => links.checked[i]).map(({ l }) => l);
+    if (!chosen.length) return;
+    setApplyingLinks(true); setErr(null); setNote(null); setLinkPlan(null);
+    try {
+      const r = await call(projectId, 'bulk_add_links', {
+        dry_run: true,
+        items: chosen.map((l) => ({ id: edit.id, anchor: l.anchor, url: l.url })),
+      });
+      if (r?.ok === false) throw new Error(r.message || 'The site rejected the request.');
+      setLinkPlan(r);
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setApplyingLinks(false); }
+  };
+
+  const applyLinks = async () => {
+    const chosen = (linkPlan?.added || []).map((a) => ({ id: a.id, anchor: a.anchor, url: a.url }));
+    if (!chosen.length) return;
+    setApplyingLinks(true); setErr(null); setNote(null);
+    try {
+      const r = await call(projectId, 'bulk_add_links', { items: chosen });
+      if (r?.ok === false) throw new Error(r.message || 'The site rejected the change.');
+      setNote(`Added ${r?.count ?? chosen.length} link${(r?.count ?? chosen.length) === 1 ? '' : 's'} to this page. WordPress kept a revision, so you can undo it.`);
+      setLinkPlan(null); setLinks(null);
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setApplyingLinks(false); }
   };
 
   const save = async () => {
@@ -428,6 +474,10 @@ export default function SeoTab({ projectId, store }) {
               className="ml-auto h-[32px] px-2.5 text-[10px] border border-primary/40 text-primary hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
               {genOne ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} WRITE IT FOR ME
             </button>
+            <button onClick={suggestLinks} disabled={loadingLinks} title="Which of your other pages this one should link to"
+              className="h-[32px] px-2.5 text-[10px] border border-primary/40 text-primary hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
+              {loadingLinks ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />} LINK IDEAS
+            </button>
           </div>
 
           {edit.suggestion && (
@@ -451,6 +501,76 @@ export default function SeoTab({ projectId, store }) {
                 <Btn onClick={() => setEdit((cur) => ({ ...cur, suggestion: null }))}>
                   <X size={12} /> Discard
                 </Btn>
+              </div>
+            </div>
+          )}
+
+          {links && (
+            <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
+              <div className="text-[10px] text-primary/60 uppercase tracking-wider flex items-center gap-1.5">
+                <Link2 size={10} /> link ideas
+              </div>
+              {(links.links || []).length === 0 && <div className="text-[10px] text-primary/50">Nothing to suggest for this page.</div>}
+              {(links.links || []).map((l, i) => (
+                <div key={`${l.url}-${i}`} className={`border px-2.5 py-2 ${links.checked[i] ? 'border-primary/30' : 'border-primary/10 opacity-60'}`}>
+                  <div className="flex items-start gap-2">
+                    <button onClick={() => setLinks((cur) => ({ ...cur, checked: { ...cur.checked, [i]: !cur.checked[i] } }))}
+                      className="mt-0.5 shrink-0" title={links.checked[i] ? 'Skip this link' : 'Include this link'}>
+                      <span className={`w-[15px] h-[15px] border flex items-center justify-center ${links.checked[i] ? 'border-primary bg-primary/20 text-primary' : 'border-primary/30 text-transparent'}`}>
+                        <Check size={11} />
+                      </span>
+                    </button>
+                    <div className="min-w-0">
+                      <div className="text-[11px] text-primary">“{l.anchor}”</div>
+                      <div className="text-[10px] text-primary/60 mt-0.5 break-words">→ {l.target || l.url}</div>
+                      {l.why && <div className="text-[9px] text-primary/40 mt-0.5">{l.why}</div>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {links.dropped?.length > 0 && (
+                <div className="text-[9px] text-yellow-500/80 leading-relaxed">
+                  {links.dropped.length} suggestion{links.dropped.length === 1 ? '' : 's'} discarded: {links.dropped.slice(0, 3).map((d) => d.reason).join('; ')}
+                  {links.dropped.length > 3 ? '…' : ''}
+                </div>
+              )}
+              {(links.links || []).length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Btn kind="primary" onClick={planLinks} disabled={applyingLinks}>
+                    {applyingLinks ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    REVIEW {(links.links || []).filter((_, i) => links.checked[i]).length}
+                  </Btn>
+                  <Btn onClick={() => setLinks(null)}><X size={12} /> Close</Btn>
+                </div>
+              )}
+            </div>
+          )}
+
+          {linkPlan && (
+            <div className="border border-primary/40 bg-primary/5 p-3 space-y-2">
+              <div className="text-[10px] text-primary/60 uppercase tracking-wider">
+                {linkPlan.added?.length || 0} link{(linkPlan.added?.length || 0) === 1 ? '' : 's'} would be added
+              </div>
+              {(linkPlan.added || []).map((a, i) => (
+                <div key={i} className="border border-primary/15 px-2.5 py-2">
+                  <div className="text-[11px] text-primary">“{a.anchor}”</div>
+                  <div className="text-[9px] text-primary/35 break-words">{a.url}</div>
+                  {a.context && <div className="text-[9px] text-primary/50 mt-1 leading-relaxed break-words font-mono">{a.context}</div>}
+                </div>
+              ))}
+              {linkPlan.skipped?.length > 0 && (
+                <div className="text-[9px] text-yellow-500/80">
+                  {linkPlan.skipped.length} refused: {linkPlan.skipped.map((s) => s.reason).join('; ')}
+                </div>
+              )}
+              <div className="text-[9px] text-primary/40">
+                Nothing has been written yet — this is the sentence each link would land in. Your text is never deleted, and WordPress keeps a revision.
+              </div>
+              <div className="flex items-center gap-2">
+                <Btn kind="primary" onClick={applyLinks} disabled={applyingLinks || !linkPlan.added?.length}>
+                  {applyingLinks ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} ADD LINKS
+                </Btn>
+                <Btn onClick={() => setLinkPlan(null)}><X size={12} /> Cancel</Btn>
               </div>
             </div>
           )}

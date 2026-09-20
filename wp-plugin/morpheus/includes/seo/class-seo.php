@@ -58,6 +58,9 @@
  *   bulk_apply_defaults — write the templates into items that have nothing set
  *                   (dry_run returns what WOULD be written) — the path that
  *                   works even when another plugin owns the head
+ *   bulk_add_links — wrap a phrase that ALREADY EXISTS in an item's text in a
+ *                   link to another page on the same site (dry_run shows the
+ *                   exact before/after context) — internal linking
  *   audit         — scan for real problems (missing/short/long/duplicate
  *                   titles and descriptions, noindex, thin content)
  */
@@ -137,6 +140,7 @@ class Morpheus_SEO {
 			case 'get_defaults': $r = array( 'defaults' => self::get_defaults() ); break;
 			case 'set_defaults': $r = self::set_defaults_action( $data ); break;
 			case 'bulk_apply_defaults': $r = self::bulk_apply_defaults( $data ); break;
+			case 'bulk_add_links': $r = self::bulk_add_links( $data ); break;
 			case 'audit':        $r = self::audit( $data ); break;
 			default:
 				return Morpheus_REST::err( 'unknown_action', "Unknown seo action: {$action}", 400 );
@@ -146,6 +150,12 @@ class Morpheus_SEO {
 			$d = $r->get_error_data();
 			$s = is_array( $d ) && isset( $d['status'] ) ? $d['status'] : 422;
 			return Morpheus_REST::err( $r->get_error_code(), $r->get_error_message(), $s );
+		}
+
+		// A cached page embeds the title, the description and the links, so a
+		// write that does not clear the cache looks like it did nothing.
+		if ( in_array( $action, array( 'set_seo', 'bulk_set_seo', 'bulk_apply_defaults', 'bulk_add_links' ), true ) ) {
+			morpheus_purge_caches();
 		}
 
 		return new WP_REST_Response( array_merge( array( 'ok' => true, 'action' => $action ), $r ), 200 );
@@ -486,6 +496,149 @@ class Morpheus_SEO {
 			// instead of implying the whole site was covered.
 			'remaining' => max( 0, count( $preview ) >= $limit ? 1 : 0 ),
 		);
+	}
+
+	/**
+	 * Internal links: wrap a phrase that is ALREADY in an item's text.
+	 *
+	 * This is the operation every SEO plugin sells as internal linking, and it
+	 * rewrites live content — so it refuses far more than it accepts:
+	 *
+	 *   * the anchor must exist VERBATIM in the item's own text (the caller is
+	 *     an AI, and an invented phrase would either do nothing or corrupt a
+	 *     sentence),
+	 *   * only inside a text node — never inside an existing tag or another
+	 *     link,
+	 *   * a link to the same URL is never added twice,
+	 *   * `dry_run` returns the exact sentence before and after, so what lands
+	 *     on a live site has been seen first.
+	 *
+	 * The edit is one phrase wrapped in an <a>, nothing is deleted, and
+	 * WordPress keeps a revision — which the harness asserts rather than
+	 * assumes.
+	 */
+	private static function bulk_add_links( $data ) {
+		$items = isset( $data['items'] ) && is_array( $data['items'] ) ? array_slice( $data['items'], 0, 25 ) : array();
+		$dry   = ! empty( $data['dry_run'] );
+		if ( ! $items ) {
+			return new WP_Error( 'no_items', 'Provide items: [{id, anchor, url}].', array( 'status' => 400 ) );
+		}
+
+		$added   = array();
+		$skipped = array();
+
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$id     = isset( $item['id'] ) ? (int) $item['id'] : 0;
+			$anchor = isset( $item['anchor'] ) ? trim( (string) $item['anchor'] ) : '';
+			$url    = isset( $item['url'] ) ? esc_url_raw( trim( (string) $item['url'] ) ) : '';
+			$post   = $id ? get_post( $id ) : null;
+
+			$refuse = function ( $why ) use ( &$skipped, $id, $anchor ) {
+				$skipped[] = array( 'id' => $id, 'anchor' => $anchor, 'reason' => $why );
+			};
+
+			if ( ! $post ) { $refuse( 'no such item' ); continue; }
+			if ( $anchor === '' ) { $refuse( 'empty anchor' ); continue; }
+			if ( mb_strlen( $anchor ) < 2 || mb_strlen( $anchor ) > 80 ) { $refuse( 'anchor length is outside 2-80 characters' ); continue; }
+			if ( $url === '' ) { $refuse( 'empty url' ); continue; }
+			// A page linking to itself is noise, not SEO.
+			if ( untrailingslashit( $url ) === untrailingslashit( (string) get_permalink( $post ) ) ) { $refuse( 'the target is this page' ); continue; }
+			// Already linked: checked as an href, not as a bare string — a URL
+			// shown as plain text in the copy is not a link.
+			if ( preg_match( '#<a[^>]+href=["\']' . preg_quote( $url, '#' ) . '["\']#i', (string) $post->post_content ) ) {
+				$refuse( 'this page already links to that URL' );
+				continue;
+			}
+
+			$linked = self::wrap_phrase( (string) $post->post_content, $anchor, $url );
+			if ( is_wp_error( $linked ) ) { $refuse( $linked->get_error_message() ); continue; }
+
+			$after = $linked['content'];
+			$row    = array(
+				'id'      => $id,
+				'title'   => get_the_title( $id ),
+				'anchor'  => $linked['matched'],
+				'url'     => $url,
+				'context' => self::link_context( $after, $url, $linked['matched'] ),
+			);
+
+			if ( $dry ) {
+				$added[] = $row;
+				continue;
+			}
+
+			$res = wp_update_post( array( 'ID' => $id, 'post_content' => $after ), true );
+			if ( is_wp_error( $res ) ) {
+				$refuse( $res->get_error_message() );
+				continue;
+			}
+			// Reported, not assumed: the harness asserts a revision really
+			// exists, because that is the operator's undo.
+			$row['revision'] = count( wp_get_post_revisions( $id ) );
+			$added[] = $row;
+		}
+
+		return array(
+			'added'    => $added,
+			'skipped'  => $skipped,
+			'count'    => $dry ? 0 : count( $added ),
+			'would'    => count( $added ),
+			'dry_run'  => $dry,
+			'revisions' => ! $dry,
+		);
+	}
+
+	/**
+	 * Wrap the first occurrence of `$anchor` that sits in a text node.
+	 *
+	 * Returns a WP_Error with the reason rather than a bare false, because
+	 * "why was this refused" is the whole value of the dry run.
+	 */
+	private static function wrap_phrase( $content, $anchor, $url ) {
+		// Split into tags and the text between them; only text is eligible.
+		$parts    = preg_split( '/(<[^>]*>)/', $content, -1, PREG_SPLIT_DELIM_CAPTURE );
+		$inside_a = false;
+		foreach ( $parts as $i => $part ) {
+			if ( $part === '' || $part === null ) {
+				continue;
+			}
+			if ( $part[0] === '<' ) {
+				if ( preg_match( '#^<a[\s>]#i', $part ) ) {
+					$inside_a = true;
+				} elseif ( preg_match( '#^</a#i', $part ) ) {
+					$inside_a = false;
+				}
+				continue;
+			}
+			if ( $inside_a ) {
+				continue;
+			}
+			$pos = mb_stripos( $part, $anchor );
+			if ( $pos === false ) {
+				continue;
+			}
+			$found      = mb_substr( $part, $pos, mb_strlen( $anchor ) );
+			$parts[ $i ] = mb_substr( $part, 0, $pos )
+				. '<a href="' . esc_url( $url ) . '">' . $found . '</a>'
+				. mb_substr( $part, $pos + mb_strlen( $anchor ) );
+			return array( 'content' => implode( '', $parts ), 'matched' => $found );
+		}
+		return new WP_Error( 'not_found', 'that phrase is not in the item text (or only inside an existing link)' );
+	}
+
+	/** The sentence the change landed in, so a dry run shows something human. */
+	private static function link_context( $content, $url, $anchor ) {
+		$needle = '<a href="' . esc_url( $url ) . '">' . $anchor . '</a>';
+		$at     = strpos( $content, $needle );
+		if ( $at === false ) {
+			return '';
+		}
+		$start = max( 0, $at - 180 );
+		$chunk = substr( $content, $start, 360 + strlen( $needle ) );
+		return ( $start > 0 ? '…' : '' ) . $chunk . ( strlen( $chunk ) + $start < strlen( $content ) ? '…' : '' );
 	}
 
 	private static function set_defaults_action( $data ) {

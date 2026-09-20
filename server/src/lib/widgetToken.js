@@ -22,7 +22,7 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   // the shop shouldn't also be able to rewrite every page's search metadata.
   // getWordPressStore is needed here because the SEO surface reads the site
   // context through it before the seo endpoint is called.
-  seo: ['getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost'],
+  seo: ['getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost', 'suggestInternalLinks'],
 };
 
 export function isMissingWidgetTable(err) {
