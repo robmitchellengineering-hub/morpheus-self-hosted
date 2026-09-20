@@ -247,3 +247,23 @@ export async function wpStore(conn, action, data = {}) {
 export async function wpSeo(conn, action, data = {}) {
   return wpCall(conn, 'seo', { action, data });
 }
+
+/**
+ * Site health + maintenance scan (plugin 0.6.0+).
+ *
+ * The only endpoint that returns the site's own configuration — plugin names and
+ * versions, auto-update settings, whether files can even be written — so it is a
+ * signed POST rather than a public GET like /status.
+ *
+ * A plugin older than 0.6.0 has no /health route, and WordPress answers a route
+ * that does not exist with 404 `rest_no_route` (a route that exists but has no
+ * such action answers 400 `unknown_action`). Both shapes mean the same thing
+ * here — "this site's plugin is too old" — and both are named, because the raw
+ * WordPress error tells an operator nothing they can act on.
+ */
+export const MIN_HEALTH_PLUGIN_VERSION = '0.6.0';
+
+export async function wpHealth(conn, { force = false } = {}) {
+  return wpCall(conn, 'health', force ? { force: true } : {});
+}
+

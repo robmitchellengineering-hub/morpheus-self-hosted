@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.5.6
+Stable tag: 0.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,21 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.6.0 =
+* New: a signed `/health` endpoint that runs WordPress's own Site Health tests
+  (plus WooCommerce's, if active) and reports the results, the available plugin,
+  theme and core updates, the auto-update settings, and whether this site can
+  have its files written at all. The Morpheus panel shows it as a HEALTH tab.
+* The scan caches itself for five minutes, so opening the panel does not re-run
+  it; the first scan of a site takes a few seconds because WordPress's tests
+  include loopback HTTP requests.
+* Six of WordPress's Site Health tests are asynchronous and are run from the
+  browser by a logged-in administrator. A signed server scan cannot run them, so
+  they are listed as not-run with the reason rather than omitted — an absent
+  test must not read as a passing one.
+* The scan is read-only apart from its own cache. Applying updates is not part
+  of this release.
 
 = 0.5.6 =
 * Plugin details now explain the connection and what a deploy may touch.

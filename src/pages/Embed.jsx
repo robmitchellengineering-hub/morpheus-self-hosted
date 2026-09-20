@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare, FileText, TrendingUp } from 'lucide-react';
+import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare, FileText, TrendingUp, Activity } from 'lucide-react';
 import { base44, setOverrideToken } from '@/api/base44Client';
 import DeployTab from '@/components/matrix/website/DeployTab';
 import ShopTab from '@/components/matrix/website/ShopTab';
 import PagesTab from '@/components/matrix/website/PagesTab';
 import SeoTab from '@/components/matrix/website/SeoTab';
+import HealthTab from '@/components/matrix/website/HealthTab';
 import EmbedChat from '@/components/matrix/website/EmbedChat';
 
 // The embeddable-widget surface — loaded in an iframe by public/plugin.js on
@@ -15,6 +16,7 @@ import EmbedChat from '@/components/matrix/website/EmbedChat';
 const SCOPE_TABS = [
   { scope: 'chat', id: 'chat', label: 'CHAT', icon: MessageSquare },
   { scope: 'deploy', id: 'deploy', label: 'DEPLOY', icon: Rocket },
+  { scope: 'deploy', id: 'health', label: 'HEALTH', icon: Activity },
   { scope: 'store', id: 'shop', label: 'SHOP', icon: ShoppingBag },
   { scope: 'store', id: 'pages', label: 'PAGES', icon: FileText },
   { scope: 'seo', id: 'seo', label: 'SEO', icon: TrendingUp },
@@ -132,6 +134,7 @@ export default function Embed() {
               pageUrl={pageUrlRef.current} pageTitle={pageTitleRef.current} />
           )}
           {tab === 'deploy' && <DeployTab projectId={ctx.projectId} />}
+          {tab === 'health' && <HealthTab projectId={ctx.projectId} />}
           {tab === 'shop' && (
             store
               ? <ShopTab store={store} projectId={ctx.projectId} />

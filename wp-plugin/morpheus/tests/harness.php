@@ -942,5 +942,79 @@ delete_transient( Morpheus_Updates::CACHE_KEY );
 delete_option( 'morpheus_settings' );
 
 echo "\n";
+// ── site health ─────────────────────────────────────────────────────────────
+//
+// The scan runs WordPress's OWN Site Health tests. That is only possible if the
+// admin includes they depend on are loaded — the first attempt called
+// get_test_wordpress_version() without them and died on an undefined function
+// with no output at all — so "does it return findings" is a real assertion, not
+// a smoke test.
+
+echo "\n-- HEALTH --\n";
+
+$health_routes = rest_get_server()->get_routes();
+ok( isset( $health_routes['/morpheus/v1/health'] ), 'health: route registered' );
+
+// Self-contained: set the secret here rather than reading whatever an earlier
+// block left behind (by this point the pairing block has replaced it, and the
+// scan answered "not configured" for both requests — which is exactly the kind
+// of order-dependence a harness should not have).
+$health_secret = 'health-secret';
+update_option( 'morpheus_settings', array_merge( Morpheus_Settings::defaults(), array( 'webhook_secret' => $health_secret, 'armed' => 0 ) ) );
+function health_req( $body, $secret ) {
+	$body['at'] = gmdate( 'c' );
+	$raw        = json_encode( $body );
+	$r          = new WP_REST_Request( 'POST', '/morpheus/v1/health' );
+	$r->set_header( 'content-type', 'application/json' );
+	$r->set_header( 'X-Morpheus-Signature', 'sha256=' . hash_hmac( 'sha256', $raw, $secret ) );
+	$r->set_body( $raw );
+	return rest_do_request( $r );
+}
+
+ok( health_req( array(), 'wrong-secret' )->get_status() === 401, 'health: bad signature -> 401 (it reports the site\'s configuration, so it is not a public route)' );
+
+// The scan is the expensive path; force it once.
+$transient_before = get_site_transient( 'update_plugins' );
+$res              = health_req( array( 'force' => true ), $health_secret );
+ok( $res->get_status() === 200, 'health: a signed scan -> 200' );
+$health = $res->get_data();
+
+ok( is_array( $health['tests'] ?? null ) && count( $health['tests'] ) > 0, 'health: WordPress\'s own tests ran (parser sanity)' );
+$statuses = array_unique( array_column( $health['tests'], 'status' ) );
+ok( count( array_diff( $statuses, array( 'good', 'recommended', 'critical', 'unknown' ) ) ) === 0, 'health: every test status is one WordPress defines' );
+$ids = array_column( $health['tests'], 'id' );
+ok( in_array( 'php_version', $ids, true ), 'health: a known core test is present, so these are really WordPress\'s tests' );
+ok( count( $health['async_not_run'] ?? array() ) === 6, 'health: the six async tests are reported as not run' );
+ok( ! empty( $health['async_not_run'][0]['reason'] ), 'health: each not-run test says why, so an absent test is not read as a passing one' );
+ok( is_bool( $health['can']['update_files'] ?? null ), 'health: the site states whether its files can be written' );
+ok( in_array( ( $health['host']['filesystem_method'] ?? '' ), array( 'direct', 'ftpext', 'ftpsockets', 'ssh2' ), true ), 'health: the filesystem method is reported' );
+
+// Ours are labelled as ours: WordPress's verdicts and Morpheus's must never be
+// presented as one another.
+$own_sources = array_unique( array_column( $health['own_checks'], 'source' ) );
+ok( $own_sources === array( 'morpheus' ), 'health: our own checks are attributed to morpheus' );
+ok( count( array_filter( $health['own_checks'], fn( $c ) => $c['id'] === 'morpheus_cron' ) ) === 0, 'health: the cron check is not duplicated from WordPress\'s own scheduled_events test' );
+
+// No score anywhere, at any depth.
+$find_score = function ( $node ) use ( &$find_score ) {
+	if ( ! is_array( $node ) ) { return false; }
+	foreach ( $node as $k => $v ) {
+		if ( preg_match( '/score|percent|grade|rating/i', (string) $k ) ) { return true; }
+		if ( $find_score( $v ) ) { return true; }
+	}
+	return false;
+};
+ok( ! $find_score( $health ), 'health: no score or grade anywhere in the payload' );
+
+// The cache, and the fact that a forced scan is the only expensive one.
+$again = health_req( array(), $health_secret )->get_data();
+ok( ( $again['cached'] ?? null ) === true, 'health: a repeat scan is served from the cache' );
+ok( ( $health['cached'] ?? null ) === false, 'health: a forced scan says it was not cached' );
+
+// READ-ONLY: a scan must not refresh the site's update data or change settings.
+// (Its own cache transient is the one write, and it is named in the class.)
+ok( get_site_transient( 'update_plugins' ) == $transient_before, 'health: the scan did not touch the site\'s update cache' );
+ok( get_option( 'active_plugins' ) === get_option( 'active_plugins' ), 'health: the scan changed no setting' );
+
 echo "==== $pass passed, $fail failed ====\n";
 exit( $fail === 0 ? 0 : 1 );

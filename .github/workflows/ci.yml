@@ -175,6 +175,14 @@ jobs:
       - name: Search Console rules
         run: node scripts/verify-search-console.mjs
 
+      # A health screen is believed, so its rules are asserted rather than
+      # eyeballed: no score, WordPress's verdicts never wearing Morpheus's badge,
+      # "nothing to update" carrying the age of the claim, no fix offered on a
+      # site whose files cannot be written, and an old plugin named rather than
+      # surfaced as WordPress's raw error. Pure module — no install.
+      - name: Site health rules
+        run: node scripts/verify-site-health.mjs
+
       # The fact generator. It exits non-zero if its own extraction breaks —
       # e.g. a refactor moves what it parses — so a silently-wrong report can
       # never be the thing you rely on.
