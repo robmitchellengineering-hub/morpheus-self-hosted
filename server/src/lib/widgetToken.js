@@ -16,7 +16,15 @@ export const WIDGET_ALWAYS = ['getWidgetContext'];
 // Anything not listed (and not in WIDGET_ALWAYS) is owner-session-only.
 export const WIDGET_SCOPE_FUNCTIONS = {
   chat: ['chatWithMorpheus', 'getChatHistory', 'getProjectFiles', 'getSelfDevFeatures', 'repoFiles'],
-  deploy: ['wordPressDeploy'],
+  // The site-operations scope. siteHealth is the read-only half of site
+  // maintenance (it reports WordPress's own Site Health verdicts plus the
+  // update, auto-update and host-capability picture). It belongs here rather
+  // than in a new `health` scope because this scope already means "operate this
+  // site" — it holds wordPressDeploy, which writes files to the site — and a
+  // new scope would silently withhold Health from every existing dock token for
+  // no gain in safety. The moment a fix/apply action exists it lands under the
+  // same reasoning and gets its own review.
+  deploy: ['wordPressDeploy', 'siteHealth'],
   store: ['getWordPressStore', 'wordPressStoreAction', 'generateProductCopy', 'analyzeProductPhoto'],
   // SEO is its own scope rather than part of `store`: an embed that only runs
   // the shop shouldn't also be able to rewrite every page's search metadata.

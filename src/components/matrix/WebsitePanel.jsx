@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode, FileText, TrendingUp } from 'lucide-react';
+import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode, FileText, TrendingUp, Activity } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import SetupTab from './website/SetupTab';
 import CodeTab from './website/CodeTab';
@@ -8,6 +8,7 @@ import ShopTab from './website/ShopTab';
 import PagesTab from './website/PagesTab';
 import SeoTab from './website/SeoTab';
 import EmbedTab from './website/EmbedTab';
+import HealthTab from './website/HealthTab';
 
 // WEBSITE panel (2026-09-10) — one place to control the Morpheus plugin on
 // your own WordPress site: install + connect it (Setup), ship code changes
@@ -19,6 +20,10 @@ const TABS = [
   { id: 'setup', label: 'SETUP', icon: Wrench },
   { id: 'code', label: 'CODE', icon: FileCode },
   { id: 'deploy', label: 'DEPLOY', icon: Rocket },
+  // HEALTH sits with DEPLOY rather than at the end: both are "operate this
+  // site", and the tab most people open most often should not be the one that
+  // wraps onto a third line on a phone.
+  { id: 'health', label: 'HEALTH', icon: Activity },
   { id: 'shop', label: 'SHOP', icon: ShoppingBag },
   { id: 'pages', label: 'PAGES', icon: FileText },
   { id: 'seo', label: 'SEO', icon: TrendingUp },
@@ -82,7 +87,7 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
         <div className="flex flex-wrap border-b border-primary/15 shrink-0 text-[11px]">
           {TABS.map((t) => {
             const Icon = t.icon;
-            const gated = ['deploy', 'shop', 'pages', 'seo'].includes(t.id) ? !connected : false;
+            const gated = ['deploy', 'health', 'shop', 'pages', 'seo'].includes(t.id) ? !connected : false;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`shrink-0 basis-[96px] px-3 h-[42px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : gated ? 'text-primary/25' : 'text-primary/45'}`}>
@@ -132,6 +137,12 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
           {!loading && tab === 'seo' && (
             connected
               ? <SeoTab projectId={projectId} store={store} />
+              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+          )}
+
+          {!loading && tab === 'health' && (
+            connected
+              ? <div className="flex-1 overflow-y-auto scrollbar-matrix"><HealthTab projectId={projectId} /></div>
               : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
           )}
 

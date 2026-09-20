@@ -26,11 +26,31 @@ class Morpheus_REST {
 			'permission_callback' => '__return_true',
 			'callback'            => array( __CLASS__, 'handle_rollback' ),
 		) );
+		// Site health + maintenance scan. POST and SIGNED, unlike /status:
+		// it returns plugin names and versions, user-visible configuration and
+		// what this site can and cannot do, which is not public information.
+		register_rest_route( MORPHEUS_REST_NS, '/health', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_health' ),
+		) );
 		register_rest_route( MORPHEUS_REST_NS, '/status', array(
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => array( __CLASS__, 'handle_status' ),
 		) );
+	}
+
+	public static function handle_health( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( ! class_exists( 'Morpheus_Health' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin has no health scan. Update the plugin.', 501 );
+		}
+		// Read-only by contract: Morpheus_Health::scan() must never write.
+		return new WP_REST_Response( Morpheus_Health::scan(), 200 );
 	}
 
 	public static function handle_status() {
