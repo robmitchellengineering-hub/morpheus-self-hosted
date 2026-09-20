@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.6.3
+Stable tag: 0.6.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,23 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.6.4 =
+* Fix: a site could be told there was no update when there was one. The published
+  manifest is cached to keep wp-admin fast, and nothing could refresh that cache —
+  so a site that read it before a release kept being told "nothing newer", and
+  WordPress's own "Check again" re-ran the check against the same cached answer.
+  Measured in a real WordPress: with a stale cache the offer is absent, a forced
+  check finds nothing, and only clearing the cache shows the update. The cache is
+  now an hour, and a signed `/updates` action clears it and re-runs the check.
+* New: `/updates` reports what is actually true — the installed and published
+  versions, the published checksum, whether WordPress is now offering the update,
+  and, when the update server cannot be reached, the REASON. A check that cannot
+  ask must never answer "nothing available".
+* `/updates` only checks. It cannot install: the request that would apply this
+  plugin's own update is served by the code being replaced, so WordPress's
+  own updater — which stages the package and swaps it in — stays the only writer.
+  Any other action is refused.
 
 = 0.6.3 =
 * New: every health finding now carries an ACTION. A signed `/fix` endpoint applies

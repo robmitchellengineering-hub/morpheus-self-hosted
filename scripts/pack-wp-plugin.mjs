@@ -11,7 +11,7 @@
 // against that hash before installing it — a self-updating component should not
 // accept whatever arrives on the wire.
 import { execSync } from 'node:child_process';
-import { rmSync, mkdirSync, cpSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { rmSync, mkdirSync, cpSync, existsSync, readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -25,6 +25,21 @@ const staging = resolve(root, 'node_modules/.cache/wp-plugin-pack');
 if (!existsSync(src)) {
   console.warn('[pack-wp-plugin] wp-plugin/morpheus not found — skipping');
   process.exit(0);
+}
+
+// The plugin directory must contain ONLY the plugin. A WordPress Playground
+// harness boot mounts this directory into wp-content/plugins, so installing
+// WooCommerce or Yoast for a test writes them back HERE — 89 MB of third-party
+// code that the packer would otherwise zip and publish as this plugin's own
+// update, with a manifest checksum that matches it. Fail loudly instead.
+const ALLOWED_TOP_LEVEL = new Set(['morpheus.php', 'uninstall.php', 'readme.txt', 'includes', 'tests']);
+const stray = readdirSync(src).filter((name) => !ALLOWED_TOP_LEVEL.has(name));
+if (stray.length) {
+  console.error(
+    `[pack-wp-plugin] refusing to pack: ${stray.join(', ')} is not part of the plugin. `
+    + 'A Playground harness boot installs test plugins inside the mounted directory — delete it and re-run.',
+  );
+  process.exit(1);
 }
 
 try {

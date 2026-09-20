@@ -12,6 +12,15 @@ PHP_VERSION="${1:-8.2}"
 PLUGIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 PG="npx --yes @wp-playground/cli@latest"
 
+# Each boot mounts this directory at wp-content/plugins, so a blueprint that
+# installs WooCommerce or Yoast for the tests writes them back INTO the plugin
+# source — 89 MB of third-party code. Left there, the packer would zip it into
+# the published update (it now refuses to, loudly). Clean it before and after,
+# including on failure, so a harness run never leaves the tree full of it.
+clean_test_plugins() { rm -rf "$PLUGIN_DIR/woocommerce" "$PLUGIN_DIR/wordpress-seo"; }
+trap clean_test_plugins EXIT
+clean_test_plugins
+
 echo "== php -l (PHP ${PHP_VERSION}) =="
 # `|| true` and no `| head -1` inside the substitution: with `set -euo pipefail`
 # a pipeline that matches nothing (or whose `head` exits first and SIGPIPEs the

@@ -47,6 +47,15 @@ class Morpheus_REST {
 			'permission_callback' => '__return_true',
 			'callback'            => array( __CLASS__, 'handle_fix' ),
 		) );
+		// Force this plugin's own update check. Signed: it names installed and
+		// available versions and it clears caches. It only CHECKS — applying the
+		// update stays with WordPress's own updater, which stages and swaps the
+		// package, so a failure cannot leave a half-written plugin.
+		register_rest_route( MORPHEUS_REST_NS, '/updates', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_updates' ),
+		) );
 		register_rest_route( MORPHEUS_REST_NS, '/status', array(
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
@@ -68,6 +77,31 @@ class Morpheus_REST {
 		}
 		$result = Morpheus_Fixes::apply( $id );
 		return new WP_REST_Response( $result, empty( $result['ok'] ) ? 409 : 200 );
+	}
+
+	/**
+	 * Force the plugin's own update check: clear both caches, re-read the
+	 * published manifest, and report what is true right now — including the
+	 * reason when the update server could not be reached.
+	 *
+	 * `check` is the only action, and that is the point: the request that would
+	 * install this plugin's update is served by the code being replaced, so
+	 * Morpheus never applies its own update. WordPress's own updater does that,
+	 * atomically, after the operator taps it.
+	 */
+	public static function handle_updates( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( ! class_exists( 'Morpheus_Updates' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin cannot check for its own updates. Install the current plugin from morpheus.nz once, by hand.', 501 );
+		}
+		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : 'check';
+		if ( 'check' !== $action ) {
+			return self::err( 'bad_request', 'The only update action is "check" — Morpheus never installs its own update.', 400 );
+		}
+		return new WP_REST_Response( Morpheus_Updates::check(), 200 );
 	}
 
 	public static function handle_maintenance( WP_REST_Request $request ) {

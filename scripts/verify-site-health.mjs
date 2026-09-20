@@ -248,7 +248,7 @@ check('a missing fix is null, not an empty object', normaliseFix(undefined), nul
 check('a warning is carried when the action needs one', normaliseFix({ kind: 'auto', label: 'x', warning: 'careful' }).warning, 'careful');
 
 // And the handler routes it to the site.
-check('the handler offers a fix action', /ACTIONS = new Set\(\['scan', 'policy', 'apply', 'fix'\]\)/.test(fn), true);
+check('the handler offers every health action', /ACTIONS = new Set\(\['scan', 'policy', 'apply', 'fix', 'updates'\]\)/.test(fn), true);
 check('…sending only the finding id to the site', /wpFix\(conn, finding\)/.test(fn), true);
 check('…and refusing an empty id', /finding id required/.test(fn), true);
 // A site declining (409) is an answer, not a failure.
@@ -272,6 +272,43 @@ check('…and a declined or rejected fix re-checks nothing', /if \(payload\.ok =
 check('the rescan is a real dependency of the callback', /\}, \[projectId, run\]\)/.test(fixBody), true);
 check('FIX ALL opts out of the per-item scan', /applyFix\(f, \{ rescan: false \}\)/.test(fixAllBody), true);
 check('…so nothing scans inside the loop', /applyFix\(f\)(?!,)/.test(fixAllBody), false);
+
+// ── the plugin's own update channel ─────────────────────────────────────────
+//
+// A site could be told "nothing to update" when there was one: the published
+// manifest is cached, and WordPress's own "Check again" re-runs the check
+// against that same cached answer. Measured in a real WordPress — offer absent,
+// still absent after a forced check, and only clearing the cache produced it.
+// The escape hatch is a forced check, and it has to be honest about WHY it found
+// nothing, because "no update available" to a question that could not be asked
+// is what hid the problem.
+const wpPluginSrc = read('server/src/lib/wpPlugin.js');
+check('a forced update check exists', /export async function wpUpdates\(conn/.test(wpPluginSrc), true);
+check('…sending only the action', /wpCall\(conn, 'updates', \{ action \}\)/.test(wpPluginSrc), true);
+check('…and routes it to the site', /wpUpdates\(conn, \{ action: 'check' \}\)/.test(fn), true);
+check('a build without the route is named, not reported as a failure', /UPDATES_UNSUPPORTED/.test(fn), true);
+check('…with the action that actually works', /install the current plugin from morpheus\.nz once, by hand/i.test(fn), true);
+
+const restSrc = read('wp-plugin/morpheus/includes/class-rest.php');
+check('the plugin registers the route', /register_rest_route\( MORPHEUS_REST_NS, '\/updates'/.test(restSrc), true);
+check('…and the handler verifies the signature', /function handle_updates[\s\S]{0,600}verified_body\( \$request \)/.test(restSrc), true);
+check('the plugin refuses anything but a check', /The only update action is "check"/.test(restSrc), true);
+
+const updSrc = read('wp-plugin/morpheus/includes/class-updates.php');
+check('the check clears the plugin manifest cache', /delete_transient\( self::CACHE_KEY \)/.test(updSrc), true);
+check('…and WordPress\u2019s own update transient', /delete_site_transient\( 'update_plugins' \)/.test(updSrc), true);
+check('…and explains itself when the manifest cannot be read', /'reason'\s*=>\s*\$reachable \? null/.test(updSrc), true);
+check('a failed read records why', /self::\$last_failure = /.test(updSrc), true);
+check('the cache window can self-heal within an hour', /CACHE_TTL\s*=\s*HOUR_IN_SECONDS/.test(updSrc), true);
+
+const setupSrc = read('src/components/matrix/website/SetupTab.jsx');
+check('the panel can force the check', /action: 'updates'/.test(setupSrc), true);
+check('…as a labelled action', /CHECK FOR UPDATES/.test(setupSrc), true);
+check('the check result is always rendered when present', /\{upd && <UpdateCheckReport/.test(setupSrc), true);
+check('an unreachable update server is reported as such', /could not read the published version list/.test(setupSrc), true);
+// The zip is the one path a cache cannot take away, so it is no longer rendered
+// only for pre-0.5.3 builds.
+check('the zip is offered whatever the check says', /Always offered, whatever the check says/.test(setupSrc), true);
 
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

@@ -79,6 +79,78 @@ function copySummary({ files = 0, bytes = 0, reused = false, theme = {} } = {}) 
 }
 
 /**
+ * What the forced update check found, said plainly.
+ *
+ * Every branch ends in an action — a button, a link, or an exact instruction —
+ * and the branch that matters most is the one where the site could not reach the
+ * update server. Answering "no update available" to that question is what hid
+ * this problem for hours: the operator pressed the only button there was, was
+ * told nothing, and had no way to tell a current site from an unreachable one.
+ */
+function UpdateCheckReport({ upd, version, zipHref }) {
+  if (upd.phase === 'busy') {
+    return <div className="text-[10px] text-primary/50">Asking your site to re-read its update channel…</div>;
+  }
+
+  if (upd.phase === 'failed') {
+    // The bootstrap case: a build that predates the route cannot be asked, so the
+    // only thing that works is installing the zip once, by hand.
+    const boot = upd.code === 'UPDATES_UNSUPPORTED';
+    return (
+      <div className="text-[10px] text-primary/60 leading-relaxed space-y-1">
+        {boot ? (
+          <p>
+            v{version} cannot check for its updates yet. Install the current build once by hand — after that WordPress
+            updates it for you: download the zip, then Plugins → Add New → Upload Plugin →{' '}
+            <span className="text-primary/80">Replace current with uploaded</span>.
+          </p>
+        ) : (
+          <p>{upd.message}</p>
+        )}
+        {!boot && <p className="text-primary/45">Nothing was changed. The zip always works.</p>}
+      </div>
+    );
+  }
+
+  const r = upd.report || {};
+  const installed = r.installed || version;
+
+  if (!r.reachable) {
+    return (
+      <div className="text-[10px] text-primary/60 leading-relaxed space-y-1">
+        <p>
+          This site could not read the published version list
+          {r.reason ? <> — <span className="text-yellow-500/90">{r.reason}</span></> : '.'}
+        </p>
+        <p className="text-primary/45">
+          That is a fact about this site&rsquo;s outbound requests, not about the update. The zip installs without them.
+        </p>
+      </div>
+    );
+  }
+
+  const published = r.manifest?.version || '?';
+  if (!r.newer_available) {
+    return <div className="text-[10px] text-primary/60">Checked just now: v{installed} is the newest published version.</div>;
+  }
+  if (r.wordpress_shows) {
+    return (
+      <div className="text-[10px] text-primary/60 leading-relaxed">
+        Checked just now: <span className="text-yellow-500/90">v{published}</span> is published and WordPress is
+        offering it. Open your Plugins screen and tap <span className="text-primary/80">update now</span> — the download
+        is checksum-verified before it installs.
+      </div>
+    );
+  }
+  return (
+    <div className="text-[10px] text-primary/60 leading-relaxed">
+      v{published} is published, but WordPress is still not offering it after a fresh check. Use{' '}
+      <a href={zipHref} download className="text-primary/80 underline">the zip</a> once — that path cannot be cached.
+    </div>
+  );
+}
+
+/**
  * Copy-to-clipboard for a line the operator has to move somewhere else — a
  * terminal, or a message to whoever manages their site. Falls back to a
  * selectable block when the clipboard API is unavailable (it is blocked in
@@ -161,6 +233,9 @@ export default function SetupTab({ store, projectId, onChanged }) {
   const [copying, setCopying] = useState(false);
   const [copy, setCopy] = useState(null);      // the working-copy result
   const [repoName, setRepoName] = useState(''); // what the repo will be called
+  // The force-check result. Kept separate from `err` because a check that cannot
+  // reach morpheus.nz is an ANSWER about the site, not a failed action.
+  const [upd, setUpd] = useState(null); // { phase: 'busy' | 'done' | 'failed', report, message, code }
 
   useEffect(() => {
     fetch(PLUGIN_MANIFEST).then((r) => (r.ok ? r.json() : null)).then((m) => setLatestVersion(m?.version || null)).catch(() => {});
@@ -187,6 +262,31 @@ export default function SetupTab({ store, projectId, onChanged }) {
 
   const connected = store?.connected;
   const updateAvailable = connected && store.online && isNewer(latestVersion, store.version);
+
+  /**
+   * Ask the SITE to re-read its own update channel, then report what it found.
+   *
+   * WordPress's own "Check again" cannot do this: the plugin caches the
+   * published manifest, and that button re-runs the check against the same
+   * cached answer — so a site whose cache predates a release is told there is
+   * nothing to update, with no way to find out why. This clears both caches
+   * (the plugin's and WordPress's) and re-reads.
+   *
+   * A check that cannot reach the update server comes back with a REASON, and a
+   * build too old to have the route comes back as UPDATES_UNSUPPORTED — both are
+   * rendered as information with the one action that works, never as a dead end.
+   */
+  const checkForUpdates = async () => {
+    setUpd({ phase: 'busy' });
+    try {
+      const { data } = await base44.functions.invoke('siteHealth', { projectId, action: 'updates' });
+      setUpd({ phase: 'done', report: data?.updates || null });
+      const found = data?.updates?.manifest?.version || null;
+      if (found) setLatestVersion((v) => (isNewer(found, v) ? found : v));
+    } catch (e) {
+      setUpd({ phase: 'failed', message: e?.data?.error || e.message, code: e?.data?.code || null });
+    }
+  };
 
   const check = async () => {
     setChecking(true); setErr(null); setProbe(null);
@@ -245,12 +345,14 @@ export default function SetupTab({ store, projectId, onChanged }) {
             {isNewer(store.version, UPDATE_CHANNEL_VERSION) ? (
               <>
                 <p className="text-[10px] text-primary/50 leading-relaxed">
-                  Update it from WordPress itself: <span className="text-primary/70">wp-admin → Plugins</span> — the Morpheus row shows
-                  “update now”. One tap, no zip, no upload, and the download is checksum-verified before it installs.
+                  WordPress offers this itself once your site has checked. If the Plugins screen shows nothing, that is
+                  usually a cached answer rather than a missing update — ask the site to re-read it.
                 </p>
-                <OpenButton href={`${store.siteUrl?.replace(/\/+$/, '')}/wp-admin/plugins.php`} tone="primary">
-                  <ArrowUpCircle size={12} /> Open your Plugins screen
-                </OpenButton>
+                <button type="button" onClick={checkForUpdates} disabled={upd?.phase === 'busy'}
+                  className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 hover:text-yellow-400 disabled:opacity-40">
+                  {upd?.phase === 'busy' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                  {upd?.phase === 'busy' ? 'Asking your site…' : 'CHECK FOR UPDATES'}
+                </button>
               </>
             ) : (
               <>
@@ -259,12 +361,22 @@ export default function SetupTab({ store, projectId, onChanged }) {
                   WordPress updates it for you. Download the zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin →
                   pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
                 </p>
-                <a href={PLUGIN_ZIP} download
-                  className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 hover:text-yellow-400">
-                  <Download size={12} /> morpheus-wordpress-plugin.zip
-                </a>
               </>
             )}
+            {/* Always offered, whatever the check says: this is the one path a
+                cache or a blocked outbound request cannot take away. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <a href={PLUGIN_ZIP} download
+                className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 border border-primary/30 text-primary/80 hover:border-primary/60">
+                <Download size={12} /> morpheus-wordpress-plugin.zip
+              </a>
+              {isNewer(store.version, UPDATE_CHANNEL_VERSION) && (
+                <OpenButton href={`${store.siteUrl?.replace(/\/+$/, '')}/wp-admin/plugins.php`} tone="primary">
+                  <ArrowUpCircle size={12} /> Open your Plugins screen
+                </OpenButton>
+              )}
+            </div>
+            {upd && <UpdateCheckReport upd={upd} version={store.version} zipHref={PLUGIN_ZIP} />}
           </div>
         )}
         {/* The step that used to be a wall: Morpheus deploys through a GitHub

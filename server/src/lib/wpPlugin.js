@@ -292,3 +292,21 @@ export async function wpFix(conn, id) {
   return wpCall(conn, 'fix', { id });
 }
 
+/**
+ * Force the plugin's OWN update check (plugin 0.6.4+), and report what is true.
+ *
+ * The plugin caches the published manifest and WordPress caches its own update
+ * transient. A site whose caches predate a release is told "nothing to update",
+ * and WordPress's own "Check again" cannot break through, because it re-runs the
+ * check against the same cached answer. This clears both and re-reads.
+ *
+ * It CHECKS ONLY. There is deliberately no apply here: the request that would
+ * install this plugin's update is served by the code being replaced, so
+ * WordPress's own updater stays the only writer. A build older than 0.6.4 has no
+ * /updates route — the bootstrap case, where the panel must offer the zip by
+ * hand rather than pretend to have checked.
+ */
+export async function wpUpdates(conn, { action = 'check' } = {}) {
+  return wpCall(conn, 'updates', { action });
+}
+
