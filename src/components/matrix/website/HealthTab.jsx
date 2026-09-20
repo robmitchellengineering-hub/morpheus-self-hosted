@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2, RefreshCw, ExternalLink, AlertTriangle, Check, ShieldCheck, Server, Package, Clock,
-  Save, CalendarClock, X,
+  Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
@@ -17,6 +17,11 @@ import { base44 } from '@/api/base44Client';
 // a severity. The scan itself stays read-only; changing the live site is a
 // separate, twice-confirmed APPLY NOW below, and every outcome it reports is
 // rendered as sent.
+//
+// A finding may also carry ONE `fix`. The control is built only from `fix.kind`
+// and the payload's own words, so a finding with no fix (or `kind: 'none'`) gets
+// no button rather than a dead one; a fix never becomes a "Done" the site did not
+// report, and a fix that reported `verified: false` is never shown as done.
 
 const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
 const faint = 'text-[9px] text-primary/30';
@@ -106,8 +111,209 @@ function UpdateRow({ name, kind, from, to, strong }) {
   );
 }
 
+/** What the site said it did with one fix, rendered as sent and never embellished. */
+function FixResult({ result }) {
+  if (!result || result.state !== 'settled') return null;
+  const f = result.fix || {};
+
+  // A 200 with ok:false is the SITE declining (a guided finding, or nothing
+  // registered for that id) — an answer to render as information, not a crash.
+  if (result.ok !== true) {
+    return (
+      <div className="border border-primary/15 px-2.5 py-2 space-y-1">
+        <div className="text-[10px] text-primary/70 leading-relaxed break-words">
+          {f.error || 'The site did not carry this out, and said nothing was changed.'}
+        </div>
+        <div className={faint}>
+          The site&apos;s own answer{f.code ? ` (${f.code})` : ''} — the request reached it, it declined.
+        </div>
+      </div>
+    );
+  }
+
+  // `verified === false` outranks `ok`: the write was attempted and did not hold,
+  // so "Done" would be a lie even though the site called the run a success.
+  const didNotVerify = f.verified === false;
+  if (didNotVerify || f.error) {
+    return (
+      <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 space-y-1">
+        <div className="flex items-center gap-1.5">
+          <AlertTriangle size={11} className="shrink-0 text-red-300" />
+          <span className="text-[9px] uppercase tracking-wider text-red-300/90">
+            {didNotVerify ? 'Did not verify' : 'Failed'}
+          </span>
+        </div>
+        <div className="text-[10px] text-red-300/90 leading-relaxed break-words">
+          {didNotVerify
+            ? 'The change did not verify, so it cannot be counted as done.'
+            : (f.error || 'The site reported that this failed.')}
+        </div>
+        {didNotVerify && f.error ? (
+          <div className="text-[10px] text-red-300/80 leading-relaxed break-words">{f.error}</div>
+        ) : null}
+        {f.did ? <div className={faint}>The site said it did: {f.did}</div> : null}
+        {f.restored === true ? (
+          <div className="text-[10px] text-yellow-500/85 leading-relaxed">
+            The previous state was put back, so nothing was left changed this time.
+          </div>
+        ) : null}
+        {f.note ? <div className={`${faint} leading-relaxed break-words`}>{f.note}</div> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-green-500/30 bg-green-500/5 px-2.5 py-2 space-y-1">
+      <div className="flex items-center gap-1.5">
+        <Check size={11} className="shrink-0 text-green-400/90" />
+        <span className="text-[9px] uppercase tracking-wider text-green-400/90">Done</span>
+      </div>
+      <div className="text-[10px] text-primary/70 leading-relaxed break-words">
+        {f.did || 'The site carried this out.'}
+      </div>
+      {f.restored === true ? (
+        <div className="text-[10px] text-yellow-500/85 leading-relaxed">The previous state was put back.</div>
+      ) : null}
+      {f.note ? <div className={`${faint} leading-relaxed break-words`}>{f.note}</div> : null}
+      <div className={faint}>RESCAN above re-reads the site, so this line is checked rather than assumed.</div>
+    </div>
+  );
+}
+
+/**
+ * The one control a finding may carry, built only from `fix.kind`.
+ *
+ *   auto    — FIX, with the payload's `does` above it and a two-step inline
+ *             confirm (never window.confirm) whenever `warning` is set
+ *   guided  — GUIDE ME: expands the payload's own numbered steps in place and
+ *             ends with RE-CHECK, so Morpheus confirms the result itself
+ *   updates — no fix button: the work belongs to the Updates section, so the
+ *             control goes there and says why
+ *
+ * `none`, an unknown kind or an absent fix render nothing at all.
+ */
+function FixBox({
+  t, fix, busy = false, paused = false, result, onFix, onRescan, scanning = false,
+  onJumpToUpdates, siteName,
+}) {
+  // Local to this finding: step two of the confirm, and whether the guide is open.
+  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  if (!fix || fix.kind === 'none') return null;
+
+  if (fix.kind === 'updates') {
+    return (
+      <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
+        <div className="text-[10px] text-primary/50 leading-relaxed break-words">
+          These are the updates in the Updates section below — apply them there, and each one is snapshotted before it is touched.
+        </div>
+        {fix.warning ? (
+          <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
+            {fix.warning}
+          </div>
+        ) : null}
+        <button className={btn} onClick={onJumpToUpdates}>
+          <ArrowDown size={12} /> GO TO UPDATES
+        </button>
+      </div>
+    );
+  }
+
+  if (fix.kind === 'guided') {
+    return (
+      <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
+        {/* The payload's own sentence, never a rewritten one. */}
+        {fix.does ? <div className="text-[10px] text-primary/50 leading-relaxed break-words">{fix.does}</div> : null}
+        {fix.warning ? (
+          <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
+            {fix.warning}
+          </div>
+        ) : null}
+        <button className={btn} onClick={() => setOpen((v) => !v)}>
+          <ListChecks size={12} /> {open ? 'HIDE STEPS' : 'GUIDE ME'}
+        </button>
+        {open ? (
+          <div className="space-y-2 border border-primary/15 px-2.5 py-2">
+            <div className={micro}>Do these, then re-check</div>
+            <ol className="space-y-1.5">
+              {fix.steps.map((s, i) => (
+                <li key={`${s.text}-${i}`} className="flex items-start gap-1.5">
+                  <span className="mt-[1px] w-[14px] shrink-0 text-[10px] text-primary/45">{i + 1}.</span>
+                  <span className="min-w-0 flex-1 space-y-0.5">
+                    <span className="block text-[10px] text-primary/70 leading-relaxed break-words">{s.text}</span>
+                    {s.link ? (
+                      <a href={s.link} target="_blank" rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-primary/80 underline break-all hover:text-primary">
+                        <ExternalLink size={10} className="shrink-0" /> Open this step
+                      </a>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <button className={btn} onClick={onRescan} disabled={scanning}>
+              {scanning ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} RE-CHECK
+            </button>
+            <div className={faint}>
+              RE-CHECK runs the scan again, so Morpheus confirms this itself instead of taking it on trust.
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // fix.kind === 'auto'
+  return (
+    <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
+      <div className="text-[10px] text-primary/50 leading-relaxed break-words">{fix.does}</div>
+      {fix.warning ? (
+        <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
+          {fix.warning}
+        </div>
+      ) : null}
+
+      {confirming ? (
+        // Step two of two. Nothing has been sent: only the button below calls the
+        // server, and it is only reached at all because `warning` was set.
+        <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
+          <div className="text-[11px] text-primary/85 leading-relaxed">
+            {fix.warning ? 'This one has a real consequence — do it anyway?' : `Do this on ${siteName} now?`}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={`${btn} border-yellow-500/40`}
+              onClick={() => { setConfirming(false); onFix(t); }} disabled={busy}>
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />} {busy ? 'FIXING' : 'YES, FIX IT'}
+            </button>
+            <button className={btn} onClick={() => setConfirming(false)} disabled={busy}>
+              <X size={12} /> CANCEL
+            </button>
+          </div>
+          <div className={faint}>Nothing has been sent yet.</div>
+        </div>
+      ) : (
+        <button className={btn} onClick={() => (fix.warning ? setConfirming(true) : onFix(t))} disabled={busy || paused}>
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />} {fix.label || 'FIX'}
+        </button>
+      )}
+
+      {busy ? (
+        <div className={faint}>Sending to {siteName} — the rest of this page stays as it is.</div>
+      ) : null}
+      {paused && !busy ? (
+        <div className={faint}>FIX ALL is running — this button starts again when it has finished.</div>
+      ) : null}
+      <FixResult result={result} />
+    </div>
+  );
+}
+
 /** One finding, rendered so the server's own source label is unmissable. */
-function Finding({ t, quiet = false }) {
+function Finding({
+  t, quiet = false, siteName, fixBusy = false, fixPaused = false, fixResult,
+  onFix, onRescan, scanning = false, onJumpToUpdates,
+}) {
   const links = t.links || [];
   return (
     <div className={`border px-3 py-2.5 space-y-1.5 ${quiet ? 'border-primary/15' : t.status === 'critical' ? 'border-red-500/30' : 'border-yellow-500/30'}`}>
@@ -129,6 +335,12 @@ function Finding({ t, quiet = false }) {
           <ExternalLink size={11} className="mt-[2px] shrink-0" />{l.label || l.url}
         </a>
       ))}
+      {/* The action, when the payload carries one — and nothing at all when it does not. */}
+      {t.fix ? (
+        <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult}
+          onFix={onFix} onRescan={onRescan} scanning={scanning}
+          onJumpToUpdates={onJumpToUpdates} siteName={siteName} />
+      ) : null}
     </div>
   );
 }
@@ -251,6 +463,17 @@ function ApplyReport({ outcome: o }) {
   );
 }
 
+/** The FIX ALL tally in words, with a clause only for what actually happened. */
+const fixAllWords = (t) => {
+  const said = [];
+  if (t.done) said.push(`${t.done} done and verified`);
+  if (t.unverified) said.push(`${t.unverified} did not verify`);
+  if (t.failed) said.push(`${t.failed} failed`);
+  if (t.declined) said.push(`${t.declined} declined by the site`);
+  if (t.rejected) said.push(`${t.rejected} could not be sent`);
+  return `FIX ALL finished — ${said.join(', ')}. The findings below are from the fresh scan taken after it.`;
+};
+
 export default function HealthTab({ projectId }) {
   const [scan, setScan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -265,6 +488,18 @@ export default function HealthTab({ projectId }) {
   const [confirming, setConfirming] = useState(false); // APPLY NOW clicked once; nothing sent yet
   const [outcome, setOutcome] = useState(null);        // the server's own report of the last run
   const [runErr, setRunErr] = useState(null);          // { message, dryRun }
+  // Per-finding fixes. `fixingIds` is the finding ids with a request actually in
+  // flight, so one finding's button can spin without freezing the page.
+  const [fixingIds, setFixingIds] = useState([]);
+  const [fixResults, setFixResults] = useState({});     // finding id -> { state, ok, fix } | { state: 'rejected', message, code }
+  const [fixAllRunning, setFixAllRunning] = useState(false);
+  const [fixAllConfirming, setFixAllConfirming] = useState(false);
+  const [fixAllProgress, setFixAllProgress] = useState(null); // { index, total, label }
+  const [fixAllReport, setFixAllReport] = useState(null);     // the run's own tally, in words
+  // The Updates section, so an `updates` finding can send the operator to it.
+  const updatesRef = useRef(null);
+  const [updatesFlash, setUpdatesFlash] = useState(false);
+  const flashTimer = useRef(null);
 
   const run = useCallback(async (force) => {
     // The previous scan stays on screen while this one runs. Blanking the tab
@@ -314,6 +549,45 @@ export default function HealthTab({ projectId }) {
     } finally { setApplying(null); setConfirming(false); }
   };
 
+  // One fix, sent to the site and reported exactly as the site answers. A 200
+  // with `ok: false` is the site DECLINING (a guided finding, or nothing
+  // registered for that id) — an answer to render as information, never a crash.
+  // A rejection carries the server's own message; the page stays on screen.
+  const applyFix = useCallback(async (finding) => {
+    const id = finding?.id;
+    if (!id) return { id: '', rejected: true, message: 'This finding has no id, so no fix could be sent.' };
+    setFixResults((r) => ({ ...r, [id]: { state: 'busy' } }));
+    setFixingIds((s) => (s.includes(id) ? s : [...s, id]));
+    try {
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'fix', finding: id });
+      const payload = res?.data;
+      if (!payload || !payload.fix) {
+        throw new Error('The server returned no result, so nothing can be shown as done.');
+      }
+      // The policy travels with the fix, so the panel above stays right without
+      // a second round trip. Unsaved edits are never overwritten by it.
+      if (payload.policy) { setPolicy(payload.policy); setPolicyErr(null); setDraft((d) => d || editableOf(payload.policy)); }
+      setFixResults((r) => ({ ...r, [id]: { state: 'settled', ok: payload.ok === true, fix: payload.fix } }));
+      return { id, rejected: false, ok: payload.ok === true, fix: payload.fix };
+    } catch (e) {
+      const message = e?.data?.error || e.message;
+      setFixResults((r) => ({ ...r, [id]: { state: 'rejected', message, code: e?.data?.code || null } }));
+      return { id, rejected: true, message, code: e?.data?.code || null };
+    } finally {
+      setFixingIds((s) => s.filter((x) => x !== id));
+    }
+  }, [projectId]);
+
+  // Take the operator to the Updates section and mark it for a moment, because a
+  // scroll with no sign of where you arrived is a dead end of its own.
+  const jumpToUpdates = useCallback(() => {
+    if (updatesRef.current?.scrollIntoView) updatesRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setUpdatesFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setUpdatesFlash(false), 1800);
+  }, []);
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
+
   const { site, summary, freshness, host, auto_updates: auto, can_apply: apply, update_plan: plan } = scan || {};
   const attention = scan?.attention || [];
   // The collapsed list is the payload's own findings, filtered to the two non-problem statuses.
@@ -353,6 +627,44 @@ export default function HealthTab({ projectId }) {
   // is offered only when there is work AND permission AND a writable site.
   const showApplyControl = updateTotal > 0 && !!policy && applyTargets > 0 && apply?.ok !== false;
   const siteName = site?.name || site?.url || 'this site';
+
+  // Only the attention list carries FIX ALL, and only its `auto` findings: a
+  // guided finding needs a person and an `updates` finding belongs to the
+  // Updates section. Nothing else may ever be swept into the run.
+  const autoFindings = attention.filter((t) => t.fix?.kind === 'auto');
+  const anyFixInFlight = fixingIds.length > 0;
+
+  // FIX ALL: every auto finding, one at a time, then ONE fresh scan at the end.
+  // Sequential by construction — a for..of with an await — because two writers on
+  // one live site is how a rollback gets tangled. Guided and updates findings are
+  // never in `autoFindings`, so they can never be included.
+  const runFixAll = async () => {
+    if (fixAllRunning || anyFixInFlight || autoFindings.length === 0) return;
+    setFixAllConfirming(false);
+    setFixAllReport(null);
+    setFixAllRunning(true);
+    const total = autoFindings.length;
+    const tally = { done: 0, unverified: 0, failed: 0, declined: 0, rejected: 0 };
+    try {
+      for (let i = 0; i < autoFindings.length; i += 1) {
+        const f = autoFindings[i];
+        setFixAllProgress({ index: i + 1, total, label: f.label || f.id });
+        const r = await applyFix(f);
+        if (r?.rejected) tally.rejected += 1;
+        else if (r?.ok !== true) tally.declined += 1;
+        else if (r?.fix?.verified === false) tally.unverified += 1;
+        else if (r?.fix?.error) tally.failed += 1;
+        else tally.done += 1;
+      }
+    } finally {
+      setFixAllRunning(false);
+      setFixAllProgress(null);
+      setFixAllReport(fixAllWords(tally));
+      // One scan at the very end, so what is on screen afterwards is the site as
+      // it now is rather than this run's word for it.
+      await run(true);
+    }
+  };
 
   const setField = (key, value) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -444,7 +756,83 @@ export default function HealthTab({ projectId }) {
                   <Check size={12} className="mt-[2px] shrink-0 text-primary/50" />
                   Nothing in this scan needs attention.
                 </div>
-              ) : attention.map((t, i) => <Finding key={`${t.id}-${i}`} t={t} />)}
+              ) : (
+                <>
+                  {autoFindings.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {fixAllRunning && fixAllProgress ? (
+                        <div className="flex items-start gap-1.5 text-[10px] text-primary/60">
+                          <Loader2 size={12} className="mt-[1px] shrink-0 animate-spin" />
+                          <span className="break-words">
+                            Fixing {fixAllProgress.index} of {fixAllProgress.total} — {fixAllProgress.label}
+                          </span>
+                        </div>
+                      ) : fixAllConfirming ? (
+                        // Step two of two, naming exactly what will be fixed and
+                        // showing each warned fix's warning BEFORE anything is sent.
+                        <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
+                          <div className="text-[11px] text-primary/85 leading-relaxed">
+                            Fix {autoFindings.length} {autoFindings.length === 1 ? 'finding' : 'findings'} on {siteName} now?
+                            Morpheus sends them one at a time and re-checks the site when it has finished.
+                          </div>
+                          <div className="space-y-1">
+                            {autoFindings.map((f) => (
+                              <div key={`all-${f.id}`} className="text-[10px] text-primary/65 break-words">
+                                <span className="text-primary/80">{f.label || f.id}</span>
+                                {f.fix?.warning ? (
+                                  <span className="block text-[9px] text-yellow-500/85 leading-relaxed">{f.fix.warning}</span>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button className={`${btn} border-yellow-500/40`} onClick={runFixAll} disabled={anyFixInFlight}>
+                              <Zap size={12} /> FIX {autoFindings.length}
+                            </button>
+                            <button className={btn} onClick={() => setFixAllConfirming(false)}>
+                              <X size={12} /> CANCEL
+                            </button>
+                          </div>
+                          <div className={faint}>
+                            Nothing has been sent yet. Only the fixes listed here run — a guided finding and an update
+                            finding are never included.
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button className={btn} onClick={() => setFixAllConfirming(true)} disabled={anyFixInFlight}>
+                            <Zap size={12} /> FIX ALL · {autoFindings.length}
+                          </button>
+                          {anyFixInFlight ? (
+                            <div className={faint}>A fix is still being sent — FIX ALL starts once it has finished.</div>
+                          ) : null}
+                        </>
+                      )}
+                      {fixAllRunning ? (
+                        <div className={faint}>
+                          One fix at a time, so the site is never written to twice at once — the fix buttons below are
+                          paused until this run finishes.
+                        </div>
+                      ) : null}
+                      {fixAllReport && !fixAllRunning ? (
+                        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-primary/65 leading-relaxed break-words">
+                          {fixAllReport}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {attention.map((t, i) => (
+                    <Finding key={`${t.id}-${i}`} t={t} siteName={siteName}
+                      fixBusy={fixingIds.includes(t.id)}
+                      fixPaused={fixAllRunning}
+                      fixResult={fixResults[t.id]}
+                      onFix={applyFix}
+                      onRescan={() => run(true)}
+                      scanning={loading}
+                      onJumpToUpdates={jumpToUpdates} />
+                  ))}
+                </>
+              )}
             </Section>
 
             {rest.length > 0 && (
@@ -452,10 +840,23 @@ export default function HealthTab({ projectId }) {
                 <button className={btn} onClick={() => setShowAll((v) => !v)}>
                   Everything else · {rest.length} {showAll ? 'HIDE' : 'SHOW'}
                 </button>
-                {showAll && rest.map((t, i) => <Finding key={`${t.id}-${i}`} t={t} quiet />)}
+                {showAll && rest.map((t, i) => (
+                  <Finding key={`${t.id}-${i}`} t={t} quiet siteName={siteName}
+                    fixBusy={fixingIds.includes(t.id)}
+                    fixPaused={fixAllRunning}
+                    fixResult={fixResults[t.id]}
+                    onFix={applyFix}
+                    onRescan={() => run(true)}
+                    scanning={loading}
+                    onJumpToUpdates={jumpToUpdates} />
+                ))}
               </div>
             )}
 
+            {/* Where an `updates` finding sends the operator; the brief highlight is
+                how they know they arrived. */}
+            <div ref={updatesRef}
+              className={`transition-colors duration-700 ${updatesFlash ? 'bg-primary/10 ring-1 ring-primary/40' : ''}`}>
             <Section title="Updates" icon={<Package size={11} className="text-primary/45" />}>
               <div className={`text-[11px] break-words ${updateTotal ? 'text-primary/80' : 'text-primary/60'}`}>
                 {plan?.message || 'This scan did not report update information.'}
@@ -556,6 +957,7 @@ export default function HealthTab({ projectId }) {
                 </div>
               )}
             </Section>
+            </div>
 
             <Section title="Can Morpheus update this site?" icon={<Server size={11} className="text-primary/45" />}>
               {apply?.ok === false ? (

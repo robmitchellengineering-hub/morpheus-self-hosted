@@ -32,6 +32,35 @@ export function severityRank(status) {
   return i === -1 ? SEVERITY_ORDER.length : i;
 }
 
+/**
+ * The fix kinds a finding may carry, and the only ones a button may be built from.
+ *
+ * Kept here rather than in the UI so a malformed action cannot become a button
+ * that does nothing: an unknown kind becomes NO fix rather than a broken one, and
+ * a guided finding with no steps is refused for the same reason — "guide me" with
+ * nothing to read is a dead end wearing a button.
+ */
+export const FIX_KINDS = ['auto', 'guided', 'updates', 'none'];
+
+export function normaliseFix(fix) {
+  if (!fix || typeof fix !== 'object') return null;
+  const kind = FIX_KINDS.includes(fix.kind) ? fix.kind : null;
+  if (!kind) return null;
+  const steps = Array.isArray(fix.steps)
+    ? fix.steps
+      .filter((s) => s && typeof s.text === 'string' && s.text.trim())
+      .map((s) => ({ text: s.text, link: typeof s.link === 'string' && s.link ? s.link : null }))
+    : [];
+  if ('guided' === kind && !steps.length) return null;
+  return {
+    kind,
+    label: String(fix.label || ''),
+    does: String(fix.does || ''),
+    warning: fix.warning ? String(fix.warning) : null,
+    steps,
+  };
+}
+
 /** Every finding in one list, worst first, each tagged with where it came from. */
 export function findings(scan = {}) {
   const out = [];
@@ -43,6 +72,10 @@ export function findings(scan = {}) {
       badge: t.badge || '',
       description: t.description || '',
       links: Array.isArray(t.links) ? t.links : [],
+      // The action, carried through from the plugin's registry. Dropping it here
+      // is what would make every finding unactionable while the engine below was
+      // fully working — the guard asserts it survives this mapper.
+      fix: normaliseFix(t.fix),
       source: 'wordpress',
       sourceLabel: SOURCE_LABELS.wordpress,
     });
@@ -55,6 +88,7 @@ export function findings(scan = {}) {
       badge: c.badge || '',
       description: c.description || '',
       links: Array.isArray(c.links) ? c.links : [],
+      fix: normaliseFix(c.fix),
       source: 'morpheus',
       sourceLabel: SOURCE_LABELS.morpheus,
     });

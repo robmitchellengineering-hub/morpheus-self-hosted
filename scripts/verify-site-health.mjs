@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import {
   findings, summarise, attention, dataFreshness, canApply, updatePlan, isPluginTooOld,
   severityRank, describeAge, SEVERITY_ORDER, SOURCE_LABELS, STALE_AFTER_HOURS,
+  normaliseFix, FIX_KINDS,
 } from '../server/src/lib/siteHealth.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -179,8 +180,20 @@ const fn = read('server/src/functions/siteHealth.js');
 // The action set grew when applying arrived; what matters is that every declared
 // action has a branch and that the rules for the dangerous ones live in
 // scripts/verify-site-maintenance.mjs.
-check('the handler declares its actions in one place', /ACTIONS = new Set\(\['scan', 'policy', 'apply'\]\)/.test(fn), true);
-check('…and every declared action is handled', ['scan', 'policy', 'apply'].every((a) => fn.includes(`'${a}'`)), true);
+// Parsed, not pinned: the set has grown twice (policy, then apply, then fix) and
+// an assertion listing them literally made each addition fail for the wrong
+// reason. The invariant is that the set is declared in one place and that every
+// member has a branch — a declared action with no handler is the real bug.
+const actionsBlock = fn.match(/const ACTIONS = new Set\(\[([^\]]*)\]\)/);
+const declared = actionsBlock ? [...actionsBlock[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]) : [];
+check('the handler declares its actions in one place', declared.length >= 4, true);
+// `scan` is the DEFAULT: it has no branch because it is what happens when no
+// other action matches, so demanding a branch for it failed on correct code.
+// What matters is that every OTHER action is branched, and that the fall-through
+// is still the scan.
+const DEFAULT_ACTION = 'scan';
+check('…every other declared action has a branch', declared.filter((a) => a !== DEFAULT_ACTION && !fn.includes(`action === '${a}'`)), []);
+check('…and the default action is the one that scans', new RegExp(`scanSite\\(user, projectId, \\{ force: body\\?\\.force === true \\}\\)`).test(fn), true);
 check('…and refuses anything else rather than ignoring it', /Unknown health action/.test(fn), true);
 check('the scan itself is a shared helper, not inlined twice', /scanSite\(user, projectId/.test(fn), true);
 
@@ -210,6 +223,38 @@ check('a forced scan bypasses the cache', /if \( ! \$force \) \{/.test(plugin), 
 // disagreed: critical vs recommended for the same fact).
 check('the cron check is not duplicated', /morpheus_cron/.test(plugin), false);
 check('the async tests WordPress cannot let us run are reported', /async_not_run/.test(plugin), true);
+
+console.log('\n9. every finding can be acted on')
+
+// The pure mapper is the ONLY path from the plugin's registry to a button, so if
+// it drops `fix` the whole engine is invisible while working perfectly. (It did.)
+const withFix = findings({
+  tests: [{ id: 'php_version', label: 'PHP', status: 'recommended', fix: { kind: 'guided', label: 'Ask your host', does: 'x', steps: [{ text: 'step', link: '/wp-admin/site-health.php' }] } }],
+  own_checks: [{ id: 'morpheus_file_editor', label: 'Editor', status: 'recommended', fix: { kind: 'auto', label: 'Disable it', does: 'y' } }],
+});
+check('the mapper carries an action through', withFix.every((f) => !!f.fix), true);
+check('…with the kind intact', withFix.map((f) => f.fix.kind).sort(), ['auto', 'guided']);
+check('…and the button label', withFix.find((f) => f.fix.kind === 'auto').fix.label, 'Disable it');
+check('a finding with no action still comes through', findings({ tests: [{ id: 'x', label: 'X', status: 'good' }] })[0].fix, null);
+
+// A button must never be built from something unrenderable.
+check('the four kinds are the only ones', FIX_KINDS, ['auto', 'guided', 'updates', 'none']);
+check('an unknown kind is refused, not rendered', normaliseFix({ kind: 'magic', label: 'x' }), null);
+check('a guided fix with no steps is refused', normaliseFix({ kind: 'guided', label: 'x', steps: [] }), null);
+check('…so "guide me" can never open nothing', normaliseFix({ kind: 'guided', label: 'x', steps: [{ text: '  ' }] }), null);
+check('a guided fix with a step is kept', normaliseFix({ kind: 'guided', label: 'x', steps: [{ text: 'do this' }] }).steps.length, 1);
+check('an empty step link becomes null, not ""', normaliseFix({ kind: 'guided', label: 'x', steps: [{ text: 's', link: '' }] }).steps[0].link, null);
+check('a missing fix is null, not an empty object', normaliseFix(undefined), null);
+check('a warning is carried when the action needs one', normaliseFix({ kind: 'auto', label: 'x', warning: 'careful' }).warning, 'careful');
+
+// And the handler routes it to the site.
+check('the handler offers a fix action', /ACTIONS = new Set\(\['scan', 'policy', 'apply', 'fix'\]\)/.test(fn), true);
+check('…sending only the finding id to the site', /wpFix\(conn, finding\)/.test(fn), true);
+check('…and refusing an empty id', /finding id required/.test(fn), true);
+// A site declining (409) is an answer, not a failure.
+check('a declined fix is not reported as an error', /res\.status !== 200 && res\.status !== 409/.test(fn), true);
+check('a plugin too old is named', /PLUGIN_TOO_OLD/.test(fn), true);
+check('the client sends nothing but the id', /wpCall\(conn, 'fix', \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
 
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

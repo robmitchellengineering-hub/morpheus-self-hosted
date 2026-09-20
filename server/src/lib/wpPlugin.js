@@ -280,3 +280,15 @@ export async function wpMaintenance(conn, { action = 'plan', targets = [], dryRu
   return wpCall(conn, 'maintenance', { action, targets, dry_run: !!dryRun });
 }
 
+/**
+ * Apply ONE registered fix by finding id (plugin 0.6.3+).
+ *
+ * The site owns the registry, so the id is all that crosses the wire — Morpheus
+ * cannot invent an action, and the site answers NOT_AUTOMATIC for anything that
+ * needs a human step. A plugin older than 0.6.3 has no /fix route, which is the
+ * same "too old" shape as /health and is reported the same way.
+ */
+export async function wpFix(conn, id) {
+  return wpCall(conn, 'fix', { id });
+}
+
