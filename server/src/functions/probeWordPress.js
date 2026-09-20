@@ -85,13 +85,21 @@ export default async function handler({ user, body }) {
   const isMorpheus = status.ok && data && data.plugin === 'morpheus';
 
   if (!isMorpheus) {
-    // A WordPress that is not ours (or not WordPress at all) still answered.
-    const looksWordPress = status.ok && !!(data && (data.namespaces || data.name || /wp-json/.test(String(status.data?.raw || ''))));
+    // Is this WordPress at all? The REST discovery header is the reliable
+    // signature — WordPress sends `Link: <…/wp-json/>; rel="https://api.w.org/"`
+    // on every REST response, including the 404 for a route that is not there,
+    // which is exactly the case for a site without the Morpheus plugin. The
+    // first version of this guessed from the body instead and told real
+    // WordPress sites they were "not a WordPress site Morpheus recognises".
+    const apiLink = /rel="https:\/\/api\.w\.org\/"/i.test(String(status.link || ''));
+    const looksWordPress = apiLink || !!(data && (data.namespaces || data.name));
+    const isWordPress = status.ok ? looksWordPress : (apiLink || looksWordPress);
     return {
       siteUrl,
       step: 'install',
       reachable: true,
-      is_wordpress: looksWordPress || status.status === 200,
+      is_wordpress: isWordPress,
+      wordpress_evidence: apiLink ? 'rest-discovery-header' : (looksWordPress ? 'rest-index' : null),
       http_status: status.status,
       detail: status.ok ? 'WordPress answered, but not the Morpheus plugin' : `HTTP ${status.status}`,
       final_url: status.finalUrl || siteUrl,

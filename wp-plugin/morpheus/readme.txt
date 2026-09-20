@@ -1,116 +1,97 @@
 === Morpheus ===
-Contributors: morpheus
+Contributors: morpheusnz
+Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
-Tested up to: 6.7
+Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.4.5
+Stable tag: 0.5.6
 License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Run your WordPress/WooCommerce site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock and content over a signed API.
+Run your WordPress site from Morpheus — deploy code, manage products and content, and own your SEO.
 
 == Description ==
 
-One plugin, two modules, one shared signed-request auth (HMAC-SHA256 over
-the raw body, verified against a secret set here and on the Morpheus side).
+Morpheus connects this site to the Morpheus app (morpheus.nz) with a signed request, so the site's
+owner can work on it from anywhere — including a phone — without handing over WordPress passwords or
+FTP details.
 
-**Deploy** — Morpheus builds changes through chat, opens a pull request on
-your connected repo, and once its checks pass and the PR merges, calls the
-deploy endpoint. The plugin diffs the merge commit, snapshots what it
-touches, writes the changed files, health-checks the site, and restores the
-snapshot if anything breaks. It never touches wp-config.php,
-wp-content/uploads, cache directories, .git, .htaccess, or .env — that
-deny-list is enforced in the plugin's own code, independent of .gitignore.
+**Connect in one step.** After activating, open Settings → Morpheus. It shows a short code (valid for
+20 minutes, usable once). Type the code into Morpheus and the two are connected: the plugin generates
+the shared secret, so nothing is invented or copied by hand.
 
-**Store** — a signed endpoint for WooCommerce and content actions (create a
-product, set stock, update a product, draft a post), so you can run the
-shop from your phone through Morpheus. Products are created as drafts unless
-you say otherwise. Requires WooCommerce for the product actions.
+**What it does once connected**
 
-= Arming =
+* **Deploy** — Morpheus opens a pull request against the repository your theme lives in. When the
+  checks pass and it is merged, this plugin applies exactly the files that commit changed, checks the
+  site still answers, and rolls the change back if it does not. WordPress core, other plugins and your
+  uploads are never touched (enforced by a hard deny-list in the plugin).
+* **Store** — products, stock, prices and content, managed from the Morpheus panel. WooCommerce
+  optional; pages and posts work without it.
+* **SEO** — read and write the title, meta description, focus keyword, canonical, social image and
+  noindex for any page, post or product, list content, and audit the site for real problems. Works
+  with NO other SEO plugin installed (Morpheus emits the tags itself) and, when Yoast, Rank Math,
+  All in One SEO or SEOPress is active, drives that plugin's own fields instead — two plugins never
+  emit competing title or description tags. Site-wide title/description templates fill the gaps, and
+  internal links can be proposed and applied to a phrase that already exists in the text.
+* **Working copy** — if the theme is not in a repository yet, the plugin can hand its own theme over
+  so one can be created for you. Text files only; images and fonts stay on the site, where they are
+  served from.
 
-Off by default: the deploy endpoint reports what a deploy *would* change
-and writes nothing. Use that to connect the repo, set the shared secret,
-and confirm the diff looks right. Tick "Armed" in settings to let a deploy
-request write files — it snapshots what it touches, writes the changed
-files, health-checks the site, and restores the snapshot automatically if
-the health check fails.
+**Updates.** This plugin registers the standard WordPress update channel, so it updates from your own
+Plugins screen — and the download is verified against a published SHA-256 before it is installed.
 
 == Installation ==
 
-1. Upload the `morpheus` folder to `wp-content/plugins/` and activate.
-2. Settings → Morpheus: set a signing secret (any random string, 12+
-   characters). This alone enables the Store module.
-3. In Morpheus, open the STORE panel, enter this site's URL and the same
-   secret, and connect.
-4. For the Deploy module as well: also set the repo (`owner/repo`), branch,
-   and a GitHub token with Contents:read, and keep "Armed" off until you've
-   reviewed a dry-run diff.
+1. Upload `morpheus-wordpress-plugin.zip` via Plugins → Add New → Upload Plugin, and activate it, or
+   with WP-CLI: `wp plugin install https://morpheus.nz/morpheus-wordpress-plugin.zip --activate`
+2. Open Settings → Morpheus and copy the code it shows.
+3. In Morpheus, open your project → WEBSITE → SETUP, enter your site address, and paste the code.
 
-== Endpoints ==
+== Frequently Asked Questions ==
 
-* `POST /wp-json/morpheus/v1/deploy` — signed (`X-Morpheus-Signature:
-  sha256=<hmac>`), body `{ "commit": "<sha>", "reason": "...", "at": "<iso>" }`.
-  Add `?dry=1` (or `"dry_run": true` in the body) to force a report.
-* `POST /wp-json/morpheus/v1/rollback` — signed; restores the last deploy's
-  snapshot.
-* `POST /wp-json/morpheus/v1/store` — signed; body
-  `{ "action": "create_product" | "update_product" | "set_stock" |
-  "delete_product" | "list_products" | "get_product" | "context" |
-  "create_post" | "list_pages" | "get_page" | "create_page" | "update_page" |
-  "delete_page" | "resolve_url", "data": {…}, "at": "<iso>" }`.
-* `GET /wp-json/morpheus/v1/status` — unauthenticated; reports version,
-  deploy state, and whether WooCommerce is available.
+= Does it need my WordPress password? =
+
+No. The connection is a shared secret generated during pairing, and every request is signed with it.
+
+= Do I need another SEO plugin? =
+
+No — but if you have one, this plugin uses its fields rather than emitting a second set of tags.
+
+= Will it overwrite my site? =
+
+A deploy only ever writes the files a merged commit changed, refuses a fixed deny-list (wp-config.php,
+uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls back if the site stops
+answering a health check.
 
 == Changelog ==
 
-= 0.4.5 =
-* Store: `resolve_url` action — what a front-end URL actually is (product,
-  page, post, the homepage, or nothing) via WordPress's own `url_to_postid()`
-  rewrite-rule matching, so it works on any permalink structure or theme.
-  Enriches with the product/page summary when it recognises the type. Feeds
-  the embed widget's "what page is the operator looking at" context.
+= 0.5.6 =
+* Plugin details now explain the connection and what a deploy may touch.
+* Update instructions and pairing guidance clarified.
 
-= 0.4.4 =
-* Store: `seo_title` / `seo_description` fields on `create_product`,
-  `update_product`, `create_page`, `update_page` — writes Yoast SEO's own
-  postmeta (`_yoast_wpseo_title` / `_yoast_wpseo_metadesc`) when Yoast is
-  active, no-op otherwise. `get_product` and `get_page` return the current
-  values; `context` reports `seo_available` so the panel knows whether to
-  show the fields.
+= 0.5.5 =
+* Export the active theme as a text-only working copy, so a site that is not in git can still use the
+  full build and deploy pipeline.
 
-= 0.4.3 =
-* Store: page actions — `list_pages`, `get_page`, `create_page`, `update_page`,
-  `delete_page`. Plain WordPress content, no WooCommerce required. Pages are
-  DRAFT by default on create, same as products and posts. Cache purged after
-  any write.
+= 0.5.4 =
+* Pairing codes: connect with a one-time code from Settings → Morpheus instead of inventing and
+  retyping a shared secret.
 
-= 0.4.2 =
-* Store: `delete_product` action — trashes a product by id or sku (reversible
-  from wp-admin; `force:true` deletes permanently). Lets the operator retire
-  a listing from Morpheus instead of the WordPress admin.
-* Store: `update_product` can flip status (publish ↔ draft), so a listing can
-  be unpublished without deleting it.
-* Store: `get_product` now returns the product's brand terms, so an edit form
-  can pre-fill them.
+= 0.5.3 =
+* One-click updates through WordPress, with the package verified against a published SHA-256.
 
-= 0.4.1 =
-* Store: purge WooCommerce product transients + the page cache (WP Rocket,
-  W3TC, WP Super Cache, SiteGround, LiteSpeed, WP-Optimize) after a product
-  or post is created/updated, so it shows on the shop and category archives
-  right away.
+= 0.5.2 =
+* Site-wide title and description templates; internal-link suggestions; page-cache purge after writes.
+
+= 0.5.1 =
+* read_content, so generated SEO is grounded in the page's real text.
+
+= 0.5.0 =
+* The SEO module: Morpheus owns the site's SEO with or without another plugin.
 
 = 0.4.0 =
-* Store module: /store endpoint for WooCommerce product + content actions.
-  Products created as drafts by default; image sideload from URLs; brand +
-  category taxonomy handling.
-
-= 0.3.0 =
-* Renamed to "Morpheus"; deploy code moved into a Deploy module; one shared
-  signing secret.
-
-= 0.2.0 =
-* Armed deploy: snapshot, write, health-check, auto-rollback. Rollback
-  endpoint. Blob-sha verification on every written file. Snapshot pruning.
+* The Store module.
 
 = 0.1.0 =
-* Initial release. Settings screen, signed deploy endpoint, dry-run diff.
+* The Deploy module.

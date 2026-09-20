@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.5.5
+ * Version:           0.5.6
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -45,19 +45,21 @@
  *            One-time pairing codes (Settings → Morpheus) replace inventing and
  *            retyping a shared secret in 0.5.4. The active theme can be exported
  *            as a text-only working copy in 0.5.5, so a site that is not in git
- *            still gets the full dev pipeline.
+ *            still gets the full dev pipeline. readme.txt carries the same
+ *            history for anyone reading this from the WordPress plugin screen.
  *
  *            Version history: module added in 0.5, read_content in 0.5.1,
  *            templates + internal links + the shared page-cache purge in 0.5.2,
  *            one-click updates (with a verified package hash) in 0.5.3,
- *            pairing codes in 0.5.4, theme export in 0.5.5.
+ *            pairing codes in 0.5.4, theme export in 0.5.5, plugin details in
+ *            0.5.6.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.5.5' );
+define( 'MORPHEUS_VERSION', '0.5.6' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 

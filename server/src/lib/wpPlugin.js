@@ -96,8 +96,13 @@ async function wpFetch(url, opts) {
       status: res.status,
       ok: res.ok,
       data,
-      // Needed by callers that follow redirects themselves (see wpStatus).
+      // Needed by callers that follow redirects themselves (see wpStatus), and
+      // by the connect wizard to recognise WordPress: every WP REST response
+      // carries `Link: <…/wp-json/>; rel="https://api.w.org/"`, including a 404
+      // for a route that does not exist. That header is how a site without the
+      // Morpheus plugin is still identified AS WordPress.
       location: res.headers?.get ? res.headers.get('location') : null,
+      link: res.headers?.get ? res.headers.get('link') : null,
     };
   } catch (err) {
     return { status: 0, ok: false, data: null, error: err.name === 'AbortError' ? 'timed out' : err.message };
