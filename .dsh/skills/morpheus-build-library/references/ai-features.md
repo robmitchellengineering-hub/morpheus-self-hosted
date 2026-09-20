@@ -64,6 +64,12 @@ and backlinks — OAuth, property verified.
   real inquiry that came in. Prove a query returns non-empty against a
   known-populated account *before* building a feature that depends on it. H10
   covers a 404; this is the quieter failure — a 200 with an empty set.
+* **A partially-read list must never be treated as the whole list.** Fetching the
+  newest N and calling that "everything" meant a message outside the window was
+  never looked at, while the run reported a clean pass — and the fix was to
+  paginate until it reached mail already processed, not to widen N. If a worker
+  drains a queue, its stopping condition belongs to the queue, not to a number
+  someone picked.
 
 ## Billing: the true-up must have a floor
 
