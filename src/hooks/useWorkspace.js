@@ -160,6 +160,19 @@ export function useWorkspace() {
     setCurrentProject(prev => ({ ...prev, compile_target: target }));
   }, [currentProject]);
 
+  // Renaming a construct. A new account's website construct is named from their
+  // own name, so this is the first thing they may want to change — and it is a
+  // plain field update, no backend work.
+  const renameProject = useCallback(async (name) => {
+    if (!currentProject) return null;
+    const clean = String(name || '').trim().slice(0, 80);
+    if (!clean || clean === currentProject.name) return null;
+    await base44.entities.Project.update(currentProject.id, { name: clean });
+    setCurrentProject(prev => ({ ...prev, name: clean }));
+    setProjects(prev => prev.map(p => (p.id === currentProject.id ? { ...p, name: clean } : p)));
+    return clean;
+  }, [currentProject]);
+
   const togglePolishUi = useCallback(async () => {
     if (!currentProject) return;
     const next = !currentProject.polish_ui;
@@ -533,5 +546,5 @@ export function useWorkspace() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, loadError, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, setStorageMode, pushToDrive, pullFromDrive, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, loadError, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, setStorageMode, pushToDrive, pullFromDrive, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, renameProject, togglePolishUi };
 }

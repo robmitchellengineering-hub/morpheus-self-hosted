@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { base44 } from '@/api/base44Client';
-import { Plus, Github, Store, Trash2, Settings as SettingsIcon, Boxes, Plug, Search, Clock, ArrowDownAZ, X, Home as HomeIcon, AlertTriangle, RefreshCw, Globe } from 'lucide-react';
+import { Plus, Github, Store, Trash2, Pencil, Settings as SettingsIcon, Boxes, Plug, Search, Clock, ArrowDownAZ, X, Home as HomeIcon, AlertTriangle, RefreshCw, Globe } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -81,8 +81,22 @@ export default function Workspace() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  // Renaming from the list: a new account's website construct is named from
+  // their own name, and this list is where they first see it.
+  const [renameId, setRenameId] = useState(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [mobileTab, setMobileTab] = useState('chat');
   const isMobile = useIsMobile();
+
+  const saveRename = async (p) => {
+    const next = renameDraft.trim().slice(0, 80);
+    setRenameId(null);
+    if (!next || next === p.name) return;
+    try {
+      await base44.entities.Project.update(p.id, { name: next });
+      ws.loadProjects();
+    } catch { /* the row keeps its old name, which is honest */ }
+  };
 
   // Pull-to-refresh for the construct list view. Suspended while a project is
   // open (the list isn't mounted then); re-engages when the user returns to it.
@@ -281,12 +295,32 @@ export default function Workspace() {
             )}
             {visibleProjects.map(p => (
               <Card key={p.id} className="group relative rounded-none border-primary/30 bg-card hover:border-primary hover:bg-primary/5 hover:shadow-[0_0_24px_-4px_rgba(0,255,65,0.2)] transition-colors">
-                <button onClick={() => navigate('/workspace/' + p.id)} className="w-full text-left p-4 pr-12">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-primary group-hover:neon-glow">{p.name}</span>
-                    <Badge variant="outline" className="rounded-none border-primary/40 bg-transparent text-primary/70 font-mono text-[10px] uppercase tracking-wider">{p.status}</Badge>
+                {renameId === p.id ? (
+                  <div className="p-4 pr-24">
+                    <input autoFocus value={renameDraft} maxLength={80}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onBlur={() => saveRename(p)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); saveRename(p); }
+                        if (e.key === 'Escape') { setRenameId(null); }
+                      }}
+                      className="w-full bg-black/40 border border-primary/40 px-2 py-1.5 text-primary text-sm focus:outline-none focus:border-primary" />
+                    <div className="text-[10px] text-primary/35 mt-1">Enter to save · Escape to cancel</div>
                   </div>
-                  {p.description && <p className="text-primary/50 text-sm mt-1.5">{p.description}</p>}
+                ) : (
+                  <button onClick={() => navigate('/workspace/' + p.id)} className="w-full text-left p-4 pr-24">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-primary group-hover:neon-glow">{p.name}</span>
+                      <Badge variant="outline" className="rounded-none border-primary/40 bg-transparent text-primary/70 font-mono text-[10px] uppercase tracking-wider">{p.status}</Badge>
+                    </div>
+                    {p.description && <p className="text-primary/50 text-sm mt-1.5">{p.description}</p>}
+                  </button>
+                )}
+                {/* Renaming lives here as well as inside the construct: this list
+                    is where a default-named construct is first seen. */}
+                <button onClick={(e) => { e.stopPropagation(); setRenameId(p.id); setRenameDraft(p.name || ''); }}
+                  className="absolute top-3 right-12 text-primary/60 hover:text-primary transition-colors p-1" title="Rename construct">
+                  <Pencil size={16} />
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} className="absolute top-3 right-3 text-primary/60 hover:text-red-500 transition-colors p-1" title="Delete construct">
                   <Trash2 size={16} />
@@ -317,7 +351,7 @@ export default function Workspace() {
 
   return (
     <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
-      <ProjectBar project={ws.currentProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onDomain={ws.currentProject?.compile_target === 'web-app' ? () => setShowDomain(true) : undefined} domainSet={domainSet} onContent={ws.currentProject?.compile_target === 'web-app' ? () => setShowContent(true) : undefined} onWebsite={ws.currentProject?.compile_target === 'web-app' ? () => setShowWebsite(true) : undefined} websiteConnected={websiteConnected} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
+      <ProjectBar project={ws.currentProject} onRename={ws.renameProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onDomain={ws.currentProject?.compile_target === 'web-app' ? () => setShowDomain(true) : undefined} domainSet={domainSet} onContent={ws.currentProject?.compile_target === 'web-app' ? () => setShowContent(true) : undefined} onWebsite={ws.currentProject?.compile_target === 'web-app' ? () => setShowWebsite(true) : undefined} websiteConnected={websiteConnected} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
       <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
         <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>CHAT</button>
         <button onClick={() => setMobileTab('files')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'files' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>FILES</button>
