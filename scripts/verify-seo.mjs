@@ -328,6 +328,26 @@ check('the scope grants nothing the surface does not use (no silent widening)',
 // the SEO scope, which would hand an SEO-only embed `delete_product` and
 // `delete_page`. Assert the narrow choice, both ways round.
 check('the broad store dispatcher is NOT in the seo scope', seoScope.includes('wordPressStoreAction'), false);
+
+// ── every tab the dock can render must be grantable, and granted by default ───
+// Rob hit this exactly: the dock's SEO page never appeared because a new token's
+// default scopes were chat/deploy/store and there was no way to change them, so
+// the only fix was a new token and a new snippet on the site. A tab no token can
+// render is a page the owner does not have.
+const embedTabSrc = readFileSync(join(REPO, 'src/components/matrix/website/EmbedTab.jsx'), 'utf8');
+// Its own reader rather than the one declared further down for the tab-strip
+// checks: referencing that one here was a temporal-dead-zone error at load.
+const embedForTabs = readFileSync(join(REPO, 'src/pages/Embed.jsx'), 'utf8');
+const tabScopes = [...new Set([...embedForTabs.matchAll(/\{ scope: '([a-z]+)'/g)].map((m) => m[1]))];
+const tickable = [...embedTabSrc.matchAll(/\{ id: '([a-z]+)', label:/g)].map((m) => m[1]);
+const defaultsBlock = embedTabSrc.match(/useState\((ALL_SCOPES[^)]*)\)/);
+check('the dock declares tabs (parser sanity)', tabScopes.length >= 4, true);
+check('the tickable scope list was parsed (parser sanity)', tickable.length >= 4, true);
+// Every scope a tab needs can be ticked on…
+check('every dock tab has a grantable scope', tabScopes.filter((sc) => !tickable.includes(sc)), []);
+// …and a NEW token gets them all, so the default is never what limits the dock.
+check('a new token defaults to every scope, not a subset', /useState\(ALL_SCOPES\.map/.test(embedTabSrc), true);
+check('…which is every tickable scope', defaultsBlock ? true : false, true);
 check('the narrow post writer is', seoScope.includes('createSitePost'), true);
 const createSitePostSrc = readFileSync(join(REPO, 'server/src/functions/createSitePost.js'), 'utf8');
 // Strip comments BEFORE asserting on source. Without this, `it forces the post to

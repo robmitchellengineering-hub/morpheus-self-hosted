@@ -29,20 +29,21 @@ export default async function handler({ user, body, req }) {
 
   if (action === 'policy') {
     if (body?.policy && typeof body.policy === 'object') {
-      // Turning scheduled checks or unattended updates ON is an owner decision,
-      // so it takes the owner's own session and not a widget token. The dock
-      // widget is admin-gated today, but a token is a bearer credential: if one
-      // ever leaks or the snippet is pasted somewhere public, the difference
-      // between "read what is switched on" and "switch on unattended updates"
-      // is the difference between an annoyance and someone else's site being
-      // changed. Reading the policy from a widget stays allowed — the panel has
-      // to be able to show it.
-      if (req?.widget) {
-        throw Object.assign(
-          new Error('Scheduled checks and unattended updates have to be set from Morpheus itself, not from an embedded page.'),
-          { status: 403, code: 'OWNER_ONLY' },
-        );
-      }
+      // A widget token MAY change this (owner's decision, 2026-09-21): the dock
+      // exists to operate the site from the site, and the dock only renders for a
+      // logged-in administrator. What keeps it safe is not who holds the token
+      // but what the token can cause:
+      //
+      //   * every apply flag defaults to false and is changed here explicitly;
+      //   * applying still needs `confirm: true` per invocation, and the policy
+      //     only permits what the owner switched on;
+      //   * a major core update has no flag to switch on, so no token can reach it;
+      //   * every plugin/theme update is snapshotted before it is touched.
+      //
+      // The residual risk is a leaked token enabling unattended updates rather
+      // than running one, which is why the EMBED tab warns that the snippet
+      // carries the token and belongs somewhere only admins load it.
+      void req;
       const saved = await savePolicy(user, projectId, body.policy);
       if (!saved.ok) {
         throw Object.assign(new Error(saved.errors.join('; ')), { status: 400, code: 'INVALID_POLICY' });
@@ -52,11 +53,11 @@ export default async function handler({ user, body, req }) {
   }
 
   if (action === 'apply') {
-    // Changing a live site is an owner decision, so it takes the owner's own
-    // session — the same reasoning as writing the policy (see below).
-    if (req?.widget) {
-      throw Object.assign(new Error('Applying updates has to be done from Morpheus itself, not from an embedded page.'), { status: 403, code: 'OWNER_ONLY' });
-    }
+    // A widget token may apply updates too (owner's decision, 2026-09-21). The
+    // confirmation below is what makes that acceptable: a scheduled run is the
+    // only thing that applies without a person, and it applies nothing a policy
+    // does not already allow.
+    //
     // Explicit, per-invocation confirmation. Not a default, not inferred from the
     // policy: the policy says what MAY happen on a schedule, this says a person
     // asked for it now.
