@@ -183,6 +183,14 @@ jobs:
       - name: Site health rules
         run: node scripts/verify-site-health.mjs
 
+      # The code that may touch live sites unattended. Asserted before the
+      # ability exists: scanning never implies applying, a major core update is
+      # never automatic (even if smuggled into the policy), a monthly job stays
+      # on its day and exists in February, a run missed while the server was down
+      # happens exactly once, and the report never claims work it did not do.
+      - name: Site maintenance policy rules
+        run: node scripts/verify-site-maintenance.mjs
+
       # The fact generator. It exits non-zero if its own extraction breaks —
       # e.g. a refactor moves what it parses — so a silently-wrong report can
       # never be the thing you rely on.

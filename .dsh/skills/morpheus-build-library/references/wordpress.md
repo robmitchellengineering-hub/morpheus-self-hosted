@@ -72,6 +72,61 @@ mid-request is how you get a half-updated plugin and a white screen, with a
 manual upload as the only recovery. The plugin's own signed update channel
 exists for this; Deploy is for the site's theme and content.
 
+## Site health and maintenance
+
+The HEALTH surface shows what is wrong with a managed site and (eventually)
+fixes it. The rules below were each learned by getting them wrong first.
+
+**Run WordPress's own Site Health tests; do not reimplement them.**
+`WP_Site_Health::get_tests()` returns ~34 direct tests plus whatever an active
+plugin registers (WooCommerce adds ten). Two implementations would give two
+answers to one question. Two traps, both of which killed the first attempt:
+
+- The tests are written for the **admin screen** and call admin-only helpers —
+  `get_test_wordpress_version()` reaches `get_core_updates()`. Without
+  `require_once ABSPATH . 'wp-admin/includes/admin.php'` the FIRST test is a fatal
+  undefined function, and under WASM/CLI that printed **nothing at all**: one line
+  of output, no error, exit 255.
+- A core test's `test` key is a method-name **suffix** (`php_version`,
+  `is_in_debug_mode`), resolved to `get_test_<name>()`. Calling the string fatals.
+  A plugin-registered test (WooCommerce) is a real callable. Handle both.
+
+Report the six **async** tests as not-run, with the reason. WordPress runs them
+from a logged-in browser; a signed server scan cannot. An absent test silently
+omitted reads as a passing one.
+
+**A health screen is believed, so: no score.** There is no honest way to weight a
+missing PHP extension against an open registration form, and a number invites
+optimising the number. Order findings worst-first and count them; nothing more.
+Keep each finding's **source** (WordPress vs our own check) — presenting our
+opinion as WordPress's verdict makes the real findings unreadable.
+
+**Scanning and applying are separate permissions.** An owner who asked to be told
+what is wrong has not asked us to change their site, so `scan_enabled` grants a
+scan and nothing else. Nothing may infer the second from the first.
+
+**A major core update is never automatic.** It is the one operation that can take
+a working site away, and WordPress's own rollback only covers a failure *during*
+an update — not "it worked and now the shop is broken". There is no setting for
+it, and the guard asserts a smuggled `apply_core_major: true` changes nothing.
+
+**"Monthly" is a wall-clock day, not a 30-day interval.** A fixed interval drifts
+into the wrong day and skips February, so the cap is day 28 and the scheduler
+ticks hourly asking a pure `isDue()`. Compare against the **scheduled instant**,
+not "30 days ago", so a run missed while the server was down happens exactly once
+on the way back. (The first version returned *next* month's instant as "the most
+recent past one", which meant a missed month was never made up. The guard caught
+it.)
+
+**Check the age of "nothing to update".** WordPress asks wordpress.org twice a
+day. A site whose cron or outbound requests are broken reports zero updates
+forever — and is exactly the site that needs them. The age is part of the answer.
+
+**A host that cannot write files cannot be updated by anyone.** Detect it
+(`get_filesystem_method()`, `DISALLOW_FILE_MODS`, directory writability), say so
+and stop. Never ask the operator for FTP or SSH credentials.
+
+
 ## Do not gate a feature on a third-party plugin's presence
 
 The SEO module briefly rendered its fields behind `defined('WPSEO_VERSION')`, so
