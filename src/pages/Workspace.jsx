@@ -9,6 +9,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import PullToRefreshIndicator from '@/components/matrix/PullToRefreshIndicator';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import ProjectBar from '@/components/matrix/ProjectBar';
+import FirstRunChecklist from '@/components/matrix/FirstRunChecklist';
 import ChatPanel from '@/components/matrix/ChatPanel';
 import FileTree from '@/components/matrix/FileTree';
 import FileViewer from '@/components/matrix/FileViewer';
@@ -352,6 +353,24 @@ export default function Workspace() {
   return (
     <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
       <ProjectBar project={ws.currentProject} onRename={ws.renameProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onDomain={ws.currentProject?.compile_target === 'web-app' ? () => setShowDomain(true) : undefined} domainSet={domainSet} onContent={ws.currentProject?.compile_target === 'web-app' ? () => setShowContent(true) : undefined} onWebsite={ws.currentProject?.compile_target === 'web-app' ? () => setShowWebsite(true) : undefined} websiteConnected={websiteConnected} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
+      {ws.currentProject?.compile_target === 'web-app' && (
+        <FirstRunChecklist
+          project={ws.currentProject}
+          onOpenWebsite={() => { setShowWebsite(true); setMobileTab('chat'); }}
+          onOpenConnections={() => setShowConnections(true)}
+          onStartChat={() => {
+            setMobileTab('chat');
+            // Put them in the chat with a start, rather than an empty box.
+            setTimeout(() => {
+              const box = document.querySelector('textarea[placeholder="speak..."], input[placeholder="speak..."]');
+              if (box) {
+                box.focus();
+                box.placeholder = 'e.g. change the homepage headline to…';
+              }
+            }, 50);
+          }}
+        />
+      )}
       <div className="md:hidden flex border-b border-primary/20 shrink-0 overscroll-none">
         <button onClick={() => setMobileTab('chat')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'chat' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>CHAT</button>
         <button onClick={() => setMobileTab('files')} className={`flex-1 py-2.5 text-xs tracking-wider font-bold transition-colors ${mobileTab === 'files' ? 'bg-primary/15 text-primary neon-glow border-b-2 border-primary' : 'text-primary hover:text-[#39ff14]'}`}>FILES</button>
