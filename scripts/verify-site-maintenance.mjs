@@ -198,15 +198,20 @@ check('an invalid policy is refused, not clamped', /INVALID_POLICY/.test(fn), tr
 // cannot leak to the browser by accident.
 check('the policy payload does not echo row plumbing', /created_by_id: policy\.created_by_id|id: policy\.id/.test(fn), false);
 check('…and the last run is exposed for the panel', /last_result: lastResult/.test(fn), true);
-// Applying is owner-only and explicitly confirmed per invocation.
+// Applying is explicitly confirmed per invocation.
 check('the handler offers an apply action', /ACTIONS = new Set\(\['scan', 'policy', 'apply'\]\)/.test(fn), true);
-check('a widget token cannot apply updates', /Applying updates has to be done from Morpheus itself/.test(fn), true);
+// A widget token MAY apply and MAY change the policy — the owner's decision on
+// 2026-09-21, on the grounds that the dock only renders for a logged-in
+// administrator. What keeps that safe is the conditions, not the token holder,
+// so THOSE are what is asserted here.
+check('a widget token is not refused outright', /OWNER_ONLY/.test(fn), false);
+check('…and the decision is recorded where the next reader will find it', /owner's decision, 2026-09-21/.test(fn), true);
+check('…but applying still needs a person to confirm it', /CONFIRM_REQUIRED/.test(fn), true);
+check('…and a fresh scan, so it cannot act on a stale plan', /action === 'apply'[\s\S]{0,2000}?scanSite\(user, projectId, \{ force: true \}\)/.test(fn), true);
 check('…and confirmation is required, not inferred from the policy', /CONFIRM_REQUIRED/.test(fn), true);
 check('a manual apply takes a FRESH scan, so it cannot act on an old plan', /action === 'apply'[\s\S]{0,2000}?scanSite\(user, projectId, \{ force: true \}\)/.test(fn), true);
 check('a manual apply writes the same report a scheduled run does', /runSummary\(\{/.test(fn), true);
 
-check('a widget token cannot change the policy', /req\?\.widget/.test(fn) && /OWNER_ONLY/.test(fn), true);
-check('…and is told why, not just refused', /not from an embedded page/.test(fn), true);
 
 const apply = read('server/src/lib/siteApply.js');
 // The allowed kinds come from the pure decision, so the policy gates the apply.

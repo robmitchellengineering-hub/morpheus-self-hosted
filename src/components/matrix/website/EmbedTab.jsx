@@ -23,7 +23,12 @@ export default function EmbedTab({ projectId, connected }) {
   const [tokens, setTokens] = useState(null);
   const [err, setErr] = useState(null);
   const [label, setLabel] = useState('');
-  const [scopes, setScopes] = useState(['chat', 'deploy', 'store']);
+  // Default to EVERY scope rather than chat/deploy/store. A token that cannot
+  // render a tab is a tab the owner does not have: the previous default omitted
+  // `seo`, so a freshly created dock silently had no SEO page and the only fix
+  // was a new token and a new snippet on the site. Everything here is still
+  // tickable off — the default should not be the thing that limits you.
+  const [scopes, setScopes] = useState(ALL_SCOPES.map((s) => s.id));
   const [dock, setDock] = useState(true);
   const [creating, setCreating] = useState(false);
   const [fresh, setFresh] = useState(null); // { token } shown once
