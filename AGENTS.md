@@ -75,13 +75,21 @@ This repo is developed through **DSH** (DeepSeek Harness) via the Web GUI. DSH i
 the **sole writer** — do not run a Claude Code session against this repo at the
 same time. See `KNOWN-HAZARDS.md` H9 for the incident that rule comes from.
 
-Three project skills under `.dsh/skills/` carry the operating rules:
+Project skills under `.dsh/skills/` carry the operating rules. The harness
+catalog is the source of truth for what exists; the table below is the map, and
+`scripts/verify-context.mjs` fails if a skill on disk is not named here.
 
 | Skill | Load it when |
 |---|---|
 | `morpheus-dev-protocol` | Before **any** change — branch/PR workflow, never-push-`main`, resync rules |
-| `morpheus-hazards` | Before writing or reviewing a change — the H1–H10 checklist |
+| `morpheus-hazards` | Before writing or reviewing a change — the H1–H12 checklist of self-inflicted breakage |
 | `morpheus-stack` | When you need the stack map, commands, or verification steps |
+| `morpheus-architecture` | When you need to know how a request reaches a handler, or how the build loop and self-dev engine work |
+| `morpheus-deck` | Before touching anything under `/deck` — own-data architecture, additive migrations, Jarvis persona |
+| `morpheus-vision` | Before any Jarvis-driven build or inter-agent work — the deferred vision, so it is not implemented opportunistically |
+| `morpheus-build-library` | **The index of build knowledge.** When the task touches something you have not done here before, read the one card it points at (verification, WordPress, AI features, onboarding UX, SEO, tooling) instead of guessing |
+| `playwright-cli` | Before browser work — `scripts/pw` navigation, snapshots, console/network reads |
+| `working-with-rob` | Before planning work or reporting results — how Rob works and what he expects verified |
 
 **Hard rules:**
 

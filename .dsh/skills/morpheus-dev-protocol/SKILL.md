@@ -148,6 +148,18 @@ A status snapshot is accurate for a day and then quietly misleads. If you need
 to know whether something exists, read the code or run the generator. Do not
 write it down here.
 
+**When you learn something new, it goes in three places, in this order:**
+
+1. the **guard** that enforces it (`scripts/verify-*.mjs`, or the relevant
+   harness) — a lesson here runs on every pull request;
+2. the **card** that explains it in `.dsh/skills/morpheus-build-library/references/`
+   — so the next session finds it instead of re-learning it;
+3. `KNOWN-HAZARDS.md` — only if it actually broke production.
+
+A lesson in a commit message is read once. That ordering is the whole point: if
+step 1 is impossible, say so on the card rather than pretending the rule is
+enforced.
+
 There are four memory sources, and each answers a different question:
 
 | Source | Answers |
@@ -166,4 +178,7 @@ why — searchable with `--kind user,assistant,tool,result` and `--reasoning`.
 - `working-with-rob` — his standing priorities and how he expects results reported.
 - `morpheus-hazards` — the H1–H12 list to check every change against.
 - `morpheus-stack` — stack map, commands, key files.
+- `morpheus-build-library` — the index of build knowledge, one short card per
+  topic. Load it when the task touches something unfamiliar, and add to it when
+  you learn something.
 - `KNOWN-HAZARDS.md` in the repo root is the authoritative, maintained source.

@@ -233,6 +233,46 @@ const ciScripts = [...ci.matchAll(/node (scripts\/[\w.-]+\.mjs)/g)].map((m) => m
 check('CI references at least one script', ciScripts.length > 0, true)
 check('all of them exist', ciScripts.filter((s) => !existsSync(join(REPO, s))), [])
 
+// ═══ 6. the build library index matches its cards ═══════════════════════════
+// The library's whole value is that the INDEX is the cheap thing you read and the
+// cards are the detail you load on demand. Both halves fail silently on their
+// own: a card missing from the index is invisible, and an index row pointing at
+// a card that was renamed is a dead end. So the two are checked against each
+// other, and the check reports what it looked at so a parse failure cannot pass
+// as "no problems".
+console.log('\n6. the build library index matches its cards')
+const LIB = '.dsh/skills/morpheus-build-library'
+const libIndexPath = `${LIB}/SKILL.md`
+const libIndexExists = existsSync(join(REPO, libIndexPath))
+check('the library index exists', libIndexExists, true)
+if (libIndexExists) {
+  const index = read(libIndexPath)
+  const cards = existsSync(join(REPO, `${LIB}/references`))
+    ? readdirSync(join(REPO, `${LIB}/references`)).filter((f) => f.endsWith('.md')).sort()
+    : []
+  check('it has cards (parser sanity)', cards.length >= 4, true)
+
+  const listed = [...index.matchAll(/`references\/([\w.-]+\.md)`/g)].map((m) => m[1])
+  const unlisted = cards.filter((c) => !listed.includes(c))
+  const missing = listed.filter((c) => !cards.includes(c))
+  check('every card is listed in the index', unlisted, [])
+  check('every index row points at a real card', missing, [])
+  check('the index says what it is for', /whenToUse:/.test(index) && /How to use it/.test(index), true)
+}
+
+// ═══ 7. The entry document knows what exists ════════════════════════════════
+// AGENTS.md is the first file a fresh agent reads, and it claimed "Three project
+// skills under .dsh/skills/" long after there were nine. A short list that reads
+// as complete is worse than no list, because nothing prompts you to look
+// further — so the two are checked against each other.
+console.log('\n7. AGENTS.md names every skill that exists')
+check('skill directories were read (parser sanity)', skillDirs.length >= 4, true)
+const agentsDoc = read('AGENTS.md')
+// Split to bare words first: a name written as `morpheus-stack` or "morpheus-stack"
+// must count, but the substring "stack" inside a sentence must not.
+const agentsWords = agentsDoc.split(/[^A-Za-z0-9_-]+/).filter(Boolean)
+check('every skill on disk is named in AGENTS.md', diff(skillDirs, agentsWords), [])
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {
