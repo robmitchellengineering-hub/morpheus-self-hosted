@@ -24,6 +24,7 @@ import {
   sanitizeGeneratedHtml, normalizeBlogDraft, buildBlogPrompt,
   SEO_INPUT_KEYS, TITLE_MAX, DESC_MAX, TITLE_HARD_MAX, MAX_GROUNDING_CHARS,
 } from '../server/src/lib/seoPrompts.js';
+import { TEMPLATE_TOKENS } from '../src/lib/seoTemplate.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -221,10 +222,26 @@ check('the proxy action list was parsed', jsActions.length >= 6, true);
 check('the plugin action list was parsed', phpActions.length >= 6, true);
 check('every action the proxy allows exists in the plugin', jsActions, phpActions);
 
-// And the write actions must stay on the velocity-gated side of the proxy.
+// The template tokens the settings screen offers must be the ones the plugin
+// understands. A token added on one side only is a silent no-op: the operator
+// types %something% and the plugin strips it out of the live title.
+const phpTokensBlock = php.match(/const TEMPLATE_TOKENS = array\(([\s\S]*?)\);/);
+const phpTokens = phpTokensBlock ? [...phpTokensBlock[1].matchAll(/'([^']+)'/g)].map((m) => m[1]).sort() : [];
+check('the plugin token list was parsed', phpTokens.length >= 3, true);
+check('the UI offers exactly the tokens the plugin understands', [...TEMPLATE_TOKENS].sort(), phpTokens);
+
+// And the write actions must stay on the velocity-gated side of the proxy. This
+// asserts the RULE — anything that mutates the site is gated, and nothing that
+// only reads is — rather than a fixed list of two names, so a new mutating
+// action cannot quietly skip the gate (which is exactly how set_defaults
+// nearly did).
 const writeBlock = jsProxy.match(/const WRITE_ACTIONS = new Set\(\[([\s\S]*?)\]\)/);
 const jsWrites = writeBlock ? [...writeBlock[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]) : [];
-check('set_seo and bulk_set_seo are the gated writes', jsWrites.sort(), ['bulk_set_seo', 'set_seo']);
+const MUTATING = /^(set_|bulk_|delete_|create_|update_)/;
+const READ_ONLY = /^(get_|list_|read_|context$|audit$)/;
+check('the write list was actually parsed', jsWrites.length >= 1, true);
+check('every mutating action is velocity-gated', jsActions.filter((a) => MUTATING.test(a)).sort(), [...jsWrites].sort());
+check('no read-only action is gated as a write', jsActions.filter((a) => READ_ONLY.test(a)).some((a) => jsWrites.includes(a)), false);
 
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);

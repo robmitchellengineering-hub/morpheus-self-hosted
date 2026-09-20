@@ -52,6 +52,12 @@
  *   read_content  — one item's title/excerpt/plain-text body, the grounding a
  *                   generator needs to WRITE new fields (bodies stay out of
  *                   list_content and bulk_set_seo so listings stay small)
+ *   get_defaults  — the site-wide title/description templates
+ *   set_defaults  — change them (tokens only: %title% %sitename% %tagline%
+ *                   %excerpt% %content%; unknown tokens are removed)
+ *   bulk_apply_defaults — write the templates into items that have nothing set
+ *                   (dry_run returns what WOULD be written) — the path that
+ *                   works even when another plugin owns the head
  *   audit         — scan for real problems (missing/short/long/duplicate
  *                   titles and descriptions, noindex, thin content)
  */
@@ -77,6 +83,23 @@ class Morpheus_SEO {
 	// Content that can be indexed and therefore needs SEO. Attachments and
 	// revisions are deliberately excluded.
 	const POST_TYPES = array( 'post', 'page', 'product' );
+
+	// Site-wide templates — the "Titles & Meta" defaults every SEO plugin has:
+	// what the title and description look like for content nobody has set by
+	// hand. Kept in their own option so the deploy settings screen's sanitiser
+	// never has to know about them.
+	const DEFAULTS_OPTION = 'morpheus_seo_defaults';
+
+	// The only tokens a template may contain. Anything else is REMOVED rather
+	// than left in place: a literal "%category%" sitting in a live <title> is
+	// worse than the word simply not being there.
+	const TEMPLATE_TOKENS = array( '%title%', '%sitename%', '%tagline%', '%excerpt%', '%content%' );
+
+	// How much of a post's body %content% may contribute, and the longest a
+	// stored template may be. Both bounds exist so a pasted essay or a runaway
+	// script can't turn every page's <title> into nonsense.
+	const CONTENT_WORDS = 30;
+	const TEMPLATE_MAX  = 200;
 
 	// Length guidance used by audit(). These are the widely-cited practical
 	// limits, not hard rules: a title over ~60 chars is truncated in results,
@@ -111,6 +134,9 @@ class Morpheus_SEO {
 			case 'bulk_set_seo': $r = self::bulk_set_action( $data ); break;
 			case 'list_content': $r = self::list_content( $data ); break;
 			case 'read_content': $r = self::read_content( $data ); break;
+			case 'get_defaults': $r = array( 'defaults' => self::get_defaults() ); break;
+			case 'set_defaults': $r = self::set_defaults_action( $data ); break;
+			case 'bulk_apply_defaults': $r = self::bulk_apply_defaults( $data ); break;
 			case 'audit':        $r = self::audit( $data ); break;
 			default:
 				return Morpheus_REST::err( 'unknown_action', "Unknown seo action: {$action}", 400 );
@@ -226,6 +252,256 @@ class Morpheus_SEO {
 		return constant( 'self::META_' . strtoupper( $field ) );
 	}
 
+	// ── site-wide templates ────────────────────────────────────────────────
+
+	/**
+	 * What an un-set title/description looks like.
+	 *
+	 * The shipped defaults are deliberately useful rather than empty: every SEO
+	 * plugin ships something like this, and "Page title | Site name" beats a
+	 * bare page title in results. Nothing here overrides a value an operator
+	 * (or the AI) has set on an item — a template only fills a gap.
+	 *
+	 * Description defaults to %excerpt%, which falls back to the first
+	 * CONTENT_WORDS words of the body. An absent meta description is the most
+	 * common real problem an audit finds, and WordPress's own derived value is
+	 * what a search engine would improvise anyway — this just makes it
+	 * deliberate and editable.
+	 */
+	public static function defaults() {
+		$per_type = array();
+		foreach ( self::POST_TYPES as $type ) {
+			$per_type[ $type ] = array( 'title' => '', 'description' => '' );
+		}
+		return array(
+			'enabled'     => true,
+			'title'       => '%title% | %sitename%',
+			'description' => '%excerpt%',
+			'post_types'  => $per_type,
+		);
+	}
+
+	/** The stored defaults, merged onto the shipped shape and sanitised. */
+	public static function get_defaults() {
+		$stored = get_option( self::DEFAULTS_OPTION, array() );
+		$stored = is_array( $stored ) ? $stored : array();
+		return self::sanitize_defaults( wp_parse_args( $stored, self::defaults() ) );
+	}
+
+	/**
+	 * Coerce anything into a usable defaults array.
+	 *
+	 * Runs on BOTH write and read. On read it means a hand-edited option, an
+	 * older shape from a previous version, or a partially-written value can
+	 * never produce a broken <title> — the worst case is the shipped default.
+	 */
+	public static function sanitize_defaults( $raw ) {
+		$raw  = is_array( $raw ) ? $raw : array();
+		$base = self::defaults();
+		$out  = array(
+			'enabled'     => ! empty( $raw['enabled'] ) && 'false' !== $raw['enabled'] && '0' !== (string) $raw['enabled'],
+			'title'       => self::clean_template( isset( $raw['title'] ) ? $raw['title'] : $base['title'] ),
+			'description' => self::clean_template( isset( $raw['description'] ) ? $raw['description'] : $base['description'] ),
+			'post_types'  => array(),
+		);
+		$per = isset( $raw['post_types'] ) && is_array( $raw['post_types'] ) ? $raw['post_types'] : array();
+		foreach ( self::POST_TYPES as $type ) {
+			$row = isset( $per[ $type ] ) && is_array( $per[ $type ] ) ? $per[ $type ] : array();
+			$out['post_types'][ $type ] = array(
+				'title'       => self::clean_template( isset( $row['title'] ) ? $row['title'] : '' ),
+				'description' => self::clean_template( isset( $row['description'] ) ? $row['description'] : '' ),
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * One template string, made safe to store and print.
+	 *
+	 * Order matters: tags are stripped FIRST (so `%title%` inside markup can't
+	 * survive as a bare token), then length is capped, then unknown tokens are
+	 * removed. An unknown token is removed rather than escaped because leaving
+	 * it would put literal "%category%" in a live title.
+	 */
+	public static function clean_template( $value ) {
+		$s = wp_strip_all_tags( (string) $value );
+		$s = trim( preg_replace( '/\s+/', ' ', $s ) );
+		if ( mb_strlen( $s ) > self::TEMPLATE_MAX ) {
+			$s = mb_substr( $s, 0, self::TEMPLATE_MAX );
+		}
+		// Remove only the tokens we do not understand. Stripping every %word%
+		// (the first cut of this) deleted the valid tokens too, so every
+		// template silently sanitised to an empty string.
+		$s = preg_replace_callback(
+			'/%[a-z_]+%/i',
+			function ( $m ) {
+				return in_array( strtolower( $m[0] ), self::TEMPLATE_TOKENS, true ) ? $m[0] : '';
+			},
+			$s
+		);
+		// Collapse again: removing a token from the middle leaves a double
+		// space that would otherwise show up in the settings field.
+		return trim( preg_replace( '/\s+/', ' ', $s ) );
+	}
+
+	/** The template that applies to one item: its post type's, then the site-wide one. */
+	public static function template_for( $post_id, $field ) {
+		$d = self::get_defaults();
+		if ( empty( $d['enabled'] ) ) {
+			return '';
+		}
+		$type = get_post_type( $post_id );
+		if ( $type && isset( $d['post_types'][ $type ][ $field ] ) && $d['post_types'][ $type ][ $field ] !== '' ) {
+			return $d['post_types'][ $type ][ $field ];
+		}
+		return isset( $d[ $field ] ) ? (string) $d[ $field ] : '';
+	}
+
+	/** First CONTENT_WORDS words of a post's body, plain text. */
+	private static function content_excerpt( $post ) {
+		$raw = preg_replace( '#<(?:h[1-6]|p|li|div|br|blockquote)(?:\s[^>]*)?/?>#i', ' ', (string) $post->post_content );
+		$txt = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( strip_shortcodes( (string) $raw ) ) ) );
+		if ( $txt === '' ) {
+			return '';
+		}
+		$words = preg_split( '/\s+/', $txt );
+		if ( count( $words ) > self::CONTENT_WORDS ) {
+			$txt = implode( ' ', array_slice( $words, 0, self::CONTENT_WORDS ) ) . '…';
+		}
+		return $txt;
+	}
+
+	/**
+	 * Apply a template to one item.
+	 *
+	 * `%excerpt%` prefers the hand-written excerpt and falls back to the body,
+	 * because a product's short description and a post's excerpt are exactly
+	 * the sentence a description should be built from when there is one.
+	 */
+	public static function apply_template( $template, $post_id ) {
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return '';
+		}
+		$excerpt = trim( (string) $post->post_excerpt );
+		if ( $excerpt === '' ) {
+			$excerpt = self::content_excerpt( $post );
+		}
+		$out = str_replace(
+			array( '%title%', '%sitename%', '%tagline%', '%excerpt%', '%content%' ),
+			array(
+				get_the_title( $post_id ),
+				get_bloginfo( 'name' ),
+				get_bloginfo( 'description' ),
+				wp_strip_all_tags( $excerpt ),
+				self::content_excerpt( $post ),
+			),
+			(string) $template
+		);
+		return trim( preg_replace( '/\s+/', ' ', $out ) );
+	}
+
+	/**
+	 * Write the site-wide templates into items that have nothing set.
+	 *
+	 * This exists because a render-time template only helps when MORPHEUS emits
+	 * the tags. On a site where Yoast owns the head, our template would never
+	 * be consulted — so the operator gets an explicit, reviewable way to fill
+	 * the gaps with the same values instead, which works with any plugin
+	 * because it writes the per-item fields.
+	 *
+	 * `dry_run` returns exactly what WOULD be written without writing it, so the
+	 * panel can show the values before anything lands on a live site.
+	 */
+	private static function bulk_apply_defaults( $data ) {
+		$limit   = isset( $data['limit'] ) ? max( 1, min( 200, (int) $data['limit'] ) ) : 25;
+		$dry     = ! empty( $data['dry_run'] );
+
+		$args = array(
+			'post_type'      => array_values( array_filter( self::POST_TYPES, 'post_type_exists' ) ),
+			'post_status'    => array( 'publish', 'draft' ),
+			'posts_per_page' => $limit,
+			'orderby'        => 'modified',
+			'order'          => 'DESC',
+		);
+		if ( ! $args['post_type'] ) {
+			return array( 'preview' => array(), 'applied' => array(), 'failed' => array(), 'count' => 0, 'dry_run' => $dry, 'remaining' => 0 );
+		}
+
+		$preview = array();
+		$applied = array();
+		$failed  = array();
+		$seen    = 0;
+
+		foreach ( get_posts( $args ) as $p ) {
+			$tpl_title = self::template_for( $p->ID, 'title' );
+			$tpl_desc  = self::template_for( $p->ID, 'description' );
+			$cur       = self::get_fields( $p->ID );
+			if ( ! $cur ) {
+				continue;
+			}
+			$write = array();
+			// Only fill a gap: a value already on the item — written by the
+			// operator, or by the AI — is never overwritten by a template.
+			if ( $cur['seo_title'] === '' && $tpl_title !== '' ) {
+				$v = self::apply_template( $tpl_title, $p->ID );
+				if ( $v !== '' ) {
+					$write['seo_title'] = $v;
+				}
+			}
+			if ( $cur['seo_description'] === '' && $tpl_desc !== '' ) {
+				$v = self::apply_template( $tpl_desc, $p->ID );
+				if ( $v !== '' ) {
+					$write['seo_description'] = $v;
+				}
+			}
+			if ( ! $write ) {
+				continue;
+			}
+			$seen++;
+			$row = array_merge( array( 'id' => (int) $p->ID, 'title' => get_the_title( $p->ID ), 'type' => $p->post_type ), $write );
+			$preview[] = $row;
+			if ( $dry ) {
+				continue;
+			}
+			$res = self::set_fields( $p->ID, $write );
+			if ( is_wp_error( $res ) ) {
+				$failed[] = array( 'id' => (int) $p->ID, 'error' => $res->get_error_message() );
+			} else {
+				$applied[] = $row;
+			}
+			if ( count( $preview ) >= $limit ) {
+				break;
+			}
+		}
+
+		return array(
+			'preview'   => $preview,
+			'applied'   => $applied,
+			'failed'    => $failed,
+			'count'     => $dry ? 0 : count( $applied ),
+			'dry_run'   => $dry,
+			'candidates'=> $seen,
+			// Whether the cap was reached, so the panel can offer another pass
+			// instead of implying the whole site was covered.
+			'remaining' => max( 0, count( $preview ) >= $limit ? 1 : 0 ),
+		);
+	}
+
+	private static function set_defaults_action( $data ) {
+		$current = self::get_defaults();
+		$incoming = isset( $data['defaults'] ) && is_array( $data['defaults'] ) ? $data['defaults'] : $data;
+		// Merge onto what is stored so a caller can change one field (the common
+		// case from the widget) without having to echo the whole shape back.
+		$merged = array_merge( $current, is_array( $incoming ) ? $incoming : array() );
+		if ( isset( $incoming['post_types'] ) && is_array( $incoming['post_types'] ) ) {
+			$merged['post_types'] = array_merge( $current['post_types'], $incoming['post_types'] );
+		}
+		$clean = self::sanitize_defaults( $merged );
+		update_option( self::DEFAULTS_OPTION, $clean );
+		return array( 'defaults' => $clean );
+	}
+
 	// ── read / write ───────────────────────────────────────────────────────
 
 	/** Resolve an id-or-url to a post id, or 0. */
@@ -268,6 +544,23 @@ class Morpheus_SEO {
 		$derived_title = get_the_title( $post_id );
 		$derived_desc  = $post->post_excerpt ? wp_strip_all_tags( $post->post_excerpt ) : '';
 
+		// A site-wide template fills the gap when nothing is set on the item.
+		// It is resolved HERE rather than only at render time so the audit, the
+		// content list and the emitter all agree on what actually goes out — an
+		// audit that calls a templated title "missing" would be lying, and an
+		// emitter that ignored the template would disagree with the panel.
+		// ONLY when Morpheus produces the tags. With Yoast (or another SEO
+		// plugin) active, that plugin's own title/description templates decide
+		// what a search engine sees — reporting ours as the "effective" value
+		// would tell the operator something false about their live site. On
+		// those sites the templates are still usable: bulk_apply_defaults()
+		// writes them into the items that have nothing set.
+		$ours      = self::owns_head();
+		$tpl_title = ( $ours && $title === '' ) ? self::template_for( $post_id, 'title' ) : '';
+		$tpl_desc  = ( $ours && $desc === '' ) ? self::template_for( $post_id, 'description' ) : '';
+		$inh_title = $tpl_title !== '' ? self::apply_template( $tpl_title, $post_id ) : '';
+		$inh_desc  = $tpl_desc !== '' ? self::apply_template( $tpl_desc, $post_id ) : '';
+
 		return array(
 			'id'             => (int) $post_id,
 			'type'           => $post->post_type,
@@ -277,8 +570,13 @@ class Morpheus_SEO {
 			// What is set, and what would go out if nothing were set.
 			'seo_title'      => $title,
 			'seo_description'=> $desc,
-			'effective_title'=> $title !== '' ? $title : $derived_title,
-			'effective_description' => $desc !== '' ? $desc : $derived_desc,
+			'effective_title'=> $title !== '' ? $title : ( $inh_title !== '' ? $inh_title : $derived_title ),
+			'effective_description' => $desc !== '' ? $desc : ( $inh_desc !== '' ? $inh_desc : $derived_desc ),
+			// Whether the effective value came from the site default rather than
+			// from anything set on this item — the panel says so instead of
+			// implying an operator wrote it.
+			'inherited_title'       => $title === '' && $inh_title !== '',
+			'inherited_description' => $desc === '' && $inh_desc !== '',
 			'focus_keyword'  => $raw( 'keyword' ),
 			'canonical'      => $raw( 'canonical' ),
 			'noindex'        => self::is_noindex( $post_id ),
@@ -383,6 +681,10 @@ class Morpheus_SEO {
 			'permalink_structure' => get_option( 'permalink_structure' ),
 			'post_types'    => self::POST_TYPES,
 			'published_counts' => $counts,
+			// The site-wide templates, so the panel can show and edit them.
+			'defaults'      => self::get_defaults(),
+			'tokens'        => self::TEMPLATE_TOKENS,
+			'content_words' => self::CONTENT_WORDS,
 			'limits'        => array(
 				'title_min' => self::TITLE_MIN,
 				'title_max' => self::TITLE_MAX,
@@ -477,6 +779,8 @@ class Morpheus_SEO {
 				'seo_description'       => $f['seo_description'],
 				'effective_title'       => $f['effective_title'],
 				'effective_description' => $f['effective_description'],
+				'inherited_title'       => $f['inherited_title'],
+				'inherited_description' => $f['inherited_description'],
 				'focus_keyword'         => $f['focus_keyword'],
 				'noindex'               => $f['noindex'],
 				'modified'              => $p->post_modified_gmt,
@@ -638,8 +942,19 @@ class Morpheus_SEO {
 		if ( ! is_singular() ) {
 			return $title;
 		}
-		$custom = get_post_meta( get_queried_object_id(), self::META_TITLE, true );
-		return $custom !== '' ? $custom : $title;
+		$id     = get_queried_object_id();
+		$custom = get_post_meta( $id, self::META_TITLE, true );
+		if ( $custom !== '' ) {
+			return $custom;
+		}
+		$tpl = self::template_for( $id, 'title' );
+		if ( $tpl !== '' ) {
+			$applied = self::apply_template( $tpl, $id );
+			if ( $applied !== '' ) {
+				return $applied;
+			}
+		}
+		return $title;
 	}
 
 	/**

@@ -14,8 +14,9 @@ import { SEO_INPUT_KEYS } from '../lib/seoPrompts.js';
 
 const ALLOWED = new Set([
   'context', 'list_content', 'read_content', 'get_seo', 'set_seo', 'bulk_set_seo', 'audit',
+  'get_defaults', 'set_defaults', 'bulk_apply_defaults',
 ]);
-const WRITE_ACTIONS = new Set(['set_seo', 'bulk_set_seo']);
+const WRITE_ACTIONS = new Set(['set_seo', 'bulk_set_seo', 'set_defaults', 'bulk_apply_defaults']);
 
 // A bulk write is one signed call the plugin loops over. 100 is well above any
 // real generation batch (lib/seoPrompts.js caps a batch at 25) but low enough
@@ -57,6 +58,10 @@ function cleanData(action, data) {
     const items = (Array.isArray(d.items) ? d.items : []).slice(0, MAX_BULK_ITEMS);
     return { items: items.map((it) => ({ ...pickSeoFields(it), id: postId(it?.id) })).filter((it) => it.id != null) };
   }
+  // get_defaults/set_defaults carry a nested `defaults` object rather than item
+  // fields, so they fall through to the plugin as-is. The plugin sanitises them
+  // (tags stripped, unknown tokens removed, length capped) — doing it in two
+  // places would just mean two different rules.
   if (action === 'get_seo' || action === 'read_content') {
     return { ...(d.chars ? { chars: d.chars } : {}), ...(postId(d.id) != null ? { id: postId(d.id) } : { url: d.url }) };
   }

@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Loader2, RefreshCw, Check, ExternalLink, ChevronLeft, Wand2, Search, AlertTriangle,
-  FileText, Plus, Save, X, Sparkles, Eye,
+  FileText, Plus, Save, X, Sparkles, Eye, Settings2,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { serpPreview } from '@/lib/serpPreview';
+import { TEMPLATE_TOKENS, TOKEN_HELP, resolveTemplate, insertToken } from '@/lib/seoTemplate';
 
 // SEO tab of the WEBSITE panel — every SEO field on every page, post and
 // product on the operator's own site, operable from here, plus AI generation
@@ -116,6 +117,14 @@ export default function SeoTab({ projectId, store }) {
   const [genBatch, setGenBatch] = useState(false);
   const [applying, setApplying] = useState(false);
 
+  const [defaults, setDefaults] = useState(null); // { enabled, title, description, post_types }
+  const [lastField, setLastField] = useState('title'); // which template field a token chip targets
+  const titleRef = useRef(null);
+  const descRef = useRef(null);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [fillPlan, setFillPlan] = useState(null); // dry-run result awaiting APPLY
+  const [filling, setFilling] = useState(false);
+
   const [blog, setBlog] = useState(null); // { form fields } | { draft }
   const [genBlog, setGenBlog] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -136,6 +145,7 @@ export default function SeoTab({ projectId, store }) {
       ]);
       if (c?.ok === false || list?.ok === false) throw new Error(c?.message || list?.message || 'The site rejected the request.');
       setCtx(c); setItems(list?.items || []);
+      if (c?.defaults) setDefaults(c.defaults);
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setLoading(false); }
   }, [projectId, search]);
@@ -254,6 +264,55 @@ export default function SeoTab({ projectId, store }) {
       setItems(list?.items || []);
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setApplying(false); }
+  };
+
+  const openDefaults = async () => {
+    setView('defaults'); setErr(null); setNote(null); setFillPlan(null);
+    try {
+      const r = await call(projectId, 'get_defaults', {});
+      if (r?.defaults) setDefaults(r.defaults);
+    } catch (e) { setErr(e?.data?.error || e.message); }
+  };
+
+  const saveDefaults = async (next) => {
+    const payload = next || defaults;
+    setSavingDefaults(true); setErr(null); setNote(null);
+    try {
+      const r = await call(projectId, 'set_defaults', { defaults: payload });
+      if (r?.ok === false) throw new Error(r.message || 'The site rejected the change.');
+      setDefaults(r.defaults);
+      setNote('Saved.');
+      setItems(null); setAudit(null);
+      const list = await call(projectId, 'list_content', { limit: 60 });
+      setItems(list?.items || []);
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setSavingDefaults(false); }
+  };
+
+  // Dry run first: the panel shows the exact values that WOULD be written, so
+  // nothing lands on a live site that the operator has not seen.
+  const planFill = async () => {
+    setFilling(true); setErr(null); setNote(null); setFillPlan(null);
+    try {
+      const r = await call(projectId, 'bulk_apply_defaults', { dry_run: true, limit: 25 });
+      if (r?.ok === false) throw new Error(r.message || 'The site rejected the request.');
+      setFillPlan(r);
+      if (!r.preview?.length) setNote('Every item already has a title and a description — nothing to fill.');
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setFilling(false); }
+  };
+
+  const applyFill = async () => {
+    setFilling(true); setErr(null); setNote(null);
+    try {
+      const r = await call(projectId, 'bulk_apply_defaults', { limit: 25 });
+      if (r?.ok === false) throw new Error(r.message || 'The site rejected the change.');
+      setNote(`Filled ${r.count} item${r.count === 1 ? '' : 's'} from the template${r.failed?.length ? ` — ${r.failed.length} failed` : ''}.`);
+      setFillPlan(null); setAudit(null); setItems(null);
+      const list = await call(projectId, 'list_content', { limit: 60 });
+      setItems(list?.items || []);
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setFilling(false); }
   };
 
   const createBlog = async () => {
@@ -459,6 +518,166 @@ export default function SeoTab({ projectId, store }) {
     );
   }
 
+  if (view === 'defaults' && defaults) {
+    const d = defaults;
+    const setD = (k, v) => setDefaults((cur) => ({ ...cur, [k]: v }));
+    const setType = (type, k, v) => setDefaults((cur) => ({
+      ...cur,
+      post_types: { ...cur.post_types, [type]: { ...(cur.post_types?.[type] || {}), [k]: v } },
+    }));
+    // An example built from real content on this site, so the tokens are shown
+    // doing their job rather than described.
+    const sample = (items || [])[0] || { title: 'A page title', effective_description: '' };
+    const sampleVars = { title: sample.title, siteName: ctx?.site_title || '', tagline: ctx?.tagline || '', excerpt: sample.effective_description || '' };
+    const exampleTitle = resolveTemplate(d.title, sampleVars);
+    const exampleDesc = resolveTemplate(d.description, sampleVars);
+    // A token chip inserts at the caret of whichever field the operator last
+    // touched — on a phone there is no "drag to position", so appending to the
+    // wrong field would be a dead end.
+    const addToken = (token) => {
+      const field = lastField;
+      const el = field === 'title' ? titleRef.current : descRef.current;
+      const cur = d[field] || '';
+      if (!el) { setD(field, cur + token); return; }
+      const at = el.selectionStart ?? cur.length;
+      const end = el.selectionEnd ?? at;
+      setD(field, insertToken(cur, token, at, end));
+      requestAnimationFrame(() => {
+        el.focus();
+        try { el.setSelectionRange(at + token.length, at + token.length); } catch { /* not focusable */ }
+      });
+    };
+
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-2 border-b border-primary/15 shrink-0 h-[40px] px-3">
+          <button onClick={() => { setView('list'); setNote(null); setErr(null); setFillPlan(null); }}
+            className="flex items-center gap-1 text-[11px] text-primary/60 hover:text-primary">
+            <ChevronLeft size={14} /> SEO
+          </button>
+          <span className="text-[11px] text-primary/80 ml-1">Site defaults</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-3">
+          {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
+          {note && <div className="text-primary/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
+
+          <p className="text-[11px] text-primary/50 leading-relaxed">
+            What a title and description look like for anything you have not set by hand — new pages included, as they are created.
+            {!ctx?.owns_head && (
+              <span className="block mt-1 text-yellow-500/85">
+                {ctx?.active_plugin === 'yoast' ? 'Yoast' : ctx?.active_plugin === 'rankmath' ? 'Rank Math' : ctx?.active_plugin === 'aioseo' ? 'All in One SEO' : ctx?.active_plugin === 'seopress' ? 'SEOPress' : 'Another SEO plugin'} is producing your tags, so it decides what goes out — use FILL EXISTING below to write these templates into the pages that have nothing set.
+              </span>
+            )}
+          </p>
+
+          <label className="flex items-start gap-2 border border-primary/15 px-3 py-2.5 cursor-pointer">
+            <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
+              checked={!!d.enabled} onChange={(e) => setD('enabled', e.target.checked)} />
+            <span className="text-[11px] leading-relaxed">
+              <span className={d.enabled ? 'text-primary/80' : 'text-primary/50'}>Use these defaults</span>
+              <span className="block text-[9px] text-primary/40 mt-0.5">
+                Off means WordPress's own values are used: the post title, and nothing for the description.
+              </span>
+            </span>
+          </label>
+
+          <div className="space-y-1">
+            <div className="text-[10px] text-primary/45 uppercase tracking-wider">Title</div>
+            <input ref={titleRef} className={inputCls} value={d.title || ''}
+              onFocus={() => setLastField('title')}
+              onChange={(e) => setD('title', e.target.value)}
+              placeholder="%title% | %sitename%" />
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-[10px] text-primary/45 uppercase tracking-wider">Meta description</div>
+            <textarea ref={descRef} className={areaCls} rows={2} value={d.description || ''}
+              onFocus={() => setLastField('description')}
+              onChange={(e) => setD('description', e.target.value)}
+              placeholder="%excerpt%" />
+          </div>
+
+          <div>
+            <div className="text-[9px] text-primary/35 uppercase tracking-wider mb-1">
+              Tokens — tap to insert into the {lastField} field
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {TEMPLATE_TOKENS.map((t) => (
+                <button key={t} onClick={() => addToken(t)}
+                  title={TOKEN_HELP[t]}
+                  className="text-[10px] px-2 py-1 border border-primary/25 text-primary/70 hover:border-primary hover:text-primary font-mono">
+                  {t}
+                </button>
+              ))}
+            </div>
+            <div className="text-[9px] text-primary/35 mt-1">
+              {TEMPLATE_TOKENS.map((t) => `${t} = ${TOKEN_HELP[t]}`).join(' · ')}
+            </div>
+          </div>
+
+          <div className="border border-primary/15 px-3 py-2.5">
+            <div className="text-[9px] text-primary/35 uppercase tracking-wider mb-1.5">
+              Example — using “{sample.title || 'your first page'}”
+            </div>
+            <div className="text-[13px] text-[#8ab4f8] leading-snug break-words">{exampleTitle || '(no title)'}</div>
+            <div className="text-[11px] text-primary/60 mt-1 leading-relaxed break-words">{exampleDesc || 'No description.'}</div>
+          </div>
+
+          <div className="border border-primary/15 p-3 space-y-2">
+            <div className="text-[10px] text-primary/45 uppercase tracking-wider">Per type — overrides the site-wide one</div>
+            {(d.post_types ? Object.keys(d.post_types) : []).map((type) => (
+              <div key={type} className="space-y-1">
+                <div className="text-[10px] text-primary/60 uppercase">{type}</div>
+                <input className={inputCls} value={d.post_types[type]?.title || ''}
+                  onChange={(e) => setType(type, 'title', e.target.value)} placeholder="(site-wide title)" />
+                <input className={inputCls} value={d.post_types[type]?.description || ''}
+                  onChange={(e) => setType(type, 'description', e.target.value)} placeholder="(site-wide description)" />
+              </div>
+            ))}
+          </div>
+
+          {fillPlan && (
+            <div className="border border-primary/40 bg-primary/5 p-3 space-y-2">
+              <div className="text-[10px] text-primary/60 uppercase tracking-wider">
+                {fillPlan.preview?.length || 0} item{(fillPlan.preview?.length || 0) === 1 ? '' : 's'} would be filled
+              </div>
+              <div className="space-y-1.5 max-h-[35vh] overflow-y-auto scrollbar-matrix">
+                {(fillPlan.preview || []).map((r) => (
+                  <div key={r.id} className="border border-primary/15 px-2.5 py-2">
+                    <div className="text-[11px] text-primary/85 truncate">{r.title || `#${r.id}`}</div>
+                    {r.seo_title && <div className="text-[10px] text-primary mt-0.5 break-words">{r.seo_title}</div>}
+                    {r.seo_description && <div className="text-[10px] text-primary/55 mt-0.5 break-words">{r.seo_description}</div>}
+                  </div>
+                ))}
+              </div>
+              <div className="text-[9px] text-primary/40 leading-relaxed">
+                Nothing has been written yet — this is exactly what APPLY would save. Items that already have a title or
+                description are left alone. These values are saved onto each page, so switching the defaults off later
+                will not remove them.
+              </div>
+              <div className="flex items-center gap-2">
+                <Btn kind="primary" onClick={applyFill} disabled={filling}>
+                  {filling ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} APPLY
+                </Btn>
+                <Btn onClick={() => setFillPlan(null)}><X size={12} /> Cancel</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-3 border-t border-primary/20 shrink-0 flex items-center gap-2">
+          <Btn kind="primary" onClick={() => saveDefaults()} disabled={savingDefaults}>
+            {savingDefaults ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} SAVE DEFAULTS
+          </Btn>
+          <Btn onClick={planFill} disabled={filling}>
+            {filling ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} FILL EXISTING
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'blog') {
     const b = blog || { form: { topic: '', keywords: '', tone: '', words: 700 } };
     return (
@@ -617,6 +836,9 @@ export default function SeoTab({ projectId, store }) {
           <Btn onClick={() => { setView('blog'); setBlog({ form: { topic: '', keywords: '', tone: '', words: 700 } }); setNote(null); setErr(null); }}>
             <Plus size={11} /> POST
           </Btn>
+          <Btn onClick={openDefaults} title="What un-set titles and descriptions look like">
+            <Settings2 size={11} /> DEFAULTS
+          </Btn>
         </div>
 
         {audit && (
@@ -684,8 +906,15 @@ export default function SeoTab({ projectId, store }) {
                 </div>
                 <div className="text-[10px] text-primary/45 mt-0.5 truncate">{it.effective_title}</div>
                 <div className="text-[9px] mt-0.5 flex items-center gap-2">
-                  <span className={it.seo_title ? 'text-primary/40' : 'text-yellow-500/70'}>{it.seo_title ? 'title set' : 'no SEO title'}</span>
-                  <span className={it.seo_description ? 'text-primary/40' : 'text-yellow-500/70'}>{it.seo_description ? 'description set' : 'no description'}</span>
+                  {/* "from default" is a third state: the page HAS a title in
+                      search results, it just isn't one anybody wrote on the
+                      item — saying "no SEO title" there would be false. */}
+                  <span className={it.seo_title ? 'text-primary/40' : it.inherited_title ? 'text-primary/30' : 'text-yellow-500/70'}>
+                    {it.seo_title ? 'title set' : it.inherited_title ? 'title from default' : 'no SEO title'}
+                  </span>
+                  <span className={it.seo_description ? 'text-primary/40' : it.inherited_description ? 'text-primary/30' : 'text-yellow-500/70'}>
+                    {it.seo_description ? 'description set' : it.inherited_description ? 'description from default' : 'no description'}
+                  </span>
                   {it.type && <span className="text-primary/25 uppercase">{it.type}</span>}
                 </div>
               </button>
