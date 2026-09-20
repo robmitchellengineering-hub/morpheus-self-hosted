@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.6.2
+Stable tag: 0.6.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,19 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.6.3 =
+* New: every health finding now carries an ACTION. A signed `/fix` endpoint applies
+  one, and the scan reports `unmapped` — any finding that asks for something and
+  has no action registered — so a new WordPress test cannot quietly become a
+  description with nothing to press.
+* Fixes Morpheus can do itself, each backed up, verified, and put back if the
+  verification fails: the wp-config defines for the file editor and error display,
+  `blog_public`, the default registration role, WordPress's own update backup
+  directory, and the overdue scheduled tasks.
+* Host-level findings (PHP version and extensions, database, SSL, disk, loopback
+  and outbound requests) carry step-by-step instructions with links and a re-check,
+  because no plugin can change them from inside WordPress.
 
 = 0.6.2 =
 * Morpheus no longer appears as a target of its own maintenance engine. The

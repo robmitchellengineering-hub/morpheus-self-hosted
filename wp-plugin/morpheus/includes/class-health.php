@@ -65,6 +65,11 @@ class Morpheus_Health {
 		self::admin_includes();
 		$updates = self::updates();
 		$host    = self::host();
+		// Every finding carries its action, and anything attention-worthy with no
+		// registered action is reported rather than left as prose (see class-fixes.php).
+		$tests    = self::direct_tests();
+		$own      = self::own_checks( $host );
+		$unmapped = array_merge( Morpheus_Fixes::annotate( $tests ), Morpheus_Fixes::annotate( $own ) );
 
 		$result = array(
 			'scan_version'      => 1,
@@ -75,8 +80,11 @@ class Morpheus_Health {
 			// Age matters: WordPress only checks for updates twice a day, so a
 			// "no updates" line is only as fresh as this.
 			'update_checked_at' => $updates['checked_at'],
-			'tests'             => self::direct_tests(),
-			'own_checks'        => self::own_checks( $host ),
+			'tests'             => $tests,
+			'own_checks'        => $own,
+			// Findings that ask for something and have no action Morpheus can take.
+			// A non-empty list is a gap in the fix registry, not a site problem.
+			'unmapped'          => $unmapped,
 			'updates'           => $updates,
 			'auto_updates'      => self::auto_updates(),
 			'host'              => $host,
