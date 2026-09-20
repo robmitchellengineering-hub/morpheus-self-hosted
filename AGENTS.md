@@ -84,7 +84,7 @@ catalog is the source of truth for what exists; the table below is the map, and
 | Skill | Load it when |
 |---|---|
 | `morpheus-dev-protocol` | Before **any** change — branch/PR workflow, never-push-`main`, resync rules |
-| `morpheus-hazards` | Before writing or reviewing a change — the H1–H16 checklist of self-inflicted breakage |
+| `morpheus-hazards` | Before writing or reviewing a change — the H1–H17 checklist of self-inflicted breakage |
 | `morpheus-stack` | When you need the stack map, commands, or verification steps |
 | `morpheus-architecture` | When you need to know how a request reaches a handler, or how the build loop and self-dev engine work |
 | `morpheus-deck` | Before touching anything under `/deck` — own-data architecture, additive migrations, Jarvis persona |

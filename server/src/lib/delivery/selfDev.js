@@ -11,6 +11,7 @@ import { SELF_DEV_REPO_FULL_NAME, SELF_DEV_BRANCH, shouldExclude } from '../self
 import { getGithubToken, revertCommit } from '../github.js';
 import { verifyProject, DEFAULT_ENTRY_POINTS } from '../engine/verify.js';
 import { mergePrWhenGreen } from '../engine/merge.js';
+import { SELF_DEV_REQUIRED_CHECKS } from '../engine/requiredChecks.js';
 import { shipChange } from '../engine/ship.js';
 import { probe } from './http.js';
 
@@ -59,10 +60,16 @@ export const selfDevDelivery = {
   // Poll the self-dev PR's checks and squash-merge it once green. Returns
   // the engine's merge result; the caller handles self-dev's side effects
   // (chat note, usage log, manual regen, migration apply).
+  //
+  // This is Rob's own repo, so we know which gates verify it and we require
+  // them by name: a green Netlify preview with no CI run behind it is not a
+  // verified change (see engine/requiredChecks.js). The WordPress adapter
+  // passes no list, so a tenant repo with no configured CI behaves as before.
   async merge({ user, prNumber, force = false }) {
     const token = await getGithubToken(user.id);
     return mergePrWhenGreen(token, SELF_DEV_REPO_FULL_NAME, prNumber, {
       force,
+      requiredChecks: SELF_DEV_REQUIRED_CHECKS,
       commitTitle: `Self-dev PR #${prNumber} (via Morpheus)`,
     });
   },

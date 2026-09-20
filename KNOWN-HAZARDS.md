@@ -299,4 +299,27 @@ happens to produce. Assert that `scope()` cannot return another account's rows
 for these models, and treat "the admin can see everything" as a disclosure
 decision, not a convenience.
 
+## H17 — a check that never ran reads as a check that passed
+
+**Incident (2026-09-20, PRs #258 and #259):** GitHub does not create a
+`pull_request` workflow run when it cannot compute the merge commit, and it never
+backfills the run once mergeability resolves. Both PRs were opened in that state:
+every check on them was a Netlify deploy preview (two of them reported
+`skipped`), all green, and **no CI run existed at all** — no `guards (no
+install)`, no `lint + build`. `getPullRequestChecks()` asks "did anything fail?",
+so its answer was `passing`, and `engine/merge.js`'s "no checks yet" grace did not
+apply either, because checks *did* exist — just not the ones that verify the code.
+A green deploy preview would have been the only gate before production, which is
+precisely the gap the CI workflow's own header says it was written to close. The
+runs appeared only after each PR was closed and reopened.
+
+**Rule:** "nothing failed" is not "the gates ran". A repo whose CI we know must
+require its gates **by name, present and successful** — `skipped` and `neutral`
+are not passes — with the list living in `engine/requiredChecks.js` and asserted
+against the workflow's own job names by `scripts/verify-merge-gates.mjs`, so a
+rename on either side cannot silently disable the requirement. A repo with no
+known gates keeps the old behaviour, and a conflict is answered as a conflict:
+it is the reason the run never appeared. Never let a *host's* green preview stand
+in for verification of the change.
+
 
