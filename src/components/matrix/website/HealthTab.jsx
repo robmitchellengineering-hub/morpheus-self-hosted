@@ -111,9 +111,32 @@ function UpdateRow({ name, kind, from, to, strong }) {
   );
 }
 
-/** What the site said it did with one fix, rendered as sent and never embellished. */
+/** The server's own answer for one fix, rendered as sent and never embellished. */
 function FixResult({ result }) {
-  if (!result || result.state !== 'settled') return null;
+  if (!result || result.state === 'busy') return null;
+
+  // The request was rejected before the site could answer. Nothing may be shown
+  // as done, and the server's own code says what the operator can do next.
+  if (result.state === 'rejected') {
+    const hint = result.code === 'PLUGIN_TOO_OLD'
+      ? 'This site’s Morpheus plugin is older than this action needs. Update it from the SETUP tab, then re-check.'
+      : result.code === 'NOT_CONNECTED'
+        ? 'No WordPress site is connected to this project, so there is nothing to send this to. Connect one in the SETUP tab.'
+        : result.code === 'UNREACHABLE'
+          ? 'The site did not answer, so Morpheus cannot say whether anything changed. RE-CHECK above once the site is reachable.'
+          : 'The request was rejected, so nothing here can be shown as done.';
+    return (
+      <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 space-y-1">
+        <div className="flex items-center gap-1.5">
+          <AlertTriangle size={11} className="shrink-0 text-red-300" />
+          <span className="text-[9px] uppercase tracking-wider text-red-300/90">Not sent</span>
+        </div>
+        <div className="text-[10px] text-red-300/90 leading-relaxed break-words">{result.message}</div>
+        <div className={faint}>{hint}</div>
+      </div>
+    );
+  }
+
   const f = result.fix || {};
 
   // A 200 with ok:false is the SITE declining (a guided finding, or nothing
