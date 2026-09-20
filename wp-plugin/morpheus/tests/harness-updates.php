@@ -209,6 +209,90 @@ ok( $installed_version() === '1.0.0', 'and the old version is still the one runn
 ok( (bool) has_filter( 'upgrader_pre_download', array( 'Morpheus_Updates', 'verify_download' ) ), 'the verification hook is registered on the upgrader' );
 ok( (bool) has_filter( 'pre_set_site_transient_update_plugins', array( 'Morpheus_Updates', 'offer_update' ) ), 'the update offer is registered where WordPress reads it' );
 
+// ── 5. a stale manifest cache must not hide a published update ──────────────
+//
+// The dead end this section exists for. The manifest is cached so wp-admin never
+// waits on it, and WordPress's own "Check again" re-runs the check against that
+// same cached answer — so a site whose cache predates a release is told there is
+// nothing to update, with no way to find out otherwise. Before the fix, measured
+// in a real WordPress: the offer was absent, it was still absent after a forced
+// check, and only clearing the cache produced the version.
+echo "\n-- 5. a stale cache cannot hide a published update --\n";
+
+$published = array(
+	'version' => '99.0.0',
+	'sha256'  => str_repeat( 'a', 64 ),
+	'url'     => $package_url,
+	'bytes'   => 4321,
+);
+
+// The cache holds a manifest from BEFORE the release (the site checked early).
+set_transient(
+	Morpheus_Updates::CACHE_KEY,
+	array( 'version' => MORPHEUS_VERSION, 'sha256' => str_repeat( 'a', 64 ), 'url' => $package_url ),
+	HOUR_IN_SECONDS
+);
+
+$own_offer = function () {
+	$t = get_site_transient( 'update_plugins' );
+	if ( ! is_object( $t ) || empty( $t->response[ Morpheus_Updates::basename() ] ) ) { return null; }
+	return (string) $t->response[ Morpheus_Updates::basename() ]->new_version;
+};
+
+$manifest = array( 'version' => MORPHEUS_VERSION, 'sha256' => str_repeat( 'a', 64 ), 'url' => $package_url );
+delete_site_transient( 'update_plugins' );
+wp_update_plugins();
+ok( null === $own_offer(), 'a stale manifest cache offers NOTHING — the bug being fixed' );
+$stale_forced = Morpheus_Updates::check();
+ok( null === $own_offer() || '99.0.0' !== $own_offer(), 'and a forced check against a manifest that promises nothing new stays honest' );
+ok( is_array( $stale_forced ) && array_key_exists( 'newer_available', $stale_forced ), 'the check always reports whether something newer exists' );
+
+// Now the same site, after the release is actually published.
+$manifest = $published;
+$report   = Morpheus_Updates::check();
+ok( is_array( $report ) && ! empty( $report['ok'] ), 'the forced check returns a result' );
+ok( ( $report['manifest']['version'] ?? null ) === '99.0.0', 'it reads the PUBLISHED manifest, not the cached one' );
+ok( ! empty( $report['newer_available'] ), 'and reports that a newer version is available' );
+ok( ! empty( $report['wordpress_shows'] ), 'and that WordPress now offers it (to: ' . ( $report['offer']['to'] ?? 'none' ) . ')' );
+ok( '99.0.0' === $own_offer(), 'the Plugins screen can now see the update — the dead end is gone' );
+ok( ( $report['installed'] ?? '' ) === MORPHEUS_VERSION, 'the report names the installed version' );
+ok( ( $report['manifest']['sha256'] ?? '' ) === $published['sha256'], 'the report carries the published checksum' );
+ok( ! empty( $report['last_checked'] ), 'and when WordPress last checked' );
+
+// A check that cannot reach the update server must SAY SO. "Nothing available"
+// when the truth is "I could not ask" is precisely what hid this problem.
+$manifest = array( 'version' => '99.0.0', 'sha256' => '', 'url' => $package_url ); // the stub refuses when sha256 is empty
+$failed = Morpheus_Updates::check();
+ok( empty( $failed['reachable'] ), 'an unreachable update server is reported as not reachable' );
+ok( is_string( $failed['reason'] ) && '' !== $failed['reason'], 'and the reason is stated: ' . ( $failed['reason'] ?? 'none' ) );
+ok( null === ( $failed['manifest'] ?? null ), 'with no manifest invented in its place' );
+
+// It CHECKS ONLY. Morpheus never installs its own update: the request that would
+// apply it is served by the code being replaced.
+$manifest = $published;
+$UPD_SECRET = 'updates-harness-secret';
+update_option( 'morpheus_settings', array_merge( Morpheus_Settings::defaults(), array( 'webhook_secret' => $UPD_SECRET ) ) );
+Morpheus_REST::register_routes();
+ok( isset( rest_get_server()->get_routes()['/morpheus/v1/updates'] ), 'the /updates route is registered' );
+
+$upd_req = function ( $data, $secret, $sign = true ) {
+	$raw = wp_json_encode( array_merge( array( 'at' => gmdate( 'c' ) ), $data ) );
+	$r   = new WP_REST_Request( 'POST', '/morpheus/v1/updates' );
+	$r->set_header( 'Content-Type', 'application/json' );
+	$r->set_body( $raw );
+	if ( $sign ) { $r->set_header( 'X-Morpheus-Signature', 'sha256=' . hash_hmac( 'sha256', $raw, $secret ) ); }
+	return rest_do_request( $r );
+};
+
+$unsigned = $upd_req( array( 'action' => 'check' ), $UPD_SECRET, false );
+ok( 401 === $unsigned->get_status(), 'an unsigned /updates request is refused (got ' . $unsigned->get_status() . ')' );
+$signed = $upd_req( array( 'action' => 'check' ), $UPD_SECRET, true );
+ok( 200 === $signed->get_status(), 'a signed /updates check is served (got ' . $signed->get_status() . ')' );
+$signed_body = $signed->get_data();
+ok( ! empty( $signed_body['ok'] ) && array_key_exists( 'wordpress_shows', $signed_body ), 'and it answers with the live report, not a cached one' );
+$applied = $upd_req( array( 'action' => 'apply' ), $UPD_SECRET, true );
+ok( 400 === $applied->get_status(), 'an "apply" action is REFUSED — Morpheus never installs its own update (got ' . $applied->get_status() . ')' );
+
 // tidy up: leave the sandbox as we found it
 foreach ( glob( $fixture_dir . '/*' ) ?: array() as $f ) { @unlink( $f ); }
 @rmdir( $fixture_dir );

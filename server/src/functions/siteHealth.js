@@ -14,13 +14,13 @@
 // "apply" and quietly did less than its name would be worse than one that
 // refuses.
 import { prisma } from '../db.js';
-import { getWpConnection, wpFix } from '../lib/wpPlugin.js';
+import { getWpConnection, wpFix, wpUpdates } from '../lib/wpPlugin.js';
 import { scanSite } from '../lib/siteScan.js';
 import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
 import { applyAllowedUpdates } from '../lib/siteApply.js';
 import { describePolicy, nextRunAt, allowedKinds, runSummary, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
 
-const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix']);
+const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'updates']);
 
 export default async function handler({ user, body, req }) {
   const { projectId, action } = body || {};
@@ -50,6 +50,30 @@ export default async function handler({ user, body, req }) {
       }
     }
     return policyPayload(await getPolicy(projectId));
+  }
+
+  if (action === 'updates') {
+    const conn = await getWpConnection(projectId, user.id);
+    if (!conn) throw Object.assign(new Error('No WordPress site connected.'), { status: 400, code: 'NOT_CONNECTED' });
+
+    const res = await wpUpdates(conn, { action: 'check' });
+    if (res.status === 0) {
+      throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || 'no response'}`), { status: 502, code: 'UNREACHABLE' });
+    }
+    // 404 is the bootstrap case, not a failure: the route only exists in 0.6.4+,
+    // so a site that needs this check most is exactly the site that cannot answer
+    // it. The panel gets a named state and tells the operator to install the zip
+    // by hand — once.
+    if (res.status === 404 || res.status === 501) {
+      throw Object.assign(
+        new Error('This build of the plugin cannot check for its own updates yet. Install the current plugin from morpheus.nz once, by hand — after that it updates itself.'),
+        { status: 409, code: 'UPDATES_UNSUPPORTED' },
+      );
+    }
+    if (res.status !== 200) {
+      throw Object.assign(new Error(res.data?.error || `The site answered HTTP ${res.status} to an update check.`), { status: 502, code: 'UPDATES_FAILED' });
+    }
+    return { ok: res.data?.ok === true, updates: res.data || null };
   }
 
   if (action === 'fix') {

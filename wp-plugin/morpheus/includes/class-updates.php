@@ -26,8 +26,20 @@
  * what stops a tampered mirror, a truncated download, or a stale manifest from
  * silently becoming the code that runs on someone's shop.
  *
- * The manifest fetch is cached for a few hours so an admin page load never
- * waits on it.
+ * THE CACHE, AND WHY THE CHECK CAN BE FORCED
+ *
+ * The manifest fetch is cached so an admin page load never waits on it. That
+ * cache used to have no way to be refreshed, and it produced a silent dead end.
+ * Measured in a real WordPress: a site whose cache held a manifest from before a
+ * release showed NO update; WordPress's own "Check again" still showed none,
+ * because it re-runs the check and the check reads the same cached answer; only
+ * clearing the cache produced the offer. So the one button an operator had was
+ * guaranteed to tell them nothing, for hours, with no way to find out why.
+ *
+ * The window is now an hour, and /updates (Morpheus_Updates::check()) clears both
+ * caches and re-reads the live manifest on demand. It CHECKS and reports — it
+ * never installs, because the request that would apply this plugin's own update
+ * is served by the code being replaced (class-maintenance.php).
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -38,7 +50,14 @@ class Morpheus_Updates {
 
 	const MANIFEST_URL = 'https://morpheus.nz/plugin-manifest.json';
 	const CACHE_KEY    = 'morpheus_update_manifest';
-	const CACHE_TTL    = 6 * HOUR_IN_SECONDS;
+	// One hour, not six. Every hour a stale cache is held is an hour an operator
+	// is told there is nothing to update when there is — and the endpoint is a
+	// static JSON file on a CDN. /updates makes it forcible as well.
+	const CACHE_TTL    = HOUR_IN_SECONDS;
+	const MISS_TTL     = 15 * MINUTE_IN_SECONDS;
+
+	/** Why the last manifest read failed, so a check can say so instead of nothing. */
+	private static $last_failure = null;
 
 	/** The plugin's own basename, e.g. morpheus/morpheus.php. */
 	public static function basename() {
@@ -70,10 +89,19 @@ class Morpheus_Updates {
 		$url = apply_filters( 'morpheus_update_manifest_url', self::MANIFEST_URL );
 		$res = wp_remote_get( $url, array( 'timeout' => 10, 'headers' => array( 'Accept' => 'application/json' ) ) );
 		$data = null;
-		if ( ! is_wp_error( $res ) && 200 === (int) wp_remote_retrieve_response_code( $res ) ) {
+		self::$last_failure = null;
+		if ( is_wp_error( $res ) ) {
+			// Say WHY. A check that cannot reach us must not report "no update
+			// available" — that is the answer that hid this whole problem.
+			self::$last_failure = $res->get_error_message();
+		} elseif ( 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+			self::$last_failure = 'the update server answered HTTP ' . (int) wp_remote_retrieve_response_code( $res );
+		} else {
 			$body = json_decode( wp_remote_retrieve_body( $res ), true );
 			if ( is_array( $body ) && ! empty( $body['version'] ) ) {
 				$data = $body;
+			} else {
+				self::$last_failure = 'the update server answered with something that is not a plugin manifest';
 			}
 		}
 		if ( $data ) {
@@ -82,7 +110,7 @@ class Morpheus_Updates {
 			// A miss is cached briefly too: a site whose host blocks outbound
 			// requests would otherwise pay a 10-second timeout on every admin
 			// page load.
-			set_transient( self::CACHE_KEY, 'none', 15 * MINUTE_IN_SECONDS );
+			set_transient( self::CACHE_KEY, 'none', self::MISS_TTL );
 		}
 		return $data;
 	}
@@ -229,5 +257,73 @@ class Morpheus_Updates {
 
 		morpheus_log( 'update_verified', array( 'sha256' => $actual ) );
 		return $tmp;
+	}
+
+	/**
+	 * Re-read the whole update path right now, and report exactly what happened.
+	 *
+	 * Two caches have to go, not one: the plugin's own manifest cache and
+	 * WordPress's `update_plugins` transient. Refreshing one while the other
+	 * stays stale shows the operator nothing new — which is how "Check again"
+	 * became a button that could not work.
+	 *
+	 * This CHECKS ONLY; it never installs. WordPress's own updater remains the
+	 * only thing that writes these files, because it stages the package and
+	 * swaps it in, so a failure leaves a working plugin rather than half of one
+	 * (the 0.6.2 rule: Morpheus is never a target of its own engine).
+	 *
+	 * @return array
+	 */
+	public static function check() {
+		delete_transient( self::CACHE_KEY );
+		$manifest = self::manifest( true );
+
+		if ( ! function_exists( 'wp_update_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/update.php';
+		}
+		delete_site_transient( 'update_plugins' );
+		wp_update_plugins();
+
+		$basename  = self::basename();
+		$transient = get_site_transient( 'update_plugins' );
+		$offer     = null;
+		$others    = array();
+		if ( is_object( $transient ) && ! empty( $transient->response ) && is_array( $transient->response ) ) {
+			foreach ( $transient->response as $file => $row ) {
+				$row_version = isset( $row->new_version ) ? (string) $row->new_version : '';
+				$others[]    = array( 'file' => (string) $file, 'new_version' => $row_version );
+				if ( (string) $file === $basename ) {
+					$offer = array(
+						'to'      => $row_version,
+						'package' => isset( $row->package ) ? (string) $row->package : '',
+					);
+				}
+			}
+		}
+
+		$reachable = is_array( $manifest ) && ! empty( $manifest['version'] );
+
+		return array(
+			'ok'                => true,
+			'checked_at'        => time(),
+			'installed'         => defined( 'MORPHEUS_VERSION' ) ? (string) MORPHEUS_VERSION : '',
+			'reachable'         => $reachable,
+			// Why the read failed, or null. A check must never answer a bare
+			// "nothing available" when the truth is "I could not ask".
+			'reason'            => $reachable ? null : ( self::$last_failure ? self::$last_failure : 'the update server could not be read' ),
+			'manifest'          => $reachable ? array(
+				'version' => (string) $manifest['version'],
+				'sha256'  => isset( $manifest['sha256'] ) ? (string) $manifest['sha256'] : '',
+				'bytes'   => isset( $manifest['bytes'] ) ? (int) $manifest['bytes'] : 0,
+				'url'     => isset( $manifest['url'] ) ? (string) $manifest['url'] : '',
+			) : null,
+			'newer_available'   => $reachable && self::is_newer( $manifest['version'] ),
+			// WordPress's own answer, so the panel can say whether the Plugins
+			// screen now offers it instead of sending the operator to look.
+			'wordpress_shows'   => (bool) $offer,
+			'offer'             => $offer,
+			'wordpress_updates' => $others,
+			'last_checked'      => is_object( $transient ) && ! empty( $transient->last_checked ) ? (int) $transient->last_checked : null,
+		);
 	}
 }
