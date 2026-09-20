@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Loader2, Plug, Check, Download, ExternalLink, ArrowUpCircle, Globe, KeyRound,
-  RefreshCw, ShieldCheck, Settings, FolderPlus,
+  RefreshCw, ShieldCheck, Settings, FolderPlus, Copy, Upload, UserCog,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
@@ -18,7 +18,16 @@ import { base44 } from '@/api/base44Client';
 // plugin, update it, or paste the one-time code from wp-admin. The wizard
 // follows what the site actually says, not what the operator assumes.
 
+// The plugin file. Two forms on purpose:
+//   PLUGIN_ZIP     — same-origin, served by THIS build, so the download button
+//                    always hands over the zip that matches the running app
+//                    (including in development, where morpheus.nz is not this
+//                    build);
+//   PLUGIN_ZIP_URL — absolute, because a WP-CLI command and a message to
+//                    someone else's developer travel off this page.
+// One constant derives the other, so the two can never name different files.
 const PLUGIN_ZIP = '/morpheus-wordpress-plugin.zip';
+const PLUGIN_ZIP_URL = `https://morpheus.nz${PLUGIN_ZIP}`;
 const PLUGIN_MANIFEST = '/plugin-manifest.json';
 
 // The version that first registers WordPress's own update channel (0.5.3). A
@@ -68,6 +77,61 @@ function copySummary({ files = 0, bytes = 0, reused = false, theme = {} } = {}) 
   return parts.join(' · ');
 }
 
+/**
+ * Copy-to-clipboard for a line the operator has to move somewhere else — a
+ * terminal, or a message to whoever manages their site. Falls back to a
+ * selectable block when the clipboard API is unavailable (it is blocked in
+ * some in-app browsers, and a dead Copy button is worse than none).
+ */
+function CopyLine({ text, label, mono = true }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* the block below stays selectable */ }
+  };
+  return (
+    <div className="space-y-1">
+      {label && <div className="text-[9px] text-primary/40 uppercase tracking-wider">{label}</div>}
+      <div className="flex items-stretch gap-1.5">
+        <code className={`flex-1 bg-black/40 border border-primary/20 px-2 py-2 text-[10px] text-primary/80 break-all select-all ${mono ? 'font-mono' : ''}`}>
+          {text}
+        </code>
+        <button onClick={copy} title="Copy"
+          className="shrink-0 px-2 border border-primary/25 text-primary/60 hover:border-primary hover:text-primary flex items-center gap-1 text-[10px]">
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The command for anyone whose host gives them a terminal. */
+const WP_CLI_INSTALL = `wp plugin install ${PLUGIN_ZIP_URL} --activate`;
+
+/**
+ * A message the operator can send to whoever actually manages their site —
+ * their developer, their agency, their host. Rob's own situation: the person
+ * who wants the tool is often not the person with wp-admin.
+ */
+function handOffMessage({ siteUrl, installUrl, settingsUrl }) {
+  return [
+    'Hi — could you install a plugin on the WordPress site? It is the one that lets me manage the site myself.',
+    '',
+    `Plugin: ${PLUGIN_ZIP_URL}`,
+    `Or with a terminal: ${WP_CLI_INSTALL}`,
+    `Or by hand: ${installUrl || `${siteUrl}/wp-admin/plugin-install.php?tab=upload`}`,
+    '  → Plugins → Add New → Upload Plugin → choose the .zip → Install → Activate',
+    '',
+    'Then open Settings → Morpheus on the site and read me the code it shows (it lasts 20 minutes).',
+    `That page: ${settingsUrl || `${siteUrl}/wp-admin/options-general.php?page=morpheus`}`,
+    '',
+    'Nothing else is needed — no passwords, no FTP, and it does not touch the theme or your existing plugins.',
+  ].join('\n');
+}
+
 /** Opens a wp-admin page on the operator's own site — one tap, no typing. */
 function OpenButton({ href, children, tone = 'default' }) {
   const cls = tone === 'primary'
@@ -91,6 +155,8 @@ export default function SetupTab({ store, projectId, onChanged }) {
   const [err, setErr] = useState(null);
   const [latestVersion, setLatestVersion] = useState(null);
   const [manual, setManual] = useState(false); // "use a shared secret instead"
+  const [downloaded, setDownloaded] = useState(false); // step 1 of the manual install
+  const [handoffOpen, setHandoffOpen] = useState(false); // sending the steps to someone else
   const [copying, setCopying] = useState(false);
   const [copy, setCopy] = useState(null);      // the working-copy result
   const [repoName, setRepoName] = useState(''); // what the repo will be called
@@ -318,24 +384,68 @@ export default function SetupTab({ store, projectId, onChanged }) {
 
       {step === 'install' && (
         <Step n={2} title="Install the Morpheus plugin">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="text-[10px] text-primary/50 leading-relaxed">
               {probe.is_wordpress
                 ? 'Your site answered — WordPress is there, the Morpheus plugin is not (yet).'
                 : 'That address answered, but not as a WordPress site Morpheus recognises.'}
             </div>
-            <div className="text-[10px] text-primary/45 leading-relaxed">
-              Download the plugin, then upload it: <span className="text-primary/65">Plugins → Add New → Upload Plugin → Install → Activate</span>.
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <a href={PLUGIN_ZIP} download
-                className="inline-flex items-center gap-1.5 text-[11px] px-3 py-2 border border-primary/60 text-primary hover:border-primary">
-                <Download size={12} /> Download the plugin
-              </a>
-              <OpenButton href={probe.install_url}>Upload it on your site</OpenButton>
-            </div>
+
+            {/* WordPress will not let anything install a plugin without an
+                administrator, and Morpheus will never ask for a WordPress
+                password. So the honest goal is: one step for whoever CAN do it. */}
+            {!handoffOpen ? (
+              <>
+                <div className="space-y-2">
+                  <div className="text-[9px] text-primary/40 uppercase tracking-wider">Two taps</div>
+                  <div className="flex flex-wrap gap-2">
+                    <a href={PLUGIN_ZIP} download onClick={() => setDownloaded(true)}
+                      className={`inline-flex items-center gap-1.5 text-[11px] px-3 py-2 border ${downloaded ? 'border-primary/30 text-primary/50' : 'border-primary/60 text-primary hover:border-primary'}`}>
+                      {downloaded ? <Check size={12} /> : <Download size={12} />} {downloaded ? '1. Downloaded' : '1. Download the plugin'}
+                    </a>
+                    <a href={probe.install_url} target="_blank" rel="noreferrer"
+                      className={`inline-flex items-center gap-1.5 text-[11px] px-3 py-2 border ${downloaded ? 'border-primary bg-primary/10 text-primary' : 'border-primary/40 text-primary/80 hover:border-primary'}`}>
+                      <Upload size={12} /> 2. Upload it on your site <ExternalLink size={11} />
+                    </a>
+                  </div>
+                  <div className="text-[9px] text-primary/40 leading-relaxed">
+                    In WordPress: <span className="text-primary/60">Plugins → Add New → Upload Plugin</span> → choose the .zip →
+                    Install → <span className="text-primary/60">Activate</span>. The file is in your Downloads.
+                  </div>
+                </div>
+
+                <div className="border-t border-primary/10 pt-2 space-y-1.5">
+                  <div className="text-[9px] text-primary/40 uppercase tracking-wider">Or one command, if you have a terminal</div>
+                  <CopyLine text={WP_CLI_INSTALL} />
+                  <div className="text-[9px] text-primary/35 leading-relaxed">
+                    Works with WP-CLI over SSH — one line, installed and activated.
+                  </div>
+                </div>
+
+                <button onClick={() => setHandoffOpen(true)}
+                  className="text-[10px] text-primary/50 hover:text-primary flex items-center gap-1.5">
+                  <UserCog size={11} /> Someone else manages this site? Send them the steps
+                </button>
+              </>
+            ) : (
+              <div className="space-y-2 border border-primary/25 px-3 py-2.5">
+                <div className="text-[10px] text-primary/70">Send this to whoever runs your site</div>
+                <div className="text-[9px] text-primary/40 leading-relaxed">
+                  Copy it into a message. It has everything they need — the file, the one-line command, and what to do after —
+                  and it asks for no passwords.
+                </div>
+                <CopyLine label="The message" mono={false} text={handOffMessage({
+                  siteUrl: probe.siteUrl || siteUrl,
+                  installUrl: probe.install_url,
+                  settingsUrl: `${probe.siteUrl || siteUrl}/wp-admin/options-general.php?page=morpheus`,
+                })} />
+                <button onClick={() => setHandoffOpen(false)} className="text-[10px] text-primary/45 hover:text-primary/80">back to installing it myself</button>
+              </div>
+            )}
+
             <div className="text-[9px] text-primary/35 leading-relaxed">
-              WordPress only lets an administrator install a plugin, so this one step is yours — it cannot be done from here.
+              WordPress only installs plugins for an administrator, and Morpheus never asks for your WordPress password — so this
+              one action is the only part that cannot happen from here. It is once per site.
             </div>
             <button onClick={check} disabled={checking}
               className="inline-flex items-center gap-1.5 text-[11px] px-3 py-2 bg-primary text-black font-bold hover:bg-[#39ff14] disabled:opacity-40">

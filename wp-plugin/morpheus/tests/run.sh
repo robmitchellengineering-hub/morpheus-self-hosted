@@ -13,9 +13,15 @@ PLUGIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 PG="npx --yes @wp-playground/cli@latest"
 
 echo "== php -l (PHP ${PHP_VERSION}) =="
+# `|| true` and no `| head -1` inside the substitution: with `set -euo pipefail`
+# a pipeline that matches nothing (or whose `head` exits first and SIGPIPEs the
+# grep) aborts the whole script with no output at all. That happened, and it
+# read as a plugin failure when it was the harness's own flakiness — the worst
+# kind of gate, because it fails for a reason that is not the code.
 for f in $( cd "$PLUGIN_DIR" && find . -name '*.php' -not -path './tests/*' | sed 's|^\./||' ); do
   out=$( $PG php --php "$PHP_VERSION" --verbosity quiet --mount "$PLUGIN_DIR:/p" -- -l "/p/$f" 2>&1 \
-         | grep -iE 'no syntax errors|parse error|syntax error' | head -1 )
+         | grep -iE 'no syntax errors|parse error|syntax error' || true )
+  out=$( printf '%s\n' "$out" | head -1 )
   echo "  $f -> ${out:-<no output>}"
   echo "$out" | grep -qi 'no syntax errors' || { echo "LINT FAILED"; exit 1; }
 done

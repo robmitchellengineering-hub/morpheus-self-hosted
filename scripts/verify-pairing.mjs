@@ -108,6 +108,12 @@ check('the probe tells the wizard to install when the plugin is missing', has(pr
 check('the probe tells the wizard to update when it is too old', has(probe, "step: 'update'"), true);
 check('the probe asks for a code when pairing is available', has(probe, "step: 'pair'"), true);
 check('the probe distinguishes unreachable from not-installed', has(probe, "step: 'unreachable'"), true);
+// Recognising WordPress itself: the REST discovery header is the signature, not
+// a guess from the body — guessing told real WordPress sites they were not
+// WordPress (found by probing a plugin-less install).
+check('the probe recognises WordPress by its REST discovery header', has(probe, 'api.w.org'), true);
+check('...and reports which evidence it used', has(probe, 'wordpress_evidence'), true);
+check('the plugin client captures that header', has(js, "res.headers.get('link')"), true);
 
 // The probe's own version comparison — the thing that would send someone on a
 // current build round the update loop.
@@ -116,6 +122,50 @@ check('version compare: equal is not newer', isNewer('0.5.4', '0.5.4'), false);
 check('version compare: double digits', isNewer('0.5.10', '0.5.9'), true);
 check('version compare: missing parts', isNewer('0.6', '0.5.4'), true);
 check('version compare: junk is not newer', isNewer('', '0.5.4'), false);
+
+// ── 6. the install step: as close to one step as WordPress allows ───────────
+console.log('\n6. the install step offers every route, and claims no more');
+const panel = read('src/components/matrix/website/SetupTab.jsx');
+const packer = read('scripts/pack-wp-plugin.mjs');
+const readme = read('wp-plugin/morpheus/readme.txt');
+
+// The download link and the WP-CLI command must point at the SAME file. They
+// are written in two places, so this is exactly the kind of pair that drifts.
+const zipConst = (panel.match(/const PLUGIN_ZIP = '([^']+)'/) || [, ''])[1];
+const zipUrlConst = (panel.match(/const PLUGIN_ZIP_URL = `([^`]+)`/) || [, ''])[1];
+const cliLine = (panel.match(/const WP_CLI_INSTALL = `([^`]+)`/) || [, ''])[1];
+check('the panel serves the zip from this build', zipConst, '/morpheus-wordpress-plugin.zip');
+// It is written as a template, so assert the STRUCTURE: the production origin
+// plus an interpolation of the same-origin path. A hardcoded second path would
+// fail here.
+check('the absolute URL is the production origin plus that same path', zipUrlConst, 'https://morpheus.nz${PLUGIN_ZIP}');
+check('the WP-CLI command names a plugin to install', has(cliLine, 'wp plugin install'), true);
+check('...using that one absolute URL (so it can only name the same file)', has(cliLine, '${PLUGIN_ZIP_URL}'), true);
+check('...and activates it', has(cliLine, '--activate'), true);
+
+// The hand-off has to be complete enough to send on its own.
+const handoff = (panel.match(/function handOffMessage\([\s\S]*?\n\}/) || [''])[0];
+check('the hand-off message carries the plugin file', has(handoff, 'WP_CLI_INSTALL') || has(handoff, zipConst), true);
+check('...the upload page', has(handoff, 'plugin-install.php?tab=upload'), true);
+check('...and where the pairing code comes from', has(handoff, 'options-general.php?page=morpheus'), true);
+check('...and says no passwords are needed', has(handoff, 'no passwords'), true);
+
+// The honest limit, stated in the UI rather than left as a mystery.
+check('the panel says WordPress requires an administrator', has(panel, 'only installs plugins for an administrator'), true);
+check('the panel promises never to ask for a WordPress password', has(panel, 'never asks for your WordPress password'), true);
+check('the manual path is ordered and confirms the download', has(panel, '1. Download the plugin') && has(panel, '1. Downloaded'), true);
+check('a copy button falls back rather than dying where the clipboard is blocked', has(panel, 'catch { /* the block below stays selectable */ }'), true);
+
+// readme.txt is what WordPress shows on the plugin screen, and a stable tag
+// that disagrees with the header is a classic silent drift.
+const headerVersion = (bootstrap.match(/Version:\s+([\d.]+)/) || [, ''])[1];
+const stableTag = (readme.match(/Stable tag:\s*([\d.]+)/) || [, ''])[1];
+check('the plugin has a readme for the WordPress plugin screen', readme.length > 500, true);
+check('its stable tag matches the plugin header', stableTag, headerVersion);
+check('it documents the connection step', has(readme, 'Settings → Morpheus'), true);
+check('it documents the deploy deny-list', has(readme, 'wp-config.php'), true);
+check('its changelog covers the shipped versions', has(readme, '= 0.5.0 =') && has(readme, `= ${headerVersion} =`), true);
+check('the readme travels inside the plugin zip', has(packer, "rmSync(resolve(staging, 'morpheus/tests')"), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
