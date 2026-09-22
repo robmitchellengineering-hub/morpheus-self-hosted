@@ -45,6 +45,18 @@ export const WIDGET_SCOPE_FUNCTIONS = {
     'getWordPressStore', 'wordPressSeoAction', 'generateSeoMeta', 'generateBlogPost',
     'suggestInternalLinks', 'researchKeywords', 'searchConsoleAction', 'createSitePost',
   ],
+  // Traffic is its own scope rather than part of `seo`: submitting URLs to a
+  // search engine is an outward action on the operator's live site, and an embed
+  // that only manages metadata should not be able to do it.
+  //
+  // Exactly ONE function, because that is exactly what the surface calls:
+  // trafficAction is the single dispatcher (status | ledger | backfill |
+  // settings) and the tab invokes nothing else. getWordPressStore is deliberately
+  // NOT here — unlike the SEO surface, which reads the site's context before it
+  // can write, the traffic tab needs no site state, and a scope entry nothing
+  // invokes is privilege handed out for free. verify-traffic.mjs asserts this
+  // list matches the tab's actual invokes, so the two cannot drift apart.
+  traffic: ['trafficAction'],
 };
 
 export function isMissingWidgetTable(err) {

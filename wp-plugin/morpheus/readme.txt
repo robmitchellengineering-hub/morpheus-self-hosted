@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.6.4
+Stable tag: 0.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,25 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.7.0 =
+* New: **IndexNow on publish.** When a post, page or product goes live — or a live
+  one changes — the site tells IndexNow about the URL, which covers Bing and
+  Yandex without an account, an OAuth app or a third party holding a key. The
+  submission is scheduled rather than sent during the save, so publishing never
+  waits on a third party and a failure never appears as an error on the site.
+  Off by default: turn it on in the TRAFFIC tab.
+* New: **a submission ledger.** Every submission is recorded with its UTC time,
+  URL, action and the HTTP status IndexNow actually returned, capped at the last
+  500 rows. A traffic feature that cannot show what it did is a claim, not a
+  record.
+* New: **`/traffic` endpoint** with `status`, `ledger`, `backfill` and `settings`.
+  Backfill submits the site's existing published URLs in bounded batches and skips
+  anything already accepted, so pressing it twice is safe.
+* New: the plugin generates and serves its own IndexNow key file. Whether the
+  host's rewrite rules actually serve it is CHECKED rather than assumed, and the
+  tab says so plainly when they do not — a key that is not served means a
+  submission that will be rejected.
 
 = 0.6.4 =
 * Fix: a site could be told there was no update when there was one. The published

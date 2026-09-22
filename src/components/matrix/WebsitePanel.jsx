@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode, FileText, TrendingUp, Activity } from 'lucide-react';
+import { X, Globe, Loader2, Wrench, Rocket, ShoppingBag, Code, FileCode, FileText, TrendingUp, Activity, Send } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import SetupTab from './website/SetupTab';
 import CodeTab from './website/CodeTab';
@@ -7,6 +7,7 @@ import DeployTab from './website/DeployTab';
 import ShopTab from './website/ShopTab';
 import PagesTab from './website/PagesTab';
 import SeoTab from './website/SeoTab';
+import TrafficTab from './website/TrafficTab';
 import EmbedTab from './website/EmbedTab';
 import HealthTab from './website/HealthTab';
 
@@ -27,6 +28,9 @@ const TABS = [
   { id: 'shop', label: 'SHOP', icon: ShoppingBag },
   { id: 'pages', label: 'PAGES', icon: FileText },
   { id: 'seo', label: 'SEO', icon: TrendingUp },
+  // TRAFFIC sits beside SEO: both are "be found", and the tab that submits URLs
+  // to an index belongs next to the one that writes what gets indexed.
+  { id: 'traffic', label: 'TRAFFIC', icon: Send },
   { id: 'embed', label: 'EMBED', icon: Code },
 ];
 
@@ -137,6 +141,12 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
           {!loading && tab === 'seo' && (
             connected
               ? <SeoTab projectId={projectId} store={store} />
+              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+          )}
+
+          {!loading && tab === 'traffic' && (
+            connected
+              ? <TrafficTab projectId={projectId} />
               : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
           )}
 

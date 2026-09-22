@@ -249,6 +249,21 @@ export async function wpSeo(conn, action, data = {}) {
 }
 
 /**
+ * Traffic module (plugin 0.7.0+): IndexNow submission state, the submission
+ * ledger, a bounded backfill, and the on/off toggle.
+ *
+ * The ledger is the point of the endpoint: it carries the UTC time, URL, action
+ * and the HTTP status IndexNow actually returned, which is the only evidence a
+ * traffic feature may show. There is no "indexed" field, because IndexNow does
+ * not report one — a 2xx means the submission was accepted, nothing more.
+ */
+export const MIN_TRAFFIC_PLUGIN_VERSION = '0.7.0';
+
+export async function wpTraffic(conn, action, data = {}) {
+  return wpCall(conn, 'traffic', { action, data });
+}
+
+/**
  * Site health + maintenance scan (plugin 0.6.0+).
  *
  * The only endpoint that returns the site's own configuration — plugin names and
