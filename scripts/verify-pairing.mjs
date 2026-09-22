@@ -162,6 +162,15 @@ const headerVersion = (bootstrap.match(/Version:\s+([\d.]+)/) || [, ''])[1];
 const stableTag = (readme.match(/Stable tag:\s*([\d.]+)/) || [, ''])[1];
 check('the plugin has a readme for the WordPress plugin screen', readme.length > 500, true);
 check('its stable tag matches the plugin header', stableTag, headerVersion);
+// The header and the readme were checked; the runtime CONSTANT was not, and it is
+// the one that does damage. MORPHEUS_VERSION is what /status reports to Morpheus
+// and what class-updates.php compares an update manifest against, so a constant
+// lagging the header makes is_newer( manifest, running ) permanently true: every
+// site is offered an update it already has, forever. That happened (0.6.3 against
+// a 0.6.4 header) and nothing failed. Three copies of one fact, so check three.
+const constantVersion = (bootstrap.match(/MORPHEUS_VERSION',\s*'([\d.]+)'/) || [, ''])[1];
+check('it reads a runtime version constant (parser sanity)', /^\d+\.\d+\.\d+$/.test(constantVersion), true);
+check('the runtime version constant matches the plugin header', constantVersion, headerVersion);
 check('it documents the connection step', has(readme, 'Settings → Morpheus'), true);
 check('it documents the deploy deny-list', has(readme, 'wp-config.php'), true);
 check('its changelog covers the shipped versions', has(readme, '= 0.5.0 =') && has(readme, `= ${headerVersion} =`), true);
