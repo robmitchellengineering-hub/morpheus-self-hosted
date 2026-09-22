@@ -59,7 +59,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MORPHEUS_VERSION', '0.6.3' );
+// Must equal the `Version:` in this file's header and the readme's Stable tag.
+// Three copies of one fact, so scripts/verify-pairing.mjs asserts all three agree.
+//
+// It drifted to 0.6.3 while the header said 0.6.4, and it is the value the REST
+// status reports to Morpheus AND the value class-updates.php compares an update
+// manifest against — so is_newer( '0.6.4', '0.6.3' ) stayed true and every site
+// was offered an update it already had. class-updates.php warns about exactly
+// that outcome in its own comment ("a stale response here would nag every site
+// forever") and it was a stale CONSTANT, not a stale response.
+define( 'MORPHEUS_VERSION', '0.6.4' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
