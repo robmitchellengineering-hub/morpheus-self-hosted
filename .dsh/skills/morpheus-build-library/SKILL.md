@@ -19,6 +19,7 @@ than none.
 |---|---|---|
 | write or review a **test, harness or CI guard** | `references/verification.md` | the bar ("it builds" is not verification), designing a guard that can actually fail, mutation testing, transitive purity, removing behaviour that passes every gate |
 | touch the **WordPress plugin** or its endpoints | `references/wordpress.md` | plugin lifecycle and the update channel, install quirks, "too old" answers two ways, proven secrets, never self-updating through Deploy, the parsed JS↔PHP contract, the theme export |
+| **find a screen someone described** ("the SEO tab in the plugin") | `references/surfaces.md` | the four surfaces and which one you are in, the dock-vs-WordPress-plugin naming trap, which tab components two surfaces share, why the dock has no SETUP tab, scope gating |
 | add or change an **AI-backed feature** | `references/ai-features.md` | model output as untrusted input, response shapes with no field for an invented number, silent truncation read as a negative answer, grounding, billing and prompt hygiene |
 | build **onboarding, a wizard or a first-run path** | `references/onboarding-ux.md` | probe-driven steps, idempotent "ensure" functions, preserving intent through login, live-state checklists, a failed load never rendering as an empty account |
 | change **SEO behaviour or metadata** | `references/seo.md` | the duplicate-tag rule, who owns the head, templates, what an audit is allowed to claim, safe internal linking |
