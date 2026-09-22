@@ -23,6 +23,7 @@ import {
   isValidKey, hostFromSiteUrl, keyLocation, buildPayload, chunkUrls,
   selectBackfillUrls, normalizeLedgerRow, boundLedger, isAccepted, summarizeLedger, NOT_BUILT,
 } from '../server/src/lib/indexNow.js';
+import { isNewer } from '../server/src/lib/version.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -179,10 +180,16 @@ check('the submission runs on cron, so publishing never waits on IndexNow', has(
 check('the feature is off until the operator turns it on', has(plugin, "'enabled' => ! empty( \$o['enabled'] )"), true);
 
 // The version is bumped in all three places verify-pairing also checks.
+//
+// Asserted as "at or beyond 0.7.0", NOT equality. This capability SHIPPED in
+// 0.7.0; demanding equality made the guard fail the first time any other change
+// bumped the plugin (0.7.1), which is a gate failing for a reason that is not the
+// code — the worst kind. Same shape as verify-pairing's own threshold check.
+const atLeast = (v, floor) => v === floor || isNewer(v, floor);
 const readme = read('wp-plugin/morpheus/readme.txt');
 const version = (bootstrap.match(/MORPHEUS_VERSION',\s*'([\d.]+)'/) || [, ''])[1];
-check('the plugin version is 0.7.0 for this capability', version, '0.7.0');
-check('the readme stable tag matches', (readme.match(/Stable tag:\s*([\d.]+)/) || [, ''])[1], '0.7.0');
+check('the plugin is at or beyond 0.7.0, the version this capability shipped in', atLeast(version, '0.7.0'), true);
+check('the readme stable tag is at or beyond 0.7.0', atLeast((readme.match(/Stable tag:\s*([\d.]+)/) || [, ''])[1], '0.7.0'), true);
 check('the changelog has a 0.7.0 entry describing the feature', has(readme, '= 0.7.0 =') && has(readme, 'IndexNow'), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

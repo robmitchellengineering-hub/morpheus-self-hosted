@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.7.0
+Stable tag: 0.7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,20 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.7.1 =
+* Fixed: **the site's own schema entity now actually exists.** `emit_schema()`'s
+  doc-comment claimed it emitted "the site's own organization node on every page"
+  and it did not — with an SEO plugin gone, a site could end up with a page node
+  and no site entity at all. Every page now carries an `Organization` node (site
+  name, URL, and a logo only when a real Site Icon is set) and a `WebSite` node
+  with the `SearchAction` that powers a sitelinks search box. Every field traces
+  to a real WordPress setting; there is no invented `sameAs`, rating or price.
+* Fixed: the doc-comment above `emit_schema()` now describes what the code emits.
+* Deliberately **not** added: a `LocalBusiness`/`Store` node. An accurate one
+  needs an address, phone and opening hours, which WooCommerce's store options do
+  not hold — a partial storefront entity is worse than none, and themes commonly
+  emit a complete one already. See the schema rules in the build library's seo card.
 
 = 0.7.0 =
 * New: **IndexNow on publish.** When a post, page or product goes live — or a live

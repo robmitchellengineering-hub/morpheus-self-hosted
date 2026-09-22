@@ -88,6 +88,70 @@ Console's own Links report; it must never imply a figure it cannot fetch. Real
 backlink data in-product needs a paid index, which is a commercial decision, not
 an API one.
 
+## Structured data: a node you cannot source is a node you must not emit
+Morpheus emits the page node (Article / Product+Offer / WebPage) and the **site
+entity** — `Organization` plus `WebSite` with its `SearchAction` — on every page,
+because those describe the site rather than the page and nothing else emits them
+once we own the head. Every field traces to a real setting: the name and URL are
+WordPress's own, a logo is emitted only when a Site Icon (or custom logo) exists,
+and `sameAs` is omitted entirely because no configured profile source exists yet.
+There is no invented rating, review count, price or `priceRange`.
+
+**Never emit a partial entity.** A `LocalBusiness`/`Store` node is only worth
+having with an address, a phone and opening hours — and WooCommerce's store
+options hold an address and nothing else, so Morpheus does not emit one at all
+(`verify-seo.mjs` §8 asserts the absence, and `tests/harness-noyoast.php` asserts
+it on the rendered head). Adding one later needs new settings for phone/hours/geo
+and must be **opt-in and off by default**.
+
+**Check who else emits it before adding an entity.** A theme or another plugin may
+already provide the store node — Woodmart does on valiantmusic.com.au, complete
+with `Review`/`AggregateRating` and a `#business` `@id` — and two nodes describing
+one business is the duplicate-entity version of the duplicate-title problem above.
+Detect it by asking the operator and offering a setting, **not** by sniffing the
+rendered head at runtime: that is fragile, and it fails silently the day the other
+side changes its markup.
+
+**Where these are checked.** `verify-seo.mjs` §8 asserts the source (CI, no PHP);
+`tests/harness-noyoast.php` asserts the rendered `<head>` in a real WordPress via
+Playground, including that every JSON-LD block parses. The two are deliberately
+coupled by a check, so the rendered assertions cannot be deleted while the source
+guard still passes.
+
+## Advertise a sitemap that exists
+When a site stops using an SEO plugin, everything advertising that plugin's
+sitemap URL breaks at once — robots.txt (often cached for a month by a caching
+plugin), Search Console submissions, third-party links — while core's own
+`/wp-sitemap.xml` keeps answering 200 and goes unadvertised. Seen live: a 404
+`/sitemap_index.xml` line sitting in a month-cached robots.txt.
+
+`filter_robots_txt()` therefore judges a `Sitemap:` line before deferring to it,
+and judges by **attribution, never by fetching** — robots.txt is served on every
+crawl, so a lookup there is a performance trap:
+
+- **dead** = our own host AND a conventional path belonging to a plugin this class
+  can identify (`/sitemap_index.xml` → Yoast/Rank Math, `/sitemap.xml` → AIOSEO,
+  `/sitemaps.xml` → SEOPress) AND that plugin is not the active one;
+- **anything else** — another host, an unknown path, somebody else's sitemap index
+  — is left exactly as it is. We are not the arbiter of other people's sitemaps,
+  and the worst case must only ever be *adding* a line, never removing a working one;
+- the filter does not run at all while another SEO plugin is active (`bootstrap()`),
+  and the legacy-path rewrite is gated on the same condition.
+
+The old path is then **served**, not left 404ing: `/sitemap_index.xml` 301s to
+`/wp-sitemap.xml`, registered on `init` and flushed on activation — the same shape
+as the TRAFFIC key-file rewrite. Rendered assertions live in
+`tests/harness-noyoast.php` (dead line dropped, live line kept, another host
+untouched, exactly one rewrite rule) and the source contracts in `verify-seo.mjs` §9.
+
+## A canonical tag can be emitted twice, and did
+While Morpheus owns the head it emits `<link rel="canonical">` at `wp_head`
+priority 1, and WordPress core's `rel_canonical()` still fires at priority 10 —
+so a singular view can render the tag twice, and the live homepage did. Fixing it
+means deciding who owns canonical (removing core's is a shared-ownership decision,
+like the head itself), so it belongs with the head-handover work and is recorded
+here rather than patched blind.
+
 ## What is still missing here
 A redirects manager (404 → target) is the one standard SEO capability absent. It
 matters once a site has traffic; nothing else in the module depends on it.

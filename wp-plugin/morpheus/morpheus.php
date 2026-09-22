@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.7.0
+ * Version:           0.7.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -68,7 +68,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // was offered an update it already had. class-updates.php warns about exactly
 // that outcome in its own comment ("a stale response here would nag every site
 // forever") and it was a stale CONSTANT, not a stale response.
-define( 'MORPHEUS_VERSION', '0.7.0' );
+define( 'MORPHEUS_VERSION', '0.7.1' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
