@@ -55,3 +55,34 @@ the gitignored env file it belongs in (`server/.env`, `.env.prodsql`,
 `.env.northflank`) and read it from there. If a credential has already been
 pasted, rotate it — that is the only fix, and it is why the Northflank owner
 token is on the list to narrow.
+
+## Reuse the connection that already exists — and respect what its scope allows
+
+Before building anything that talks to a third party, look for a connection that
+already does. The Alice Stats photo widget needed "upload to the user's Drive"
+and found `googleDriveConnection` (`lib/googleDrive.js`) already there: per-user,
+encrypted tokens, silent refresh, scope `drive.file`. Standing up a second OAuth
+client would have meant a second consent screen for the same account.
+
+**A scope is a promise about what the feature can do, so read it before promising
+anything.** `drive.file` grants access only to files **this app created** — not
+"the user's Drive". So:
+
+- a folder the app creates is always writable, which is why the widget offers to
+  create one (`Morpheus Photos`) rather than starting from a folder picker;
+- a folder the user pastes from their own Drive may legitimately come back **403**,
+  and that is not a bug, a missing folder, or something to retry;
+- **403 and 404 must never be reported as the same failure** — one means "this
+  connection cannot write there", the other "no such folder", and the operator's
+  next action is different. `classifyDriveError()` in `lib/photoDrive.js` exists
+  for exactly that, and `verify-photo-drive.mjs` asserts the two messages differ.
+
+Two more rules this feature had to obey, both general:
+
+- **Binary content must never pass through string concatenation.** `createDriveFile`
+  used to build its multipart body with `+`, which silently re-encodes every
+  non-UTF8 byte — Drive stores whatever it is given, so a corrupt photo uploads
+  "successfully". It now takes a Buffer and the text path is unchanged.
+- **Prefer an existing JSON column to a new column.** The chosen folder id lives in
+  `UserSettings.connections` under a namespaced key, because migrations here are
+  hand-run SQL (H8) and a folder preference does not justify one.

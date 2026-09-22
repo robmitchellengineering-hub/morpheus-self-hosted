@@ -132,20 +132,46 @@ export async function getDriveFileContent(token, fileId) {
   return res.text();
 }
 
+// Metadata for one file or folder. Used to verify a folder id the operator
+// pasted actually resolves, rather than trusting a string that looks like one.
+// Throws with `.status` so a caller can tell 403 (this connection cannot see
+// it) from 404 (no such id) — those need different words and different fixes.
+export async function getDriveFileMeta(token, fileId) {
+  const res = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await driveJson(res);
+  if (!res.ok || !data.id) {
+    const message = data._error || data.error?.message || `HTTP ${res.status}`;
+    throw Object.assign(new Error(`Could not read that Drive item: ${message}`), {
+      status: res.status,
+      driveMessage: message,
+    });
+  }
+  return data;
+}
+
 // Creates a new file with content in one call via a multipart/related
 // upload (Drive's documented way to set metadata + content together
 // without a client SDK). Returns { id, modifiedTime }.
 export async function createDriveFile(token, { name, parentId, content, mimeType = 'text/plain' }) {
   const boundary = 'morpheus-drive-boundary-314159265358979';
   const metadata = { name, parents: parentId ? [parentId] : undefined, mimeType };
-  const body =
+  const head =
     `--${boundary}\r\n` +
     'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
     JSON.stringify(metadata) + '\r\n' +
     `--${boundary}\r\n` +
-    `Content-Type: ${mimeType}\r\n\r\n` +
-    content + '\r\n' +
-    `--${boundary}--`;
+    `Content-Type: ${mimeType}\r\n\r\n`;
+  // Binary-safe. A photo arrives as a Buffer and must not pass through string
+  // concatenation, which re-encodes every non-UTF8 byte and uploads a corrupt
+  // image that Drive happily accepts (it stores whatever bytes it is given).
+  // The text path — project file pushes — keeps the exact expression it has
+  // always used, so nothing about existing uploads changes.
+  const isBinary = Buffer.isBuffer(content) || content instanceof Uint8Array;
+  const body = isBinary
+    ? Buffer.concat([Buffer.from(head, 'utf8'), Buffer.from(content), Buffer.from(`\r\n--${boundary}--`, 'utf8')])
+    : `${head}${content}\r\n--${boundary}--`;
   const res = await fetch(`${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,modifiedTime`, {
     method: 'POST',
     headers: {
@@ -155,7 +181,16 @@ export async function createDriveFile(token, { name, parentId, content, mimeType
     body,
   });
   const data = await driveJson(res);
-  if (!data.id) throw new Error(`Failed to create Drive file "${name}": ${data._error || data.error?.message || 'unknown error'}`);
+  if (!data.id) {
+    const message = data._error || data.error?.message || 'unknown error';
+    // Carry the HTTP status. Without it a caller cannot tell "this connection
+    // cannot write here" (403) from "that folder does not exist" (404), and
+    // those need different words and different fixes.
+    throw Object.assign(new Error(`Failed to create Drive file "${name}": ${message}`), {
+      status: res.status,
+      driveMessage: message,
+    });
+  }
   return data;
 }
 
