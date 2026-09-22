@@ -11,13 +11,43 @@ import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getWpConnection, wpSeo } from '../lib/wpPlugin.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
+import { getSearchConsoleConnection, querySearchAnalytics, dateRange } from '../lib/searchConsole.js';
 import {
-  parseSuggest, extractPageSignals, mergeCandidates, researchDisclosure, normalizePhrase, contentWords,
+  parseSuggest, extractPageSignals, mergeCandidates, researchDisclosure, researchSeeds,
+  gscCandidates, normalizePhrase,
   MAX_SEEDS, MAX_COMPETITORS, MAX_COMPETITOR_BYTES,
 } from '../lib/keywordResearch.js';
 
 const SUGGEST_URL = 'https://suggestqueries.google.com/complete/search';
 const FETCH_TIMEOUT_MS = 12000;
+// 90 days of the site's own queries: long enough that a small site has some, short
+// enough that the list is about what it ranks for now rather than years ago.
+const GSC_DAYS = 90;
+
+/**
+ * The site's own Search Console queries, as rows carrying Google's real numbers.
+ *
+ * Never fatal and never guessed: no connection, no chosen property, or a failed
+ * call all yield no rows plus the fact that they were skipped, which the
+ * disclosure reports. The handler this borrows from (searchConsoleAction.js)
+ * throws for its own panel, where the operator asked for Search Console
+ * specifically — here they asked for keyword ideas, so a missing connection must
+ * not fail the research.
+ */
+async function loadOwnQueries(userId) {
+  try {
+    const conn = await getSearchConsoleConnection(userId);
+    if (!conn || !conn.property) return { queries: [], skipped: true };
+    const { startDate, endDate } = dateRange(GSC_DAYS);
+    const { rows } = await querySearchAnalytics(conn.accessToken, conn.property, {
+      startDate, endDate, dimensions: ['query'], rowLimit: 200,
+    });
+    return { queries: gscCandidates(rows), skipped: false };
+  } catch (err) {
+    console.log(`[researchKeywords] Search Console queries unavailable: ${err.message}`);
+    return { queries: [], skipped: true };
+  }
+}
 
 /** Google autocomplete — real typed phrases, no key, no scraping of results. */
 async function suggest(term, { hl = 'en', gl = 'au' } = {}) {
@@ -146,11 +176,16 @@ export default async function handler({ user, body }) {
   const manualSeed = normalizePhrase(body?.seed);
   if (manualSeed) page.focus_keyword = page.focus_keyword || manualSeed;
 
+  // The site's own Search Console queries cost one HTTP call and are independent
+  // of everything below, so they start now and are awaited at the merge — the
+  // competitor fetches happen while it is in flight.
+  const ownQueries = loadOwnQueries(user.id);
+
   // Competitor pages first: their headings are seeds too, and reading them
   // before asking for seeds means the extra seed ideas know what they target.
   const competitors = [];
   for (const url of competitorInputs) {
-    // Sequential: three parallel fetches to three strangers' servers is a good
+    // Sequential: a burst of parallel fetches at strangers' servers is a good
     // way to get rate-limited, and this runs while someone waits either way.
     // eslint-disable-next-line no-await-in-loop
     competitors.push(await fetchCompetitor(url));
@@ -158,19 +193,15 @@ export default async function handler({ user, body }) {
 
   const business = [await getDeckBusinessContext(user.id).catch(() => ''), project.description].filter(Boolean).join(' — ');
 
-  // SEEDS COME FROM THE PAGE AND THE MODEL ONLY — never from a competitor's
-  // headings. Scraped headings include site furniture ("Form name" from a
-  // search field), and feeding those to Google's autocomplete produced
-  // "form name meaning in hindi" as a keyword. The competitor's headings are
-  // still used, as CANDIDATES, where a chrome filter applies.
-  const seeds = [
-    page.focus_keyword,
-    page.title && contentWords(page.title).length <= 7 ? page.title : '',
-    manualSeed,
-  ]
-    .map(normalizePhrase)
-    .filter((s) => s && s.split(' ').length <= 6)
-    .filter((s, i, all) => all.indexOf(s) === i);
+  // SEEDS COME FROM THE PAGE, THE OPERATOR, THE COMPETITORS AND THE MODEL — in
+  // that order of trust. Competitor phrases were excluded outright after a live
+  // run turned a search field's "Form name" label into a seed and dragged "form
+  // name meaning in hindi" back from Google; they are allowed now, but only
+  // through the same isChrome() filter and word caps that guard the candidate
+  // list (see researchSeeds in lib/keywordResearch.js). That filter is the fix
+  // for the incident, so it is the thing that decides, not a bypass.
+  const goodCompetitors = competitors.filter((c) => c && !c.error);
+  const seeds = researchSeeds({ page, manualSeed, competitors: goodCompetitors });
 
   const modelSeeds = await proposeSeeds({ userId: user.id, business, page, competitors });
   const allSeeds = [...seeds, ...modelSeeds].filter((s, i, all) => all.indexOf(s) === i).slice(0, MAX_SEEDS);
@@ -186,7 +217,10 @@ export default async function handler({ user, body }) {
     if (list.length) suggests[seed] = list.slice(0, 10);
   }
 
-  const keywords = mergeCandidates({ seeds: allSeeds, suggests, competitors: competitors.filter((c) => c && !c.error), model: modelSeeds, page });
+  const own = await ownQueries;
+  const keywords = mergeCandidates({
+    seeds: allSeeds, suggests, competitors: goodCompetitors, model: modelSeeds, gsc: own.queries, page,
+  });
 
   return {
     keywords,
@@ -201,11 +235,18 @@ export default async function handler({ user, body }) {
       words: c.words || 0,
     } : null)).filter(Boolean),
     autocomplete_used: Object.keys(suggests).length > 0,
+    // Whether the site's own measured queries are in the list, and whether we
+    // could not ask. The panel shows the numbers on the rows themselves; these
+    // two fields are what the disclosure is built from.
+    gsc_used: own.queries.length > 0,
+    gsc_skipped: own.skipped,
     count: keywords.length,
     disclosure: researchDisclosure({
-      competitorCount: competitors.filter((c) => c && !c.error).length,
+      competitorCount: goodCompetitors.length,
       autocompleteUsed: Object.keys(suggests).length > 0,
       modelUsed: modelSeeds.length > 0,
+      gscQueryCount: own.queries.length,
+      gscSkipped: own.skipped,
     }),
   };
 }

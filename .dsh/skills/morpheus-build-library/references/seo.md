@@ -33,10 +33,35 @@ and WordPress keeps a revision — that is the undo.
 
 ## Keyword research signals
 Real: Google autocomplete, a competitor page's own title/description/headings, the
-page itself. Labelled per row (`people type this`, `competing page`, `this page`,
-`AI idea`) because the weakest signal must not look like the strongest. Seeds come
-from the page and the model only — scraping a competitor's headings as seeds fed a
-form label to Google and dragged back "form name meaning in hindi".
+page itself, and — when the account has connected it — the site's **own Search
+Console queries**, which are the only *measured* demand in the list and carry
+Google's own impressions, clicks and average position on the row. Labelled per row
+(`people type this`, `competing page`, `this page`, `AI idea`,
+`your Search Console`) because the weakest signal must not look like the strongest.
+
+Seeds come from the page, the operator, the model, and — since 2026-09-22 —
+competitor phrases **through `isChrome()` and the word caps, never around them**.
+The earlier ban on competitor seeds was the wrong fix for the "form name meaning
+in hindi" incident: the chrome filter was already the right one, and it is what
+`researchSeeds()` uses to decide.
+
+## Relevance is not "shares a word with the page"
+A candidate is kept only if it carries **two of the page's distinctive terms** —
+its title's content words, its own target keyword, and body words repeated at
+least twice. Counting any shared word instead is what makes a keyword list look
+broken: on a page about guitar repairs, every one of `guitar center`,
+`guitar hero`, `guitar tab` and `how to play guitar` shares exactly one word
+("guitar") and would pass a single-word test. Asserted in
+`scripts/verify-keywords.mjs` with that exact fixture, so weakening the gate to
+one shared term fails CI.
+
+Two fallbacks, both load-bearing: a page with fewer than three distinctive terms
+asks for **one** shared term (a thin page cannot support a two-term test), and a
+page that could not be read at all — a bare `body.seed` exploration — is **not
+gated**, because dropping every candidate would report "no keywords" for a page
+nobody ever read. The operator's own seed, their page's keyword/title, and
+measured Search Console queries are never gated: they are not inferences about
+the page.
 
 ## Search Console is where the real numbers come from
 
