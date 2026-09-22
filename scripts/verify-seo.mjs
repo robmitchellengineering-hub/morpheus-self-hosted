@@ -646,6 +646,90 @@ check('…and bounds one click to what it can apply', has(seoPanelSrc, 'SEO_BATC
 check('…and no longer sends the whole batch in one request', has(seoPanelSrc, 'missing.slice(0, 25)'), false);
 check('…and shows a live timer while an AI action runs', has(seoPanelSrc, 'EtaTimer'), true);
 
+// ── 8. the site entity is emitted, and nothing partial is invented ─────────
+//
+// The bug this pins: emit_schema()'s doc-comment claimed "the site's own
+// organization node on every page" and the code emitted no such node. With an
+// SEO plugin gone, a site could carry a page node and NO site entity at all —
+// which is what a live shop looked like. Asserted on the source here because CI
+// has no PHP; the rendered head is asserted by tests/harness-noyoast.php, and
+// the last check below keeps the two coupled.
+console.log('\n8. the site entity is emitted, and nothing partial is invented');
+
+const seoSrc = read('wp-plugin/morpheus/includes/seo/class-seo.php');
+// Comments first: this file explains the rules in prose, and the prose names the
+// very fields the assertions below require to be ABSENT. (The traffic guard was
+// caught by exactly this — it failed on the sentence documenting its own rule.)
+const seoCode = seoSrc
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  .replace(/^\s*#[^\n]*/gm, '');
+
+check('the schema emitter builds an Organization node', /'@type'\s*=>\s*'Organization'/.test(seoCode), true);
+check('…and a WebSite node', /'@type'\s*=>\s*'WebSite'/.test(seoCode), true);
+check('…whose SearchAction is declared with its query-input', /'query-input'\s*=>\s*'required name=search_term_string'/.test(seoCode), true);
+// Every field traces to a real setting: no invented names, URLs or logos.
+check('the site name comes from WordPress', has(seoCode, "get_bloginfo( 'name' )"), true);
+check('the site URL comes from home_url', has(seoCode, "home_url( '/' )"), true);
+check('the logo comes from the Site Icon', has(seoCode, 'get_site_icon_url('), true);
+check('…and is omitted rather than emitted empty', /if \( \$logo !== '' \)/.test(seoCode), true);
+check('the nodes are serialised as JSON, not hand-built', has(seoCode, 'wp_json_encode( $nodes )'), true);
+
+// The rule: never a partial entity, never an invented number.
+check('no LocalBusiness node is emitted', has(seoCode, 'LocalBusiness'), false);
+check('no aggregateRating is invented', has(seoCode, 'aggregateRating'), false);
+check('no priceRange is invented', has(seoCode, 'priceRange'), false);
+check('no review count is invented', has(seoCode, 'reviewCount'), false);
+
+// The real test lives in the harness (PHP, run under WordPress Playground, not
+// in CI). Coupling them means the rendered assertions cannot be deleted while
+// this one still passes.
+const noYoastHarness = read('wp-plugin/morpheus/tests/harness-noyoast.php');
+check('the no-Yoast harness asserts the Organization node renders', has(noYoastHarness, 'the head carries an Organization node'), true);
+check('…and asserts no LocalBusiness renders', has(noYoastHarness, 'no LocalBusiness node is emitted'), true);
+check('…and asserts every JSON-LD block parses', has(noYoastHarness, 'every JSON-LD block parses as JSON'), true);
+
+// ── 9. robots.txt advertises a sitemap that exists ─────────────────────────
+//
+// The live failure: a site removed Yoast, `/sitemap_index.xml` started 404ing,
+// and a month-cached robots.txt kept advertising it while core's real sitemap
+// went unadvertised. The filter used to defer to ANY existing Sitemap line,
+// including a dead one. Rendered behaviour is asserted in
+// tests/harness-noyoast.php; these are the source contracts CI can check.
+console.log('\n9. robots.txt advertises a sitemap that exists');
+
+/** The body of a named function, comment-stripped source, for scoped assertions. */
+const fnBody = (src, name) => {
+  const at = src.indexOf(`function ${name}(`);
+  if (at < 0) return '';
+  const rest = src.slice(at);
+  const end = rest.indexOf('\n\t}');
+  return end < 0 ? rest : rest.slice(0, end);
+};
+
+const robotsFn = fnBody(seoCode, 'filter_robots_txt');
+const deadFn = fnBody(seoCode, 'sitemap_url_is_dead');
+const redirFn = fnBody(seoCode, 'register_legacy_sitemap_redirect');
+const bootFn = fnBody(seoCode, 'bootstrap');
+
+check('the robots filter parses Sitemap lines (parser sanity)', /preg_match\([^)]*Sitemap:/.test(robotsFn), true);
+check('…and drops a line it can prove is dead', has(robotsFn, 'sitemap_url_is_dead('), true);
+check('…while keeping every live one', has(robotsFn, '$live++'), true);
+check('the dead-path test only judges attributable SEO-plugin paths', has(deadFn, "/sitemap_index.xml' => array( 'yoast', 'rankmath' )"), true);
+check('…and refuses another host', /url_host[^\n]*!==[^\n]*host/.test(deadFn), true);
+check('…and never fetches over HTTP to decide (robots is served on every crawl)', has(deadFn, 'wp_remote_get'), false);
+check('…and is only dead when that plugin is not the active one', has(deadFn, 'in_array( self::active_plugin(), $owned[ $path ], true )'), true);
+check('the legacy path is redirected, not left 404ing', has(redirFn, "add_rewrite_rule( '^sitemap_index\\.xml$'"), true);
+check('…and only while Morpheus owns the head', has(redirFn, 'if ( ! self::owns_head() )'), true);
+check('…with a 301 to the sitemap core actually serves', has(seoCode, "wp_safe_redirect( home_url( '/wp-sitemap.xml' ), 301 )"), true);
+check('the bootstrap registers both the rule and the redirect hook', has(bootFn, 'register_legacy_sitemap_redirect()') && has(bootFn, 'maybe_redirect_legacy_sitemap'), true);
+
+// Coupled to the rendered assertions, so the harness cases cannot be deleted
+// while this still passes.
+check('the harness asserts a dead sitemap line is removed', has(noYoastHarness, 'a dead attributable Sitemap line is removed'), true);
+check('…and that a live line survives', has(noYoastHarness, 'a live line survives'), true);
+check('…and that another host is left alone', has(noYoastHarness, 'a sitemap on another host is left alone'), true);
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

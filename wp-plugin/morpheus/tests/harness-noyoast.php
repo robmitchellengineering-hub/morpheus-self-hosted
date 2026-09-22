@@ -275,6 +275,50 @@ ok( strpos( $head, 'property="og:image" content="https://example.com/og.png"' ) 
 ok( strpos( $head, 'name="twitter:card"' ) !== false, 'head carries a twitter card' );
 ok( strpos( $head, 'application/ld+json' ) !== false, 'head carries JSON-LD' );
 ok( strpos( $head, '"@type":"WebPage"' ) !== false, 'the schema node is typed WebPage for a page' );
+
+// The site's own entity, on every page. This is the half of the schema that
+// describes the SITE rather than the page, and with no SEO plugin active
+// nothing else emits it. Asserted on the rendered head, not on the source,
+// because a doc-comment claiming an organization node while the code emitted
+// none is exactly how this went unnoticed before.
+ok( strpos( $head, '"@type":"Organization"' ) !== false, 'the head carries an Organization node' );
+ok( strpos( $head, '"@type":"WebSite"' ) !== false, 'the head carries a WebSite node' );
+ok( strpos( $head, '"@type":"SearchAction"' ) !== false, 'the WebSite node carries a SearchAction' );
+ok( strpos( $head, 'query-input":"required name=search_term_string' ) !== false, 'the SearchAction declares its query-input' );
+ok( strpos( $head, '#organization' ) !== false && strpos( $head, '#website' ) !== false, 'the two site nodes are linked by @id' );
+ok( strpos( $head, '"name":"' ) !== false, 'the Organization node carries the site name' );
+
+// A storefront entity needs an address, a phone and opening hours, none of
+// which WooCommerce's store options hold. A partial LocalBusiness is worse than
+// none (and a theme often emits a complete one already), so its absence is
+// asserted rather than left to chance.
+ok( strpos( $head, 'LocalBusiness' ) === false, 'no LocalBusiness node is emitted' );
+ok( strpos( $head, 'aggregateRating' ) === false, 'no invented aggregateRating' );
+ok( strpos( $head, 'priceRange' ) === false, 'no invented priceRange' );
+
+// Every JSON-LD block on the page must parse. A malformed node is worse than a
+// missing one: consumers drop the whole graph.
+$ld_blocks = array();
+if ( preg_match_all( '#<script type="application/ld\+json">(.*?)</script>#s', $head, $m ) ) {
+	$ld_blocks = $m[1];
+}
+ok( count( $ld_blocks ) >= 1, 'at least one JSON-LD block is present' );
+$bad_json = 0;
+foreach ( $ld_blocks as $block ) {
+	if ( json_decode( $block, true ) === null ) {
+		$bad_json++;
+	}
+}
+ok( $bad_json === 0, 'every JSON-LD block parses as JSON (' . count( $ld_blocks ) . ' block(s))' );
+
+// KNOWN FINDING, deliberately not fixed here: while Morpheus owns the head we
+// emit our own canonical at wp_head priority 1 and WordPress core's
+// rel_canonical() still fires at priority 10, so a singular view can render the
+// tag twice. The live homepage does. Removing core's is a shared-ownership
+// decision (it belongs with the head-handover work), so this asserts only that
+// we emit one and reports the count instead of failing on the duplicate.
+$canonical_count = substr_count( $head, 'rel="canonical"' );
+ok( $canonical_count >= 1, 'head carries our canonical (canonical tags rendered: ' . $canonical_count . ')' );
 ok( strpos( $head, 'name="robots"' ) === false, 'no robots tag while the page is indexable' );
 
 // noindex is stored differently per plugin and is the one field with its own
@@ -388,10 +432,51 @@ add_filter( 'robots_txt', array( 'Morpheus_SEO', 'filter_robots_txt' ), 20, 2 );
 
 $robots = apply_filters( 'robots_txt', "User-agent: *\nDisallow: /wp-admin/\n", true );
 ok( strpos( $robots, 'Sitemap: ' . home_url( '/wp-sitemap.xml' ) ) !== false, 'robots.txt points at the sitemap' );
-$already = apply_filters( 'robots_txt', "User-agent: *\nSitemap: https://example.com/sitemap.xml\n", true );
-ok( substr_count( $already, 'Sitemap:' ) === 1, 'an existing Sitemap line is left alone' );
+
+// An existing line we CANNOT attribute is left alone. The fixture is a path this
+// plugin knows nothing about on purpose: /sitemap.xml on our own host IS
+// attributable (to AIOSEO), so using it here would pass while testing the
+// opposite of what this check means.
+$already = apply_filters( 'robots_txt', "User-agent: *\nSitemap: " . home_url( '/custom-sitemap.xml' ) . "\n", true );
+ok( substr_count( $already, 'Sitemap:' ) === 1 && strpos( $already, '/custom-sitemap.xml' ) !== false, 'an unattributable Sitemap line is left alone' );
+
+$other_host = apply_filters( 'robots_txt', "User-agent: *\nSitemap: https://example.org/sitemap_index.xml\n", true );
+ok( strpos( $other_host, 'example.org/sitemap_index.xml' ) !== false && substr_count( $other_host, 'Sitemap:' ) === 1, 'a sitemap on another host is left alone' );
+
 $private = apply_filters( 'robots_txt', "User-agent: *\n", false );
 ok( strpos( $private, 'Sitemap:' ) === false, 'a private site gets no sitemap line' );
+
+// The live failure this fixes: an SEO plugin was removed, its sitemap path 404s,
+// and a month-cached robots.txt kept advertising it while core's real sitemap
+// went unadvertised. A dead attributable line must be dropped and ours emitted.
+$dead = apply_filters( 'robots_txt', "User-agent: *\nSitemap: " . home_url( '/sitemap_index.xml' ) . "\n", true );
+ok( strpos( $dead, '/sitemap_index.xml' ) === false, 'a dead attributable Sitemap line is removed' );
+ok( strpos( $dead, 'Sitemap: ' . home_url( '/wp-sitemap.xml' ) ) !== false, '…and ours is advertised in its place' );
+ok( substr_count( $dead, 'Sitemap:' ) === 1, '…leaving exactly one Sitemap line' );
+
+$dead_and_live = apply_filters( 'robots_txt', "User-agent: *\nSitemap: " . home_url( '/sitemap_index.xml' ) . "\nSitemap: " . home_url( '/custom-sitemap.xml' ) . "\n", true );
+ok( substr_count( $dead_and_live, 'Sitemap:' ) === 2 && strpos( $dead_and_live, '/custom-sitemap.xml' ) !== false, 'a live line survives alongside a dropped dead one' );
+
+// The judgement itself, unit-tested: attributable-and-inactive is dead,
+// everything we cannot attribute is not.
+ok( Morpheus_SEO::sitemap_url_is_dead( home_url( '/sitemap_index.xml' ) ), 'sitemap_index.xml on our host is judged dead with no SEO plugin' );
+ok( Morpheus_SEO::sitemap_url_is_dead( '/sitemap.xml' ), 'a relative attributable path is judged dead too' );
+ok( ! Morpheus_SEO::sitemap_url_is_dead( home_url( '/custom-sitemap.xml' ) ), 'a path we cannot attribute is NOT judged dead' );
+ok( ! Morpheus_SEO::sitemap_url_is_dead( 'https://example.org/sitemap_index.xml' ), 'another host is NOT judged dead' );
+
+// The old path is served rather than left 404ing, and only when nothing else
+// legitimately claims it (with an SEO plugin active this method returns early).
+Morpheus_SEO::register_legacy_sitemap_redirect();
+$rules = get_option( 'rewrite_rules' );
+flush_rewrite_rules();
+$rules = get_option( 'rewrite_rules' );
+$rule_hit = 0;
+foreach ( (array) $rules as $pattern => $target ) {
+	if ( strpos( $pattern, 'sitemap_index' ) !== false && strpos( $target, 'morpheus_legacy_sitemap' ) !== false ) {
+		$rule_hit++;
+	}
+}
+ok( $rule_hit === 1, 'the legacy sitemap path is rewritten (one rule)' );
 
 echo "\n== no-Yoast boot: the STORE module's SEO fields work too ==\n";
 // This is the path that used to be a silent no-op without Yoast: create a page

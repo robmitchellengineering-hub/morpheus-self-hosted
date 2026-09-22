@@ -1088,6 +1088,12 @@ class Morpheus_SEO {
 		add_filter( 'pre_get_document_title', array( __CLASS__, 'filter_title' ), 20 );
 		add_action( 'wp_head', array( __CLASS__, 'emit_head' ), 1 );
 		add_filter( 'robots_txt', array( __CLASS__, 'filter_robots_txt' ), 20, 2 );
+		// A removed SEO plugin leaves its own sitemap path 404ing while robots.txt
+		// (often cached for a month), Search Console submissions and third-party
+		// links still point at it. Serve the old path — bootstrap() runs on `init`,
+		// which is the hook add_rewrite_rule() requires.
+		add_action( 'template_redirect', array( __CLASS__, 'maybe_redirect_legacy_sitemap' ) );
+		self::register_legacy_sitemap_redirect();
 	}
 
 	/** Our title replaces the derived one for a singular view. */
@@ -1165,8 +1171,18 @@ class Morpheus_SEO {
 	/**
 	 * JSON-LD structured data. Kept small and honest: Article for posts,
 	 * Product for products (when WooCommerce gives us a price), WebPage
-	 * otherwise, plus the site's own organization node on every page. No
-	 * invented ratings or offers.
+	 * otherwise — plus the site's OWN entity, which describes the site rather
+	 * than the page and so belongs on every page.
+	 *
+	 * Two things this deliberately does not do:
+	 *
+	 *   * No `LocalBusiness`/`Store` node. Our address, phone and opening hours
+	 *     are not in WooCommerce's store options, and a storefront entity
+	 *     without them is a partial one — see `site_entity_nodes()` and the
+	 *     schema rules in the build library's seo card. (This doc-comment used
+	 *     to claim an organization node was emitted here when none was. It is
+	 *     emitted now; the comment and the code agree.)
+	 *   * No invented ratings, review counts or offers.
 	 */
 	private static function emit_schema( $post_id, $f ) {
 		$type = 'WebPage';
@@ -1201,26 +1217,197 @@ class Morpheus_SEO {
 				}
 			}
 		}
-		echo "\t<script type=\"application/ld+json\">" . wp_json_encode( $node ) . "</script>\n";
+		$nodes = array( $node );
+		$site  = self::site_entity_nodes();
+		if ( $site ) {
+			$nodes[] = $site;
+		}
+		echo "\t<script type=\"application/ld+json\">" . wp_json_encode( $nodes ) . "</script>\n";
 	}
 
 	/**
-	 * Point robots.txt at WordPress's own sitemap if nothing else has.
+	 * The nodes that describe the SITE, emitted on every page.
 	 *
-	 * A backstop, not the usual source: core has appended its own Sitemap line
-	 * since 5.5, so on a normal site this finds one already there and does
-	 * nothing (asserted in tests/harness-noyoast.php, which removes core's
-	 * filter to test this one on its own). It matters when something else has
-	 * filtered the output — a security or caching plugin that rewrites
-	 * robots.txt would otherwise leave the site's sitemap undiscoverable.
+	 * Every field traces to a real source, and a field with no source is absent
+	 * rather than guessed:
+	 *
+	 *   name     get_bloginfo( 'name' )
+	 *   url      home_url( '/' )
+	 *   logo     the Site Icon, or the custom logo if one is set — otherwise the
+	 *            field is omitted entirely (an empty logo is worse than none:
+	 *            consumers cache it)
+	 *   sameAs   nothing yet. There is no configured social-profile setting in
+	 *            this plugin, and inventing profile URLs is exactly the kind of
+	 *            claim this repo does not make. Add the setting first.
+	 *
+	 * The two nodes are emitted as one array in a single script block, with @id
+	 * values so WebSite can point at Organization. The @id fragments are ours
+	 * (#organization / #website) and deliberately do not collide with the
+	 * `#business` id a theme may already use for its own entity.
+	 *
+	 * @return array Node array, or empty array when even the name/url are missing.
+	 */
+	public static function site_entity_nodes() {
+		$name = trim( (string) get_bloginfo( 'name' ) );
+		$home = home_url( '/' );
+		if ( $name === '' || $home === '' ) {
+			return array();
+		}
+
+		$logo = (string) get_site_icon_url( 512 );
+		if ( $logo === '' ) {
+			$custom = get_theme_mod( 'custom_logo' );
+			if ( $custom ) {
+				$logo = (string) wp_get_attachment_image_url( $custom, 'full' );
+			}
+		}
+
+		$organization = array(
+			'@type' => 'Organization',
+			'@id'   => $home . '#organization',
+			'name'  => $name,
+			'url'   => $home,
+		);
+		if ( $logo !== '' ) {
+			$organization['logo'] = $logo;
+		}
+
+		$website = array(
+			'@type'           => 'WebSite',
+			'@id'             => $home . '#website',
+			'name'            => $name,
+			'url'             => $home,
+			'publisher'       => array( '@id' => $home . '#organization' ),
+			'potentialAction' => array(
+				'@type'       => 'SearchAction',
+				'target'      => array(
+					'@type'       => 'EntryPoint',
+					'urlTemplate' => $home . '?s={search_term_string}',
+				),
+				'query-input' => 'required name=search_term_string',
+			),
+		);
+
+		return array( $organization, $website );
+	}
+
+	/**
+	 * Point robots.txt at a sitemap that EXISTS.
+	 *
+	 * Core has appended its own Sitemap line since 5.5, so on a normal site this
+	 * finds a live one already there and does nothing. Two cases matter:
+	 *
+	 *   1. Nothing advertises a sitemap at all — a security or caching plugin
+	 *      filtered it out — so ours is appended.
+	 *   2. The only advertised sitemap is a path that belonged to an SEO plugin
+	 *      which is no longer active. That line is stale, it 404s, and deferring
+	 *      to it hides the sitemap the site actually serves. Seen live: a site
+	 *      that removed Yoast kept `Sitemap: /sitemap_index.xml` in a
+	 *      month-cached robots.txt while `/wp-sitemap.xml` answered 200 and went
+	 *      unadvertised.
+	 *
+	 * Conservative by construction. We only ever judge a URL on OUR host whose
+	 * path this class can attribute to one of the plugins it detects, and this
+	 * filter does not run at all while such a plugin is active (see
+	 * bootstrap()). Another host, an unknown path, or somebody else's sitemap
+	 * index is left exactly as it was: we are not the arbiter of other people's
+	 * sitemaps.
 	 */
 	public static function filter_robots_txt( $output, $public ) {
 		if ( ! $public ) {
 			return $output;
 		}
-		if ( stripos( $output, 'Sitemap:' ) === false ) {
-			$output .= "\nSitemap: " . home_url( '/wp-sitemap.xml' ) . "\n";
+
+		$ours  = 'Sitemap: ' . home_url( '/wp-sitemap.xml' );
+		$lines = preg_split( '/\R/', (string) $output );
+		$kept  = array();
+		$live  = 0;
+
+		foreach ( $lines as $line ) {
+			if ( ! preg_match( '/^\s*Sitemap:\s*(\S+)/i', $line, $m ) ) {
+				$kept[] = $line;
+				continue;
+			}
+			if ( self::sitemap_url_is_dead( $m[1] ) ) {
+				continue; // advertising a 404 is worse than advertising nothing
+			}
+			$live++;
+			$kept[] = $line;
 		}
-		return $output;
+
+		if ( $live > 0 ) {
+			return $output; // a real sitemap is advertised: leave the file alone
+		}
+
+		$body = rtrim( implode( "\n", $kept ) );
+
+		return ( $body === '' ? '' : $body . "\n" ) . "\n" . $ours . "\n";
+	}
+
+	/**
+	 * Is an advertised sitemap URL one we can PROVE is dead?
+	 *
+	 * True only for our own host AND a path attributable to an SEO plugin this
+	 * class knows about (see active_plugin()) that is not the active one.
+	 * Everything else is "not dead", which leaves it alone.
+	 *
+	 * No HTTP request on purpose: robots.txt is served on every crawl and a
+	 * lookup here would be a performance trap, so the judgement is by
+	 * attribution rather than by fetching. That also means the worst case is
+	 * appending a line, never removing a working one.
+	 */
+	public static function sitemap_url_is_dead( $url ) {
+		$host     = wp_parse_url( home_url( '/' ), PHP_URL_HOST );
+		$url_host = wp_parse_url( $url, PHP_URL_HOST );
+		$path     = wp_parse_url( $url, PHP_URL_PATH );
+		if ( ! is_string( $host ) || $host === '' || ! is_string( $path ) || $path === '' ) {
+			return false;
+		}
+		if ( is_string( $url_host ) && $url_host !== '' && strtolower( $url_host ) !== strtolower( $host ) ) {
+			return false; // another host: not ours to judge
+		}
+
+		// The conventional paths, by the plugin that serves them. A path we do not
+		// recognise is never judged dead.
+		$owned = array(
+			'/sitemap_index.xml' => array( 'yoast', 'rankmath' ),
+			'/sitemap.xml'       => array( 'aioseo' ),
+			'/sitemaps.xml'      => array( 'seopress' ),
+		);
+		$path = '/' . ltrim( strtolower( $path ), '/' );
+		if ( ! isset( $owned[ $path ] ) ) {
+			return false;
+		}
+
+		// Dead only when the plugin that would serve that path is NOT the active one.
+		// While such a plugin is active this filter does not even run, so this is a
+		// second belt on the same braces.
+		return ! in_array( self::active_plugin(), $owned[ $path ], true );
+	}
+
+	/**
+	 * Serve the sitemap path a removed SEO plugin used to own.
+	 *
+	 * `/sitemap_index.xml` 404s the moment Yoast or Rank Math is deactivated, but
+	 * the URL lives on: in robots.txt (cached for a month by caching plugins), in
+	 * Search Console submissions, in third-party links. A 301 to the sitemap core
+	 * actually serves repairs all three at once, and the assertion in
+	 * tests/harness-noyoast.php pins that it is only registered in that case.
+	 */
+	public static function register_legacy_sitemap_redirect() {
+		if ( ! self::owns_head() ) {
+			return; // someone else legitimately serves this path — do not touch it
+		}
+		add_rewrite_rule( '^sitemap_index\.xml$', 'index.php?morpheus_legacy_sitemap=1', 'top' );
+		add_rewrite_tag( '%morpheus_legacy_sitemap%', '1' );
+	}
+
+	/** The redirect itself, on the query var the rewrite sets. */
+	public static function maybe_redirect_legacy_sitemap() {
+		if ( ! get_query_var( 'morpheus_legacy_sitemap' ) ) {
+			return;
+		}
+		wp_safe_redirect( home_url( '/wp-sitemap.xml' ), 301 );
+		exit;
 	}
 }
