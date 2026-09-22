@@ -95,7 +95,15 @@ export const TITLE_MAX_WORDS = 5;
 export const HEADING_MAX_WORDS = 6;
 
 export const MAX_SEEDS = 6;
-export const MAX_COMPETITORS = 3;
+// Eight, not three. The cap bounds how many strangers' pages ONE request will
+// fetch sequentially with a 12s timeout each — it is not a judgement about how
+// many competitors are worth reading, which is why the panel accepts the same
+// eight. Kept in step with the UI by scripts/verify-keywords.mjs.
+export const MAX_COMPETITORS = 8;
+/** Seeds are short phrases; same ceiling the page title has always had. */
+export const MAX_SEED_WORDS = 6;
+/** How many of the site's own Search Console queries to fold in. */
+export const MAX_GSC_QUERIES = 40;
 export const MAX_KEYWORDS = 60;
 export const MAX_COMPETITOR_BYTES = 400000;
 
@@ -121,6 +129,180 @@ export function normalizePhrase(raw) {
 /** Words that count towards a phrase being "real" (not just stopwords). */
 export function contentWords(phrase) {
   return normalizePhrase(phrase).split(' ').filter((w) => w && !STOPWORDS.has(w));
+}
+
+/**
+ * The host of a URL, for provenance.
+ *
+ * "rival.example", not ninety characters of address with tracking parameters on
+ * it: the operator needs to know WHICH page a row came from, at a glance.
+ */
+export function hostOf(url) {
+  const raw = String(url ?? '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).host.replace(/^www\./, '');
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * The chip label for a source.
+ *
+ * Lives here rather than in the JSX so the guard can assert every source the
+ * pipeline can produce has a name — an unknown source shows its own name rather
+ * than an empty chip, which is what "every row shows where it came from" means.
+ */
+export function sourceLabel(source) {
+  switch (source) {
+    case 'seed': return 'your input';
+    case 'page-keyword':
+    case 'page-title': return 'this page';
+    case 'autocomplete': return 'people type this';
+    case 'competitor-title':
+    case 'competitor-heading':
+    case 'competitor-phrase': return 'competing page';
+    case 'gsc': return 'your Search Console';
+    case 'model': return 'AI idea';
+    default: return String(source || '');
+  }
+}
+
+/**
+ * What the "from:" line shows for one provenance detail: a competitor's URL
+ * becomes its host, an autocomplete seed stays as the operator typed it.
+ */
+export function provenanceOf(detail) {
+  const d = String(detail ?? '').trim();
+  if (!d) return '';
+  return /^https?:\/\//i.test(d) ? hostOf(d) : d;
+}
+
+/**
+ * Google's own numbers for one query, as one line.
+ *
+ * Only ever called with the metrics gscCandidates already proved are real
+ * numbers, and it formats rather than computes: nothing here can produce a
+ * figure Google did not send. Plain digits with a comma, not toLocaleString,
+ * so the string is identical everywhere it is rendered or asserted.
+ */
+export function gscSummary(m) {
+  if (!m) return '';
+  const thousands = (n) => String(Math.round(Number(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const pos = Number(m.position);
+  return `${thousands(m.impressions)} impressions · ${thousands(m.clicks)} clicks · avg position ${Number.isFinite(pos) ? pos.toFixed(1) : '—'}`;
+}
+
+/**
+ * The page's DISTINCTIVE terms — what a candidate has to be about to belong to
+ * this page.
+ *
+ * Not "any word the page contains", which is what the obvious version of this
+ * does and which filters nothing: on a real page an autocomplete list ending in
+ * the same head noun ("guitar center", "guitar hero", "guitar tab" against a page
+ * about guitar repairs) shares exactly one word with the page and would sail
+ * through a single-word overlap test. That IS the complaint this change answers.
+ *
+ * Distinctive = the title's content words, plus the page's own target keyword,
+ * plus body words that appear at least twice. A word repeated in the body is
+ * what the page is actually about; a word that happens to be in the title once
+ * is not enough on its own to qualify a phrase.
+ */
+export function distinctiveTerms(page = {}) {
+  const terms = new Set([
+    ...contentWords(page.title || ''),
+    ...contentWords(page.focus_keyword || ''),
+  ]);
+  const counts = new Map();
+  for (const w of contentWords(page.text || '')) counts.set(w, (counts.get(w) || 0) + 1);
+  for (const [w, n] of counts) if (n >= 2) terms.add(w);
+  return terms;
+}
+
+/** How many of a phrase's content words are distinctive terms of the page. */
+export function distinctiveMatches(phrase, terms) {
+  if (!terms || terms.size === 0) return 0;
+  return contentWords(phrase).filter((w) => terms.has(w)).length;
+}
+
+// A thin page cannot support a two-term test: with two distinctive words to its
+// name, requiring two matches would drop everything the page is genuinely about.
+const THIN_PAGE_TERMS = 3;
+const MIN_MATCHES_NORMAL = 2;
+const MIN_MATCHES_THIN = 1;
+
+// Measured demand and the operator's own words are kept whatever the page says;
+// everything inferred has to earn its place by overlapping the page.
+const ALWAYS_KEPT = new Set(['seed', 'page-keyword', 'page-title', 'gsc']);
+
+// A row's score. GSC carries a large constant because it is the one source that
+// is measured rather than inferred, and the operator's own site is the best
+// evidence available about what this page should target.
+const GSC_BONUS = 100;
+const RELEVANCE_WEIGHT = 3;
+
+/**
+ * The site's own Search Console rows, as candidates that carry Google's numbers.
+ *
+ * Nothing is defaulted and nothing is invented: a row whose metrics are not all
+ * real numbers is dropped rather than shown with a 0, because "0 impressions" is
+ * a claim about the site and a missing field is not. Duplicates keep the busiest
+ * row, since Google can return one query more than once across dimensions.
+ */
+export function gscCandidates(rows, limit = MAX_GSC_QUERIES) {
+  const byPhrase = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const phrase = normalizePhrase(Array.isArray(r?.keys) ? r.keys[0] : '');
+    if (!phrase) continue;
+    const metrics = {
+      impressions: Number(r?.impressions),
+      clicks: Number(r?.clicks),
+      ctr: Number(r?.ctr),
+      position: Number(r?.position),
+    };
+    if (!Object.values(metrics).every((n) => Number.isFinite(n))) continue;
+    const prev = byPhrase.get(phrase);
+    if (!prev || metrics.impressions > prev.impressions) byPhrase.set(phrase, { phrase, ...metrics });
+  }
+  return [...byPhrase.values()].sort((a, b) => b.impressions - a.impressions).slice(0, limit);
+}
+
+/**
+ * The phrases to ask Google's autocomplete about.
+ *
+ * The page and the operator come first — they are what this research is about.
+ * Competitor phrases may seed too, but ONLY through the same chrome filter and
+ * word caps the candidate list uses: that filter is what stopped a search
+ * field's "Form name" label becoming a seed and dragging "form name meaning in
+ * hindi" back from Google, so it is applied here rather than bypassed.
+ */
+export function researchSeeds({ page = {}, manualSeed = '', competitors = [] } = {}) {
+  const out = [];
+  const push = (raw, maxWords = MAX_SEED_WORDS) => {
+    const p = normalizePhrase(raw);
+    if (!p) return;
+    if (p.split(' ').length > maxWords) return;
+    if (out.includes(p)) return;
+    out.push(p);
+  };
+
+  push(page.focus_keyword);
+  if (page.title && contentWords(page.title).length <= 7) push(page.title);
+  push(manualSeed);
+
+  for (const c of competitors) {
+    if (!c || c.error) continue;
+    const core = titleCore(c.title);
+    if (core && !isChrome(core) && contentWords(core).length <= TITLE_MAX_WORDS && !/[&!]/.test(core)) {
+      push(core, TITLE_MAX_WORDS);
+    }
+    for (const h of [...(c.h1 || []), ...(c.h2 || []).slice(0, 4)]) {
+      if (!isChrome(h) && contentWords(h).length <= HEADING_MAX_WORDS) push(h, HEADING_MAX_WORDS);
+    }
+  }
+
+  return out;
 }
 
 /**
@@ -241,7 +423,7 @@ export function extractPageSignals(html, url = '') {
  * autocomplete AND in two competitors' headings is a far better signal than the
  * same phrase typed by a model, and the operator can see which is which.
  */
-export function mergeCandidates({ seeds = [], suggests = {}, competitors = [], model = [], page = {} } = {}) {
+export function mergeCandidates({ seeds = [], suggests = {}, competitors = [], model = [], gsc = [], page = {} } = {}) {
   const byPhrase = new Map();
 
   const add = (phrase, source, detail = '') => {
@@ -291,13 +473,57 @@ export function mergeCandidates({ seeds = [], suggests = {}, competitors = [], m
   if (page.focus_keyword) add(page.focus_keyword, 'page-keyword');
   for (const m of model) add(m, 'model');
 
-  const rows = [...byPhrase.values()].map((r) => ({
-    ...r,
-    // Longer phrases generated FROM a shorter one are usually the more
-    // specific target; both are useful, so order by how many independent
-    // sources agree, then by specificity.
-    weight: r.sources.length * 10 + contentWords(r.phrase).length,
-  }));
+  // The site's own measured queries, each carrying Google's real numbers. The
+  // metrics ride on the row so the panel can show them; a row that already has
+  // them keeps the first (the list arrives busiest-first).
+  for (const g of gsc) {
+    add(g.phrase, 'gsc');
+    const row = byPhrase.get(normalizePhrase(g.phrase));
+    if (row && !row.gsc) {
+      row.gsc = { impressions: g.impressions, clicks: g.clicks, position: g.position, ctr: g.ctr };
+    }
+  }
+
+  const terms = distinctiveTerms(page);
+  // Two matches, or one when the page has too few distinctive terms to tell a
+  // real neighbour from a phrase that merely shares its head noun.
+  const minMatches = terms.size >= THIN_PAGE_TERMS ? MIN_MATCHES_NORMAL : MIN_MATCHES_THIN;
+  // Was there a page to be relevant TO? The handler copies a bare `body.seed`
+  // into page.focus_keyword, so "no page" is not the same as "no terms" — a
+  // bare-seed exploration would otherwise be judged against the seed's own words
+  // and have everything Google returned for it filtered out. Only a title or real
+  // page text means the page was actually read.
+  const pageWasRead = Boolean(String(page.title || '').trim() || String(page.text || '').trim());
+
+  const rows = [...byPhrase.values()]
+    .map((r) => ({
+      ...r,
+      // Display strings, built HERE rather than in the panel: the panel cannot
+      // import this module, and two copies of "which source is which" is how a
+      // row ends up labelled wrongly on one surface. Every row therefore says
+      // where it came from by name — a competitor row names the HOST.
+      source_labels: r.sources.map(sourceLabel),
+      provenance: [...new Set(r.details.map(provenanceOf).filter(Boolean))].join(', '),
+      gsc_summary: r.gsc ? gscSummary(r.gsc) : null,
+      // How many of the page's DISTINCTIVE terms this phrase carries. One shared
+      // word is the head noun and means nothing (see distinctiveTerms).
+      relevance: distinctiveMatches(r.phrase, terms),
+      // Longer phrases generated FROM a shorter one are usually the more
+      // specific target; both are useful, so order by how many independent
+      // sources agree, then how much of the page this phrase is about, then
+      // specificity. GSC's bonus keeps measured demand above everything
+      // inferred — it is the only number here Google gave us rather than us.
+      weight: r.sources.length * 10
+        + distinctiveMatches(r.phrase, terms) * RELEVANCE_WEIGHT
+        + contentWords(r.phrase).length
+        + (r.sources.includes('gsc') ? GSC_BONUS : 0),
+    }))
+    // The relevance gate. It only applies when the page was actually READ: for a
+    // bare-seed exploration (body.seed with no page) there is nothing to be
+    // relevant TO, and dropping every candidate would turn "we could not read
+    // the page" into "there are no keywords". Measured and operator-chosen rows
+    // are exempt even when the page is known — they are not inferences about it.
+    .filter((r) => !pageWasRead || r.sources.some((s) => ALWAYS_KEPT.has(s)) || r.relevance >= minMatches);
 
   rows.sort((a, b) => b.weight - a.weight || a.phrase.localeCompare(b.phrase));
   return rows.slice(0, MAX_KEYWORDS);
@@ -307,10 +533,21 @@ export function mergeCandidates({ seeds = [], suggests = {}, competitors = [], m
  * The disclosure the UI shows next to every result set. Kept in the module so
  * the wording cannot drift away from what the data actually is.
  */
-export function researchDisclosure({ competitorCount = 0, autocompleteUsed = false, modelUsed = false } = {}) {
+export function researchDisclosure({
+  competitorCount = 0, autocompleteUsed = false, modelUsed = false,
+  gscQueryCount = 0, gscSkipped = false,
+} = {}) {
   const parts = [];
+  // First, because it is the only measured signal in the list.
+  if (gscQueryCount > 0) {
+    parts.push(`${gscQueryCount} ${gscQueryCount === 1 ? 'query' : 'queries'} your own site already appears for in Google Search Console, with Google's own impressions, clicks and average position copied exactly`);
+  }
   if (autocompleteUsed) parts.push('what people actually type into Google (its autocomplete)');
   if (competitorCount > 0) parts.push(`what ${competitorCount} competing page${competitorCount === 1 ? '' : 's'} say about themselves (title, description and headings)`);
   if (modelUsed) parts.push('phrases an AI suggested (the weakest signal here, and labelled as such on each row)');
-  return `Signals used: ${parts.join('; ')}. There are deliberately no search volumes, difficulty scores or rankings here — those come from paid indexes, and a model asked for them will invent them.`;
+  // Skipped silently in the payload, but never silently in the disclosure: the
+  // operator should be able to tell "your site has no such queries" from "we
+  // could not ask".
+  if (gscSkipped) parts.push('your Search Console connection is not set up, so your site\'s own queries are not included (connect it here to add measured demand)');
+  return `Signals used: ${parts.join('; ')}. There are deliberately no search volumes or difficulty scores here — those come from paid indexes, and a model asked for them will invent them. The only numbers shown are Google's own, reported for your own site.`;
 }

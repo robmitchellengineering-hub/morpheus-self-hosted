@@ -297,7 +297,10 @@ export default function SeoTab({ projectId, store, widget = false }) {
   const runKeywords = async () => {
     setKwBusy(true); setErr(null); setNote(null); setKw(null);
     try {
-      const list = competitors.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+      // Eight, matching MAX_COMPETITORS in server/src/lib/keywordResearch.js —
+      // scripts/verify-keywords.mjs compares the two, because a UI that caps
+      // lower than the server is a limit nobody can see or explain.
+      const list = competitors.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 8);
       const r = await runAi('keywords', 'researching what people search for',
         () => base44.functions.invoke('researchKeywords', {
           projectId, id: edit.id, competitors: list,
@@ -633,12 +636,13 @@ export default function SeoTab({ projectId, store, widget = false }) {
           {timerFor('one', 'links', 'keywords')}
 
           <div className="space-y-1">
-            <div className="text-[9px] text-primary/35 uppercase tracking-wider">Competitor pages to compare (optional, up to 3)</div>
+            <div className="text-[9px] text-primary/35 uppercase tracking-wider">Competitor pages to compare (optional, up to 8)</div>
             <input className={inputCls} value={competitors} onChange={(e) => rememberCompetitors(e.target.value)}
               placeholder="rival1.com/repairs, rival2.com" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
             <div className="text-[9px] text-primary/30">
-              Morpheus reads what those pages say about themselves — their title, description and headings. It does not guess at
-              their traffic, and there are no invented search volumes anywhere in this panel.
+              Morpheus reads what those pages say about themselves — their title, description and headings. When Search Console is
+              connected, your site's own queries come first, with Google's real impressions, clicks and average position on them. It
+              does not guess at anyone's traffic, and there are no invented search volumes anywhere in this panel.
             </div>
           </div>
 
@@ -702,17 +706,19 @@ export default function SeoTab({ projectId, store, widget = false }) {
                       <div className="min-w-0">
                         <div className="text-[11px] text-primary/85 break-words">{row.display || row.phrase}</div>
                         <div className="text-[9px] text-primary/40 mt-0.5 flex flex-wrap gap-1.5">
-                          {row.sources.map((src) => (
-                            <span key={src} className="border border-primary/20 px-1 py-0.5">
-                              {src === 'autocomplete' ? 'people type this'
-                                : src.startsWith('competitor') ? 'competing page'
-                                : src === 'model' ? 'AI idea'
-                                : src.startsWith('page') ? 'this page'
-                                : 'your input'}
-                            </span>
+                          {/* Labels and provenance come from the payload: the
+                              server builds them, so the two surfaces that mount
+                              this tab cannot drift apart on what a row is. */}
+                          {(row.source_labels || []).map((label) => (
+                            <span key={label} className="border border-primary/20 px-1 py-0.5">{label}</span>
                           ))}
-                          {row.details?.length > 0 && <span className="text-primary/30">from: {row.details.join(', ')}</span>}
+                          {row.provenance && <span className="text-primary/30">from: {row.provenance}</span>}
                         </div>
+                        {/* Google's own numbers for this query, copied exactly —
+                            the only measured figures in this list. */}
+                        {row.gsc_summary && (
+                          <div className="text-[9px] text-cyan-300/50 mt-0.5">{row.gsc_summary}</div>
+                        )}
                       </div>
                       <button onClick={() => {
                         setEdit((cur) => ({ ...cur, form: { ...cur.form, focus_keyword: row.phrase } }));
