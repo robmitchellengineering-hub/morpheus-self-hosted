@@ -12,6 +12,7 @@ const ALL_SCOPES = [
   { id: 'deploy', label: 'Deploy code' },
   { id: 'store', label: 'Shop & pages' },
   { id: 'seo', label: 'SEO' },
+  { id: 'traffic', label: 'Traffic (indexing)' },
 ];
 const HOST = typeof window !== 'undefined' ? window.location.origin : 'https://morpheus.nz';
 

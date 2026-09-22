@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare, FileText, TrendingUp, Activity } from 'lucide-react';
+import { Globe, Loader2, Rocket, ShoppingBag, ExternalLink, MessageSquare, FileText, TrendingUp, Activity, Send } from 'lucide-react';
 import { base44, setOverrideToken } from '@/api/base44Client';
 import DeployTab from '@/components/matrix/website/DeployTab';
 import ShopTab from '@/components/matrix/website/ShopTab';
 import PagesTab from '@/components/matrix/website/PagesTab';
 import SeoTab from '@/components/matrix/website/SeoTab';
+import TrafficTab from '@/components/matrix/website/TrafficTab';
 import HealthTab from '@/components/matrix/website/HealthTab';
 import EmbedChat from '@/components/matrix/website/EmbedChat';
 
@@ -20,6 +21,7 @@ const SCOPE_TABS = [
   { scope: 'store', id: 'shop', label: 'SHOP', icon: ShoppingBag },
   { scope: 'store', id: 'pages', label: 'PAGES', icon: FileText },
   { scope: 'seo', id: 'seo', label: 'SEO', icon: TrendingUp },
+  { scope: 'traffic', id: 'traffic', label: 'TRAFFIC', icon: Send },
 ];
 
 export default function Embed() {
@@ -144,6 +146,7 @@ export default function Embed() {
           {/* widget: this render is driven by a widget token, so owner-only actions
               (connecting a Google account, for one) must not be offered here. */}
           {tab === 'seo' && <SeoTab projectId={ctx.projectId} store={store} widget />}
+          {tab === 'traffic' && <TrafficTab projectId={ctx.projectId} />}
         </>
       )}
     </div>

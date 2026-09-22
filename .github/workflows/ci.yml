@@ -130,6 +130,15 @@ jobs:
       - name: Keyword research rules
         run: node scripts/verify-keywords.mjs
 
+      # Traffic (IndexNow): the pure payload/batching/ledger decisions, the rule
+      # that a 2xx means "submitted" and never "indexed", and the contracts across
+      # the boundary — the action list against the plugin's switch, the widget
+      # scope against what the tab actually invokes, the caps on both sides, and
+      # the tab being mounted by BOTH surfaces. Each of those otherwise fails at
+      # runtime on a customer's site as a silent 400 or a missing tab.
+      - name: Traffic rules
+        run: node scripts/verify-traffic.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,
