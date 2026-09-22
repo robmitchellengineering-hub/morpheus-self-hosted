@@ -399,6 +399,48 @@ for (const doc of DOCS) {
 }
 check(`every quoted hazard range ends at H${hMax}`, staleRanges, [])
 
+// ═══ 11. The operator's surfaces are the ones we think ══════════════════════
+// A session asked to fix "the SEO tab in the WordPress plugin" went to wp-plugin/
+// — which ships no interface at all — while the operator was in the floating dock
+// that public/plugin.js drops on their own site. Two unrelated things share the
+// word "plugin", and the dock and the app's WEBSITE panel mount the SAME tab
+// components, so a fix in one is a fix in both.
+//
+// That is only true while nobody forks them: the day someone gives the dock its
+// own SEO panel, a shared-component fix silently stops covering the operator's
+// site. This is the check that announces it.
+console.log('\n11. the operator\'s surfaces are the ones we think')
+const surfPanel = read('src/components/matrix/WebsitePanel.jsx')
+const surfEmbed = read('src/pages/Embed.jsx')
+const surfDock = read('public/plugin.js')
+const tabImports = (src) => [...src.matchAll(/from\s+'[^']*\/website\/(\w+)'/g)].map((m) => m[1])
+const panelCmps = tabImports(surfPanel)
+const embedCmps = tabImports(surfEmbed)
+// Only components that ARE tabs. The dock legitimately adds non-tab components of
+// its own (EmbedChat — it talks to the page it floats over, which the app panel's
+// chat does not), so the assertion is about tabs: a dock-only *Tab is the fork
+// that would silently stop a shared-component fix from reaching the operator.
+const embedTabCmps = embedCmps.filter((c) => /Tab$/.test(c))
+check('the app panel mounts tabs (parser sanity)', panelCmps.length >= 5, true)
+check('the dock mounts tabs (parser sanity)', embedTabCmps.length >= 4, true)
+check('every tab the dock mounts is the app panel\'s own component', embedTabCmps.filter((t) => !panelCmps.includes(t)), [])
+check('the SEO tab is shared by both surfaces', embedTabCmps.includes('SeoTab') && panelCmps.includes('SeoTab'), true)
+check('the dock loader points at the embed surface', /\/embed\?/.test(surfDock), true)
+
+// The WordPress plugin is headless, and that is exactly why looking for a tab in
+// it wastes a session. Assert the absence so that adding a UI to the plugin fails
+// here — forcing whoever does it to update the map rather than surprise the next
+// reader with a third place a panel can live.
+const pluginFiles = (() => {
+  const full = join(REPO, 'wp-plugin/morpheus')
+  if (!existsSync(full)) return []
+  const walk = (d, prefix = '') => readdirSync(d, { withFileTypes: true }).flatMap((e) => (
+    e.isDirectory() ? walk(join(d, e.name), `${prefix}${e.name}/`) : [`${prefix}${e.name}`]
+  ))
+  return walk(full)
+})()
+check('the WordPress plugin still ships no JS/CSS (it is headless)', pluginFiles.filter((f) => /\.(js|css)$/.test(f)), [])
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

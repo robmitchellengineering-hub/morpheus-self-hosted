@@ -21,6 +21,14 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p) => readFileSync(join(REPO, p), 'utf8')
 const exists = (p) => existsSync(join(REPO, p))
 const ls = (p) => (exists(p) ? readdirSync(join(REPO, p)) : [])
+/** Every file under a directory, recursive — for "does this ship any JS at all". */
+const walkFiles = (dir) => {
+  const full = join(REPO, dir)
+  if (!existsSync(full)) return []
+  return readdirSync(full, { withFileTypes: true }).flatMap((e) => (
+    e.isDirectory() ? walkFiles(`${dir}/${e.name}`) : [`${dir}/${e.name}`]
+  ))
+}
 const listFiles = (dir, ext) => {
   const full = join(REPO, dir)
   if (!existsSync(full)) return []
@@ -142,6 +150,37 @@ out.frontend = {
   lintIgnores,
 }
 
+// ── surfaces ────────────────────────────────────────────────────────────────
+// Where the operator actually SEES Morpheus, derived so it cannot drift.
+//
+// This section exists because of a real miss (2026-09-22). Asked to fix "the SEO
+// tab in the WordPress plugin", a session went to wp-plugin/ — which ships no
+// interface at all — because two unrelated things share the word "plugin":
+//
+//   public/plugin.js   the dock loader MORPHEUS serves, which drops the panel on
+//                      the operator's own site (admin-only by gating the tag)
+//   wp-plugin/         the WordPress plugin, which answers signed requests
+//
+// The second fact worth never re-learning: the dock and the app's WEBSITE panel
+// mount the SAME tab components, so a fix in one is a fix in both — true only
+// while nobody forks them, which is what section 11 of verify-context.mjs holds.
+const panelSrc = read('src/components/matrix/WebsitePanel.jsx')
+const embedSrc = read('src/pages/Embed.jsx')
+const dockSrc = read('public/plugin.js')
+const tabComponents = (src) => [...src.matchAll(/from\s+'[^']*\/website\/(\w+)'/g)].map((m) => m[1])
+const panelTabCmp = tabComponents(panelSrc)
+const embedTabCmp = tabComponents(embedSrc)
+const pluginAssets = walkFiles('wp-plugin/morpheus').filter((f) => /\.(js|css)$/.test(f))
+out.surfaces = {
+  panelTabs: [...panelSrc.matchAll(/\{\s*id:\s*'([a-z]+)',\s*label:/g)].map((m) => m[1]),
+  embedTabs: [...embedSrc.matchAll(/scope:\s*'([a-z]+)',\s*id:\s*'([a-z]+)'/g)].map((m) => `${m[2]} (${m[1]})`),
+  sharedTabs: embedTabCmp.filter((t) => panelTabCmp.includes(t)).sort(),
+  panelOnlyTabs: panelTabCmp.filter((t) => !embedTabCmp.includes(t)).sort(),
+  embedPath: /\/embed\?/.test(dockSrc) ? '/embed' : null,
+  pluginVersion: (read('wp-plugin/morpheus/morpheus.php').match(/MORPHEUS_VERSION',\s*'([^']+)'/) || [])[1] || '?',
+  pluginAssets: pluginAssets.length,
+}
+
 // ── verification ────────────────────────────────────────────────────────────
 const ci = exists('.github/workflows/ci.yml') ? read('.github/workflows/ci.yml') : ''
 // Scope to the jobs: block. Taking every 2-space key matched pull_request: and
@@ -227,6 +266,20 @@ console.log(H('COMMAND DECK'))
 console.log(`  ${out.deck.functionFiles.length} deck/jarvis functions · ${out.deck.models.length} Deck models · ${out.deck.pages.length} pages · ${out.deck.widgetCount} widgets`)
 console.log(`  synthesis card: ${out.deck.hasSynthesisCard} · vault check: ${out.deck.hasVaultCheck} · long-term memory: ${out.deck.hasMemory}`)
 console.log(`  functions: ${out.deck.functionFiles.join(', ')}`)
+
+console.log(H('SURFACES'))
+console.log(`  app panel        src/components/matrix/WebsitePanel.jsx   tabs: ${out.surfaces.panelTabs.join(', ')}`)
+console.log(`  dock / embed     public/plugin.js -> ${out.surfaces.embedPath} -> src/pages/Embed.jsx   tabs: ${out.surfaces.embedTabs.join(', ')}`)
+console.log('                   (the dock is what the operator sees logged into wp-admin, over their own site;')
+console.log('                    its tabs are gated by the widget token\'s scopes, so a missing tab is a missing scope)')
+console.log(`  wordpress plugin wp-plugin/morpheus v${out.surfaces.pluginVersion}   ${out.surfaces.pluginAssets === 0
+  ? 'no JS/CSS — headless: pairing + signed endpoints + the on-site work'
+  : `${out.surfaces.pluginAssets} JS/CSS asset(s)`}`)
+console.log(`  command deck     /deck   (see COMMAND DECK above)`)
+console.log(`  app panel only   ${out.surfaces.panelOnlyTabs.join(', ')}`)
+console.log(`  BOTH surfaces    ${out.surfaces.sharedTabs.join(', ')}   <- one component, so one fix`)
+console.log('  naming trap      public/plugin.js is the dock loader Morpheus serves; wp-plugin/ is the')
+console.log('                   WordPress plugin. Unrelated files, unrelated jobs.')
 
 console.log(H('FRONTEND'))
 console.log(`  ${out.frontend.routes} routes · adminOnly: ${out.frontend.adminOnlyRoutes.join(', ') || 'none'}`)
