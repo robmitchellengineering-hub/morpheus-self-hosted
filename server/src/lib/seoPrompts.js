@@ -44,12 +44,125 @@ export const SEO_INPUT_KEYS = ['seo_title', 'seo_description', 'focus_keyword', 
 // are structural decisions for the operator, not something to invent.
 export const SEO_SUGGESTION_KEYS = ['seo_title', 'seo_description', 'focus_keyword'];
 
-// One batch = one model call. 25 items with 1500 chars of grounding each is
-// already a large prompt; beyond that the model starts dropping items, which
-// looks like a generation failure to the operator.
+// The most items one *request* may ask for. 25 items with 1500 chars of
+// grounding each is already a large prompt; beyond that the model starts
+// dropping items, which looks like a generation failure to the operator.
+//
+// This is not "one model call" — a request is split into several calls by
+// chunkSeoItems() below, because the model's hidden reasoning shares the output
+// budget with the JSON it returns (see seoCallMaxTokens).
 export const MAX_BATCH = 25;
 export const MAX_GROUNDING_CHARS = 1500;
 export const MAX_INTERNAL_LINKS = 40;
+
+// ── one call's output budget, hidden reasoning included ─────────────────────
+//
+// The deployed model spends real budget on hidden reasoning BEFORE it emits any
+// visible text (build library: ai-features → "a truncated call reads as a
+// negative answer"). A cap sized only from the JSON that must come back is
+// therefore not a cap on the JSON at all: the reasoning eats it first, the call
+// returns finish_reason 'length' with an incomplete object, and ai.js turns that
+// into OUTPUT_TRUNCATED — which the SEO panel then shows as a token-limit error.
+//
+// That is what broke "generate for every published item missing metadata":
+// 900 + 25*260 = 7400 tokens had to cover the reasoning AND 25 items of JSON,
+// and a single item got only 1160.
+//
+// So every call pays a reasoning floor first, and items are split into calls
+// small enough that one verbose page cannot spend another page's share.
+export const SEO_TOKENS_PER_ITEM = 400;
+export const SEO_REASONING_FLOOR = 6000;
+export const SEO_MIN_CALL_TOKENS = 8000;
+export const SEO_MAX_CALL_TOKENS = 32000;
+export const SEO_ITEMS_PER_CALL = 5;
+
+/**
+ * Output cap for one model call covering `itemCount` items.
+ *
+ * Monotonic in itemCount and never below SEO_MIN_CALL_TOKENS, so the floor that
+ * pays for hidden reasoning cannot be squeezed out by a small batch.
+ */
+export function seoCallMaxTokens(itemCount) {
+  const n = Math.max(1, Math.trunc(Number(itemCount) || 1));
+  const wanted = SEO_REASONING_FLOOR + n * SEO_TOKENS_PER_ITEM;
+  return Math.min(SEO_MAX_CALL_TOKENS, Math.max(SEO_MIN_CALL_TOKENS, wanted));
+}
+
+/**
+ * Split items into calls of at most `size`, preserving order.
+ *
+ * A partition, not a filter: every item lands in exactly one chunk, so a batch
+ * cannot be split and silently lose items.
+ */
+export function chunkSeoItems(items, size = SEO_ITEMS_PER_CALL) {
+  const list = Array.isArray(items) ? items : [];
+  const per = Math.max(1, Math.trunc(size) || SEO_ITEMS_PER_CALL);
+  const out = [];
+  for (let i = 0; i < list.length; i += per) out.push(list.slice(i, i + per));
+  return out;
+}
+
+/**
+ * Merge the suggestion lists from several calls, first entry per id wins.
+ *
+ * Chunking means one response per call but the operator reviews one batch, so
+ * responses are stitched back into a single list before normalising. `coerceId`
+ * is the same guard the normaliser uses — an id the model invented is dropped
+ * rather than trusted (a hallucinated id would write SEO to someone else's page).
+ */
+export function mergeSeoSuggestions(lists) {
+  // Accepts either the per-call lists ([[...], [...]]) or one already-flat list,
+  // so a caller stitching a single response cannot silently merge nothing.
+  const flat = [];
+  for (const entry of Array.isArray(lists) ? lists : []) {
+    if (Array.isArray(entry)) flat.push(...entry);
+    else if (entry && typeof entry === 'object') flat.push(entry);
+  }
+  const byId = new Map();
+  for (const s of flat) {
+    const id = coerceId(s?.id);
+    if (id == null || byId.has(id)) continue;
+    byId.set(id, s);
+  }
+  return [...byId.values()];
+}
+
+/**
+ * Ask for items in bounded chunks, halving any chunk that comes back truncated.
+ *
+ * `ask(chunk)` performs one model call and returns that call's raw suggestion
+ * list; it must throw an error whose message contains OUTPUT_TRUNCATED when the
+ * response was cut off. A chunk that truncates is split in half and retried, so
+ * one verbose page costs one extra call instead of the whole batch — which is
+ * exactly how the 25-item batch used to fail. A single item with nothing left to
+ * split is handed to `onGiveUp` (default: rethrow), so the caller can name the
+ * item instead of surfacing ai.js's "files per step" advice.
+ *
+ * Pure apart from `ask`: no model, no site, so scripts/verify-seo.mjs can drive
+ * every branch with a fake asker.
+ */
+export async function generateSeoInChunks(items, ask, options = {}) {
+  const { size = SEO_ITEMS_PER_CALL, onGiveUp } = options;
+  const out = [];
+  const run = async (chunk) => {
+    try {
+      const list = await ask(chunk);
+      out.push(...(Array.isArray(list) ? list : []));
+    } catch (e) {
+      const truncated = /OUTPUT_TRUNCATED/.test(String(e?.message || ''));
+      if (!truncated) throw e; // a real failure is not made smaller by splitting
+      if (chunk.length === 1) throw onGiveUp ? onGiveUp(chunk[0], e) : e;
+      const mid = Math.ceil(chunk.length / 2);
+      // Sequential: a burst at a shared provider is a good way to get rate-limited.
+      // eslint-disable-next-line no-await-in-loop
+      await run(chunk.slice(0, mid));
+      // eslint-disable-next-line no-await-in-loop
+      await run(chunk.slice(mid));
+    }
+  };
+  for (const chunk of chunkSeoItems(items, size)) await run(chunk);
+  return out;
+}
 
 // ── small helpers ───────────────────────────────────────────────────────────
 

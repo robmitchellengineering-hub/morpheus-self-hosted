@@ -24,6 +24,9 @@ import {
   sanitizeGeneratedHtml, normalizeBlogDraft, buildBlogPrompt,
   SEO_INPUT_KEYS, TITLE_MAX, DESC_MAX, TITLE_HARD_MAX, MAX_GROUNDING_CHARS,
   buildLinkPrompt, normalizeLinkSuggestions, MAX_LINKS,
+  MAX_BATCH, SEO_ITEMS_PER_CALL, SEO_TOKENS_PER_ITEM, SEO_REASONING_FLOOR,
+  SEO_MIN_CALL_TOKENS, SEO_MAX_CALL_TOKENS,
+  chunkSeoItems, seoCallMaxTokens, mergeSeoSuggestions, generateSeoInChunks,
 } from '../server/src/lib/seoPrompts.js';
 import { TEMPLATE_TOKENS } from '../src/lib/seoTemplate.js';
 
@@ -458,6 +461,121 @@ const stripRegion = (src, marker) => {
 };
 check('panel tabs keep their minimum width', /basis-\[96px\]/.test(stripRegion(panelSrc2, '{TABS.map(')), true);
 check('widget tabs keep their minimum width', /basis-\[84px\]/.test(stripRegion(embedSrc, '{tabs.map(')), true);
+
+// ── 5. a batch is split into calls that can each finish ─────────────────────
+//
+// The bug this pins: "generate for every published item missing metadata" sent
+// up to MAX_BATCH items in ONE call whose output cap was 900 + n*260 — sized
+// from the JSON alone, with nothing reserved for the model's hidden reasoning.
+// On the deployed model the reasoning spends that budget before any visible text
+// is emitted, so a full batch returned finish_reason 'length' and the panel
+// showed OUTPUT_TRUNCATED ("the AI response was cut off by the token limit").
+// A guard, not a comment: the arithmetic below fails if the floor is removed or
+// a whole batch is put back into one call.
+console.log('\n5. a batch is split into calls that can each finish');
+
+const twentyFive = Array.from({ length: MAX_BATCH }, (_, i) => ({ id: 1000 + i, title: `Item ${i}` }));
+const chunks = chunkSeoItems(twentyFive);
+
+check('the batch cap is more than one call\'s worth', SEO_ITEMS_PER_CALL < MAX_BATCH, true);
+check('a full batch really is split', chunks.length > 1, true);
+check('no call exceeds the per-call item limit', chunks.every((c) => c.length <= SEO_ITEMS_PER_CALL), true);
+// A partition, not a filter: a chunker that dropped an item would look like the
+// model "not returning a suggestion", which is how a silent loss gets shipped.
+check('every item survives the split, exactly once', chunks.flat().length === twentyFive.length, true);
+check('…and in order', chunks.flat().every((it, i) => it.id === twentyFive[i].id), true);
+check('ids are unique after the split', new Set(chunks.flat().map((it) => it.id)).size === twentyFive.length, true);
+check('an empty batch asks for no calls', chunkSeoItems([]).length, 0);
+check('one item asks for one call', chunkSeoItems([{ id: 1 }]).length, 1);
+
+// The cap must cover the model's hidden reasoning AND the largest JSON the
+// schema permits, for every batch size the caller may ask for. Worst-case JSON
+// per item is derived from the hard limits the normaliser enforces, not guessed.
+const worstCaseItemTokens = Math.ceil((TITLE_HARD_MAX + DESC_MAX + 60 + 80) / 4);
+const caps = Array.from({ length: MAX_BATCH }, (_, i) => seoCallMaxTokens(i + 1));
+check('no call is budgeted below the floor', caps.every((c) => c >= SEO_MIN_CALL_TOKENS), true);
+check('no call exceeds the hard ceiling', caps.every((c) => c <= SEO_MAX_CALL_TOKENS), true);
+check('the budget never shrinks as the batch grows', caps.every((c, i) => i === 0 || c >= caps[i - 1]), true);
+check(
+  'a full call can hold its worst-case JSON on top of the reasoning floor',
+  seoCallMaxTokens(SEO_ITEMS_PER_CALL) - SEO_REASONING_FLOOR >= SEO_ITEMS_PER_CALL * worstCaseItemTokens,
+  true,
+);
+// The old single-item cap (1160) is the one that failed first in the panel.
+check('a single item is no longer budgeted below the old failing cap', seoCallMaxTokens(1) > 900 + 260, true);
+
+// Responses come back one per call; the operator reviews one batch.
+const merged = mergeSeoSuggestions([
+  [{ id: 11, seo_title: 'A' }, { id: 12, seo_title: 'B' }],
+  [{ id: 13, seo_title: 'C' }],
+]);
+check('suggestions from every call are kept', merged.map((s) => s.id), [11, 12, 13]);
+check('a duplicate id keeps the first answer', mergeSeoSuggestions([[{ id: 7, seo_title: 'first' }], [{ id: 7, seo_title: 'second' }]])[0].seo_title, 'first');
+check('an invented id is dropped on merge', mergeSeoSuggestions([[{ id: 'not-a-number', seo_title: 'x' }]]).length, 0);
+check('an already-flat list merges too', mergeSeoSuggestions([{ id: 5, seo_title: 'E' }]).map((s) => s.id), [5]);
+check('merging nothing is not an error', mergeSeoSuggestions([]).length, 0);
+
+// The call site itself: the split is the fix, so assert the generator actually
+// goes through the chunked runner — a helper nobody calls changes nothing.
+const genSrc = read('server/src/functions/generateSeoMeta.js').replace(/^\s*\/\/.*$/gm, '');
+check('the SEO batch generator routes through the chunked runner', has(genSrc, 'generateSeoInChunks('), true);
+check('…and budgets each call from the reasoning-aware helper', has(genSrc, 'seoCallMaxTokens('), true);
+check('…and no longer budgets the whole batch from the item count alone', has(genSrc, '900 + usable.length * 260'), false);
+check('…and stitches the per-call responses back together', has(genSrc, 'mergeSeoSuggestions('), true);
+
+// ── 6. the split/retry loop, driven for real ────────────────────────────────
+//
+// Group 5 asserts the arithmetic. This drives the loop with a fake asker, so the
+// branch that actually recovers a truncated batch is executed rather than
+// reasoned about — the halving is the part an off-by-one would break.
+console.log('\n6. the split/retry loop, driven for real');
+
+const sized = (chunk) => chunk.map((it) => ({ id: it.id, seo_title: `T${it.id}` }));
+const truncatedError = () => new Error('OUTPUT_TRUNCATED (role=diagnosis, maxTokens=8000): The AI response was cut off by the token limit before it could finish.');
+
+let cleanCalls = 0;
+const cleanSizes = [];
+const clean = await generateSeoInChunks(twentyFive, async (chunk) => {
+  cleanCalls++;
+  cleanSizes.push(chunk.length);
+  return sized(chunk);
+});
+check('a clean batch answers every item', clean.length, twentyFive.length);
+check('…in one call per chunk', cleanCalls, Math.ceil(twentyFive.length / SEO_ITEMS_PER_CALL));
+check('…never above the per-call limit', cleanSizes.every((n) => n <= SEO_ITEMS_PER_CALL), true);
+
+let splitCalls = 0;
+const recovered = await generateSeoInChunks(twentyFive, async (chunk) => {
+  splitCalls++;
+  if (chunk.length > 2) throw truncatedError();
+  return sized(chunk);
+});
+check('a truncated chunk is halved, not lost', recovered.length, twentyFive.length);
+check('…with every id still answered exactly once', new Set(recovered.map((s) => s.id)).size, twentyFive.length);
+check('…at a cost of no more than one call per item', splitCalls <= twentyFive.length, true);
+
+// A real failure must not be mistaken for truncation and quietly shrunk.
+let propagated = null;
+try {
+  await generateSeoInChunks(twentyFive, async () => { throw new Error('Could not reach https://shop.test — no response'); });
+} catch (e) { propagated = e.message; }
+check('a non-truncation failure propagates unchanged', propagated, 'Could not reach https://shop.test — no response');
+
+// One item has nothing left to split: the caller gets to name it.
+let gaveUp = null;
+try {
+  await generateSeoInChunks([{ id: 99, title: 'Long page' }], async () => { throw truncatedError(); }, {
+    onGiveUp: (item) => Object.assign(new Error(`gave up on ${item.id}`), { status: 502 }),
+  });
+} catch (e) { gaveUp = { message: e.message, status: e.status }; }
+check('a single item that still truncates is named', gaveUp?.message, 'gave up on 99');
+check('…and carries a status the API layer can use', gaveUp?.status, 502);
+
+let survived = null;
+try {
+  await generateSeoInChunks([{ id: 1 }], async () => { throw truncatedError(); });
+} catch (e) { survived = /OUTPUT_TRUNCATED/.test(e.message); }
+check('without a give-up handler the truncation error survives', survived, true);
 
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);
