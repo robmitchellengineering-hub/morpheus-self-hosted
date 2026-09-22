@@ -5,8 +5,10 @@ import {
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import SearchConsolePanel from './SearchConsolePanel';
+import EtaTimer from './EtaTimer';
 import { serpPreview } from '@/lib/serpPreview';
 import { TEMPLATE_TOKENS, TOKEN_HELP, resolveTemplate, insertToken } from '@/lib/seoTemplate';
+import { sliceForRequests, mergeBatchResults, estimateRemainingMs, SEO_BATCH_MAX } from '@/lib/seoBatch';
 
 // SEO tab of the WEBSITE panel — every SEO field on every page, post and
 // product on the operator's own site, operable from here, plus AI generation
@@ -32,6 +34,24 @@ const DEFAULT_LIMITS = { title_min: 15, title_max: 60, desc_min: 70, desc_max: 1
 
 const call = (projectId, action, data) =>
   base44.functions.invoke('wordPressSeoAction', { projectId, action, data }).then((r) => r.data);
+
+// Per-action measured durations, so a single-call action's ETA comes from what it
+// actually took last time rather than a hardcoded guess. The batch doesn't need
+// this — it measures its own slices as it goes.
+const RUN_MS_KEY = 'morpheus_seo_run_ms';
+function readLastMs(key) {
+  try {
+    const v = Number((JSON.parse(localStorage.getItem(RUN_MS_KEY) || '{}'))[key]);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  } catch { return null; }
+}
+function writeLastMs(key, ms) {
+  try {
+    const all = JSON.parse(localStorage.getItem(RUN_MS_KEY) || '{}');
+    all[key] = ms;
+    localStorage.setItem(RUN_MS_KEY, JSON.stringify(all));
+  } catch { /* storage is a convenience */ }
+}
 
 function Btn({ onClick, disabled, children, kind = 'ghost', title }) {
   const cls = kind === 'primary'
@@ -127,6 +147,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
 
   const [batch, setBatch] = useState(null); // { suggestions, ... } pending review
   const [genBatch, setGenBatch] = useState(false);
+  const [run, setRun] = useState(null); // { key, startedAt, estimateMs, done, total, detail }
+  const cancelRun = useRef(false);
   const [applying, setApplying] = useState(false);
 
   const [defaults, setDefaults] = useState(null); // { enabled, title, description, post_types }
@@ -232,7 +254,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
   const suggestLinks = async () => {
     setLoadingLinks(true); setErr(null); setNote(null); setLinkPlan(null);
     try {
-      const r = await base44.functions.invoke('suggestInternalLinks', { projectId, id: edit.id }).then((x) => x.data);
+      const r = await runAi('links', 'reading the page and picking links',
+        () => base44.functions.invoke('suggestInternalLinks', { projectId, id: edit.id }).then((x) => x.data));
       if (!r) throw new Error('No suggestion came back — try again.');
       setLinks({ ...r, checked: Object.fromEntries((r.links || []).map((l, i) => [i, true])) });
       if (r.note) setNote(r.note);
@@ -275,9 +298,10 @@ export default function SeoTab({ projectId, store, widget = false }) {
     setKwBusy(true); setErr(null); setNote(null); setKw(null);
     try {
       const list = competitors.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
-      const r = await base44.functions.invoke('researchKeywords', {
-        projectId, id: edit.id, competitors: list,
-      }).then((x) => x.data);
+      const r = await runAi('keywords', 'researching what people search for',
+        () => base44.functions.invoke('researchKeywords', {
+          projectId, id: edit.id, competitors: list,
+        }).then((x) => x.data));
       setKw(r);
       if (!r?.keywords?.length) setNote('No keyword signals came back — try again, or add a competitor address.');
     } catch (e) { setErr(e?.data?.error || e.message); }
@@ -298,10 +322,41 @@ export default function SeoTab({ projectId, store, widget = false }) {
     finally { setSaving(false); }
   };
 
+  // Every AI action goes through here, so the operator gets the same honest
+  // feedback everywhere: a clock that ticks from the first moment (a bare spinner
+  // is what "it just sits there, looks frozen" was), and a remaining estimate
+  // taken from this action's own last run rather than a hardcoded guess.
+  const runAi = async (key, detail, fn) => {
+    const startedAt = Date.now();
+    setRun({ key, startedAt, estimateMs: readLastMs(key), detail, done: 0, total: 1 });
+    try {
+      return await fn();
+    } finally {
+      writeLastMs(key, Date.now() - startedAt);
+      setRun(null);
+    }
+  };
+
+  // Renders the timer only for the run that is actually in flight (they are
+  // mutually exclusive — one operator, one click at a time). The wrapper lives
+  // here so every call site is a single `{timerFor(...)}` with no duplicate
+  // element construction.
+  const timerFor = (...keys) => (run && keys.includes(run.key) ? (
+    <div className="mt-2">
+      <EtaTimer
+        startedAt={run.startedAt}
+        estimateMs={run.estimateMs}
+        detail={run.detail}
+        onCancel={run.total > 1 ? () => { cancelRun.current = true; } : undefined}
+      />
+    </div>
+  ) : null);
+
   const generateOne = async () => {
     setGenOne(true); setErr(null); setNote(null);
     try {
-      const r = await base44.functions.invoke('generateSeoMeta', { projectId, items: [{ id: edit.id }] }).then((x) => x.data);
+      const r = await runAi('one', 'writing metadata for this page',
+        () => base44.functions.invoke('generateSeoMeta', { projectId, items: [{ id: edit.id }] }).then((x) => x.data));
       const s = r?.suggestions?.[0];
       if (!s) throw new Error('No suggestion came back — try again.');
       setEdit((cur) => ({ ...cur, suggestion: s }));
@@ -321,13 +376,64 @@ export default function SeoTab({ projectId, store, widget = false }) {
   const generateBatch = async () => {
     if (missing.length === 0) { setNote('Every published item already has a title and a description.'); return; }
     setGenBatch(true); setErr(null); setNote(null); setBatch(null);
+    cancelRun.current = false;
+    const startedAt = Date.now();
+    // Bounded per click: what this generates has to be applyable in one
+    // bulk_set_seo (see SEO_BATCH_MAX). The remainder stays counted as missing.
+    const work = missing.slice(0, SEO_BATCH_MAX);
+    // One request per slice of items. A request is then a single model call, which
+    // is what keeps it inside the platform's request envelope — asking for the
+    // whole batch in one request made the server run five sequential calls before
+    // answering, and the connection was cut before it could: "Failed to fetch"
+    // (2026-09-22). Slicing also means real progress and an ETA that comes from
+    // completed slices instead of a guess.
+    const slices = sliceForRequests(work);
+    setRun({
+      key: 'batch', startedAt, estimateMs: null, done: 0, total: slices.length,
+      detail: `batch 0 of ${slices.length}`,
+    });
     try {
-      const r = await base44.functions.invoke('generateSeoMeta', {
-        projectId, items: missing.slice(0, 25).map((it) => ({ id: it.id })),
-      }).then((x) => x.data);
-      setBatch({ ...r, checked: Object.fromEntries((r.suggestions || []).map((s) => [s.id, true])) });
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setGenBatch(false); }
+      const results = [];
+      let failure = null;
+      for (let i = 0; i < slices.length; i += 1) {
+        if (cancelRun.current) break;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const r = await base44.functions.invoke('generateSeoMeta', {
+            projectId, items: slices[i].map((it) => ({ id: it.id })),
+          }).then((x) => x.data);
+          results.push(r);
+        } catch (e) { failure = e; break; } // keep the slices that did answer
+        const done = i + 1;
+        const elapsedMs = Date.now() - startedAt;
+        const remaining = estimateRemainingMs({ done, total: slices.length, elapsedMs });
+        setRun((cur) => (cur ? {
+          ...cur, done, detail: `batch ${done} of ${slices.length}`,
+          estimateMs: remaining == null ? null : elapsedMs + remaining,
+        } : cur));
+      }
+
+      const merged = mergeBatchResults(results);
+      writeLastMs('batch', Date.now() - startedAt);
+      if (merged.suggestions.length) {
+        setBatch({ ...merged, checked: Object.fromEntries(merged.suggestions.map((s) => [s.id, true])) });
+        const empty = work.length - merged.generated;      // asked for, nothing came back
+        const capped = missing.length - work.length;        // beyond this click's cap
+        const tail = [
+          empty > 0 ? `${empty} came back empty` : null,
+          capped > 0 ? `${capped} still waiting (click again for the next ${SEO_BATCH_MAX})` : null,
+        ].filter(Boolean).join(' · ');
+        if (failure) setNote(`Stopped at ${merged.generated} of ${missing.length} — ${failure?.data?.error || failure.message}`);
+        else if (cancelRun.current) setNote(`Stopped — ${merged.generated} of ${missing.length} generated. The rest are still listed as missing.`);
+        else if (tail) setNote(`${merged.generated} generated · ${tail}`);
+      } else if (failure) {
+        setErr(failure?.data?.error || failure.message);
+      } else if (cancelRun.current) {
+        setNote('Stopped before anything was generated.');
+      } else {
+        setErr('No suggestions came back — try again.');
+      }
+    } finally { setRun(null); setGenBatch(false); }
   };
 
   const applyBatch = async () => {
@@ -428,7 +534,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
   const generateBlog = async () => {
     setGenBlog(true); setErr(null); setNote(null);
     try {
-      const r = await base44.functions.invoke('generateBlogPost', { projectId, ...blog.form }).then((x) => x.data);
+      const r = await runAi('blog', 'writing the draft',
+        () => base44.functions.invoke('generateBlogPost', { projectId, ...blog.form }).then((x) => x.data));
       if (!r?.draft) throw new Error('No draft came back — try again.');
       setBlog({ form: blog.form, draft: r.draft, warnings: r.warnings, linkable: r.linkable });
     } catch (e) { setErr(e?.data?.error || e.message); }
@@ -523,6 +630,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
               {kwBusy ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} KEYWORD IDEAS
             </button>
           </div>
+          {timerFor('one', 'links', 'keywords')}
 
           <div className="space-y-1">
             <div className="text-[9px] text-primary/35 uppercase tracking-wider">Competitor pages to compare (optional, up to 3)</div>
@@ -1032,6 +1140,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             </Btn>
           )}
         </div>
+        {timerFor('blog')}
       </div>
     );
   }
@@ -1086,6 +1195,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <Settings2 size={11} /> DEFAULTS
           </Btn>
         </div>
+
+        {timerFor('batch')}
 
         {audit && (
           <div className="border border-primary/15 px-3 py-2 text-[10px] text-primary/55">

@@ -29,6 +29,9 @@ import {
   chunkSeoItems, seoCallMaxTokens, mergeSeoSuggestions, generateSeoInChunks,
 } from '../server/src/lib/seoPrompts.js';
 import { TEMPLATE_TOKENS } from '../src/lib/seoTemplate.js';
+import {
+  SEO_REQUEST_ITEMS, SEO_BATCH_MAX, sliceForRequests, mergeBatchResults, estimateRemainingMs,
+} from '../src/lib/seoBatch.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -576,6 +579,72 @@ try {
   await generateSeoInChunks([{ id: 1 }], async () => { throw truncatedError(); });
 } catch (e) { survived = /OUTPUT_TRUNCATED/.test(e.message); }
 check('without a give-up handler the truncation error survives', survived, true);
+
+// ── 7. a batch is requested in slices a single connection can survive ───────
+//
+// The bug this pins (2026-09-22): the panel sent up to 25 items in ONE request,
+// which the server answered only after five sequential model calls. Each call is
+// capped at 180s (ai.js AI_FETCH_TIMEOUT_MS) and the request returned no bytes
+// until all of them finished, so the connection was cut long before the server
+// could answer — the operator saw a bare "Failed to fetch" and a spinner that
+// never resolved. The fix is an invariant, not a tuning value: ONE REQUEST MUST
+// CARRY NO MORE THAN ONE MODEL CALL'S WORTH OF ITEMS. Slicing on the client also
+// makes progress and the ETA measurable, which is why the timer lives there.
+console.log('\n7. a batch is requested in slices one connection can survive');
+
+const fortyOne = Array.from({ length: 41 }, (_, i) => ({ id: 2000 + i, title: `Item ${i}` }));
+const slices = sliceForRequests(fortyOne);
+
+// The contract across the boundary no compiler checks: if the client asked for
+// more than the server's own chunk, the server would silently split it again and
+// the request would go back to being multi-call — the original bug.
+check('a client request is never more than the server call chunk', SEO_REQUEST_ITEMS <= SEO_ITEMS_PER_CALL, true);
+// What one click generates must be applyable in one bulk write: the review list
+// goes back through a single bulk_set_seo, which the server caps at 100 items by
+// silently slicing the payload. Generating past that would look like a complete
+// apply while dropping the rest.
+check('one click stays within the server batch cap', SEO_BATCH_MAX <= MAX_BATCH, true);
+check('one click\'s results fit a single bulk write', SEO_BATCH_MAX <= 100, true);
+check('the 41-item case is more than one request', slices.length > 1, true);
+check('no request exceeds the client slice size', slices.every((s) => s.length <= SEO_REQUEST_ITEMS), true);
+// A partition, not a filter: dropping an item here would look like "the model
+// didn't return a suggestion for that page".
+check('every item is requested exactly once', slices.flat().length, fortyOne.length);
+check('…and in order', slices.flat().every((it, i) => it.id === fortyOne[i].id), true);
+check('the last slice holds the remainder', slices.at(-1).length, fortyOne.length % SEO_REQUEST_ITEMS || SEO_REQUEST_ITEMS);
+check('an empty batch asks for nothing', sliceForRequests([]).length, 0);
+
+// Stitching the per-request responses back into one review batch.
+const mergedBatch = mergeBatchResults([
+  { suggestions: [{ id: 1, seo_title: 'A' }, { id: 2, seo_title: 'B' }], requested: 5, generated: 2, missing: [3], title_only: 1, owns_head: true },
+  { suggestions: [{ id: 3, seo_title: 'C' }], requested: 5, generated: 1, missing: [], title_only: 0, owns_head: true },
+]);
+check('suggestions from every request are kept', mergedBatch.suggestions.map((s) => s.id), [1, 2, 3]);
+check('the review header counts every request', mergedBatch.generated, 3);
+check('requested totals every request', mergedBatch.requested, 10);
+check('the not-generated list is carried across', mergedBatch.missing, [3]);
+check('title-only count is carried across', mergedBatch.title_only, 1);
+check('a repeated id does not double-count', mergeBatchResults([
+  { suggestions: [{ id: 7, seo_title: 'first' }], generated: 1 },
+  { suggestions: [{ id: 7, seo_title: 'second' }], generated: 1 },
+]).suggestions.map((s) => s.seo_title), ['first']);
+check('merging nothing is not an error', mergeBatchResults([]).suggestions.length, 0);
+
+// The ETA is measured, never invented: nothing is claimed before a slice has
+// finished, and the projection uses the slices that actually ran.
+check('no ETA is claimed before the first slice finishes', estimateRemainingMs({ done: 0, total: 9, elapsedMs: 40000 }), null);
+check('the ETA extrapolates the slices that ran', estimateRemainingMs({ done: 2, total: 10, elapsedMs: 80000 }), 320000);
+check('a finished loop has nothing left', estimateRemainingMs({ done: 10, total: 10, elapsedMs: 400000 }), 0);
+check('an unknown total claims nothing', estimateRemainingMs({ done: 1, total: 0, elapsedMs: 5000 }), null);
+
+// The call site: the panel must route the batch through the slicer, and must not
+// put the whole missing list into one request again.
+const seoPanelSrc = read('src/components/matrix/website/SeoTab.jsx').replace(/^\s*\/\/.*$/gm, '');
+check('the SEO panel slices the batch', has(seoPanelSrc, 'sliceForRequests('), true);
+check('…and stitches the responses back', has(seoPanelSrc, 'mergeBatchResults('), true);
+check('…and bounds one click to what it can apply', has(seoPanelSrc, 'SEO_BATCH_MAX'), true);
+check('…and no longer sends the whole batch in one request', has(seoPanelSrc, 'missing.slice(0, 25)'), false);
+check('…and shows a live timer while an AI action runs', has(seoPanelSrc, 'EtaTimer'), true);
 
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);
