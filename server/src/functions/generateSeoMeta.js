@@ -19,6 +19,7 @@ import { getBrand } from '../lib/projectBrand.js';
 import {
   buildSeoPrompt, SEO_SCHEMA, normalizeSuggestions,
   MAX_BATCH, MAX_GROUNDING_CHARS, oneLine, blockText,
+  seoCallMaxTokens, mergeSeoSuggestions, generateSeoInChunks,
 } from '../lib/seoPrompts.js';
 
 /** Grounding for one item: its real title, current fields and (0.5.1+) its text. */
@@ -112,29 +113,47 @@ export default async function handler({ user, body }) {
   }
 
   const business = [businessCtx, project.description].filter(Boolean).join(' — ');
-  const prompt = buildSeoPrompt({
-    business,
-    brandVoice: brand?.voice || '',
-    site: seoContext
-      ? {
-          site_title: seoContext.site_title,
-          tagline: seoContext.tagline,
-          owns_head: seoContext.owns_head,
-          active_plugin: seoContext.active_plugin,
-        }
-      : null,
-    items: usable,
+  const site = seoContext
+    ? {
+        site_title: seoContext.site_title,
+        tagline: seoContext.tagline,
+        owns_head: seoContext.owns_head,
+        active_plugin: seoContext.active_plugin,
+      }
+    : null;
+
+  // One model call per chunk, and a chunk that comes back truncated is halved
+  // rather than failing the request — one verbose page must not cost the
+  // operator the other 24. seoCallMaxTokens pays the model's hidden reasoning out
+  // of a floor first; the previous single call for the whole batch sized its cap
+  // from the JSON alone, so a 25-item batch died with OUTPUT_TRUNCATED before it
+  // returned anything.
+  const askChunk = async (chunk) => {
+    const prompt = buildSeoPrompt({ business, brandVoice: brand?.voice || '', site, items: chunk });
+    const { result } = await invokeAI({
+      userId: user.id,
+      prompt,
+      schema: SEO_SCHEMA,
+      role: 'diagnosis',
+      maxTokens: seoCallMaxTokens(chunk.length),
+    });
+    return Array.isArray(result?.suggestions) ? result.suggestions : [];
+  };
+
+  // The split/retry loop lives in seoPrompts so the guard can drive every branch
+  // with a fake asker. A single item that still truncates has nothing left to
+  // split, so it names the item instead of leaking ai.js's "files per step".
+  const rawSuggestions = await generateSeoInChunks(usable, askChunk, {
+    onGiveUp: (item) => Object.assign(
+      new Error(`The model ran out of output budget writing metadata for "${oneLine(item?.title, 60) || `item ${item?.id}`}". Try that row's own Generate button, or shorten the page and retry.`),
+      { status: 502 },
+    ),
   });
 
-  const { result } = await invokeAI({
-    userId: user.id,
-    prompt,
-    schema: SEO_SCHEMA,
-    role: 'diagnosis',
-    maxTokens: Math.min(8000, 900 + usable.length * 260),
-  });
-
-  const suggestions = normalizeSuggestions(result, usable).map((s) => {
+  const suggestions = normalizeSuggestions(
+    { suggestions: mergeSeoSuggestions(rawSuggestions) },
+    usable,
+  ).map((s) => {
     const src = usable.find((it) => it.id === s.id) || {};
     return { ...s, type: src.type, url: src.url, grounded: !!src.grounded };
   });
