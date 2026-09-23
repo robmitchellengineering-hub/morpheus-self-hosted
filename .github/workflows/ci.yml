@@ -130,6 +130,15 @@ jobs:
       - name: Keyword research rules
         run: node scripts/verify-keywords.mjs
 
+      # The photo widget on Alice Stats: what counts as a Drive folder, what
+      # counts as an acceptable photo, and above all that a 403 (this connection
+      # cannot write there) never reads like a 404 (no such folder) — plus the
+      # promises on screen: the photo goes to the user's own Drive, the camera
+      # opens on a phone, and no Prisma column was added for what an existing
+      # JSON column already holds.
+      - name: Photo widget rules
+        run: node scripts/verify-photo-drive.mjs
+
       # Traffic (IndexNow): the pure payload/batching/ledger decisions, the rule
       # that a 2xx means "submitted" and never "indexed", and the contracts across
       # the boundary — the action list against the plugin's switch, the widget

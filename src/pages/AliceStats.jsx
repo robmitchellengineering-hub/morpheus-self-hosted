@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Loader2, ExternalLink, Sparkles } from 'lucide-react';
 import MatrixRain from '@/components/matrix/MatrixRain';
+import PhotoDriveWidget from '@/components/matrix/PhotoDriveWidget';
 
 // Styled to match src/pages/CostTracker.jsx's design language (2026-09-12,
 // Rob: "format the [page] with the same colors and effects and fonts as
@@ -295,8 +296,12 @@ export default function AliceStats() {
           </button>
         </div>
         <p className="text-primary/60 text-sm mb-8">
-          // Everything on this page is pulled live from public Wikimedia APIs, fresh on every load — nothing is stored. Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
+          // Everything below is pulled live from public Wikimedia APIs, fresh on every load — nothing is stored. The photo widget above stores only your chosen Drive folder id, on this account. Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
         </p>
+
+        {/* Photo → the signed-in user's own Google Drive. See PhotoDriveWidget's
+            header for why the copy insists the photo never reaches Morpheus. */}
+        <PhotoDriveWidget />
 
         {/* Bio — real, sourced facts, not invented */}
         <div className="border border-primary/20 bg-primary/5 px-4 py-3 mb-8 text-sm text-ink leading-relaxed">
