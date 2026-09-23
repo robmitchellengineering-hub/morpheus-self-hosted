@@ -176,8 +176,8 @@ export default function BackendPipelineRunner({ project, selectedComponents, onC
       </div>
       <div className="max-h-32 overflow-y-auto scrollbar-matrix p-3 space-y-0.5">
         {logs.map((log, i) => (
-          <div key={i} className="text-xs text-ink/60 font-mono">
-            <span className="text-ink/65">{log.time} </span>
+          <div key={i} className="text-xs text-ink-strong font-mono">
+            <span className="text-ink-strong">{log.time} </span>
             {log.msg}
           </div>
         ))}

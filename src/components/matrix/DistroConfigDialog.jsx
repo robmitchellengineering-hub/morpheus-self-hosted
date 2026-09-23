@@ -145,16 +145,16 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="p-4 space-y-4">
-          <p className="text-xs text-ink/60">
-            // Customise the bootable image. Settings are saved to <span className="text-ink">morpheus-distro.json</span> in your
+          <p className="text-xs text-ink-strong">
+            // Customise the bootable image. Settings are saved to <span className="text-ink-strong">morpheus-distro.json</span> in your
             project and applied at build time — no manual pi-gen stage files needed.
           </p>
-          <p className="text-[10px] text-ink/50 border border-primary/20 bg-primary/5 p-2">
-            // Default user: <span className="text-ink">pi</span>. Set a password below; if you add an SSH key, password login is
+          <p className="text-[10px] text-ink-max border border-primary/20 bg-primary/5 p-2">
+            // Default user: <span className="text-ink-max">pi</span>. Set a password below; if you add an SSH key, password login is
             automatically disabled for security (key-only).
           </p>
           {loading ? (
-            <div className="flex items-center gap-2 text-ink/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading config...</div>
+            <div className="flex items-center gap-2 text-ink text-sm"><Loader2 size={14} className="animate-spin" /> Loading config...</div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-2">
@@ -185,12 +185,12 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
 
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input type="checkbox" checked={sshEnabled} onChange={e => setSshEnabled(e.target.checked)} className="accent-primary w-4 h-4" />
-                <span className="text-xs text-ink">Enable SSH on first boot</span>
+                <span className="text-xs text-ink-strong">Enable SSH on first boot</span>
               </label>
 
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">SSH public key (injected into the `pi` user; disables password login)</label>
-                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-ink/20 resize-y" />
+                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-background text-ink-strong border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-ink-strong resize-y" />
                 {errors.sshPublicKey && <p className={errClass}>// {errors.sshPublicKey}</p>}
               </div>
 
@@ -201,7 +201,7 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
                 <input value={wifiCountry} onChange={e => setWifiCountry(e.target.value.toUpperCase())} placeholder="Country code (e.g. AU)" className={inputClass} />
                 {errors.wifiCountry && <p className={errClass}>// {errors.wifiCountry}</p>}
                 {errors.wifiPassword && <p className={errClass}>// {errors.wifiPassword}</p>}
-                <p className="text-[10px] text-ink/50">// Bakes wpa_supplicant.conf into the boot partition so the Pi joins WiFi on first boot.</p>
+                <p className="text-[10px] text-ink-max">// Bakes wpa_supplicant.conf into the boot partition so the Pi joins WiFi on first boot.</p>
               </div>
 
               <div>
@@ -212,8 +212,8 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
 
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Custom run commands (one per line, run inside the image at build time)</label>
-                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-ink/20 resize-y font-mono" />
-                <p className="text-[10px] text-ink/50 mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
+                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-background text-ink-strong border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-ink-strong resize-y font-mono" />
+                <p className="text-[10px] text-ink-max mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
               </div>
 
               <button onClick={handleSave} disabled={saving || hasErrors} className="flex items-center justify-center gap-2 w-full py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">

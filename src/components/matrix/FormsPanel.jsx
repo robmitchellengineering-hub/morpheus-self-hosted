@@ -73,13 +73,13 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+        <p className="text-[11px] text-ink-max leading-relaxed px-4 py-2 border-b border-primary/10">
           Where contact / signup form submissions land. Morpheus never receives them — the builder generates a handler
-          that runs on your host and delivers to <span className="text-ink/70">your</span> inbox or sheet.
+          that runs on your host and delivers to <span className="text-ink-max">your</span> inbox or sheet.
           {state && state.isWeb === false && <span className="text-yellow-500/80"> This project isn't a web-app target, so this won't be applied.</span>}
         </p>
 
-        {!f && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {!f && <div className="p-4 flex items-center gap-2 text-ink-strong text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
         {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
 
         {f && (
@@ -90,8 +90,8 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
                 <input type="checkbox" checked={f.enabled} onChange={(e) => set('enabled', e.target.checked)}
                   className="accent-[color:var(--primary,#4f8cff)] w-4 h-4" />
                 <div>
-                  <div className="text-[12px] text-ink/85">Wire up forms on this site</div>
-                  <div className="text-[10px] text-ink/40">When on, every &lt;form&gt; the builder adds gets a real, delivering handler.</div>
+                  <div className="text-[12px] text-ink-strong">Wire up forms on this site</div>
+                  <div className="text-[10px] text-ink-max">When on, every &lt;form&gt; the builder adds gets a real, delivering handler.</div>
                 </div>
               </label>
 
@@ -102,9 +102,9 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
                     <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Send submissions to</div>
                     <input value={f.email} onChange={(e) => set('email', e.target.value)} type="email"
                       placeholder="you@yourdomain.com"
-                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
+                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink-max focus:outline-none focus:border-primary/50" />
                     {!emailValid && <div className="text-[10px] text-red-400/80 mt-1">That doesn't look like an email address.</div>}
-                    <div className="text-[10px] text-ink/40 mt-1">Your own address. Leave blank to set it later — the form still gets built.</div>
+                    <div className="text-[10px] text-ink-max mt-1">Your own address. Leave blank to set it later — the form still gets built.</div>
                   </section>
 
                   {/* Method */}
@@ -118,8 +118,8 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
                             <input type="radio" name="forms-method" checked={f.method === m} onChange={() => set('method', m)}
                               className="accent-[color:var(--primary,#4f8cff)] mt-0.5 shrink-0" />
                             <div className="min-w-0">
-                              <div className="text-[11px] text-ink/80">{label}</div>
-                              <div className="text-[10px] text-ink/40 leading-snug">{hint}</div>
+                              <div className="text-[11px] text-ink-max">{label}</div>
+                              <div className="text-[10px] text-ink-max leading-snug">{hint}</div>
                             </div>
                           </label>
                         );
@@ -132,8 +132,8 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
                     <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">After submit, go to</div>
                     <input value={f.thankYouPath} onChange={(e) => set('thankYouPath', e.target.value)}
                       placeholder="/thank-you"
-                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50" />
-                    <div className="text-[10px] text-ink/40 mt-1">A page path on this site. The builder creates it if it doesn't exist.</div>
+                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink-max font-mono focus:outline-none focus:border-primary/50" />
+                    <div className="text-[10px] text-ink-max mt-1">A page path on this site. The builder creates it if it doesn't exist.</div>
                   </section>
 
                   {/* Setup steps */}
@@ -156,7 +156,7 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
                 {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Inbox size={12} />}
                 {saved ? 'SAVED' : 'SAVE FORMS'}
               </button>
-              <span className="text-[10px] text-ink/40">Written to <span className="font-mono">.morpheus/forms.json</span> in this project.</span>
+              <span className="text-[10px] text-ink-max">Written to <span className="font-mono">.morpheus/forms.json</span> in this project.</span>
             </div>
           </>
         )}

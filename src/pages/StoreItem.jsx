@@ -213,7 +213,7 @@ export default function StoreItem() {
               <CheckCircle2 size={20} className="text-primary shrink-0 mt-0.5" />
               <div>
                 <p className="text-primary font-bold text-sm">PAYMENT SUCCESSFUL</p>
-                <p className="text-ink/60 text-xs mt-1">Your purchase is confirmed. Download your software below.</p>
+                <p className="text-ink-strong text-xs mt-1">Your purchase is confirmed. Download your software below.</p>
               </div>
             </div>
             <button
@@ -248,7 +248,7 @@ export default function StoreItem() {
           <div className="flex-1 min-w-0 flex flex-col justify-center">
             <h1 className="text-xl sm:text-2xl font-display tracking-wide neon-glow break-words text-heading">{template.name}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <p className="text-ink/60 text-sm">by {template.author_name}</p>
+              <p className="text-ink text-sm">by {template.author_name}</p>
               <VerifiedBadge />
             </div>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -311,7 +311,7 @@ export default function StoreItem() {
         {template.description && (
           <div>
             <h2 className="text-xs text-primary/75 uppercase mb-2 tracking-wider">// About</h2>
-            <p className="text-ink/80 text-sm leading-relaxed">{template.description}</p>
+            <p className="text-ink text-sm leading-relaxed">{template.description}</p>
           </div>
         )}
 
@@ -319,7 +319,7 @@ export default function StoreItem() {
         {template.long_description && (
           <div>
             <h2 className="text-xs text-primary/75 uppercase mb-2 tracking-wider">// Details</h2>
-            <div className="text-ink/70 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:px-1 [&_h1]:text-primary [&_h2]:text-primary [&_h3]:text-primary [&_li]:text-ink/70 [&_strong]:text-primary">
+            <div className="text-ink text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:px-1 [&_h1]:text-primary [&_h2]:text-primary [&_h3]:text-primary [&_li]:text-ink [&_strong]:text-primary">
               <ReactMarkdown>{template.long_description}</ReactMarkdown>
             </div>
           </div>
@@ -331,24 +331,24 @@ export default function StoreItem() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="border border-primary/20 p-3">
               <FileCode size={14} className="text-primary/50 mb-1" />
-              <div className="text-xs text-ink/75">Files</div>
+              <div className="text-xs text-ink-strong">Files</div>
               <div className="text-sm text-ink">{template.file_count || 0}</div>
             </div>
             <div className="border border-primary/20 p-3">
               <TrendingUp size={14} className="text-primary/50 mb-1" />
-              <div className="text-xs text-ink/75">Installs</div>
+              <div className="text-xs text-ink-strong">Installs</div>
               <div className="text-sm text-ink">{template.install_count || 0}</div>
             </div>
             <div className="border border-primary/20 p-3">
               <Calendar size={14} className="text-primary/50 mb-1" />
-              <div className="text-xs text-ink/75">Published</div>
+              <div className="text-xs text-ink-strong">Published</div>
               <div className="text-sm text-ink">
                 {template.created_date ? new Date(template.created_date).toLocaleDateString() : 'N/A'}
               </div>
             </div>
             <div className="border border-primary/20 p-3">
               <Tag size={14} className="text-primary/50 mb-1" />
-              <div className="text-xs text-ink/75">Platform</div>
+              <div className="text-xs text-ink-strong">Platform</div>
               <div className="text-sm text-primary uppercase">{template.compile_target?.replace('-', ' ') || 'source'}</div>
             </div>
           </div>
@@ -358,7 +358,7 @@ export default function StoreItem() {
         {template.tags && (
           <div className="flex items-center gap-2 flex-wrap">
             {template.tags.split(',').filter(t => t.trim()).map((tag, i) => (
-              <span key={i} className="text-xs text-ink/50 border border-primary/20 px-2 py-1">
+              <span key={i} className="text-xs text-ink-strong border border-primary/20 px-2 py-1">
                 {tag.trim()}
               </span>
             ))}

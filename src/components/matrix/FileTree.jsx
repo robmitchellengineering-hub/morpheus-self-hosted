@@ -42,7 +42,7 @@ export default function FileTree({ files, selectedFile, onSelect, contextPaths, 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="filter files…"
-            className="w-full bg-transparent border border-primary/25 focus:border-primary/60 outline-none text-xs pl-6 pr-6 py-1 text-ink placeholder:text-ink/35"
+            className="w-full bg-transparent border border-primary/25 focus:border-primary/60 outline-none text-xs pl-6 pr-6 py-1 text-ink-strong placeholder:text-ink-strong"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary" aria-label="Clear search">
@@ -53,7 +53,7 @@ export default function FileTree({ files, selectedFile, onSelect, contextPaths, 
       )}
       <div className="overflow-y-auto scrollbar-matrix flex-1 min-h-0">
         {filtered.length === 0 && (
-          <div className="px-3 py-2 text-ink/65 text-sm italic">
+          <div className="px-3 py-2 text-ink text-sm italic">
             {files.length === 0 ? 'No files yet. Ask Morpheus to build something.' : 'No files match your search.'}
           </div>
         )}
@@ -65,7 +65,7 @@ export default function FileTree({ files, selectedFile, onSelect, contextPaths, 
           return (
             <div
               key={f.id}
-              className={`w-full flex items-center gap-2 px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 text-sm ${active ? 'bg-primary/10 text-ink' : isCompiled ? 'text-ink hover:bg-primary/5' : 'text-ink/60 hover:text-primary hover:bg-primary/5'}`}
+              className={`w-full flex items-center gap-2 px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 text-sm ${active ? 'bg-primary/10 text-ink' : isCompiled ? 'text-ink hover:bg-primary/5' : 'text-ink hover:text-primary hover:bg-primary/5'}`}
             >
               {multiSelect && (
                 <input

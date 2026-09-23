@@ -73,13 +73,13 @@ function JsonNode({ value, path, onChange, keyName }) {
         <input type="checkbox" checked={value} onChange={(e) => set(e.target.checked)} className="accent-[color:var(--primary,#4f8cff)] w-4 h-4" />
       ) : typeof value === 'number' ? (
         <input type="number" value={value} onChange={(e) => set(e.target.value === '' ? 0 : Number(e.target.value))}
-          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50" />
+          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink-max font-mono focus:outline-none focus:border-primary/50" />
       ) : isLong ? (
         <textarea value={value ?? ''} onChange={(e) => set(e.target.value)} rows={Math.min(8, (String(value).match(/\n/g) || []).length + 2)}
-          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
+          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink-max focus:outline-none focus:border-primary/50" />
       ) : (
         <input value={value ?? ''} onChange={(e) => set(e.target.value)}
-          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
+          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink-max focus:outline-none focus:border-primary/50" />
       )}
     </label>
   );
@@ -149,24 +149,24 @@ export default function ContentPanel({ open, onClose, projectId }) {
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+        <p className="text-[11px] text-ink-max leading-relaxed px-4 py-2 border-b border-primary/10">
           Text and lists the builder put in <span className="font-mono">content/*.json</span>. Edits commit straight to your repo and your host redeploys — no rebuild, nothing stored here.
         </p>
 
         {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
-        {!state && !err && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {!state && !err && <div className="p-4 flex items-center gap-2 text-ink-strong text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
 
         {state && !state.connected && (
-          <div className="p-4 text-[11px] text-ink/50 leading-relaxed">
+          <div className="p-4 text-[11px] text-ink-max leading-relaxed">
             Connect this project to a GitHub repo (Export to GitHub) to edit its content here.
           </div>
         )}
 
         {state?.connected && !selected && (
           <div className="flex-1 overflow-y-auto scrollbar-matrix p-3">
-            <div className="text-[10px] text-ink/40 mb-2">{state.repo} · {state.branch}</div>
+            <div className="text-[10px] text-ink-max mb-2">{state.repo} · {state.branch}</div>
             {files.length === 0 && (
-              <div className="text-[11px] text-ink/50 leading-relaxed">
+              <div className="text-[11px] text-ink-max leading-relaxed">
                 No <span className="font-mono">content/*.json</span> files yet. Ask Morpheus in chat to “move the site text into content files” and they’ll show up here.
               </div>
             )}
@@ -174,8 +174,8 @@ export default function ContentPanel({ open, onClose, projectId }) {
               {files.map((f) => (
                 <button key={f.path} onClick={() => openFile(f)} disabled={!!f.parseError}
                   className={`w-full text-left border px-3 py-2 transition-colors ${f.parseError ? 'border-red-500/30 opacity-60' : 'border-primary/15 hover:border-primary/40'}`}>
-                  <div className="text-[12px] text-ink/85 capitalize">{f.name}</div>
-                  <div className="text-[9px] text-ink/35 font-mono">{f.path}{f.parseError ? ` · invalid JSON: ${f.parseError}` : ''}</div>
+                  <div className="text-[12px] text-ink-strong capitalize">{f.name}</div>
+                  <div className="text-[9px] text-ink-max font-mono">{f.path}{f.parseError ? ` · invalid JSON: ${f.parseError}` : ''}</div>
                 </button>
               ))}
             </div>
@@ -193,7 +193,7 @@ export default function ContentPanel({ open, onClose, projectId }) {
                 {saving ? <Loader2 size={12} className="animate-spin" /> : savedPath === current.path && !dirty ? <Check size={12} /> : <FileJson size={12} />}
                 {savedPath === current.path && !dirty ? 'COMMITTED' : 'SAVE & PUBLISH'}
               </button>
-              <span className="text-[10px] text-ink/40">{dirty ? 'Commits to ' + current.path : 'Your host redeploys on save.'}</span>
+              <span className="text-[10px] text-ink-max">{dirty ? 'Commits to ' + current.path : 'Your host redeploys on save.'}</span>
             </div>
           </>
         )}

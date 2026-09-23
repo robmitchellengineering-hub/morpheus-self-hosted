@@ -33,7 +33,7 @@ export default function GithubDeviceModal({ device, onCancel, onRetry }) {
         </div>
 
         {phase === 'starting' && (
-          <div className="flex items-center justify-center gap-2 text-ink/60 text-sm py-8">
+          <div className="flex items-center justify-center gap-2 text-ink text-sm py-8">
             <Loader2 size={16} className="animate-spin" /> Requesting a sign-in code...
           </div>
         )}
@@ -55,7 +55,7 @@ export default function GithubDeviceModal({ device, onCancel, onRetry }) {
 
         {phase === 'awaiting' && (
           <div className="space-y-4">
-            <ol className="text-xs text-ink/60 space-y-1 list-decimal list-inside">
+            <ol className="text-xs text-ink-strong space-y-1 list-decimal list-inside">
               <li>Open GitHub (opens in a new tab)</li>
               <li>Enter this code and authorize Morpheus</li>
               <li>Come back here — this closes itself once you're connected</li>
@@ -82,7 +82,7 @@ export default function GithubDeviceModal({ device, onCancel, onRetry }) {
               <ExternalLink size={14} /> OPEN GITHUB
             </a>
 
-            <div className="flex items-center justify-center gap-2 text-ink/50 text-xs pt-1">
+            <div className="flex items-center justify-center gap-2 text-ink-strong text-xs pt-1">
               <Loader2 size={13} className="animate-spin" /> Waiting for authorization...
             </div>
 

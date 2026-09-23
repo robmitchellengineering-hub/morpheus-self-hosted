@@ -53,7 +53,7 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
               className="w-full h-24 bg-background text-ink text-sm border border-primary/30 px-3 py-2 outline-none focus:border-primary/60 resize-none scrollbar-matrix"
               disabled={running}
             />
-            <p className="text-xs text-ink/75 mt-1">// Morpheus will analyze all files and generate tests + CI pipeline</p>
+            <p className="text-xs text-ink-strong mt-1">// Morpheus will analyze all files and generate tests + CI pipeline</p>
           </div>
 
           {error && (
@@ -70,13 +70,13 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
                 <div>
                   <p>{result.reply}</p>
                   {result.testCount > 0 && (
-                    <p className="text-xs text-ink/50 mt-1">{result.testCount} test file(s) generated</p>
+                    <p className="text-xs text-ink-strong mt-1">{result.testCount} test file(s) generated</p>
                   )}
                   {result.fileOperations?.length > 0 && (
                     <div className="mt-2 space-y-1">
                       {result.fileOperations.map((op, i) => (
-                        <div key={i} className="text-xs text-ink/60 font-mono">
-                          <span className="text-ink/75">[{op.action}]</span> {op.path}
+                        <div key={i} className="text-xs text-ink-strong font-mono">
+                          <span className="text-ink-strong">[{op.action}]</span> {op.path}
                         </div>
                       ))}
                     </div>

@@ -18,7 +18,7 @@ export default function MarketTrustStrip() {
           <Icon size={18} className="text-primary shrink-0 mt-0.5" />
           <div className="min-w-0">
             <div className="text-xs text-primary font-bold leading-tight">{label}</div>
-            <div className="text-[10px] text-ink/55 leading-tight mt-0.5">{sub}</div>
+            <div className="text-[10px] text-ink-max leading-tight mt-0.5">{sub}</div>
           </div>
         </div>
       ))}

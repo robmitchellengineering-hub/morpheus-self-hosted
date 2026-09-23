@@ -91,7 +91,7 @@ export default function Architect() {
             </Link>
           </div>
         </div>
-        <p className="text-ink/60 mb-4 text-sm">// Standalone backend constructs — plan, generate, deploy independently</p>
+        <p className="text-ink mb-4 text-sm">// Standalone backend constructs — plan, generate, deploy independently</p>
         <div className="flex flex-col sm:flex-row gap-3 mb-8">
           <HelpHint id="new-backend" title="New Backend Construct" body="Create a standalone backend project. Add external sources (your frontend app files), then let Morpheus plan and generate the backend — database, API, auth. Deploy to Cloudflare, Supabase, Docker, and more.">
             <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-black transition-colors">
@@ -107,7 +107,7 @@ export default function Architect() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search backends..."
-              className="flex-1 bg-transparent text-ink text-sm outline-none placeholder:text-ink/30 min-w-0"
+              className="flex-1 bg-transparent text-ink text-sm outline-none placeholder:text-ink min-w-0"
             />
             {search && <button onClick={() => setSearch('')} className="text-primary/50 hover:text-primary shrink-0"><X size={14} /></button>}
           </div>
@@ -121,9 +121,9 @@ export default function Architect() {
           </button>
         </div>
         <div className="space-y-3" ref={listRef}>
-          {loading && <p className="text-ink/75 italic">Loading constructs...</p>}
+          {loading && <p className="text-ink italic">Loading constructs...</p>}
           {!loading && visibleProjects.length === 0 && (
-            <p className="text-ink/75 italic">{search ? 'No backends match your search.' : 'No backend constructs found. The Matrix is empty. Create your first.'}</p>
+            <p className="text-ink italic">{search ? 'No backends match your search.' : 'No backend constructs found. The Matrix is empty. Create your first.'}</p>
           )}
           {visibleProjects.map(p => (
             <div key={p.id} className="relative group border border-primary/30 hover:border-primary hover:bg-primary/5 transition-colors">
@@ -135,7 +135,7 @@ export default function Architect() {
                   </div>
                   <span className="text-xs text-primary/75 uppercase">{p.status}</span>
                 </div>
-                {p.description && <p className="text-ink/50 text-sm mt-1">{p.description}</p>}
+                {p.description && <p className="text-ink text-sm mt-1">{p.description}</p>}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }}

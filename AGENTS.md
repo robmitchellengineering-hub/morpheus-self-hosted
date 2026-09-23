@@ -77,6 +77,16 @@ This repo is developed through **DSH** (DeepSeek Harness) via the Web GUI. DSH i
 the **sole writer** — do not run a Claude Code session against this repo at the
 same time. See `KNOWN-HAZARDS.md` H9 for the incident that rule comes from.
 
+More than one DSH session against this repo at once is normal and fine — that is
+what the per-session `git worktree`s are for. **The hazard is one session
+committing from the *shared* checkout.** On 2026-09-23 a session ran
+`git add -A && git commit` there while another session's sweep sat uncommitted in
+the same tree, and the two unrelated changes landed in one commit under one
+message; the second session only found out because its branch was suddenly a
+commit ahead of `main` that it had not written. So: **keep one worktree per
+session, and never `git add -A` in the shared checkout** — stage the explicit
+paths you changed, which is a habit worth having even when you are alone.
+
 Project skills under `.dsh/skills/` carry the operating rules. The harness
 catalog is the source of truth for what exists; the table below is the map, and
 `scripts/verify-context.mjs` fails if a skill on disk is not named here.

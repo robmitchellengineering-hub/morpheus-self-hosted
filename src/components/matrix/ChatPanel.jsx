@@ -141,7 +141,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
     <div className="flex flex-col h-full w-full">
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-matrix">
         {messages.length === 0 && !loading && (
-          <div className="text-ink/75 italic text-sm space-y-1">
+          <div className="text-ink italic text-sm space-y-1">
             <p>&gt; Morpheus is here.</p>
             <p>&gt; Tell me what you want to build. I can only show you the door.</p>
           </div>
@@ -150,7 +150,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
             <div className={`max-w-[85%] ${m.role === 'user' ? 'text-[#39ff14]/80' : 'text-ink'}`}>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-ink/75">{m.role === 'user' ? 'operator@matrix:~$' : 'morpheus@construct:~$'}</span>
+                <span className="text-xs text-ink-strong">{m.role === 'user' ? 'operator@matrix:~$' : 'morpheus@construct:~$'}</span>
                 {m.role === 'morpheus' && !m.content.startsWith('// SYSTEM') && (
                   <button
                     onClick={() => speak(m)}
@@ -209,7 +209,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="text-ink/60 text-sm max-w-[85%]">
+            <div className="text-ink text-sm max-w-[85%]">
               {/* Show the plain thinking indicator only while the planner is
                   still running — at that point we don't yet know if this is a
                   build or just a chat answer. The moment the planner finishes
@@ -221,12 +221,12 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
                   emits no stages and lands in the thinking branch. */}
               {pipelineStages && pipelineStages.some((s) => s.stage !== 'planner' || s.status === 'done') ? (
                 <>
-                  <div className="text-ink/75 mb-1">morpheus@construct:~$</div>
+                  <div className="text-ink mb-1">morpheus@construct:~$</div>
                   <MorpheusPipelineStatus stages={pipelineStages} />
                 </>
               ) : (
                 <>
-                  <span className="text-ink/75 mr-2">morpheus@construct:~$</span>
+                  <span className="text-ink mr-2">morpheus@construct:~$</span>
                   <MorpheusThinking />
                 </>
               )}
@@ -239,7 +239,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           {attachments.map((a, i) => (
             <div key={i} className="flex items-center gap-1.5 border border-primary/40 bg-primary/5 px-2 py-1 text-xs">
               <Paperclip size={10} className="text-primary/60 shrink-0" />
-              <span className="text-ink/80 truncate max-w-[120px]">{a.name}</span>
+              <span className="text-ink-strong truncate max-w-[120px]">{a.name}</span>
               <button onClick={() => removeAttachment(i)} className="text-primary/75 hover:text-red-500 shrink-0">
                 <X size={12} />
               </button>
@@ -278,7 +278,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
               <Globe size={12} /> WEB
             </button>
           )}
-          <span className="text-[10px] text-ink/50 leading-tight">
+          <span className="text-[10px] text-ink-max leading-tight">
             {mode === 'context'
               ? '// chat & shape the plan — nothing gets built or written'
               : '// planner → coder → reviewer — changes are written to the workspace'}
@@ -300,7 +300,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           onInput={resizeTextarea}
           placeholder={listening ? 'listening...' : modeEnabled && mode === 'context' ? 'discuss, plan, ask...' : 'speak...'}
-          className="flex-1 min-w-0 resize-none bg-transparent text-ink placeholder:text-ink/65 outline-none text-sm leading-5 py-0.5 overflow-y-auto scrollbar-matrix"
+          className="flex-1 min-w-0 resize-none bg-transparent text-ink placeholder:text-ink outline-none text-sm leading-5 py-0.5 overflow-y-auto scrollbar-matrix"
           disabled={loading}
           autoComplete="off"
           autoCapitalize="off"

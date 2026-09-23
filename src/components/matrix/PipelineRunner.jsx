@@ -201,8 +201,8 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
       </div>
       <div className="max-h-32 overflow-y-auto scrollbar-matrix p-3 space-y-0.5">
         {logs.map((log, i) => (
-          <div key={i} className="text-xs text-ink/60 font-mono">
-            <span className="text-ink/65">{log.time} </span>
+          <div key={i} className="text-xs text-ink-strong font-mono">
+            <span className="text-ink-strong">{log.time} </span>
             {log.msg}
           </div>
         ))}
@@ -230,7 +230,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
           <div className="flex items-center gap-2 text-red-500 text-sm">
             <AlertTriangle size={14} /> Pipeline stuck after {iteration} attempt(s)
           </div>
-          <p className="text-[10px] text-ink/60 leading-relaxed">
+          <p className="text-[10px] text-ink-max leading-relaxed">
             // The AI couldn't auto-fix the last failure. Open the chat, describe the build error to Morpheus, and ask for a fix — then run the pipeline again.
           </p>
         </div>

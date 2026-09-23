@@ -168,12 +168,12 @@ export default function RebuildBlueprint() {
           <FileText size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">REBUILD BLUEPRINT</h1>
         </div>
-        <p className="text-ink/60 text-sm mb-8">
+        <p className="text-ink text-sm mb-8">
           // The complete standalone reconstruction blueprint for Morpheus itself. Drop this + the published APK into any AI agent to rebuild the full stack without Base44.
         </p>
 
         {loading && (
-          <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-ink text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading blueprint...
           </div>
         )}
@@ -184,20 +184,20 @@ export default function RebuildBlueprint() {
 
         {!loading && doc && (
           <div className="space-y-4 mb-6">
-            <div className="flex items-center gap-2 text-xs text-ink/60">
+            <div className="flex items-center gap-2 text-xs text-ink-strong">
               <CheckCircle size={14} className="text-primary" />
-              Version: <span className="text-ink">{new Date(doc.version).toLocaleString()}</span>
+              Version: <span className="text-ink-strong">{new Date(doc.version).toLocaleString()}</span>
               <span className="text-primary/65">|</span>
               {sizeKb} KB
             </div>
-            <div className="border border-primary/20 bg-primary/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-ink/70 font-mono whitespace-pre-wrap">
+            <div className="border border-primary/20 bg-primary/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-ink-strong font-mono whitespace-pre-wrap">
               {doc.content?.substring(0, 3000)}{doc.content?.length > 3000 ? '\n\n... (truncated — download for full document)' : ''}
             </div>
           </div>
         )}
 
         {!loading && !doc && !error && (
-          <p className="text-ink/75 text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
+          <p className="text-ink text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
         )}
 
         <div className="flex flex-wrap items-center gap-3">

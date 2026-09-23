@@ -264,17 +264,17 @@ export default function Screenshots() {
         </Link>
         <Camera size={48} className="text-primary mb-4 neon-glow" />
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">SCREENSHOTS</h1>
-        <p className="text-ink/60 text-sm mb-8">// Live captures of every control UI screen. Generated on-demand from the running app — always current.</p>
+        <p className="text-ink text-sm mb-8">// Live captures of every control UI screen. Generated on-demand from the running app — always current.</p>
         {generating && (
           <div className="w-full max-w-xs mb-6">
-            <div className="flex items-center justify-between text-xs text-ink/70 mb-2">
+            <div className="flex items-center justify-between text-xs text-ink-strong mb-2">
               <span className="truncate">{status}</span>
               <span className="shrink-0 ml-2">{progress}%</span>
             </div>
             <div className="h-1 bg-primary/20 overflow-hidden">
               <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
-            <p className="text-[10px] text-ink/40 mt-2">{pageCount} pages captured</p>
+            <p className="text-[10px] text-ink-max mt-2">{pageCount} pages captured</p>
           </div>
         )}
         <button
@@ -286,10 +286,10 @@ export default function Screenshots() {
           {generating ? 'GENERATING...' : 'GENERATE SCREENSHOTS PDF'}
         </button>
         {!generating && status && (
-          <p className="text-ink/40 text-xs mt-4">{status}</p>
+          <p className="text-ink-strong text-xs mt-4">{status}</p>
         )}
         {!generating && !status && (
-          <p className="text-ink/40 text-xs mt-4">// Click to capture all UI screens and download as PDF</p>
+          <p className="text-ink-strong text-xs mt-4">// Click to capture all UI screens and download as PDF</p>
         )}
         {pdfUrl && !generating && (
           <a

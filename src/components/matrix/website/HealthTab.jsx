@@ -27,7 +27,7 @@ const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
 // prose helper text, so ink: resolved by usage — every use is a span/div of
 // faint helper copy. The neighbouring `micro` keeps green because it is an
 // uppercase label, and `btn` because it is a button.
-const faint = 'text-ink/30';
+const faint = 'text-ink';
 const btn = 'inline-flex items-center justify-center gap-1.5 px-3 h-[32px] border border-primary/30 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary disabled:opacity-40 shrink-0';
 const kvRow = 'grid grid-cols-[1fr_auto] gap-2 border-b border-primary/10 py-1.5 last:border-b-0';
 
@@ -73,8 +73,8 @@ function Toggle({ label, hint, on, onChange, disabled }) {
         <span className={`absolute top-[2px] w-[8px] h-[8px] ${on ? 'right-[2px] bg-primary/80' : 'left-[2px] bg-primary/35'}`} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[11px] text-ink/85 break-words">{label}</span>
-        {hint ? <span className="block text-[9px] text-ink/40 leading-relaxed">{hint}</span> : null}
+        <span className="block text-[11px] text-ink-max break-words">{label}</span>
+        {hint ? <span className="block text-[9px] text-ink-max leading-relaxed">{hint}</span> : null}
       </span>
       <span className={`shrink-0 text-[9px] uppercase tracking-wider ${on ? 'text-primary/80' : 'text-primary/35'}`}>{on ? 'On' : 'Off'}</span>
     </button>
@@ -106,10 +106,10 @@ function UpdateRow({ name, kind, from, to, strong }) {
   return (
     <div className={`border px-3 py-2 ${strong ? 'border-primary/30' : 'border-primary/15'}`}>
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[11px] text-ink/85 break-words">{name}</span>
+        <span className="text-[11px] text-ink-max break-words">{name}</span>
         {kind ? <span className={`${faint} shrink-0`}>{kind}</span> : null}
       </div>
-      <div className="text-[10px] text-ink/55">{from || '—'} → {to || '—'}</div>
+      <div className="text-[10px] text-ink-max">{from || '—'} → {to || '—'}</div>
     </div>
   );
 }
@@ -147,7 +147,7 @@ function FixResult({ result }) {
   if (result.ok !== true) {
     return (
       <div className="border border-primary/15 px-2.5 py-2 space-y-1">
-        <div className="text-[10px] text-ink/70 leading-relaxed break-words">
+        <div className="text-[10px] text-ink-max leading-relaxed break-words">
           {f.error || 'The site did not carry this out, and said nothing was changed.'}
         </div>
         <div className={faint}>
@@ -194,7 +194,7 @@ function FixResult({ result }) {
         <Check size={11} className="shrink-0 text-green-400/90" />
         <span className="text-[9px] uppercase tracking-wider text-green-400/90">Done</span>
       </div>
-      <div className="text-[10px] text-ink/70 leading-relaxed break-words">
+      <div className="text-[10px] text-ink-max leading-relaxed break-words">
         {f.did || 'The site carried this out.'}
       </div>
       {f.restored === true ? (
@@ -231,7 +231,7 @@ function FixBox({
   if (fix.kind === 'updates') {
     return (
       <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
-        <div className="text-[10px] text-ink/50 leading-relaxed break-words">
+        <div className="text-[10px] text-ink-max leading-relaxed break-words">
           These are the updates in the Updates section below — apply them there, and each one is snapshotted before it is touched.
         </div>
         {fix.warning ? (
@@ -250,7 +250,7 @@ function FixBox({
     return (
       <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
         {/* The payload's own sentence, never a rewritten one. */}
-        {fix.does ? <div className="text-[10px] text-ink/50 leading-relaxed break-words">{fix.does}</div> : null}
+        {fix.does ? <div className="text-[10px] text-ink-max leading-relaxed break-words">{fix.does}</div> : null}
         {fix.warning ? (
           <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
             {fix.warning}
@@ -265,9 +265,9 @@ function FixBox({
             <ol className="space-y-1.5">
               {fix.steps.map((s, i) => (
                 <li key={`${s.text}-${i}`} className="flex items-start gap-1.5">
-                  <span className="mt-[1px] w-[14px] shrink-0 text-[10px] text-ink/45">{i + 1}.</span>
+                  <span className="mt-[1px] w-[14px] shrink-0 text-[10px] text-ink-max">{i + 1}.</span>
                   <span className="min-w-0 flex-1 space-y-0.5">
-                    <span className="block text-[10px] text-ink/70 leading-relaxed break-words">{s.text}</span>
+                    <span className="block text-[10px] text-ink-max leading-relaxed break-words">{s.text}</span>
                     {s.link ? (
                       <a href={s.link} target="_blank" rel="noreferrer"
                         className="inline-flex items-center gap-1 text-[10px] text-primary/80 underline break-all hover:text-primary">
@@ -293,7 +293,7 @@ function FixBox({
   // fix.kind === 'auto'
   return (
     <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
-      <div className="text-[10px] text-ink/50 leading-relaxed break-words">{fix.does}</div>
+      <div className="text-[10px] text-ink-max leading-relaxed break-words">{fix.does}</div>
       {fix.warning ? (
         <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
           {fix.warning}
@@ -304,7 +304,7 @@ function FixBox({
         // Step two of two. Nothing has been sent: only the button below calls the
         // server, and it is only reached at all because `warning` was set.
         <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
-          <div className="text-[11px] text-ink/85 leading-relaxed">
+          <div className="text-[11px] text-ink-max leading-relaxed">
             {fix.warning ? 'This one has a real consequence — do it anyway?' : `Do this on ${siteName} now?`}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -345,14 +345,14 @@ function Finding({
     <div className={`border px-3 py-2.5 space-y-1.5 ${quiet ? 'border-primary/15' : t.status === 'critical' ? 'border-red-500/30' : 'border-yellow-500/30'}`}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[12px] text-ink/85 break-words">{t.label}</div>
+          <div className="text-[12px] text-ink-strong break-words">{t.label}</div>
           <div className={`${micro} mt-0.5`}>{t.sourceLabel || 'Unknown source'}{t.badge ? ` · ${t.badge}` : ''}</div>
         </div>
         <span className={`shrink-0 border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${statusChip(t.status)}`}>{statusWord(t.status)}</span>
       </div>
       {/* The description is shown in full, not truncated: when a finding carries
           no link, this text is the entire reason it matters. */}
-      <p className={`${quiet ? 'text-[10px] text-ink/45' : 'text-[11px] text-ink/65'} leading-relaxed break-words`}>
+      <p className={`${quiet ? 'text-[10px] text-ink' : 'text-[11px] text-ink'} leading-relaxed break-words`}>
         {t.description}
       </p>
       {links.map((l, i) => (
@@ -397,9 +397,9 @@ function OutcomeGroup({ tone = 'yellow', title, note, items, icon }) {
         {icon}
         <span className={`text-[9px] uppercase tracking-wider ${TONE_TEXT[tone] || TONE_TEXT.yellow}`}>{title}</span>
       </div>
-      {note ? <div className="text-[9px] text-ink/45 leading-relaxed">{note}</div> : null}
+      {note ? <div className="text-[9px] text-ink-max leading-relaxed">{note}</div> : null}
       {items.map((it, i) => (
-        <div key={`${it}-${i}`} className="flex items-start gap-1.5 text-[11px] text-ink/80">
+        <div key={`${it}-${i}`} className="flex items-start gap-1.5 text-[11px] text-ink-max">
           <span className="mt-[5px] shrink-0 w-[3px] h-[3px] bg-primary/40" />
           <span className="min-w-0 flex-1 break-words">{it}</span>
         </div>
@@ -443,7 +443,7 @@ function ApplyReport({ outcome: o }) {
       ) : null}
 
       {o.attempted === false && !o.error ? (
-        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink/60 leading-relaxed">
+        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed">
           {o.message || 'There was nothing for Morpheus to apply.'}
         </div>
       ) : null}
@@ -481,7 +481,7 @@ function ApplyReport({ outcome: o }) {
       ) : null}
 
       {nothingHappened ? (
-        <div className="text-[10px] text-ink/55 leading-relaxed">
+        <div className="text-[10px] text-ink-max leading-relaxed">
           {dry ? 'The site reported no update it would apply.' : 'No updates were applied.'}
         </div>
       ) : null}
@@ -735,14 +735,14 @@ export default function HealthTab({ projectId }) {
 
         {scan && (
           <>
-            <div className="text-[12px] text-ink/85 break-words">{summary?.headline || 'The scan finished.'}</div>
+            <div className="text-[12px] text-ink-strong break-words">{summary?.headline || 'The scan finished.'}</div>
             <div className="text-[10px] text-primary/50 break-words">
               {countParts.join(' · ')}{countParts.length ? ' · ' : ''}WP {scan.wp_version || '—'} · PHP {scan.php_version || '—'}
             </div>
             {freshness?.message && (
               // Stale freshness is a caution, not trivia: it means a "no updates"
               // answer is old enough that it cannot be trusted.
-              <div className={`flex items-start gap-1 ${freshness.stale ? 'text-yellow-500/85' : 'text-ink/45'}`}>
+              <div className={`flex items-start gap-1 ${freshness.stale ? 'text-yellow-500/85' : 'text-ink'}`}>
                 {freshness.stale
                   ? <AlertTriangle size={10} className="mt-[2px] shrink-0" />
                   : <Clock size={10} className="mt-[2px] shrink-0" />}
@@ -750,7 +750,7 @@ export default function HealthTab({ projectId }) {
               </div>
             )}
             {scan.cached && (
-              <div className="text-[10px] text-ink/45">From a recent scan — RESCAN for a fresh one.</div>
+              <div className="text-[10px] text-ink-max">From a recent scan — RESCAN for a fresh one.</div>
             )}
           </>
         )}
@@ -766,7 +766,7 @@ export default function HealthTab({ projectId }) {
           </div>
         )}
         {!scan && loading && (
-          <div className="flex items-center gap-2 text-[11px] text-ink/50">
+          <div className="flex items-center gap-2 text-[11px] text-ink-max">
             <Loader2 size={12} className="animate-spin" /> Scanning the site…
           </div>
         )}
@@ -778,12 +778,12 @@ export default function HealthTab({ projectId }) {
               {summary?.total === 0 ? (
                 // "No tests" and "no problems" are different answers, and only one
                 // of them means the site is fine.
-                <div className="border border-yellow-500/30 px-3 py-2 text-[11px] text-ink/65 leading-relaxed">
+                <div className="border border-yellow-500/30 px-3 py-2 text-[11px] text-ink-max leading-relaxed">
                   The scan returned no tests at all. That is not the same as everything being fine — update the
                   Morpheus plugin from the SETUP tab, then rescan.
                 </div>
               ) : attention.length === 0 ? (
-                <div className="flex items-start gap-1.5 text-[11px] text-ink/60">
+                <div className="flex items-start gap-1.5 text-[11px] text-ink-max">
                   <Check size={12} className="mt-[2px] shrink-0 text-primary/50" />
                   Nothing in this scan needs attention.
                 </div>
@@ -792,7 +792,7 @@ export default function HealthTab({ projectId }) {
                   {autoFindings.length > 0 ? (
                     <div className="space-y-1.5">
                       {fixAllRunning && fixAllProgress ? (
-                        <div className="flex items-start gap-1.5 text-[10px] text-ink/60">
+                        <div className="flex items-start gap-1.5 text-[10px] text-ink-max">
                           <Loader2 size={12} className="mt-[1px] shrink-0 animate-spin" />
                           <span className="break-words">
                             Fixing {fixAllProgress.index} of {fixAllProgress.total} — {fixAllProgress.label}
@@ -802,14 +802,14 @@ export default function HealthTab({ projectId }) {
                         // Step two of two, naming exactly what will be fixed and
                         // showing each warned fix's warning BEFORE anything is sent.
                         <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
-                          <div className="text-[11px] text-ink/85 leading-relaxed">
+                          <div className="text-[11px] text-ink-max leading-relaxed">
                             Fix {autoFindings.length} {autoFindings.length === 1 ? 'finding' : 'findings'} on {siteName} now?
                             Morpheus sends them one at a time and re-checks the site when it has finished.
                           </div>
                           <div className="space-y-1">
                             {autoFindings.map((f) => (
-                              <div key={`all-${f.id}`} className="text-[10px] text-ink/65 break-words">
-                                <span className="text-ink/80">{f.label || f.id}</span>
+                              <div key={`all-${f.id}`} className="text-[10px] text-ink-max break-words">
+                                <span className="text-ink-max">{f.label || f.id}</span>
                                 {f.fix?.warning ? (
                                   <span className="block text-[9px] text-yellow-500/85 leading-relaxed">{f.fix.warning}</span>
                                 ) : null}
@@ -846,7 +846,7 @@ export default function HealthTab({ projectId }) {
                         </div>
                       ) : null}
                       {fixAllReport && !fixAllRunning ? (
-                        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink/65 leading-relaxed break-words">
+                        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed break-words">
                           {fixAllReport}
                         </div>
                       ) : null}
@@ -889,7 +889,7 @@ export default function HealthTab({ projectId }) {
             <div ref={updatesRef}
               className={`transition-colors duration-700 ${updatesFlash ? 'bg-primary/10 ring-1 ring-primary/40' : ''}`}>
             <Section title="Updates" icon={<Package size={11} className="text-primary/45" />}>
-              <div className={`text-[11px] break-words ${updateTotal ? 'text-ink/80' : 'text-ink/60'}`}>
+              <div className={`text-[11px] break-words ${updateTotal ? 'text-ink-max' : 'text-ink-max'}`}>
                 {plan?.message || 'This scan did not report update information.'}
               </div>
               {updateTotal > 0 && (
@@ -912,7 +912,7 @@ export default function HealthTab({ projectId }) {
                   {showApplyControl ? (
                     <>
                       {applying ? (
-                        <div className="flex items-center gap-1.5 text-[10px] text-ink/55">
+                        <div className="flex items-center gap-1.5 text-[10px] text-ink-max">
                           <Loader2 size={12} className="animate-spin shrink-0" />
                           {applying === 'check'
                             ? 'Checking what the site would do — nothing is being changed.'
@@ -925,7 +925,7 @@ export default function HealthTab({ projectId }) {
                         // thing that calls the server, and the policy's own limits
                         // still apply to what it will actually touch.
                         <div className="border border-yellow-500/30 px-3 py-2.5 space-y-2">
-                          <div className="text-[11px] text-ink/85 leading-relaxed">
+                          <div className="text-[11px] text-ink-max leading-relaxed">
                             Apply {applyTargets} update{applyTargets === 1 ? '' : 's'} to {siteName}? WordPress will restore anything that fails.
                           </div>
                           <div className="flex items-center gap-2">
@@ -937,7 +937,7 @@ export default function HealthTab({ projectId }) {
                               <X size={12} /> CANCEL
                             </button>
                           </div>
-                          <div className="text-[9px] text-ink/45 leading-relaxed">
+                          <div className="text-[9px] text-ink-max leading-relaxed">
                             Nothing has been sent yet. Morpheus applies only the update kinds this site&apos;s policy allows, and snapshots each one before it starts.
                           </div>
                         </div>
@@ -955,7 +955,7 @@ export default function HealthTab({ projectId }) {
                       {runErr ? (
                         <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
                           <div className="text-[11px] text-red-300/90 break-words">{runErr.message}</div>
-                          <div className="text-[9px] text-ink/45 leading-relaxed">
+                          <div className="text-[9px] text-ink-max leading-relaxed">
                             {runErr.dryRun
                               ? 'The check did not finish. A check changes nothing, so the site is exactly as it was.'
                               : 'Morpheus cannot say from here whether the site was changed. RESCAN above to see the site as it is now before trying again.'}
@@ -975,14 +975,14 @@ export default function HealthTab({ projectId }) {
                       WordPress says it cannot write to this site&apos;s own files, so Morpheus will not offer to apply these. The section below, Can Morpheus update this site?, says why.
                     </div>
                   ) : (
-                    <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink/60 leading-relaxed">
+                    <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink-max leading-relaxed">
                       {canApply.length === 0
                         ? 'Applying updates is switched off for this site, so the updates above can only be reported. Switch on plugin, theme or minor WordPress updates in SCHEDULED CHECKS below and save the policy.'
                         : 'The updates above are all of a kind this site\u2019s policy only reports, so there is nothing here Morpheus may apply. Change that in SCHEDULED CHECKS below and save the policy.'}
                     </div>
                   )}
                   {/* Said once, here, at the point where applying is offered. */}
-                  <div className="text-[9px] text-ink/40 leading-relaxed">
+                  <div className="text-[9px] text-ink-max leading-relaxed">
                     Every plugin and theme update is snapshotted before it is touched, and put back automatically if the new version does not install cleanly. A major WordPress update is never applied from here — it is listed in the findings above for you to run from wp-admin.
                   </div>
                 </div>
@@ -1001,7 +1001,7 @@ export default function HealthTab({ projectId }) {
                   ))}
                 </div>
               ) : apply?.ok === true ? (
-                <div className="flex items-center gap-1.5 text-[10px] text-ink/45">
+                <div className="flex items-center gap-1.5 text-[10px] text-ink-max">
                   <ShieldCheck size={11} className="shrink-0" /> Morpheus can write to this site&apos;s own files.
                 </div>
               ) : (
@@ -1034,8 +1034,8 @@ export default function HealthTab({ projectId }) {
                 <div className={micro}>Not checked · {notRun.length}</div>
                 <div className={faint}>These tests did not run — that is not the same as passing.</div>
                 {notRun.map((a, i) => (
-                  <div key={`${a.id}-${i}`} className="text-[10px] text-ink/45 break-words">
-                    <span className="text-ink/60">{a.label || a.id}</span>{a.reason ? ` — ${a.reason}` : ''}
+                  <div key={`${a.id}-${i}`} className="text-[10px] text-ink-max break-words">
+                    <span className="text-ink-max">{a.label || a.id}</span>{a.reason ? ` — ${a.reason}` : ''}
                   </div>
                 ))}
               </div>
@@ -1052,7 +1052,7 @@ export default function HealthTab({ projectId }) {
                 onChange={(v) => setField('scan_enabled', v)} />
               {!draft?.scan_enabled ? (
                 // Off means off: no day, no hour and no apply switches — they would imply a run that is not scheduled.
-                <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink/60 leading-relaxed">
+                <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed">
                   Monthly checks are off, so Morpheus will only look at this site when you ask it to — with RESCAN above. Nothing runs on a schedule and nothing is changed.
                 </div>
               ) : (
@@ -1076,15 +1076,15 @@ export default function HealthTab({ projectId }) {
                   </div>
                   <div className="border border-primary/15 px-2.5 py-2">
                     <div className={micro}>Next check{dirty ? ' · from the saved policy' : ''}</div>
-                    {nextRun ? <div className="text-[11px] text-ink/85 break-words">{nextRun}</div>
+                    {nextRun ? <div className="text-[11px] text-ink-max break-words">{nextRun}</div>
                       : policy.scan_enabled
-                        ? <div className="text-[10px] text-ink/50">Not known — the server did not report a next run time for this policy.</div>
-                        : <div className="text-[10px] text-ink/55">None yet — the saved policy has the schedule off. Save and the server works out the next run.</div>}
+                        ? <div className="text-[10px] text-ink-max">Not known — the server did not report a next run time for this policy.</div>
+                        : <div className="text-[10px] text-ink-max">None yet — the saved policy has the schedule off. Save and the server works out the next run.</div>}
                   </div>
                   {/* Yellow and away from the scan switch: these three change the live site; the scan does not. */}
                   <div className="border border-yellow-500/30 px-2.5 py-2.5 space-y-2">
                     <div className={`${micro} text-yellow-500/85`}>A scheduled check could also change the site</div>
-                    <div className="text-[9px] text-ink/45 leading-relaxed">Each switch below changes the live site with nobody watching. Off means it is only reported.</div>
+                    <div className="text-[9px] text-ink-max leading-relaxed">Each switch below changes the live site with nobody watching. Off means it is only reported.</div>
                     <Toggle label="Plugin updates" disabled={saving} on={!!draft?.apply_plugins} onChange={(v) => setField('apply_plugins', v)}
                       hint="Morpheus would install plugin updates on its own, with nobody watching." />
                     <Toggle label="Theme updates" disabled={saving} on={!!draft?.apply_themes} onChange={(v) => setField('apply_themes', v)}
@@ -1099,14 +1099,14 @@ export default function HealthTab({ projectId }) {
                   </div>
                 </>
               )}
-              <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink/65 leading-relaxed">
+              <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed">
                 {canApply.length === 0
                   ? 'Scheduled checks are report-only on this site — Morpheus looks and tells you what it finds, and nothing is changed.'
                   : `With nobody watching, Morpheus may apply ${wordList(canApply)} updates${reportOnly.length ? `, and reports ${wordList(reportOnly)} updates without applying them` : ''}.`}
               </div>
               <div className="border border-primary/15 px-2.5 py-2">
                 <div className={micro}>What this policy says{dirty ? ' · from the saved policy' : ''}</div>
-                <div className="text-[10px] text-ink/65 leading-relaxed break-words">{policy.description || 'The server sent no description for this policy.'}</div>
+                <div className="text-[10px] text-ink-max leading-relaxed break-words">{policy.description || 'The server sent no description for this policy.'}</div>
               </div>
               {policy.exists === false ? <div className={faint}>No policy saved for this site yet — these are the safe defaults.</div> : null}
               <div className="space-y-1.5">
@@ -1115,7 +1115,7 @@ export default function HealthTab({ projectId }) {
                 </button>
                 {dirty && !saving ? <div className={faint}>Unsaved changes — the next run and description above still describe the saved policy.</div> : null}
                 {policyErr ? <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 text-[10px] text-red-300/90 break-words">{policyErr}</div> : null}
-                {policySaved ? <div className="flex items-start gap-1.5 text-[10px] text-ink/70"><Check size={11} className="mt-[1px] shrink-0" /> {policySaved}</div> : null}
+                {policySaved ? <div className="flex items-start gap-1.5 text-[10px] text-ink-max"><Check size={11} className="mt-[1px] shrink-0" /> {policySaved}</div> : null}
               </div>
             </Section>
           </div>

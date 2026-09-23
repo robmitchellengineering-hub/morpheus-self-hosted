@@ -48,15 +48,15 @@ export default function PublishPanel({ open, onClose, projectId, onRequestFix })
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+        <p className="text-[11px] text-ink-max leading-relaxed px-4 py-2 border-b border-primary/10">
           What a finished, launchable {state?.target || 'project'} includes. The builder is told these on every
           build — this is a check against the current files.
         </p>
 
-        {!state && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Checking…</div>}
+        {!state && <div className="p-4 flex items-center gap-2 text-ink-strong text-xs"><Loader2 size={14} className="animate-spin" /> Checking…</div>}
         {state?.error && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{state.error}</div>}
         {state && state.supported === false && (
-          <div className="m-4 text-ink/50 text-xs border border-primary/20 px-3 py-2">
+          <div className="m-4 text-ink-strong text-xs border border-primary/20 px-3 py-2">
             No publish checklist for the <span className="font-mono">{state.target}</span> target yet — this is mainly for web-app builds.
           </div>
         )}
@@ -64,7 +64,7 @@ export default function PublishPanel({ open, onClose, projectId, onRequestFix })
         {state?.supported && (
           <>
             <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-2">
-              {missing.length === 0 && <div className="text-ink text-xs flex items-center gap-2"><CheckCircle2 size={14} /> Everything required is covered.</div>}
+              {missing.length === 0 && <div className="text-ink-strong text-xs flex items-center gap-2"><CheckCircle2 size={14} /> Everything required is covered.</div>}
               {[...missing, ...conditional, ...done].map((i) => (
                 <div key={i.id} className={`border p-2.5 ${i.done ? 'border-primary/15 bg-primary/[0.03]' : 'border-primary/25 bg-primary/5'}`}>
                   <div className="flex items-start gap-2">
@@ -72,10 +72,10 @@ export default function PublishPanel({ open, onClose, projectId, onRequestFix })
                       ? <CheckCircle2 size={13} className="text-primary shrink-0 mt-0.5" />
                       : <Circle size={13} className="text-primary/40 shrink-0 mt-0.5" />}
                     <div className="min-w-0">
-                      <div className={`text-[11px] ${i.done ? 'text-ink/60' : 'text-ink'}`}>
-                        {i.label}{i.when === 'data' ? <span className="text-ink/40"> — only if the site collects data</span> : ''}
+                      <div className={`text-[11px] ${i.done ? 'text-ink-max' : 'text-ink-max'}`}>
+                        {i.label}{i.when === 'data' ? <span className="text-ink-max"> — only if the site collects data</span> : ''}
                       </div>
-                      <div className="text-[10px] text-ink/40 leading-relaxed mt-0.5">{i.detail}</div>
+                      <div className="text-[10px] text-ink-max leading-relaxed mt-0.5">{i.detail}</div>
                     </div>
                   </div>
                 </div>
