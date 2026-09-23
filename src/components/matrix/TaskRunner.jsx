@@ -172,8 +172,14 @@ export function TaskRunner({ children }) {
  *
  * `apply` is called once per distinct result (the ref), not on every render, so a
  * selection the operator has since changed is not overwritten.
+ *
+ * `watch` is for the loops whose result lands on something the TAB controls — the
+ * per-item ones carry an item id, and reopening that page is a state change this
+ * effect has to see. Without it the effect never re-runs when the item is opened
+ * and the result is never placed: found by watching the merged code do exactly
+ * that, not by reading it.
  */
-export function useTaskResult(key, apply) {
+export function useTaskResult(key, apply, watch = []) {
   const { tasks } = useTaskRunner();
   const task = tasks[key];
   const applied = useRef(null);
@@ -181,12 +187,17 @@ export function useTaskResult(key, apply) {
   fn.current = apply;
   useEffect(() => {
     const r = task?.result;
-    if (task?.status === 'done' && r && applied.current !== r) {
-      applied.current = r;
-      fn.current(r);
-    }
+    if (task?.status !== 'done' || !r || applied.current === r) return;
+    // An apply that returns FALSE could not place the result yet — the per-item
+    // loops carry an item id, and on a remount the tab is on the list with no item
+    // open, so there is nothing to apply to. Consuming the result then would spend
+    // the one application this hook gets on a tab that could not use it, and the
+    // answer would be silently lost: exactly the failure this hook exists to stop.
+    // So the result stays unconsumed until an apply actually takes it.
+    if (fn.current(r) === false) return;
+    applied.current = r;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, task?.status, task?.result]);
+  }, [key, task?.status, task?.result, ...watch]);
   return task;
 }
 

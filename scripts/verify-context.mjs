@@ -626,9 +626,25 @@ for (const [i, src] of loopSrc.entries()) {
   check(`${label} checks the cancel in every loop it starts (${cancels} checks / ${started} starts)`,
     cancels >= started, true)
 }
+// A result the tab CANNOT place yet must not be consumed. The per-item loops carry
+// an item id, and a remount starts on the list with no item open — consuming the
+// result there spends the hook's one application on a tab that cannot use it, and
+// the answer is lost silently. Watching the merged code do exactly that is how this
+// was found; these two keep it from coming back.
+check('the runner does not consume a result its apply refused',
+  /if \(fn\.current\(r\) === false\) return;/.test(runnerSrc), true)
+check('…and the effect re-runs when what the result lands on changes',
+  /\[key, task\?\.status, task\?\.result, \.\.\.watch\]/.test(runnerSrc), true)
+{
+  const perItem = (loopSrc[0].match(/\[edit\?\.id\]\)/g) || []).length
+  check('every per-item loop watches the open item', perItem >= 3, true)
+  check('…and refuses a result that belongs to another page',
+    (loopSrc[0].match(/return false; \/\/ not this page/g) || []).length >= 3, true)
+}
+
 // …and the strip is where the cancel comes from, so it must pass one on.
-const runnerSrc2 = read(RUNNER)
-check('the strip offers a cancel', contains(runnerSrc2, 'onCancel(t.key)') || contains(runnerSrc2, 'onCancel:'), true)
+
+check('the strip offers a cancel', contains(runnerSrc, 'onCancel(t.key)') || contains(runnerSrc, 'onCancel:'), true)
 
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${pass}/${pass + fail} checks passed`)
