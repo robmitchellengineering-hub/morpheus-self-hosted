@@ -146,15 +146,15 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
         </div>
         <div className="p-4 space-y-4">
           <p className="text-xs text-ink/60">
-            // Customise the bootable image. Settings are saved to <span className="text-primary">morpheus-distro.json</span> in your
+            // Customise the bootable image. Settings are saved to <span className="text-ink">morpheus-distro.json</span> in your
             project and applied at build time — no manual pi-gen stage files needed.
           </p>
           <p className="text-[10px] text-ink/50 border border-primary/20 bg-primary/5 p-2">
-            // Default user: <span className="text-primary">pi</span>. Set a password below; if you add an SSH key, password login is
+            // Default user: <span className="text-ink">pi</span>. Set a password below; if you add an SSH key, password login is
             automatically disabled for security (key-only).
           </p>
           {loading ? (
-            <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading config...</div>
+            <div className="flex items-center gap-2 text-ink/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading config...</div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-2">
@@ -185,7 +185,7 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
 
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input type="checkbox" checked={sshEnabled} onChange={e => setSshEnabled(e.target.checked)} className="accent-primary w-4 h-4" />
-                <span className="text-xs text-primary">Enable SSH on first boot</span>
+                <span className="text-xs text-ink">Enable SSH on first boot</span>
               </label>
 
               <div>

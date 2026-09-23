@@ -100,7 +100,7 @@ export default function NetworkFlashDialog({ open, onClose, projectId, target })
             target device. No disk swapping.
           </p>
           {loading && (
-            <div className="flex items-center gap-2 text-primary/60 text-sm">
+            <div className="flex items-center gap-2 text-ink/60 text-sm">
               <Loader2 size={14} className="animate-spin" /> Locating compiled image...
             </div>
           )}
@@ -128,7 +128,7 @@ export default function NetworkFlashDialog({ open, onClose, projectId, target })
             <>
               <div className="border border-primary/30 bg-primary/5 p-2.5">
                 <div className="text-[10px] text-ink/60 mb-1">// RUN THIS FROM YOUR OWN MACHINE (not the Pi, not the cloud):</div>
-                <pre className="text-[10px] text-primary overflow-x-auto scrollbar-matrix whitespace-pre-wrap break-all">{command}</pre>
+                <pre className="text-[10px] text-ink overflow-x-auto scrollbar-matrix whitespace-pre-wrap break-all">{command}</pre>
               </div>
               <div className="flex gap-2">
                 <button onClick={copy} className="flex-1 flex items-center justify-center gap-2 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-xs font-bold">

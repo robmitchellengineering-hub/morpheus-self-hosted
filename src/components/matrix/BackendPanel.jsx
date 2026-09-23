@@ -398,16 +398,16 @@ export default function BackendPanel({ open, onClose, project }) {
           {plan && phase !== 'planning' && phase !== 'loading' && (
             <div className="border border-primary/20 p-3">
               <div className="text-xs text-primary/75 uppercase mb-2">// architecture plan</div>
-              <p className="text-primary text-sm mb-3">{plan.summary}</p>
+              <p className="text-ink text-sm mb-3">{plan.summary}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {plan.database?.tables?.length > 0 && (
-                  <div><span className="text-primary/50">DB Tables: </span><span className="text-primary/80">{plan.database.tables.map(t => t.name).join(', ')}</span></div>
+                  <div><span className="text-ink/50">DB Tables: </span><span className="text-ink/80">{plan.database.tables.map(t => t.name).join(', ')}</span></div>
                 )}
                 {plan.api?.routes?.length > 0 && (
-                  <div><span className="text-primary/50">API Routes: </span><span className="text-primary/80">{plan.api.routes.length} endpoints</span></div>
+                  <div><span className="text-ink/50">API Routes: </span><span className="text-ink/80">{plan.api.routes.length} endpoints</span></div>
                 )}
-                <div><span className="text-primary/50">Auth: </span><span className="text-primary/80">{plan.auth?.strategy || 'none'}</span></div>
-                <div><span className="text-primary/50">Storage: </span><span className="text-primary/80">{plan.storage?.type || 'none'}</span></div>
+                <div><span className="text-ink/50">Auth: </span><span className="text-ink/80">{plan.auth?.strategy || 'none'}</span></div>
+                <div><span className="text-ink/50">Storage: </span><span className="text-ink/80">{plan.storage?.type || 'none'}</span></div>
               </div>
               {plan.recommendations && <p className="text-xs text-ink/75 italic mt-2">{plan.recommendations}</p>}
             </div>
@@ -430,7 +430,7 @@ export default function BackendPanel({ open, onClose, project }) {
                         <Icon size={16} className="text-primary shrink-0 mt-0.5" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-primary text-sm">{comp.label}</span>
+                            <span className="text-ink text-sm">{comp.label}</span>
                             {isAutoSelected && <span className="text-[9px] text-primary/75 border border-primary/30 px-1 uppercase">auto</span>}
                             {!comp.required && <span className="text-[9px] text-primary/65 uppercase">optional</span>}
                           </div>
@@ -460,7 +460,7 @@ export default function BackendPanel({ open, onClose, project }) {
 
           {/* Generating */}
           {phase === 'generating' && (
-            <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={16} className="animate-spin" /> Generating backend code for selected infrastructure...</div>
+            <div className="flex items-center gap-2 text-ink/60 text-sm"><Loader2 size={16} className="animate-spin" /> Generating backend code for selected infrastructure...</div>
           )}
 
           {/* Pre-deploy readiness check */}
@@ -488,7 +488,7 @@ export default function BackendPanel({ open, onClose, project }) {
                         return (
                           <div key={r.type} className="flex items-center gap-2 text-xs">
                             <AlertTriangle size={10} className="text-yellow-500 shrink-0" />
-                            <span className="text-primary/70">{service?.label || r.serviceId}</span>
+                            <span className="text-ink/70">{service?.label || r.serviceId}</span>
                             <span className="text-yellow-500/60">— {r.label}</span>
                           </div>
                         );
@@ -539,7 +539,7 @@ export default function BackendPanel({ open, onClose, project }) {
                   />
                 </div>
                 <div className="overflow-y-auto scrollbar-matrix max-h-64">
-                  {selectedFile ? <pre className="text-xs text-primary/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-ink/65 text-xs">Select a file</div>}
+                  {selectedFile ? <pre className="text-xs text-ink/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-ink/65 text-xs">Select a file</div>}
                 </div>
               </div>
 
@@ -553,14 +553,14 @@ export default function BackendPanel({ open, onClose, project }) {
                   ))}
                 </div>
                 <div className="flex-1 overflow-y-auto scrollbar-matrix">
-                  {selectedFile ? <pre className="text-xs text-primary/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-ink/65 text-xs">Select a file</div>}
+                  {selectedFile ? <pre className="text-xs text-ink/80 p-3 whitespace-pre-wrap font-mono break-all">{selectedFile.content}</pre> : <div className="p-3 text-ink/65 text-xs">Select a file</div>}
                 </div>
               </div>
             </div>
           )}
 
           {/* Deploying */}
-          {phase === 'deploying' && <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={16} className="animate-spin" /> Deploying all components to their platforms...</div>}
+          {phase === 'deploying' && <div className="flex items-center gap-2 text-ink/60 text-sm"><Loader2 size={16} className="animate-spin" /> Deploying all components to their platforms...</div>}
 
           {/* Deployed — per-component results */}
           {phase === 'deployed' && deployResults.length > 0 && (() => {
@@ -577,7 +577,7 @@ export default function BackendPanel({ open, onClose, project }) {
                   </p>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-primary text-sm"><CheckCircle size={16} /> Deployment complete — review each component:</div>
+              <div className="flex items-center gap-2 text-ink text-sm"><CheckCircle size={16} /> Deployment complete — review each component:</div>
               {deployResults.map((r, i) => (
                 <div key={i} className={`border p-3 ${r.status === 'deployed' ? 'border-primary/40 bg-primary/5' : r.status === 'error' ? 'border-red-500/40 bg-red-500/5' : 'border-primary/20'}`}>
                   <div className="flex items-center justify-between gap-2 mb-1">
@@ -606,12 +606,12 @@ export default function BackendPanel({ open, onClose, project }) {
                     </a>
                   )}
                   {r.customDomain && (
-                    <div className="flex items-center gap-1 text-xs text-primary/70 mb-1">
-                      <Globe size={12} /> Custom domain: <span className="text-primary">{r.customDomain}</span>
+                    <div className="flex items-center gap-1 text-xs text-ink/70 mb-1">
+                      <Globe size={12} /> Custom domain: <span className="text-ink">{r.customDomain}</span>
                     </div>
                   )}
                   {r.apiKeysInjected && (
-                    <div className="flex items-center gap-1 text-xs text-primary/70 mb-1">
+                    <div className="flex items-center gap-1 text-xs text-ink/70 mb-1">
                       <Key size={12} /> API keys injected as env var
                     </div>
                   )}
@@ -628,7 +628,7 @@ export default function BackendPanel({ open, onClose, project }) {
                   {r.sql && (
                     <details className="mt-1">
                       <summary className="text-xs text-primary/50 cursor-pointer hover:text-primary">View SQL migration</summary>
-                      <pre className="text-xs text-primary/60 whitespace-pre-wrap mt-1 max-h-32 overflow-y-auto scrollbar-matrix border border-primary/10 p-2">{r.sql}</pre>
+                      <pre className="text-xs text-ink/60 whitespace-pre-wrap mt-1 max-h-32 overflow-y-auto scrollbar-matrix border border-primary/10 p-2">{r.sql}</pre>
                     </details>
                   )}
                   {r.status === 'deployed' && (r.service === 'cloudflare-workers' || r.service === 'supabase-pg' || r.service === 'render' || r.service === 'vercel' || r.service === 'netlify') && (

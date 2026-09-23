@@ -9,7 +9,7 @@ export default function GithubGate({ children, note, showSignup = false }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 text-primary/50 text-sm py-4">
+      <div className="flex items-center justify-center gap-2 text-ink/50 text-sm py-4">
         <Loader2 size={16} className="animate-spin" /> Checking GitHub link...
       </div>
     );
@@ -47,7 +47,7 @@ export default function GithubGate({ children, note, showSignup = false }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-primary/60 flex items-center gap-1.5">
+        <span className="text-ink/60 flex items-center gap-1.5">
           <Github size={12} /> {login}
         </span>
         <button onClick={disconnect} className="text-primary/75 hover:text-red-400 flex items-center gap-1">

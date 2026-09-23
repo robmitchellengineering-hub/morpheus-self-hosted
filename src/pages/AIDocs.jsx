@@ -299,7 +299,7 @@ export default function AIDocs() {
   };
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono overflow-hidden">
+    <div className="relative min-h-screen bg-background text-ink font-mono overflow-hidden">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-16 safe-top flex flex-col items-center justify-center min-h-screen text-center">
         <Link to="/" className="absolute top-4 left-4 flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider">
@@ -321,8 +321,8 @@ export default function AIDocs() {
                 return (
                   <div key={p.name} className="flex items-center gap-1.5 text-xs">
                     <Icon size={12} className="text-primary" />
-                    <span className="text-primary">{p.name}</span>
-                    <span className="text-primary/40">({p.role})</span>
+                    <span className="text-ink">{p.name}</span>
+                    <span className="text-ink/40">({p.role})</span>
                   </div>
                 );
               })}
@@ -332,24 +332,24 @@ export default function AIDocs() {
             <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// FUNCTIONS BY CATEGORY</p>
             {[...new Set(AI_FUNCTIONS.map(f => f.category))].map(cat => (
               <div key={cat} className="text-xs mb-1">
-                <span className="text-primary/70">{cat}:</span>{' '}
-                <span className="text-primary/50">{AI_FUNCTIONS.filter(f => f.category === cat).map(f => f.name).join(', ')}</span>
+                <span className="text-ink/70">{cat}:</span>{' '}
+                <span className="text-ink/50">{AI_FUNCTIONS.filter(f => f.category === cat).map(f => f.name).join(', ')}</span>
               </div>
             ))}
           </div>
           <div className="border border-primary/30 bg-black/60 p-3">
             <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// MODEL TIERS</p>
             <div className="text-xs space-y-1">
-              <div><span className="text-primary">fast</span> <span className="text-primary/50">— GPT 5 Mini, Gemini Flash (coder)</span></div>
-              <div><span className="text-primary">balanced</span> <span className="text-primary/50">— GPT 5.4/5.6, Sonnet (reviewer)</span></div>
-              <div><span className="text-primary">high</span> <span className="text-primary/50">— Opus, Gemini Pro (planner, diagnosis)</span></div>
+              <div><span className="text-ink">fast</span> <span className="text-ink/50">— GPT 5 Mini, Gemini Flash (coder)</span></div>
+              <div><span className="text-ink">balanced</span> <span className="text-ink/50">— GPT 5.4/5.6, Sonnet (reviewer)</span></div>
+              <div><span className="text-ink">high</span> <span className="text-ink/50">— Opus, Gemini Pro (planner, diagnosis)</span></div>
             </div>
           </div>
         </div>
 
         {generating && (
           <div className="w-full max-w-xs mb-6">
-            <div className="flex items-center justify-between text-xs text-primary/70 mb-2">
+            <div className="flex items-center justify-between text-xs text-ink/70 mb-2">
               <span className="truncate">{status || 'Generating...'}</span>
               <span className="shrink-0 ml-2">{progress}%</span>
             </div>
@@ -366,7 +366,7 @@ export default function AIDocs() {
           {generating ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
           {generating ? 'GENERATING...' : 'GENERATE AI DOCS PDF'}
         </button>
-        {!generating && status && <p className="text-primary/40 text-xs mt-4">{status}</p>}
+        {!generating && status && <p className="text-ink/40 text-xs mt-4">{status}</p>}
         {!generating && !status && <p className="text-ink/40 text-xs mt-4">// Click to generate the complete AI functions & settings reference as PDF</p>}
         {pdfUrl && !generating && (
           <a href={pdfUrl} download="morpheus-ai-functions.pdf" target="_blank" rel="noopener noreferrer"

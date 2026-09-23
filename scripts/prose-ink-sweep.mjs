@@ -18,26 +18,22 @@
 //   node scripts/prose-ink-sweep.mjs --apply    # write the changes
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { scanSource, applyConversions, REASONS, PROTECTED_FILES } from './lib/prose-ink.mjs';
+import { scanSource, applyConversions, REASONS, isDeckFile } from './lib/prose-ink.mjs';
 
 const APPLY = process.argv.includes('--apply');
 const root = new URL('..', import.meta.url).pathname;
-const files = execFileSync('grep', ['-rlE', 'text-primary/[0-9]+', 'src', '--include=*.jsx', '--include=*.js'],
+const files = execFileSync('grep', ['-rlE', 'text-primary', 'src', '--include=*.jsx', '--include=*.js'],
   { cwd: root, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
 
 const byReason = new Map();
 const converted = [];
-const protectedSkipped = [];
+const deckSkipped = [];
 let touched = 0;
 
 for (const rel of files) {
   const src = readFileSync(root + rel, 'utf8');
-  const occ = scanSource(src);
-  if (PROTECTED_FILES.includes(rel)) {
-    const n = occ.filter((o) => o.verdict === 'convert').length;
-    if (n) protectedSkipped.push({ rel, n });
-    continue;
-  }
+  if (isDeckFile(rel)) { deckSkipped.push(rel); continue; }
+  const occ = scanSource(src, rel);
   for (const o of occ) {
     const key = o.verdict === 'convert' ? 'CONVERT' : o.reason;
     byReason.set(key, (byReason.get(key) || 0) + 1);
@@ -53,13 +49,10 @@ for (const rel of files) {
 }
 
 const total = [...byReason.values()].reduce((a, b) => a + b, 0);
-const protectedTotal = protectedSkipped.reduce((a, p) => a + p.n, 0);
-console.log(`\nprose-ink sweep over ${files.length} files — ${total + protectedTotal} occurrences of text-primary/N\n`);
+console.log(`\nprose-ink sweep over ${files.length} files — ${total} occurrences of text-primary/N\n`);
 console.log(`  ${APPLY ? 'converted' : 'would convert'}: ${converted.length} in ${touched} files`);
-console.log(`  in scope: ${total}   protected (untouched): ${protectedTotal}\n`);
-for (const p of protectedSkipped) {
-  console.log(`  SKIPPED (protected reference page): ${p.rel} — ${p.n} the rule would have converted\n`);
-}
+if (deckSkipped.length) console.log(`  OUT OF SCOPE (Command Deck, its own theme): ${deckSkipped.join(', ')}`);
+console.log('');
 
 const order = ['CONVERT', ...Object.keys(REASONS)];
 for (const key of order) {

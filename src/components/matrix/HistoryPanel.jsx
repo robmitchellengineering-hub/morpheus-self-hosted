@@ -250,7 +250,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                             </div>
                             <p className="text-ink/75 text-xs mt-0.5">{new Date(log.timestamp).toLocaleString()}</p>
                             {log.credits > 0 && <span className="text-yellow-500/60 text-xs">⚡ {log.credits} credits</span>}
-                            <p className={`text-primary/70 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'max-h-16 overflow-hidden' : ''}`}>{log.details}</p>
+                            <p className={`text-ink/70 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'max-h-16 overflow-hidden' : ''}`}>{log.details}</p>
                             {log.toolchain && (
                               <div className="mt-1.5 flex flex-wrap gap-1">
                                 <span className="text-primary/75 text-xs border border-primary/20 px-1.5 py-0.5">SDK {log.toolchain.sdk}</span>
@@ -283,7 +283,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
           <ChatHistoryTab project={project} />
         ) : tab === 'decisions' ? (
           <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-2">
-            {!decisions && <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+            {!decisions && <div className="flex items-center gap-2 text-ink/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
             {decisions && !decisions.migrated && (
               <p className="text-ink/75 italic text-sm">Decisions log not available yet on this deployment.</p>
             )}
@@ -292,7 +292,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
             )}
             {decisions?.decisions?.map((d) => (
               <div key={d.id} className="border border-primary/20 p-3">
-                <p className="text-primary text-sm">{d.summary}</p>
+                <p className="text-ink text-sm">{d.summary}</p>
                 {d.rationale && d.rationale !== '—' && <p className="text-ink/60 text-xs mt-1 leading-relaxed">{d.rationale}</p>}
                 <p className="text-ink/40 text-[11px] mt-1.5">{new Date(d.created_date).toLocaleString()}{d.ref ? ` · ${d.ref}` : ''}</p>
               </div>
@@ -333,7 +333,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   <div key={s.id} className="border border-primary/20 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-primary text-sm truncate">{s.label}</p>
+                        <p className="text-ink text-sm truncate">{s.label}</p>
                         <p className="text-ink/75 text-xs mt-0.5">{new Date(s.created_date).toLocaleString()}</p>
                       </div>
                       {confirmId === s.id ? (

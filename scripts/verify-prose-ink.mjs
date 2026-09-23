@@ -3,28 +3,32 @@
 // WHY THIS EXISTS
 //
 // verify-contrast.mjs pins the *tokens* — body copy is ink and headings are
-// green. It cannot see the 1,600-odd places that name the green by hand, and
+// green. It cannot see the 2,500-odd places that name the green by hand, and
 // those are where reading text actually lives. This guard pins the *usage* rule
-// that the sweep applied, so it cannot be undone one component at a time — the
-// same failure mode verify-contrast was written for.
+// the sweep applied, so it cannot be undone one component at a time.
 //
-// It asserts the rule from both sides, which matters: a sweep that converted
-// everything would pass a "no green prose left" check while destroying the
-// brand, and the brand is the point. So this fails BOTH when prose is still
-// green AND when the green has been stripped from the titles, labels and
-// actions that are supposed to keep it.
+// It asserts the rule from BOTH sides. A sweep that converted everything would
+// pass a "no green prose left" check while destroying the brand, and the brand is
+// the point — green has to keep meaning something. So this fails when prose is
+// still green AND when green has been stripped from the headings, labels, badges,
+// actions, metrics and inline emphasis that are supposed to keep it.
 //
-// It also asserts that the sweep and the guard read the SAME rule. A guard that
-// re-implements the rule it is guarding drifts from it, and then the two
-// disagree silently — so both scripts are required to import lib/prose-ink.mjs.
+// An earlier version asserted "green still outnumbers ink" as a proxy for "the
+// brand survives". That is gone. It was a proxy for a real intent but not the
+// intent, it would have gone false the moment the sweep did its job properly, and
+// a guard that measures the wrong thing is worse than one that measures nothing.
+//
+// It still asserts that the sweep and the guard read the SAME rule, because a
+// guard that re-implements the rule it guards drifts from it silently.
 //
 // Run: node scripts/verify-prose-ink.mjs
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  scanSource, rawOccurrences, PROTECTED_FILES, PROSE_TAGS, SMALL_SIZE, HEADING_TAGS,
+  scanSource, rawOccurrences, isDeckFile, DECK_PATHS, KNOWN_GREEN_CONSTANTS,
+  PROSE_TAGS, ACTION_TAGS, HEADING_TAGS, EMPHASIS_TAGS,
 } from './lib/prose-ink.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,11 +59,14 @@ function walk(dir, out = []) {
 }
 const files = walk(join(REPO, 'src')).sort();
 
-console.log('\nProse-ink rule — the green belongs to titles, the ink to the prose\n');
+console.log('\nProse-ink rule — the green belongs to structure, the ink to the prose\n');
 
 // ── 1. the scanner accounts for every occurrence ────────────────────────────
-// A scanner that silently skips what it cannot parse reports a clean sweep of
-// the part it happened to see. That is the failure this section exists to stop.
+// A scanner that silently skips what it cannot parse reports a clean sweep of the
+// part it happened to see. That is the failure this section exists to stop — and
+// it is not hypothetical: a regex literal in SyntaxHighlighter.jsx blanked 60
+// lines and hid a real className, which then filed itself under "class-constant"
+// and looked harmless.
 let rawTotal = 0;
 let classifiedTotal = 0;
 const unaccounted = [];
@@ -69,101 +76,167 @@ for (const rel of files) {
   const raw = rawOccurrences(src);
   if (!raw) continue;
   rawTotal += raw;
-  const found = scanSource(src);
+  const found = scanSource(src, rel);
   classifiedTotal += found.length;
   if (found.length !== raw) unaccounted.push(`${rel}: ${raw} present, ${found.length} classified`);
   for (const o of found) if (o.reason === 'unattributed') unattributed.push(`${rel}:${o.offset}`);
 }
 ok('source files were scanned (parser sanity)', files.length >= 200, `walked ${files.length} files under src/`);
-ok('there are green occurrences to judge (parser sanity)', rawTotal >= 1000, `found ${rawTotal}`);
-eq('every text-primary/N is classified exactly once', classifiedTotal, rawTotal);
+// The population shrinks as the sweep converts tokens to ink, so this cannot be a
+// fixed number near the original count — it only has to prove the census looked at
+// a real codebase rather than an empty scan.
+ok('there are occurrences to judge (parser sanity)', rawTotal >= 1000, `found ${rawTotal} still on text-primary`);
+eq('every text-primary occurrence is classified exactly once', classifiedTotal, rawTotal);
+if (unattributed.length) console.log(`          ${unattributed.slice(0, 6).join('\n          ')}`);
 eq('nothing was left unattributed', unattributed, []);
 if (unaccounted.length) console.log(`          ${unaccounted.slice(0, 5).join('\n          ')}`);
 eq('no file has an occurrence the scanner could not account for', unaccounted, []);
 
-// ── 2. the sweep is complete over the in-scope files ────────────────────────
-// The positive half of the rule: small prose is ink now.
+// ── 2. the sweep is complete: ink carries prose ─────────────────────────────
 const stillGreen = [];
-const counts = { green: 0, ink: 0, sweptInk: 0 };
+const counts = { green: 0, sweptInk: 0, ink: 0 };
 const byReason = new Map();
-const greenOn = { headings: 0, actions: 0, labels: 0, badges: 0 };
-const ACTION_TAGS = new Set(['button', 'a', 'link', 'navlink']);
+const greenOn = { headings: 0, actions: 0, labels: 0, badges: 0, metrics: 0, titles: 0, emphasis: 0 };
+const ACTION_TAG_NAMES = new Set(['button', 'a', 'link', 'navlink']);
 for (const rel of files) {
+  if (isDeckFile(rel)) continue;
   const src = readFileSync(join(REPO, rel), 'utf8');
   counts.ink += (src.match(/text-ink(?:\/\d+)?/g) || []).length;
-  // The sweep only ever writes the opacity form; bare `text-ink` predates it.
   counts.sweptInk += (src.match(/text-ink\/\d+/g) || []).length;
-  if (PROTECTED_FILES.includes(rel)) continue;
-  for (const o of scanSource(src)) {
-    const key = o.verdict === 'convert' ? 'CONVERT' : o.reason;
-    byReason.set(key, (byReason.get(key) || 0) + 1);
-    if (o.verdict === 'convert') stillGreen.push(`${rel}:${(src.slice(0, o.offset).match(/\n/g) || []).length + 1} ${o.tag} ${o.token}`);
+  for (const o of scanSource(src, rel)) {
+    byReason.set(o.reason, (byReason.get(o.reason) || 0) + 1);
+    if (o.verdict === 'convert') {
+      stillGreen.push(`${rel}:${src.slice(0, o.offset).split('\n').length} ${o.tag} ${o.token}`);
+      continue;
+    }
     counts.green++;
     const tag = String(o.tag).toLowerCase();
     if (HEADING_TAGS.has(tag)) greenOn.headings++;
-    else if (ACTION_TAGS.has(tag)) greenOn.actions++;
-    if (o.reason === 'uppercase') greenOn.labels++;
+    else if (ACTION_TAG_NAMES.has(tag) || ACTION_TAGS.has(tag)) greenOn.actions++;
+    else if (EMPHASIS_TAGS.has(tag)) greenOn.emphasis++;
+    if (o.reason === 'uppercase' || o.reason === 'text-capitals' || o.reason === 'runtime-capitals' || o.reason === 'title-tracking') greenOn.labels++;
     if (o.reason === 'badge') greenOn.badges++;
+    if (o.reason === 'number-like') greenOn.metrics++;
+    if (o.reason === 'title-weight' || o.reason === 'title-size') greenOn.titles++;
   }
 }
 if (stillGreen.length) console.log(`          ${stillGreen.slice(0, 8).join('\n          ')}`);
-eq('no small prose still carries the brand green', stillGreen, []);
+eq('no in-rule prose still carries the brand green', stillGreen, []);
 
-// ── 3. the brand survived ───────────────────────────────────────────────────
-// The negative half. Stripping the green everywhere is a FAILURE of this task,
-// not a success, so each class that is supposed to stay green must still have
-// green, and green must still be the dominant colour.
-// Floors, deliberately: adding a green heading or label is fine and passes, but
-// stripping one fails. A floor is the right shape for a convention — growth is
-// allowed, erosion is not.
-ok('green still marks headings', greenOn.headings >= 5, `headings carrying green: ${greenOn.headings} (5 before this branch; add freely, do not remove)`);
-ok('green still marks badges', greenOn.badges >= 1, `badges carrying green: ${greenOn.badges}`);
-ok('green still marks uppercase labels', greenOn.labels >= 150, `labels carrying green: ${greenOn.labels} (196 before this branch)`);
-ok('green still marks actions (button/a/Link)', greenOn.actions >= 150, `actions carrying green: ${greenOn.actions} (219 before this branch)`);
-ok('green is still the majority colour', counts.green > counts.ink,
-  `green ${counts.green} vs ink ${counts.ink} — if ink has taken over, the brand is gone`);
+// ── 3. green still means something ──────────────────────────────────────────
+// Floors, deliberately: adding a green heading or label passes, stripping one
+// fails. That is the right shape for a convention — growth is allowed, erosion is
+// not. The point is that the brand did not get flattened into white.
+// Pinned at the counts this branch produced, because a floor far below the real
+// number cannot see the failure it is meant to see: with 18 green headings and a
+// floor of 5, converting one heading is invisible. Growth still passes; ANY
+// reduction fails, and the message says what to do about it.
+const FLOORS = { headings: 18, titles: 86, labels: 376, badges: 4, actions: 955, metrics: 19, emphasis: 7 };
+ok('green still marks headings', greenOn.headings >= FLOORS.headings, `headings: ${greenOn.headings} (pinned ${FLOORS.headings})`);
+ok('green still marks titles and headline sizes', greenOn.titles >= FLOORS.titles, `titles: ${greenOn.titles} (pinned ${FLOORS.titles})`);
+ok('green still marks uppercase / runtime labels', greenOn.labels >= FLOORS.labels, `labels: ${greenOn.labels} (pinned ${FLOORS.labels})`);
+ok('green still marks badges', greenOn.badges >= FLOORS.badges, `badges: ${greenOn.badges} (pinned ${FLOORS.badges})`);
+ok('green still marks actions (button/a/label/input)', greenOn.actions >= FLOORS.actions, `actions: ${greenOn.actions} (pinned ${FLOORS.actions})`);
+ok('green still marks metrics and counters', greenOn.metrics >= FLOORS.metrics, `metrics: ${greenOn.metrics} (pinned ${FLOORS.metrics})`);
+ok('green still marks inline emphasis', greenOn.emphasis >= FLOORS.emphasis, `emphasis: ${greenOn.emphasis} (pinned ${FLOORS.emphasis})`);
+ok('the sweep is still applied (text-ink/N is in use)', counts.sweptInk >= 700, `text-ink/N: ${counts.sweptInk}`);
 
-// ── 4. the reference page was not swept ────────────────────────────────────
-// Alice Stats is the page the convention came from; editing the reference while
-// sweeping everything else leaves nothing to compare against.
-eq('the reference page is declared protected', PROTECTED_FILES, ['src/pages/AliceStats.jsx']);
+// ── 4. the class-constant decisions are pinned ──────────────────────────────
+// A class string in a constant has no tag to read, so it cannot be classified —
+// only decided. Pinning the set means a NEW constant fails this guard and has to
+// be looked at, instead of quietly leaving prose green.
+const constants = new Set();
+for (const rel of files) {
+  if (isDeckFile(rel)) continue;
+  for (const o of scanSource(readFileSync(join(REPO, rel), 'utf8'), rel)) {
+    if (o.reason === 'class-constant' && o.owner) constants.add(`${rel}|${o.owner}`);
+  }
+}
+const known = new Set(KNOWN_GREEN_CONSTANTS);
+const undecided = [...constants].filter((c) => !known.has(c)).sort();
+const stale = [...known].filter((c) => !constants.has(c)).sort();
+ok('class-constant declarations were found (parser sanity)', constants.size >= 20, `found ${constants.size}`);
+eq('every green class-constant has been decided', undecided, []);
+eq('the decided list has no stale entries', stale, []);
+
+// ── 5. the Deck is its own theme and is untouched ───────────────────────────
+// Rob, 2026-09-23: "command deck is its own theme please dont change it".
+ok('the Deck paths are declared', DECK_PATHS.length >= 4, DECK_PATHS.join(', '));
+const deckFiles = [];
+for (const p of DECK_PATHS) {
+  const full = join(REPO, p);
+  if (!existsSync(full)) continue;
+  if (p.endsWith('/')) {
+    const walkDeck = (d) => {
+      for (const e of readdirSync(d)) {
+        const q = join(d, e);
+        if (statSync(q).isDirectory()) walkDeck(q);
+        else if (/\.(jsx|js)$/.test(e)) deckFiles.push(relative(REPO, q));
+      }
+    };
+    walkDeck(full);
+  } else if (/\.(jsx|js)$/.test(p)) deckFiles.push(p);
+}
+ok('the Deck files were found (parser sanity)', deckFiles.length >= 10, `found ${deckFiles.length}`);
+const deckInked = deckFiles.filter((f) => /text-ink/.test(readFileSync(join(REPO, f), 'utf8')));
+eq('no Deck file was swept (no text-ink token anywhere in the Deck)', deckInked, []);
 {
-  const alice = readFileSync(join(REPO, 'src/pages/AliceStats.jsx'), 'utf8');
-  const green = rawOccurrences(alice);
-  // The swept form is `text-ink/N`; bare `text-ink` was already on this page
-  // before the sweep (the big hero numbers use it) and is not evidence of one.
-  const swept = (alice.match(/text-ink\/\d+/g) || []).length;
-  ok('AliceStats.jsx still carries its 27 green tokens', green === 27, `found ${green}`);
-  eq('AliceStats.jsx was not swept (no text-ink/N)', swept, 0);
+  // The rule itself must refuse the Deck, not merely be skipped by the sweep.
+  const probe = scanSource('<p className="text-primary/60 text-primary">words</p>', 'src/pages/CommandDeck/DeckUI.jsx');
+  eq('the rule refuses a Deck file outright', probe.map((o) => o.reason), ['deck-own-theme', 'deck-own-theme']);
+  const external = scanSource('<p className="text-primary/60">words</p>', 'src/pages/Landing.jsx');
+  eq('the same markup outside the Deck is in scope', external.map((o) => o.verdict), ['convert']);
+}
+{
+  const palette = readFileSync(join(REPO, 'src/pages/CommandDeck/deckConstants.js'), 'utf8');
+  ok('the Deck keeps its own Tweed & Walnut palette',
+    /export const C = \{/.test(palette) && /tweed:\s*'#[0-9A-Fa-f]{6}'/.test(palette) && /walnut:\s*'#[0-9A-Fa-f]{6}'/.test(palette));
 }
 
-// The sweep has to still be *there*: a guard that only forbids new green would
-// pass on a branch where every conversion had been reverted by hand.
-ok('the sweep is still applied (text-ink/N is in use)', counts.sweptInk >= 400,
-  `text-ink/N occurrences: ${counts.sweptInk}`);
+// ── 6. the rule shape cannot be quietly narrowed again ──────────────────────
+eq('the prose tags include the ones the size gate used to hide',
+  ['div', 'li', 'p', 'pre', 'span', 'td'].every((t) => PROSE_TAGS.has(t)), true);
+eq('buttons, links and field labels are actions',
+  ['a', 'button', 'input', 'label', 'select', 'textarea'].every((t) => ACTION_TAGS.has(t)), true);
+{
+  // A prose host with NO size class must convert: that was the whole complaint.
+  const noSize = scanSource('<p className="text-primary/60 leading-relaxed">Some prose.</p>', 'src/pages/Landing.jsx');
+  eq('a size-less paragraph still converts', noSize.map((o) => o.verdict), ['convert']);
+}
+{
+  // A runtime label must NOT convert: `{label.toUpperCase()}` is invisible to a
+  // source-level capitals test, which is how the rule got this wrong.
+  const runtime = scanSource('<p className="text-primary/50">{label.toUpperCase()}</p>', 'src/pages/Landing.jsx');
+  eq('a runtime-uppercased label stays green', runtime.map((o) => o.reason), ['runtime-capitals']);
+}
+{
+  const emphasis = scanSource('<strong className="text-primary">word</strong>', 'src/pages/Landing.jsx');
+  eq('inline emphasis stays green', emphasis.map((o) => o.reason), ['inline-emphasis']);
+}
 
-// ── 5. the rule itself has not been quietly widened ────────────────────────
-eq('the rule names exactly the approved prose tags', [...PROSE_TAGS].sort(), ['li', 'p', 'span', 'td']);
-eq('the approved size range is exactly 9-12px, xs, sm', [
-  'text-[9px]', 'text-[10px]', 'text-[11px]', 'text-[12px]', 'text-xs', 'text-sm',
-].map((c) => SMALL_SIZE.test(c)), [true, true, true, true, true, true]);
-eq('sizes outside the approved range are NOT swept', [
-  'text-[8px]', 'text-[13px]', 'text-base', 'text-lg', 'text-xl', 'text-2xl',
-].map((c) => SMALL_SIZE.test(c)), [false, false, false, false, false, false]);
+// ── 7. Alice Stats: its prose is ink, its runtime labels are still green ────
+{
+  const alice = readFileSync(join(REPO, 'src/pages/AliceStats.jsx'), 'utf8');
+  const swept = (alice.match(/text-ink\/\d+/g) || []).length;
+  const labels = scanSource(alice, 'src/pages/AliceStats.jsx')
+    .filter((o) => o.reason === 'runtime-capitals').length;
+  ok('Alice Stats prose was swept into ink', swept >= 6, `text-ink/N: ${swept}`);
+  ok("Alice Stats' {x.toUpperCase()} labels kept their green", labels === 2, `runtime labels still green: ${labels}`);
+}
 
-// ── 6. the sweep and the guard share one implementation ───────────────────
-// Otherwise the guard can pass while the sweep does something else.
+// ── 8. the sweep and the guard share one implementation ────────────────────
 for (const script of ['scripts/verify-prose-ink.mjs', 'scripts/prose-ink-sweep.mjs']) {
   const src = readFileSync(join(REPO, script), 'utf8');
   ok(`${script} reads the shared rule`, /from '\.\/lib\/prose-ink\.mjs'/.test(src));
 }
 
-console.log(`\n  green left in place: ${counts.green}   ink in use: ${counts.ink} (swept this branch: ${counts.sweptInk})`);
+console.log(`\n  green kept: ${counts.green}   ink in use: ${counts.ink} (swept this branch: ${counts.sweptInk})`);
+console.log(`  headings ${greenOn.headings} · titles ${greenOn.titles} · labels ${greenOn.labels} · badges ${greenOn.badges} · actions ${greenOn.actions} · metrics ${greenOn.metrics}`);
 for (const [k, v] of [...byReason].sort((a, b) => b[1] - a[1])) console.log(`    ${String(v).padStart(5)}  ${k}`);
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
-  console.log('\nThe green/ink convention has drifted. Fix the usage — do not widen the rule or');
-  console.log('strip the brand to make this pass.\n');
+  console.log('\nThe green/ink convention has drifted. Fix the usage — do not widen the rule,');
+  console.log('convert the Deck, or strip the brand to make this pass.\n');
   process.exit(1);
 }
 console.log('the prose-ink rule holds.\n');

@@ -24,7 +24,10 @@ import { base44 } from '@/api/base44Client';
 // report, and a fix that reported `verified: false` is never shown as done.
 
 const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
-const faint = 'text-[9px] text-primary/30';
+// prose helper text, so ink: resolved by usage — every use is a span/div of
+// faint helper copy. The neighbouring `micro` keeps green because it is an
+// uppercase label, and `btn` because it is a button.
+const faint = 'text-ink/30';
 const btn = 'inline-flex items-center justify-center gap-1.5 px-3 h-[32px] border border-primary/30 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary disabled:opacity-40 shrink-0';
 const kvRow = 'grid grid-cols-[1fr_auto] gap-2 border-b border-primary/10 py-1.5 last:border-b-0';
 
@@ -349,7 +352,7 @@ function Finding({
       </div>
       {/* The description is shown in full, not truncated: when a finding carries
           no link, this text is the entire reason it matters. */}
-      <p className={`${quiet ? 'text-[10px] text-primary/45' : 'text-[11px] text-primary/65'} leading-relaxed break-words`}>
+      <p className={`${quiet ? 'text-[10px] text-ink/45' : 'text-[11px] text-ink/65'} leading-relaxed break-words`}>
         {t.description}
       </p>
       {links.map((l, i) => (
@@ -396,7 +399,7 @@ function OutcomeGroup({ tone = 'yellow', title, note, items, icon }) {
       </div>
       {note ? <div className="text-[9px] text-ink/45 leading-relaxed">{note}</div> : null}
       {items.map((it, i) => (
-        <div key={`${it}-${i}`} className="flex items-start gap-1.5 text-[11px] text-primary/80">
+        <div key={`${it}-${i}`} className="flex items-start gap-1.5 text-[11px] text-ink/80">
           <span className="mt-[5px] shrink-0 w-[3px] h-[3px] bg-primary/40" />
           <span className="min-w-0 flex-1 break-words">{it}</span>
         </div>
@@ -739,7 +742,7 @@ export default function HealthTab({ projectId }) {
             {freshness?.message && (
               // Stale freshness is a caution, not trivia: it means a "no updates"
               // answer is old enough that it cannot be trusted.
-              <div className={`flex items-start gap-1 ${freshness.stale ? 'text-yellow-500/85' : 'text-primary/45'}`}>
+              <div className={`flex items-start gap-1 ${freshness.stale ? 'text-yellow-500/85' : 'text-ink/45'}`}>
                 {freshness.stale
                   ? <AlertTriangle size={10} className="mt-[2px] shrink-0" />
                   : <Clock size={10} className="mt-[2px] shrink-0" />}
@@ -763,7 +766,7 @@ export default function HealthTab({ projectId }) {
           </div>
         )}
         {!scan && loading && (
-          <div className="flex items-center gap-2 text-[11px] text-primary/50">
+          <div className="flex items-center gap-2 text-[11px] text-ink/50">
             <Loader2 size={12} className="animate-spin" /> Scanning the site…
           </div>
         )}
@@ -780,7 +783,7 @@ export default function HealthTab({ projectId }) {
                   Morpheus plugin from the SETUP tab, then rescan.
                 </div>
               ) : attention.length === 0 ? (
-                <div className="flex items-start gap-1.5 text-[11px] text-primary/60">
+                <div className="flex items-start gap-1.5 text-[11px] text-ink/60">
                   <Check size={12} className="mt-[2px] shrink-0 text-primary/50" />
                   Nothing in this scan needs attention.
                 </div>
@@ -789,7 +792,7 @@ export default function HealthTab({ projectId }) {
                   {autoFindings.length > 0 ? (
                     <div className="space-y-1.5">
                       {fixAllRunning && fixAllProgress ? (
-                        <div className="flex items-start gap-1.5 text-[10px] text-primary/60">
+                        <div className="flex items-start gap-1.5 text-[10px] text-ink/60">
                           <Loader2 size={12} className="mt-[1px] shrink-0 animate-spin" />
                           <span className="break-words">
                             Fixing {fixAllProgress.index} of {fixAllProgress.total} — {fixAllProgress.label}
@@ -805,8 +808,8 @@ export default function HealthTab({ projectId }) {
                           </div>
                           <div className="space-y-1">
                             {autoFindings.map((f) => (
-                              <div key={`all-${f.id}`} className="text-[10px] text-primary/65 break-words">
-                                <span className="text-primary/80">{f.label || f.id}</span>
+                              <div key={`all-${f.id}`} className="text-[10px] text-ink/65 break-words">
+                                <span className="text-ink/80">{f.label || f.id}</span>
                                 {f.fix?.warning ? (
                                   <span className="block text-[9px] text-yellow-500/85 leading-relaxed">{f.fix.warning}</span>
                                 ) : null}
@@ -886,7 +889,7 @@ export default function HealthTab({ projectId }) {
             <div ref={updatesRef}
               className={`transition-colors duration-700 ${updatesFlash ? 'bg-primary/10 ring-1 ring-primary/40' : ''}`}>
             <Section title="Updates" icon={<Package size={11} className="text-primary/45" />}>
-              <div className={`text-[11px] break-words ${updateTotal ? 'text-primary/80' : 'text-primary/60'}`}>
+              <div className={`text-[11px] break-words ${updateTotal ? 'text-ink/80' : 'text-ink/60'}`}>
                 {plan?.message || 'This scan did not report update information.'}
               </div>
               {updateTotal > 0 && (
@@ -909,7 +912,7 @@ export default function HealthTab({ projectId }) {
                   {showApplyControl ? (
                     <>
                       {applying ? (
-                        <div className="flex items-center gap-1.5 text-[10px] text-primary/55">
+                        <div className="flex items-center gap-1.5 text-[10px] text-ink/55">
                           <Loader2 size={12} className="animate-spin shrink-0" />
                           {applying === 'check'
                             ? 'Checking what the site would do — nothing is being changed.'
@@ -998,7 +1001,7 @@ export default function HealthTab({ projectId }) {
                   ))}
                 </div>
               ) : apply?.ok === true ? (
-                <div className="flex items-center gap-1.5 text-[10px] text-primary/45">
+                <div className="flex items-center gap-1.5 text-[10px] text-ink/45">
                   <ShieldCheck size={11} className="shrink-0" /> Morpheus can write to this site&apos;s own files.
                 </div>
               ) : (
@@ -1031,8 +1034,8 @@ export default function HealthTab({ projectId }) {
                 <div className={micro}>Not checked · {notRun.length}</div>
                 <div className={faint}>These tests did not run — that is not the same as passing.</div>
                 {notRun.map((a, i) => (
-                  <div key={`${a.id}-${i}`} className="text-[10px] text-primary/45 break-words">
-                    <span className="text-primary/60">{a.label || a.id}</span>{a.reason ? ` — ${a.reason}` : ''}
+                  <div key={`${a.id}-${i}`} className="text-[10px] text-ink/45 break-words">
+                    <span className="text-ink/60">{a.label || a.id}</span>{a.reason ? ` — ${a.reason}` : ''}
                   </div>
                 ))}
               </div>
@@ -1112,7 +1115,7 @@ export default function HealthTab({ projectId }) {
                 </button>
                 {dirty && !saving ? <div className={faint}>Unsaved changes — the next run and description above still describe the saved policy.</div> : null}
                 {policyErr ? <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 text-[10px] text-red-300/90 break-words">{policyErr}</div> : null}
-                {policySaved ? <div className="flex items-start gap-1.5 text-[10px] text-primary/70"><Check size={11} className="mt-[1px] shrink-0" /> {policySaved}</div> : null}
+                {policySaved ? <div className="flex items-start gap-1.5 text-[10px] text-ink/70"><Check size={11} className="mt-[1px] shrink-0" /> {policySaved}</div> : null}
               </div>
             </Section>
           </div>

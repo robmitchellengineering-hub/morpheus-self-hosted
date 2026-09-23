@@ -138,7 +138,7 @@ export default function ExternalSources({ projectId, externalFiles, onRefresh })
           {externalFiles.map(f => (
             <div key={f.id} className="flex items-center gap-2 text-xs border border-primary/10 px-2 py-1.5">
               <FileCode size={12} className="text-primary/60 shrink-0" />
-              <span className="text-primary/80 truncate flex-1">{f.path.replace('external/', '')}</span>
+              <span className="text-ink/80 truncate flex-1">{f.path.replace('external/', '')}</span>
               <button onClick={() => handleDelete(f)} className="text-primary/65 hover:text-red-500 shrink-0">
                 <Trash2 size={12} />
               </button>

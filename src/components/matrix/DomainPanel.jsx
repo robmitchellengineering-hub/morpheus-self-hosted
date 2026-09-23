@@ -58,7 +58,7 @@ function StatusRow({ label, ok, children }) {
     <div className="flex items-start gap-2 text-[11px]">
       <Icon size={13} className={`${color} mt-0.5 shrink-0`} />
       <div className="min-w-0">
-        <span className="text-primary/70">{label}</span>
+        <span className="text-ink/70">{label}</span>
         <div className={`${color} leading-snug`}>{children}</div>
       </div>
     </div>
@@ -232,7 +232,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
           {state && state.isWeb === false && <span className="text-yellow-500/80"> This project isn't a web-app target.</span>}
         </p>
 
-        {!d && <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {!d && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
         {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
 
         {d && (
@@ -283,8 +283,8 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                   <div className="border border-primary/15">
                     {records.map((r, i) => (
                       <div key={i} className="px-2 py-1.5 border-b border-primary/10 last:border-0">
-                        <div className="flex items-center gap-2 font-mono text-[10px] text-primary/80">
-                          <span className="text-primary/50 w-12 shrink-0">{r.type}</span>
+                        <div className="flex items-center gap-2 font-mono text-[10px] text-ink/80">
+                          <span className="text-ink/50 w-12 shrink-0">{r.type}</span>
                           <span className="w-8 shrink-0">{r.name}</span>
                           <span className="flex-1 min-w-0 break-all">{r.value}</span>
                           <CopyBtn text={r.value} />
@@ -370,7 +370,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     <div className="mt-2">
                       <div className="text-[9px] text-primary/40 uppercase mb-1">Embedded in &lt;head&gt;</div>
                       <div className="flex items-start gap-2 bg-black/40 border border-primary/15 px-2 py-1.5">
-                        <code className="text-[9px] text-primary/70 break-all flex-1 leading-relaxed">{analytics.snippet}</code>
+                        <code className="text-[9px] text-ink/70 break-all flex-1 leading-relaxed">{analytics.snippet}</code>
                         <CopyBtn text={analytics.snippet} />
                       </div>
                     </div>
@@ -381,7 +381,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     {aBusy ? <Loader2 size={10} className="animate-spin" /> : aSaved ? <Check size={10} /> : <BarChart3 size={10} />}
                     {aSaved ? 'SAVED' : aDraft.provider ? 'SAVE ANALYTICS' : 'SAVE (NONE)'}
                   </button>
-                  <span className="text-[9px] text-primary/35 ml-2">→ <span className="font-mono">.morpheus/analytics.json</span></span>
+                  <span className="text-[9px] text-ink/35 ml-2">→ <span className="font-mono">.morpheus/analytics.json</span></span>
                 </section>
               )}
 
@@ -437,7 +437,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     Rolled back to {rollbackDone.rolledBackToSha.slice(0, 7)} as commit {rollbackDone.commitSha.slice(0, 7)}. Your host is redeploying now.
                   </div>
                 )}
-                {!history && !historyErr && <div className="text-[10px] text-primary/40 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading commits…</div>}
+                {!history && !historyErr && <div className="text-[10px] text-ink/40 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading commits…</div>}
                 {history && !history.connected && (
                   <div className="text-[10px] text-ink/45 leading-snug">Connect this project to a GitHub repo (Export to GitHub) to see deploy history and roll back.</div>
                 )}

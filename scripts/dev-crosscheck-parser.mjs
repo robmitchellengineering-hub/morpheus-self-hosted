@@ -51,7 +51,7 @@ for (const rel of files) {
       const text = nd.type === 'TemplateElement' ? nd.value.raw : nd.value;
       // Babel's TemplateElement range already starts at the quasi's content.
       const base = nd.start + (nd.type === 'StringLiteral' ? 1 : 0);
-      const re = /(^|[\s'"`])((?:\[[^\]]*\]:|[a-z-]+:)*)(text-primary\/\d+)/g;
+      const re = /(^|[\s'"`])((?:\[[^\]]*\]:|[a-z-]+:)*)(text-primary(?![\w-])(?:\/\d+)?)/g;
       let m;
       while ((m = re.exec(text))) {
         const off = base + m.index + m[1].length + m[2].length;

@@ -118,7 +118,7 @@ export default function ChatHistoryTab({ project }) {
                         </button>
                       </div>
                       <p
-                        className={`text-primary/80 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && q ? 'max-h-20 overflow-hidden' : ''}`}
+                        className={`text-ink/80 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && q ? 'max-h-20 overflow-hidden' : ''}`}
                         onClick={() => q && setExpandedId(isExpanded ? null : m.id)}
                       >
                         <MatchText content={m.content} query={q} />

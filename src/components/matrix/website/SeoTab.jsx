@@ -103,7 +103,7 @@ function SuggestionRow({ s, checked, onToggle }) {
             {s.type && <span className="text-[9px] text-primary/35 uppercase shrink-0">{s.type}</span>}
             {!s.grounded && <span className="text-[9px] text-yellow-500/70 shrink-0" title="Only the title was read — the model did not see the page text.">title-only</span>}
           </div>
-          <div className="text-[11px] text-primary mt-1 break-words">{s.seo_title}</div>
+          <div className="text-[11px] text-ink mt-1 break-words">{s.seo_title}</div>
           <div className="text-[10px] text-ink/60 mt-0.5 break-words">{s.seo_description}</div>
           {s.focus_keyword && <div className="text-[9px] text-ink/40 mt-0.5">keyword: {s.focus_keyword}</div>}
           {s.warnings?.length > 0 && (
@@ -601,7 +601,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <div className="border border-yellow-500/30 px-3 py-2 space-y-1">
               <div className="text-[9px] text-yellow-500/85 uppercase tracking-wider">What the audit found here</div>
               {(issuesById[edit.id] || []).map((i, n) => (
-                <div key={n} className="text-[10px] text-primary/70 flex items-start gap-1.5">
+                <div key={n} className="text-[10px] text-ink/70 flex items-start gap-1.5">
                   <span className={`uppercase text-[9px] shrink-0 ${i.severity === 'high' ? 'text-red-400' : i.severity === 'medium' ? 'text-yellow-500/85' : 'text-primary/40'}`}>{i.severity}</span>
                   <span>{i.message}</span>
                 </div>
@@ -688,7 +688,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
                         <span className="text-yellow-500/80">{c.url.replace(/^https?:\/\//, '')} — {c.error}</span>
                       ) : (
                         <>
-                          <div className="text-primary/75 truncate">{c.title || c.url.replace(/^https?:\/\//, '')}</div>
+                          <div className="text-ink/75 truncate">{c.title || c.url.replace(/^https?:\/\//, '')}</div>
                           {c.headings?.length > 0 && (
                             <div className="text-ink/40 text-[9px] truncate">{c.headings.join(' · ')}</div>
                           )}
@@ -712,7 +712,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
                           {(row.source_labels || []).map((label) => (
                             <span key={label} className="border border-primary/20 px-1 py-0.5">{label}</span>
                           ))}
-                          {row.provenance && <span className="text-primary/30">from: {row.provenance}</span>}
+                          {row.provenance && <span className="text-ink/30">from: {row.provenance}</span>}
                         </div>
                         {/* Google's own numbers for this query, copied exactly —
                             the only measured figures in this list. */}
@@ -761,7 +761,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
                       </span>
                     </button>
                     <div className="min-w-0">
-                      <div className="text-[11px] text-primary">“{l.anchor}”</div>
+                      <div className="text-[11px] text-ink">“{l.anchor}”</div>
                       <div className="text-[10px] text-ink/60 mt-0.5 break-words">→ {l.target || l.url}</div>
                       {l.why && <div className="text-[9px] text-ink/40 mt-0.5">{l.why}</div>}
                     </div>
@@ -793,7 +793,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
               </div>
               {(linkPlan.added || []).map((a, i) => (
                 <div key={i} className="border border-primary/15 px-2.5 py-2">
-                  <div className="text-[11px] text-primary">“{a.anchor}”</div>
+                  <div className="text-[11px] text-ink">“{a.anchor}”</div>
                   <div className="text-[9px] text-ink/35 break-words">{a.url}</div>
                   {a.context && <div className="text-[9px] text-ink/50 mt-1 leading-relaxed break-words font-mono">{a.context}</div>}
                 </div>
@@ -861,7 +861,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
               checked={f.noindex} onChange={(e) => set('noindex', e.target.checked)} />
             <span className="text-[11px] leading-relaxed">
-              <span className={f.noindex ? 'text-yellow-500/90' : 'text-primary/70'}>Keep this out of search results (noindex)</span>
+              <span className={f.noindex ? 'text-yellow-500/90' : 'text-ink/70'}>Keep this out of search results (noindex)</span>
               <span className="block text-[9px] text-ink/40 mt-0.5">
                 Use for a thank-you page, a test page, or anything you don't want strangers landing on. It stays live on the site — it just stops being listed.
               </span>
@@ -935,7 +935,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
               checked={!!d.enabled} onChange={(e) => setD('enabled', e.target.checked)} />
             <span className="text-[11px] leading-relaxed">
-              <span className={d.enabled ? 'text-primary/80' : 'text-primary/50'}>Use these defaults</span>
+              <span className={d.enabled ? 'text-ink/80' : 'text-ink/50'}>Use these defaults</span>
               <span className="block text-[9px] text-ink/40 mt-0.5">
                 Off means WordPress's own values are used: the post title, and nothing for the description.
               </span>
@@ -1006,7 +1006,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
                 {(fillPlan.preview || []).map((r) => (
                   <div key={r.id} className="border border-primary/15 px-2.5 py-2">
                     <div className="text-[11px] text-ink/85 truncate">{r.title || `#${r.id}`}</div>
-                    {r.seo_title && <div className="text-[10px] text-primary mt-0.5 break-words">{r.seo_title}</div>}
+                    {r.seo_title && <div className="text-[10px] text-ink mt-0.5 break-words">{r.seo_title}</div>}
                     {r.seo_description && <div className="text-[10px] text-ink/55 mt-0.5 break-words">{r.seo_description}</div>}
                   </div>
                 ))}
@@ -1058,7 +1058,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <>
               <p className="text-[11px] text-ink/50 leading-relaxed">
                 Morpheus writes the post using your business profile and links to pages you already have. It lands as a
-                <span className="text-primary/75"> draft</span> — you read it before it goes public.
+                <span className="text-ink/75"> draft</span> — you read it before it goes public.
               </p>
               <Field label="Topic" hint="leave empty and it picks the most useful thing your business could publish">
                 <input className={inputCls} value={b.form.topic} onChange={(e) => setBlog({ ...b, form: { ...b.form, topic: e.target.value } })} />
@@ -1114,7 +1114,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
           {b.created && (
             <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] space-y-1.5">
               <div className="flex items-center gap-1.5 text-primary font-bold"><Check size={13} /> Draft created</div>
-              <div className="text-primary/70">It's on your site as a draft. Publish it from WordPress when you're happy with it.</div>
+              <div className="text-ink/70">It's on your site as a draft. Publish it from WordPress when you're happy with it.</div>
               {b.created.edit_url && (
                 <a href={b.created.edit_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary/70 hover:text-primary">
                   <ExternalLink size={11} /> Open it in WordPress
@@ -1205,14 +1205,14 @@ export default function SeoTab({ projectId, store, widget = false }) {
         {timerFor('batch')}
 
         {audit && (
-          <div className="border border-primary/15 px-3 py-2 text-[10px] text-primary/55">
+          <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink/55">
             <div className="flex items-center gap-3">
               <span className="text-red-400">{audit.counts?.high || 0} high</span>
               <span className="text-yellow-500/85">{audit.counts?.medium || 0} medium</span>
               <span>{audit.counts?.low || 0} low</span>
               <span className="ml-auto">{audit.scanned} scanned</span>
             </div>
-            <div className="text-primary/35 mt-1">
+            <div className="text-ink/35 mt-1">
               High = missing or duplicated metadata on something that is live. Tap an item to fix it.
             </div>
           </div>
@@ -1245,7 +1245,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
         )}
 
         {loading && items == null && (
-          <div className="flex items-center gap-2 text-primary/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Reading your site…</div>
+          <div className="flex items-center gap-2 text-ink/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Reading your site…</div>
         )}
         {!loading && items && items.length === 0 && <div className="text-[11px] text-ink/45 py-3">No pages, posts or products found.</div>}
 
@@ -1272,10 +1272,10 @@ export default function SeoTab({ projectId, store, widget = false }) {
                   {/* "from default" is a third state: the page HAS a title in
                       search results, it just isn't one anybody wrote on the
                       item — saying "no SEO title" there would be false. */}
-                  <span className={it.seo_title ? 'text-primary/40' : it.inherited_title ? 'text-primary/30' : 'text-yellow-500/70'}>
+                  <span className={it.seo_title ? 'text-ink/40' : it.inherited_title ? 'text-ink/30' : 'text-yellow-500/70'}>
                     {it.seo_title ? 'title set' : it.inherited_title ? 'title from default' : 'no SEO title'}
                   </span>
-                  <span className={it.seo_description ? 'text-primary/40' : it.inherited_description ? 'text-primary/30' : 'text-yellow-500/70'}>
+                  <span className={it.seo_description ? 'text-ink/40' : it.inherited_description ? 'text-ink/30' : 'text-yellow-500/70'}>
                     {it.seo_description ? 'description set' : it.inherited_description ? 'description from default' : 'no description'}
                   </span>
                   {it.type && <span className="text-primary/25 uppercase">{it.type}</span>}

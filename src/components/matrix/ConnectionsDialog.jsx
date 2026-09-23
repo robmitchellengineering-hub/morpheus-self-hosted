@@ -199,7 +199,7 @@ export default function ConnectionsDialog({ open, onClose }) {
 
           {/* Hosting / infra platforms (reuses the Settings connections UI) */}
           {loading ? (
-            <div className="flex items-center gap-2 text-primary/60 text-sm py-6 justify-center"><Loader2 size={14} className="animate-spin" /> Loading connections...</div>
+            <div className="flex items-center gap-2 text-ink/60 text-sm py-6 justify-center"><Loader2 size={14} className="animate-spin" /> Loading connections...</div>
           ) : (
             <ConnectionsSection connections={connections} onChange={setConnections} />
           )}
@@ -217,14 +217,14 @@ export default function ConnectionsDialog({ open, onClose }) {
                       {isReady ? <Check size={14} className="text-primary shrink-0 mt-0.5" /> : <XCircle size={14} className="text-primary/40 shrink-0 mt-0.5" />}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-sm ${isReady ? 'text-primary' : 'text-primary/70'}`}>{cap.label}</span>
+                          <span className={`text-sm ${isReady ? 'text-ink' : 'text-ink/70'}`}>{cap.label}</span>
                           <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${isReady ? 'border-primary/40 text-primary' : 'border-primary/20 text-primary/50'}`}>
                             {isReady ? 'READY' : 'BLOCKED'}
                           </span>
                         </div>
                         <p className="text-[11px] text-ink/55 mt-0.5">{cap.description}</p>
                         {!isReady && (
-                          <div className="mt-2 text-[11px] text-primary/65 space-y-1.5">
+                          <div className="mt-2 text-[11px] text-ink/65 space-y-1.5">
                             <p>// {cap.instructions}</p>
                             {cap.links.length > 0 && (
                               <div className="flex flex-wrap gap-x-3 gap-y-1">

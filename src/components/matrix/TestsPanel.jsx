@@ -65,7 +65,7 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
 
           {result && (
             <div className="space-y-3">
-              <div className="flex items-start gap-2 text-primary text-sm border border-primary/30 p-3">
+              <div className="flex items-start gap-2 text-ink text-sm border border-primary/30 p-3">
                 <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
                 <div>
                   <p>{result.reply}</p>
@@ -75,8 +75,8 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
                   {result.fileOperations?.length > 0 && (
                     <div className="mt-2 space-y-1">
                       {result.fileOperations.map((op, i) => (
-                        <div key={i} className="text-xs text-primary/60 font-mono">
-                          <span className="text-primary/75">[{op.action}]</span> {op.path}
+                        <div key={i} className="text-xs text-ink/60 font-mono">
+                          <span className="text-ink/75">[{op.action}]</span> {op.path}
                         </div>
                       ))}
                     </div>

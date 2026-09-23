@@ -99,7 +99,7 @@ export default function InsufficientCreditsModal() {
                 <Coins size={12} /> {block.credits.toLocaleString()} CREDITS
               </div>
               <div className="text-[10px] text-ink/55 mt-1">~${block.intendedNetUsd.toFixed(2)} + card fees</div>
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-primary">
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-ink">
                 {buyingIndex === i ? <Loader2 size={12} className="animate-spin" /> : null}
                 {buyingIndex === i ? 'Redirecting…' : 'Buy'}
               </div>

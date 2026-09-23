@@ -60,7 +60,7 @@ export default function UpdatesPlan() {
   };
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-3xl mx-auto px-6 py-12 safe-top">
         <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
@@ -76,7 +76,7 @@ export default function UpdatesPlan() {
         </p>
 
         {loading && (
-          <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading plan...
           </div>
         )}
@@ -87,9 +87,9 @@ export default function UpdatesPlan() {
 
         {!loading && plan && (
           <div className="space-y-4 mb-6">
-            <div className="flex items-center gap-2 text-xs text-primary/60">
+            <div className="flex items-center gap-2 text-xs text-ink/60">
               <CheckCircle size={14} className="text-primary" />
-              Last synthesized: <span className="text-primary">{new Date(plan.updated_date || plan.created_date).toLocaleString()}</span>
+              Last synthesized: <span className="text-ink">{new Date(plan.updated_date || plan.created_date).toLocaleString()}</span>
               <span className="text-primary/65">|</span>
               {plan.feedback_count ?? 0} feedback item{plan.feedback_count === 1 ? '' : 's'}
             </div>

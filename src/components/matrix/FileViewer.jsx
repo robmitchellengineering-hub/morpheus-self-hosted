@@ -22,7 +22,7 @@ export default function FileViewer({ file }) {
             <a href={file.file_url} download={fileName} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-3 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-bold">
               <Download size={16} /> DOWNLOAD
             </a>
-            <pre className="text-[10px] text-primary/75 text-left whitespace-pre-wrap">{file.content || ''}</pre>
+            <pre className="text-[10px] text-ink/75 text-left whitespace-pre-wrap">{file.content || ''}</pre>
           </div>
         </div>
       </div>

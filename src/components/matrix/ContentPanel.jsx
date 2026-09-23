@@ -154,7 +154,7 @@ export default function ContentPanel({ open, onClose, projectId }) {
         </p>
 
         {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
-        {!state && !err && <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {!state && !err && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
 
         {state && !state.connected && (
           <div className="p-4 text-[11px] text-ink/50 leading-relaxed">

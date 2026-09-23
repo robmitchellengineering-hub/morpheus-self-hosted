@@ -158,7 +158,7 @@ export default function EmbedTab({ projectId, connected }) {
         <label className="flex items-start gap-2 text-[10px] cursor-pointer">
           <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
             checked={dock} onChange={(e) => setDock(e.target.checked)} />
-          <span className={dock ? 'text-primary/70' : 'text-primary/40'}>
+          <span className={dock ? 'text-ink/70' : 'text-ink/40'}>
             Floating widget — a small button in the corner that opens the panel over the page, instead of sitting inline on one page.
             {dock && ' Switch it on in the Morpheus WordPress plugin (Settings → Morpheus → Dock) and paste this token there — the plugin prints it for you only, so a theme update can’t delete it. Without the plugin, paste the snippet where it loads for you only (e.g. a PHP snippet gated to logged-in admins). It carries the token, so anyone the page sends it to can act as you.'}
           </span>
@@ -174,14 +174,14 @@ export default function EmbedTab({ projectId, connected }) {
           <div className="text-[11px] text-primary font-bold">Copy this now — it won’t be shown again.</div>
           <div className="text-[10px] text-ink/60">Token</div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-primary/80 break-all">{fresh.token}</code>
+            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-ink/80 break-all">{fresh.token}</code>
             <button onClick={() => copy(fresh.token, 'tok')} className="text-primary/50 hover:text-primary shrink-0">
               {copied === 'tok' ? <Check size={13} /> : <Copy size={13} />}
             </button>
           </div>
           <div className="text-[10px] text-ink/60 flex items-center gap-1"><Code size={10} /> Embed snippet</div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-primary/80 break-all">{snippet(fresh.token, dock)}</code>
+            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-ink/80 break-all">{snippet(fresh.token, dock)}</code>
             <button onClick={() => copy(snippet(fresh.token, dock), 'snip')} className="text-primary/50 hover:text-primary shrink-0">
               {copied === 'snip' ? <Check size={13} /> : <Copy size={13} />}
             </button>
@@ -193,7 +193,7 @@ export default function EmbedTab({ projectId, connected }) {
       <div className="space-y-1.5">
         <div className="text-[10px] text-primary/40 uppercase tracking-wider">Tokens</div>
         {notice && <div className="text-[10px] text-ink/70 border border-primary/15 bg-primary/5 px-3 py-2">{notice}</div>}
-        {tokens == null && <div className="text-[11px] text-primary/40 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> loading…</div>}
+        {tokens == null && <div className="text-[11px] text-ink/40 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> loading…</div>}
         {tokens?.length === 0 && <div className="text-[11px] text-ink/40">None yet.</div>}
         {(tokens || []).map((t) => {
           const open = editing === t.id;
@@ -235,7 +235,7 @@ export default function EmbedTab({ projectId, connected }) {
                       <label key={s.id} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
                         <input type="checkbox" className="accent-[color:var(--primary,#4f8cff)]"
                           checked={editScopes.includes(s.id)} onChange={() => toggleEditScope(s.id)} />
-                        <span className={editScopes.includes(s.id) ? 'text-primary/70' : 'text-primary/40'}>{s.label}</span>
+                        <span className={editScopes.includes(s.id) ? 'text-ink/70' : 'text-ink/40'}>{s.label}</span>
                       </label>
                     ))}
                   </div>

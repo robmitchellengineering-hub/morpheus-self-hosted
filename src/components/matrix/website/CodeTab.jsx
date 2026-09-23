@@ -116,7 +116,7 @@ export default function CodeTab({ projectId }) {
       <div className="border border-primary/20 p-3 space-y-2.5">
         <div className="flex items-center gap-1.5 text-[10px] text-primary/40 uppercase tracking-wider"><GitBranch size={11} /> Repo &amp; access</div>
         {repoLocked ? (
-          <div className="text-[11px] text-primary/70 font-mono break-all">{config.repo} · {config.branch}
+          <div className="text-[11px] text-ink/70 font-mono break-all">{config.repo} · {config.branch}
             <div className="text-[9px] text-ink/35 font-sans normal-case tracking-normal mt-0.5">Set on the site (Settings → Morpheus) — change it there.</div>
           </div>
         ) : (
@@ -130,7 +130,7 @@ export default function CodeTab({ projectId }) {
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 text-[10px] text-primary/45">
+        <div className="flex items-center gap-1.5 text-[10px] text-ink/45">
           <KeyRound size={10} />
           {config?.tokenScope === 'construct'
             ? <span>Using a token set for this construct.</span>
@@ -171,12 +171,12 @@ export default function CodeTab({ projectId }) {
           <button onClick={() => loadTree(parent)} className="flex items-center gap-1 text-primary/60 hover:text-primary">
             <ChevronLeft size={13} /> up
           </button>
-        ) : <span className="text-primary/40">{tree?.repo} · {tree?.branch}</span>}
-        {dir && <span className="text-primary/50 font-mono truncate">/{dir}</span>}
+        ) : <span className="text-ink/40">{tree?.repo} · {tree?.branch}</span>}
+        {dir && <span className="text-ink/50 font-mono truncate">/{dir}</span>}
         <button onClick={() => loadTree(dir)} className="ml-auto text-primary/40 hover:text-primary"><RefreshCw size={11} /></button>
       </div>
 
-      {loading && <div className="flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
+      {loading && <div className="flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
 
       {!loading && tree && !tree.notReady && (
         <div className="border border-primary/15 max-h-[46vh] overflow-y-auto scrollbar-matrix divide-y divide-primary/10">
@@ -214,7 +214,7 @@ export default function CodeTab({ projectId }) {
       {result && (
         <div className="text-[11px] text-ink/70 border border-primary/25 px-3 py-2 leading-relaxed">
           {result.imported} imported{result.updated ? `, ${result.updated} refreshed` : ''}{result.failed ? `, ${result.failed} failed` : ''}. Project has {result.total}/{result.cap} files.
-          {result.note && <div className="text-primary/45 mt-1">{result.note}</div>}
+          {result.note && <div className="text-ink/45 mt-1">{result.note}</div>}
         </div>
       )}
 
@@ -227,7 +227,7 @@ export default function CodeTab({ projectId }) {
           {imported.files.map((f) => (
             <div key={f.path} className="flex items-center gap-2 text-[10px]">
               <Check size={11} className="text-primary/50 shrink-0" />
-              <span className="text-primary/65 font-mono truncate flex-1">{f.path}</span>
+              <span className="text-ink/65 font-mono truncate flex-1">{f.path}</span>
               <button onClick={() => removeFile(f.path)} className="text-primary/30 hover:text-red-400 shrink-0"><Trash2 size={11} /></button>
             </div>
           ))}

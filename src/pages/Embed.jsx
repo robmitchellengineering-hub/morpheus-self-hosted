@@ -85,7 +85,7 @@ export default function Embed() {
   const chatOnly = ctx && tabs.length === 0;
 
   return (
-    <div ref={rootRef} className="min-h-[200px] bg-background text-primary font-mono">
+    <div ref={rootRef} className="min-h-[200px] bg-background text-ink font-mono">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-primary/20">
         <Globe size={15} className="text-primary" />
         <span className="font-display tracking-wider text-[13px]">
@@ -96,7 +96,7 @@ export default function Embed() {
       {err && <div className="m-4 text-red-400 text-[12px] border border-red-500/30 px-3 py-2">{err}</div>}
 
       {!ctx && !err && (
-        <div className="p-6 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+        <div className="p-6 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>
       )}
 
       {ctx && chatOnly && (

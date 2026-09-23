@@ -393,11 +393,11 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
         </div>
       )}
       {isSelfDev && selfDevState === 'prototype' && (
-        <div className="flex items-start gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 shrink-0 text-[11px] text-primary/60 font-mono">
+        <div className="flex items-start gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 shrink-0 text-[11px] text-ink/60 font-mono">
           <span className="shrink-0 text-primary/40">TOUCHED:</span>
           <span className="truncate">{selfDevFrontendPaths.join(', ')}</span>
           {selfDevPreviewStale && (
-            <span className="shrink-0 text-primary/40 flex items-center gap-1 ml-auto pl-2">
+            <span className="shrink-0 text-ink/40 flex items-center gap-1 ml-auto pl-2">
               (preview from an earlier turn — click <RefreshCw size={9} className="inline" /> to update)
             </span>
           )}
@@ -412,7 +412,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
           </div>
         ) : isSelfDev && selfDevState === 'backend-only' ? (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6">
-            <div className="text-primary/60 text-xs font-mono text-center max-w-sm leading-relaxed space-y-2">
+            <div className="text-ink/60 text-xs font-mono text-center max-w-sm leading-relaxed space-y-2">
               <p>// Backend-only change — no visual preview needed.</p>
               <p className="truncate">Touched: {selfDevBackendPaths.join(', ')}</p>
               <p>Verify via PUSH TO PRODUCTION + the Admin Panel's Ops Console (logs / DB console), or ask Morpheus to walk through the logic in chat.</p>

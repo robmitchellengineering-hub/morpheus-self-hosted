@@ -177,7 +177,7 @@ export default function RebuildDocDialog({ open, onClose }) {
           </p>
 
           {loading && (
-            <div className="flex items-center gap-2 text-primary/60 text-sm py-8 justify-center">
+            <div className="flex items-center gap-2 text-ink/60 text-sm py-8 justify-center">
               <Loader2 size={16} className="animate-spin" /> Loading blueprint...
             </div>
           )}
@@ -188,9 +188,9 @@ export default function RebuildDocDialog({ open, onClose }) {
 
           {!loading && doc && (
             <>
-              <div className="flex items-center gap-2 text-xs text-primary/60">
+              <div className="flex items-center gap-2 text-xs text-ink/60">
                 <CheckCircle size={14} className="text-primary" />
-                Version: <span className="text-primary">{new Date(doc.version).toLocaleString()}</span>
+                Version: <span className="text-ink">{new Date(doc.version).toLocaleString()}</span>
                 <span className="text-primary/65">|</span>
                 {sizeKb} KB
               </div>

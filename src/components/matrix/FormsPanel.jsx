@@ -75,11 +75,11 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
 
         <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
           Where contact / signup form submissions land. Morpheus never receives them — the builder generates a handler
-          that runs on your host and delivers to <span className="text-primary/70">your</span> inbox or sheet.
+          that runs on your host and delivers to <span className="text-ink/70">your</span> inbox or sheet.
           {state && state.isWeb === false && <span className="text-yellow-500/80"> This project isn't a web-app target, so this won't be applied.</span>}
         </p>
 
-        {!f && <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {!f && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
         {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
 
         {f && (

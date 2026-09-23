@@ -87,7 +87,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
           {state && state.isWeb === false && <span className="text-yellow-500/80"> This project isn't a web-app target, so the brand won't be applied.</span>}
         </p>
 
-        {!b && <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {!b && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
         {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
 
         {b && (
@@ -127,7 +127,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                   ))}
                 </div>
                 <div className="mt-2 border border-primary/15 bg-black/20 p-3">
-                  <div style={{ fontFamily: `'${b.fonts.heading}', sans-serif` }} className="text-primary text-base">The quick brown fox</div>
+                  <div style={{ fontFamily: `'${b.fonts.heading}', sans-serif` }} className="text-ink text-base">The quick brown fox</div>
                   <div style={{ fontFamily: `'${b.fonts.body}', sans-serif` }} className="text-ink/70 text-[11px] mt-1">jumps over the lazy dog — body copy sample at a small size.</div>
                 </div>
               </section>

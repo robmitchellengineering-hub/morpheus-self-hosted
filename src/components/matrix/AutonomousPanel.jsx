@@ -203,7 +203,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
             <span className="text-primary font-display tracking-wider text-sm">AUTONOMOUS MODE</span>
             {complete && <span className="text-xs text-primary border border-primary/40 px-2 py-0.5 neon-glow">COMPLETE</span>}
             {running && (
-              <div className="flex items-center gap-2 text-primary font-mono text-xs ml-2">
+              <div className="flex items-center gap-2 text-ink font-mono text-xs ml-2">
                 <span className="flex items-center gap-1"><Timer size={12} /> {timerStr}</span>
                 {etaStr && <span className="text-primary/50">ETA {etaStr}</span>}
               </div>

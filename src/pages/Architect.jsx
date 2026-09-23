@@ -77,7 +77,7 @@ export default function Architect() {
   };
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-16 safe-top">
         <div className="flex items-center justify-between mb-2 gap-3">
@@ -121,9 +121,9 @@ export default function Architect() {
           </button>
         </div>
         <div className="space-y-3" ref={listRef}>
-          {loading && <p className="text-primary/75 italic">Loading constructs...</p>}
+          {loading && <p className="text-ink/75 italic">Loading constructs...</p>}
           {!loading && visibleProjects.length === 0 && (
-            <p className="text-primary/75 italic">{search ? 'No backends match your search.' : 'No backend constructs found. The Matrix is empty. Create your first.'}</p>
+            <p className="text-ink/75 italic">{search ? 'No backends match your search.' : 'No backend constructs found. The Matrix is empty. Create your first.'}</p>
           )}
           {visibleProjects.map(p => (
             <div key={p.id} className="relative group border border-primary/30 hover:border-primary hover:bg-primary/5 transition-colors">
@@ -131,7 +131,7 @@ export default function Architect() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Server size={14} className="text-primary/60" />
-                    <span className="text-primary group-hover:neon-glow">{p.name}</span>
+                    <span className="text-ink group-hover:neon-glow">{p.name}</span>
                   </div>
                   <span className="text-xs text-primary/75 uppercase">{p.status}</span>
                 </div>

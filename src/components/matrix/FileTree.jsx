@@ -65,7 +65,7 @@ export default function FileTree({ files, selectedFile, onSelect, contextPaths, 
           return (
             <div
               key={f.id}
-              className={`w-full flex items-center gap-2 px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 text-sm ${active ? 'bg-primary/10 text-primary' : isCompiled ? 'text-primary hover:bg-primary/5' : 'text-primary/60 hover:text-primary hover:bg-primary/5'}`}
+              className={`w-full flex items-center gap-2 px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 text-sm ${active ? 'bg-primary/10 text-ink' : isCompiled ? 'text-ink hover:bg-primary/5' : 'text-ink/60 hover:text-primary hover:bg-primary/5'}`}
             >
               {multiSelect && (
                 <input

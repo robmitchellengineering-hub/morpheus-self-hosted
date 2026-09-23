@@ -102,12 +102,12 @@ function UpdateCheckReport({ upd, version, zipHref }) {
           <p>
             v{version} cannot check for its updates yet. Install the current build once by hand — after that WordPress
             updates it for you: download the zip, then Plugins → Add New → Upload Plugin →{' '}
-            <span className="text-primary/80">Replace current with uploaded</span>.
+            <span className="text-ink/80">Replace current with uploaded</span>.
           </p>
         ) : (
           <p>{upd.message}</p>
         )}
-        {!boot && <p className="text-primary/45">Nothing was changed. The zip always works.</p>}
+        {!boot && <p className="text-ink/45">Nothing was changed. The zip always works.</p>}
       </div>
     );
   }
@@ -117,12 +117,12 @@ function UpdateCheckReport({ upd, version, zipHref }) {
 
   if (!r.reachable) {
     return (
-      <div className="text-[10px] text-primary/60 leading-relaxed space-y-1">
+      <div className="text-[10px] text-ink/60 leading-relaxed space-y-1">
         <p>
           This site could not read the published version list
           {r.reason ? <> — <span className="text-yellow-500/90">{r.reason}</span></> : '.'}
         </p>
-        <p className="text-primary/45">
+        <p className="text-ink/45">
           That is a fact about this site&rsquo;s outbound requests, not about the update. The zip installs without them.
         </p>
       </div>
@@ -137,7 +137,7 @@ function UpdateCheckReport({ upd, version, zipHref }) {
     return (
       <div className="text-[10px] text-ink/60 leading-relaxed">
         Checked just now: <span className="text-yellow-500/90">v{published}</span> is published and WordPress is
-        offering it. Open your Plugins screen and tap <span className="text-primary/80">update now</span> — the download
+        offering it. Open your Plugins screen and tap <span className="text-ink/80">update now</span> — the download
         is checksum-verified before it installs.
       </div>
     );
@@ -169,7 +169,7 @@ function CopyLine({ text, label, mono = true }) {
     <div className="space-y-1">
       {label && <div className="text-[9px] text-primary/40 uppercase tracking-wider">{label}</div>}
       <div className="flex items-stretch gap-1.5">
-        <code className={`flex-1 bg-black/40 border border-primary/20 px-2 py-2 text-[10px] text-primary/80 break-all select-all ${mono ? 'font-mono' : ''}`}>
+        <code className={`flex-1 bg-black/40 border border-primary/20 px-2 py-2 text-[10px] text-ink/80 break-all select-all ${mono ? 'font-mono' : ''}`}>
           {text}
         </code>
         <button onClick={copy} title="Copy"
@@ -330,8 +330,8 @@ export default function SetupTab({ store, projectId, onChanged }) {
     return (
       <div className="p-4 space-y-4">
         <div className="border border-primary/30 px-3 py-3 space-y-1.5">
-          <div className="flex items-center gap-1.5 text-primary text-[12px]"><Check size={13} /> Connected</div>
-          <div className="text-[11px] text-primary/60 break-all">{store.siteUrl?.replace(/^https?:\/\//, '')}</div>
+          <div className="flex items-center gap-1.5 text-ink text-[12px]"><Check size={13} /> Connected</div>
+          <div className="text-[11px] text-ink/60 break-all">{store.siteUrl?.replace(/^https?:\/\//, '')}</div>
           <div className="text-[10px] text-ink/40">
             {store.online ? `plugin v${store.version}` : 'plugin unreachable'}
             {store.woocommerce ? ` · WooCommerce ${store.woocommerce}` : store.store_available === false ? ' · WooCommerce not active' : ''}
@@ -359,7 +359,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
                 <p className="text-[10px] text-ink/50 leading-relaxed">
                   This build ({store.version}) predates the update channel, so it has to be replaced by hand — once. After that,
                   WordPress updates it for you. Download the zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin →
-                  pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
+                  pick the zip → <span className="text-ink/70">Replace current with uploaded</span>.
                 </p>
               </>
             )}
@@ -418,7 +418,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
 
         {copy && (
           <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-primary text-[12px]"><Check size={13} /> Working copy created</div>
+            <div className="flex items-center gap-1.5 text-ink text-[12px]"><Check size={13} /> Working copy created</div>
             <a href={copy.url} target="_blank" rel="noreferrer"
               className="text-[10px] text-primary/70 hover:text-primary inline-flex items-center gap-1 break-all">
               <ExternalLink size={10} /> {copy.repo}
@@ -445,8 +445,8 @@ export default function SetupTab({ store, projectId, onChanged }) {
         )}
 
         <p className="text-[11px] text-ink/45 leading-relaxed">
-          Use the <span className="text-primary/70">Deploy</span> tab to ship code changes to the site, and the{' '}
-          <span className="text-primary/70">Shop</span>, <span className="text-primary/70">Pages</span> and{' '}
+          Use the <span className="text-ink/70">Deploy</span> tab to ship code changes to the site, and the{' '}
+          <span className="text-ink/70">Shop</span>, <span className="text-ink/70">Pages</span> and{' '}
           <span className="text-primary/70">SEO</span> tabs to run it. This connection is private to your account.
         </p>
         <button onClick={disconnect} className="text-[11px] text-primary/40 hover:text-red-400">Disconnect this site</button>
@@ -528,8 +528,8 @@ export default function SetupTab({ store, projectId, onChanged }) {
                     </a>
                   </div>
                   <div className="text-[9px] text-ink/40 leading-relaxed">
-                    In WordPress: <span className="text-primary/60">Plugins → Add New → Upload Plugin</span> → choose the .zip →
-                    Install → <span className="text-primary/60">Activate</span>. The file is in your Downloads.
+                    In WordPress: <span className="text-ink/60">Plugins → Add New → Upload Plugin</span> → choose the .zip →
+                    Install → <span className="text-ink/60">Activate</span>. The file is in your Downloads.
                   </div>
                 </div>
 
@@ -583,7 +583,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
             {probe.self_update ? (
               <>
                 <div className="text-[10px] text-ink/45 leading-relaxed">
-                  Your build can update itself: open your Plugins screen and tap <span className="text-primary/65">update now</span> on
+                  Your build can update itself: open your Plugins screen and tap <span className="text-ink/65">update now</span> on
                   the Morpheus row. No zip, nothing to upload.
                 </div>
                 <OpenButton href={probe.plugins_url} tone="primary"><ArrowUpCircle size={12} /> Open your Plugins screen</OpenButton>
@@ -592,7 +592,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
               <>
                 <div className="text-[10px] text-ink/45 leading-relaxed">
                   This build is too old to update itself, so upload the current zip once — after that WordPress updates it for you:
-                  Plugins → Add New → Upload Plugin → pick the zip → <span className="text-primary/65">Replace current with uploaded</span>.
+                  Plugins → Add New → Upload Plugin → pick the zip → <span className="text-ink/65">Replace current with uploaded</span>.
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <a href={PLUGIN_ZIP} download
@@ -639,7 +639,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
                 {connecting ? <Loader2 size={14} className="animate-spin" /> : <Plug size={14} />}
                 {connecting ? 'CONNECTING…' : 'CONNECT'}
               </button>
-              <div className="text-[9px] text-primary/35 flex items-start gap-1">
+              <div className="text-[9px] text-ink/35 flex items-start gap-1">
                 <ShieldCheck size={10} className="mt-[1px] shrink-0" />
                 <span>
                   Exchanging the code sets a shared secret on both sides, used to sign every request. Over https only —

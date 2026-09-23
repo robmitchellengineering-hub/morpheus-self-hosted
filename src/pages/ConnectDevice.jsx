@@ -89,7 +89,7 @@ export default function ConnectDevice() {
   }
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-md mx-auto px-6 py-16 safe-top">
         <div className="flex items-center gap-2 mb-6">
@@ -125,7 +125,7 @@ export default function ConnectDevice() {
             </div>
           </form>
         ) : loading && !pending ? (
-          <div className="flex items-center gap-2 text-primary/60 text-sm py-8 justify-center">
+          <div className="flex items-center gap-2 text-ink/60 text-sm py-8 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading...
           </div>
         ) : error ? (

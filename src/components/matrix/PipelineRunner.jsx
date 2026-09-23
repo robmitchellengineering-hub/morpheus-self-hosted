@@ -184,7 +184,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
           )}
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-primary font-mono text-sm">
+          <div className="flex items-center gap-1 text-ink font-mono text-sm">
             <Timer size={14} /> {timerStr}
             {etaStr && <span className="text-primary/50 text-xs ml-1">/ ETA {etaStr}</span>}
           </div>
@@ -201,8 +201,8 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
       </div>
       <div className="max-h-32 overflow-y-auto scrollbar-matrix p-3 space-y-0.5">
         {logs.map((log, i) => (
-          <div key={i} className="text-xs text-primary/60 font-mono">
-            <span className="text-primary/65">{log.time} </span>
+          <div key={i} className="text-xs text-ink/60 font-mono">
+            <span className="text-ink/65">{log.time} </span>
             {log.msg}
           </div>
         ))}
@@ -210,7 +210,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
       </div>
       {phase === 'done' && finalStatus && (
         <div className="border-t border-primary/20 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-primary text-sm">
+          <div className="flex items-center gap-2 text-ink text-sm">
             <CheckCircle size={14} /> Build complete!
           </div>
           {finalStatus.assets?.map((a, i) => (

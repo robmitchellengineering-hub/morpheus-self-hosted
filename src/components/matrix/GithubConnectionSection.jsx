@@ -57,7 +57,7 @@ export default function GithubConnectionSection() {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <Github size={16} className={gh.connected ? 'text-primary shrink-0' : 'text-primary/50 shrink-0'} />
-          <span className="text-sm text-primary">GitHub</span>
+          <span className="text-sm text-ink">GitHub</span>
           {gh.loading ? (
             <span className="flex items-center gap-1 text-[10px] text-primary/50 border border-primary/20 px-1.5 py-0.5">
               <Loader2 size={10} className="animate-spin" /> CHECKING

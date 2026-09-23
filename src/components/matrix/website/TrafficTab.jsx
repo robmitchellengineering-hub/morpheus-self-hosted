@@ -100,12 +100,12 @@ export default function TrafficTab({ projectId }) {
         </div>
       )}
       {note && (
-        <div className="border border-primary/25 text-primary/80 px-2 py-1.5 flex items-start gap-1.5">
+        <div className="border border-primary/25 text-ink/80 px-2 py-1.5 flex items-start gap-1.5">
           <Check size={11} className="mt-0.5 shrink-0" /> <span>{note}</span>
         </div>
       )}
       {busy === 'reload' && !status && (
-        <div className="text-primary/50 flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Reading the site…</div>
+        <div className="text-ink/50 flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Reading the site…</div>
       )}
 
       {status && (
@@ -113,7 +113,7 @@ export default function TrafficTab({ projectId }) {
           {/* The switch, and what it does in plain words. */}
           <div className="border border-primary/20 px-3 py-2 space-y-2">
             <div className="flex items-center gap-2">
-              <span className="text-primary/85">Submit to IndexNow on publish</span>
+              <span className="text-ink/85">Submit to IndexNow on publish</span>
               <button onClick={toggle} disabled={!!busy}
                 className={`ml-auto h-[26px] px-3 border disabled:opacity-40 ${status.enabled
                   ? 'border-green-500/40 text-green-400 hover:border-green-400'
@@ -121,7 +121,7 @@ export default function TrafficTab({ projectId }) {
                 {busy === 'toggle' ? <Loader2 size={10} className="animate-spin" /> : (status.enabled ? 'On' : 'Off')}
               </button>
             </div>
-            <p className="text-primary/45 leading-relaxed">
+            <p className="text-ink/45 leading-relaxed">
               When a page goes live, or a live one changes, the site tells IndexNow about the URL — which
               covers Bing and Yandex without an account. It cannot tell us a page was <em>indexed</em>; a
               2xx means the submission was accepted, and that is all this tab will claim.
@@ -131,7 +131,7 @@ export default function TrafficTab({ projectId }) {
           {/* The key: a submission is rejected when this is not being served. */}
           <div className="border border-primary/20 px-3 py-2 space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-primary/85">Key file</span>
+              <span className="text-ink/85">Key file</span>
               <span className={`ml-auto ${keyServed?.served ? 'text-green-400' : 'text-yellow-400'}`}>
                 {keyServed?.served ? 'being served' : 'NOT confirmed served'}
               </span>
@@ -151,7 +151,7 @@ export default function TrafficTab({ projectId }) {
           </div>
 
           {/* Counts: what we did, not what it achieved. */}
-          <div className="flex items-center gap-3 text-primary/60">
+          <div className="flex items-center gap-3 text-ink/60">
             <span>{status.submitted || 0} submitted</span>
             <span className="text-green-400/80">{status.accepted || 0} accepted</span>
             <span className="ml-auto">last accepted {when(status.last_ok)}</span>
@@ -164,21 +164,21 @@ export default function TrafficTab({ projectId }) {
               {busy === 'backfill' ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
               Submit existing pages
             </button>
-            <span className="text-primary/40">up to {status.backfill_max} per run, skipping anything already accepted</span>
+            <span className="text-ink/40">up to {status.backfill_max} per run, skipping anything already accepted</span>
           </div>
 
           {/* The ledger — the reason this tab is allowed to make any claim at all. */}
           <div className="border border-primary/20">
-            <div className="px-3 py-1.5 border-b border-primary/15 flex items-center gap-2 text-primary/70">
+            <div className="px-3 py-1.5 border-b border-primary/15 flex items-center gap-2 text-ink/70">
               <span>Submissions</span>
               {ledger?.summary && (
-                <span className="text-primary/45">
+                <span className="text-ink/45">
                   {ledger.summary.accepted} accepted · {ledger.summary.failed} not{ledger.max ? ` · keeps last ${ledger.max}` : ''}
                 </span>
               )}
             </div>
             {(!ledger?.rows || ledger.rows.length === 0) ? (
-              <div className="px-3 py-2 text-primary/45">
+              <div className="px-3 py-2 text-ink/45">
                 Nothing submitted yet. Publish a page, or submit the existing ones above.
               </div>
             ) : (
@@ -186,12 +186,12 @@ export default function TrafficTab({ projectId }) {
                 {ledger.rows.map((row, i) => (
                   <div key={`${row.at}-${row.url}-${i}`} className="px-3 py-1.5 flex items-start gap-2">
                     <span className={`${STATUS_TONE(row.status)} shrink-0 w-[38px]`}>{row.status || '—'}</span>
-                    <span className="text-primary/50 shrink-0 w-[86px]">{when(row.at)}</span>
+                    <span className="text-ink/50 shrink-0 w-[86px]">{when(row.at)}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="text-primary/80 break-all">{row.url}</span>
-                      {row.note && <span className="text-primary/40"> — {row.note}</span>}
+                      <span className="text-ink/80 break-all">{row.url}</span>
+                      {row.note && <span className="text-ink/40"> — {row.note}</span>}
                     </span>
-                    <span className="text-primary/30 shrink-0">{row.action}</span>
+                    <span className="text-ink/30 shrink-0">{row.action}</span>
                   </div>
                 ))}
               </div>
@@ -200,10 +200,10 @@ export default function TrafficTab({ projectId }) {
 
           {/* Not built. Named, not omitted — an absent half reads as a finished whole. */}
           <div className="border border-primary/15 px-3 py-2">
-            <div className="text-primary/60 mb-1 flex items-center gap-1.5">
+            <div className="text-ink/60 mb-1 flex items-center gap-1.5">
               <X size={10} /> Not built yet
             </div>
-            <ul className="space-y-0.5 text-primary/40">
+            <ul className="space-y-0.5 text-ink/40">
               {Object.entries(notBuilt).map(([k, text]) => (
                 <li key={k}>· {text}</li>
               ))}

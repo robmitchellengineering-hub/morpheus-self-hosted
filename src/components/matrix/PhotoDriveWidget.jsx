@@ -110,7 +110,7 @@ export default function PhotoDriveWidget() {
       </p>
 
       {loading && (
-        <div className="flex items-center gap-2 text-primary/60 text-xs py-2">
+        <div className="flex items-center gap-2 text-ink/60 text-xs py-2">
           <Loader2 size={13} className="animate-spin" /> Checking your Drive connection…
         </div>
       )}
@@ -167,7 +167,7 @@ export default function PhotoDriveWidget() {
               {status.folder.name}
             </a>
             {status.email ? (
-              <span className="text-primary/40">
+              <span className="text-ink/40">
                 {' · '}{status.email}
                 {status.sourceLabel ? ` (${status.sourceLabel})` : ''}
               </span>
@@ -201,8 +201,8 @@ export default function PhotoDriveWidget() {
 
           {saved && (
             <div className="text-[11px] border border-primary/30 px-3 py-2">
-              <span className="text-primary">Saved to Drive</span>
-              {saved.folder?.name ? <span className="text-primary/60"> → {saved.folder.name}</span> : null}
+              <span className="text-ink">Saved to Drive</span>
+              {saved.folder?.name ? <span className="text-ink/60"> → {saved.folder.name}</span> : null}
               <a href={saved.file.link} target="_blank" rel="noreferrer" className="ml-2 underline hover:text-primary inline-flex items-center gap-1">
                 OPEN PHOTO <ExternalLink size={10} />
               </a>

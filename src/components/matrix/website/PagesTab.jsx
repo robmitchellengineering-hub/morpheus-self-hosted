@@ -148,7 +148,7 @@ export default function PagesTab({ projectId, store }) {
           </div>
 
           {err && <div className="mb-2 text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
-          {loadingList && <div className="flex items-center gap-2 text-primary/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
+          {loadingList && <div className="flex items-center gap-2 text-ink/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
           {!loadingList && pages && pages.length === 0 && <div className="text-[11px] text-ink/45 py-3">No pages found.</div>}
 
           <div className="space-y-1.5">
@@ -192,11 +192,11 @@ export default function PagesTab({ projectId, store }) {
           {err && <div className="m-4 mb-0 text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
 
           {loadingEdit ? (
-            <div className="flex items-center gap-2 text-primary/60 text-xs p-4"><Loader2 size={13} className="animate-spin" /> Loading…</div>
+            <div className="flex items-center gap-2 text-ink/60 text-xs p-4"><Loader2 size={13} className="animate-spin" /> Loading…</div>
           ) : (
             <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-4">
               {result && (
-                <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-primary/80 leading-relaxed">
+                <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-ink/80 leading-relaxed">
                   <div className="flex items-center gap-1.5 text-primary font-bold mb-1"><Check size={13} /> Saved{result.published === false ? ' as draft' : ''}.</div>
                   {result.page?.edit_url && (
                     <a href={result.page.edit_url} target="_blank" rel="noreferrer"

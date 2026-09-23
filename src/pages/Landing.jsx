@@ -149,14 +149,14 @@ export default function Landing() {
         {showButtons && <div className="mt-10 mx-auto max-w-lg border border-primary/40 bg-black/60 p-4 text-left shadow-[0_0_20px_rgba(0,255,65,0.15)]">
           <div className="border-b border-primary/30 pb-2 mb-3">
             <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// CORE PRINCIPLE</p>
-            <p className="text-primary font-display tracking-wide neon-glow text-sm mt-1">{MORPHEUS_PRINCIPLE}</p>
+            <p className="text-ink font-display tracking-wide neon-glow text-sm mt-1">{MORPHEUS_PRINCIPLE}</p>
           </div>
           <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// CAPABILITIES</p>
           <ul className="space-y-1.5 max-h-44 overflow-y-auto scrollbar-matrix pr-1">
             {MORPHEUS_CAPABILITIES.map((c) => (
               <li key={c.title} className="text-xs leading-snug">
-                <span className="text-primary font-mono">{c.title}</span>
-                <span className="text-primary/55 font-mono"> — {c.body}</span>
+                <span className="text-ink font-mono">{c.title}</span>
+                <span className="text-ink/55 font-mono"> — {c.body}</span>
               </li>
             ))}
           </ul>

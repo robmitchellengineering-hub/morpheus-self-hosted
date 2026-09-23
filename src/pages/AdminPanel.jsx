@@ -31,8 +31,8 @@ function Card({ children, className = '' }) {
 function Flag({ label, ok }) {
   return (
     <div className="flex items-center justify-between text-xs py-1.5 border-b border-primary/10 last:border-0">
-      <span className="text-primary/70">{label}</span>
-      <span className={ok ? 'text-primary' : 'text-primary/40'}>{ok ? 'CONFIGURED' : 'NOT SET'}</span>
+      <span className="text-ink/70">{label}</span>
+      <span className={ok ? 'text-ink' : 'text-ink/40'}>{ok ? 'CONFIGURED' : 'NOT SET'}</span>
     </div>
   );
 }
@@ -56,7 +56,7 @@ function OverviewTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
   if (error) return <div className="text-red-500 text-sm border border-red-500/30 px-3 py-2">{error}</div>;
   if (!data) return null;
 
@@ -84,7 +84,7 @@ function OverviewTab() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-primary/50 text-left border-b border-primary/10">
+                <tr className="text-ink/50 text-left border-b border-primary/10">
                   <th className="py-1.5 pr-3">MODEL</th>
                   <th className="py-1.5 pr-3">PROVIDER</th>
                   <th className="py-1.5 pr-3 text-right">CALLS</th>
@@ -96,11 +96,11 @@ function OverviewTab() {
               <tbody>
                 {data.usageByModel30d.map((r) => (
                   <tr key={`${r.provider}:${r.modelId}`} className="border-b border-primary/5 last:border-0">
-                    <td className="py-1.5 pr-3 text-primary/80">{r.modelId}</td>
-                    <td className="py-1.5 pr-3 text-primary/60">{r.provider}</td>
-                    <td className="py-1.5 pr-3 text-right text-primary/70">{r.calls}</td>
-                    <td className="py-1.5 pr-3 text-right text-primary/70">{r.inputTokens.toLocaleString()}</td>
-                    <td className="py-1.5 pr-3 text-right text-primary/70">{r.outputTokens.toLocaleString()}</td>
+                    <td className="py-1.5 pr-3 text-ink/80">{r.modelId}</td>
+                    <td className="py-1.5 pr-3 text-ink/60">{r.provider}</td>
+                    <td className="py-1.5 pr-3 text-right text-ink/70">{r.calls}</td>
+                    <td className="py-1.5 pr-3 text-right text-ink/70">{r.inputTokens.toLocaleString()}</td>
+                    <td className="py-1.5 pr-3 text-right text-ink/70">{r.outputTokens.toLocaleString()}</td>
                     <td className="py-1.5 text-right text-primary/70">${r.costUsd.toFixed(4)}</td>
                   </tr>
                 ))}
@@ -201,7 +201,7 @@ function FreeUsageGrantsCard() {
         <div className="divide-y divide-primary/10">
           {users.map((u) => (
             <div key={u.id} className="flex items-center justify-between py-1.5 text-xs">
-              <span className="text-primary/80 truncate">{u.email}{u.role === 'admin' && <span className="text-primary/40"> (already admin — this has no extra effect)</span>}</span>
+              <span className="text-ink/80 truncate">{u.email}{u.role === 'admin' && <span className="text-ink/40"> (already admin — this has no extra effect)</span>}</span>
               <button onClick={() => revoke(u)} className="text-red-500/70 hover:text-red-500 shrink-0 ml-2" title="Revoke">
                 <Trash2 size={13} />
               </button>
@@ -319,7 +319,7 @@ function ModelsTab() {
     }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
   if (error) return <div className="text-red-500 text-sm border border-red-500/30 px-3 py-2">{error}</div>;
   if (!settings || !catalog) return null;
 
@@ -374,7 +374,7 @@ function ModelsTab() {
           {savingKey === 'default_model' && <Loader2 size={13} className="animate-spin text-primary/60" />}
         </div>
         <div className="text-ink/40 text-[11px] mt-2">
-          Effective now: <span className="text-primary/70 font-mono">{effectiveDefault || 'auto'}</span>
+          Effective now: <span className="text-ink/70 font-mono">{effectiveDefault || 'auto'}</span>
           {!settings.settings.default_model && ' (from env LLM_MODEL — no admin override set yet)'}
         </div>
       </Card>
@@ -440,7 +440,7 @@ function ModelsTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-primary/50 text-left border-b border-primary/10">
+              <tr className="text-ink/50 text-left border-b border-primary/10">
                 <th className="py-1.5 pr-2">MODEL</th>
                 <th className="py-1.5 pr-2">IN $/M</th>
                 <th className="py-1.5 pr-2">OUT $/M</th>
@@ -457,7 +457,7 @@ function ModelsTab() {
                 const setField = (field, value) => setDraft((cur) => ({ ...cur, [modelId]: { ...cur[modelId], [field]: value } }));
                 return (
                   <tr key={modelId} className="border-b border-primary/5 last:border-0">
-                    <td className="py-1.5 pr-2 text-primary/80">{modelId}</td>
+                    <td className="py-1.5 pr-2 text-ink/80">{modelId}</td>
                     <td className="py-1.5 pr-2">
                       <input type="number" step="0.01" value={get('input_price_per_m', '') ?? ''}
                         onChange={(e) => setField('input_price_per_m', e.target.value)}
@@ -548,7 +548,7 @@ function SettingsTab() {
     }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
 
   const entries = Object.entries(settings?.settings || {});
 
@@ -644,7 +644,7 @@ function TasksTab() {
     }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
 
   const open = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
@@ -675,7 +675,7 @@ function TasksTab() {
           {open.map((t) => (
             <div key={t.id} className="flex items-center gap-2 text-xs group">
               <button onClick={() => toggleDone(t)} className="w-4 h-4 border border-primary/40 flex items-center justify-center shrink-0 hover:border-primary" />
-              <span className="flex-1 text-primary/80">{t.title}</span>
+              <span className="flex-1 text-ink/80">{t.title}</span>
               <button onClick={() => removeTask(t)} className="text-primary/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Trash2 size={13} />
               </button>
@@ -691,7 +691,7 @@ function TasksTab() {
               <button onClick={() => toggleDone(t)} className="w-4 h-4 border border-primary/40 bg-primary/30 flex items-center justify-center shrink-0">
                 <Check size={11} className="text-primary" />
               </button>
-              <span className="flex-1 text-primary/40 line-through">{t.title}</span>
+              <span className="flex-1 text-ink/40 line-through">{t.title}</span>
               <button onClick={() => removeTask(t)} className="text-primary/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Trash2 size={13} />
               </button>
@@ -871,7 +871,7 @@ function SelfDevManualCard() {
       </p>
 
       {loading && (
-        <div className="flex items-center gap-2 text-primary/60 text-xs py-4 justify-center">
+        <div className="flex items-center gap-2 text-ink/60 text-xs py-4 justify-center">
           <Loader2 size={14} className="animate-spin" /> Loading...
         </div>
       )}
@@ -879,9 +879,9 @@ function SelfDevManualCard() {
       {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
 
       {!loading && doc && (
-        <div className="flex items-center gap-2 text-xs text-primary/60 mb-3 flex-wrap">
+        <div className="flex items-center gap-2 text-xs text-ink/60 mb-3 flex-wrap">
           <CheckCircle2 size={14} className="text-primary" />
-          <span className="text-primary">{new Date(doc.version).toLocaleString()}</span>
+          <span className="text-ink">{new Date(doc.version).toLocaleString()}</span>
           <span className="text-primary/30">|</span>
           {sizeKb} KB
           {triggerLabel && (<><span className="text-primary/30">|</span><span>{triggerLabel}</span></>)}
@@ -972,7 +972,7 @@ function NorthflankCard() {
       {status?.configured && status.error && <div className="text-red-500 text-xs mb-3">{status.error}</div>}
       {status?.configured && status.service && (
         <div className="text-xs text-ink/70 mb-3">
-          Build status: <span className="text-primary">{buildStatus || 'unknown'}</span>
+          Build status: <span className="text-ink">{buildStatus || 'unknown'}</span>
           {status.service?.name && <> — {status.service.name}</>}
         </div>
       )}
@@ -1004,10 +1004,10 @@ function NorthflankCard() {
       {logsError && <div className="text-red-500 text-xs mb-2">{logsError}</div>}
       {logs && (
         <div className="max-h-80 overflow-y-auto scrollbar-matrix bg-black/40 border border-primary/10 p-2 font-mono text-[11px] text-ink/70 space-y-0.5">
-          {logs.length === 0 && <div className="text-primary/40 italic">No matching log lines.</div>}
+          {logs.length === 0 && <div className="text-ink/40 italic">No matching log lines.</div>}
           {logs.map((l, i) => (
             <div key={i} className="whitespace-pre-wrap break-all">
-              <span className="text-primary/40">{l.ts ? new Date(l.ts).toLocaleTimeString() : ''}</span> {l.log}
+              <span className="text-ink/40">{l.ts ? new Date(l.ts).toLocaleTimeString() : ''}</span> {l.log}
             </div>
           ))}
         </div>
@@ -1076,7 +1076,7 @@ function DbConsoleCard() {
         <div className="overflow-x-auto max-h-80 overflow-y-auto scrollbar-matrix border border-primary/10">
           <table className="w-full text-[11px]">
             <thead>
-              <tr className="text-primary/50 text-left border-b border-primary/10 sticky top-0 bg-background">
+              <tr className="text-ink/50 text-left border-b border-primary/10 sticky top-0 bg-background">
                 {result.rows[0]
                   ? Object.keys(result.rows[0]).map((c) => <th key={c} className="py-1 px-2">{c}</th>)
                   : <th className="py-1 px-2">(no columns)</th>}
@@ -1086,8 +1086,8 @@ function DbConsoleCard() {
               {result.rows.map((row, i) => (
                 <tr key={i} className="border-b border-primary/5 last:border-0">
                   {Object.values(row).map((v, j) => (
-                    <td key={j} className="py-1 px-2 text-primary/70 whitespace-pre-wrap break-all">
-                      {v === null ? <span className="text-primary/30 italic">null</span> : String(v)}
+                    <td key={j} className="py-1 px-2 text-ink/70 whitespace-pre-wrap break-all">
+                      {v === null ? <span className="text-ink/30 italic">null</span> : String(v)}
                     </td>
                   ))}
                 </tr>
@@ -1100,7 +1100,7 @@ function DbConsoleCard() {
         </div>
       )}
       {result?.rowsAffected !== undefined && (
-        <div className="text-primary text-xs">{result.rowsAffected} row(s) affected.</div>
+        <div className="text-ink text-xs">{result.rowsAffected} row(s) affected.</div>
       )}
 
       {confirmOpen && (
@@ -1110,7 +1110,7 @@ function DbConsoleCard() {
               <AlertTriangle size={18} />
               <span className="font-display tracking-wider">CONFIRM WRITE</span>
             </div>
-            <pre className="text-primary/80 text-xs bg-black/40 border border-primary/10 p-2 mb-4 overflow-x-auto whitespace-pre-wrap break-all">{sql}</pre>
+            <pre className="text-ink/80 text-xs bg-black/40 border border-primary/10 p-2 mb-4 overflow-x-auto whitespace-pre-wrap break-all">{sql}</pre>
             <p className="text-ink/60 text-xs mb-4">This runs directly against production data and is logged to the audit trail. Are you sure?</p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirmOpen(false)} className="px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary text-xs">
@@ -1152,7 +1152,7 @@ function StripeHealthCard() {
   if (loading) {
     return (
       <Card>
-        <div className="flex items-center gap-2 text-primary/60 text-xs py-4 justify-center">
+        <div className="flex items-center gap-2 text-ink/60 text-xs py-4 justify-center">
           <Loader2 size={14} className="animate-spin" /> Loading...
         </div>
       </Card>
@@ -1174,14 +1174,14 @@ function StripeHealthCard() {
         </div>
       )}
       {data?.configured && !data.error && (
-        <div className={`text-xs mb-2 ${data.failedCount > 0 ? 'text-red-400' : 'text-primary/70'}`}>
+        <div className={`text-xs mb-2 ${data.failedCount > 0 ? 'text-red-400' : 'text-ink/70'}`}>
           {data.failedCount} failed/disputed event(s) in the last 25.
         </div>
       )}
       {data?.recentEvents?.length > 0 && (
         <div className="max-h-40 overflow-y-auto scrollbar-matrix space-y-1">
           {data.recentEvents.slice(0, 10).map((e) => (
-            <div key={e.id} className={`text-[11px] flex justify-between gap-2 ${e.failed ? 'text-red-400' : 'text-primary/50'}`}>
+            <div key={e.id} className={`text-[11px] flex justify-between gap-2 ${e.failed ? 'text-red-400' : 'text-ink/50'}`}>
               <span className="truncate">{e.type}</span>
               <span className="shrink-0">{new Date(e.created * 1000).toLocaleString()}</span>
             </div>
@@ -1212,7 +1212,7 @@ function AuditLogTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
   if (error) return <div className="text-red-500 text-sm border border-red-500/30 px-3 py-2">{error}</div>;
 
   return (
@@ -1225,10 +1225,10 @@ function AuditLogTab() {
       <div className="space-y-2 max-h-[32rem] overflow-y-auto scrollbar-matrix">
         {entries.map((e) => (
           <div key={e.id} className="text-xs border-b border-primary/10 pb-2 last:border-0">
-            <div className="flex items-center gap-2 text-primary/70">
+            <div className="flex items-center gap-2 text-ink/70">
               <span className="font-bold text-primary/85">{e.action}</span>
-              <span className="text-primary/40">{new Date(e.created_date).toLocaleString()}</span>
-              <span className="text-primary/40">— {e.admin?.email || 'unknown'}</span>
+              <span className="text-ink/40">{new Date(e.created_date).toLocaleString()}</span>
+              <span className="text-ink/40">— {e.admin?.email || 'unknown'}</span>
             </div>
             {e.details && <div className="text-ink/50 mt-1 break-all font-mono text-[11px]">{e.details}</div>}
           </div>
@@ -1242,7 +1242,7 @@ export default function AdminPanel() {
   const [tab, setTab] = useState('overview');
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 safe-top">
         <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">

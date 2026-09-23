@@ -194,7 +194,7 @@ export default function StoreItem() {
   const purchaseCancelled = searchParams.get('purchase') === 'cancelled';
 
   return (
-    <div className="min-h-screen bg-background text-primary">
+    <div className="min-h-screen bg-background text-ink">
       {/* Header */}
       <header className="border-b border-primary/20 sticky top-0 z-10 bg-black/95 backdrop-blur-sm safe-top">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -319,7 +319,7 @@ export default function StoreItem() {
         {template.long_description && (
           <div>
             <h2 className="text-xs text-primary/75 uppercase mb-2 tracking-wider">// Details</h2>
-            <div className="text-primary/70 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:px-1 [&_h1]:text-primary [&_h2]:text-primary [&_h3]:text-primary [&_li]:text-primary/70 [&_strong]:text-primary">
+            <div className="text-ink/70 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:px-1 [&_h1]:text-primary [&_h2]:text-primary [&_h3]:text-primary [&_li]:text-ink/70 [&_strong]:text-primary">
               <ReactMarkdown>{template.long_description}</ReactMarkdown>
             </div>
           </div>
@@ -332,17 +332,17 @@ export default function StoreItem() {
             <div className="border border-primary/20 p-3">
               <FileCode size={14} className="text-primary/50 mb-1" />
               <div className="text-xs text-ink/75">Files</div>
-              <div className="text-sm text-primary">{template.file_count || 0}</div>
+              <div className="text-sm text-ink">{template.file_count || 0}</div>
             </div>
             <div className="border border-primary/20 p-3">
               <TrendingUp size={14} className="text-primary/50 mb-1" />
               <div className="text-xs text-ink/75">Installs</div>
-              <div className="text-sm text-primary">{template.install_count || 0}</div>
+              <div className="text-sm text-ink">{template.install_count || 0}</div>
             </div>
             <div className="border border-primary/20 p-3">
               <Calendar size={14} className="text-primary/50 mb-1" />
               <div className="text-xs text-ink/75">Published</div>
-              <div className="text-sm text-primary">
+              <div className="text-sm text-ink">
                 {template.created_date ? new Date(template.created_date).toLocaleDateString() : 'N/A'}
               </div>
             </div>

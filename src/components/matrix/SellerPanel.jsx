@@ -60,13 +60,13 @@ export default function SellerPanel({ open, onClose }) {
                 </div>
                 <div className="border border-primary/30 p-4">
                   <div className="text-xs text-primary/50 uppercase tracking-wider mb-1">Total Sales</div>
-                  <div className="text-lg text-primary font-display flex items-center gap-2">
+                  <div className="text-lg text-ink font-display flex items-center gap-2">
                     <TrendingUp size={16} /> {stats.totalSales || 0}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 text-xs text-primary/50 mb-6">
+              <div className="flex items-center gap-4 text-xs text-ink/50 mb-6">
                 <span className="flex items-center gap-1"><Package size={12} /> {stats.templateCount || 0} templates</span>
                 <span className="flex items-center gap-1"><RotateCcw size={12} /> {stats.refunds || 0} refunds</span>
               </div>
@@ -78,11 +78,11 @@ export default function SellerPanel({ open, onClose }) {
                     {Object.entries(stats.perTemplate).map(([id, t]) => (
                       <div key={id} className="border border-primary/20 px-3 py-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-primary truncate">{t.name}</span>
-                          <span className="text-xs text-ink/75 shrink-0 ml-2">${(t.price || 0).toFixed(2)}</span>
+                          <span className="text-sm text-ink truncate">{t.name}</span>
+                          <span className="text-xs text-primary/75 shrink-0 ml-2">${(t.price || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex items-center justify-between mt-1 text-xs">
-                          <span className="text-primary/50">{t.sales} sale(s) · {t.installs} install(s)</span>
+                          <span className="text-ink/50">{t.sales} sale(s) · {t.installs} install(s)</span>
                           <span className="text-primary font-display">+${(t.sellerCut || 0).toFixed(2)}</span>
                         </div>
                       </div>
@@ -98,12 +98,12 @@ export default function SellerPanel({ open, onClose }) {
                     {stats.recentSales.map((s, i) => (
                       <div key={i} className="flex items-center justify-between text-xs border-b border-primary/10 py-1.5">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-primary/60 truncate">{s.template_name}</span>
+                          <span className="text-ink/60 truncate">{s.template_name}</span>
                           {s.status === 'refunded' && <span className="text-red-500/70 shrink-0">[refunded]</span>}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-primary/75">{new Date(s.created_date).toLocaleDateString()}</span>
-                          <span className={s.status === 'refunded' ? 'text-red-500/60' : 'text-primary'}>
+                          <span className="text-ink/75">{new Date(s.created_date).toLocaleDateString()}</span>
+                          <span className={s.status === 'refunded' ? 'text-red-500/60' : 'text-ink'}>
                             {s.status === 'refunded' ? '-' : '+'}${(s.seller_cut || 0).toFixed(2)}
                           </span>
                         </div>

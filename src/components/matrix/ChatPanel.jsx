@@ -141,14 +141,14 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
     <div className="flex flex-col h-full w-full">
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-matrix">
         {messages.length === 0 && !loading && (
-          <div className="text-primary/75 italic text-sm space-y-1">
+          <div className="text-ink/75 italic text-sm space-y-1">
             <p>&gt; Morpheus is here.</p>
             <p>&gt; Tell me what you want to build. I can only show you the door.</p>
           </div>
         )}
         {messages.map((m, idx) => (
           <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-            <div className={`max-w-[85%] ${m.role === 'user' ? 'text-[#39ff14]/80' : 'text-primary'}`}>
+            <div className={`max-w-[85%] ${m.role === 'user' ? 'text-[#39ff14]/80' : 'text-ink'}`}>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-ink/75">{m.role === 'user' ? 'operator@matrix:~$' : 'morpheus@construct:~$'}</span>
                 {m.role === 'morpheus' && !m.content.startsWith('// SYSTEM') && (
@@ -221,12 +221,12 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
                   emits no stages and lands in the thinking branch. */}
               {pipelineStages && pipelineStages.some((s) => s.stage !== 'planner' || s.status === 'done') ? (
                 <>
-                  <div className="text-primary/75 mb-1">morpheus@construct:~$</div>
+                  <div className="text-ink/75 mb-1">morpheus@construct:~$</div>
                   <MorpheusPipelineStatus stages={pipelineStages} />
                 </>
               ) : (
                 <>
-                  <span className="text-primary/75 mr-2">morpheus@construct:~$</span>
+                  <span className="text-ink/75 mr-2">morpheus@construct:~$</span>
                   <MorpheusThinking />
                 </>
               )}
@@ -239,7 +239,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           {attachments.map((a, i) => (
             <div key={i} className="flex items-center gap-1.5 border border-primary/40 bg-primary/5 px-2 py-1 text-xs">
               <Paperclip size={10} className="text-primary/60 shrink-0" />
-              <span className="text-primary/80 truncate max-w-[120px]">{a.name}</span>
+              <span className="text-ink/80 truncate max-w-[120px]">{a.name}</span>
               <button onClick={() => removeAttachment(i)} className="text-primary/75 hover:text-red-500 shrink-0">
                 <X size={12} />
               </button>

@@ -133,7 +133,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
         </div>
 
         {success && (
-          <div className="mb-4 p-3 border border-primary bg-primary/5 text-primary text-sm flex items-center gap-2">
+          <div className="mb-4 p-3 border border-primary bg-primary/5 text-ink text-sm flex items-center gap-2">
             <CheckCircle size={16} className="shrink-0" />
             {tab === 'github' && typeof success === 'string' && success.startsWith('http') ? (
               <a href={success} target="_blank" rel="noreferrer" className="underline hover:neon-glow flex items-center gap-1 break-all">
@@ -166,7 +166,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
             <div className="space-y-4">
               {project?.github_repo && (
                 <div className="p-3 border border-primary/40 bg-primary/5 text-sm space-y-2">
-                  <div className="flex items-center gap-2 text-primary">
+                  <div className="flex items-center gap-2 text-ink">
                     <CheckCircle size={14} className="shrink-0" />
                     <span>Synced to</span>
                     <a href={`https://github.com/${project.github_repo}`} target="_blank" rel="noreferrer" className="underline hover:neon-glow flex items-center gap-1 break-all">
@@ -207,7 +207,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
           <div className="space-y-4">
             {!drive.connected ? (
               <div className="p-3 border border-primary/40 bg-primary/5 text-sm space-y-3">
-                <p className="text-primary/70">Connect Google Drive to mirror this project's files there instead of (well, alongside — Postgres still keeps a full copy in this phase) Morpheus's own database.</p>
+                <p className="text-ink/70">Connect Google Drive to mirror this project's files there instead of (well, alongside — Postgres still keeps a full copy in this phase) Morpheus's own database.</p>
                 <button onClick={drive.connect} className="flex items-center gap-1.5 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2 font-bold">
                   <HardDrive size={12} /> CONNECT GOOGLE DRIVE
                 </button>
@@ -215,7 +215,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
             ) : (
               <>
                 <div className="p-3 border border-primary/40 bg-primary/5 text-sm space-y-2">
-                  <div className="flex items-center gap-2 text-primary">
+                  <div className="flex items-center gap-2 text-ink">
                     <CheckCircle size={14} className="shrink-0" />
                     <span>Drive connected{drive.email ? ` · ${drive.email}` : ''}</span>
                   </div>

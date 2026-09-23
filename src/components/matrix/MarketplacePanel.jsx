@@ -224,7 +224,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
           <button onClick={() => setTab('publish')} className={`flex-1 py-2 text-xs tracking-wider ${tab === 'publish' ? 'bg-primary/10 text-primary' : 'text-primary/40'}`} disabled={!currentProject}>PUBLISH</button>
         </div>
 
-        {purchaseMsg && <div className="px-4 py-2 text-xs text-primary border-b border-primary/20 shrink-0 flex items-center gap-2"><CheckCircle2 size={12} /> {purchaseMsg}</div>}
+        {purchaseMsg && <div className="px-4 py-2 text-xs text-ink border-b border-primary/20 shrink-0 flex items-center gap-2"><CheckCircle2 size={12} /> {purchaseMsg}</div>}
         {error && <div className="px-4 py-2 text-xs text-red-500 border-b border-red-500/20 shrink-0">// {error}</div>}
 
         {tab === 'browse' ? (
@@ -258,18 +258,18 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-primary font-bold">{t.name}</span>
                           {t.mine && <span className="text-[10px] text-primary/50 border border-primary/30 px-1">YOURS</span>}
-                          {isPaid && <span className={`text-[10px] px-1.5 py-0.5 border ${t.purchased ? 'text-primary border-primary/50' : 'text-black bg-primary border-primary'}`}>{t.purchased ? 'OWNED' : 'PAID'}</span>}
+                          {isPaid && <span className={`text-[10px] px-1.5 py-0.5 border ${t.purchased ? 'text-ink border-primary/50' : 'text-black bg-primary border-primary'}`}>{t.purchased ? 'OWNED' : 'PAID'}</span>}
                           {t.has_artifacts && <span className="flex items-center gap-0.5 text-[10px] text-info border border-info/40 px-1"><Package size={9} /> BUILD INCLUDED</span>}
                         </div>
                         {t.description && <p className="text-ink/60 text-sm mt-1">{t.description}</p>}
-                        <div className="flex items-center gap-3 mt-2 text-xs text-primary/40 flex-wrap">
+                        <div className="flex items-center gap-3 mt-2 text-xs text-ink/40 flex-wrap">
                           <span>by {t.author_name}</span>
                           <span className="uppercase">{t.compile_target}</span>
                           <span>{t.file_count} files</span>
                           <span>{t.install_count} installs</span>
                           {t.category && <span className="border border-primary/20 px-1">{t.category}</span>}
                         </div>
-                        {t.tags && <div className="flex items-center gap-1 mt-1 text-xs text-primary/40"><Tag size={10} /> {t.tags}</div>}
+                        {t.tags && <div className="flex items-center gap-1 mt-1 text-xs text-ink/40"><Tag size={10} /> {t.tags}</div>}
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         {isPaid && <span className="text-primary font-bold text-sm">{fmtPrice(t.price)}</span>}
@@ -315,7 +315,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                 <p className="text-[10px] text-ink/40">// Share this link with anyone — they can view and buy your app on the public store page.</p>
               </div>
             )}
-            {!shareUrl && publishMsg && <div className="text-xs text-primary border border-primary/30 p-2">// {publishMsg}</div>}
+            {!shareUrl && publishMsg && <div className="text-xs text-ink border border-primary/30 p-2">// {publishMsg}</div>}
 
             {/* Icon */}
             <div>

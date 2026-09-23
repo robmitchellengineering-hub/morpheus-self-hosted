@@ -185,7 +185,7 @@ export default function Workspace() {
 
   if (!ws.currentProject) {
     return (
-      <div ref={listRef} className="relative min-h-screen bg-background text-primary font-mono">
+      <div ref={listRef} className="relative min-h-screen bg-background text-ink font-mono">
         <MatrixRain opacity={0.05} />
         <div className="pointer-events-none fixed inset-0 opacity-[0.05]" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--primary) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--primary) / 0.5) 1px, transparent 1px)', backgroundSize: '44px 44px' }} />
         <div className="relative z-10"><PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} /></div>
@@ -311,7 +311,7 @@ export default function Workspace() {
                 ) : (
                   <button onClick={() => navigate('/workspace/' + p.id)} className="w-full text-left p-4 pr-24">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-primary group-hover:neon-glow">{p.name}</span>
+                      <span className="text-ink group-hover:neon-glow">{p.name}</span>
                       <Badge variant="outline" className="rounded-none border-primary/40 bg-transparent text-primary/70 font-mono text-[10px] uppercase tracking-wider">{p.status}</Badge>
                     </div>
                     {p.description && <p className="text-ink/50 text-sm mt-1.5">{p.description}</p>}
@@ -351,7 +351,7 @@ export default function Workspace() {
   }
 
   return (
-    <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
+    <div className="relative h-workspace-mobile bg-background text-ink font-mono flex flex-col overflow-hidden safe-top">
       <ProjectBar project={ws.currentProject} onRename={ws.renameProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onDomain={ws.currentProject?.compile_target === 'web-app' ? () => setShowDomain(true) : undefined} domainSet={domainSet} onContent={ws.currentProject?.compile_target === 'web-app' ? () => setShowContent(true) : undefined} onWebsite={ws.currentProject?.compile_target === 'web-app' ? () => setShowWebsite(true) : undefined} websiteConnected={websiteConnected} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
       {ws.currentProject?.compile_target === 'web-app' && (
         <FirstRunChecklist

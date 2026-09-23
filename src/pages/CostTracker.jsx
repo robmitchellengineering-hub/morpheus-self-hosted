@@ -125,7 +125,7 @@ export default function CostTracker() {
   const { monthlyFixed, annualExtra, monthlyEquivalent } = computeTotals(items);
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 safe-top">
         <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
@@ -161,7 +161,7 @@ export default function CostTracker() {
         {error && <div className="text-danger text-sm border border-danger/30 px-3 py-2 mb-4">{error}</div>}
 
         {loading ? (
-          <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading...
           </div>
         ) : (
@@ -184,7 +184,7 @@ export default function CostTracker() {
             <div className="overflow-x-auto border border-primary/20">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-primary/20 text-primary/50 text-left">
+                  <tr className="border-b border-primary/20 text-ink/50 text-left">
                     <th className="px-3 py-2 font-normal">SERVICE</th>
                     <th className="px-3 py-2 font-normal">CATEGORY</th>
                     <th className="px-3 py-2 font-normal">MONTHLY</th>
@@ -229,15 +229,15 @@ export default function CostTracker() {
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-2 text-primary">{item.service}</td>
-                          <td className="px-3 py-2 text-primary/60">{item.category}</td>
+                          <td className="px-3 py-2 text-ink">{item.service}</td>
+                          <td className="px-3 py-2 text-ink/60">{item.category}</td>
                           <td className="px-3 py-2 text-primary/80">{num(item.monthly) > 0 ? `$${num(item.monthly).toFixed(2)}` : '—'}</td>
                           <td className="px-3 py-2 text-primary/80">{num(item.annual) > 0 ? `$${num(item.annual).toFixed(2)}` : '—'}</td>
                           <td className="px-3 py-2">
                             <span className={item.tier === 'free' ? 'text-info' : 'text-success'}>{item.tier === 'free' ? 'FREE TIER' : 'PAID'}</span>
                             {item.flag === 'watch' && <span className="ml-1.5 text-warning">⚠ WATCH</span>}
                           </td>
-                          <td className="px-3 py-2 text-primary/50">{item.note}</td>
+                          <td className="px-3 py-2 text-ink/50">{item.note}</td>
                         </>
                       )}
                     </tr>

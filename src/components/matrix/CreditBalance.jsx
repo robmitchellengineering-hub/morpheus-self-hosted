@@ -88,12 +88,12 @@ export default function CreditBalance() {
       </p>
 
       {banner?.kind === 'success' && (
-        <div className="flex items-center gap-2 border border-primary/40 bg-primary/5 px-3 py-2 mb-4 text-xs text-primary">
+        <div className="flex items-center gap-2 border border-primary/40 bg-primary/5 px-3 py-2 mb-4 text-xs text-ink">
           <Check size={14} /> Payment received — your balance updates within a few seconds.
         </div>
       )}
       {banner?.kind === 'cancelled' && (
-        <div className="flex items-center gap-2 border border-primary/20 px-3 py-2 mb-4 text-xs text-primary/60">
+        <div className="flex items-center gap-2 border border-primary/20 px-3 py-2 mb-4 text-xs text-ink/60">
           <X size={14} /> Checkout cancelled — no charge was made.
         </div>
       )}
@@ -103,7 +103,7 @@ export default function CreditBalance() {
         {loadingBalance ? (
           <Loader2 size={14} className="animate-spin text-primary/50" />
         ) : (
-          <span className="text-lg font-display text-primary">{balance != null ? balance.toFixed(2) : '—'} credits</span>
+          <span className="text-lg font-display text-ink">{balance != null ? balance.toFixed(2) : '—'} credits</span>
         )}
       </div>
 
@@ -117,7 +117,7 @@ export default function CreditBalance() {
           >
             <div className="text-xs font-display tracking-wider text-primary">{block.credits.toLocaleString()} CREDITS</div>
             <div className="text-[10px] text-ink/55 mt-1">~${block.intendedNetUsd.toFixed(2)} + card fees</div>
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-primary">
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-ink">
               {buyingIndex === i ? <Loader2 size={12} className="animate-spin" /> : null}
               {buyingIndex === i ? 'Redirecting…' : 'Buy'}
             </div>

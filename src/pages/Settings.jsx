@@ -177,7 +177,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.05} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-10 safe-top">
         <div className="flex items-center gap-3 mb-8">
@@ -341,7 +341,7 @@ export default function Settings() {
 
               {providerMode === 'guided' ? (
                 <div className="space-y-4">
-                  <ol className="space-y-2.5 text-xs text-primary/70 list-decimal list-inside">
+                  <ol className="space-y-2.5 text-xs text-ink/70 list-decimal list-inside">
                     <li>
                       Open{' '}
                       <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 inline-flex items-center gap-1">
@@ -349,7 +349,7 @@ export default function Settings() {
                       </a>{' '}
                       and sign in with any Google account.
                     </li>
-                    <li>Click <span className="text-primary">Create API key</span> — it's free, no card required.</li>
+                    <li>Click <span className="text-ink">Create API key</span> — it's free, no card required.</li>
                     <li>Copy the key and paste it below.</li>
                   </ol>
                   <div>
@@ -376,7 +376,7 @@ export default function Settings() {
                       {keyTest?.testing ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
                       Test key
                     </button>
-                    {keyTest?.ok === true && <span className="text-xs text-primary flex items-center gap-1"><Check size={12} /> Key works</span>}
+                    {keyTest?.ok === true && <span className="text-xs text-ink flex items-center gap-1"><Check size={12} /> Key works</span>}
                     {keyTest?.ok === false && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {keyTest.message || 'Key rejected'}</span>}
                   </div>
                   <p className="text-xs text-ink/50">
@@ -396,7 +396,7 @@ export default function Settings() {
                     <p className="text-xs text-ink/65 mt-1">
                       // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1 · https://api.moonshot.ai/v1 (Kimi K3)
                     </p>
-                    <div className="mt-2 border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary/50 space-y-1">
+                    <div className="mt-2 border border-primary/20 bg-primary/5 p-2.5 text-xs text-ink/50 space-y-1">
                       <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Free-tier providers:</p>
                       <p>// Google AI Studio — free Gemini Flash, generous limits</p>
                       <p>// Groq — free fast inference (Llama, Mixtral)</p>
@@ -443,7 +443,7 @@ export default function Settings() {
                       {keyTest?.testing ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
                       Test connection
                     </button>
-                    {keyTest?.ok === true && <span className="text-xs text-primary flex items-center gap-1"><Check size={12} /> Connected</span>}
+                    {keyTest?.ok === true && <span className="text-xs text-ink flex items-center gap-1"><Check size={12} /> Connected</span>}
                     {keyTest?.ok === false && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {keyTest.message || 'Rejected'}</span>}
                   </div>
                 </div>
@@ -459,7 +459,7 @@ export default function Settings() {
               <p className="text-xs text-ink/50 mb-4">
                 // Every agent in the pipeline is individually addressable. All default to automatic — override only when you want a specific model for a specific role. Max think power is enabled (no output token cap).
               </p>
-              <div className="mb-4 border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary/50 space-y-1">
+              <div className="mb-4 border border-primary/20 bg-primary/5 p-2.5 text-xs text-ink/50 space-y-1">
                 <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Free-tier optimisation:</p>
                 <p>// Best free-tier setup: leave all on Automatic (lowest credit cost)</p>
                 <p>// Or set Planner → Gemini 3 Flash, Coder → GPT 5 Mini (lowest cost overrides)</p>

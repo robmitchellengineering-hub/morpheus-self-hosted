@@ -15,7 +15,7 @@ export default function GoogleDriveConnectionSection() {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <HardDrive size={16} className={drive.connected ? 'text-primary shrink-0' : 'text-primary/50 shrink-0'} />
-          <span className="text-sm text-primary">Google Drive</span>
+          <span className="text-sm text-ink">Google Drive</span>
           {drive.loading ? (
             <span className="flex items-center gap-1 text-[10px] text-primary/50 border border-primary/20 px-1.5 py-0.5">
               <Loader2 size={10} className="animate-spin" /> CHECKING

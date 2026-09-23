@@ -15,7 +15,10 @@ import { base44 } from '@/api/base44Client';
 // lib/searchConsoleInsights.js's payload has no field for an estimate.
 
 const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
-const faint = 'text-[9px] text-primary/30';
+// prose helper text, so ink: resolved by usage — every use is a span/div of
+// faint helper copy. The neighbouring `micro` keeps green because it is an
+// uppercase label, and `btn` because it is a button.
+const faint = 'text-ink/30';
 const btn = 'inline-flex items-center gap-1.5 px-2.5 h-[28px] border border-primary/25 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary/50 disabled:opacity-40 disabled:hover:border-primary/25';
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
@@ -131,7 +134,7 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
       <div className="flex items-center justify-between gap-2">
         <button className={btn} onClick={() => { setOpen((v) => !v); if (!open && status?.connected && status?.property) loadOverview(days); }} disabled={busy === 'status'}>
           {busy === 'status' || busy === 'overview' ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} SEARCH CONSOLE
-          {status?.connected ? <span className="text-primary/50 normal-case tracking-normal">· {status.property || 'no property chosen'}</span> : null}
+          {status?.connected ? <span className="text-ink/50 normal-case tracking-normal">· {status.property || 'no property chosen'}</span> : null}
         </button>
         {open ? (
           <button className={btn} onClick={() => loadOverview(days)} disabled={!status?.property || busy === 'overview'} title="Refresh from Google">
@@ -149,7 +152,7 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
             <div className="space-y-2">
               <div className="text-[10px] text-ink/60">
                 Connect your own Google Search Console to see the real queries, clicks, impressions, CTR and average
-                position for your site. Read-only: Morpheus is asking to <span className="text-primary/80">view</span> your
+                position for your site. Read-only: Morpheus is asking to <span className="text-ink/80">view</span> your
                 search performance and nothing else.
               </div>
               {widget ? (
@@ -171,7 +174,7 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
           {status?.connected && !status?.property ? (
             <div className="space-y-2">
               <div className="text-[10px] text-ink/60">
-                Connected as <span className="text-primary/80">{status.email}</span>. Choose which property to read —
+                Connected as <span className="text-ink/80">{status.email}</span>. Choose which property to read —
                 Google lists what this account can see.
               </div>
               <div className="flex items-center gap-2">

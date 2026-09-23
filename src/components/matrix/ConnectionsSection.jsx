@@ -225,7 +225,7 @@ export default function ConnectionsSection({ connections, onChange }) {
                       className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-primary/5 transition-colors"
                     >
                       <Icon size={14} className={isConnected ? 'text-primary shrink-0' : 'text-primary/50 shrink-0'} />
-                      <span className={`text-sm flex-1 ${isConnected ? 'text-primary' : 'text-primary/70'}`}>{p.label}</span>
+                      <span className={`text-sm flex-1 ${isConnected ? 'text-ink' : 'text-ink/70'}`}>{p.label}</span>
                       {isConnected && <Check size={12} className="text-primary shrink-0" />}
                       {isExpanded ? <ChevronDown size={14} className="text-primary/75 shrink-0" /> : <ChevronRight size={14} className="text-primary/75 shrink-0" />}
                     </button>

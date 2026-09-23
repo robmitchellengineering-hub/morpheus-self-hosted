@@ -41,7 +41,7 @@ export function DiagnosisLoading({ label = 'AI AGENT ANALYZING ERRORS...', steps
 
   return (
     <div className="border border-primary/30 bg-primary/5 p-3">
-      <div className="flex items-center gap-2 text-primary text-sm mb-3">
+      <div className="flex items-center gap-2 text-ink text-sm mb-3">
         <Bot size={16} className="animate-pulse" /> {label}
         <span className="ml-auto flex items-center gap-1 text-ink/55 text-xs font-mono tabular-nums">
           <Timer size={12} /> {formatRunTime(elapsed)}
@@ -61,10 +61,10 @@ export function DiagnosisLoading({ label = 'AI AGENT ANALYZING ERRORS...', steps
             const isDone = i < activeIndex;
             return (
               <div key={s.label} className="flex items-baseline gap-2 text-xs">
-                <span className={isActive ? 'text-primary animate-pulse' : isDone ? 'text-primary/50' : 'text-primary/30'} aria-hidden="true">
+                <span className={isActive ? 'text-ink animate-pulse' : isDone ? 'text-ink/50' : 'text-ink/30'} aria-hidden="true">
                   {isDone ? '✓' : isActive ? '>' : '·'}
                 </span>
-                <span className={isActive ? 'text-primary' : isDone ? 'text-primary/50' : 'text-primary/30'}>{s.label}</span>
+                <span className={isActive ? 'text-ink' : isDone ? 'text-ink/50' : 'text-ink/30'}>{s.label}</span>
               </div>
             );
           })}
@@ -130,8 +130,8 @@ export default function DiagnosisPanel({ diagnosis, onRedeploy, redeployLabel = 
               <p className="text-xs text-ink/70 mb-1.5 ml-5">{item.issue}</p>
               <div className="ml-5 space-y-0.5">
                 {item.steps.map((step, j) => (
-                  <div key={j} className="flex items-start gap-1.5 text-xs text-primary/50">
-                    <span className="text-primary/65 shrink-0">{j + 1}.</span>
+                  <div key={j} className="flex items-start gap-1.5 text-xs text-ink/50">
+                    <span className="text-ink/65 shrink-0">{j + 1}.</span>
                     <span>{step}</span>
                   </div>
                 ))}
@@ -153,7 +153,7 @@ export default function DiagnosisPanel({ diagnosis, onRedeploy, redeployLabel = 
       )}
 
       {diagnosis.allClear && !diagnosis.autoFixed?.length && (
-        <div className="flex items-center gap-2 text-primary text-sm border-t border-primary/20 pt-2">
+        <div className="flex items-center gap-2 text-ink text-sm border-t border-primary/20 pt-2">
           <CheckCircle size={16} /> All clear — retry the operation.
         </div>
       )}

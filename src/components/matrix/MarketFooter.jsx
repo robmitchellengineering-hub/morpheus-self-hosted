@@ -8,11 +8,11 @@ export default function MarketFooter() {
   return (
     <footer className="border-t border-primary/20 mt-10 pt-6 pb-8">
       <div className="max-w-6xl mx-auto px-4 space-y-4">
-        <div className="flex items-center gap-2 text-primary/60">
+        <div className="flex items-center gap-2 text-ink/60">
           <Store size={14} />
           <span className="font-display tracking-wider text-xs">MORPHEUS MARKET</span>
         </div>
-        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-primary/55">
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-ink/55">
           <Link to="/terms" className="hover:text-primary">Terms of Service</Link>
           <Link to="/privacy" className="hover:text-primary">Privacy Policy</Link>
           <Link to="/refund-policy" className="hover:text-primary">Refund Policy</Link>

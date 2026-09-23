@@ -54,7 +54,7 @@ export default function CapabilityStatus({ connections }) {
             <div key={c.title} className="flex items-center gap-2.5 py-1.5 border-b border-primary/10 last:border-0">
               <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass(status)}`} />
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-primary truncate">{c.title}</div>
+                <div className="text-xs text-ink truncate">{c.title}</div>
               </div>
               <span className={`text-[10px] tracking-wider shrink-0 font-display ${labelClass(status)}`}>
                 {labelFor(status)}

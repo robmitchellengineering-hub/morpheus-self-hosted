@@ -173,7 +173,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
                 {files.map((f, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-xs border border-primary/10 px-2 py-1.5">
                     <FileCode size={12} className="text-primary/60 shrink-0" />
-                    <span className="text-primary/80 truncate flex-1">{f.path}</span>
+                    <span className="text-ink/80 truncate flex-1">{f.path}</span>
                     <button onClick={() => removeFile(idx)} className="text-primary/65 hover:text-red-500 shrink-0">
                       <Trash2 size={12} />
                     </button>

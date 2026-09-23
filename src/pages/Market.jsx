@@ -50,7 +50,7 @@ export default function Market() {
   const fmtPrice = (p) => (p && p > 0 ? `$${Number(p).toFixed(2)}` : 'FREE');
 
   return (
-    <div ref={listRef} className="min-h-screen bg-background text-primary">
+    <div ref={listRef} className="min-h-screen bg-background text-ink">
       <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} />
       {/* Header */}
       <header className="border-b border-primary/20 sticky top-0 z-10 bg-black/95 backdrop-blur-sm safe-top">
@@ -110,7 +110,7 @@ export default function Market() {
             <Loader2 className="animate-spin text-primary/50" size={24} />
           </div>
         ) : templates.length === 0 ? (
-          <div className="text-center py-20 text-primary/75">
+          <div className="text-center py-20 text-ink/75">
             <Store size={32} className="mx-auto mb-3 opacity-50" />
             <p className="text-sm">No constructs found. Be the first to publish.</p>
             <Link to="/workspace" className="inline-block mt-4 text-xs text-primary border border-primary/30 hover:border-primary/60 px-4 py-2">

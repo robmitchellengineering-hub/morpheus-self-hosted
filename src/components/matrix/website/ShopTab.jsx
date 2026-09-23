@@ -273,7 +273,7 @@ export default function ShopTab({ store, projectId }) {
   const formBody = (mode) => (
     <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-4">
       {result && mode === 'add' && (
-        <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-primary/80 leading-relaxed">
+        <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-ink/80 leading-relaxed">
           <div className="flex items-center gap-1.5 text-primary font-bold mb-1">
             <Check size={13} /> {result.published ? 'Published' : 'Saved as draft'}
           </div>
@@ -287,7 +287,7 @@ export default function ShopTab({ store, projectId }) {
         </div>
       )}
       {result && mode === 'edit' && (
-        <div className="border border-primary/40 bg-primary/5 px-3 py-2 text-[11px] text-primary/80 flex items-center gap-1.5">
+        <div className="border border-primary/40 bg-primary/5 px-3 py-2 text-[11px] text-ink/80 flex items-center gap-1.5">
           <Check size={13} className="text-primary" /> Saved{result.published === false ? ' (draft)' : ''}.
         </div>
       )}
@@ -344,7 +344,7 @@ export default function ShopTab({ store, projectId }) {
                 <img src={p.url} alt="" className="w-full h-full object-cover" />
                 {i === 0 && <span className="absolute bottom-0 left-0 text-[8px] bg-primary text-black px-1">MAIN</span>}
                 {p.existing
-                  ? <span className="absolute bottom-0 right-0 text-[8px] bg-black/70 text-primary/70 px-1">on site</span>
+                  ? <span className="absolute bottom-0 right-0 text-[8px] bg-black/70 text-ink/70 px-1">on site</span>
                   : (
                     <button onClick={() => setPhotos((ps) => ps.filter((x) => x.url !== p.url))}
                       className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-primary/40 text-primary/60 hover:text-red-400 text-[10px] leading-none">×</button>
@@ -468,7 +468,7 @@ export default function ShopTab({ store, projectId }) {
       {view === 'edit' && (
         <>
           {loadingEdit
-            ? <div className="flex items-center gap-2 text-primary/60 text-xs p-4"><Loader2 size={13} className="animate-spin" /> Loading…</div>
+            ? <div className="flex items-center gap-2 text-ink/60 text-xs p-4"><Loader2 size={13} className="animate-spin" /> Loading…</div>
             : formBody('edit')}
           {!loadingEdit && (
             <div className="p-3 border-t border-primary/20 shrink-0 space-y-2">
@@ -521,7 +521,7 @@ export default function ShopTab({ store, projectId }) {
               <RefreshCw size={11} />
             </button>
           </div>
-          {loadingList && <div className="flex items-center gap-2 text-primary/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
+          {loadingList && <div className="flex items-center gap-2 text-ink/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
           {!loadingList && products && products.length === 0 && <div className="text-[11px] text-ink/45 py-3">No products found.</div>}
           <div className="space-y-1.5">
             {(products || []).map((p) => (
