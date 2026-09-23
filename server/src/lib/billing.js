@@ -71,7 +71,15 @@ const CHARS_PER_TOKEN = 4; // rough, standard heuristic for a pre-call estimate 
 // Per-role *output* token expectations, used only to size the pre-call
 // estimate -- the real charge always reconciles against actual usage (Step 2's
 // real metering) once the call completes, regardless of how this guesses.
-const ROLE_OUTPUT_ESTIMATE = { planner: 1500, coder: 3000, reviewer: 1500, diagnosis: 2000 };
+const ROLE_OUTPUT_ESTIMATE = { planner: 1500, coder: 3000, reviewer: 1500, diagnosis: 2000,
+  // The SEO batch moved off `diagnosis` to its own timing role. Pinned to the
+  // SAME output estimate it had there, so forking the role changes what the ETA
+  // averages over and nothing about what a batch reserves up front. Its call cap
+  // is seoCallMaxTokens(5) = 8000 output tokens, so 2000 is already the smaller
+  // number; raising it would reserve more credits before every batch and is a
+  // pricing decision, not a timing one — left as it was.
+  seo: 2000,
+};
 const DEFAULT_OUTPUT_ESTIMATE = 1500;
 
 // Token-block purchase denominations. Revised 2026-09-02: round $2/$4/$8

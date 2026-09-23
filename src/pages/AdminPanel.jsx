@@ -276,7 +276,7 @@ function ModelsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const roles = ['default', 'planner', 'coder', 'reviewer', 'diagnosis'];
+  const roles = ['default', 'planner', 'coder', 'reviewer', 'diagnosis', 'seo'];
 
   const saveOverride = async (role, value) => {
     const key = role === 'default' ? 'default_model' : `default_${role}_model`;

@@ -384,12 +384,15 @@ export default function SeoTab({ projectId, store, widget = false }) {
     // Bounded per click: what this generates has to be applyable in one
     // bulk_set_seo (see SEO_BATCH_MAX). The remainder stays counted as missing.
     const work = missing.slice(0, SEO_BATCH_MAX);
-    // One request per slice of items. A request is then a single model call, which
-    // is what keeps it inside the platform's request envelope — asking for the
-    // whole batch in one request made the server run five sequential calls before
-    // answering, and the connection was cut before it could: "Failed to fetch"
-    // (2026-09-22). Slicing also means real progress and an ETA that comes from
-    // completed slices instead of a guess.
+    // One request per slice of items, and each request now STREAMS its progress.
+    //
+    // Slicing stays: a request that is one model call is what keeps it inside the
+    // platform's request envelope, and it is what makes a partial batch worth
+    // keeping. What changed on 2026-09-23 is that a slice no longer answers in
+    // total silence — the server emits a start event with its own measured ETA and
+    // an event per completed model call, so bytes are always flowing. An idle
+    // connection was what got cut, and a cut before Express answered arrived with
+    // no CORS headers, which is why the browser could only say "Failed to fetch".
     const slices = sliceForRequests(work);
     setRun({
       key: 'batch', startedAt, estimateMs: null, done: 0, total: slices.length,
@@ -398,14 +401,43 @@ export default function SeoTab({ projectId, store, widget = false }) {
     try {
       const results = [];
       let failure = null;
+      // The server's own ETA for the request in flight, in ms. Kept per request —
+      // it is replaced by the next event, and reset when the next slice starts.
+      let serverRemainingMs = null;
+      let itemsDone = 0;
       for (let i = 0; i < slices.length; i += 1) {
         if (cancelRun.current) break;
+        serverRemainingMs = null;
+        itemsDone = 0;
+        // Fires as each NDJSON line arrives, so the clock and the ETA move while
+        // the model is still working rather than only when a slice lands.
+        const onStage = (evt) => {
+          if (evt.type !== 'stage') return;
+          if (Number.isFinite(evt.etaSeconds)) serverRemainingMs = evt.etaSeconds * 1000;
+          if (Number.isFinite(evt.done)) itemsDone = evt.done;
+          const elapsedMs = Date.now() - startedAt;
+          // What is left for the WHOLE batch: what the server says this request
+          // still needs, plus a measured average for the slices not started. The
+          // per-slice average comes from slices that actually finished, so before
+          // the first one the server's own estimate is the only honest number.
+          const sliceMs = i > 0 ? elapsedMs / i : serverRemainingMs;
+          const remaining = serverRemainingMs == null && sliceMs == null
+            ? null
+            : (serverRemainingMs ?? sliceMs) + (slices.length - i - 1) * (sliceMs ?? 0);
+          setRun((cur) => (cur ? {
+            ...cur,
+            detail: `batch ${i + 1} of ${slices.length}${itemsDone ? ` · ${itemsDone}/${slices[i].length} in this batch` : ''}`,
+            estimateMs: remaining == null ? null : elapsedMs + remaining,
+          } : cur));
+        };
         try {
           // eslint-disable-next-line no-await-in-loop
-          const r = await base44.functions.invoke('generateSeoMeta', {
-            projectId, items: slices[i].map((it) => ({ id: it.id })),
-          }).then((x) => x.data);
-          results.push(r);
+          const r = await base44.functions.invokeStream(
+            'generateSeoMeta',
+            { projectId, items: slices[i].map((it) => ({ id: it.id })), stream: true },
+            onStage,
+          );
+          results.push(r.data);
         } catch (e) { failure = e; break; } // keep the slices that did answer
         const done = i + 1;
         const elapsedMs = Date.now() - startedAt;
@@ -426,7 +458,11 @@ export default function SeoTab({ projectId, store, widget = false }) {
           empty > 0 ? `${empty} came back empty` : null,
           capped > 0 ? `${capped} still waiting (click again for the next ${SEO_BATCH_MAX})` : null,
         ].filter(Boolean).join(' · ');
-        if (failure) setNote(`Stopped at ${merged.generated} of ${missing.length} — ${failure?.data?.error || failure.message}`);
+        // A streamed failure arrives as the terminal event, and base44Client's
+        // reader turns it into a thrown error whose `.data` is that event — so
+        // this reads the same wording whether the failure happened before the
+        // first byte (a normal JSON error) or after it (a streamed one).
+        if (failure) setNote(`Stopped at ${merged.generated} of ${missing.length} — ${failure?.data?.error || failure?.data?.message || failure.message}`);
         else if (cancelRun.current) setNote(`Stopped — ${merged.generated} of ${missing.length} generated. The rest are still listed as missing.`);
         else if (tail) setNote(`${merged.generated} generated · ${tail}`);
       } else if (failure) {
