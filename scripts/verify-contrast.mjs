@@ -115,6 +115,35 @@ for (const b of themed) {
   }
 }
 
+// ── the ink ladder (Rob, 2026-09-23) ────────────────────────────────────────
+// "the level of the biggest white title should be set as the dullest setting and
+// go up from there". So the rungs above ink must exist in EVERY theme block that
+// defines ink — one missing and `text-ink-strong` silently resolves to nothing
+// and the text renders at the inherited colour, which is a failure with no error
+// anywhere — and each rung must carry strictly MORE contrast than the one below
+// it. That is the whole rule; it is asserted as a relation, not as a value, so a
+// theme is free to pick its own colours.
+console.log('\nThe ink ladder — ink is the floor, and each rung is more contrast');
+const RUNGS = ['text-ink', 'text-ink-strong', 'text-ink-max'];
+const missingRungs = themed.filter((b) => RUNGS.some((t) => !b.vars[t])).map((b) => b.sel);
+ok('every theme with an ink token defines all three rungs', missingRungs.length === 0,
+  `missing in: ${missingRungs.join(', ')}`);
+
+for (const b of themed) {
+  if (RUNGS.some((t) => !b.vars[t])) continue;
+  const bg = b.vars.background;
+  const [, strong, max] = RUNGS.map((t) => b.vars[t]);
+  const inkC = contrast(b.vars['text-ink'], bg);
+  const strongC = contrast(strong, bg);
+  const maxC = contrast(max, bg);
+  console.log(`  ${b.sel}: ink ${inkC} → strong ${strongC} → max ${maxC}`);
+  ok(`${b.sel}: the strong rung is more contrast than ink`, strongC > inkC, `ink ${inkC} vs strong ${strongC}`);
+  ok(`${b.sel}: the max rung is more contrast than strong`, maxC > strongC, `strong ${strongC} vs max ${maxC}`);
+  // "Max" is the most contrast the theme has. If the top rung is not at least
+  // AAA for body text, calling it the brightest is a claim the theme cannot keep.
+  ok(`${b.sel}: the max rung clears AAA (7:1)`, maxC >= 7, `max ${maxC}`);
+}
+
 // The rule itself: body copy must not go back to inheriting the bright green.
 const bodyRule = (css.match(/\n\s*body\s*\{[^}]*\}/) || [''])[0];
 ok('body copy uses the ink token', /@apply[^;]*text-ink/.test(bodyRule), bodyRule.trim());

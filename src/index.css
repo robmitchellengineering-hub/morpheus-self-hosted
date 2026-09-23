@@ -56,6 +56,8 @@
        #fff. Use for real reading copy (paragraphs, primary table values);
        leave headline numbers, H1s and glow effects on --primary/--heading. */
     --text-ink: 142 35% 90%;
+    --text-ink-strong: 142 25% 95%;
+    --text-ink-max: 0 0% 100%;
     --radius: 0.25rem;
     --font-heading: 'Share Tech Mono', ui-monospace, monospace;
     --font-body: 'JetBrains Mono', ui-monospace, monospace;
@@ -102,6 +104,8 @@
     --status-danger: 0 78% 58%;
     --heading: 130 100% 50%;
     --text-ink: 142 35% 90%;
+    --text-ink-strong: 142 25% 95%;
+    --text-ink-max: 0 0% 100%;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 142 90% 58%;
     --sidebar-primary: 142 90% 58%;
@@ -147,6 +151,8 @@
     --status-danger: 0 100% 50%;
     --heading: 130 100% 50%;
     --text-ink: 130 35% 90%;
+    --text-ink-strong: 130 25% 95%;
+    --text-ink-max: 0 0% 100%;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 130 100% 50%;
     --sidebar-primary: 130 100% 50%;
@@ -215,6 +221,8 @@
     --status-danger: 0 72% 50%;
     --heading: 140 60% 68%;
     --text-ink: 0 0% 90%;
+    --text-ink-strong: 0 0% 95%;
+    --text-ink-max: 0 0% 100%;
     --radius: 0.6rem;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 0 0% 78%;
@@ -270,6 +278,8 @@
     --status-danger: 0 72% 50%;
     --heading: 140 60% 28%;
     --text-ink: 0 0% 10%;
+    --text-ink-strong: 0 0% 5%;
+    --text-ink-max: 0 0% 0%;
     --radius: 0.6rem;
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 0 0% 12%;
@@ -300,6 +310,33 @@
     @apply bg-background text-ink font-body;
     overscroll-behavior: none;
   }
+
+  /* THE INK LADDER (Rob, 2026-09-23).
+
+     He sent a screenshot of the Project History decisions list — "how the
+     smallest white text is too dull hard to read" — and stated the rule:
+
+       "the gradients of brightness of the white text need to start from the
+        brightest as in the level of the biggest white title should be set as
+        the dullest setting and go up from there"
+
+     He is right, and it is measurable. That card set its title at full ink
+     (17.4:1), its description at `text-ink/60` (6.4:1) and its 11px date at
+     `text-ink/40` — which is 3.3:1, below the 4.5:1 floor for small text. The
+     old ladder dimmed text as it got SMALLER, which is backwards: big text is
+     the text that needs contrast least (WCAG asks 3:1 of large text and 4.5:1 of
+     small). So the ladder now runs the other way.
+
+       text-ink         the FLOOR. The dullest any text may be. Large text only.
+       text-ink-strong  more contrast — 12-13px copy.
+       text-ink-max     the most contrast the theme has — 11px and below.
+
+     "Max" is maximum CONTRAST, not maximum brightness, so the light theme gets
+     darker values and the rule survives every theme block.
+
+     What this forbids, and what a guard should enforce: any `text-ink/N` with
+     N below 100. An opacity modifier can only ever make ink dimmer, and dimmer
+     than the floor is the one thing this rule says cannot happen. */
 
   /* Headings keep the brand green, including the ones with no class of their
      own. Tailwind text-* utilities still win where a component sets one. */

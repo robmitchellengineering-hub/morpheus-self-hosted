@@ -46,6 +46,11 @@ module.exports = {
   			danger: 'hsl(var(--status-danger))',
   			heading: 'hsl(var(--heading))',
   			ink: 'hsl(var(--text-ink))',
+  			// The two rungs ABOVE ink. Ink is the floor — the dullest any text is
+  			// allowed to be — and the smaller the text, the more contrast it gets.
+  			// See the ladder note in src/index.css.
+  			'ink-strong': 'hsl(var(--text-ink-strong))',
+  			'ink-max': 'hsl(var(--text-ink-max))',
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
