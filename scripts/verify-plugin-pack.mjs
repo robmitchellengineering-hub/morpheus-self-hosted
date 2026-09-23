@@ -115,36 +115,65 @@ check('the published sha256 is the zip on disk', second.sha256, onDisk);
 check('the published size is the zip on disk', second.bytes, readFileSync(ZIP).length);
 check('the manifest points at the URL the plugin fetches', has(second.url, 'morpheus.nz/morpheus-wordpress-plugin.zip'), true);
 
+// ── the archive's own metadata, read from the file ──────────────────────────
+// Not from `unzip -l`. The first version of this guard parsed that output and
+// passed locally while failing in CI: macOS's Info-ZIP prints dates as
+// `01-01-2020`, Ubuntu's prints `2020-01-01`, so the parser matched nothing on
+// the runner and the check that mattered reported "0 timestamps". Reading the
+// central directory directly has no tool output to depend on and is exact.
+function zipEntries(buf) {
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i >= buf.length - 66000; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('no end-of-central-directory record — this is not a zip');
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error(`bad central-directory header at ${p}`);
+    const time = buf.readUInt16LE(p + 12);
+    const date = buf.readUInt16LE(p + 14);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    out.push({
+      name: buf.toString('utf8', p + 46, p + 46 + nameLen),
+      // DOS date: bits 0-4 day, 5-8 month, 9-15 years since 1980.
+      year: ((date >> 9) & 0x7f) + 1980,
+      time,
+    });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
+const entries = zipEntries(readFileSync(ZIP));
+
 // ── 3. the test-only parts stay out of the package ──────────────────────────
 // A Playground boot writes third-party plugins into the mounted directory; the
 // packer refuses to pack those, and the harnesses themselves have no business
 // on a customer's site.
 console.log('\n3. the package carries the plugin and not the harness');
 
-const listing = execFileSync('unzip', ['-Z1', ZIP], { encoding: 'utf8' })
-  .split('\n').map((l) => l.trim()).filter(Boolean);
-check('the package has entries (parser sanity)', listing.length >= 8, true);
-check('the entry point is in the package', listing.includes('morpheus/morpheus.php'), true);
-check('nothing from tests/ is in the package', listing.filter((f) => has(f, 'tests/')), []);
+const names = entries.map((e) => e.name);
+check('the central directory was read (parser sanity)', entries.length >= 8, true);
+check('the entry point is in the package', names.includes('morpheus/morpheus.php'), true);
+check('nothing from tests/ is in the package', names.filter((f) => has(f, 'tests/')), []);
 
 // ── 4. no entry carries a "now" timestamp ───────────────────────────────────
 // The direct form of the bug: every entry in the archive must share one
 // timestamp, because a per-file mtime is exactly what made two builds of the
-// same code differ. The value is not asserted — ZIP renders it in the packer's
-// local timezone, so pinning it would fail on a machine west of UTC. What is
-// asserted is that there is only one of them.
+// same code differ. The exact value is not pinned — ZIP stores the packer's
+// local time, so the fixed 2020-01-01 can render as 2019-12-31 west of UTC — but
+// the year has to be the pinned one, which is what catches a build time.
 console.log('\n4. every entry carries the same fixed timestamp');
 
-const stamped = execFileSync('unzip', ['-l', ZIP], { encoding: 'utf8' })
-  .split('\n')
-  .map((l) => (l.match(/^\s*\d+\s+(\d{2}-\d{2}-\d{4} \d{2}:\d{2})\s+\S/) || [])[1])
-  .filter(Boolean);
-check('timestamps were parsed (parser sanity)', stamped.length >= 8, true);
-const stamps = [...new Set(stamped)];
+const stamps = [...new Set(entries.map((e) => `${e.year}:${e.time}`))];
 check('all entries share one timestamp, so none carries a build time', stamps.length, 1);
-// Guard against a parser that reads one line and gives up: the count of stamped
-// entries has to match the archive's own entry count.
-check('a timestamp was read for every entry', stamped.length, listing.length);
+check('and it is the pinned timestamp, not today', entries.every((e) => e.year <= 2020), true);
+check('a timestamp was read for every entry', entries.filter((e) => e.year > 0).length, entries.length);
+
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
