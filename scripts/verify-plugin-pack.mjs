@@ -91,6 +91,12 @@ console.log('1. two packs of the same source are the same bytes');
 
 const first = pack();
 touchAll(SRC);
+// A deliberate gap, and it is not padding. ZIP stores modification times at
+// two-second granularity, so two packs taken back to back can land in the SAME
+// bucket and compare equal even with the fix removed — the guard would then pass
+// by luck, which is the one thing a guard must never do. Measured: dropping the
+// mtime normalisation still produced identical bytes until this wait was added.
+await new Promise((r) => setTimeout(r, 2200));
 const second = pack();
 
 check('the packer published a manifest', typeof first.sha256 === 'string' && first.sha256.length === 64, true);
@@ -120,6 +126,25 @@ const listing = execFileSync('unzip', ['-Z1', ZIP], { encoding: 'utf8' })
 check('the package has entries (parser sanity)', listing.length >= 8, true);
 check('the entry point is in the package', listing.includes('morpheus/morpheus.php'), true);
 check('nothing from tests/ is in the package', listing.filter((f) => has(f, 'tests/')), []);
+
+// ── 4. no entry carries a "now" timestamp ───────────────────────────────────
+// The direct form of the bug: every entry in the archive must share one
+// timestamp, because a per-file mtime is exactly what made two builds of the
+// same code differ. The value is not asserted — ZIP renders it in the packer's
+// local timezone, so pinning it would fail on a machine west of UTC. What is
+// asserted is that there is only one of them.
+console.log('\n4. every entry carries the same fixed timestamp');
+
+const stamped = execFileSync('unzip', ['-l', ZIP], { encoding: 'utf8' })
+  .split('\n')
+  .map((l) => (l.match(/^\s*\d+\s+(\d{2}-\d{2}-\d{4} \d{2}:\d{2})\s+\S/) || [])[1])
+  .filter(Boolean);
+check('timestamps were parsed (parser sanity)', stamped.length >= 8, true);
+const stamps = [...new Set(stamped)];
+check('all entries share one timestamp, so none carries a build time', stamps.length, 1);
+// Guard against a parser that reads one line and gives up: the count of stamped
+// entries has to match the archive's own entry count.
+check('a timestamp was read for every entry', stamped.length, listing.length);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
