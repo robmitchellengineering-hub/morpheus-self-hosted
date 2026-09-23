@@ -17,6 +17,7 @@ import {
   MAX_PHOTO_BYTES, ALLOWED_PHOTO_MIME, CONNECTIONS_KEY, DEFAULT_FOLDER_NAME,
   folderIdFromInput, driveFolderLink, driveFileLink, extensionForMime,
   photoFilename, validatePhoto, classifyDriveError,
+  GOOGLE_SOURCES, chooseGoogleSource, hasAnyGoogleSource,
 } from '../server/src/lib/photoDrive.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -150,6 +151,42 @@ check('a sensible default folder name exists', DEFAULT_FOLDER_NAME, 'Morpheus Ph
 const page = read('src/pages/AliceStats.jsx');
 check('the page mounts the widget', has(page, '<PhotoDriveWidget />'), true);
 check('the page no longer claims nothing at all is stored', has(page, 'nothing is stored. The photo widget'), true);
+
+
+// ── 6. one user, one Google consent ─────────────────────────────────────────
+//
+// Rob, 2026-09-22: "The google credentials should come from the google connected
+// from the user." There are two per-user Google connections here and the widget
+// originally used only one of them, so somebody who had already connected Google
+// for the Command Deck was asked to connect it again for a photo. These
+// assertions pin the fix, including the shape of the bug: a hard dependency on
+// either single connection.
+console.log('\n6. the token comes from whichever Google connection the user already has');
+
+const deckConn = { email: 'rob@example.com', token: 'deck-token' };
+const driveConn = { email: 'other@example.com', token: 'drive-token' };
+
+check('the Deck connection wins when both exist', chooseGoogleSource({ deck: deckConn, drive: driveConn })?.source, 'deck');
+check('a Deck-only user needs no Drive connection', chooseGoogleSource({ deck: deckConn, drive: null })?.source, 'deck');
+check('a Drive-only user still works', chooseGoogleSource({ deck: null, drive: driveConn })?.source, 'drive');
+check('only a user with NEITHER is prompted to connect', chooseGoogleSource({ deck: null, drive: null }), null);
+check('the account that will be used is reported back', chooseGoogleSource({ deck: deckConn, drive: driveConn })?.email, 'rob@example.com');
+check('the chosen connection carries a human label', chooseGoogleSource({ deck: deckConn, drive: null })?.label, GOOGLE_SOURCES[0]?.label);
+check('a row with no token does not count as connected', chooseGoogleSource({ deck: { email: 'x' }, drive: null }), null);
+check('the search order is deck then drive', GOOGLE_SOURCES.map((s) => s.id), ['deck', 'drive']);
+// The regression this guards: someone "simplifying" this down to the one
+// connection they happen to know about.
+check('more than one source exists — neither is a hard dependency', GOOGLE_SOURCES.length >= 2, true);
+check('hasAnyGoogleSource agrees with the chooser', hasAnyGoogleSource({ drive: driveConn }), true);
+check('hasAnyGoogleSource says no when there is nothing', hasAnyGoogleSource({}), false);
+
+check('the handler resolves the Deck connection', has(handlerCode, 'getDeckGoogleConnection'), true);
+check('the handler resolves the Drive connection as a fallback', has(handlerCode, 'getGoogleDriveConnection'), true);
+// getGoogleDriveToken THROWS when the Drive connection is absent, so using it
+// here would reinstate exactly the dependency Rob corrected.
+check('the handler never calls the throwing Drive-only resolver', has(handlerCode, 'getGoogleDriveToken'), false);
+check('the widget names the account and where it came from', has(widget, 'sourceLabel'), true);
+check('the copy promises no second consent', has(widget, 'never a second one'), true);
 
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);

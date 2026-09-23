@@ -18,10 +18,11 @@
 // Deliberately NOT a new column: migrations here are hand-run SQL and a known
 // hazard (H8).
 import { prisma } from '../db.js';
-import { createDriveFile, createDriveFolder, getDriveFileMeta } from '../lib/googleDrive.js';
+import { createDriveFile, createDriveFolder, getDriveFileMeta, getGoogleDriveConnection } from '../lib/googleDrive.js';
+import { getDeckGoogleConnection } from '../lib/deckGoogle.js';
 import {
-  CONNECTIONS_KEY, DEFAULT_FOLDER_NAME, classifyDriveError, driveFileLink, driveFolderLink,
-  folderIdFromInput, photoFilename, validatePhoto,
+  CONNECTIONS_KEY, DEFAULT_FOLDER_NAME, chooseGoogleSource, classifyDriveError, driveFileLink,
+  driveFolderLink, folderIdFromInput, photoFilename, validatePhoto,
 } from '../lib/photoDrive.js';
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -61,25 +62,39 @@ async function writeFolderId(userId, folderId) {
 }
 
 /** Drive failures become errors carrying the HTTP status and our own words. */
-function driveFailure(err) {
+function driveFailure(err, source = null) {
   const { kind, message } = classifyDriveError(err?.status, err?.driveMessage || err?.message);
-  return Object.assign(new Error(message), { status: err?.status || 502, kind });
+  // The Deck connection's scope list includes drive.file, but a connection made
+  // before that was added would not have it — so a 403 on a Deck token has one
+  // extra, specific fix worth naming rather than leaving as "reconnect".
+  const hint = (kind === 'scope' && source === 'deck')
+    ? ' If this is your Command Deck connection, reconnecting it there re-grants the Drive permission.'
+    : '';
+  return Object.assign(new Error(message + hint), { status: err?.status || 502, kind, source });
 }
 
-/** The Drive connection, or a structured "not connected" answer. */
-async function driveConnection(userId) {
-  const { getGoogleDriveConnection } = await import('../lib/googleDrive.js');
-  const conn = await getGoogleDriveConnection(userId);
-  if (!conn?.token) {
+/**
+ * The Google token to use for this user, from whichever Google connection they
+ * already have — the Command Deck's first (it carries drive.file), the storage
+ * connection second. Only a user with NEITHER is asked to connect anything.
+ */
+async function googleSource(userId) {
+  const [deck, drive] = await Promise.all([
+    getDeckGoogleConnection(userId).catch(() => null),
+    getGoogleDriveConnection(userId).catch(() => null),
+  ]);
+  const chosen = chooseGoogleSource({ deck, drive });
+  if (!chosen) {
     return {
       connected: false,
       message:
-        'No Google Drive account is connected to this login, so there is nowhere to put the photo. '
-        + 'Connect it in Settings → Google Drive, then come back — the photo is never stored by Morpheus.',
+        'No Google account is connected to this login yet, so there is nowhere to put the photo. '
+        + 'Connect Google once — in Settings → Google Drive, or in Command Deck — and this widget uses '
+        + 'that same account. It never asks for a second one. The photo is never stored by Morpheus.',
       connectPath: '/settings',
     };
   }
-  return { connected: true, token: conn.token, email: conn.email || null };
+  return { connected: true, ...chosen };
 }
 
 export default async function handler({ user, body }) {
@@ -88,7 +103,7 @@ export default async function handler({ user, body }) {
     throw Object.assign(new Error(`action must be one of ${ACTIONS.join(', ')}.`), { status: 400 });
   }
 
-  const conn = await driveConnection(user.id);
+  const conn = await googleSource(user.id);
 
   // `status` answers even when Drive is not connected: that is the state the
   // widget needs to render its "connect this first" panel.
@@ -105,6 +120,12 @@ export default async function handler({ user, body }) {
       return {
         connected: true,
         email: conn.email,
+    source: conn.source,
+    sourceLabel: conn.label,
+        source: conn.source,
+        sourceLabel: conn.label,
+        source: conn.source,
+        sourceLabel: conn.label,
         folder: null,
         suggestedFolderName: DEFAULT_FOLDER_NAME,
         message: 'No folder chosen yet. Create one, or paste the link to a folder Morpheus made.',
@@ -116,6 +137,8 @@ export default async function handler({ user, body }) {
         return {
           connected: true,
           email: conn.email,
+          source: conn.source,
+          sourceLabel: conn.label,
           folder: null,
           staleFolderId: folderId,
           suggestedFolderName: DEFAULT_FOLDER_NAME,
@@ -153,7 +176,7 @@ export default async function handler({ user, body }) {
     try {
       meta = await getDriveFileMeta(token, folderId);
     } catch (err) {
-      throw driveFailure(err); // keeps 403-vs-404 intact for the widget
+      throw driveFailure(err, conn.source); // keeps 403-vs-404 intact for the widget
     }
     if (meta.mimeType !== FOLDER_MIME) {
       throw Object.assign(new Error('That link points at a file, not a folder. Give me a folder.'), { status: 400 });
@@ -168,7 +191,7 @@ export default async function handler({ user, body }) {
     try {
       id = await createDriveFolder(token, name);
     } catch (err) {
-      throw driveFailure(err);
+      throw driveFailure(err, conn.source);
     }
     await writeFolderId(user.id, id);
     return { ok: true, folder: { id, name, link: driveFolderLink(id) } };
@@ -199,7 +222,7 @@ export default async function handler({ user, body }) {
   try {
     created = await createDriveFile(token, { name, parentId: folderId, content: buffer, mimeType });
   } catch (err) {
-    throw driveFailure(err);
+    throw driveFailure(err, conn.source);
   }
 
   let folderName = null;

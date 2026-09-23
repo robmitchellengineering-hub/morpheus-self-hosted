@@ -106,6 +106,7 @@ export default function PhotoDriveWidget() {
       </div>
       <p className="text-primary/50 text-[11px] mb-3">
         The photo is uploaded to <strong className="text-primary/70">your own</strong> Google Drive folder — Morpheus never stores it.
+        It uses the Google account you have already connected — Command Deck or Drive, whichever you granted — never a second one.
       </p>
 
       {loading && (
@@ -165,7 +166,12 @@ export default function PhotoDriveWidget() {
             <a href={status.folder.link} target="_blank" rel="noreferrer" className="underline hover:text-primary">
               {status.folder.name}
             </a>
-            {status.email ? <span className="text-primary/40"> · {status.email}</span> : null}
+            {status.email ? (
+              <span className="text-primary/40">
+                {' · '}{status.email}
+                {status.sourceLabel ? ` (${status.sourceLabel})` : ''}
+              </span>
+            ) : null}
           </div>
 
           <input

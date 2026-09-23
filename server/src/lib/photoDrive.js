@@ -44,6 +44,51 @@ export const CONNECTIONS_KEY = 'photoDriveFolderId';
 export const DEFAULT_FOLDER_NAME = 'Morpheus Photos';
 
 /**
+ * Where a Google token may come from, **in the order we look**.
+ *
+ * Rob, 2026-09-22: "The google credentials should come from the google connected
+ * from the user." Two per-user Google connections exist here — the Command
+ * Deck's (`deckGoogleConnection`: Gmail, Calendar, Docs, email, and
+ * `drive.file`) and the storage one (`googleDriveConnection`: `drive.file
+ * email`). Both can write to Drive, so **whichever the user already granted is
+ * the right one**: asking someone who has already connected Google for the Deck
+ * to connect it again for a photo is the wrong default.
+ *
+ * Deck first because it is the broader connection and carries drive.file; the
+ * storage connection is the fallback. A third Google consent screen is never the
+ * answer — add a source here instead.
+ */
+export const GOOGLE_SOURCES = [
+  { id: 'deck', label: 'your Command Deck Google account' },
+  { id: 'drive', label: 'your connected Google Drive account' },
+];
+
+/**
+ * Choose the token to use from the connections the user actually has, or null
+ * when they have neither — the only case that should prompt for consent.
+ *
+ * Pure on purpose: the fallback order is a rule, and a rule the guard can drive
+ * with plain objects is a rule that cannot quietly become "the Drive connection
+ * is required" again. Each candidate is the shape both resolvers return,
+ * `{ email, token }`, or null.
+ */
+export function chooseGoogleSource({ deck = null, drive = null } = {}) {
+  const candidates = { deck, drive };
+  for (const source of GOOGLE_SOURCES) {
+    const found = candidates[source.id];
+    if (found?.token) {
+      return { source: source.id, label: source.label, email: found.email || null, token: found.token };
+    }
+  }
+  return null;
+}
+
+/** Whether the user has any Google connection at all. */
+export function hasAnyGoogleSource(connections = {}) {
+  return chooseGoogleSource(connections) !== null;
+}
+
+/**
  * Turn whatever the operator pasted into a folder id, or null.
  *
  * Accepts the forms Google's UI actually hands people:
