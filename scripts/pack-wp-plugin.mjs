@@ -11,7 +11,7 @@
 // against that hash before installing it — a self-updating component should not
 // accept whatever arrives on the wire.
 import { execSync } from 'node:child_process';
-import { rmSync, mkdirSync, cpSync, existsSync, readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
+import { rmSync, mkdirSync, cpSync, existsSync, readFileSync, writeFileSync, statSync, readdirSync, utimesSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -49,7 +49,42 @@ try {
   rmSync(resolve(staging, 'morpheus/tests'), { recursive: true, force: true });
   mkdirSync(resolve(root, 'public'), { recursive: true });
   rmSync(outZip, { force: true });
-  execSync(`zip -rq "${outZip}" morpheus -x '*.DS_Store'`, { cwd: staging, stdio: 'inherit' });
+
+  // THE PACK IS DETERMINISTIC, AND THAT IS NOT TIDINESS — IT IS THE UPDATE CHANNEL.
+  //
+  // 2026-09-23: `zip -rq` embedded each file's modification time, so packing the
+  // SAME plugin source twice produced two different files with two different
+  // SHA-256s. Every build therefore published a new hash for byte-identical
+  // content, and the plugin verifies its download against the manifest it read
+  // earlier — cached for an hour (class-updates.php, CACHE_TTL).
+  //
+  // The loop that produced: a site caches the manifest, the app is rebuilt for
+  // any unrelated reason, the site clicks Update, downloads a package whose
+  // bytes no longer match the hash it is holding, and the plugin correctly
+  // REFUSES to install it. WordPress's own "Check again" does not clear that
+  // cache, so retrying says the same thing. Rob hit exactly this on
+  // valiantmusic.com.au and named it: "an unupdatable logic loop".
+  //
+  // The hash is not the thing to weaken — a component that installs code over
+  // the network must verify what arrives. The bytes are the thing to fix: one
+  // fixed timestamp for every file, `-X` to drop the extra field that carries
+  // mtimes at higher precision plus uid/gid, and an explicit SORTED file list
+  // rather than whatever order readdir happens to return.
+  const files = [];
+  const walk = (dir, prefix = '') => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(resolve(dir, entry.name), rel);
+      else if (!/\.DS_Store$/.test(entry.name)) files.push(rel);
+    }
+  };
+  walk(resolve(staging, 'morpheus'), 'morpheus');
+  files.sort();
+
+  const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');
+  for (const rel of files) utimesSync(resolve(staging, rel), FIXED_MTIME, FIXED_MTIME);
+
+  execSync(`zip -X -q "${outZip}" -@`, { cwd: staging, input: `${files.join('\n')}\n` });
   console.log(`[pack-wp-plugin] wrote ${outZip}`);
 
   const header = readFileSync(resolve(src, 'morpheus.php'), 'utf8');
