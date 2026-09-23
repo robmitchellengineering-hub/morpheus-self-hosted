@@ -91,7 +91,7 @@ export default function FeatureModal({ open, onClose, projectId, onActiveChange 
 
           {state.migrated && !loading && !f && (
             <div className="space-y-3">
-              <p className="text-primary/70 text-sm leading-relaxed">
+              <p className="text-ink/70 text-sm leading-relaxed">
                 Describe a feature you want to add. It'll be broken into small, shippable steps — the planner gets the goal + step list + current step on every build turn, so a multi-turn feature stays on track instead of drifting.
               </p>
               <textarea
@@ -111,8 +111,8 @@ export default function FeatureModal({ open, onClose, projectId, onActiveChange 
             <div className="space-y-3">
               <div>
                 <p className="text-primary font-display tracking-wide text-sm">{f.title}</p>
-                <p className="text-primary/60 text-xs mt-1 leading-relaxed">{f.goal}</p>
-                <p className="text-primary/50 text-[11px] mt-1">{f.doneCount}/{f.totalSteps} steps done</p>
+                <p className="text-ink/60 text-xs mt-1 leading-relaxed">{f.goal}</p>
+                <p className="text-ink/50 text-[11px] mt-1">{f.doneCount}/{f.totalSteps} steps done</p>
               </div>
 
               <ul className="space-y-1.5">

@@ -75,13 +75,13 @@ export default function SelfDevHistoryModal({ open, onClose, project, snapshots,
               </div>
             )}
             {decisions?.migrated && decisions.decisions.length === 0 && (
-              <p className="text-primary/75 italic text-sm">No decisions logged yet. Each self-dev change that ships records what it did and why here, and the recent ones are fed back to the planner.</p>
+              <p className="text-ink/75 italic text-sm">No decisions logged yet. Each self-dev change that ships records what it did and why here, and the recent ones are fed back to the planner.</p>
             )}
             {decisions?.decisions?.map((d) => (
               <div key={d.id} className="border border-primary/20 p-3">
                 <p className="text-primary text-sm">{d.summary}</p>
-                {d.rationale && d.rationale !== '—' && <p className="text-primary/60 text-xs mt-1 leading-relaxed">{d.rationale}</p>}
-                <p className="text-primary/40 text-[11px] mt-1.5">
+                {d.rationale && d.rationale !== '—' && <p className="text-ink/60 text-xs mt-1 leading-relaxed">{d.rationale}</p>}
+                <p className="text-ink/40 text-[11px] mt-1.5">
                   {new Date(d.created_date).toLocaleString()}{d.ref ? ` · ${d.ref}` : ' · not yet shipped'}
                 </p>
               </div>
@@ -92,14 +92,14 @@ export default function SelfDevHistoryModal({ open, onClose, project, snapshots,
         {tab === 'snapshots' && (
           <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-2">
             {snapshots.length === 0 ? (
-              <p className="text-primary/75 italic text-sm">No snapshots yet. Morpheus captures one before every build.</p>
+              <p className="text-ink/75 italic text-sm">No snapshots yet. Morpheus captures one before every build.</p>
             ) : (
               snapshots.map((s) => (
                 <div key={s.id} className="border border-primary/20 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-primary text-sm truncate">{s.label}</p>
-                      <p className="text-primary/75 text-xs mt-0.5">{new Date(s.created_date).toLocaleString()}</p>
+                      <p className="text-ink/75 text-xs mt-0.5">{new Date(s.created_date).toLocaleString()}</p>
                     </div>
                     {confirmId === s.id ? (
                       <div className="flex gap-1 shrink-0">

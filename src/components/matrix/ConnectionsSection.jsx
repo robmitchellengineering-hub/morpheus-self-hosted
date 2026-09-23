@@ -201,7 +201,7 @@ export default function ConnectionsSection({ connections, onChange }) {
       <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
         <Globe size={14} /> CONNECTIONS
       </h2>
-      <p className="text-xs text-primary/50 mb-4">
+      <p className="text-xs text-ink/50 mb-4">
         // Link your hosting and infrastructure accounts. Cloudflare + Supabase enable live deploy with log pulling. All credentials are used by generated backend code and deploy pipelines.
       </p>
       <div className="space-y-4">
@@ -231,7 +231,7 @@ export default function ConnectionsSection({ connections, onChange }) {
                     </button>
                     {isExpanded && (
                       <div className="px-3 pb-3 pt-1 space-y-3 border-t border-primary/10">
-                        <p className="text-xs text-primary/75">{p.description}</p>
+                        <p className="text-xs text-ink/75">{p.description}</p>
                         {p.setupUrl && (
                           <a href={p.setupUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary/60 hover:text-primary underline">
                             <ExternalLink size={10} /> Get token / setup guide
@@ -262,7 +262,7 @@ export default function ConnectionsSection({ connections, onChange }) {
                                   </button>
                                 )}
                               </div>
-                              {f.hint && <p className="text-[10px] text-primary/65 mt-1">{f.hint}</p>}
+                              {f.hint && <p className="text-[10px] text-ink/65 mt-1">{f.hint}</p>}
                             </div>
                           );
                         })}

@@ -492,7 +492,7 @@ export default function SelfDev() {
         <MatrixRain opacity={0.05} />
         <div className="relative z-10 flex flex-col items-center gap-3">
           <Loader2 size={28} className="animate-spin text-primary/60" />
-          <p className="text-primary/60 text-sm">// {syncing ? 'Syncing morpheus-self-hosted…' : 'Loading self-dev workspace…'}</p>
+          <p className="text-ink/60 text-sm">// {syncing ? 'Syncing morpheus-self-hosted…' : 'Loading self-dev workspace…'}</p>
           {syncResult?.ok === false && <p className="text-red-500 text-xs max-w-md text-center">{syncResult.error}</p>}
         </div>
       </div>
@@ -813,7 +813,7 @@ export default function SelfDev() {
               <AlertTriangle size={18} />
               <span className="font-display tracking-wider">PUSH TO PRODUCTION</span>
             </div>
-            <p className="text-primary/70 text-sm mb-4 leading-relaxed">
+            <p className="text-ink/70 text-sm mb-4 leading-relaxed">
               A verification pass (esbuild syntax + import/export checks over the whole workspace) runs first and blocks on any error. The changed files then go to a <span className="text-primary">self-dev/…</span> branch on the real <span className="text-primary">morpheus-self-hosted</span> repo as one commit, and Morpheus opens a PR. Once Netlify's deploy-preview build and every other check pass, it squash-merges to <span className="text-primary">main</span> automatically — Northflank and Netlify redeploy production from there. If a check fails, main is left untouched. Still review the changes in the editor and preview yourself.
             </p>
             <div className="flex justify-end gap-2">

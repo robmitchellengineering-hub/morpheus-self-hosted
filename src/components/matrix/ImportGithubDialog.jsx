@@ -46,7 +46,7 @@ export default function ImportGithubDialog({ open, onClose, onImport }) {
                 autoFocus
                 onKeyDown={e => e.key === 'Enter' && handleImport()}
               />
-              <p className="text-xs text-primary/65 mt-1">// Pull an existing repo into the Matrix</p>
+              <p className="text-xs text-ink/65 mt-1">// Pull an existing repo into the Matrix</p>
             </div>
             <div>
               <label className="text-xs text-primary/50 uppercase tracking-wider">Compile Target</label>

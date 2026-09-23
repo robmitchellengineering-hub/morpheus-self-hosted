@@ -66,7 +66,7 @@ export default function DonateWidget() {
 
       {open && (
         <div className="px-4 pb-4 border-t border-primary/20 pt-3">
-          <p className="text-xs text-primary/60 mb-3 leading-relaxed">
+          <p className="text-xs text-ink/60 mb-3 leading-relaxed">
             Donations keep Morpheus alive — and free for everyone who follows the white rabbit. Every credit fuels the Construct.
           </p>
 
@@ -81,7 +81,7 @@ export default function DonateWidget() {
               >
                 <div className="min-w-0">
                   <div className="text-xs text-primary font-bold">{tier.label}</div>
-                  <div className="text-[10px] text-primary/55 mt-0.5">{tier.body}</div>
+                  <div className="text-[10px] text-ink/55 mt-0.5">{tier.body}</div>
                 </div>
                 {selected === tier.id && <span className="text-primary shrink-0">✓</span>}
               </button>
@@ -112,7 +112,7 @@ export default function DonateWidget() {
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Heart size={14} />} DONATE NOW
           </button>
-          <p className="text-[10px] text-primary/45 mt-2 text-center">
+          <p className="text-[10px] text-ink/45 mt-2 text-center">
             // Secure checkout via Stripe. Your contribution keeps the Construct running.
           </p>
         </div>

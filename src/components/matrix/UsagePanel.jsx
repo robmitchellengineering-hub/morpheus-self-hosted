@@ -64,7 +64,7 @@ export default function UsagePanel({ open, onClose }) {
                     <Terminal size={12} /> Custom: <span className="text-primary/80">${(stats.customUsd || 0).toFixed(4)}</span>
                   </div>
                 </div>
-                <p className="text-[10px] text-primary/65 mt-2">// Estimated underlying API cost. Platform path billed via Base44 credits ({stats.totalCredits || 0} used). Custom path billed directly by your AI provider.</p>
+                <p className="text-[10px] text-ink/65 mt-2">// Estimated underlying API cost. Platform path billed via Base44 credits ({stats.totalCredits || 0} used). Custom path billed directly by your AI provider.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-6">
@@ -88,10 +88,10 @@ export default function UsagePanel({ open, onClose }) {
                     <div key={type} className="flex items-center justify-between border border-primary/20 px-3 py-2">
                       <div>
                         <div className="text-sm text-primary">{ACTION_LABELS[type] || type}</div>
-                        <div className="text-xs text-primary/75">{data.count} action(s)</div>
+                        <div className="text-xs text-ink/75">{data.count} action(s)</div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="text-primary/60 font-mono text-xs">${(data.usd || 0).toFixed(4)}</div>
+                        <div className="text-ink/60 font-mono text-xs">${(data.usd || 0).toFixed(4)}</div>
                         <div className="text-primary font-display flex items-center gap-1">
                           <Zap size={14} /> {data.credits}
                         </div>
@@ -99,7 +99,7 @@ export default function UsagePanel({ open, onClose }) {
                     </div>
                   ))}
                 {Object.keys(stats.byType || {}).length === 0 && (
-                  <p className="text-primary/75 italic text-sm">// No usage recorded yet. Start building.</p>
+                  <p className="text-ink/75 italic text-sm">// No usage recorded yet. Start building.</p>
                 )}
               </div>
 
@@ -115,7 +115,7 @@ export default function UsagePanel({ open, onClose }) {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-primary/75">{new Date(r.created_date).toLocaleDateString()}</span>
-                          <span className="text-primary/60 font-mono text-[10px]">${(r.usd || 0).toFixed(4)}</span>
+                          <span className="text-ink/60 font-mono text-[10px]">${(r.usd || 0).toFixed(4)}</span>
                           <span className="text-primary flex items-center gap-0.5"><Zap size={10} />{r.credits}</span>
                         </div>
                       </div>
@@ -127,7 +127,7 @@ export default function UsagePanel({ open, onClose }) {
           )}
 
           {!loading && !stats && (
-            <p className="text-primary/75 italic text-sm text-center py-8">// Failed to load usage data.</p>
+            <p className="text-ink/75 italic text-sm text-center py-8">// Failed to load usage data.</p>
           )}
         </div>
       </div>

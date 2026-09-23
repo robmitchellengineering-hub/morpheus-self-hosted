@@ -309,7 +309,7 @@ export default function AIDocs() {
           <Cpu size={48} className="text-primary neon-glow" />
         </div>
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">AI FUNCTIONS &amp; SETTINGS</h1>
-        <p className="text-primary/60 text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
+        <p className="text-ink/60 text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
 
         {/* On-screen summary */}
         <div className="w-full max-w-md text-left mb-8 space-y-3">
@@ -367,7 +367,7 @@ export default function AIDocs() {
           {generating ? 'GENERATING...' : 'GENERATE AI DOCS PDF'}
         </button>
         {!generating && status && <p className="text-primary/40 text-xs mt-4">{status}</p>}
-        {!generating && !status && <p className="text-primary/40 text-xs mt-4">// Click to generate the complete AI functions & settings reference as PDF</p>}
+        {!generating && !status && <p className="text-ink/40 text-xs mt-4">// Click to generate the complete AI functions & settings reference as PDF</p>}
         {pdfUrl && !generating && (
           <a href={pdfUrl} download="morpheus-ai-functions.pdf" target="_blank" rel="noopener noreferrer"
             className="mt-4 flex items-center gap-2 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-black font-bold transition-colors">

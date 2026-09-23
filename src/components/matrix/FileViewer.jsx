@@ -3,7 +3,7 @@ import SyntaxHighlighter from './SyntaxHighlighter';
 
 export default function FileViewer({ file }) {
   if (!file) {
-    return <div className="flex-1 flex items-center justify-center text-primary/65 text-sm italic">// select a file to inspect</div>;
+    return <div className="flex-1 flex items-center justify-center text-ink/65 text-sm italic">// select a file to inspect</div>;
   }
 
   // Compiled artifact — show a download card instead of trying to render binary
@@ -11,7 +11,7 @@ export default function FileViewer({ file }) {
     const fileName = file.path.split('/').pop();
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-3 py-2 border-b border-primary/20 text-xs text-primary/60 truncate">{file.path}</div>
+        <div className="px-3 py-2 border-b border-primary/20 text-xs text-ink/60 truncate">{file.path}</div>
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="border border-primary/40 bg-primary/5 p-6 max-w-sm w-full text-center space-y-4">
             <Package size={48} className="mx-auto text-primary neon-glow" />
@@ -31,7 +31,7 @@ export default function FileViewer({ file }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-3 py-2 border-b border-primary/20 text-xs text-primary/60 truncate">{file.path}</div>
+      <div className="px-3 py-2 border-b border-primary/20 text-xs text-ink/60 truncate">{file.path}</div>
       <div className="flex-1 overflow-auto scrollbar-matrix">
         <pre className="text-sm p-3 leading-relaxed">
           <SyntaxHighlighter content={file.content || ''} language={file.language || 'text'} filePath={file.path} />

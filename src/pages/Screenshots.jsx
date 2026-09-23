@@ -264,7 +264,7 @@ export default function Screenshots() {
         </Link>
         <Camera size={48} className="text-primary mb-4 neon-glow" />
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">SCREENSHOTS</h1>
-        <p className="text-primary/60 text-sm mb-8">// Live captures of every control UI screen. Generated on-demand from the running app — always current.</p>
+        <p className="text-ink/60 text-sm mb-8">// Live captures of every control UI screen. Generated on-demand from the running app — always current.</p>
         {generating && (
           <div className="w-full max-w-xs mb-6">
             <div className="flex items-center justify-between text-xs text-primary/70 mb-2">
@@ -274,7 +274,7 @@ export default function Screenshots() {
             <div className="h-1 bg-primary/20 overflow-hidden">
               <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
-            <p className="text-[10px] text-primary/40 mt-2">{pageCount} pages captured</p>
+            <p className="text-[10px] text-ink/40 mt-2">{pageCount} pages captured</p>
           </div>
         )}
         <button
@@ -289,7 +289,7 @@ export default function Screenshots() {
           <p className="text-primary/40 text-xs mt-4">{status}</p>
         )}
         {!generating && !status && (
-          <p className="text-primary/40 text-xs mt-4">// Click to capture all UI screens and download as PDF</p>
+          <p className="text-ink/40 text-xs mt-4">// Click to capture all UI screens and download as PDF</p>
         )}
         {pdfUrl && !generating && (
           <a

@@ -247,7 +247,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
               {loading ? (
                 <div className="flex items-center justify-center h-full text-primary/50"><Loader2 className="animate-spin" size={20} /></div>
               ) : templates.length === 0 ? (
-                <div className="text-primary/40 italic text-sm text-center py-8">// no constructs found. be the first.</div>
+                <div className="text-ink/40 italic text-sm text-center py-8">// no constructs found. be the first.</div>
               ) : templates.map(t => {
                 const isPaid = t.price && t.price > 0;
                 const canInstall = !isPaid || t.purchased || t.mine;
@@ -261,7 +261,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                           {isPaid && <span className={`text-[10px] px-1.5 py-0.5 border ${t.purchased ? 'text-primary border-primary/50' : 'text-black bg-primary border-primary'}`}>{t.purchased ? 'OWNED' : 'PAID'}</span>}
                           {t.has_artifacts && <span className="flex items-center gap-0.5 text-[10px] text-info border border-info/40 px-1"><Package size={9} /> BUILD INCLUDED</span>}
                         </div>
-                        {t.description && <p className="text-primary/60 text-sm mt-1">{t.description}</p>}
+                        {t.description && <p className="text-ink/60 text-sm mt-1">{t.description}</p>}
                         <div className="flex items-center gap-3 mt-2 text-xs text-primary/40 flex-wrap">
                           <span>by {t.author_name}</span>
                           <span className="uppercase">{t.compile_target}</span>
@@ -299,7 +299,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
           </>
         ) : (
           <div className="flex-1 overflow-auto scrollbar-matrix p-4 space-y-4">
-            <p className="text-primary/60 text-sm">// Share "{currentProject?.name}" with the network. Files are cloned as-is. Set a price to charge buyers — you keep 80%, the platform takes 20%.</p>
+            <p className="text-ink/60 text-sm">// Share "{currentProject?.name}" with the network. Files are cloned as-is. Set a price to charge buyers — you keep 80%, the platform takes 20%.</p>
 
             {/* Share link after publish */}
             {shareUrl && (
@@ -312,7 +312,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                     <Copy size={12} /> COPY
                   </button>
                 </div>
-                <p className="text-[10px] text-primary/40">// Share this link with anyone — they can view and buy your app on the public store page.</p>
+                <p className="text-[10px] text-ink/40">// Share this link with anyone — they can view and buy your app on the public store page.</p>
               </div>
             )}
             {!shareUrl && publishMsg && <div className="text-xs text-primary border border-primary/30 p-2">// {publishMsg}</div>}

@@ -230,7 +230,7 @@ export default function FlowDiagram() {
         </Link>
         <Network size={48} className="text-primary mb-4 neon-glow" />
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">FLOW DIAGRAM</h1>
-        <p className="text-primary/60 text-sm mb-8">// Complete call graph of every Morpheus operation — what's called, how it's used, and the data flow between them. Generated live from the source code model.</p>
+        <p className="text-ink/60 text-sm mb-8">// Complete call graph of every Morpheus operation — what's called, how it's used, and the data flow between them. Generated live from the source code model.</p>
         {generating && (
           <div className="w-full max-w-xs mb-6">
             <div className="flex items-center justify-between text-xs text-primary/70 mb-2">
@@ -251,7 +251,7 @@ export default function FlowDiagram() {
           {generating ? 'GENERATING...' : 'GENERATE FLOW DIAGRAM PDF'}
         </button>
         {!generating && status && <p className="text-primary/40 text-xs mt-4">{status}</p>}
-        {!generating && !status && <p className="text-primary/40 text-xs mt-4">// Click to generate the complete operations flow diagram as PDF</p>}
+        {!generating && !status && <p className="text-ink/40 text-xs mt-4">// Click to generate the complete operations flow diagram as PDF</p>}
         {pdfUrl && !generating && (
           <a href={pdfUrl} download="morpheus-flow-diagram.pdf" target="_blank" rel="noopener noreferrer"
             className="mt-4 flex items-center gap-2 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-black font-bold transition-colors">

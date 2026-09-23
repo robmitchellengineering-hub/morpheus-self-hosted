@@ -38,7 +38,7 @@ export default function GoogleDriveConnectionSection() {
           </button>
         )}
       </div>
-      <p className="text-[10px] text-primary/50 mt-2">
+      <p className="text-[10px] text-ink/50 mt-2">
         // Optional, per project — connect once here, then choose Drive storage for any project in its own Share panel. Postgres stays the default; nothing changes for a project unless you opt it in.
       </p>
     </section>

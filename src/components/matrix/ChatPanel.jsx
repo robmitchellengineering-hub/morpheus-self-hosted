@@ -150,7 +150,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
             <div className={`max-w-[85%] ${m.role === 'user' ? 'text-[#39ff14]/80' : 'text-primary'}`}>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-primary/75">{m.role === 'user' ? 'operator@matrix:~$' : 'morpheus@construct:~$'}</span>
+                <span className="text-xs text-ink/75">{m.role === 'user' ? 'operator@matrix:~$' : 'morpheus@construct:~$'}</span>
                 {m.role === 'morpheus' && !m.content.startsWith('// SYSTEM') && (
                   <button
                     onClick={() => speak(m)}
@@ -209,7 +209,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="text-primary/60 text-sm max-w-[85%]">
+            <div className="text-ink/60 text-sm max-w-[85%]">
               {/* Show the plain thinking indicator only while the planner is
                   still running — at that point we don't yet know if this is a
                   build or just a chat answer. The moment the planner finishes
@@ -278,7 +278,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
               <Globe size={12} /> WEB
             </button>
           )}
-          <span className="text-[10px] text-primary/50 leading-tight">
+          <span className="text-[10px] text-ink/50 leading-tight">
             {mode === 'context'
               ? '// chat & shape the plan — nothing gets built or written'
               : '// planner → coder → reviewer — changes are written to the workspace'}

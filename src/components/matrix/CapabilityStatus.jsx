@@ -44,7 +44,7 @@ export default function CapabilityStatus({ connections }) {
       <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
         <Activity size={14} /> CAPABILITIES
       </h2>
-      <p className="text-xs text-primary/50 mb-4">
+      <p className="text-xs text-ink/50 mb-4">
         // Live status of every Morpheus capability. Green = ready, amber = needs a connection to activate.
       </p>
       <div className="grid grid-cols-1 gap-0">

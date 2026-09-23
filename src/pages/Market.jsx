@@ -137,7 +137,7 @@ export default function Market() {
                 <div className="min-w-0">
                   <div className="text-primary text-sm font-bold truncate">{t.name}</div>
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-primary/75 text-xs truncate">by {t.author_name}</span>
+                    <span className="text-ink/75 text-xs truncate">by {t.author_name}</span>
                     <VerifiedBadge />
                   </div>
                 </div>

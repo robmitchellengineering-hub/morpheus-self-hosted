@@ -168,7 +168,7 @@ export default function RebuildBlueprint() {
           <FileText size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">REBUILD BLUEPRINT</h1>
         </div>
-        <p className="text-primary/60 text-sm mb-8">
+        <p className="text-ink/60 text-sm mb-8">
           // The complete standalone reconstruction blueprint for Morpheus itself. Drop this + the published APK into any AI agent to rebuild the full stack without Base44.
         </p>
 
@@ -190,14 +190,14 @@ export default function RebuildBlueprint() {
               <span className="text-primary/65">|</span>
               {sizeKb} KB
             </div>
-            <div className="border border-primary/20 bg-primary/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-primary/70 font-mono whitespace-pre-wrap">
+            <div className="border border-primary/20 bg-primary/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-ink/70 font-mono whitespace-pre-wrap">
               {doc.content?.substring(0, 3000)}{doc.content?.length > 3000 ? '\n\n... (truncated — download for full document)' : ''}
             </div>
           </div>
         )}
 
         {!loading && !doc && !error && (
-          <p className="text-primary/75 text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
+          <p className="text-ink/75 text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
         )}
 
         <div className="flex flex-wrap items-center gap-3">

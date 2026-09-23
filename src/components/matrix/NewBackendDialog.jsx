@@ -117,7 +117,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
           {/* File upload section */}
           <div>
             <label className="text-xs text-primary/50 uppercase mb-1 block">Source Files (optional)</label>
-            <p className="text-xs text-primary/65 mb-2">Upload your existing app or files — Morpheus will analyze them to plan the backend.</p>
+            <p className="text-xs text-ink/65 mb-2">Upload your existing app or files — Morpheus will analyze them to plan the backend.</p>
             <div className="flex items-center gap-1.5 mb-2">
               <button
                 onClick={() => fileInputRef.current?.click()}

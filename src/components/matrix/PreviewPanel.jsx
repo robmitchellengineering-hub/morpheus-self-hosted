@@ -406,7 +406,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
       <div ref={stageRef} className="flex-1 bg-[#0a0a0a] relative overflow-hidden">
         {isSelfDev && selfDevState === 'idle' ? (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6">
-            <div className="text-primary/50 text-xs font-mono text-center max-w-xs leading-relaxed">
+            <div className="text-ink/50 text-xs font-mono text-center max-w-xs leading-relaxed">
               // No preview yet — ask Morpheus to change something. A scoped mockup of just the touched UI file(s) will appear here. Backend-only changes (server/*) never trigger a build.
             </div>
           </div>
@@ -421,7 +421,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
         ) : building && !html ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-background gap-2">
             <Loader2 size={24} className="animate-spin text-primary/60" />
-            <span className="text-primary/60 text-xs font-mono">
+            <span className="text-ink/60 text-xs font-mono">
               {isSelfDev ? 'Generating scoped prototype...' : isNative ? 'Generating rapid prototype...' : 'Building preview...'}
             </span>
           </div>
@@ -469,12 +469,12 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-primary/75 text-sm font-mono">
+          <div className="flex items-center justify-center h-full text-ink/75 text-sm font-mono">
             No files to preview
           </div>
         )}
         {isFramed && !building && html && (
-          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-primary/50 text-[10px] font-mono bg-black/70 px-2 py-0.5 border border-primary/20 pointer-events-none whitespace-nowrap">
+          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-ink/50 text-[10px] font-mono bg-black/70 px-2 py-0.5 border border-primary/20 pointer-events-none whitespace-nowrap">
             {dw}×{dh} · {Math.round(scale * 100)}%
           </div>
         )}

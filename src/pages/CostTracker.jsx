@@ -154,7 +154,7 @@ export default function CostTracker() {
             )
           )}
         </div>
-        <p className="text-primary/60 text-sm mb-8">
+        <p className="text-ink/60 text-sm mb-8">
           // Everything it costs to host and run Morpheus, checked by hand against each provider's billing dashboard. Admin-only — not published anywhere public.
         </p>
 
@@ -263,12 +263,12 @@ export default function CostTracker() {
                   placeholder="Anything worth flagging — watch-list items, pending confirmations, etc."
                 />
               ) : (
-                <p className="text-primary/60 text-xs whitespace-pre-wrap">{summary || '(none)'}</p>
+                <p className="text-ink/60 text-xs whitespace-pre-wrap">{summary || '(none)'}</p>
               )}
             </div>
 
             {updatedDate && (
-              <p className="mt-6 text-[10px] text-primary/40">Last updated: {new Date(updatedDate).toLocaleString()}</p>
+              <p className="mt-6 text-[10px] text-ink/40">Last updated: {new Date(updatedDate).toLocaleString()}</p>
             )}
           </>
         )}

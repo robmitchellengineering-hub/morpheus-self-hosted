@@ -198,11 +198,11 @@ export default function Settings() {
               <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
                 <User size={14} /> ACCOUNT
               </h2>
-              <p className="text-xs text-primary/50 mb-4">
+              <p className="text-xs text-ink/50 mb-4">
                 // Signed in as. Credits, projects, and connections below all belong to this account — sign out to switch.
               </p>
               <div className="flex items-center justify-between gap-4 flex-wrap">
-                <span className="text-sm text-primary/90 break-all">{user?.email || '—'}</span>
+                <span className="text-sm text-ink/90 break-all">{user?.email || '—'}</span>
                 <button
                   onClick={() => logout(true)}
                   className="flex items-center gap-2 px-4 py-2 border border-primary/30 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs font-display tracking-wider shrink-0"
@@ -218,7 +218,7 @@ export default function Settings() {
               <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
                 <Palette size={14} /> APPEARANCE
               </h2>
-              <p className="text-xs text-primary/50 mb-4">
+              <p className="text-xs text-ink/50 mb-4">
                 // Clear is the default look — brighter text and visible panel borders so small print reads easily, plus color-coded status dots. Classic Matrix is the original all-green terminal look. Boring is a plain black-and-grey look with green accents for anyone the neon Matrix look isn't for.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -235,7 +235,7 @@ export default function Settings() {
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(199 89% 60%)' }} />
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(38 92% 58%)' }} />
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(0 78% 58%)' }} />
-                    <span className="text-[10px] text-primary/50 ml-1">higher contrast + color-coded status</span>
+                    <span className="text-[10px] text-ink/50 ml-1">higher contrast + color-coded status</span>
                   </div>
                 </button>
                 <button
@@ -250,7 +250,7 @@ export default function Settings() {
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#00ff41' }} />
-                    <span className="text-[10px] text-primary/50 ml-1">original all-green terminal look</span>
+                    <span className="text-[10px] text-ink/50 ml-1">original all-green terminal look</span>
                   </div>
                 </button>
                 <button
@@ -266,7 +266,7 @@ export default function Settings() {
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(0 0% 65%)' }} />
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(150 45% 30%)' }} />
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'hsl(140 45% 65%)' }} />
-                    <span className="text-[10px] text-primary/50 ml-1">black + grey, green accents, rounded corners</span>
+                    <span className="text-[10px] text-ink/50 ml-1">black + grey, green accents, rounded corners</span>
                   </div>
                 </button>
               </div>
@@ -306,7 +306,7 @@ export default function Settings() {
                   <Sparkles size={14} className="text-primary/70 mt-0.5 shrink-0" />
                   <div>
                     <p className="text-xs font-display tracking-wider text-primary">PERSONALITY</p>
-                    <p className="text-[10px] text-primary/50 mt-0.5 max-w-sm">
+                    <p className="text-[10px] text-ink/50 mt-0.5 max-w-sm">
                       // On: Morpheus talks like Morpheus — Matrix references, mentor voice, calm and deliberate. Off: plain, direct, professional responses with no roleplay or character voice. Build behavior is unaffected either way.
                     </p>
                   </div>
@@ -322,7 +322,7 @@ export default function Settings() {
 
             <section className="mb-8 border border-primary/30 p-5">
               <h2 className="text-sm font-display tracking-wider mb-1 text-primary">AI PROVIDER</h2>
-              <p className="text-xs text-primary/50 mb-4">
+              <p className="text-xs text-ink/50 mb-4">
                 // Point Morpheus at any OpenAI-compatible endpoint. Default uses the platform brain — no config needed.
               </p>
 
@@ -379,7 +379,7 @@ export default function Settings() {
                     {keyTest?.ok === true && <span className="text-xs text-primary flex items-center gap-1"><Check size={12} /> Key works</span>}
                     {keyTest?.ok === false && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {keyTest.message || 'Key rejected'}</span>}
                   </div>
-                  <p className="text-xs text-primary/50">
+                  <p className="text-xs text-ink/50">
                     // ~5,000 free grounded requests/month on the Gemini 3 family, then usage-billed to this key directly by Google — never through Morpheus. Rate-limited under heavy autonomous builds; switch to platform default if you hit that.
                   </p>
                 </div>
@@ -393,7 +393,7 @@ export default function Settings() {
                       placeholder="https://api.openai.com/v1"
                       className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
-                    <p className="text-xs text-primary/65 mt-1">
+                    <p className="text-xs text-ink/65 mt-1">
                       // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1 · https://api.moonshot.ai/v1 (Kimi K3)
                     </p>
                     <div className="mt-2 border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary/50 space-y-1">
@@ -448,7 +448,7 @@ export default function Settings() {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-primary/75">// Using the platform default. No configuration required.</p>
+                <p className="text-xs text-ink/75">// Using the platform default. No configuration required.</p>
               )}
             </section>
 
@@ -456,7 +456,7 @@ export default function Settings() {
               <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
                 <Brain size={14} /> AGENT MODELS
               </h2>
-              <p className="text-xs text-primary/50 mb-4">
+              <p className="text-xs text-ink/50 mb-4">
                 // Every agent in the pipeline is individually addressable. All default to automatic — override only when you want a specific model for a specific role. Max think power is enabled (no output token cap).
               </p>
               <div className="mb-4 border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary/50 space-y-1">
@@ -479,7 +479,7 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-primary/65 mt-1">
+                  <p className="text-xs text-ink/65 mt-1">
                     // Used for design reasoning, architecture, aesthetics, and planning. Higher think power = better reliability and UX decisions.
                   </p>
                 </div>
@@ -495,7 +495,7 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-primary/65 mt-1">
+                  <p className="text-xs text-ink/65 mt-1">
                     // Used for writing clean, efficient code from the planner's blueprint. Fast lightweight models minimise errors and speed up mobile builds.
                   </p>
                 </div>
@@ -511,7 +511,7 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-primary/65 mt-1">
+                  <p className="text-xs text-ink/65 mt-1">
                     // Reviews code before commit — checks correctness, security, and performance. Defaults to automatic.
                   </p>
                 </div>
@@ -527,7 +527,7 @@ export default function Settings() {
                     options={MODEL_OPTIONS}
                     triggerClassName="w-full"
                   />
-                  <p className="text-xs text-primary/65 mt-1">
+                  <p className="text-xs text-ink/65 mt-1">
                     // Diagnoses build, compile, and deploy errors — analyzes failures and regenerates broken files. Defaults to automatic.
                   </p>
                 </div>
@@ -538,7 +538,7 @@ export default function Settings() {
               <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
                 <Volume2 size={14} /> MORPHEUS VOICE
               </h2>
-              <p className="text-xs text-primary/50 mb-4">
+              <p className="text-xs text-ink/50 mb-4">
                 // Default uses the deepest built-in voice ("storm"). Point it at a custom TTS engine to make him actually sound like Morpheus.
               </p>
 
@@ -585,7 +585,7 @@ export default function Settings() {
                       placeholder={ttsEngine === 'elevenlabs' ? 'Cloned Morpheus voice ID' : ttsEngine === 'openai' ? 'onyx (deepest)' : 'morpheus'}
                       className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                     />
-                    <p className="text-xs text-primary/65 mt-1">
+                    <p className="text-xs text-ink/65 mt-1">
                       {ttsEngine === 'elevenlabs' ? '// Create a cloned voice in ElevenLabs, paste its voice ID here.' : ttsEngine === 'openai' ? '// OpenAI voices: onyx (deepest), nova, shimmer, alloy, echo, fable.' : '// Passed as the "voice" field to your custom endpoint.'}
                     </p>
                   </div>
@@ -598,12 +598,12 @@ export default function Settings() {
                         placeholder="https://your-tts.example.com/synthesize"
                         className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
                       />
-                      <p className="text-xs text-primary/65 mt-1">// POST {`{ text, voice }`} → audio bytes or {`{ audioUrl }`}. Bearer API key sent if provided.</p>
+                      <p className="text-xs text-ink/65 mt-1">// POST {`{ text, voice }`} → audio bytes or {`{ audioUrl }`}. Bearer API key sent if provided.</p>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-xs text-primary/75">// Using "storm" — the deepest, most authoritative built-in voice. No configuration required.</p>
+                <p className="text-xs text-ink/75">// Using "storm" — the deepest, most authoritative built-in voice. No configuration required.</p>
               )}
             </section>
 

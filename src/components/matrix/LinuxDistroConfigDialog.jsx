@@ -151,11 +151,11 @@ export default function LinuxDistroConfigDialog({ open, onClose, projectId }) {
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="p-4 space-y-4">
-          <p className="text-xs text-primary/60">
+          <p className="text-xs text-ink/60">
             // Customise a bootable PC/server image. Settings are saved to <span className="text-primary">morpheus-linux-distro.json</span> in your
             project and applied at build time via mkosi — no manual config editing needed.
           </p>
-          <p className="text-[10px] text-primary/50 border border-primary/20 bg-primary/5 p-2">
+          <p className="text-[10px] text-ink/50 border border-primary/20 bg-primary/5 p-2">
             // Produces a bootable x86_64 disk image (UEFI). Flash to USB / hard drive / VM disk. If you add an SSH key,
             password login is automatically disabled for security (key-only).
           </p>
@@ -166,7 +166,7 @@ export default function LinuxDistroConfigDialog({ open, onClose, projectId }) {
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Base distro</label>
                 <SheetSelect value={base} onChange={setBase} options={BASES} triggerClassName="w-full" label="BASE DISTRO" />
-                <p className="text-[10px] text-primary/50 mt-1">// The base distribution. Debian/Ubuntu are apt-based; Fedora is dnf-based.</p>
+                <p className="text-[10px] text-ink/50 mt-1">// The base distribution. Debian/Ubuntu are apt-based; Fedora is dnf-based.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -222,7 +222,7 @@ export default function LinuxDistroConfigDialog({ open, onClose, projectId }) {
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Custom run commands (one per line, run inside the image at build time)</label>
                 <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y font-mono" />
-                <p className="text-[10px] text-primary/50 mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
+                <p className="text-[10px] text-ink/50 mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
               </div>
 
               <button onClick={handleSave} disabled={saving || hasErrors} className="flex items-center justify-center gap-2 w-full py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">

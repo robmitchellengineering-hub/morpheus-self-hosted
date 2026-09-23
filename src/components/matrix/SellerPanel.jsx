@@ -79,7 +79,7 @@ export default function SellerPanel({ open, onClose }) {
                       <div key={id} className="border border-primary/20 px-3 py-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-primary truncate">{t.name}</span>
-                          <span className="text-xs text-primary/75 shrink-0 ml-2">${(t.price || 0).toFixed(2)}</span>
+                          <span className="text-xs text-ink/75 shrink-0 ml-2">${(t.price || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex items-center justify-between mt-1 text-xs">
                           <span className="text-primary/50">{t.sales} sale(s) · {t.installs} install(s)</span>
@@ -114,13 +114,13 @@ export default function SellerPanel({ open, onClose }) {
               )}
 
               {stats.templateCount === 0 && (
-                <p className="text-primary/75 italic text-sm text-center py-8">// No templates published yet. Publish from the MARKET panel to start earning.</p>
+                <p className="text-ink/75 italic text-sm text-center py-8">// No templates published yet. Publish from the MARKET panel to start earning.</p>
               )}
             </>
           )}
 
           {!loading && !stats && (
-            <p className="text-primary/75 italic text-sm text-center py-8">// Failed to load earnings data.</p>
+            <p className="text-ink/75 italic text-sm text-center py-8">// Failed to load earnings data.</p>
           )}
         </div>
       </div>

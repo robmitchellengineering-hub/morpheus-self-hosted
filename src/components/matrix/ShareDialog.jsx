@@ -173,7 +173,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
                       {project.github_repo} <ExternalLink size={11} className="shrink-0" />
                     </a>
                   </div>
-                  <p className="text-primary/50 text-xs">Every chat edit pushes here automatically — no need to re-push manually.</p>
+                  <p className="text-ink/50 text-xs">Every chat edit pushes here automatically — no need to re-push manually.</p>
                   <div className="flex items-center gap-3 flex-wrap">
                     <button onClick={handleSyncFromGithub} disabled={syncing} className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-primary disabled:opacity-30">
                       {syncing ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />} Sync from GitHub (pull in edits made directly on the repo)
@@ -183,7 +183,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
                     </button>
                   </div>
                   {syncResult && (
-                    <p className="text-primary/50 text-xs">
+                    <p className="text-ink/50 text-xs">
                       Synced {syncResult.fileCount} file(s) at HEAD ({syncResult.fetched} pulled, {syncResult.fileCount - syncResult.fetched} already current)
                       {syncResult.removed ? `, ${syncResult.removed} removed (deleted upstream)` : ''}.
                     </p>
@@ -219,7 +219,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
                     <CheckCircle size={14} className="shrink-0" />
                     <span>Drive connected{drive.email ? ` · ${drive.email}` : ''}</span>
                   </div>
-                  <p className="text-primary/50 text-xs">
+                  <p className="text-ink/50 text-xs">
                     This project is currently in <strong className="text-primary">{project?.storage_mode === 'drive' ? 'Drive' : 'Postgres (default)'}</strong> mode.
                   </p>
                   {project?.storage_mode === 'drive' ? (
@@ -244,7 +244,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
                       </button>
                     </div>
                     {driveResult && (
-                      <p className="text-primary/50 text-xs">
+                      <p className="text-ink/50 text-xs">
                         {typeof driveResult.created === 'number'
                           ? `Pushed ${driveResult.totalFiles} file(s) — ${driveResult.created} created, ${driveResult.updated} updated${driveResult.failed ? `, ${driveResult.failed} failed` : ''}.`
                           : `Pulled ${driveResult.fileCount} file(s) — ${driveResult.fetched} fetched${driveResult.removed ? `, ${driveResult.removed} removed` : ''}.`}

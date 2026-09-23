@@ -81,7 +81,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <p className="text-[11px] text-primary/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+        <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
           Colours, type and voice for this site. On a web build the builder is given these as hard constraints —
           it defines them as CSS variables and uses them everywhere.
           {state && state.isWeb === false && <span className="text-yellow-500/80"> This project isn't a web-app target, so the brand won't be applied.</span>}
@@ -104,8 +104,8 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                       <input value={b.colors[key]} onChange={(e) => set(`colors.${key}`, e.target.value)}
                         className="w-24 bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50" />
                       <div className="min-w-0">
-                        <div className="text-[11px] text-primary/75">{label}</div>
-                        <div className="text-[10px] text-primary/40 truncate">{hint}</div>
+                        <div className="text-[11px] text-ink/75">{label}</div>
+                        <div className="text-[10px] text-ink/40 truncate">{hint}</div>
                       </div>
                     </div>
                   ))}
@@ -128,7 +128,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                 </div>
                 <div className="mt-2 border border-primary/15 bg-black/20 p-3">
                   <div style={{ fontFamily: `'${b.fonts.heading}', sans-serif` }} className="text-primary text-base">The quick brown fox</div>
-                  <div style={{ fontFamily: `'${b.fonts.body}', sans-serif` }} className="text-primary/70 text-[11px] mt-1">jumps over the lazy dog — body copy sample at a small size.</div>
+                  <div style={{ fontFamily: `'${b.fonts.body}', sans-serif` }} className="text-ink/70 text-[11px] mt-1">jumps over the lazy dog — body copy sample at a small size.</div>
                 </div>
               </section>
 
@@ -136,13 +136,13 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
               <section>
                 <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Shape</div>
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="text-[11px] text-primary/60 w-16">Radius</span>
+                  <span className="text-[11px] text-ink/60 w-16">Radius</span>
                   <input type="range" min="0" max="24" value={parseInt(b.radius) || 0}
                     onChange={(e) => set('radius', `${e.target.value}px`)} className="flex-1 accent-[color:var(--primary,#4f8cff)]" />
-                  <span className="text-[11px] text-primary/70 font-mono w-10 text-right">{b.radius}</span>
+                  <span className="text-[11px] text-ink/70 font-mono w-10 text-right">{b.radius}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-primary/60 w-16">Density</span>
+                  <span className="text-[11px] text-ink/60 w-16">Density</span>
                   <div className="flex border border-primary/30">
                     {DENSITIES.map((d) => (
                       <button key={d} onClick={() => set('density', d)}
@@ -181,7 +181,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                 {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Palette size={12} />}
                 {saved ? 'SAVED' : 'SAVE BRAND'}
               </button>
-              <span className="text-[10px] text-primary/40">Written to <span className="font-mono">.morpheus/brand.json</span> in this project.</span>
+              <span className="text-[10px] text-ink/40">Written to <span className="font-mono">.morpheus/brand.json</span> in this project.</span>
             </div>
           </>
         )}

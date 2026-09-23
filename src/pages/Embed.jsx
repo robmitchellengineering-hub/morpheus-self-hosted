@@ -100,7 +100,7 @@ export default function Embed() {
       )}
 
       {ctx && chatOnly && (
-        <div className="p-6 text-[12px] text-primary/60 leading-relaxed">
+        <div className="p-6 text-[12px] text-ink/60 leading-relaxed">
           This embed has no panels enabled — open it in Morpheus for the full workspace.
           <a href="https://morpheus.nz/workspace" target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-1 text-primary/80 hover:text-primary ml-1">open <ExternalLink size={10} /></a>
@@ -140,7 +140,7 @@ export default function Embed() {
           {tab === 'shop' && (
             store
               ? <ShopTab store={store} projectId={ctx.projectId} />
-              : <div className="p-4 text-[12px] text-primary/50">The connected store isn’t reachable right now.</div>
+              : <div className="p-4 text-[12px] text-ink/50">The connected store isn’t reachable right now.</div>
           )}
           {tab === 'pages' && <PagesTab projectId={ctx.projectId} store={store} />}
           {/* widget: this render is driven by a widget token, so owner-only actions

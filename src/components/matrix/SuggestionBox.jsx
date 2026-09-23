@@ -55,12 +55,12 @@ export default function SuggestionBox() {
       {open && (
         <div className="px-4 pb-4 border-t border-primary/20 pt-3">
           {submitted ? (
-            <p className="text-xs text-primary/80 flex items-center gap-2 py-2">
+            <p className="text-xs text-ink/80 flex items-center gap-2 py-2">
               <Check size={14} /> Got it — thanks for helping shape Morpheus.
             </p>
           ) : (
             <>
-              <p className="text-xs text-primary/60 mb-3 leading-relaxed">
+              <p className="text-xs text-ink/60 mb-3 leading-relaxed">
                 Found a bug? Got an idea to make Morpheus better? Drop it here.
               </p>
 

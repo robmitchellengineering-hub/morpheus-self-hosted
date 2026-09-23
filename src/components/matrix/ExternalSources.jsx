@@ -97,7 +97,7 @@ export default function ExternalSources({ projectId, externalFiles, onRefresh })
           </button>
         </div>
       </div>
-      <p className="text-xs text-primary/65 mb-2">Add external apps, files, or programs to include in backend planning.</p>
+      <p className="text-xs text-ink/65 mb-2">Add external apps, files, or programs to include in backend planning.</p>
       <input
         ref={fileInputRef}
         type="file"

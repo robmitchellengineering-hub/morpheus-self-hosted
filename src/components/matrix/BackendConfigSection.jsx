@@ -115,11 +115,11 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             {savingDomain ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} SET
           </button>
         </div>
-        <p className="text-[10px] text-primary/65 mt-1">
+        <p className="text-[10px] text-ink/65 mt-1">
           // Auto-applied on deploy for Cloudflare Workers + Vercel. Render / Railway / Fly / Netlify: step-by-step DNS instructions shown in deploy results.
         </p>
         {customDomain && (
-          <p className="text-[10px] text-primary/50 mt-1 flex items-center gap-1">
+          <p className="text-[10px] text-ink/50 mt-1 flex items-center gap-1">
             <Check size={10} className="text-primary" /> Active: <span className="text-primary">{customDomain}</span>
           </p>
         )}
@@ -130,7 +130,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
         <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
           <Key size={12} /> API Keys ({activeKeys.length} active)
         </label>
-        <p className="text-[10px] text-primary/65 mb-2">
+        <p className="text-[10px] text-ink/65 mb-2">
           // Keys are injected as env vars on deploy. The backend validates incoming requests against them. Full key shown only once — copy it now.
         </p>
 
@@ -172,7 +172,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             {apiKeys.map(k => (
               <div key={k.id} className={`flex items-center gap-2 px-2 py-1.5 border ${k.active ? 'border-primary/20' : 'border-primary/10 opacity-40'}`}>
                 <Key size={12} className={k.active ? 'text-primary' : 'text-primary/65'} />
-                <span className="text-xs text-primary/70 flex-1 truncate">{k.name}</span>
+                <span className="text-xs text-ink/70 flex-1 truncate">{k.name}</span>
                 <code className="text-xs text-primary/50 font-mono">{k.prefix}...</code>
                 <span className={`text-[9px] uppercase px-1 ${k.active ? 'text-primary' : 'text-primary/65'}`}>{k.active ? 'ACTIVE' : 'REVOKED'}</span>
                 {k.active && (
@@ -189,7 +189,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             ))}
           </div>
         ) : (
-          <p className="text-[10px] text-primary/65">// No API keys yet. Generate one to secure your backend endpoints.</p>
+          <p className="text-[10px] text-ink/65">// No API keys yet. Generate one to secure your backend endpoints.</p>
         )}
       </div>
 

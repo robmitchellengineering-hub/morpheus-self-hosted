@@ -91,7 +91,7 @@ export default function Architect() {
             </Link>
           </div>
         </div>
-        <p className="text-primary/60 mb-4 text-sm">// Standalone backend constructs — plan, generate, deploy independently</p>
+        <p className="text-ink/60 mb-4 text-sm">// Standalone backend constructs — plan, generate, deploy independently</p>
         <div className="flex flex-col sm:flex-row gap-3 mb-8">
           <HelpHint id="new-backend" title="New Backend Construct" body="Create a standalone backend project. Add external sources (your frontend app files), then let Morpheus plan and generate the backend — database, API, auth. Deploy to Cloudflare, Supabase, Docker, and more.">
             <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-black transition-colors">
@@ -135,7 +135,7 @@ export default function Architect() {
                   </div>
                   <span className="text-xs text-primary/75 uppercase">{p.status}</span>
                 </div>
-                {p.description && <p className="text-primary/50 text-sm mt-1">{p.description}</p>}
+                {p.description && <p className="text-ink/50 text-sm mt-1">{p.description}</p>}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }}

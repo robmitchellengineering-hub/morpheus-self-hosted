@@ -138,7 +138,7 @@ export default function FirstRunChecklist({ project, onOpenWebsite, onOpenConnec
               </span>
               <div className="min-w-0 flex-1">
                 <div className={`text-[11px] ${s.done ? 'text-primary/45' : 'text-primary/85'}`}>{s.title}</div>
-                {!s.done && <div className="text-[10px] text-primary/45 leading-relaxed mt-0.5">{s.body}</div>}
+                {!s.done && <div className="text-[10px] text-ink/45 leading-relaxed mt-0.5">{s.body}</div>}
               </div>
               {s.action && (
                 <button onClick={s.action.onClick}

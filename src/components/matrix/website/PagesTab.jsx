@@ -15,7 +15,7 @@ function Field({ label, hint, children }) {
     <label className="block">
       <div className="text-[10px] text-primary/45 uppercase tracking-wider mb-1">{label}</div>
       {children}
-      {hint && <div className="text-[9px] text-primary/35 mt-0.5">{hint}</div>}
+      {hint && <div className="text-[9px] text-ink/35 mt-0.5">{hint}</div>}
     </label>
   );
 }
@@ -149,19 +149,19 @@ export default function PagesTab({ projectId, store }) {
 
           {err && <div className="mb-2 text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
           {loadingList && <div className="flex items-center gap-2 text-primary/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
-          {!loadingList && pages && pages.length === 0 && <div className="text-[11px] text-primary/45 py-3">No pages found.</div>}
+          {!loadingList && pages && pages.length === 0 && <div className="text-[11px] text-ink/45 py-3">No pages found.</div>}
 
           <div className="space-y-1.5">
             {(pages || []).map((p) => (
               <div key={p.id} className="border border-primary/15 hover:border-primary/40 transition-colors">
                 <button onClick={() => openEdit(p.id)} className="w-full text-left px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[12px] text-primary/85 truncate">{p.title || '(untitled)'}</span>
+                    <span className="text-[12px] text-ink/85 truncate">{p.title || '(untitled)'}</span>
                     <span className={`text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${p.status === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
                       {p.status === 'publish' ? 'live' : p.status}
                     </span>
                   </div>
-                  <div className="text-[10px] text-primary/40 mt-0.5 truncate">/{p.slug}</div>
+                  <div className="text-[10px] text-ink/40 mt-0.5 truncate">/{p.slug}</div>
                 </button>
                 {p.edit_url && (
                   <a href={p.edit_url} target="_blank" rel="noreferrer"
@@ -181,7 +181,7 @@ export default function PagesTab({ projectId, store }) {
             <button onClick={backToList} className="flex items-center gap-1 text-[11px] text-primary/60 hover:text-primary">
               <ChevronLeft size={14} /> Pages
             </button>
-            <span className="text-[11px] text-primary/80 truncate ml-1">{editId == null ? 'New page' : (form.title || 'Edit page')}</span>
+            <span className="text-[11px] text-ink/80 truncate ml-1">{editId == null ? 'New page' : (form.title || 'Edit page')}</span>
             {editStatus && (
               <span className={`ml-auto text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${editStatus === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
                 {editStatus === 'publish' ? 'live' : editStatus}
@@ -232,7 +232,7 @@ export default function PagesTab({ projectId, store }) {
             <div className="p-3 border-t border-primary/20 shrink-0 space-y-2">
               {confirmDelete ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-primary/70 flex-1">Move to trash? You can restore it on your site.</span>
+                  <span className="text-[11px] text-ink/70 flex-1">Move to trash? You can restore it on your site.</span>
                   <button onClick={() => setConfirmDelete(false)} className="h-[36px] px-3 text-[11px] border border-primary/30 text-primary/70">Cancel</button>
                   <button onClick={doDelete} disabled={saving}
                     className="h-[36px] px-3 text-[11px] bg-red-500/80 text-white hover:bg-red-500 disabled:opacity-40 flex items-center gap-1">

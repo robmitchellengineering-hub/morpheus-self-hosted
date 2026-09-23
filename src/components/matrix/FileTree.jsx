@@ -53,7 +53,7 @@ export default function FileTree({ files, selectedFile, onSelect, contextPaths, 
       )}
       <div className="overflow-y-auto scrollbar-matrix flex-1 min-h-0">
         {filtered.length === 0 && (
-          <div className="px-3 py-2 text-primary/65 text-sm italic">
+          <div className="px-3 py-2 text-ink/65 text-sm italic">
             {files.length === 0 ? 'No files yet. Ask Morpheus to build something.' : 'No files match your search.'}
           </div>
         )}

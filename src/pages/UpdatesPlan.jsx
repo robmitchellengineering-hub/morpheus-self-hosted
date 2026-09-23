@@ -71,7 +71,7 @@ export default function UpdatesPlan() {
           <Sparkles size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">MORPHEUS UPDATES PLAN</h1>
         </div>
-        <p className="text-primary/60 text-sm mb-8">
+        <p className="text-ink/60 text-sm mb-8">
           // Synthesizes every user-submitted issue and feature request into a single prioritized, actionable plan — ranked by criticality, alignment with build strategy and model ethos, and revenue potential.
         </p>
 
@@ -93,14 +93,14 @@ export default function UpdatesPlan() {
               <span className="text-primary/65">|</span>
               {plan.feedback_count ?? 0} feedback item{plan.feedback_count === 1 ? '' : 's'}
             </div>
-            <div className="border border-primary/20 bg-primary/5 p-4 max-h-[32rem] overflow-y-auto scrollbar-matrix text-xs text-primary/70 font-mono whitespace-pre-wrap">
+            <div className="border border-primary/20 bg-primary/5 p-4 max-h-[32rem] overflow-y-auto scrollbar-matrix text-xs text-ink/70 font-mono whitespace-pre-wrap">
               {plan.content}
             </div>
           </div>
         )}
 
         {!loading && !plan && !error && (
-          <p className="text-primary/75 text-sm italic text-center py-12">No plan synthesized yet. Press SYNTHESIZE PLAN to generate one from submitted feedback.</p>
+          <p className="text-ink/75 text-sm italic text-center py-12">No plan synthesized yet. Press SYNTHESIZE PLAN to generate one from submitted feedback.</p>
         )}
 
         <div className="flex flex-wrap items-center gap-3">

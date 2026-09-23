@@ -317,7 +317,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
               <Check size={12} /> {lastBuild.paths.length} file{lastBuild.paths.length === 1 ? '' : 's'} changed
             </div>
             <div className="space-y-0.5 max-h-16 overflow-y-auto scrollbar-matrix">
-              {lastBuild.paths.map((p) => <div key={p} className="text-[10px] text-primary/50 font-mono truncate">{p}</div>)}
+              {lastBuild.paths.map((p) => <div key={p} className="text-[10px] text-ink/50 font-mono truncate">{p}</div>)}
             </div>
 
             {!canShip && (

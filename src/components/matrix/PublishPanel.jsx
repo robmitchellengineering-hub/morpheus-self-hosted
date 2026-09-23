@@ -48,7 +48,7 @@ export default function PublishPanel({ open, onClose, projectId, onRequestFix })
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <p className="text-[11px] text-primary/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+        <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
           What a finished, launchable {state?.target || 'project'} includes. The builder is told these on every
           build — this is a check against the current files.
         </p>
@@ -56,7 +56,7 @@ export default function PublishPanel({ open, onClose, projectId, onRequestFix })
         {!state && <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Checking…</div>}
         {state?.error && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{state.error}</div>}
         {state && state.supported === false && (
-          <div className="m-4 text-primary/50 text-xs border border-primary/20 px-3 py-2">
+          <div className="m-4 text-ink/50 text-xs border border-primary/20 px-3 py-2">
             No publish checklist for the <span className="font-mono">{state.target}</span> target yet — this is mainly for web-app builds.
           </div>
         )}
@@ -75,7 +75,7 @@ export default function PublishPanel({ open, onClose, projectId, onRequestFix })
                       <div className={`text-[11px] ${i.done ? 'text-primary/60' : 'text-primary'}`}>
                         {i.label}{i.when === 'data' ? <span className="text-primary/40"> — only if the site collects data</span> : ''}
                       </div>
-                      <div className="text-[10px] text-primary/40 leading-relaxed mt-0.5">{i.detail}</div>
+                      <div className="text-[10px] text-ink/40 leading-relaxed mt-0.5">{i.detail}</div>
                     </div>
                   </div>
                 </div>

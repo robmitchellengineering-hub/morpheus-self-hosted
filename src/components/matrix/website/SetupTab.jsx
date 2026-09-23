@@ -58,7 +58,7 @@ function Step({ n, title, children, done }) {
         {done ? <Check size={12} /> : n}
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
-        <div className="text-[12px] text-primary/85">{title}</div>
+        <div className="text-[12px] text-ink/85">{title}</div>
         {children}
       </div>
     </div>
@@ -89,7 +89,7 @@ function copySummary({ files = 0, bytes = 0, reused = false, theme = {} } = {}) 
  */
 function UpdateCheckReport({ upd, version, zipHref }) {
   if (upd.phase === 'busy') {
-    return <div className="text-[10px] text-primary/50">Asking your site to re-read its update channel…</div>;
+    return <div className="text-[10px] text-ink/50">Asking your site to re-read its update channel…</div>;
   }
 
   if (upd.phase === 'failed') {
@@ -97,7 +97,7 @@ function UpdateCheckReport({ upd, version, zipHref }) {
     // only thing that works is installing the zip once, by hand.
     const boot = upd.code === 'UPDATES_UNSUPPORTED';
     return (
-      <div className="text-[10px] text-primary/60 leading-relaxed space-y-1">
+      <div className="text-[10px] text-ink/60 leading-relaxed space-y-1">
         {boot ? (
           <p>
             v{version} cannot check for its updates yet. Install the current build once by hand — after that WordPress
@@ -131,11 +131,11 @@ function UpdateCheckReport({ upd, version, zipHref }) {
 
   const published = r.manifest?.version || '?';
   if (!r.newer_available) {
-    return <div className="text-[10px] text-primary/60">Checked just now: v{installed} is the newest published version.</div>;
+    return <div className="text-[10px] text-ink/60">Checked just now: v{installed} is the newest published version.</div>;
   }
   if (r.wordpress_shows) {
     return (
-      <div className="text-[10px] text-primary/60 leading-relaxed">
+      <div className="text-[10px] text-ink/60 leading-relaxed">
         Checked just now: <span className="text-yellow-500/90">v{published}</span> is published and WordPress is
         offering it. Open your Plugins screen and tap <span className="text-primary/80">update now</span> — the download
         is checksum-verified before it installs.
@@ -143,7 +143,7 @@ function UpdateCheckReport({ upd, version, zipHref }) {
     );
   }
   return (
-    <div className="text-[10px] text-primary/60 leading-relaxed">
+    <div className="text-[10px] text-ink/60 leading-relaxed">
       v{published} is published, but WordPress is still not offering it after a fresh check. Use{' '}
       <a href={zipHref} download className="text-primary/80 underline">the zip</a> once — that path cannot be cached.
     </div>
@@ -332,7 +332,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
         <div className="border border-primary/30 px-3 py-3 space-y-1.5">
           <div className="flex items-center gap-1.5 text-primary text-[12px]"><Check size={13} /> Connected</div>
           <div className="text-[11px] text-primary/60 break-all">{store.siteUrl?.replace(/^https?:\/\//, '')}</div>
-          <div className="text-[10px] text-primary/40">
+          <div className="text-[10px] text-ink/40">
             {store.online ? `plugin v${store.version}` : 'plugin unreachable'}
             {store.woocommerce ? ` · WooCommerce ${store.woocommerce}` : store.store_available === false ? ' · WooCommerce not active' : ''}
           </div>
@@ -344,7 +344,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
             </div>
             {isNewer(store.version, UPDATE_CHANNEL_VERSION) ? (
               <>
-                <p className="text-[10px] text-primary/50 leading-relaxed">
+                <p className="text-[10px] text-ink/50 leading-relaxed">
                   WordPress offers this itself once your site has checked. If the Plugins screen shows nothing, that is
                   usually a cached answer rather than a missing update — ask the site to re-read it.
                 </p>
@@ -356,7 +356,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
               </>
             ) : (
               <>
-                <p className="text-[10px] text-primary/50 leading-relaxed">
+                <p className="text-[10px] text-ink/50 leading-relaxed">
                   This build ({store.version}) predates the update channel, so it has to be replaced by hand — once. After that,
                   WordPress updates it for you. Download the zip and re-upload it on WordPress — Plugins → Add New → Upload Plugin →
                   pick the zip → <span className="text-primary/70">Replace current with uploaded</span>.
@@ -387,7 +387,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
         {!store?.existing_repo && !copy && (
           <Step n={2} title="Turn on code changes">
           <div className="space-y-2">
-            <p className="text-[10px] text-primary/50 leading-relaxed">
+            <p className="text-[10px] text-ink/50 leading-relaxed">
               Morpheus ships changes through a GitHub repo — it opens a pull request, checks run, and the plugin applies
               the merged commit. Your site's theme is not in one, so Morpheus can make you a private one to work from.
               Deploy, Code and the AI build loop all start working after this.
@@ -396,7 +396,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
             <div className="space-y-1">
               <div className="text-[9px] text-primary/40 uppercase tracking-wider">Repository name</div>
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-primary/40 shrink-0">{store?.github_login ? `${store.github_login}/` : ''}</span>
+                <span className="text-[11px] text-ink/40 shrink-0">{store?.github_login ? `${store.github_login}/` : ''}</span>
                 <input className="flex-1 bg-black/30 border border-primary/20 px-2 h-[36px] text-[12px] text-primary font-mono focus:outline-none focus:border-primary/50"
                   value={repoName} onChange={(e) => setRepoName(e.target.value)}
                   autoCapitalize="off" autoCorrect="off" spellCheck={false} />
@@ -407,7 +407,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
               {copying ? <Loader2 size={13} className="animate-spin" /> : <FolderPlus size={13} />}
               {copying ? 'COPYING YOUR THEME…' : `CREATE ${repoName.trim() || 'MY WORKING COPY'}`}
             </button>
-            <div className="text-[9px] text-primary/35 leading-relaxed">
+            <div className="text-[9px] text-ink/35 leading-relaxed">
               Copies the active theme's code only — never WordPress core, other plugins, or your media. Nothing on your
               site changes.
             </div>
@@ -423,14 +423,14 @@ export default function SetupTab({ store, projectId, onChanged }) {
               className="text-[10px] text-primary/70 hover:text-primary inline-flex items-center gap-1 break-all">
               <ExternalLink size={10} /> {copy.repo}
             </a>
-            <div className="text-[10px] text-primary/55 leading-relaxed">{copySummary(copy)}</div>
+            <div className="text-[10px] text-ink/55 leading-relaxed">{copySummary(copy)}</div>
             {copy.theme?.is_child && (
-              <div className="text-[9px] text-primary/40">
+              <div className="text-[9px] text-ink/40">
                 Child theme copied; its parent ({copy.theme.parent_slug}) is a third-party theme Morpheus leaves alone.
               </div>
             )}
             {copy.skipped_count > 0 && (
-              <div className="text-[9px] text-primary/40">
+              <div className="text-[9px] text-ink/40">
                 {copy.skipped_count} image{copy.skipped_count === 1 ? '' : 's'}, font{''} or large file{copy.skipped_count === 1 ? '' : 's'} stayed
                 on your site — Morpheus manages code, and WordPress keeps serving those.
               </div>
@@ -440,11 +440,11 @@ export default function SetupTab({ store, projectId, onChanged }) {
                 The theme was larger than one copy — the rest is still on your site. Deploy still works for the files that came across.
               </div>
             )}
-            <div className="text-[9px] text-primary/40">{copy.next}</div>
+            <div className="text-[9px] text-ink/40">{copy.next}</div>
           </div>
         )}
 
-        <p className="text-[11px] text-primary/45 leading-relaxed">
+        <p className="text-[11px] text-ink/45 leading-relaxed">
           Use the <span className="text-primary/70">Deploy</span> tab to ship code changes to the site, and the{' '}
           <span className="text-primary/70">Shop</span>, <span className="text-primary/70">Pages</span> and{' '}
           <span className="text-primary/70">SEO</span> tabs to run it. This connection is private to your account.
@@ -460,7 +460,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
 
   return (
     <div className="p-4 space-y-5">
-      <p className="text-[11px] text-primary/50 leading-relaxed">
+      <p className="text-[11px] text-ink/50 leading-relaxed">
         Connect this project to your WordPress site. The Morpheus plugin is what lets Morpheus deploy code, run your shop,
         manage content and own your SEO — you install it once, and after that WordPress keeps it up to date.
       </p>
@@ -484,16 +484,16 @@ export default function SetupTab({ store, projectId, onChanged }) {
       {step === 'unreachable' && (
         <div className="border border-red-500/30 px-3 py-2.5 space-y-1">
           <div className="text-[11px] text-red-400">Nothing answered at {probe.siteUrl}</div>
-          <div className="text-[10px] text-primary/50 leading-relaxed">{probe.guidance}</div>
-          {probe.detail && <div className="text-[9px] text-primary/35">{probe.detail}</div>}
+          <div className="text-[10px] text-ink/50 leading-relaxed">{probe.guidance}</div>
+          {probe.detail && <div className="text-[9px] text-ink/35">{probe.detail}</div>}
         </div>
       )}
 
       {step === 'behind_login' && (
         <div className="border border-yellow-500/35 bg-yellow-500/5 px-3 py-2.5 space-y-1.5">
           <div className="text-[11px] text-yellow-500/90">Your site is protected</div>
-          <div className="text-[10px] text-primary/55 leading-relaxed">{probe.guidance}</div>
-          {probe.login_url && <div className="text-[9px] text-primary/35 break-all">landed on {probe.login_url}</div>}
+          <div className="text-[10px] text-ink/55 leading-relaxed">{probe.guidance}</div>
+          {probe.login_url && <div className="text-[9px] text-ink/35 break-all">landed on {probe.login_url}</div>}
           <button onClick={check} disabled={checking}
             className="inline-flex items-center gap-1.5 text-[11px] px-3 py-2 border border-yellow-500/50 text-yellow-500/90 hover:border-yellow-500 disabled:opacity-40">
             {checking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} CHECK AGAIN
@@ -504,7 +504,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
       {step === 'install' && (
         <Step n={2} title="Install the Morpheus plugin">
           <div className="space-y-3">
-            <div className="text-[10px] text-primary/50 leading-relaxed">
+            <div className="text-[10px] text-ink/50 leading-relaxed">
               {probe.is_wordpress
                 ? 'Your site answered — WordPress is there, the Morpheus plugin is not (yet).'
                 : 'That address answered, but not as a WordPress site Morpheus recognises.'}
@@ -527,7 +527,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
                       <Upload size={12} /> 2. Upload it on your site <ExternalLink size={11} />
                     </a>
                   </div>
-                  <div className="text-[9px] text-primary/40 leading-relaxed">
+                  <div className="text-[9px] text-ink/40 leading-relaxed">
                     In WordPress: <span className="text-primary/60">Plugins → Add New → Upload Plugin</span> → choose the .zip →
                     Install → <span className="text-primary/60">Activate</span>. The file is in your Downloads.
                   </div>
@@ -536,7 +536,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
                 <div className="border-t border-primary/10 pt-2 space-y-1.5">
                   <div className="text-[9px] text-primary/40 uppercase tracking-wider">Or one command, if you have a terminal</div>
                   <CopyLine text={WP_CLI_INSTALL} />
-                  <div className="text-[9px] text-primary/35 leading-relaxed">
+                  <div className="text-[9px] text-ink/35 leading-relaxed">
                     Works with WP-CLI over SSH — one line, installed and activated.
                   </div>
                 </div>
@@ -548,8 +548,8 @@ export default function SetupTab({ store, projectId, onChanged }) {
               </>
             ) : (
               <div className="space-y-2 border border-primary/25 px-3 py-2.5">
-                <div className="text-[10px] text-primary/70">Send this to whoever runs your site</div>
-                <div className="text-[9px] text-primary/40 leading-relaxed">
+                <div className="text-[10px] text-ink/70">Send this to whoever runs your site</div>
+                <div className="text-[9px] text-ink/40 leading-relaxed">
                   Copy it into a message. It has everything they need — the file, the one-line command, and what to do after —
                   and it asks for no passwords.
                 </div>
@@ -562,7 +562,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
               </div>
             )}
 
-            <div className="text-[9px] text-primary/35 leading-relaxed">
+            <div className="text-[9px] text-ink/35 leading-relaxed">
               WordPress only installs plugins for an administrator, and Morpheus never asks for your WordPress password — so this
               one action is the only part that cannot happen from here. It is once per site.
             </div>
@@ -577,12 +577,12 @@ export default function SetupTab({ store, projectId, onChanged }) {
       {step === 'update' && (
         <Step n={2} title="Update the Morpheus plugin">
           <div className="space-y-2">
-            <div className="text-[10px] text-primary/50 leading-relaxed">
+            <div className="text-[10px] text-ink/50 leading-relaxed">
               Your site is running plugin v{probe.version}. Connecting with a code needs v0.5.4 or newer.
             </div>
             {probe.self_update ? (
               <>
-                <div className="text-[10px] text-primary/45 leading-relaxed">
+                <div className="text-[10px] text-ink/45 leading-relaxed">
                   Your build can update itself: open your Plugins screen and tap <span className="text-primary/65">update now</span> on
                   the Morpheus row. No zip, nothing to upload.
                 </div>
@@ -590,7 +590,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
               </>
             ) : (
               <>
-                <div className="text-[10px] text-primary/45 leading-relaxed">
+                <div className="text-[10px] text-ink/45 leading-relaxed">
                   This build is too old to update itself, so upload the current zip once — after that WordPress updates it for you:
                   Plugins → Add New → Upload Plugin → pick the zip → <span className="text-primary/65">Replace current with uploaded</span>.
                 </div>
@@ -615,11 +615,11 @@ export default function SetupTab({ store, projectId, onChanged }) {
         <>
           <Step n={2} title="Get your code from WordPress" done>
             <div className="space-y-2">
-              <div className="text-[10px] text-primary/50 leading-relaxed">{probe.guidance}</div>
+              <div className="text-[10px] text-ink/50 leading-relaxed">{probe.guidance}</div>
               <OpenButton href={probe.settings_url} tone="primary">
                 <Settings size={12} /> Open Settings → Morpheus
               </OpenButton>
-              <div className="text-[9px] text-primary/35 leading-relaxed">
+              <div className="text-[9px] text-ink/35 leading-relaxed">
                 The code is on that screen, valid for 20 minutes and usable once. Nothing is copied from here into WordPress —
                 the plugin makes the secret itself.
               </div>
@@ -660,7 +660,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
             </button>
           ) : (
             <div className="space-y-2">
-              <div className="text-[10px] text-primary/45">Set the same secret in the plugin (Settings → Morpheus → Shared secret) and paste it here.</div>
+              <div className="text-[10px] text-ink/45">Set the same secret in the plugin (Settings → Morpheus → Shared secret) and paste it here.</div>
               <input className={inputCls} type="password" placeholder="shared secret" value={secret}
                 autoCapitalize="off" autoCorrect="off"
                 onChange={(e) => setSecret(e.target.value)} />
@@ -675,7 +675,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
       )}
 
       {!probe && (
-        <div className="text-[10px] text-primary/40 leading-relaxed border-t border-primary/10 pt-3">
+        <div className="text-[10px] text-ink/40 leading-relaxed border-t border-primary/10 pt-3">
           Nothing is stored on Morpheus until a connection succeeds. You can disconnect at any time, and removing the plugin
           from WordPress leaves your site's files alone.
         </div>

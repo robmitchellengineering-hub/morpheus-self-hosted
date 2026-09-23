@@ -80,14 +80,14 @@ export default function GithubConnectionSection() {
           </button>
         )}
       </div>
-      <p className="text-[10px] text-primary/50 mt-2">
+      <p className="text-[10px] text-ink/50 mt-2">
         // Required to compile binaries, import repos, and push to GitHub. OAuth — no token pasting. If it ever stops working (token expired or access revoked on GitHub's side), click DISCONNECT then CONNECT again here to re-authorize.
       </p>
 
       {gh.connected && (
         <div className="mt-3 border-t border-primary/15 pt-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-[10px] text-primary/50 flex-1 min-w-[180px]">
+            <p className="text-[10px] text-ink/50 flex-1 min-w-[180px]">
               // Compiles used to create a fresh <code>morpheus-build-*</code> repo per attempt. That's fixed — a project now reuses one repo — so these are leftovers. Clean up the ones older than 24h.
             </p>
             <div className="flex items-center gap-2 shrink-0">
@@ -115,7 +115,7 @@ export default function GithubConnectionSection() {
           {cleanup.error && <p className="text-[10px] text-red-400 mt-2">// {cleanup.error}</p>}
 
           {cleanup.status === 'previewed' && cleanup.preview && (
-            <p className="text-[10px] text-primary/60 mt-2">
+            <p className="text-[10px] text-ink/60 mt-2">
               {cleanup.preview.count === 0
                 ? 'Nothing to clean up — no build repos older than 24h.'
                 : `Found ${cleanup.preview.count} build repo${cleanup.preview.count === 1 ? '' : 's'} older than ${cleanup.preview.olderThanHours}h, ready to delete.`}
@@ -123,7 +123,7 @@ export default function GithubConnectionSection() {
           )}
 
           {cleanup.status === 'done' && cleanup.result && (
-            <p className="text-[10px] mt-2 text-primary/60">
+            <p className="text-[10px] mt-2 text-ink/60">
               Deleted {cleanup.result.deletedCount}/{cleanup.result.attempted}.
               {cleanup.result.failed?.length > 0 && ` ${cleanup.result.failed.length} failed.`}
               {cleanup.result.hint && <span className="text-red-400/90 block mt-1">// {cleanup.result.hint}</span>}

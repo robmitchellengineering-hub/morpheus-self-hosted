@@ -81,7 +81,7 @@ export default function ChatHistoryTab({ project }) {
             </button>
           )}
         </div>
-        <span className="text-xs text-primary/50 shrink-0 tabular-nums">
+        <span className="text-xs text-ink/50 shrink-0 tabular-nums">
           {q ? `${filtered.length}/${all.length}` : `${all.length} msgs`}
         </span>
       </div>
@@ -92,7 +92,7 @@ export default function ChatHistoryTab({ project }) {
             <Loader2 size={20} className="animate-spin text-primary/60" />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-primary/75 italic text-sm p-4">
+          <p className="text-ink/75 italic text-sm p-4">
             {q ? `No messages match "${query}".` : 'No chat history yet. Start building to populate the record.'}
           </p>
         ) : (
@@ -111,7 +111,7 @@ export default function ChatHistoryTab({ project }) {
                           <span className={`text-xs font-bold tracking-wider ${isUser ? 'text-[#39ff14]/80' : 'text-primary'}`}>
                             {isUser ? 'OPERATOR' : 'MORPHEUS'}
                           </span>
-                          <span className="text-primary/50 text-xs">{new Date(m.created_date).toLocaleString()}</span>
+                          <span className="text-ink/50 text-xs">{new Date(m.created_date).toLocaleString()}</span>
                         </div>
                         <button onClick={() => copy(m)} className="text-primary/65 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Copy message">
                           {copiedId === m.id ? <Check size={12} className="text-primary" /> : <Copy size={12} />}

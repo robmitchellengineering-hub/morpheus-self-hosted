@@ -43,7 +43,7 @@ export function DiagnosisLoading({ label = 'AI AGENT ANALYZING ERRORS...', steps
     <div className="border border-primary/30 bg-primary/5 p-3">
       <div className="flex items-center gap-2 text-primary text-sm mb-3">
         <Bot size={16} className="animate-pulse" /> {label}
-        <span className="ml-auto flex items-center gap-1 text-primary/55 text-xs font-mono tabular-nums">
+        <span className="ml-auto flex items-center gap-1 text-ink/55 text-xs font-mono tabular-nums">
           <Timer size={12} /> {formatRunTime(elapsed)}
         </span>
       </div>
@@ -82,7 +82,7 @@ export default function DiagnosisPanel({ diagnosis, onRedeploy, redeployLabel = 
       <div className="flex items-center gap-2 text-primary text-sm">
         <Bot size={16} /> AI DIAGNOSIS COMPLETE
       </div>
-      <p className="text-primary/80 text-sm">{diagnosis.summary}</p>
+      <p className="text-ink/80 text-sm">{diagnosis.summary}</p>
 
       {onAskMorpheus && (
         <button onClick={onAskMorpheus} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-1.5 font-bold w-fit">
@@ -99,10 +99,10 @@ export default function DiagnosisPanel({ diagnosis, onRedeploy, redeployLabel = 
               <div className="flex items-center gap-2 mb-1">
                 <CheckCircle size={12} className="text-primary shrink-0" />
                 <span className="text-primary text-xs font-bold uppercase">{fix.component}</span>
-                <span className="text-primary/75 text-xs">— {fix.fileCount} file(s) regenerated</span>
+                <span className="text-ink/75 text-xs">— {fix.fileCount} file(s) regenerated</span>
               </div>
-              <p className="text-xs text-primary/60 ml-5">{fix.issue}</p>
-              <p className="text-xs text-primary/80 ml-5 mt-0.5">Fix: {fix.fix}</p>
+              <p className="text-xs text-ink/60 ml-5">{fix.issue}</p>
+              <p className="text-xs text-ink/80 ml-5 mt-0.5">Fix: {fix.fix}</p>
             </div>
           ))}
           {onRedeploy && (
@@ -110,7 +110,7 @@ export default function DiagnosisPanel({ diagnosis, onRedeploy, redeployLabel = 
               <button onClick={onRedeploy} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-1.5 font-bold">
                 <ArrowRight size={12} /> {redeployLabel}
               </button>
-              <span className="text-xs text-primary/60">to push the fixed code live.</span>
+              <span className="text-xs text-ink/60">to push the fixed code live.</span>
             </div>
           )}
         </div>
@@ -125,9 +125,9 @@ export default function DiagnosisPanel({ diagnosis, onRedeploy, redeployLabel = 
               <div className="flex items-center gap-2 mb-1">
                 {item.severity === 'credentials' ? <Key size={12} className="text-yellow-500 shrink-0" /> : <ExternalLink size={12} className="text-primary/60 shrink-0" />}
                 <span className="text-primary text-xs font-bold uppercase">{item.component}</span>
-                <span className="text-primary/50 text-xs">— {item.label}</span>
+                <span className="text-ink/50 text-xs">— {item.label}</span>
               </div>
-              <p className="text-xs text-primary/70 mb-1.5 ml-5">{item.issue}</p>
+              <p className="text-xs text-ink/70 mb-1.5 ml-5">{item.issue}</p>
               <div className="ml-5 space-y-0.5">
                 {item.steps.map((step, j) => (
                   <div key={j} className="flex items-start gap-1.5 text-xs text-primary/50">

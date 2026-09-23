@@ -19,10 +19,10 @@ export default function MarketFooter() {
           <Link to="/market" className="hover:text-primary">Browse Market</Link>
           <Link to="/" className="hover:text-primary">Home</Link>
         </div>
-        <p className="text-[10px] text-primary/45 leading-relaxed max-w-2xl">
+        <p className="text-[10px] text-ink/45 leading-relaxed max-w-2xl">
           // Sellers agree to the Morpheus Marketplace Seller Agreement when publishing. Payments are processed by Stripe. Morpheus acts as the marketplace platform and is not the seller of record for individual listings.
         </p>
-        <p className="text-[10px] text-primary/40">© {new Date().getFullYear()} Morpheus. All transactions secured by Stripe.</p>
+        <p className="text-[10px] text-ink/40">© {new Date().getFullYear()} Morpheus. All transactions secured by Stripe.</p>
       </div>
     </footer>
   );

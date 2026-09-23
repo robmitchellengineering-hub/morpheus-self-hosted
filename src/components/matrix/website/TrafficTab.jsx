@@ -136,7 +136,7 @@ export default function TrafficTab({ projectId }) {
                 {keyServed?.served ? 'being served' : 'NOT confirmed served'}
               </span>
             </div>
-            <div className="font-mono text-[10px] text-primary/50 break-all">{status.key_location}</div>
+            <div className="font-mono text-[10px] text-ink/50 break-all">{status.key_location}</div>
             {!keyServed?.served && (
               <p className="text-yellow-400/80 leading-relaxed">
                 IndexNow authenticates the submission with this file. A check of that address did not
@@ -146,7 +146,7 @@ export default function TrafficTab({ projectId }) {
               </p>
             )}
             {!keyServed?.served && (
-              <div className="font-mono text-[10px] text-primary/60 break-all bg-black/30 px-2 py-1">{status.key}</div>
+              <div className="font-mono text-[10px] text-ink/60 break-all bg-black/30 px-2 py-1">{status.key}</div>
             )}
           </div>
 

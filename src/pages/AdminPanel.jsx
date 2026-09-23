@@ -79,7 +79,7 @@ function OverviewTab() {
 
       <Card>
         <div className="text-xs text-primary/60 mb-2 tracking-wider">USAGE BY MODEL — LAST 30 DAYS</div>
-        {data.usageByModel30d.length === 0 && <div className="text-primary/40 text-xs italic py-4 text-center">No usage recorded yet.</div>}
+        {data.usageByModel30d.length === 0 && <div className="text-ink/40 text-xs italic py-4 text-center">No usage recorded yet.</div>}
         {data.usageByModel30d.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -179,7 +179,7 @@ function FreeUsageGrantsCard() {
   return (
     <Card>
       <div className="flex items-center gap-2 text-primary/60 text-xs mb-2 tracking-wider"><Gift size={13} /> FREE USAGE GRANTS</div>
-      <p className="text-primary/40 text-[11px] mb-3">Billing-exempt, same as an admin account — but no Admin Panel, ops console, or any other admin capability.</p>
+      <p className="text-ink/40 text-[11px] mb-3">Billing-exempt, same as an admin account — but no Admin Panel, ops console, or any other admin capability.</p>
       <div className="flex gap-2 mb-3">
         <input
           value={email}
@@ -194,9 +194,9 @@ function FreeUsageGrantsCard() {
       </div>
       {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
       {loading ? (
-        <div className="text-primary/40 text-xs italic py-2 text-center">Loading...</div>
+        <div className="text-ink/40 text-xs italic py-2 text-center">Loading...</div>
       ) : users.length === 0 ? (
-        <div className="text-primary/40 text-xs italic py-2 text-center">No accounts currently granted free usage.</div>
+        <div className="text-ink/40 text-xs italic py-2 text-center">No accounts currently granted free usage.</div>
       ) : (
         <div className="divide-y divide-primary/10">
           {users.map((u) => (
@@ -245,7 +245,7 @@ function DeepSeekBalanceCard({ status }) {
           No fallback configured — AI calls are failing platform-wide right now. Top up at platform.deepseek.com/top_up, or set FALLBACK_LLM_API_KEY/FALLBACK_LLM_BASE_URL/FALLBACK_LLM_MODEL.
         </div>
       )}
-      <div className="text-primary/40 text-[11px] mt-2">
+      <div className="text-ink/40 text-[11px] mt-2">
         {status.checkedAt ? `Last checked ${new Date(status.checkedAt).toLocaleString()}` : 'Not checked yet.'} · Warning threshold editable in CONFIG (key: deepseek_balance_min_usd).
       </div>
     </Card>
@@ -350,7 +350,7 @@ function ModelsTab() {
     <div className="space-y-4">
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">DEEPSEEK — LIVE MODEL</div>
-        <p className="text-primary/50 text-xs mb-3">
+        <p className="text-ink/50 text-xs mb-3">
           Switches which DeepSeek model actually serves calls platform-wide, no deploy needed. Retail
           already bills every DeepSeek call at 2.0&times; Pro's peak rate regardless of which one
           serves it, so this only changes real cost and margin, not what users are charged — Flash is
@@ -373,7 +373,7 @@ function ModelsTab() {
           ))}
           {savingKey === 'default_model' && <Loader2 size={13} className="animate-spin text-primary/60" />}
         </div>
-        <div className="text-primary/40 text-[11px] mt-2">
+        <div className="text-ink/40 text-[11px] mt-2">
           Effective now: <span className="text-primary/70 font-mono">{effectiveDefault || 'auto'}</span>
           {!settings.settings.default_model && ' (from env LLM_MODEL — no admin override set yet)'}
         </div>
@@ -381,7 +381,7 @@ function ModelsTab() {
 
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">PLATFORM DEFAULT MODEL ROUTING</div>
-        <p className="text-primary/50 text-xs mb-3">
+        <p className="text-ink/50 text-xs mb-3">
           Overrides "Automatic" model discovery per role, platform-wide. Leave blank for existing auto-discovery / env-var behavior. Never overrides an operator's LLM_*_MODEL env pin or a user's own Settings choice.
         </p>
         <div className="space-y-2">
@@ -406,7 +406,7 @@ function ModelsTab() {
 
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">PLATFORM DEFAULT TEMPERATURE</div>
-        <p className="text-primary/50 text-xs mb-3">
+        <p className="text-ink/50 text-xs mb-3">
           The "think temperature" for each pipeline role — 0 is deterministic, 2 is maximally random. Everything (planner, coder, reviewer, diagnosis, and chat) ran at a single hardcoded 0.7 before this; role-specific here wins over "default", which wins over the built-in 0.7. Leave blank to keep that default.
         </p>
         <div className="space-y-2">
@@ -436,7 +436,7 @@ function ModelsTab() {
 
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">MARGIN — MODEL PRICING &amp; MARKUP</div>
-        <p className="text-primary/50 text-xs mb-3">$/M tokens x markup multiplier = billed rate. Blank price falls back to the static table.</p>
+        <p className="text-ink/50 text-xs mb-3">$/M tokens x markup multiplier = billed rate. Blank price falls back to the static table.</p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
@@ -556,12 +556,12 @@ function SettingsTab() {
     <div className="space-y-4">
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">GENERAL CONFIG / FEATURE FLAGS</div>
-        <p className="text-primary/50 text-xs mb-3">
+        <p className="text-ink/50 text-xs mb-3">
           Free-form admin-editable key/value store. Model-routing keys (default_model, default_planner_model, etc.) are also editable here, but the Models &amp; Routing tab is the friendlier way to set those.
         </p>
         {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
 
-        {entries.length === 0 && <div className="text-primary/40 text-xs italic py-2">No overrides set — everything is on its default.</div>}
+        {entries.length === 0 && <div className="text-ink/40 text-xs italic py-2">No overrides set — everything is on its default.</div>}
         {entries.length > 0 && (
           <div className="space-y-1.5 mb-4">
             {entries.map(([key, value]) => (
@@ -668,7 +668,7 @@ function TasksTab() {
         </button>
       </div>
 
-      {tasks.length === 0 && <div className="text-primary/40 text-xs italic py-4 text-center">Nothing on the list.</div>}
+      {tasks.length === 0 && <div className="text-ink/40 text-xs italic py-4 text-center">Nothing on the list.</div>}
 
       {open.length > 0 && (
         <div className="space-y-1 mb-3">
@@ -866,7 +866,7 @@ function SelfDevManualCard() {
       <div className="flex items-center gap-2 text-xs text-primary/60 mb-1 tracking-wider">
         <FileText size={13} /> SELF-DEV &amp; ADMIN MANUAL
       </div>
-      <p className="text-primary/50 text-xs mb-3 leading-relaxed">
+      <p className="text-ink/50 text-xs mb-3 leading-relaxed">
         How to actually run Morpheus through Self-Dev and this Admin panel — written by AI directly from the current source of both, so it reflects what the code does right now. Re-generates automatically whenever a self-dev push changes one of the files it's built from; REGENERATE forces a fresh copy any time.
       </p>
 
@@ -888,7 +888,7 @@ function SelfDevManualCard() {
         </div>
       )}
 
-      {!loading && !doc && <div className="text-primary/40 text-xs italic mb-3">No manual generated yet. Press GENERATE to create one.</div>}
+      {!loading && !doc && <div className="text-ink/40 text-xs italic mb-3">No manual generated yet. Press GENERATE to create one.</div>}
 
       <div className="flex items-center gap-2 flex-wrap">
         <button
@@ -971,7 +971,7 @@ function NorthflankCard() {
       {statusError && <div className="text-red-500 text-xs mb-3">{statusError}</div>}
       {status?.configured && status.error && <div className="text-red-500 text-xs mb-3">{status.error}</div>}
       {status?.configured && status.service && (
-        <div className="text-xs text-primary/70 mb-3">
+        <div className="text-xs text-ink/70 mb-3">
           Build status: <span className="text-primary">{buildStatus || 'unknown'}</span>
           {status.service?.name && <> — {status.service.name}</>}
         </div>
@@ -992,7 +992,7 @@ function NorthflankCard() {
           max={1440}
           className="w-20 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
         />
-        <span className="text-primary/40 text-xs">min</span>
+        <span className="text-ink/40 text-xs">min</span>
         <button
           onClick={loadLogs}
           disabled={loading}
@@ -1003,7 +1003,7 @@ function NorthflankCard() {
       </div>
       {logsError && <div className="text-red-500 text-xs mb-2">{logsError}</div>}
       {logs && (
-        <div className="max-h-80 overflow-y-auto scrollbar-matrix bg-black/40 border border-primary/10 p-2 font-mono text-[11px] text-primary/70 space-y-0.5">
+        <div className="max-h-80 overflow-y-auto scrollbar-matrix bg-black/40 border border-primary/10 p-2 font-mono text-[11px] text-ink/70 space-y-0.5">
           {logs.length === 0 && <div className="text-primary/40 italic">No matching log lines.</div>}
           {logs.map((l, i) => (
             <div key={i} className="whitespace-pre-wrap break-all">
@@ -1046,7 +1046,7 @@ function DbConsoleCard() {
   return (
     <Card>
       <div className="text-xs text-primary/60 mb-1 tracking-wider">DATABASE CONSOLE</div>
-      <p className="text-primary/50 text-xs mb-3 leading-relaxed">
+      <p className="text-ink/50 text-xs mb-3 leading-relaxed">
         Direct SQL against this deployment's own database. SELECT/WITH run immediately; INSERT/UPDATE/DELETE ask
         for confirmation first and are logged to the audit trail either way. Schema changes (DROP/ALTER/CREATE/
         TRUNCATE/...) aren't allowed here — that needs a real migration.
@@ -1094,7 +1094,7 @@ function DbConsoleCard() {
               ))}
             </tbody>
           </table>
-          <div className="text-primary/40 text-[11px] px-2 py-1">
+          <div className="text-ink/40 text-[11px] px-2 py-1">
             {result.rowCount} row(s){result.truncated ? ' (truncated to 500)' : ''}
           </div>
         </div>
@@ -1111,7 +1111,7 @@ function DbConsoleCard() {
               <span className="font-display tracking-wider">CONFIRM WRITE</span>
             </div>
             <pre className="text-primary/80 text-xs bg-black/40 border border-primary/10 p-2 mb-4 overflow-x-auto whitespace-pre-wrap break-all">{sql}</pre>
-            <p className="text-primary/60 text-xs mb-4">This runs directly against production data and is logged to the audit trail. Are you sure?</p>
+            <p className="text-ink/60 text-xs mb-4">This runs directly against production data and is logged to the audit trail. Are you sure?</p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirmOpen(false)} className="px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary text-xs">
                 CANCEL
@@ -1166,10 +1166,10 @@ function StripeHealthCard() {
         <button onClick={load} className="text-primary/50 hover:text-primary"><RefreshCw size={13} /></button>
       </div>
       {error && <div className="text-red-500 text-xs">{error}</div>}
-      {data?.configured === false && <div className="text-primary/40 text-xs italic">Stripe not configured.</div>}
+      {data?.configured === false && <div className="text-ink/40 text-xs italic">Stripe not configured.</div>}
       {data?.configured && data.error && <div className="text-red-500 text-xs">{data.error}</div>}
       {data?.configured && data.balance && (
-        <div className="text-xs text-primary/70 mb-2">
+        <div className="text-xs text-ink/70 mb-2">
           Available: {(data.balance.available || []).map((b) => `${(b.amount / 100).toFixed(2)} ${b.currency.toUpperCase()}`).join(', ') || '—'}
         </div>
       )}
@@ -1221,7 +1221,7 @@ function AuditLogTab() {
         <div className="text-xs text-primary/60 tracking-wider">AUDIT LOG — LAST 100</div>
         <button onClick={load} className="text-primary/50 hover:text-primary"><RefreshCw size={13} /></button>
       </div>
-      {entries.length === 0 && <div className="text-primary/40 text-xs italic py-4 text-center">No admin actions logged yet.</div>}
+      {entries.length === 0 && <div className="text-ink/40 text-xs italic py-4 text-center">No admin actions logged yet.</div>}
       <div className="space-y-2 max-h-[32rem] overflow-y-auto scrollbar-matrix">
         {entries.map((e) => (
           <div key={e.id} className="text-xs border-b border-primary/10 pb-2 last:border-0">
@@ -1230,7 +1230,7 @@ function AuditLogTab() {
               <span className="text-primary/40">{new Date(e.created_date).toLocaleString()}</span>
               <span className="text-primary/40">— {e.admin?.email || 'unknown'}</span>
             </div>
-            {e.details && <div className="text-primary/50 mt-1 break-all font-mono text-[11px]">{e.details}</div>}
+            {e.details && <div className="text-ink/50 mt-1 break-all font-mono text-[11px]">{e.details}</div>}
           </div>
         ))}
       </div>
@@ -1258,7 +1258,7 @@ export default function AdminPanel() {
           <ShieldCheck size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">ADMIN CONTROL PANEL</h1>
         </div>
-        <p className="text-primary/60 text-sm mb-8">
+        <p className="text-ink/60 text-sm mb-8">
           // Model/routing control, margin visibility, monitoring, general config, and the maintenance punch-list — all in one place. Every write below is logged to the audit trail.
         </p>
 

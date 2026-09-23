@@ -102,7 +102,7 @@ export default function ConnectDevice() {
             <CheckCircle2 size={18} className="text-success shrink-0 mt-0.5" />
             <div>
               <p className="text-ink text-sm mb-1">Connected.</p>
-              <p className="text-primary/60 text-xs">You can close this tab and return to the app.</p>
+              <p className="text-ink/60 text-xs">You can close this tab and return to the app.</p>
             </div>
           </div>
         ) : outcome === 'denied' ? (
@@ -111,7 +111,7 @@ export default function ConnectDevice() {
           </div>
         ) : !code ? (
           <form onSubmit={submitCode} className="border border-primary/20 bg-primary/5 px-4 py-4">
-            <p className="text-primary/60 text-xs mb-3">Enter the code shown in the app.</p>
+            <p className="text-ink/60 text-xs mb-3">Enter the code shown in the app.</p>
             <div className="flex gap-2">
               <input
                 value={codeInput}
@@ -165,7 +165,7 @@ export default function ConnectDevice() {
           </div>
         ) : null}
 
-        <p className="text-primary/40 text-[11px] mt-6">
+        <p className="text-ink/40 text-[11px] mt-6">
           Only approve this if you just started this connection from an app on your own device.
         </p>
       </div>

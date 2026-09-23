@@ -104,7 +104,7 @@ export default function PhotoDriveWidget() {
         <Camera size={16} className="text-primary" />
         <h2 className="text-sm font-display tracking-widest text-heading">TAKE A PHOTO → YOUR GOOGLE DRIVE</h2>
       </div>
-      <p className="text-primary/50 text-[11px] mb-3">
+      <p className="text-ink/50 text-[11px] mb-3">
         The photo is uploaded to <strong className="text-primary/70">your own</strong> Google Drive folder — Morpheus never stores it.
         It uses the Google account you have already connected — Command Deck or Drive, whichever you granted — never a second one.
       </p>
@@ -120,12 +120,12 @@ export default function PhotoDriveWidget() {
           <AlertTriangle size={13} className="mt-0.5 shrink-0" /> <span>{err}</span>
         </div>
       )}
-      {note && <div className="text-primary/70 text-xs border border-primary/30 px-3 py-2 mb-3">{note}</div>}
+      {note && <div className="text-ink/70 text-xs border border-primary/30 px-3 py-2 mb-3">{note}</div>}
 
       {/* Not connected: say exactly what is missing and where to fix it. */}
       {!loading && status && status.connected === false && (
         <div className="space-y-2">
-          <p className="text-primary/70 text-xs">{status.message}</p>
+          <p className="text-ink/70 text-xs">{status.message}</p>
           <a href={status.connectPath || '/settings'} className={btn}>
             <ExternalLink size={12} /> OPEN SETTINGS → GOOGLE DRIVE
           </a>
@@ -135,7 +135,7 @@ export default function PhotoDriveWidget() {
       {/* Connected but no usable folder: offer to make one, or take a link. */}
       {!loading && status?.connected && !status.folder && (
         <div className="space-y-3">
-          {status.message && <p className="text-primary/70 text-xs">{status.message}</p>}
+          {status.message && <p className="text-ink/70 text-xs">{status.message}</p>}
           <button onClick={createFolder} disabled={busy === 'create'} className={btn}>
             {busy === 'create' ? <Loader2 size={12} className="animate-spin" /> : <FolderPlus size={12} />}
             CREATE “{(status.suggestedFolderName || 'Morpheus Photos').toUpperCase()}” IN MY DRIVE
@@ -151,7 +151,7 @@ export default function PhotoDriveWidget() {
               {busy === 'folder' ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} USE THIS FOLDER
             </button>
           </div>
-          <p className="text-primary/40 text-[10px]">
+          <p className="text-ink/40 text-[10px]">
             A folder made here always works. A folder from elsewhere in your Drive may be refused — this connection is scoped to
             files Morpheus created, so the error will say so rather than pretending the folder is missing.
           </p>
@@ -161,7 +161,7 @@ export default function PhotoDriveWidget() {
       {/* Ready: camera first on a phone, file picker everywhere else. */}
       {!loading && status?.folder && (
         <div className="space-y-3">
-          <div className="text-[11px] text-primary/60">
+          <div className="text-[11px] text-ink/60">
             Saving to{' '}
             <a href={status.folder.link} target="_blank" rel="noreferrer" className="underline hover:text-primary">
               {status.folder.name}
