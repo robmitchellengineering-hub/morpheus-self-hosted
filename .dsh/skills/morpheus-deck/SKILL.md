@@ -27,6 +27,30 @@ An earlier revision of this file said `/deck` was still admin-gated. That was
 true when the source memory was written (2026-09-17) and had already changed by
 the time it was committed here.
 
+## The Deck is its own theme — app-wide colour rules do not reach it
+
+Rob, 2026-09-23, after the contrast work turned the Deck's own title Morpheus
+green: *"comand deck is its own theme please dont change it"*.
+
+"Tweed & Walnut" is a deliberate departure from Morpheus's Matrix look — dark
+walnut on cream, palette in `pages/CommandDeck/deckConstants.js`, painted with
+inline colours. It declares itself by swapping `html[data-theme="deck"]` while it
+is mounted (`pages/CommandDeck/index.jsx`).
+
+That declaration is a real boundary, not decoration. `src/index.css` sets
+app-wide defaults for `h1`–`h6`, `a` and `body`, and an element-level rule beats a
+colour an element merely **inherits** — so the Deck's `h1`, which carries no
+colour of its own and inherits paper cream from its own walnut header, came out
+Morpheus green on that header, and a plain link came out cyan on cream. Both are
+now reset to `inherit` under `[data-theme='deck']`, and
+`scripts/verify-contrast.mjs` asserts the reset still covers all six heading
+levels and that the Deck still declares itself.
+
+So: **never fix a Deck colour by adding a colour to the Deck element** — extend
+the boundary, or the next app-wide rule repaints the next element. And do not run
+an app-wide sweep across `pages/CommandDeck/**`: the prose-ink sweep treats the
+whole directory as out of scope for exactly this reason.
+
 ## How the Deck is fed: dictation → auto-file → synthesis
 
 **This is the product, and getting it backwards leads to building the wrong
