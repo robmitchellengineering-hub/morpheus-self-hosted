@@ -609,6 +609,13 @@ class Morpheus_Health {
 	 * already provides (update-core.php, options-general.php, …). Kept, because
 	 * a finding with no way to act on it is the thing to avoid; only this site's
 	 * own URLs are returned.
+	 *
+	 * A root-relative href is resolved against THIS site before it leaves. The
+	 * panel renders the value straight into an href inside the Morpheus app,
+	 * where a bare `/wp-admin/…` resolves against the app's own origin and 404s
+	 * — so a link the operator was told to follow would land on our error page.
+	 * Core normally emits absolute action URLs, but the filter below admits a
+	 * relative one, and a value that leaves here is the app's to trust.
 	 */
 	private static function links( $actions ) {
 		if ( ! is_string( $actions ) || '' === $actions ) {
@@ -621,8 +628,11 @@ class Morpheus_Health {
 				if ( '' === $url ) {
 					continue;
 				}
+				if ( 0 === strpos( $url, '/' ) ) {
+					$url = home_url( $url );
+				}
 				// Same-site only: an external link in a findings list is noise.
-				if ( 0 !== strpos( $url, home_url() ) && 0 !== strpos( $url, '/' ) ) {
+				if ( 0 !== strpos( $url, home_url() ) ) {
 					continue;
 				}
 				$out[] = array(

@@ -156,7 +156,7 @@ class Morpheus_Fixes {
 				'steps' => array(
 					array( 'text' => 'Note every file named in the finding. If you (or a developer) patched core deliberately, stop here and keep a record of why.' ),
 					array( 'text' => 'Take a full backup of the site — files and database — before touching core.' ),
-					array( 'text' => 'Re-install WordPress from the Dashboard. WordPress replaces core files and leaves your content, themes and plugins alone.', 'link' => '/wp-admin/update-core.php' ),
+					array( 'text' => 'Re-install WordPress from the Dashboard. WordPress replaces core files and leaves your content, themes and plugins alone.', 'link' => admin_url( 'update-core.php' ) ),
 					array( 'text' => 'Come back and scan again; Morpheus confirms the checksums itself.' ),
 				),
 			),
@@ -166,7 +166,7 @@ class Morpheus_Fixes {
 				'does'  => 'A plugin file that does not match the package wordpress.org publishes means the code on disk is not the code the author shipped. Re-installing the same version is the clean fix.',
 				'steps' => array(
 					array( 'text' => 'Note the plugin named in the finding and the files listed under it.' ),
-					array( 'text' => 'Delete the plugin and install it again from the directory — same version, clean files.', 'link' => '/wp-admin/plugin-install.php' ),
+					array( 'text' => 'Delete the plugin and install it again from the directory — same version, clean files.', 'link' => admin_url( 'plugin-install.php' ) ),
 					array( 'text' => 'If the extra file is one you added deliberately, keep a note of it rather than deleting it on the strength of this check.' ),
 				),
 			),
@@ -185,7 +185,7 @@ class Morpheus_Fixes {
 				'label' => 'Review the administrator accounts',
 				'does'  => 'Every account listed can reach wp-admin and change anything on the site. Morpheus never removes an account — this is a list to check.',
 				'steps' => array(
-					array( 'text' => 'Open the users list and confirm you recognise every administrator, and that the email address is one you control.', 'link' => '/wp-admin/users.php?role=administrator' ),
+					array( 'text' => 'Open the users list and confirm you recognise every administrator, and that the email address is one you control.', 'link' => admin_url( 'users.php?role=administrator' ) ),
 					array( 'text' => 'For an account you do not recognise: change its password first, then remove it, then change the passwords of every other administrator.' ),
 					array( 'text' => 'A new administrator account is a standard way to keep access after a cleanup, so check the registration dates in the finding.' ),
 				),
@@ -229,8 +229,8 @@ class Morpheus_Fixes {
 				'does'    => 'A plugin withdrawn from wordpress.org will never get another security fix.',
 				'steps'   => array(
 					array( 'text' => 'Open your plugins list and note which plugin the finding named.' ),
-					array( 'text' => 'Find its replacement, or confirm you no longer need it.', 'link' => '/wp-admin/plugin-install.php' ),
-					array( 'text' => 'Install the replacement and deactivate the old one, then come back and re-check — Morpheus confirms it itself.', 'link' => '/wp-admin/plugins.php' ),
+					array( 'text' => 'Find its replacement, or confirm you no longer need it.', 'link' => admin_url( 'plugin-install.php' ) ),
+					array( 'text' => 'Install the replacement and deactivate the old one, then come back and re-check — Morpheus confirms it itself.', 'link' => admin_url( 'plugins.php' ) ),
 				),
 			),
 
@@ -241,7 +241,7 @@ class Morpheus_Fixes {
 				'label' => 'Make WordPress check for updates again',
 				'does'  => 'WordPress could not reach wordpress.org to ask, so it does not know whether it is current — and neither do you.',
 				'steps' => array(
-					array( 'text' => 'Force a check now.', 'link' => '/wp-admin/update-core.php?force-check=1' ),
+					array( 'text' => 'Force a check now.', 'link' => admin_url( 'update-core.php?force-check=1' ) ),
 					array( 'text' => 'If it still cannot reach out, paste this to your host: "Please allow this site\'s PHP to make outbound HTTPS requests to api.wordpress.org and downloads.wordpress.org."' ),
 				),
 			),
@@ -261,7 +261,7 @@ class Morpheus_Fixes {
 				'does'  => 'Customer details and payment steps should never cross plain HTTP. The certificate is issued by your host or CDN, not by WordPress.',
 				'steps' => array(
 					array( 'text' => 'Get a free certificate from your host — look for "SSL/TLS" or "Free SSL" in the control panel.' ),
-					array( 'text' => 'Then set both URLs to https://.', 'link' => '/wp-admin/options-general.php' ),
+					array( 'text' => 'Then set both URLs to https://.', 'link' => admin_url( 'options-general.php' ) ),
 				),
 			),
 
@@ -315,7 +315,7 @@ class Morpheus_Fixes {
 				'label' => 'Finish switching the site to HTTPS',
 				'does'  => 'The certificate may exist while WordPress still points at http://.',
 				'steps' => array(
-					array( 'text' => 'Settings → General: make sure both WordPress Address and Site Address start with https://.', 'link' => '/wp-admin/options-general.php' ),
+					array( 'text' => 'Settings → General: make sure both WordPress Address and Site Address start with https://.', 'link' => admin_url( 'options-general.php' ) ),
 					array( 'text' => 'Then re-check — Morpheus confirms the site now answers on HTTPS.' ),
 				),
 			),
@@ -340,7 +340,7 @@ class Morpheus_Fixes {
 				'label' => 'Consider a persistent object cache',
 				'does'  => 'Only worth doing on a busy site, and it needs a Redis or Memcached service from your host.',
 				'steps' => array(
-					array( 'text' => 'Ask your host whether Redis is available on your plan, then install an object-cache plugin.', 'link' => '/wp-admin/plugin-install.php?s=redis&tab=search&type=term' ),
+					array( 'text' => 'Ask your host whether Redis is available on your plan, then install an object-cache plugin.', 'link' => admin_url( 'plugin-install.php?s=redis&tab=search&type=term' ) ),
 				),
 			),
 			'available_updates_disk_space' => array(
@@ -349,7 +349,7 @@ class Morpheus_Fixes {
 				'does'  => 'Updates need room to unpack; only your host can give you more.',
 				'steps' => array(
 					array( 'text' => 'Delete unused plugins and themes, and old backups, then re-check.' ),
-					array( 'text' => 'If the site still has no room, ask your host for more disk.', 'link' => '/wp-admin/plugins.php?plugin_status=inactive' ),
+					array( 'text' => 'If the site still has no room, ask your host for more disk.', 'link' => admin_url( 'plugins.php?plugin_status=inactive' ) ),
 				),
 			),
 			'autoloaded_options' => array(
@@ -357,7 +357,7 @@ class Morpheus_Fixes {
 				'label' => 'Trim autoloaded data',
 				'does'  => 'A large autoloaded set slows every page. What to remove needs judgement, so Morpheus shows you where to look rather than guessing.',
 				'steps' => array(
-					array( 'text' => 'Usually this is a plugin leaving data behind, or a caching plugin. Deactivate plugins you are not using, then re-check.', 'link' => '/wp-admin/plugins.php' ),
+					array( 'text' => 'Usually this is a plugin leaving data behind, or a caching plugin. Deactivate plugins you are not using, then re-check.', 'link' => admin_url( 'plugins.php' ) ),
 				),
 			),
 
@@ -375,7 +375,7 @@ class Morpheus_Fixes {
 				'label' => 'Ask your host about the REST API being blocked',
 				'does'  => 'Something is intercepting /wp-json/ — usually a security plugin or the host.',
 				'steps' => array(
-					array( 'text' => 'Check your security plugin for a "disable REST API" setting.', 'link' => '/wp-admin/plugins.php' ),
+					array( 'text' => 'Check your security plugin for a "disable REST API" setting.', 'link' => admin_url( 'plugins.php' ) ),
 					array( 'text' => 'If no plugin is doing it, send the finding above to your host.' ),
 				),
 			),
@@ -409,7 +409,7 @@ class Morpheus_Fixes {
 				'label' => 'Consider a page cache',
 				'does'  => 'Performance advice rather than a fault; a caching plugin is the usual fix.',
 				'steps' => array(
-					array( 'text' => 'Install a caching plugin if the site is slow rather than for this check alone.', 'link' => '/wp-admin/plugin-install.php?s=cache&tab=search&type=term' ),
+					array( 'text' => 'Install a caching plugin if the site is slow rather than for this check alone.', 'link' => admin_url( 'plugin-install.php?s=cache&tab=search&type=term' ) ),
 				),
 			),
 
@@ -451,7 +451,7 @@ class Morpheus_Fixes {
 			if ( ! $has_link ) {
 				$registry[ $id ]['steps'][] = array(
 					'text' => 'For background, Tools → Site Health in wp-admin shows this same test with WordPress\'s own explanation.',
-					'link' => '/wp-admin/site-health.php',
+					'link' => admin_url( 'site-health.php' ),
 				);
 			}
 		}
