@@ -102,6 +102,17 @@ check('the safe set is the attention-worthy auto findings and nothing else', [..
 // the bulk press.
 check('a `good` finding is never in the safe set', safe.some((f) => f.status === 'good'), false);
 check('an `unknown` finding is never in the safe set', safeSet(cleanFindings({ findings: [find('morpheus_public_debug_log', 'unknown', 'auto')] })), []);
+
+// THE MAPPER'S DEFENSIVE DEFAULT. A finding that arrives with NO status is an
+// unanswered question, not a pass: with the default flipped to 'good' it counts
+// as a check that succeeded, which is the false-success shape this whole feature
+// exists to avoid. Found by mutation — `|| 'unknown'` flipped to `|| 'good'`
+// passed this guard until these two checks existed.
+const noStatus = cleanSummary({ findings: [{ id: 'morpheus_uploads_php' }] });
+check('a finding with no status counts as unknown', noStatus.unknown, 1);
+check('…and never as good', noStatus.good, 0);
+check('…so it is not in the safe set either',
+  safeSet(cleanFindings({ findings: [{ id: 'morpheus_uploads_php' }] })), []);
 check('a `guided` auto-looking finding is never in the safe set', safe.some((f) => f.fix.kind !== 'auto'), false);
 check('the registry still has four automatic fixes', AUTO_IDS.length, 4);
 check('a modified core file is NEVER in the safe set', safe.some((f) => f.id === 'morpheus_core_checksums'), false);
