@@ -50,7 +50,7 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
               value={spec}
               onChange={e => setSpec(e.target.value)}
               placeholder="// e.g. focus on the API layer, include edge cases for auth..."
-              className="w-full h-24 bg-background text-primary text-sm border border-primary/30 px-3 py-2 outline-none focus:border-primary/60 resize-none scrollbar-matrix"
+              className="w-full h-24 bg-background text-ink text-sm border border-primary/30 px-3 py-2 outline-none focus:border-primary/60 resize-none scrollbar-matrix"
               disabled={running}
             />
             <p className="text-xs text-ink/75 mt-1">// Morpheus will analyze all files and generate tests + CI pipeline</p>

@@ -250,7 +250,7 @@ export default function ConnectionsSection({ connections, onChange }) {
                                   value={connections[p.id]?.[f.key] || ''}
                                   onChange={e => updateField(p.id, f.key, e.target.value)}
                                   placeholder={f.placeholder}
-                                  className="flex-1 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                                  className="flex-1 bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20"
                                 />
                                 {isSecret && (
                                   <button

@@ -28,7 +28,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   scanSource, rawOccurrences, isDeckFile, DECK_PATHS, KNOWN_GREEN_CONSTANTS,
-  PROSE_TAGS, ACTION_TAGS, HEADING_TAGS, EMPHASIS_TAGS,
+  PROSE_TAGS, ACTION_TAGS, FIELD_TAGS, HEADING_TAGS, EMPHASIS_TAGS,
 } from './lib/prose-ink.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -131,12 +131,12 @@ eq('no in-rule prose still carries the brand green', stillGreen, []);
 // number cannot see the failure it is meant to see: with 18 green headings and a
 // floor of 5, converting one heading is invisible. Growth still passes; ANY
 // reduction fails, and the message says what to do about it.
-const FLOORS = { headings: 18, titles: 86, labels: 376, badges: 4, actions: 955, metrics: 19, emphasis: 7 };
+const FLOORS = { headings: 18, titles: 86, labels: 379, badges: 4, actions: 760, metrics: 19, emphasis: 7 };
 ok('green still marks headings', greenOn.headings >= FLOORS.headings, `headings: ${greenOn.headings} (pinned ${FLOORS.headings})`);
 ok('green still marks titles and headline sizes', greenOn.titles >= FLOORS.titles, `titles: ${greenOn.titles} (pinned ${FLOORS.titles})`);
 ok('green still marks uppercase / runtime labels', greenOn.labels >= FLOORS.labels, `labels: ${greenOn.labels} (pinned ${FLOORS.labels})`);
 ok('green still marks badges', greenOn.badges >= FLOORS.badges, `badges: ${greenOn.badges} (pinned ${FLOORS.badges})`);
-ok('green still marks actions (button/a/label/input)', greenOn.actions >= FLOORS.actions, `actions: ${greenOn.actions} (pinned ${FLOORS.actions})`);
+ok('green still marks controls and structure (button/a/summary/th)', greenOn.actions >= FLOORS.actions, `controls: ${greenOn.actions} (pinned ${FLOORS.actions})`);
 ok('green still marks metrics and counters', greenOn.metrics >= FLOORS.metrics, `metrics: ${greenOn.metrics} (pinned ${FLOORS.metrics})`);
 ok('green still marks inline emphasis', greenOn.emphasis >= FLOORS.emphasis, `emphasis: ${greenOn.emphasis} (pinned ${FLOORS.emphasis})`);
 ok('the sweep is still applied (text-ink/N is in use)', counts.sweptInk >= 700, `text-ink/N: ${counts.sweptInk}`);
@@ -196,8 +196,22 @@ eq('no Deck file was swept (no text-ink token anywhere in the Deck)', deckInked,
 // ── 6. the rule shape cannot be quietly narrowed again ──────────────────────
 eq('the prose tags include the ones the size gate used to hide',
   ['div', 'li', 'p', 'pre', 'span', 'td'].every((t) => PROSE_TAGS.has(t)), true);
-eq('buttons, links and field labels are actions',
-  ['a', 'button', 'input', 'label', 'select', 'textarea'].every((t) => ACTION_TAGS.has(t)), true);
+eq('buttons, links, disclosure and table headers stay green',
+  ['a', 'button', 'summary', 'th'].every((t) => ACTION_TAGS.has(t)), true);
+eq('form fields are OUT of the keep-green set (Rob, 2026-09-23)',
+  ['input', 'textarea', 'select'].every((t) => !ACTION_TAGS.has(t) && FIELD_TAGS.has(t)), true);
+eq('a form label is prose now', PROSE_TAGS.has('label') && !ACTION_TAGS.has('label'), true);
+{
+  // The decision itself, as behaviour rather than as membership.
+  const probe = (src) => scanSource(src, 'src/pages/Landing.jsx').map((o) => o.verdict === 'convert' ? 'convert' : o.reason);
+  eq('a field value converts', probe('<input className="text-primary/70" />'), ['convert']);
+  eq('a placeholder converts with it', probe('<input className="placeholder:text-primary/20" />'), ['convert']);
+  eq('a form label converts', probe('<label className="text-primary/60">API key</label>'), ['convert']);
+  eq('a textarea converts', probe('<textarea className="text-primary/70" />'), ['convert']);
+  eq('a button still stays green', probe('<button className="text-primary/60">Save</button>'), ['action-tag']);
+  eq('a disclosure control still stays green', probe('<summary className="text-primary/60">More</summary>'), ['action-tag']);
+  eq('a table header still stays green', probe('<th className="text-primary/60">Name</th>'), ['action-tag']);
+}
 {
   // A prose host with NO size class must convert: that was the whole complaint.
   const noSize = scanSource('<p className="text-primary/60 leading-relaxed">Some prose.</p>', 'src/pages/Landing.jsx');

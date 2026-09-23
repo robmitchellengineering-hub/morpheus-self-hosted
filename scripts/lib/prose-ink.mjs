@@ -47,17 +47,21 @@
  */
 export const PROSE_TAGS = new Set([
   'p', 'span', 'div', 'td', 'li', 'dd', 'dt', 'figcaption', 'blockquote',
-  'pre', 'code', 'tr', 'ul', 'ol',
+  'pre', 'code', 'tr', 'ul', 'ol', 'label',
 ]);
 /**
  * Tags that carry structure or an action, so green keeps meaning something:
  * buttons and controls are actions, `label` is a field label, `a` is a link, and
  * `th` is a column heading. Their text is not the running prose Rob is reading.
  */
-export const ACTION_TAGS = new Set([
-  'button', 'a', 'label', 'input', 'textarea', 'select', 'option', 'summary',
-  'details', 'th',
-]);
+export const ACTION_TAGS = new Set(['button', 'a', 'summary', 'details', 'th']);
+/**
+ * Form fields. Rob, 2026-09-23: "a form label or the text you type into a field
+ * is text you read, not structure", so these came OUT of the keep-green set.
+ * They need their own set because an `input` has no children to judge — the text
+ * the user reads is its value and its placeholder, not a child node.
+ */
+export const FIELD_TAGS = new Set(['input', 'textarea', 'select', 'option']);
 export const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 /** Inline emphasis inside prose: green is the brand's emphasis, so it stays. */
 export const EMPHASIS_TAGS = new Set(['strong', 'b', 'em', 'i', 'mark', 'kbd', 'samp', 'var', 'abbr', 'cite']);
@@ -132,10 +136,9 @@ const hasInk = (classes) => classes.some((c) => /^text-ink(?:\/\d+)?$/.test(stri
  * "not a rival" test and looks like a conflict. Strip the delimiters first.
  */
 const cleanToken = (c) => c.replace(/^[^A-Za-z[]+/, '').replace(/[^A-Za-z0-9\]/%.-]+$/, '');
-const segmentHasRival = (segment) =>
-  segment.split(/\s+/).map(cleanToken).some((c) =>
-    c && !/^[a-z-]+:/.test(c) && !/^\[/.test(c) &&
-    (isRivalColour(c) || /^text-ink(?:\/\d+)?$/.test(stripVariants(c))));
+const isPlain = (c) => c && !/^[a-z-]+:/.test(c) && !/^\[/.test(c);
+const isPlainPrimary = (c) => isPlain(c) && /^text-primary(?![\w-])(?:\/\d+)?$/.test(c);
+const isPlainRival = (c) => isPlain(c) && (isRivalColour(c) || /^text-ink(?:\/\d+)?$/.test(stripVariants(c)));
 
 /**
  * A conflict is two colours that can apply AT THE SAME TIME. In a computed
@@ -145,7 +148,13 @@ const segmentHasRival = (segment) =>
  * holding both and does not.
  */
 const literalHasRival = (interior) =>
-  interior.split(/['"`]/).some((seg) => /text-primary/.test(seg) && segmentHasRival(seg));
+  interior.split(/['"`]/).some((seg) => {
+    const toks = seg.split(/\s+/).map(cleanToken).filter(Boolean);
+    // BOTH sides must be PLAIN. A reverted `placeholder:text-primary/65` sitting
+    // next to a `text-ink` is not a conflict — they apply at different times — and
+    // treating it as one let a partial revert hide from the guard.
+    return toks.some(isPlainPrimary) && toks.some(isPlainRival);
+  });
 
 /**
  * Does the `/` at `k` begin a regex literal rather than a division? A regex is
@@ -714,7 +723,12 @@ function classify(el) {
   // tells you why it stays green.
   if (ACTION_TAGS.has(flat)) return { verdict: 'leave', reason: 'action-tag' };
   if (EMPHASIS_TAGS.has(flat)) return { verdict: 'leave', reason: 'inline-emphasis' };
-  if (!PROSE_TAGS.has(flat)) return { verdict: 'leave', reason: 'component-host' };
+
+  // A form field is judged before the children checks: an `input` renders no
+  // children at all, and reading that as "icon or empty" is exactly how a field's
+  // text stayed green while everything around it turned white.
+  const isField = FIELD_TAGS.has(flat);
+  if (!isField && !PROSE_TAGS.has(flat)) return { verdict: 'leave', reason: 'component-host' };
 
   // A computed className with a rival colour is a STATE pair — `ok ? 'text-primary'
   // : 'text-red-400'` only ever applies one of them — so it converts. A single
@@ -723,6 +737,8 @@ function classify(el) {
   // collapse the two states into one.
   if (el.conflictingLiteral) return { verdict: 'leave', reason: 'multi-colour' };
   if (el.dynamic && hasInk(classes)) return { verdict: 'leave', reason: 'ink-collision' };
+
+  if (isField) return { verdict: 'convert', reason: null };
 
   // A label reads as a title whether the capitals come from the class, from the
   // text, or from a `.toUpperCase()` at runtime.
@@ -762,13 +778,16 @@ function classify(el) {
  * `[&_li]:text-primary` is prose inside a rendered description and converts,
  * while `[&_h2]:text-primary` is a title inside prose and stays green.
  */
-function variantVerdict(prefix) {
+function variantVerdict(prefix, tag) {
   if (!prefix) return null;
+  // A placeholder is the field's RESTING content — the hint you read before you
+  // type — not an interaction state like hover or focus. It is the same text as
+  // the value, so it follows the value into ink.
+  if (/^placeholder:$/.test(prefix) && FIELD_TAGS.has(String(tag).toLowerCase())) return null;
   const arbitrary = prefix.match(/\[&_([a-z0-9]+)\]:/);
   if (arbitrary) {
     const target = arbitrary[1].toLowerCase();
     if (VARIANT_PROSE_TARGETS.has(target)) return null;            // judge as prose
-    if (VARIANT_TITLE_TARGETS.has(target)) return { verdict: 'leave', reason: 'descendant-title' };
     return { verdict: 'leave', reason: 'descendant-title' };
   }
   return { verdict: 'leave', reason: 'state-variant' };
@@ -810,7 +829,7 @@ export function scanSource(src, rel = '') {
         let verdict = base.verdict;
         let reason = base.reason;
         if (verdict === 'convert' && variantPrefix) {
-          const v = variantVerdict(variantPrefix);
+          const v = variantVerdict(variantPrefix, el.tag);
           if (v) { verdict = v.verdict; reason = v.reason; }
         }
         claimed[offset] = 1;

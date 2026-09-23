@@ -186,7 +186,7 @@ function FreeUsageGrantsCard() {
           onChange={(e) => setEmail(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') grant(); }}
           placeholder="account@example.com"
-          className="flex-1 bg-background border border-primary/30 px-2 py-1.5 text-xs text-primary placeholder:text-primary/30"
+          className="flex-1 bg-background border border-primary/30 px-2 py-1.5 text-xs text-ink placeholder:text-ink/30"
         />
         <button onClick={grant} disabled={saving || !email.trim()} className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs transition-colors disabled:opacity-40">
           {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} GRANT
@@ -395,7 +395,7 @@ function ModelsTab() {
                   defaultValue={settings.settings[key] || ''}
                   onBlur={(e) => { if (e.target.value !== (settings.settings[key] || '')) saveOverride(role, e.target.value.trim()); }}
                   placeholder={settings.envDefaults[envKey] || 'auto'}
-                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
                 />
                 {savingKey === key && <Loader2 size={13} className="animate-spin text-primary/60" />}
               </div>
@@ -425,7 +425,7 @@ function ModelsTab() {
                     saveTempOverride(role, v);
                   }}
                   placeholder="0.7"
-                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
                 />
                 {savingKey === key && <Loader2 size={13} className="animate-spin text-primary/60" />}
               </div>
@@ -461,17 +461,17 @@ function ModelsTab() {
                     <td className="py-1.5 pr-2">
                       <input type="number" step="0.01" value={get('input_price_per_m', '') ?? ''}
                         onChange={(e) => setField('input_price_per_m', e.target.value)}
-                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-primary focus:outline-none focus:border-primary/50" />
+                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink focus:outline-none focus:border-primary/50" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="number" step="0.01" value={get('output_price_per_m', '') ?? ''}
                         onChange={(e) => setField('output_price_per_m', e.target.value)}
-                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-primary focus:outline-none focus:border-primary/50" />
+                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink focus:outline-none focus:border-primary/50" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="number" step="0.1" value={get('markup_multiplier', 2.0) ?? 2.0}
                         onChange={(e) => setField('markup_multiplier', e.target.value)}
-                        className="w-16 bg-black/30 border border-primary/20 px-1.5 py-1 text-primary focus:outline-none focus:border-primary/50" />
+                        className="w-16 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink focus:outline-none focus:border-primary/50" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="checkbox" checked={get('active', true) === true || get('active', true) === undefined}
@@ -578,9 +578,9 @@ function SettingsTab() {
 
         <div className="flex items-center gap-2 pt-3 border-t border-primary/10">
           <input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="key"
-            className="w-48 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50" />
+            className="w-48 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50" />
           <input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="value"
-            className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50" />
+            className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50" />
           <button onClick={addSetting} disabled={saving || !newKey.trim()}
             className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30">
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} SET
@@ -660,7 +660,7 @@ function TasksTab() {
           onChange={(e) => setNewTitle(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
           placeholder="Add a task..."
-          className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+          className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
         />
         <button onClick={addTask} disabled={saving || !newTitle.trim()}
           className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30">
@@ -982,7 +982,7 @@ function NorthflankCard() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="search text (e.g. error)"
-          className="flex-1 min-w-[10rem] bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+          className="flex-1 min-w-[10rem] bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
         />
         <input
           type="number"
@@ -990,7 +990,7 @@ function NorthflankCard() {
           onChange={(e) => setMinutes(e.target.value)}
           min={1}
           max={1440}
-          className="w-20 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary focus:outline-none focus:border-primary/50"
+          className="w-20 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
         />
         <span className="text-ink/40 text-xs">min</span>
         <button
@@ -1056,7 +1056,7 @@ function DbConsoleCard() {
         onChange={(e) => setSql(e.target.value)}
         rows={4}
         spellCheck={false}
-        className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-primary font-mono focus:outline-none focus:border-primary/50 mb-2"
+        className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink font-mono focus:outline-none focus:border-primary/50 mb-2"
       />
       <div className="flex items-center gap-2 mb-3">
         <button

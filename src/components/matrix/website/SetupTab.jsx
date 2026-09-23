@@ -397,7 +397,7 @@ export default function SetupTab({ store, projectId, onChanged }) {
               <div className="text-[9px] text-primary/40 uppercase tracking-wider">Repository name</div>
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-ink/40 shrink-0">{store?.github_login ? `${store.github_login}/` : ''}</span>
-                <input className="flex-1 bg-black/30 border border-primary/20 px-2 h-[36px] text-[12px] text-primary font-mono focus:outline-none focus:border-primary/50"
+                <input className="flex-1 bg-black/30 border border-primary/20 px-2 h-[36px] text-[12px] text-ink font-mono focus:outline-none focus:border-primary/50"
                   value={repoName} onChange={(e) => setRepoName(e.target.value)}
                   autoCapitalize="off" autoCorrect="off" spellCheck={false} />
               </div>

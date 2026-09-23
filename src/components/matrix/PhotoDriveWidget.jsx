@@ -145,7 +145,7 @@ export default function PhotoDriveWidget() {
               value={folderInput}
               onChange={(e) => setFolderInput(e.target.value)}
               placeholder="…or paste a Drive folder link"
-              className="flex-1 min-w-[220px] bg-black/30 border border-primary/20 px-2.5 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50"
+              className="flex-1 min-w-[220px] bg-black/30 border border-primary/20 px-2.5 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50"
             />
             <button onClick={saveFolder} disabled={busy === 'folder' || !folderInput.trim()} className={btn}>
               {busy === 'folder' ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} USE THIS FOLDER

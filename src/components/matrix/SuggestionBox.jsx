@@ -83,14 +83,14 @@ export default function SuggestionBox() {
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder={tab === 'bug' ? "What went wrong, and what did you expect instead?" : 'What should Morpheus do?'}
                 rows={3}
-                className="w-full bg-black/40 border border-primary/30 text-primary text-xs p-2.5 outline-none focus:border-primary/60 placeholder:text-primary/30 resize-none"
+                className="w-full bg-black/40 border border-primary/30 text-ink text-xs p-2.5 outline-none focus:border-primary/60 placeholder:text-ink/30 resize-none"
               />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email (optional — if you want a reply)"
-                className="w-full mt-2 bg-black/40 border border-primary/30 text-primary text-xs p-2.5 outline-none focus:border-primary/60 placeholder:text-primary/30"
+                className="w-full mt-2 bg-black/40 border border-primary/30 text-ink text-xs p-2.5 outline-none focus:border-primary/60 placeholder:text-ink/30"
               />
 
               {error && <p className="text-red-400 text-xs mt-3">// {error}</p>}

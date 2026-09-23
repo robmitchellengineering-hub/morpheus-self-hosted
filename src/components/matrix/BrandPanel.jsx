@@ -102,7 +102,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                       <input type="color" value={b.colors[key]} onChange={(e) => set(`colors.${key}`, e.target.value)}
                         className="w-8 h-8 bg-transparent border border-primary/30 cursor-pointer shrink-0" />
                       <input value={b.colors[key]} onChange={(e) => set(`colors.${key}`, e.target.value)}
-                        className="w-24 bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50" />
+                        className="w-24 bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50" />
                       <div className="min-w-0">
                         <div className="text-[11px] text-ink/75">{label}</div>
                         <div className="text-[10px] text-ink/40 truncate">{hint}</div>
@@ -120,7 +120,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                     <label key={slot} className="block">
                       <span className="text-[10px] text-primary/45 uppercase">{slot}</span>
                       <select value={b.fonts[slot]} onChange={(e) => set(`fonts.${slot}`, e.target.value)}
-                        className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50 mt-0.5">
+                        className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50 mt-0.5">
                         {fonts.map((f) => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </label>
@@ -159,7 +159,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                 <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Logo</div>
                 <input value={b.logoUrl} onChange={(e) => set('logoUrl', e.target.value)}
                   placeholder="https://… — paste a link, or add one in MEDIA and copy it here"
-                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
                 {b.logoUrl && /^https?:\/\//.test(b.logoUrl) && (
                   <div className="mt-2 h-16 bg-black/30 border border-primary/15 flex items-center justify-center">
                     <img src={b.logoUrl} alt="logo preview" className="max-h-full max-w-full object-contain" />
@@ -172,7 +172,7 @@ export default function BrandPanel({ open, onClose, projectId, onSetChange }) {
                 <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Voice &amp; tone</div>
                 <textarea value={b.voice} onChange={(e) => set('voice', e.target.value)} rows={3}
                   placeholder="e.g. warm and direct, no corporate jargon, short sentences, a bit of dry humour"
-                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
               </section>
             </div>
 

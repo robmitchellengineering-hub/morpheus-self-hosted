@@ -1177,7 +1177,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-1.5 bg-black/30 border border-primary/20 px-2 h-[34px]">
             <Search size={11} className="text-primary/35 shrink-0" />
-            <input className="flex-1 bg-transparent text-[12px] text-primary focus:outline-none min-w-0"
+            <input className="flex-1 bg-transparent text-[12px] text-ink focus:outline-none min-w-0"
               placeholder="Search content" value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') load(); }} />

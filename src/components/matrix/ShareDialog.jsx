@@ -192,9 +192,9 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
               )}
               <div>
                 <label className="text-xs text-primary/50 uppercase tracking-wider">{project?.github_repo ? 'Push to a different repository' : 'Repository Name'}</label>
-                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus={!project?.github_repo} />
+                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-primary/30 text-ink px-3 py-2 outline-none focus:border-primary text-sm" autoFocus={!project?.github_repo} />
               </div>
-              <label className="flex items-center gap-2 text-sm text-primary/70 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm text-ink/70 cursor-pointer">
                 <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} className="accent-primary" />
                 Private repository
               </label>
@@ -264,7 +264,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
           <div className="space-y-4">
             <div>
               <label className="text-xs text-primary/50 uppercase tracking-wider">Email Address</label>
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="operator@matrix.net" type="email" className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="operator@matrix.net" type="email" className="w-full mt-1 bg-transparent border border-primary/30 text-ink px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
             </div>
             <button onClick={handleEmail} disabled={loading || !email.trim()} className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2">
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />} SEND FILES

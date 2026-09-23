@@ -300,7 +300,7 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           onInput={resizeTextarea}
           placeholder={listening ? 'listening...' : modeEnabled && mode === 'context' ? 'discuss, plan, ask...' : 'speak...'}
-          className="flex-1 min-w-0 resize-none bg-transparent text-primary placeholder:text-primary/65 outline-none text-sm leading-5 py-0.5 overflow-y-auto scrollbar-matrix"
+          className="flex-1 min-w-0 resize-none bg-transparent text-ink placeholder:text-ink/65 outline-none text-sm leading-5 py-0.5 overflow-y-auto scrollbar-matrix"
           disabled={loading}
           autoComplete="off"
           autoCapitalize="off"

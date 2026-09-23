@@ -73,7 +73,7 @@ export default function Market() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search constructs..."
-            className="bg-transparent text-primary text-sm outline-none w-full"
+            className="bg-transparent text-ink text-sm outline-none w-full"
           />
         </div>
 

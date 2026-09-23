@@ -133,7 +133,7 @@ export default function PagesTab({ projectId, store }) {
       {view === 'list' && (
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-3">
           <div className="flex items-center gap-2 mb-2">
-            <input className="flex-1 bg-black/30 border border-primary/20 px-2.5 h-[34px] text-[12px] text-primary focus:outline-none focus:border-primary/50"
+            <input className="flex-1 bg-black/30 border border-primary/20 px-2.5 h-[34px] text-[12px] text-ink focus:outline-none focus:border-primary/50"
               placeholder="Search pages" value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { setPages(null); loadPages(); } }} />

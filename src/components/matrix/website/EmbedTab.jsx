@@ -145,7 +145,7 @@ export default function EmbedTab({ projectId, connected }) {
       <div className="border border-primary/20 p-3 space-y-3">
         <div className="text-[10px] text-primary/40 uppercase tracking-wider">New token</div>
         <input
-          className="w-full bg-black/30 border border-primary/20 px-2.5 h-[38px] text-[12px] text-primary focus:outline-none focus:border-primary/50"
+          className="w-full bg-black/30 border border-primary/20 px-2.5 h-[38px] text-[12px] text-ink focus:outline-none focus:border-primary/50"
           placeholder="label (e.g. “storefront footer”)" value={label} onChange={(e) => setLabel(e.target.value)} />
         <div className="flex flex-wrap gap-2">
           {ALL_SCOPES.map((s) => (

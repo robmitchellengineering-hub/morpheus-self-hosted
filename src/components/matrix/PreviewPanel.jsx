@@ -345,7 +345,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
                 type="number"
                 value={customW}
                 onChange={e => setCustomW(e.target.value)}
-                className="w-14 text-xs bg-background text-primary border border-primary/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-background text-ink border border-primary/40 px-1 py-1 outline-none"
                 title="Width (px)"
               />
               <span className="text-primary/50 text-xs">×</span>
@@ -353,7 +353,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
                 type="number"
                 value={customH}
                 onChange={e => setCustomH(e.target.value)}
-                className="w-14 text-xs bg-background text-primary border border-primary/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-background text-ink border border-primary/40 px-1 py-1 outline-none"
                 title="Height (px)"
               />
             </div>

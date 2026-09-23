@@ -200,26 +200,26 @@ export default function CostTracker() {
                       {editing ? (
                         <>
                           <td className="px-3 py-2">
-                            <input value={item.service} onChange={(e) => updateItem(idx, 'service', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-primary" />
+                            <input value={item.service} onChange={(e) => updateItem(idx, 'service', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-ink" />
                           </td>
                           <td className="px-3 py-2">
-                            <select value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-primary">
+                            <select value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-ink">
                               {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" step="0.01" value={item.monthly} onChange={(e) => updateItem(idx, 'monthly', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-primary" />
+                            <input type="number" step="0.01" value={item.monthly} onChange={(e) => updateItem(idx, 'monthly', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-ink" />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" step="0.01" value={item.annual} onChange={(e) => updateItem(idx, 'annual', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-primary" />
+                            <input type="number" step="0.01" value={item.annual} onChange={(e) => updateItem(idx, 'annual', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-ink" />
                           </td>
                           <td className="px-3 py-2">
-                            <select value={item.tier} onChange={(e) => updateItem(idx, 'tier', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 text-primary">
+                            <select value={item.tier} onChange={(e) => updateItem(idx, 'tier', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 text-ink">
                               {TIER_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                             </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input value={item.note} onChange={(e) => updateItem(idx, 'note', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-primary" />
+                            <input value={item.note} onChange={(e) => updateItem(idx, 'note', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-ink" />
                           </td>
                           <td className="px-3 py-2">
                             <button onClick={() => removeItem(idx)} className="text-danger/70 hover:text-danger transition-colors">
@@ -259,7 +259,7 @@ export default function CostTracker() {
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
                   rows={3}
-                  className="w-full bg-background border border-primary/30 px-3 py-2 text-primary/80 text-xs"
+                  className="w-full bg-background border border-primary/30 px-3 py-2 text-ink/80 text-xs"
                   placeholder="Anything worth flagging — watch-list items, pending confirmations, etc."
                 />
               ) : (

@@ -232,7 +232,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
             <div className="flex flex-col sm:flex-row gap-2 p-3 border-b border-primary/20 shrink-0">
               <div className="flex items-center gap-2 border border-primary/30 px-2 py-1.5 flex-1">
                 <Search size={14} className="text-primary/50" />
-                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="search constructs..." className="bg-transparent text-primary text-sm outline-none w-full" />
+                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="search constructs..." className="bg-transparent text-ink text-sm outline-none w-full" />
               </div>
               <SheetSelect
                 value={category}
@@ -307,7 +307,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
                 <div className="flex items-center gap-2 text-primary text-sm font-bold"><CheckCircle2 size={14} /> {publishMsg}</div>
                 <div className="flex items-center gap-2">
                   <Link2 size={12} className="text-primary/50 shrink-0" />
-                  <input readOnly value={shareUrl} className="flex-1 bg-background text-primary text-xs border border-primary/30 px-2 py-1.5 outline-none" />
+                  <input readOnly value={shareUrl} className="flex-1 bg-background text-ink text-xs border border-primary/30 px-2 py-1.5 outline-none" />
                   <button onClick={copyShareLink} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-1.5 font-bold">
                     <Copy size={12} /> COPY
                   </button>
@@ -334,7 +334,7 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
 
             {/* Screenshots */}
             <div>
-              <label className="text-xs text-primary/50 block mb-1">SCREENSHOTS (shown on store page)</label>
+              <label className="text-xs text-ink/50 block mb-1">SCREENSHOTS (shown on store page)</label>
               <div className="flex gap-2 flex-wrap mb-2">
                 {publishScreenshots.map((url, i) => (
                   <div key={i} className="relative w-24 h-16 border border-primary/30 bg-background overflow-hidden group">
@@ -353,23 +353,23 @@ export default function MarketplacePanel({ open, onClose, currentProject, onInst
 
             {/* Long description */}
             <div>
-              <label className="text-xs text-primary/50 block mb-1">STORE DESCRIPTION (markdown — optional)</label>
-              <textarea value={publishLongDesc} onChange={e => setPublishLongDesc(e.target.value)} placeholder="## Features&#10;Describe your app in detail...&#10;&#10;## Installation&#10;How to install and run..." rows={4} className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none resize-y" />
+              <label className="text-xs text-ink/50 block mb-1">STORE DESCRIPTION (markdown — optional)</label>
+              <textarea value={publishLongDesc} onChange={e => setPublishLongDesc(e.target.value)} placeholder="## Features&#10;Describe your app in detail...&#10;&#10;## Installation&#10;How to install and run..." rows={4} className="w-full bg-background text-ink text-sm border border-primary/30 px-2 py-1.5 outline-none resize-y" />
             </div>
 
             <div>
-              <label className="text-xs text-primary/50 block mb-1">PRICE (USD, 0 = free)</label>
-              <input type="number" min="0" step="0.01" value={publishPrice} onChange={e => setPublishPrice(e.target.value)} placeholder="0" className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
+              <label className="text-xs text-ink/50 block mb-1">PRICE (USD, 0 = free)</label>
+              <input type="number" min="0" step="0.01" value={publishPrice} onChange={e => setPublishPrice(e.target.value)} placeholder="0" className="w-full bg-background text-ink text-sm border border-primary/30 px-2 py-1.5 outline-none" />
             </div>
             <div>
               <label className="text-xs text-primary/50 block mb-1">CATEGORY</label>
-              <input value={publishCategory} onChange={e => setPublishCategory(e.target.value)} placeholder="general" className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
+              <input value={publishCategory} onChange={e => setPublishCategory(e.target.value)} placeholder="general" className="w-full bg-background text-ink text-sm border border-primary/30 px-2 py-1.5 outline-none" />
             </div>
             <div>
-              <label className="text-xs text-primary/50 block mb-1">TAGS (comma separated)</label>
-              <input value={publishTags} onChange={e => setPublishTags(e.target.value)} placeholder="cli, tool, demo" className="w-full bg-background text-primary text-sm border border-primary/30 px-2 py-1.5 outline-none" />
+              <label className="text-xs text-ink/50 block mb-1">TAGS (comma separated)</label>
+              <input value={publishTags} onChange={e => setPublishTags(e.target.value)} placeholder="cli, tool, demo" className="w-full bg-background text-ink text-sm border border-primary/30 px-2 py-1.5 outline-none" />
             </div>
-            <label className="flex items-start gap-2 text-xs text-primary/60 cursor-pointer">
+            <label className="flex items-start gap-2 text-xs text-ink/60 cursor-pointer">
               <input type="checkbox" checked={publishIncludeArtifacts} onChange={e => setPublishIncludeArtifacts(e.target.checked)} className="mt-0.5" />
               <span className="flex items-center gap-1 flex-wrap">
                 <Package size={12} className="text-primary/50 shrink-0" />

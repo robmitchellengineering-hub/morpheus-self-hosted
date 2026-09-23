@@ -69,7 +69,7 @@ export default function ChatHistoryTab({ project }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="search all chat history…"
-            className="w-full bg-background text-primary border border-primary/30 pl-8 pr-8 py-2 text-sm outline-none placeholder:text-primary/30"
+            className="w-full bg-background text-ink border border-primary/30 pl-8 pr-8 py-2 text-sm outline-none placeholder:text-ink/30"
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"

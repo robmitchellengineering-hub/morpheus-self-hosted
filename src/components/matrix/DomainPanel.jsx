@@ -243,7 +243,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                 <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Domain</div>
                 <input value={d.domain} onChange={(e) => set('domain', e.target.value)}
                   placeholder="valiantmusic.com.au"
-                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50" />
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50" />
                 <div className="text-[10px] text-ink/40 mt-1">Registrable domain, no https:// and no www — the www / apex choice is below.</div>
               </section>
 
@@ -251,14 +251,14 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
               <section>
                 <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Hosted on</div>
                 <select value={d.host} onChange={(e) => set('host', e.target.value)}
-                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50">
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50">
                   <option value="">— choose —</option>
                   {hosts.map((h) => <option key={h} value={h}>{HOST_LABELS[h] || h}</option>)}
                 </select>
                 {d.host && d.host !== 'other' && (
                   <input value={d.hostSubdomain} onChange={(e) => set('hostSubdomain', e.target.value)}
                     placeholder={`your host subdomain (e.g. my-site.${d.host === 'github-pages' ? 'github.io' : d.host === 'vercel' ? 'vercel.app' : d.host === 'cloudflare-pages' ? 'pages.dev' : 'netlify.app'})`}
-                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50 mt-2" />
+                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50 mt-2" />
                 )}
               </section>
 
@@ -345,7 +345,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     Cookieless, privacy-friendly options only — the builder embeds the script and your own account collects the data. No cookie banner needed.
                   </div>
                   <select value={aDraft.provider} onChange={(e) => setAProvider(e.target.value)}
-                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50">
+                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50">
                     {Object.entries(analytics.providers).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}
                   </select>
 
@@ -356,7 +356,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                           <span className="text-[10px] text-primary/45 uppercase">{(A_FIELD_META[f] || [f])[0]}</span>
                           <input value={aDraft[f] || ''} onChange={(e) => setA(f, e.target.value)}
                             placeholder={(A_FIELD_META[f] || [f, ''])[1]}
-                            className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50 mt-0.5" />
+                            className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50 mt-0.5" />
                         </label>
                       ))}
                     </div>
@@ -395,7 +395,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                       <div className="text-[10px] text-green-400/90 mb-1.5">● ON — checks {history.monitoring.url || 'the site'} every {history.monitoring.intervalMinutes || 15} min from a GitHub Action in your repo. Opens an issue if it's down.</div>
                       <div className="flex items-center gap-2">
                         <select value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value))}
-                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-primary focus:outline-none">
+                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-ink focus:outline-none">
                           {[15, 30, 60].map((n) => <option key={n} value={n}>every {n} min</option>)}
                         </select>
                         <button onClick={() => setupMonitor(monitorInterval)} disabled={monitorBusy}
@@ -415,7 +415,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                       </div>
                       <div className="flex items-center gap-2">
                         <select value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value))}
-                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-primary focus:outline-none">
+                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-ink focus:outline-none">
                           {[15, 30, 60].map((n) => <option key={n} value={n}>every {n} min</option>)}
                         </select>
                         <button onClick={() => setupMonitor(monitorInterval)} disabled={monitorBusy || !savedDomain}

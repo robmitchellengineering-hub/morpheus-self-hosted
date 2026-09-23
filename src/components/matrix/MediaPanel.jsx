@@ -151,10 +151,10 @@ export default function MediaPanel({ open, onClose, projectId, onCountChange }) 
               {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-2 py-1.5 flex items-start gap-1.5"><AlertTriangle size={11} className="shrink-0 mt-0.5" /><span>{err}</span></div>}
               {tab === 'url' && (
                 <>
-                  <input value={urlForm.url} onChange={(e) => setUrlForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://your-cdn.com/spring-poster.jpg" className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+                  <input value={urlForm.url} onChange={(e) => setUrlForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://your-cdn.com/spring-poster.jpg" className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
                   <div className="flex gap-2">
-                    <input value={urlForm.name} onChange={(e) => setUrlForm((f) => ({ ...f, name: e.target.value }))} placeholder="name (e.g. Spring Poster)" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
-                    <input value={urlForm.alt} onChange={(e) => setUrlForm((f) => ({ ...f, alt: e.target.value }))} placeholder="alt text" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+                    <input value={urlForm.name} onChange={(e) => setUrlForm((f) => ({ ...f, name: e.target.value }))} placeholder="name (e.g. Spring Poster)" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
+                    <input value={urlForm.alt} onChange={(e) => setUrlForm((f) => ({ ...f, alt: e.target.value }))} placeholder="alt text" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
                   </div>
                   <button onClick={addUrl} disabled={busy || !urlForm.url.trim()} className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-[11px] disabled:opacity-30">
                     {busy ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} ADD LINK

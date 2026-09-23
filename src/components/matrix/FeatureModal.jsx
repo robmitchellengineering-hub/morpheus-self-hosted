@@ -99,7 +99,7 @@ export default function FeatureModal({ open, onClose, projectId, onActiveChange 
                 onChange={(e) => setGoal(e.target.value)}
                 rows={4}
                 placeholder="e.g. Add a comments system — users can leave threaded comments on any item, with edit/delete and a count badge."
-                className="w-full bg-black/40 border border-primary/30 text-primary text-sm p-2 font-mono focus:border-primary/60 outline-none resize-y"
+                className="w-full bg-black/40 border border-primary/30 text-ink text-sm p-2 font-mono focus:border-primary/60 outline-none resize-y"
               />
               <button onClick={plan} disabled={planning || goal.trim().length < 10} className="flex items-center gap-1.5 text-xs px-3 h-[34px] text-black bg-primary hover:bg-primary/90 font-bold disabled:opacity-40">
                 {planning ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} {planning ? 'PLANNING…' : 'PLAN FEATURE'}

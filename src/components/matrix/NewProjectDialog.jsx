@@ -26,11 +26,11 @@ export default function NewProjectDialog({ open, onClose, onCreate }) {
         <div className="space-y-4">
           <div>
             <label className="text-xs text-primary/50 uppercase tracking-wider">Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="my-construct" className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="my-construct" className="w-full mt-1 bg-transparent border border-primary/30 text-ink px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
           </div>
           <div>
             <label className="text-xs text-primary/50 uppercase tracking-wider">Description</label>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="This is the core vision of your app and helps Morpheus stay on track when coding" rows={3} className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm resize-none" />
+            <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="This is the core vision of your app and helps Morpheus stay on track when coding" rows={3} className="w-full mt-1 bg-transparent border border-primary/30 text-ink px-3 py-2 outline-none focus:border-primary text-sm resize-none" />
           </div>
           <div>
             <label className="text-xs text-primary/50 uppercase tracking-wider">Compile Target</label>

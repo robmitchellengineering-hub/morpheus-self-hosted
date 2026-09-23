@@ -190,7 +190,7 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
 
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">SSH public key (injected into the `pi` user; disables password login)</label>
-                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y" />
+                <textarea value={sshPublicKey} onChange={e => setSshPublicKey(e.target.value)} rows={2} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-ink/20 resize-y" />
                 {errors.sshPublicKey && <p className={errClass}>// {errors.sshPublicKey}</p>}
               </div>
 
@@ -212,7 +212,7 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
 
               <div>
                 <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Custom run commands (one per line, run inside the image at build time)</label>
-                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-background text-primary border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-primary/20 resize-y font-mono" />
+                <textarea value={extraRunCommands} onChange={e => setExtraRunCommands(e.target.value)} rows={3} placeholder="echo built-by-morpheus > /etc/morpheus-build" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-xs outline-none placeholder:text-ink/20 resize-y font-mono" />
                 <p className="text-[10px] text-ink/50 mt-1">// Advanced: arbitrary shell commands baked into the image. A failing line is logged but won't abort the build.</p>
               </div>
 

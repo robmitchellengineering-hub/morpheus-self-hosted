@@ -383,7 +383,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
 
       <div className="p-3 flex items-end gap-2">
         <textarea
-          className="flex-1 bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50 resize-none"
+          className="flex-1 bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-ink focus:outline-none focus:border-primary/50 resize-none"
           rows={2}
           placeholder={mode === 'build' ? 'Describe the change…' : 'Ask about your site…'}
           value={input}

@@ -162,8 +162,8 @@ function LogsTab() {
         {!notConfigured && (
           <>
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="filter text" className="flex-1 min-w-[8rem] bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
-              <input type="number" value={minutes} min={1} max={1440} onChange={(e) => setMinutes(e.target.value)} className="w-16 bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="filter text" className="flex-1 min-w-[8rem] bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
+              <input type="number" value={minutes} min={1} max={1440} onChange={(e) => setMinutes(e.target.value)} className="w-16 bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
               <span className="text-ink/40 text-[11px]">min</span>
               <button onClick={pull} disabled={loading} className="flex items-center gap-1 text-[11px] border border-primary/40 px-2 py-1 text-primary/75 hover:text-primary hover:border-primary/70 disabled:opacity-40">
                 {loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} PULL
@@ -224,7 +224,7 @@ function DatabaseTab() {
   return (
     <div className="p-3 space-y-3">
       <Section title="Database console" hint="Direct SQL against this deployment's database. SELECT/WITH run immediately; INSERT/UPDATE/DELETE confirm first. Both are audit-logged. Schema changes are rejected — those need a migration.">
-        <textarea value={sql} onChange={(e) => setSql(e.target.value)} rows={4} spellCheck={false} className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50 mb-2" />
+        <textarea value={sql} onChange={(e) => setSql(e.target.value)} rows={4} spellCheck={false} className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50 mb-2" />
         <button onClick={() => run(false)} disabled={running || !sql.trim()} className={`flex items-center gap-1 px-3 py-1.5 border text-[11px] disabled:opacity-30 ${isWrite ? 'border-yellow-500/60 text-yellow-500 hover:bg-yellow-500/10' : 'border-primary/50 text-primary/80 hover:border-primary hover:text-primary'}`}>
           {running ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {isWrite ? 'RUN (WRITE)' : 'RUN'}
         </button>
@@ -447,7 +447,7 @@ function PunchListTab() {
       <Section title="Maintenance punch list" hint="Things to get to — persists across sessions.">
         {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-2 py-1.5 mb-2">{err}</div>}
         <div className="flex items-center gap-2 mb-3">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); }} placeholder="add a task…" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); }} placeholder="add a task…" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
           <button onClick={add} disabled={saving || !title.trim()} className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-[11px] disabled:opacity-30">
             {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} ADD
           </button>

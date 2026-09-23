@@ -202,7 +202,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   value={logSearch}
                   onChange={e => setLogSearch(e.target.value)}
                   placeholder="search build logs…"
-                  className="w-full bg-background text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
+                  className="w-full bg-background text-ink border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-ink/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -307,7 +307,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   value={snapSearch}
                   onChange={e => setSnapSearch(e.target.value)}
                   placeholder="search snapshots by label…"
-                  className="w-full bg-background text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
+                  className="w-full bg-background text-ink border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-ink/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"

@@ -73,13 +73,13 @@ function JsonNode({ value, path, onChange, keyName }) {
         <input type="checkbox" checked={value} onChange={(e) => set(e.target.checked)} className="accent-[color:var(--primary,#4f8cff)] w-4 h-4" />
       ) : typeof value === 'number' ? (
         <input type="number" value={value} onChange={(e) => set(e.target.value === '' ? 0 : Number(e.target.value))}
-          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50" />
+          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50" />
       ) : isLong ? (
         <textarea value={value ?? ''} onChange={(e) => set(e.target.value)} rows={Math.min(8, (String(value).match(/\n/g) || []).length + 2)}
-          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
       ) : (
         <input value={value ?? ''} onChange={(e) => set(e.target.value)}
-          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+          className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
       )}
     </label>
   );

@@ -42,7 +42,7 @@ export default function FileTree({ files, selectedFile, onSelect, contextPaths, 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="filter files…"
-            className="w-full bg-transparent border border-primary/25 focus:border-primary/60 outline-none text-xs pl-6 pr-6 py-1 text-primary placeholder:text-primary/35"
+            className="w-full bg-transparent border border-primary/25 focus:border-primary/60 outline-none text-xs pl-6 pr-6 py-1 text-ink placeholder:text-ink/35"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary" aria-label="Clear search">

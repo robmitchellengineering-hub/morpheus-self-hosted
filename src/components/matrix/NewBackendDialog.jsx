@@ -99,7 +99,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="my-api"
-              className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+              className="w-full bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20"
               autoFocus
             />
           </div>
@@ -110,7 +110,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
               onChange={e => setDescription(e.target.value)}
               placeholder="What does this backend do?"
               rows={3}
-              className="w-full bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20 resize-y"
+              className="w-full bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20 resize-y"
             />
           </div>
 
@@ -147,14 +147,14 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
                   value={pasteName}
                   onChange={e => setPasteName(e.target.value)}
                   placeholder="filename.js"
-                  className="w-full bg-background text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20"
+                  className="w-full bg-background text-ink border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink/20"
                 />
                 <textarea
                   value={pasteContent}
                   onChange={e => setPasteContent(e.target.value)}
                   placeholder="// paste code here..."
                   rows={4}
-                  className="w-full bg-background text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20 font-mono resize-y"
+                  className="w-full bg-background text-ink border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink/20 font-mono resize-y"
                 />
                 <div className="flex items-center gap-2">
                   <button

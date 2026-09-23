@@ -96,7 +96,7 @@ export default function DonateWidget() {
                   value={customAmount}
                   onChange={(e) => setCustomAmount(e.target.value)}
                   placeholder="Amount"
-                  className="bg-transparent text-primary text-sm outline-none w-full"
+                  className="bg-transparent text-ink text-sm outline-none w-full"
                   autoFocus
                 />
               </div>

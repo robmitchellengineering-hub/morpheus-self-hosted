@@ -239,7 +239,7 @@ export default function Workspace() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search constructs..."
-                className="flex-1 bg-transparent text-primary text-sm outline-none placeholder:text-primary/30 min-w-0"
+                className="flex-1 bg-transparent text-ink text-sm outline-none placeholder:text-ink/30 min-w-0"
               />
               {search && <button onClick={() => setSearch('')} className="text-primary/50 hover:text-primary shrink-0"><X size={14} /></button>}
             </div>
@@ -305,7 +305,7 @@ export default function Workspace() {
                         if (e.key === 'Enter') { e.preventDefault(); saveRename(p); }
                         if (e.key === 'Escape') { setRenameId(null); }
                       }}
-                      className="w-full bg-black/40 border border-primary/40 px-2 py-1.5 text-primary text-sm focus:outline-none focus:border-primary" />
+                      className="w-full bg-black/40 border border-primary/40 px-2 py-1.5 text-ink text-sm focus:outline-none focus:border-primary" />
                     <div className="text-[10px] text-ink/35 mt-1">Enter to save · Escape to cancel</div>
                   </div>
                 ) : (

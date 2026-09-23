@@ -222,7 +222,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
                 value={spec}
                 onChange={e => setSpec(e.target.value)}
                 placeholder="Describe what to build, or leave blank to let Morpheus assess and complete the current state..."
-                className="w-full h-32 bg-background border border-primary/30 text-primary p-3 text-sm outline-none focus:border-primary/60 resize-none scrollbar-matrix"
+                className="w-full h-32 bg-background border border-primary/30 text-ink p-3 text-sm outline-none focus:border-primary/60 resize-none scrollbar-matrix"
                 disabled={running}
               />
             </div>

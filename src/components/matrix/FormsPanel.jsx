@@ -102,7 +102,7 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
                     <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Send submissions to</div>
                     <input value={f.email} onChange={(e) => set('email', e.target.value)} type="email"
                       placeholder="you@yourdomain.com"
-                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
                     {!emailValid && <div className="text-[10px] text-red-400/80 mt-1">That doesn't look like an email address.</div>}
                     <div className="text-[10px] text-ink/40 mt-1">Your own address. Leave blank to set it later — the form still gets built.</div>
                   </section>
@@ -132,7 +132,7 @@ export default function FormsPanel({ open, onClose, projectId, onSetChange }) {
                     <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">After submit, go to</div>
                     <input value={f.thankYouPath} onChange={(e) => set('thankYouPath', e.target.value)}
                       placeholder="/thank-you"
-                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary font-mono focus:outline-none focus:border-primary/50" />
+                      className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50" />
                     <div className="text-[10px] text-ink/40 mt-1">A page path on this site. The builder creates it if it doesn't exist.</div>
                   </section>
 

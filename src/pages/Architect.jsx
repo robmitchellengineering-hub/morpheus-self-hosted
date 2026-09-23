@@ -107,7 +107,7 @@ export default function Architect() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search backends..."
-              className="flex-1 bg-transparent text-primary text-sm outline-none placeholder:text-primary/30 min-w-0"
+              className="flex-1 bg-transparent text-ink text-sm outline-none placeholder:text-ink/30 min-w-0"
             />
             {search && <button onClick={() => setSearch('')} className="text-primary/50 hover:text-primary shrink-0"><X size={14} /></button>}
           </div>
