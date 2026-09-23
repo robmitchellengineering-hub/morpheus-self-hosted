@@ -255,6 +255,19 @@ class Morpheus_Health {
 			'source'      => 'morpheus',
 		);
 
+		// 5. A physical robots.txt in the site root STOPS WordPress serving its
+		//    own — core's file and Morpheus's own robots_txt filter both go
+		//    silent, and nothing in wp-admin mentions it. If that file also went
+		//    stale (the SEO plugin that owned its sitemap path was removed, so
+		//    the path 404s) the site advertises a sitemap that is not there and
+		//    never mentions the one that is. Reported only when Morpheus can
+		//    PROVE the file is the one being served; see
+		//    Morpheus_SEO::robots_txt_state() for the three-step judgement.
+		$robots = class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::robots_txt_state() : null;
+		if ( is_array( $robots ) ) {
+			$checks[] = self::robots_check( $robots );
+		}
+
 		// 6. Abandoned plugins: closed on wordpress.org means no security fixes
 		//    will ever arrive, which no update list can tell you.
 		$closed = self::closed_plugins();
@@ -271,6 +284,60 @@ class Morpheus_Health {
 		}
 
 		return $checks;
+	}
+
+	/**
+	 * The robots.txt check, as one of exactly four honest verdicts.
+	 *
+	 * The LABEL is the good claim and never changes (the same shape every other
+	 * check here uses): a `recommended` verdict means the statement below it is
+	 * not true right now, and the description says in the site's own words what
+	 * was actually found — the dead URL it advertises, or the absence of any
+	 * working one. Morpheus_Fixes carries the action for the id.
+	 */
+	private static function robots_check( $state ) {
+		$file = $state['file'];
+
+		if ( empty( $state['physical'] ) ) {
+			return array(
+				'id'          => 'morpheus_stale_robots_txt',
+				'label'       => 'robots.txt is built by WordPress, and its sitemap answers',
+				'status'      => 'good',
+				'description' => 'There is no physical robots.txt in the site root, so WordPress builds it on every request — including the sitemap line. Nothing to do here.',
+				'source'      => 'morpheus',
+			);
+		}
+
+		if ( empty( $state['served'] ) ) {
+			return array(
+				'id'          => 'morpheus_stale_robots_txt',
+				'label'       => 'robots.txt is built by WordPress, and its sitemap answers',
+				'status'      => 'good',
+				// A file nobody is serving is debris, not a problem. Saying so is
+				// the honest answer, and it is also the reassurance the operator
+				// needs after being told a robots.txt file exists on the host.
+				'description' => 'A robots.txt file exists at ' . $file . ', but the file being served at /robots.txt is NOT that one — WordPress\'s own is. The leftover file is not affecting anything, so Morpheus is leaving it alone.',
+				'source'      => 'morpheus',
+			);
+		}
+
+		if ( empty( $state['stale'] ) ) {
+			return array(
+				'id'          => 'morpheus_stale_robots_txt',
+				'label'       => 'robots.txt is built by WordPress, and its sitemap answers',
+				'status'      => 'good',
+				'description' => (string) $state['reason'],
+				'source'      => 'morpheus',
+			);
+		}
+
+		return array(
+			'id'          => 'morpheus_stale_robots_txt',
+			'label'       => 'robots.txt is built by WordPress, and its sitemap answers',
+			'status'      => 'recommended',
+			'description' => (string) $state['reason'],
+			'source'      => 'morpheus',
+		);
 	}
 
 	private static function loopback_check() {

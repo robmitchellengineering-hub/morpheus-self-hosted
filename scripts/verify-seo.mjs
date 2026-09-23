@@ -30,6 +30,10 @@ import {
 } from '../server/src/lib/seoPrompts.js';
 import { TEMPLATE_TOKENS } from '../src/lib/seoTemplate.js';
 import {
+  ROBOTS_FINDING_ID, ROBOTS_BACKUP_PREFIX, backupName, isBackupName, backupBasename,
+  quarantineEvidence, undoLine,
+} from '../server/src/lib/robotsQuarantine.js';
+import {
   SEO_REQUEST_ITEMS, SEO_BATCH_MAX, sliceForRequests, mergeBatchResults, estimateRemainingMs,
 } from '../src/lib/seoBatch.js';
 
@@ -931,6 +935,201 @@ check('the bootstrap registers both the rule and the redirect hook', has(bootFn,
 check('the harness asserts a dead sitemap line is removed', has(noYoastHarness, 'a dead attributable Sitemap line is removed'), true);
 check('…and that a live line survives', has(noYoastHarness, 'a live line survives'), true);
 check('…and that another host is left alone', has(noYoastHarness, 'a sitemap on another host is left alone'), true);
+
+// ── 10. a stale physical robots.txt is QUARANTINED, never deleted ──────────
+//
+// WHY THIS SECTION IS IN THIS FILE AND NOT verify-site-health.mjs.
+//
+// The subject is robots.txt: the same subject as section 9, the same plugin
+// file, and the same harness boot (harness-noyoast.php, the one with no SEO
+// plugin, which is also the only boot where Morpheus owns the head). This file
+// also already owns the JS↔PHP contract for the SEO module (section 4). A
+// health screen's own rules — no score, sources, update staleness — are a
+// different subject and stay in verify-site-health.mjs.
+//
+// CI HAS NO PHP. Everything about the DECISION and the FILE MOVE is therefore
+// asserted here from the source, and by name against the rendered assertions in
+// tests/harness-noyoast.php, which runs under WordPress Playground. That
+// coupling is the point: the harness cases cannot be deleted while this passes,
+// and this cannot be satisfied by prose.
+console.log('\n10. a stale physical robots.txt is quarantined, never deleted');
+
+const fixesSrc = read('wp-plugin/morpheus/includes/class-fixes.php');
+const fixesCode = fixesSrc
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const healthSrc = read('wp-plugin/morpheus/includes/class-health.php');
+// Comments first, for the same reason as seoCode above: this file explains its
+// rules in prose, and the prose names the very call the assertions below require.
+const healthCode = healthSrc
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+// ── the judgement ───────────────────────────────────────────────────────────
+
+const stateFn = fnBody(seoCode, 'robots_txt_state');
+const dynFn = fnBody(seoCode, 'dynamic_sitemap_urls');
+const fetchFn = fnBody(seoCode, 'fetch_url');
+// A regex that matches nothing would make the rest of this group pass by
+// accident, so the parse is asserted first.
+check('the robots state function was parsed (parser sanity)', stateFn.length > 400, true);
+check('…and the sitemap-source function', dynFn.length > 0, true);
+
+// 1. A physical file at ABSPATH, and it must be the SERVED one.
+check('detection starts from the file at ABSPATH', has(stateFn, 'ABSPATH . self::ROBOTS_FILE'), true);
+check('…and only when a physical file is there at all', /if \( ! file_exists\( \$file \) \) \{/.test(stateFn), true);
+check('…and asks the site what it serves at /robots.txt', has(stateFn, 'self::fetch_robots_txt()'), true);
+check('…comparing those bytes with the bytes on disk', /bodies_match\( \$body, \$served \)/.test(stateFn), true);
+check('…and deciding NOTHING when the site does not answer', /null === \$served[\s\S]{0,120}?return null;/.test(stateFn), true);
+check('…so a file that is not served is not a finding', /! self::bodies_match\( \$body, \$served \) \)[\s\S]{0,80}?return \$base;/.test(stateFn), true);
+// The read decides whether a FILE IS MOVED, so one blip must not decide it: a
+// 5xx is "the site did not answer", and the answer is asked for more than once.
+const robotsFetchFn = fnBody(seoCode, 'fetch_robots_txt');
+check('the retrying read was parsed (parser sanity)', robotsFetchFn.length > 100, true);
+check('the read retries before concluding the site did not answer', has(robotsFetchFn, 'ROBOTS_FETCH_ATTEMPTS'), true);
+check('…treating a 5xx as no answer rather than as one', has(fetchFn, 'if ( $code < 500 )'), true);
+check('…with a bounded ceiling', /FETCH_MAX_ATTEMPTS = 5;/.test(seoCode), true);
+check('…and an unreadable file is not a finding either', /! is_string\( \$body \)[\s\S]{0,80}?return null;/.test(stateFn), true);
+
+// 2. Staleness, judged against the sitemap the site actually serves.
+check('staleness (a): each advertised sitemap is fetched', /200 !== self::fetch_url\( \$url, false \)\['code'\]/.test(stateFn), true);
+// The URL the file NAMES is the thing judged. Following a redirect would let a
+// 301 to any 200 page read as a working sitemap — and would call the live site
+// healthy, because this plugin's own legacy-sitemap redirect turns the removed
+// plugin's path into a 301.
+check('…without following a redirect (a redirect is not "that sitemap answers")', (stateFn.match(/self::fetch_url\( \$url, false \)/g) || []).length, 2);
+check('…while the robots.txt fetch itself DOES follow one', has(fetchFn, '$follow ? 2 : 0'), true);
+check('staleness (b): the site\'s own sitemap is asked of the filter chain', has(stateFn, 'dynamic_sitemap_urls()'), true);
+check('…not hard-coded to /wp-sitemap.xml', has(dynFn, "apply_filters( 'robots_txt'"), true);
+check('…so a site whose SEO plugin serves another path is judged correctly', has(dynFn, 'sitemap_urls_in('), true);
+check('clause (a) fires on a dead advertised sitemap', /if \( \$dead \) \{\s*\n\s*\$base\['stale'\]\s*=\s*true;/.test(stateFn), true);
+check('clause (b) needs the site\'s own sitemap to be live', has(stateFn, '$base[\'missing_site_sitemap\'] && 0 === $live_advertised'), true);
+check('a private site is not judged at all (nothing to advertise)', has(stateFn, '! $public'), true);
+// Never a request from the robots filter itself: robots.txt is served on every
+// crawl, which is why sitemap_url_is_dead() judges by attribution instead.
+check('the fetch is NOT reachable from the robots filter', has(seoCode.slice(seoCode.indexOf('function filter_robots_txt'), seoCode.indexOf('function sitemap_url_is_dead')), 'fetch_url('), false);
+
+// 3. The finding, its reason, and its action.
+const robotsCheck = fnBody(healthCode, 'robots_check');
+check('the health scan builds the check (parser sanity)', robotsCheck.length > 0, true);
+// `healthCode`, not `healthSrc`: the prose above the call names it too, and a
+// check a comment can satisfy is not a check.
+check('the scan asks the SEO module for the state', has(healthCode, 'Morpheus_SEO::robots_txt_state()'), true);
+check('the finding id is the one the app sends back', has(robotsCheck, `'${ROBOTS_FINDING_ID}'`), true);
+// And the SAME string in both halves of the plugin: a scan that reports an id
+// the registry does not know shows the operator a problem with no action, and
+// /fix answers NO_FIX — the silent gap this registry exists to close.
+check('…and the fix registry answers for that exact id', new RegExp(`'${ROBOTS_FINDING_ID}'\\s*=>\\s*array\\(`).test(fixesCode), true);
+check('a stale served file is `recommended`', /'status'\s*=>\s*'recommended'/.test(robotsCheck), true);
+check('every other outcome is `good`, not silent', (robotsCheck.match(/'status'\s*=>\s*'good'/g) || []).length, 3);
+// The reason travels as the finding's own description — the site's words, not a
+// generic "something is wrong".
+check('the stale branch carries the reason', /'status'\s*=>\s*'recommended',\s*\n\s*'description'\s*=>\s*\(string\) \$state\['reason'\]/.test(robotsCheck), true);
+
+// 4. THE FIX — quarantine, not delete.
+const quarantineFn = fnBody(fixesCode, 'fix_quarantine_robots_txt');
+check('the quarantine handler was parsed (parser sanity)', quarantineFn.length > 600, true);
+check('the registry registers the finding as automatic', /'morpheus_stale_robots_txt'\s*=>\s*array\(\s*'kind'\s*=>\s*'auto'/.test(fixesCode), true);
+// The silent failure this catches: a registry naming a mechanism the switch
+// does not handle answers NO_MECHANISM at runtime and looks like a site bug.
+check('…naming a mechanism the switch actually handles', /'fix'\s*=>\s*'quarantine_robots_txt'/.test(fixesCode) && /case 'quarantine_robots_txt':\s*\n\s*return self::fix_quarantine_robots_txt\( \$id \);/.test(fixesCode), true);
+
+check('the fix RENAMES the file', has(quarantineFn, '@rename( $file, $backup )'), true);
+check('…and never deletes anything', /@?unlink\s*\(/.test(quarantineFn), false);
+check('…and never writes over anything either', /file_put_contents/.test(quarantineFn), false);
+check('the backup sits beside the file, under a UTC timestamp', has(fixesCode, "'.morpheus-bak-' . gmdate( 'YmdHis' )"), true);
+// Each refusal is asserted WITH the condition that reaches it: the literal
+// alone would still be "present" inside a branch that can never run, which is
+// exactly the shape that passes while the behaviour is gone.
+check('an existing backup is never overwritten (the only undo)', /if \( file_exists\( \$backup \) \) \{[\s\S]{0,140}?'BACKUP_EXISTS'/.test(quarantineFn), true);
+check('the fix refuses a file that is no longer there', /if \( empty\( \$state\['physical'\] \) \) \{[\s\S]{0,140}?'NO_FILE'/.test(quarantineFn), true);
+check('…and one that is not the file being served', /if \( empty\( \$state\['served'\] \) \) \{[\s\S]{0,140}?'NOT_SERVED'/.test(quarantineFn), true);
+check('…re-asking the question rather than trusting a cached scan', has(quarantineFn, 'Morpheus_SEO::robots_txt_state()'), true);
+check('the deny-list is consulted before anything moves', /morpheus_is_denied\( Morpheus_SEO::ROBOTS_FILE \)/.test(quarantineFn), true);
+
+// 5. VERIFY, then ROLL BACK. Both halves, because "verified" is the claim the
+// panel turns into "Done".
+const verifyFn = fnBody(fixesCode, 'verify_quarantined_robots');
+check('the verifier was parsed (parser sanity)', verifyFn.length > 400, true);
+check('verification re-fetches the live /robots.txt', has(verifyFn, "home_url( '/robots.txt' )") && has(verifyFn, 'Morpheus_SEO::fetch_robots_txt()'), true);
+check('…requires the old body to be gone', /if \( Morpheus_SEO::bodies_match\( \$previous, \$live \) \) \{\s*\n\s*return array\( 'ok' => false/.test(verifyFn), true);
+check('…requires every sitemap the site serves to be advertised', has(verifyFn, 'dynamic_sitemap_urls()') && has(verifyFn, 'advertises( $live,'), true);
+check('…and cannot confirm anything from a site that will not answer', /null === \$live/.test(verifyFn), true);
+check('…retries behind a cache-buster before calling it a failure', has(verifyFn, 'morpheus-verify'), true);
+check('the handler calls the verifier', has(quarantineFn, 'verify_quarantined_robots( $before )'), true);
+check('ROLLBACK: the backup is renamed straight back', has(quarantineFn, '@rename( $backup, $file )'), true);
+check('…and only when verification failed', /if \( empty\( \$verdict\['ok'\] \) \) \{/.test(quarantineFn), true);
+check('…with the reason, and whether the file is back', has(quarantineFn, "'NOT_VERIFIED'") && /'restored'\s*=>\s*\(bool\) \$put_back,/.test(quarantineFn) && has(quarantineFn, "\$verdict['why']"), true);
+// The undo is only a field the panel can state if the plugin sends it.
+check('the outcome names the backup on BOTH paths', (quarantineFn.match(/'backup'\s*=>\s*\$backup,/g) || []).length, 2);
+
+// 6. The deny-list is intact: this feature must not have widened it.
+const helpersSrc = read('wp-plugin/morpheus/includes/helpers.php');
+const denyBlock = helpersSrc.match(/function morpheus_is_denied[\s\S]*?\n\}/);
+check('the deny-list was parsed (parser sanity)', !!denyBlock && denyBlock[0].length > 200, true);
+check('robots.txt is NOT on the deny-list (the fix reads it, so it must be)', /robots/i.test(denyBlock ? denyBlock[0] : ''), false);
+
+// ── the cross-boundary contract ─────────────────────────────────────────────
+//
+// The app echoes back whatever id the scan produced, so a rename on the plugin
+// side does not error — it quietly stops the app recognising the fix, and the
+// operator loses the undo path from the panel while everything reports success.
+check('the app\'s finding id is the plugin\'s', ROBOTS_FINDING_ID, 'morpheus_stale_robots_txt');
+check('…and that id really is in the plugin\'s registry', fixesCode.includes(`'${ROBOTS_FINDING_ID}'`), true);
+check('the app\'s backup prefix is the plugin\'s', ROBOTS_BACKUP_PREFIX, 'robots.txt.morpheus-bak-');
+check('…and the plugin\'s own name format is 14 UTC digits', /'\.morpheus-bak-' \. gmdate\( 'YmdHis' \);/.test(fixesCode), true);
+
+// The app's side of the drive: the FIX button reaches the one signed /fix route.
+const fnSrc = read('server/src/functions/siteHealth.js');
+check('the app has a fix action', /action === 'fix'/.test(fnSrc) && /ACTIONS = new Set\(\['scan', 'policy', 'apply', 'fix', 'updates'\]\)/.test(fnSrc), true);
+check('…which sends the site\'s own finding id, not a mechanism name', /body\?\.finding \|\| body\?\.id/.test(fnSrc), true);
+check('…to the plugin\'s /fix route', /wpFix\(conn, finding\)/.test(fnSrc) && /wpCall\(conn, 'fix', \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
+check('…and the plugin registers that route (signed)', /register_rest_route\( MORPHEUS_REST_NS, '\/fix'/.test(read('wp-plugin/morpheus/includes/class-rest.php')), true);
+check('the app reads the quarantine evidence out of the result', /quarantineEvidence\(res\.data, finding\)/.test(fnSrc), true);
+
+// ── the pure module's behaviour ─────────────────────────────────────────────
+const backup = backupName(new Date(Date.UTC(2026, 8, 23, 16, 2, 0)));
+check('the backup name is the documented shape', backup, 'robots.txt.morpheus-bak-20260923160200');
+check('…and is recognised as one', isBackupName(backup), true);
+check('a near-miss name is NOT one', isBackupName('robots.txt.morpheus-bak-20260923'), false);
+check('…nor is a plain .bak', isBackupName('robots.txt.bak'), false);
+check('a Windows path still yields the basename', backupBasename(`C:\\site\\${backup}`), backup);
+// The gate that stops an arbitrary path being treated as the operator's undo.
+check('a path whose basename is not a backup name yields nothing', backupBasename('/srv/site/robots.txt'), '');
+
+const quarantined = quarantineEvidence({ backup: `/srv/site/${backup}`, verified: true, restored: false }, ROBOTS_FINDING_ID);
+check('a verified quarantine yields the undo path', quarantined?.name, backup);
+check('…and is reported as quarantined', quarantined?.quarantined, true);
+check('…which the panel states in words', /robots\.txt\.morpheus-bak-20260923160200/.test(undoLine(quarantined) || ''), true);
+// A rollback must never read as "your site changed".
+const rolledBack = quarantineEvidence({ backup: `/srv/site/${backup}`, verified: false, restored: true }, ROBOTS_FINDING_ID);
+check('a rollback is NOT reported as quarantined', rolledBack?.quarantined, false);
+check('…and says the file was put back', /put back/.test(undoLine(rolledBack) || ''), true);
+// "Success" without a recoverable file is the one outcome quarantine cannot have.
+check('a success with no backup yields no evidence', quarantineEvidence({ did: 'done', verified: true }, ROBOTS_FINDING_ID), null);
+check('…and no undo line', undoLine(null), null);
+check('…nor for evidence that names no file', undoLine({ name: '', quarantined: true, restored: false }), null);
+check('another finding\'s backup is not a quarantine', quarantineEvidence({ backup: `/srv/site/${backup}`, verified: true }, 'morpheus_file_editor'), null);
+
+const uiSrc = read('src/components/matrix/website/HealthTab.jsx');
+check('the panel stores what the site sent about the quarantine', has(uiSrc, 'quarantine: payload.quarantine || null'), true);
+check('…and prints the undo, not just a generic success', (uiSrc.match(/result\.quarantine\?\.undo/g) || []).length, 2);
+
+// ── coupled to the rendered assertions ──────────────────────────────────────
+//
+// PHP needs a running WordPress, which CI does not have. These keep the
+// behaviour asserted in tests/harness-noyoast.php from quietly disappearing.
+check('the harness asserts a good physical file produces no finding', has(noYoastHarness, 'robots: a good physical file produces NO finding'), true);
+check('…and that a stale served one does', has(noYoastHarness, 'robots: the stale file IS a finding'), true);
+check('…and that a file which is not served is neither', has(noYoastHarness, 'robots: a file that is not served is not a finding'), true);
+check('…and that the scan turns it into a recommended finding with a fix', has(noYoastHarness, "robots: a stale served file is a recommendation, not silence"), true);
+check('…and that the fix quarantines rather than deletes', has(noYoastHarness, 'robots: …which exists — QUARANTINED, not deleted'), true);
+check('…and that the backup name is the documented one', has(noYoastHarness, 'robots: …under the documented timestamped name'), true);
+check('…and that the outcome names where the backup is', has(noYoastHarness, 'robots: the outcome says where the backup is'), true);
+check('…and that the dynamic robots.txt is served afterwards', has(noYoastHarness, 'robots: the dynamic robots.txt advertises the sitemap the site serves'), true);
+check('…and that a fix which cannot verify rolls the file back', has(noYoastHarness, 'robots: a fix that cannot verify is NOT reported as verified'), true);
+check('…and that the file really is back', has(noYoastHarness, "robots: …with its original contents"), true);
+check('…and that a warm cache does not undo a working fix', has(noYoastHarness, 'robots: a warm cache does not undo a fix that actually worked'), true);
 
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${checks - failures}/${checks} checks passed`);

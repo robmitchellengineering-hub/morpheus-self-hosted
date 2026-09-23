@@ -82,6 +82,23 @@ class Morpheus_Fixes {
 				'fix'   => 'make_backup_dir',
 			),
 
+			// ── A stale physical file standing in front of WordPress ────────
+			//
+			// WordPress serves /robots.txt dynamically — core builds it, and
+			// class-seo.php adds the sitemap line — but ONLY while no physical
+			// file exists: a real file always wins, and the filter never runs.
+			// A file left behind by a removed SEO plugin therefore advertises a
+			// sitemap path that 404s, and nothing on the site says so. The fix
+			// is a RENAME, because the owner often cannot reach the hosting
+			// panel to undo a delete.
+			'morpheus_stale_robots_txt' => array(
+				'kind'    => 'auto',
+				'label'   => 'Quarantine the stale robots.txt',
+				'does'    => 'Renames robots.txt to a timestamped backup beside it, so WordPress serves its own robots.txt again — including the sitemap line this site actually has. Nothing is deleted; the backup is the undo, and Morpheus re-reads the live /robots.txt afterwards and puts the file back if the change did not take.',
+				'warning' => 'The whole physical file stops being served, including any User-agent or Disallow rules written in it — WordPress\'s own robots.txt takes its place. The file is renamed rather than deleted, so it can be put back.',
+				'fix'     => 'quarantine_robots_txt',
+			),
+
 			// ── Overdue scheduled work ──────────────────────────────────────
 			'scheduled_events' => array(
 				'kind'  => 'auto',
@@ -407,6 +424,8 @@ class Morpheus_Fixes {
 				return self::fix_make_backup_dir( $id );
 			case 'spawn_cron':
 				return self::fix_spawn_cron( $id );
+			case 'quarantine_robots_txt':
+				return self::fix_quarantine_robots_txt( $id );
 			default:
 				return array( 'ok' => false, 'id' => $id, 'code' => 'NO_MECHANISM', 'error' => 'The registry names a mechanism that does not exist. Nothing was changed.' );
 		}
@@ -520,6 +539,173 @@ class Morpheus_Fixes {
 			}
 		}
 		return $n;
+	}
+
+	// ── Quarantining a stale physical robots.txt ────────────────────────────
+
+	/**
+	 * Move a stale physical robots.txt out of the way so WordPress serves its
+	 * own — RENAME, NEVER DELETE.
+	 *
+	 * WHY A RENAME AND NOT A DELETE
+	 *
+	 * The owner of the site this was built for owns the hosting account but not
+	 * the cPanel login (a third-party IT company holds it), so "just delete the
+	 * file" was not available to him. Even for an owner who can reach a file
+	 * manager, a robots.txt carries the site's own User-agent and Disallow
+	 * rules, and those are not reconstructible from anything on the site. So the
+	 * file is renamed to `robots.txt.morpheus-bak-YYYYMMDDHHMMSS` in the same
+	 * directory — the operator's undo, readable in any file manager.
+	 *
+	 * WHAT IT REFUSES
+	 *
+	 *   * anything the deny-list covers (a belt on the mechanism: the path is
+	 *     hard-coded to the site root's robots.txt and nothing else);
+	 *   * a file that is no longer there (someone else removed it since the
+	 *     scan — say so instead of reporting a success that did nothing);
+	 *   * a file that is NOT the one being served. Moving a file the site is not
+	 *     serving changes nothing, so the honest answer is "this is not your
+	 *     problem" rather than a rename that looks like a fix;
+	 *   * an existing backup of the same name, which would silently destroy the
+	 *     only undo.
+	 *
+	 * AND IT VERIFIES, THEN PUTS IT BACK. After the rename it re-fetches the
+	 * live /robots.txt — what a crawler would get — and requires that it is no
+	 * longer the old body AND that it carries every Sitemap line WordPress's own
+	 * filter chain is emitting. Anything else renames the backup straight back
+	 * and reports the reason; the site is left exactly as it was found.
+	 */
+	private static function fix_quarantine_robots_txt( $id ) {
+		// The one path this mechanism may ever touch. If the deny-list is ever
+		// widened to cover it, this refuses rather than finding a way around it.
+		if ( morpheus_is_denied( Morpheus_SEO::ROBOTS_FILE ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'DENIED', 'error' => 'robots.txt is on the deploy deny-list for this plugin, so Morpheus will not move it. Nothing was changed.' );
+		}
+		$file = ABSPATH . Morpheus_SEO::ROBOTS_FILE;
+
+		// Re-ask the same question the scan asked, now: the scan is cached, and
+		// the file may have changed, been removed, or stopped being the one
+		// served since. Never move a file on the strength of a five-minute-old
+		// answer.
+		$state = class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::robots_txt_state() : null;
+		if ( ! is_array( $state ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'UNKNOWN', 'error' => 'Morpheus could not confirm which robots.txt this site is serving, so it did not move anything. Re-check the site and try again.' );
+		}
+		if ( empty( $state['physical'] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_FILE', 'error' => 'There is no physical robots.txt at ' . $file . ' any more — something removed it since the scan. Nothing was changed; re-check the site.' );
+		}
+		if ( empty( $state['served'] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NOT_SERVED', 'error' => 'The file at ' . $file . ' is not the robots.txt this site is serving — WordPress\'s own already is. Moving it would change nothing, so Morpheus did not. Nothing was changed.' );
+		}
+
+		$before = @file_get_contents( $file );
+		if ( ! is_string( $before ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'UNREADABLE', 'error' => 'The robots.txt file at ' . $file . ' could not be read, so Morpheus did not move it. Nothing was changed.' );
+		}
+
+		$backup = self::robots_backup_path( $file );
+		if ( file_exists( $backup ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'BACKUP_EXISTS', 'error' => 'A backup from this same second already exists at ' . $backup . ', and Morpheus will not overwrite the only copy of the original. Nothing was changed — try again in a moment.' );
+		}
+		if ( ! @rename( $file, $backup ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'RENAME_FAILED', 'error' => 'Morpheus could not rename ' . $file . ' to ' . $backup . ' — this host does not let PHP write in the site root, so the file cannot be quarantined from here. Nothing was changed. Your host or whoever holds your hosting account would have to rename it.' );
+		}
+
+		// A page cache can keep serving the old robots.txt after the file is
+		// gone, so clear what we can before asking the site what it serves now.
+		morpheus_purge_caches();
+
+		$verdict = self::verify_quarantined_robots( $before );
+		if ( empty( $verdict['ok'] ) ) {
+			$put_back = @rename( $backup, $file );
+			return array(
+				// Mirrors fix_wp_config_define: the run happened and did not
+				// hold, which `verified => false` outranks `ok` for on the panel.
+				'ok'       => true,
+				'id'       => $id,
+				'code'     => 'NOT_VERIFIED',
+				'did'      => 'renamed robots.txt to ' . $backup,
+				'backup'   => $backup,
+				'verified' => false,
+				'restored' => (bool) $put_back,
+				'error'    => $verdict['why'] . ( $put_back
+					? ' The file was renamed straight back, so the site is exactly as it was.'
+					: ' Morpheus could NOT put the file back — it is still at ' . $backup . '.' ),
+			);
+		}
+
+		return array(
+			'ok'       => true,
+			'id'       => $id,
+			'did'      => 'quarantined the stale robots.txt — renamed it to ' . $backup . ' so WordPress serves its own again',
+			// The undo, as a field rather than only inside a sentence: the app
+			// lifts this out and states it (lib/robotsQuarantine.js).
+			'backup'   => $backup,
+			'verified' => true,
+			'restored' => false,
+			'error'    => null,
+			'note'     => $verdict['note'],
+		);
+	}
+
+	/**
+	 * Where a quarantined robots.txt goes: beside it, under a UTC timestamp.
+	 *
+	 * UTC (`gmdate`), not the site's timezone, so the name is the same fact read
+	 * from anywhere. Format pinned by the app side (lib/robotsQuarantine.js) and
+	 * asserted by scripts/verify-seo.mjs — a change here is a change to the
+	 * operator's undo, so it is not allowed to be a silent one.
+	 */
+	public static function robots_backup_path( $file = null ) {
+		$file = is_string( $file ) && '' !== $file ? $file : ABSPATH . 'robots.txt';
+		return $file . '.morpheus-bak-' . gmdate( 'YmdHis' );
+	}
+
+	/**
+	 * Is the dynamic robots.txt being served now, and does it carry the right
+	 * sitemap line?
+	 *
+	 * @return array{ok:bool, why:?string, note:?string}
+	 */
+	private static function verify_quarantined_robots( $previous ) {
+		$url  = home_url( '/robots.txt' );
+		$live = Morpheus_SEO::fetch_robots_txt();
+		$note = null;
+
+		if ( null !== $live && Morpheus_SEO::bodies_match( $previous, $live ) ) {
+			// A cache can outlive the file. Ask again behind a cache-busting
+			// query before declaring failure: renaming the file back because a
+			// cache is warm would undo a fix that actually worked.
+			$note = 'A cached copy of the old robots.txt is still being handed to some requests. The file itself is quarantined and the site is serving WordPress\'s own behind the cache, which will expire on its own.';
+			$live = Morpheus_SEO::fetch_robots_txt( add_query_arg( 'morpheus-verify', time(), $url ) );
+		}
+
+		if ( null === $live ) {
+			return array(
+				'ok'   => false,
+				'note' => null,
+				'why'  => 'After moving the file, the site did not answer a request for /robots.txt (it was asked ' . Morpheus_SEO::ROBOTS_FETCH_ATTEMPTS . ' times), so Morpheus cannot confirm that WordPress\'s own robots.txt is now being served.',
+			);
+		}
+		if ( Morpheus_SEO::bodies_match( $previous, $live ) ) {
+			return array( 'ok' => false, 'note' => null, 'why' => 'The site is still serving the old file\'s contents at /robots.txt, so the quarantine did not take effect.' );
+		}
+
+		$missing = array();
+		foreach ( Morpheus_SEO::dynamic_sitemap_urls() as $want ) {
+			if ( ! Morpheus_SEO::advertises( $live, $want ) ) {
+				$missing[] = $want;
+			}
+		}
+		if ( $missing ) {
+			return array(
+				'ok'   => false,
+				'note' => null,
+				'why'  => 'WordPress\'s own robots.txt is now being served, but it does not advertise ' . implode( ', ', $missing ) . ' — so the site would still be hiding its sitemap.',
+			);
+		}
+
+		return array( 'ok' => true, 'note' => $note, 'why' => null );
 	}
 
 	// ── File plumbing ───────────────────────────────────────────────────────

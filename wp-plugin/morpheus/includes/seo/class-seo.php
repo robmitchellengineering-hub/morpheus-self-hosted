@@ -1385,6 +1385,352 @@ class Morpheus_SEO {
 		return ! in_array( self::active_plugin(), $owned[ $path ], true );
 	}
 
+	// ── a stale PHYSICAL robots.txt, and how it is judged ──────────────────
+
+	/** The file the web server serves at /robots.txt, relative to ABSPATH. */
+	const ROBOTS_FILE = 'robots.txt';
+
+	/** How many advertised sitemap URLs one scan will fetch before stopping. */
+	const ROBOTS_SITEMAP_LIMIT = 3;
+
+	/**
+	 * How many times the /robots.txt read is attempted before "it did not
+	 * answer" is reported. See fetch_robots_txt() — the answer decides whether a
+	 * file is moved, so a single blip must not decide it.
+	 */
+	const ROBOTS_FETCH_ATTEMPTS = 5;
+
+	/** The ceiling on any one fetch's attempts. Keeps a broken site bounded. */
+	const FETCH_MAX_ATTEMPTS = 5;
+
+	/**
+	 * What is being served at /robots.txt, and whether it has gone stale.
+	 *
+	 * THE PROBLEM
+	 *
+	 * WordPress serves /robots.txt DYNAMICALLY — core builds it, this class's
+	 * filter_robots_txt() adds the sitemap line — but only while no physical
+	 * file exists. A physical file always wins, and it is invisible to
+	 * WordPress: the filter never runs, nothing in wp-admin mentions it, and a
+	 * sitemap line can sit there pointing at a path that 404s since the SEO
+	 * plugin that owned it was removed. Seen live: valiantmusic.com.au served a
+	 * leftover `# START YOAST BLOCK` advertising /sitemap_index.xml (404) while
+	 * /wp-sitemap.xml answered 200 and went unadvertised — and the owner's
+	 * cPanel was held by a third party, so deleting the file was not available
+	 * to him. Hence a quarantine the operator can undo, not a delete.
+	 *
+	 * HOW IT DECIDES — three steps, and every one of them can end the question
+	 * with "nothing here" rather than with a guess. An over-eager finding is
+	 * worse than none, because the fix MOVES A FILE THE OWNER MAY HAVE WRITTEN.
+	 *
+	 *   1. A physical file has to exist at ABSPATH . 'robots.txt', and be
+	 *      readable. ABSPATH is what WordPress calls the site root; on a host
+	 *      whose docroot is somewhere else, step 2 is what catches it.
+	 *
+	 *   2. It has to be the file actually being SERVED. Verified by fetching the
+	 *      site's own /robots.txt — wp_remote_get( home_url( '/robots.txt' ) ),
+	 *      i.e. exactly what a crawler gets — and comparing those bytes with the
+	 *      bytes on disk. A file that is not served is not a problem: WordPress
+	 *      is already building robots.txt, this class's filter is already
+	 *      running, and the file is just debris. If the fetch fails (a host that
+	 *      blocks loopback) nothing is decided at all — the scan reports no
+	 *      check rather than inventing one.
+	 *
+	 *   3. It has to be STALE, judged against the sitemap the site actually
+	 *      serves (dynamic_sitemap_urls() — the Sitemap lines WordPress's own
+	 *      robots.txt filter chain emits right now):
+	 *
+	 *        a. it advertises a sitemap URL that does not answer 200, or
+	 *        b. it advertises no live sitemap at all while the site's own
+	 *           sitemap is itself live.
+	 *
+	 *      Clause (b) is deliberately narrower than "it lacks the site's
+	 *      sitemap". A file that already points crawlers at a DIFFERENT live
+	 *      sitemap (a hand-rolled one, a CDN's) is doing its job; quarantining
+	 *      it would take its Disallow rules out of service for no gain. The
+	 *      question that matters is "can a crawler find a working sitemap", not
+	 *      "is this byte-for-byte what WordPress would have written".
+	 *
+	 * A GOOD file therefore produces NO finding: served, and advertising a live
+	 * sitemap. So does no file at all, so does a file that is shadowed, and so
+	 * does an unreadable/unreachable one. The check is reported as `good` in all
+	 * of those cases, never as a silent omission.
+	 *
+	 * @return array|null Null when the question cannot be answered honestly
+	 *                    (unreadable file, or the site did not answer).
+	 */
+	public static function robots_txt_state() {
+		$file = ABSPATH . self::ROBOTS_FILE;
+		$base = array(
+			'file'                 => $file,
+			'physical'             => false,
+			'served'               => false,
+			'stale'                => false,
+			'reason'               => null,
+			'advertised'           => array(),
+			'dead'                 => array(),
+			'dynamic_sitemaps'     => array(),
+			'missing_site_sitemap' => false,
+		);
+
+		if ( ! file_exists( $file ) ) {
+			return $base;
+		}
+		$body = @file_get_contents( $file );
+		if ( ! is_string( $body ) || '' === trim( $body ) ) {
+			return null; // There, but we cannot read it — so we cannot judge it.
+		}
+		$base['physical'] = true;
+
+		$served = self::fetch_robots_txt();
+		if ( null === $served ) {
+			// The site did not answer for its own robots.txt. Which file is being
+			// served is then unknowable from in here, and guessing is how a
+			// finding gets invented for a file nobody is serving.
+			return null;
+		}
+		if ( ! self::bodies_match( $body, $served ) ) {
+			return $base; // A physical file exists but is NOT the one being served.
+		}
+		$base['served'] = true;
+
+		$public = (bool) get_option( 'blog_public' );
+		if ( ! $public ) {
+			// The whole point of the dynamic file on a private site is
+			// "Disallow: /" — there is no sitemap to advertise to anyone, so a
+			// physical file cannot be stale in the sense this check means.
+			$base['reason'] = 'This site is set to discourage search engines, so there is no sitemap to advertise and nothing here needs changing.';
+			return $base;
+		}
+
+		$advertised               = self::sitemap_urls_in( $body );
+		$base['advertised']       = $advertised;
+		$base['dynamic_sitemaps'] = self::dynamic_sitemap_urls();
+
+		$checked = array_slice( $advertised, 0, self::ROBOTS_SITEMAP_LIMIT );
+		$dead    = array();
+		foreach ( $checked as $url ) {
+			if ( 200 !== self::fetch_url( $url, false )['code'] ) {
+				$dead[] = $url;
+			}
+		}
+		$base['dead'] = $dead;
+
+		// Counted over the URLs actually checked, so "no live sitemap" is a fact
+		// about this run rather than an assumption about the lines we skipped.
+		$live_advertised = count( $checked ) - count( $dead );
+		$missing         = array();
+		foreach ( $base['dynamic_sitemaps'] as $url ) {
+			if ( ! self::advertises( $body, $url ) ) {
+				$missing[] = $url;
+			}
+		}
+		// Only demand the site's own sitemap when that sitemap is real.
+		$site_sitemap_live = array();
+		foreach ( array_slice( $missing, 0, self::ROBOTS_SITEMAP_LIMIT ) as $url ) {
+			if ( 200 === self::fetch_url( $url, false )['code'] ) {
+				$site_sitemap_live[] = $url;
+			}
+		}
+		$base['missing_site_sitemap'] = ! empty( $site_sitemap_live );
+
+		if ( $dead ) {
+			$base['stale']  = true;
+			$base['reason'] = 'A physical robots.txt file — not WordPress — is serving /robots.txt on this site, so Morpheus\'s own robots.txt filter never runs. It advertises '
+				. implode( ', ', $dead ) . ', which does not answer (a sitemap that 404s tells search engines to trust a file that is not there). '
+				. self::sitemap_advice( $base['dynamic_sitemaps'] );
+			return $base;
+		}
+
+		if ( $base['missing_site_sitemap'] && 0 === $live_advertised ) {
+			$base['stale']  = true;
+			$base['reason'] = 'A physical robots.txt file — not WordPress — is serving /robots.txt on this site, and it advertises no sitemap at all. '
+				. self::sitemap_advice( $site_sitemap_live );
+			return $base;
+		}
+
+		// Served, and nothing it advertises is broken. The sentence still has to be
+		// TRUE when it advertises nothing at all — "every sitemap it advertises
+		// answers" is vacuously true there, and reads as though a sitemap exists.
+		$base['reason'] = $advertised
+			? 'A physical robots.txt file is being served, and every sitemap it advertises answers — so it is doing its job and needs nothing.'
+			: 'A physical robots.txt file is being served, and this site has no sitemap for it to advertise, so there is nothing stale about it.';
+		return $base;
+	}
+
+	/** The sentence naming the sitemap(s) that should be advertised. */
+	private static function sitemap_advice( $urls ) {
+		if ( ! $urls ) {
+			return 'WordPress would serve its own robots.txt in its place.';
+		}
+		return 'WordPress would advertise ' . implode( ', ', $urls ) . ' in its place.';
+	}
+
+	/**
+	 * The Sitemap: URLs a robots.txt body advertises, in the order they appear.
+	 *
+	 * Sitemap directives are a whitespace-separated line (`Sitemap: <url>`), and
+	 * anything that is not one is not our business — comments, User-agent and
+	 * Disallow rules are all left to the file's author.
+	 */
+	public static function sitemap_urls_in( $body ) {
+		$out = array();
+		foreach ( preg_split( '/\R/', (string) $body ) as $line ) {
+			if ( preg_match( '/^\s*Sitemap:\s*(\S+)/i', $line, $m ) ) {
+				$out[] = $m[1];
+			}
+		}
+		return $out;
+	}
+
+	/** Does a robots.txt body advertise exactly this URL? */
+	public static function advertises( $body, $url ) {
+		foreach ( self::sitemap_urls_in( $body ) as $found ) {
+			if ( self::same_url( $found, $url ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Do two robots.txt bodies carry the same bytes?
+	 *
+	 * Line endings and trailing whitespace are normalised, because a host (or a
+	 * proxy) can rewrite those on the way out without changing a single
+	 * directive — and a byte-for-byte compare that is one `\r` too strict would
+	 * decide a served file is "not served", which is the failure that matters
+	 * here (the finding would never be offered on the site that needs it).
+	 * Everything else has to match: this test is what proves the physical file
+	 * is the one a crawler receives.
+	 */
+	public static function bodies_match( $a, $b ) {
+		if ( ! is_string( $a ) || ! is_string( $b ) ) {
+			return false;
+		}
+		$norm = function ( $s ) {
+			return rtrim( str_replace( array( "\r\n", "\r" ), "\n", $s ) );
+		};
+		return $norm( $a ) === $norm( $b );
+	}
+
+	/** Do two URLs point at the same sitemap? Scheme and a trailing slash are not the difference. */
+	public static function same_url( $a, $b ) {
+		$norm = function ( $u ) {
+			$u = strtolower( trim( (string) $u ) );
+			$u = preg_replace( '#^https?://#', '', $u );
+			return rtrim( $u, '/' );
+		};
+		return $norm( $a ) === $norm( $b ) && '' !== $norm( $a );
+	}
+
+	/**
+	 * The Sitemap: URLs this site's robots.txt advertises when NO physical file
+	 * is in the way — the file's own author, core and this plugin, in the order
+	 * the filter chain runs.
+	 *
+	 * Asking the filter chain rather than assuming `home_url( '/wp-sitemap.xml' )`
+	 * is the whole point: which sitemap exists is the site's answer, not ours.
+	 * With Yoast or Rank Math active it is THEIR path; with core alone it is
+	 * /wp-sitemap.xml; with somebody's custom filter it is whatever they emit.
+	 * Hard-coding ours would make every correctly-Yoast-configured physical file
+	 * look stale, and the fix would then take a working robots.txt away.
+	 *
+	 * The seed body is the shape core's do_robots() builds, so a filter that
+	 * appends or rewrites sees something realistic. This is a string filter that
+	 * runs on every crawl; calling it here is the same work, not a side effect.
+	 */
+	public static function dynamic_sitemap_urls() {
+		$public = (bool) get_option( 'blog_public' );
+		if ( ! $public ) {
+			return array();
+		}
+		$body = "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n";
+		return self::sitemap_urls_in( (string) apply_filters( 'robots_txt', $body, $public ) );
+	}
+
+	/**
+	 * GET a URL and report its status and body, with caching defeated.
+	 *
+	 * Deliberately timid: this only ever runs from the health scan (cached for
+	 * five minutes), never from filter_robots_txt(), because robots.txt is
+	 * fetched on every crawl and a request there would be a performance trap —
+	 * see sitemap_url_is_dead(), which judges by attribution for that reason.
+	 * Here the question is the opposite one ("does this URL answer?") and only a
+	 * real request can answer it.
+	 *
+	 * `$follow` is the difference between the two questions this answers, and it
+	 * is not a detail:
+	 *
+	 *   * fetching /robots.txt FOLLOWS a redirect, because the bytes a crawler
+	 *     ends up with are exactly what is being compared with the file on disk;
+	 *   * judging a SITEMAP does not. "It advertises a sitemap URL that does not
+	 *     return 200" is about the URL the file actually names: a 301 to
+	 *     somewhere else is not that sitemap answering, and following redirects
+	 *     would let a redirect to any 200 page — the front page, a soft 404 —
+	 *     read as a working sitemap. It also keeps this honest about a site
+	 *     where THIS plugin's legacy-sitemap redirect (see
+	 *     register_legacy_sitemap_redirect()) turns the removed plugin's path
+	 *     into a 301: the file is still naming a location that is not the
+	 *     sitemap, and still hiding the one the site serves.
+	 *
+	 * @return array{code:int, body:?string, error:?string}
+	 */
+	public static function fetch_url( $url, $follow = true, $attempts = 1 ) {
+		if ( ! is_string( $url ) || '' === $url ) {
+			return array( 'code' => 0, 'body' => null, 'error' => 'empty url' );
+		}
+		$attempts = max( 1, min( self::FETCH_MAX_ATTEMPTS, (int) $attempts ) );
+		$last     = array( 'code' => 0, 'body' => null, 'error' => 'no attempt was made' );
+
+		for ( $i = 0; $i < $attempts; $i++ ) {
+			if ( $i > 0 ) {
+				// A blip, not a load test: five tries spread over well under a
+				// second still cost far less than a wrong verdict.
+				usleep( 150000 );
+			}
+			$res = wp_remote_get( $url, array(
+				'timeout'     => 8,
+				'redirection' => $follow ? 2 : 0,
+				// A verification fetch must not be answered out of a cache
+				// holding the very file that was just moved.
+				'headers'     => array( 'Cache-Control' => 'no-cache', 'Pragma' => 'no-cache' ),
+			) );
+			if ( is_wp_error( $res ) ) {
+				$last = array( 'code' => 0, 'body' => null, 'error' => $res->get_error_message() );
+				continue;
+			}
+			$code = (int) wp_remote_retrieve_response_code( $res );
+			$last = array( 'code' => $code, 'body' => (string) wp_remote_retrieve_body( $res ), 'error' => null );
+			// A 5xx is "the site did not answer", not an answer about the file.
+			// Anything below it — 200, 404, 410, a 3xx we chose not to follow —
+			// IS an answer, and retrying it would only make the check slow.
+			if ( $code < 500 ) {
+				return $last;
+			}
+		}
+		return $last;
+	}
+
+	/**
+	 * GET a robots.txt URL and return its body, or null when the site did not
+	 * answer after several attempts.
+	 *
+	 * THE RETRY IS PART OF THE HONESTY, not a performance nicety. This answer
+	 * decides whether Morpheus MOVES A FILE IN THE SITE ROOT, and (after a
+	 * quarantine) whether it puts that file back. A single 5xx is a blip — a
+	 * momentarily overloaded host, a proxy hiccup — and concluding "the site did
+	 * not answer" from it would either hide a real finding or, worse, roll back a
+	 * fix that actually worked. So the question is asked up to
+	 * ROBOTS_FETCH_ATTEMPTS times, and only a site that will not answer at all is
+	 * reported as not answering.
+	 */
+	public static function fetch_robots_txt( $url = null ) {
+		$url = is_string( $url ) && '' !== $url ? $url : home_url( '/robots.txt' );
+		$res = self::fetch_url( $url, true, self::ROBOTS_FETCH_ATTEMPTS );
+		return ( 200 === $res['code'] && is_string( $res['body'] ) ) ? $res['body'] : null;
+	}
+
 	/**
 	 * Serve the sitemap path a removed SEO plugin used to own.
 	 *

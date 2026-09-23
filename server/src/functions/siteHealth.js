@@ -19,6 +19,7 @@ import { scanSite } from '../lib/siteScan.js';
 import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
 import { applyAllowedUpdates } from '../lib/siteApply.js';
 import { describePolicy, nextRunAt, allowedKinds, runSummary, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
+import { quarantineEvidence, undoLine } from '../lib/robotsQuarantine.js';
 
 const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'updates']);
 
@@ -94,9 +95,16 @@ export default async function handler({ user, body, req }) {
     if (res.status !== 200 && res.status !== 409) {
       throw Object.assign(new Error(res.data?.error || `The site answered HTTP ${res.status} to a fix.`), { status: 502, code: 'FIX_FAILED' });
     }
+    // Quarantine-instead-of-delete is only a promise if the undo is visible. The
+    // site's own answer names the file it renamed; this lifts that out of the
+    // sentence into a field the panel states plainly, and is null for every
+    // other finding. A rename on the plugin side makes it null rather than
+    // wrong — see lib/robotsQuarantine.js.
+    const evidence = quarantineEvidence(res.data, finding);
     return {
       ok: res.data?.ok === true,
       fix: res.data || null,
+      quarantine: evidence ? { ...evidence, undo: undoLine(evidence) } : null,
       // The caller re-scans after this; the policy travels so the panel does not
       // need a second round trip to stay right.
       policy: policyPayload(await getPolicy(projectId)),

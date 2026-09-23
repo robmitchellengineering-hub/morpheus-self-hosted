@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.2
+Stable tag: 0.8.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -41,6 +41,11 @@ the shared secret, so nothing is invented or copied by hand.
   Morpheus and the plugin prints it on every page you open while signed in as an administrator; a
   visitor, an editor or a shop manager never receives it. It is a plugin feature rather than a
   snippet pasted into your theme, so a theme update cannot take it away.
+* **Health** — what is wrong with the site, and the actions that fix it. Where a leftover physical
+  `robots.txt` is being served instead of WordPress's own and it advertises a sitemap that 404s, the
+  panel names the file it found and offers to **quarantine** it — the file is renamed to a
+  timestamped backup beside it, never deleted, and put straight back if the site does not come up
+  serving the right robots.txt afterwards.
 
 **Updates.** This plugin registers the standard WordPress update channel, so it updates from your own
 Plugins screen — and the download is verified against a published SHA-256 before it is installed.
@@ -69,6 +74,26 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.3 =
+* Added: **a site health check and a one-tap fix for a stale physical
+  robots.txt.** WordPress only builds /robots.txt itself while no real file
+  exists — a physical file always wins, so this plugin's own robots.txt filter
+  never runs and nothing on the site mentions the file. When that file was left
+  behind by an SEO plugin that has since been removed, it advertises a sitemap
+  path that 404s while the sitemap the site actually serves goes unadvertised —
+  and the owner usually cannot delete a file in the web root, because the
+  hosting panel is often held by someone else.
+* The check only reports the file when Morpheus can PROVE it is the one being
+  served: it fetches the site's own /robots.txt and compares it with the bytes
+  on disk, so a file that is not being served is never reported, and a file that
+  already advertises a working sitemap is left alone.
+* The fix **quarantines, it never deletes**: robots.txt is renamed to
+  `robots.txt.morpheus-bak-YYYYMMDDHHMMSS` beside it, which is the owner's undo.
+  Morpheus then re-reads the live /robots.txt and, if it is not WordPress's own
+  with the correct sitemap line, renames the file straight back and says why.
+* The health panel now states where a quarantined file went, by name, so the
+  undo is visible rather than buried in a sentence.
 
 = 0.8.2 =
 * Added: **one-tap dock setup.** The owner's Morpheus account can now switch the
