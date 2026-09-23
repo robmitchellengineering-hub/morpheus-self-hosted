@@ -263,9 +263,9 @@ class Morpheus_Health {
 		//    never mentions the one that is. Reported only when Morpheus can
 		//    PROVE the file is the one being served; see
 		//    Morpheus_SEO::robots_txt_state() for the three-step judgement.
-		$robots = class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::robots_txt_state() : null;
+		$robots = self::robots_finding();
 		if ( is_array( $robots ) ) {
-			$checks[] = self::robots_check( $robots );
+			$checks[] = $robots;
 		}
 
 		// 6. Abandoned plugins: closed on wordpress.org means no security fixes
@@ -284,6 +284,22 @@ class Morpheus_Health {
 		}
 
 		return $checks;
+	}
+
+	/**
+	 * The robots.txt finding, or null when the state cannot be established.
+	 *
+	 * PUBLIC because CLEAN MY SITE includes this finding rather than competing
+	 * with it (see class-clean.php): there is one judgement about whether a stale
+	 * physical robots.txt is being served, one finding shape, and one fix. Two
+	 * copies would eventually disagree about a file on a live site.
+	 */
+	public static function robots_finding() {
+		if ( ! class_exists( 'Morpheus_SEO' ) ) {
+			return null;
+		}
+		$state = Morpheus_SEO::robots_txt_state();
+		return is_array( $state ) ? self::robots_check( $state ) : null;
 	}
 
 	/**

@@ -130,16 +130,50 @@ class Morpheus_REST {
 		return new WP_REST_Response( $result, empty( $result['ok'] ) ? 409 : 200 );
 	}
 
+	/**
+	 * The signed health route, with two actions on it.
+	 *
+	 *   health (default) — WordPress's own Site Health tests plus our light checks.
+	 *   clean            — CLEAN MY SITE: the heavier scan for what is on the
+	 *                      server that nobody asked for. It has its own cache and
+	 *                      its own switch for a reason: it checksums core,
+	 *                      inventories uploads/, mu-plugins, the site root, admins
+	 *                      and cron, and may download a plugin package. Running
+	 *                      that when a panel opens would be a performance bug, so
+	 *                      the APP decides when to spend it — see class-clean.php.
+	 *
+	 * One route rather than two because the auth, the timestamp window and the
+	 * answer shape are identical; a second route would be a second place for the
+	 * signature check to be got wrong. An unknown action is refused by name
+	 * rather than quietly answered with a health scan.
+	 */
 	public static function handle_health( WP_REST_Request $request ) {
 		$body = self::verified_body( $request );
 		if ( $body instanceof WP_REST_Response ) {
 			return $body;
 		}
+		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : 'health';
+		$force  = ! empty( $body['force'] );
+
+		if ( 'clean' === $action ) {
+			if ( ! class_exists( 'Morpheus_Clean' ) ) {
+				return self::err( 'unsupported', 'This build of the Morpheus plugin has no clean scan. Update the plugin.', 501 );
+			}
+			// Read-only by contract: Morpheus_Clean::scan() must never write.
+			return new WP_REST_Response( Morpheus_Clean::scan( $force ), 200 );
+		}
+
+		if ( 'health' !== $action ) {
+			return self::err( 'unknown_action', 'action must be health or clean.', 400 );
+		}
+
 		if ( ! class_exists( 'Morpheus_Health' ) ) {
 			return self::err( 'unsupported', 'This build of the Morpheus plugin has no health scan. Update the plugin.', 501 );
 		}
 		// Read-only by contract: Morpheus_Health::scan() must never write.
-		return new WP_REST_Response( Morpheus_Health::scan(), 200 );
+		// `force` is passed through — without it the panel's RESCAN returned the
+		// cached scan for five minutes and read as a fresh one.
+		return new WP_REST_Response( Morpheus_Health::scan( $force ), 200 );
 	}
 
 	public static function handle_status() {
@@ -175,6 +209,13 @@ class Morpheus_REST {
 			'pairing'    => array(
 				'available' => true,
 				'paired'    => Morpheus_Pairing::is_paired(),
+			),
+			// Whether this build can run CLEAN MY SITE. Public on purpose: it is a
+			// build capability, not the site's state, and the app uses it to say
+			// "update the plugin" rather than to send a request that an older
+			// build would answer with a health scan (it ignores the body).
+			'clean'      => array(
+				'available' => class_exists( 'Morpheus_Clean' ),
 			),
 			// Whether this build can hand its theme over as a working copy —
 			// the wizard offers to create the repo only when it can.

@@ -127,6 +127,21 @@ means the old container is still serving.
   "NOT ENFORCED" beside it — and assert **both** halves, because a unit test
   proves the rule works and cannot see that nothing calls it.
 
+## An identifier that is used and never imported
+
+`node --check` validates syntax and never resolves an identifier; lint does not
+either. A call to a helper that was referenced but never imported is a
+`ReferenceError` at the first request that reaches that line, and every static
+gate stays green. It sat in `server/src/functions/siteHealth.js` on `main`: the
+`fix` branch called `isPluginTooOld` and the import was missing, so a fix against
+a site answering a non-200 died with "isPluginTooOld is not defined" instead of
+the sentence telling the operator to update the plugin.
+
+`verify-server-imports.mjs` resolves specifiers, not identifiers. What actually
+found it was driving the real flow in a real browser. Where a guard can assert
+that a file imports every helper it calls, do that; where it cannot, the browser
+is the check.
+
 ## Removing behaviour passes every gate
 
 H1 covers a shared module losing an **export**. The quieter and worse case is a

@@ -1090,7 +1090,14 @@ check('…and the plugin\'s own name format is 14 UTC digits', /'\.morpheus-bak-
 
 // The app's side of the drive: the FIX button reaches the one signed /fix route.
 const fnSrc = read('server/src/functions/siteHealth.js');
-check('the app has a fix action', /action === 'fix'/.test(fnSrc) && /ACTIONS = new Set\(\['scan', 'policy', 'apply', 'fix', 'updates'\]\)/.test(fnSrc), true);
+// The action set is PARSED, not pinned: it grew again when CLEAN MY SITE arrived
+// (`clean`), and a literal list fails for the wrong reason every time. What this
+// assertion owns is that the FIX action exists and is declared in the one set;
+// verify-clean-site.mjs owns whether the new member is safe.
+const actionSet = fnSrc.match(/const ACTIONS = new Set\(\[([^\]]*)\]\)/);
+const actions = actionSet ? [...actionSet[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]) : [];
+check('the app has a fix action', /action === 'fix'/.test(fnSrc) && actions.includes('fix'), true);
+check('…and the robots quarantine is reachable through the signed routes it names', actions.includes('scan') && actions.includes('fix'), true);
 check('…which sends the site\'s own finding id, not a mechanism name', /body\?\.finding \|\| body\?\.id/.test(fnSrc), true);
 check('…to the plugin\'s /fix route', /wpFix\(conn, finding\)/.test(fnSrc) && /wpCall\(conn, 'fix', \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
 check('…and the plugin registers that route (signed)', /register_rest_route\( MORPHEUS_REST_NS, '\/fix'/.test(read('wp-plugin/morpheus/includes/class-rest.php')), true);

@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.3
+Stable tag: 0.8.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,31 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.4 =
+* Added: **CLEAN MY SITE** — a scan for the things only code on the server can
+  see, and one press to quarantine what is safe to clean.
+* It checksums every WordPress core file against wordpress.org, verifies
+  wordpress.org-hosted plugins against the package the author published (bounded:
+  a few packages, a few megabytes, and it says what it did not reach), lists
+  every mu-plugin with its size and date, flags any .php file under uploads/,
+  lists the accounts that can reach wp-admin, names scheduled hooks it cannot
+  attribute, shows what changed on the site in the last week, and finds a
+  publicly readable debug.log and any wp-config.php.bak / .env copy in the site
+  root.
+* **Nothing is ever deleted.** The three automatic actions rename the file with
+  a UTC timestamp, name the backup on screen as the undo, and — where the file
+  was being served over HTTP — request the URL again to confirm it stopped. If
+  it is still served, the file goes straight back and the panel says so.
+* A modified core file, a modified plugin file, an unknown admin account, an
+  unattributed cron hook and a recently changed file are **reported, never
+  applied**: re-downloading core over a live site, re-installing a plugin,
+  removing an account and unscheduling a job are the owner's decisions.
+* The scan is its own signed request with its own cache, so opening the panel
+  never runs it. It reports what it skipped, and how far it got, whenever it hits
+  a cap.
+* Fixed: the health scan's `force` flag was accepted by the app and dropped by
+  the plugin, so RESCAN returned a cached scan for five minutes.
 
 = 0.8.3 =
 * Added: **a site health check and a one-tap fix for a stale physical

@@ -91,4 +91,15 @@ $PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
   -- /tests/harness-dock.php
 
 echo
+echo "== harness: CLEAN MY SITE — scan, quarantine, rollback (PHP ${PHP_VERSION}) =="
+# Its own boot, and no blueprint: this harness plants files in uploads/, the site
+# root and mu-plugins, mutates mtimes, and removes them again. Sharing a WordPress
+# with the assertions above would leave that state behind for whichever harness
+# ran next — and a fixture site is the whole point of the run.
+$PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
+  --auto-mount "$PLUGIN_DIR" \
+  --mount "$PLUGIN_DIR/tests:/tests" \
+  -- /tests/harness-clean.php
+
+echo
 echo "All plugin harnesses passed."
