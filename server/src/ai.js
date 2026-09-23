@@ -439,7 +439,7 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, billing_exempt: true } }).catch(() => null);
     isExempt = !billingUser || String(billingUser.role || '').trim().toLowerCase() === 'admin' || billingUser.billing_exempt === true;
     if (!isExempt) {
-      reservedCredits = await estimatePreCallCredits(prompt, role, model);
+      reservedCredits = await estimatePreCallCredits(prompt, role, model, maxTokens);
       await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace
     }
   }
