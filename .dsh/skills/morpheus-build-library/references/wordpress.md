@@ -45,6 +45,24 @@ AIOSEO or SEOPress active it writes *that plugin's* keys and emits nothing. The
 rule lives in one place (`Morpheus_SEO::owns_head`) because it is the kind of
 thing that gets duplicated and then disagrees.
 
+## The dock is printed by the plugin, and its token is a credential
+`includes/class-dock.php` prints the dock's `<script>` tag on the site's own
+pages, for a signed-in **administrator only** — the token it carries acts as the
+owner, so a visitor or an editor receiving it is the whole risk. Before 0.8 the
+tag was pasted into the theme by hand, and a theme update deleted it; that is
+why valiantmusic.com.au's dock "just stopped appearing" with `plugin.js` and
+`/embed` both answering 200 and nothing anywhere saying why. A theme cannot
+delete a plugin, and the settings screen names the one reason it is not printing
+when it is not.
+
+Three rules live in that file and are asserted in `scripts/verify-dock.mjs`:
+the printed attributes are exactly the ones `public/plugin.js` reads; the token
+rule admits what `server/src/lib/widgetToken.js` actually issues; and
+`DONOTCACHEPAGE` is set **after** the decision, never before it — set for every
+response it would quietly make the whole site uncacheable. `public/plugin.js`
+mounts one dock per page however many copies of the tag are present, because
+sites that had the old theme snippet still have it.
+
 ## Content rules worth keeping
 * `read_content` turns block tags into a separator before stripping them —
   otherwise `</h2><p>` glues "properly" to "We", and a generator writes a title

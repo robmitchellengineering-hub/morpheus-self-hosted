@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:       Morpheus
- * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Three modules: Deploy, Store and SEO.
- * Version:           0.7.1
+ * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Deploy, Store, SEO and Traffic, plus the admin-only Morpheus dock printed on the site itself.
+ * Version:           0.8.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -53,6 +53,15 @@
  *            one-click updates (with a verified package hash) in 0.5.3,
  *            pairing codes in 0.5.4, theme export in 0.5.5, plugin details in
  *            0.5.6.
+ *
+ *  Dock    — the floating Morpheus button, printed on the site's own pages for
+ *            a signed-in administrator and nobody else (0.8). It used to be a
+ *            <script> tag pasted into the theme by hand, which a theme update
+ *            silently deletes — the dock then "just stops appearing" with
+ *            nothing anywhere saying why. A plugin cannot be deleted by a
+ *            theme update, and Settings → Morpheus can now say whether the dock
+ *            is on and, if not, the one reason. See includes/class-dock.php for
+ *            the security rule and why the response is opted out of caching.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -68,7 +77,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // was offered an update it already had. class-updates.php warns about exactly
 // that outcome in its own comment ("a stale response here would nag every site
 // forever") and it was a stale CONSTANT, not a stale response.
-define( 'MORPHEUS_VERSION', '0.7.1' );
+define( 'MORPHEUS_VERSION', '0.8.0' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -90,6 +99,7 @@ require_once MORPHEUS_DIR . 'includes/deploy/class-deploy.php';
 require_once MORPHEUS_DIR . 'includes/store/class-store.php';
 require_once MORPHEUS_DIR . 'includes/seo/class-seo.php';
 require_once MORPHEUS_DIR . 'includes/class-traffic.php';
+require_once MORPHEUS_DIR . 'includes/class-dock.php';
 
 register_activation_hook( __FILE__, function () {
 	if ( ! is_dir( MORPHEUS_STATE_DIR ) ) {
@@ -126,3 +136,6 @@ add_action( 'init', array( 'Morpheus_SEO', 'bootstrap' ) );
 Morpheus_Updates::init();
 // Traffic: the IndexNow submission on publish and the ledger that proves it.
 Morpheus_Traffic::init();
+// Dock: the floating panel button, printed on the site's own pages — for a
+// signed-in administrator only. See includes/class-dock.php.
+Morpheus_Dock::init();
