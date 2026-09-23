@@ -62,6 +62,90 @@ jobs:
             echo "::warning file=src/MORPHEUS_DESIGN_PLAN.md::npm run build rewrote this file (hazard H3) — do not commit it unless the change is specifically about it."
           fi
 
+  # ADVISORY, and named so on purpose: this does not block a merge.
+  #
+  # The gap it closes: every other job here, and both of self-dev's own
+  # verification tiers, are blind to whether a page RENDERS. engine/verify.js
+  # parses and bundles with esbuild and checks exports; smokeCheckSelfDev probes
+  # live URLs over HTTP, and an SPA answers 200 for every path. In one day this
+  # repo shipped a dock panel that opened off the bottom of the screen and a
+  # guided link that 404'd inside the app's own router — both passed a bundle
+  # check AND an HTTP 200. This job serves the BUILT output, opens each public
+  # route in real Chrome, and asserts the route reached its destination and
+  # rendered a locator naming that page, with a clean console.
+  #
+  # ADVISORY means a flake is VISIBLE rather than FREE. What is deliberate here:
+  #
+  #   * `timeout-minutes: 10` bounds the job, so a hung browser cannot hold a
+  #     runner (and a merge) open indefinitely.
+  #   * The browser is the runner's OWN Chrome (`channel: 'chrome'`), not a
+  #     download. There is nothing to fetch, so there is no browser-download
+  #     step that can be slow, cached wrongly, or flaky — the usual source of
+  #     CI browser-test flakes is not present. (That is also why this step has
+  #     no `npx playwright install`: nothing needs installing.)
+  #   * The app's own API is stubbed ON THE SAME ORIGIN, and every third-party
+  #     request is intercepted — so the check never reaches a live service and
+  #     cannot pass or fail on the weather.
+  #   * Ports are dynamic (`listen(0)`), so two runs can never collide.
+  #   * On failure the script writes a screenshot per failed route plus
+  #     report.json, and the upload step below publishes them — a red advisory
+  #     job nobody can debug is worse than none.
+  #
+  # PROMOTION TO A REQUIRED GATE IS ONE ARRAY ENTRY: add 'render (advisory)' to
+  # SELF_DEV_REQUIRED_CHECKS in server/src/lib/engine/requiredChecks.js. That is
+  # deliberately NOT done in the change that adds this job — it lands advisory
+  # so it can earn its reliability, and only after it has run clean across
+  # several real pull requests does a red one become a stop rather than a look.
+  # `scripts/verify-merge-gates.mjs` asserts the required list against the real
+  # job names here, so that promotion is a checked rename rather than a hope.
+  render:
+    name: render (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The BUILT app, exactly as it ships — not the dev server. `npm run build`
+      # rewrites src/MORPHEUS_DESIGN_PLAN.md (H3); that is build noise and is
+      # warned about in the `build` job, not repeated here.
+      - name: Build the frontend
+        run: npm run build
+
+      # Asserts, per public route: the destination was reached, a locator naming
+      # that page is visible, the pre-mount shell is gone, the console is clean,
+      # and nothing threw. Exits non-zero naming the route that failed.
+      - name: Render every public route in a real browser
+        run: node scripts/render-smoke.mjs --out=.render-smoke
+
+      # if: always() — the artifacts are the whole point of a failure, and a
+      # step that only runs on failure would leave the passing case with nothing.
+      #
+      # `include-hidden-files: true` IS LOAD-BEARING: the output directory is
+      # `.render-smoke/`, and upload-artifact@v4 SKIPS dot-directories by
+      # default. Without this the first run of this job passed and printed
+      # "No files were found with the provided path: .render-smoke/" — so on a
+      # real failure the screenshots and report.json would have been discarded,
+      # which is the exact "red advisory job nobody can debug" outcome the
+      # screenshot step exists to prevent. Verified on CI, not assumed: the run
+      # after this change uploads the artifact.
+      - name: Upload failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-smoke
+          path: .render-smoke/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
   guards:
     name: guards (no install)
     runs-on: ubuntu-latest
