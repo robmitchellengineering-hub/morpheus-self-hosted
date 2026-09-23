@@ -52,3 +52,22 @@ Dock tabs render only for the scopes the widget token carries. A missing tab is
 almost always a missing scope rather than a missing feature — check the token
 before the code, and remember a token's scopes can be edited without reissuing
 the token or touching the snippet already pasted on the site.
+
+## Driving the dock locally, instead of reasoning about it
+
+Source-reading guards cannot tell you the dock works: it is a loader, an iframe,
+a token, scopes and the same tab components as the app panel, and every one of
+those joins can fail while every guard stays green. `scripts/dev-dock-rig.mjs`
+exists so it can be observed. `up` starts the stack plus a mock AI provider and a
+mock WordPress, seeds a fixture project and two widget tokens (a full one and a
+chat-only one) through the real server code, and works in its own database;
+`url` prints the embed URL; `drive` drives the whole thing with the browser —
+including `public/plugin.js` itself on a host page — and fails if a tab is
+missing, a scan never reached the mock site, a message never round-tripped, or
+the console logged an error. See `README.md` → "Driving the embeddable dock
+locally" for what it assumes.
+
+When you change a dock tab, run `drive` and say what you saw. Until this rig
+existed, the dock was asserted by source-reading guards alone — nothing had ever
+put it in a browser.
+
