@@ -493,6 +493,80 @@ const pluginFiles = (() => {
 })()
 check('the WordPress plugin still ships no JS/CSS (it is headless)', pluginFiles.filter((f) => /\.(js|css)$/.test(f)), [])
 
+
+// ── 11b. the task runner is above the tab switch, on both surfaces ──────────
+//
+// 2026-09-24, Rob: "whenever you switch tabs in the plugin the tasks stop running
+// or atleast apear to". Both were true: the tabs are rendered conditionally, so
+// switching UNMOUNTED the component that owned the loop, and the remaining slices
+// were never sent while the state that described them was destroyed.
+//
+// "The provider is present" is not the claim. The claim is that it ENCLOSES the
+// conditional tab renders — so these checks locate the mount and the tab branches
+// in the same source and compare their positions, rather than looking for a name.
+// This script compares values rather than searching text, so the section brings
+// its own one-line helper instead of assuming another guard's vocabulary.
+const contains = (haystack, needle) => String(haystack).includes(needle)
+
+const RUNNER = 'src/components/matrix/TaskRunner.jsx'
+const runnerSrc = read(RUNNER)
+const seoLoopSrc = read('src/components/matrix/website/SeoTab.jsx')
+
+// The tab branches, by the shape both surfaces use to render one.
+const tabBranchPositions = (src) => [...src.matchAll(/\{\s*(?:!loading\s*&&\s*)?tab === '/g)].map((m) => m.index)
+
+for (const [label, file] of [['the app panel', 'src/components/matrix/WebsitePanel.jsx'], ['the dock', 'src/pages/Embed.jsx']]) {
+  const src = read(file)
+  const open = src.indexOf('<TaskRunner>')
+  const close = src.lastIndexOf('</TaskRunner>')
+  const branches = tabBranchPositions(src)
+  check(`${label} mounts the task runner (parser sanity)`, open > 0 && close > open, true)
+  check(`${label} still switches tabs (parser sanity)`, branches.length >= 4, true)
+  // The whole point: every conditional tab render sits INSIDE the provider, so
+  // unmounting a tab cannot unmount the thing that owns the work.
+  check(`${label} mounts it outside the tab switch`,
+    open < Math.min(...branches) && close > Math.max(...branches), true)
+  // EXACTLY one mount. A second one inside a tab branch leaves the first in the
+  // right place, so a position check alone still passes while a loop started in
+  // that branch is owned by the wrong provider — and nothing on screen says so.
+  check(`${label} mounts it exactly once`,
+    (src.match(/<TaskRunner>/g) || []).length, 1)
+  check(`${label} imports the one shared runner`,
+    /from '@\/components\/matrix\/TaskRunner'|from '\.\/TaskRunner'/.test(src), true)
+}
+
+// The state is the runner's, not the tab's. If someone moves the loop back into
+// the tab, the strip would still exist and the provider would still be mounted —
+// and the bug would be back. These two are what catch that.
+check('the SEO tab uses the shared runner', contains(seoLoopSrc, 'useTaskRunner()'), true)
+check('…and starts the batch through it', contains(seoLoopSrc, 'startTask('), true)
+check('…under a stable task key', contains(seoLoopSrc, "RUN_KEY = 'seo:batch'"), true)
+// The markers of the loop having gone back into the tab: its own cancel ref, and
+// a local run state keyed to the batch.
+check('…and no longer cancels with a local ref', contains(seoLoopSrc, 'cancelRun'), false)
+check('…and no longer holds the batch run in tab state', /setRun\(\{\s*key: 'batch'/.test(seoLoopSrc), false)
+check('…and no longer draws the batch timer itself', contains(seoLoopSrc, "timerFor('batch')"), false)
+
+// The run has to be RENDERED somewhere that is not the tab it belongs to, or
+// leaving the tab still hides it.
+check('the runner renders the strip', contains(runnerSrc, '<TaskRunStrip'), true)
+check('the strip is exported for the same reason', contains(runnerSrc, 'export function TaskRunStrip'), true)
+// Rendered UNCONDITIONALLY. A strip behind a condition is a strip that can be
+// hidden by the very thing this fixes — the tab the operator is looking at — and
+// "it is present in the file" would still pass while that happened.
+check('…and rendered unconditionally, not behind a condition',
+  /\{[^}]*<TaskRunStrip/.test(runnerSrc), false)
+const tabFiles = (() => {
+  const dir = join(REPO, 'src/components/matrix/website')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir).filter((f) => f.endsWith('.jsx'))
+})()
+check('the website tabs were found (parser sanity)', tabFiles.length >= 8, true)
+check('no tab draws the run strip for itself',
+  tabFiles.filter((f) => contains(read(`src/components/matrix/website/${f}`), 'TaskRunStrip')), [])
+check('the runner says where its state lives',
+  contains(runnerSrc, 'THIS MODULE owns the state') && contains(runnerSrc, 'A TAB owns only the presentation'), true)
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

@@ -10,6 +10,7 @@ import SeoTab from './website/SeoTab';
 import TrafficTab from './website/TrafficTab';
 import EmbedTab from './website/EmbedTab';
 import HealthTab from './website/HealthTab';
+import { TaskRunner } from './TaskRunner';
 
 // WEBSITE panel (2026-09-10) — one place to control the Morpheus plugin on
 // your own WordPress site: install + connect it (Setup), ship code changes
@@ -88,6 +89,11 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
             there, so on a phone the panel reads as having four tabs. A tab you
             cannot see is a tab you do not have. `shrink-0` each button and let
             the row wrap to a second line instead. */}
+        {/* The runner sits ABOVE the tab switch, so a loop started in one tab is
+            not unmounted by leaving it — and the strip it renders is chrome, so
+            the progress is on screen from every tab. The guard checks this mount
+            site rather than trusting the comment. */}
+        <TaskRunner>
         <div className="flex flex-wrap border-b border-primary/15 shrink-0 text-[11px]">
           {TABS.map((t) => {
             const Icon = t.icon;
@@ -162,6 +168,7 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
             </div>
           )}
         </div>
+        </TaskRunner>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import PagesTab from '@/components/matrix/website/PagesTab';
 import SeoTab from '@/components/matrix/website/SeoTab';
 import TrafficTab from '@/components/matrix/website/TrafficTab';
 import HealthTab from '@/components/matrix/website/HealthTab';
+import { TaskRunner } from '@/components/matrix/TaskRunner';
 import EmbedChat from '@/components/matrix/website/EmbedChat';
 
 // The embeddable-widget surface — loaded in an iframe by public/plugin.js on
@@ -108,7 +109,11 @@ export default function Embed() {
       )}
 
       {ctx && tabs.length > 0 && (
-        <>
+        // The same runner the app's WEBSITE panel mounts, for the same reason:
+        // these are the SAME tab components, so a loop that dies on a tab switch
+        // in the dock dies the identical way in the panel. Mounted here, around
+        // the tab bar and the tab bodies, so it is outside the conditional render.
+        <TaskRunner>
           {tabs.length > 1 && (
             // WRAPS rather than scrolls, and every tab keeps a minimum width.
             //
@@ -147,7 +152,7 @@ export default function Embed() {
               (connecting a Google account, for one) must not be offered here. */}
           {tab === 'seo' && <SeoTab projectId={ctx.projectId} store={store} widget />}
           {tab === 'traffic' && <TrafficTab projectId={ctx.projectId} />}
-        </>
+        </TaskRunner>
       )}
     </div>
   );

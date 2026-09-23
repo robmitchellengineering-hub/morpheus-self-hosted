@@ -6,6 +6,7 @@ import {
 import { base44 } from '@/api/base44Client';
 import SearchConsolePanel from './SearchConsolePanel';
 import EtaTimer from './EtaTimer';
+import { useTaskRunner } from '../TaskRunner';
 import { serpPreview } from '@/lib/serpPreview';
 import { TEMPLATE_TOKENS, TOKEN_HELP, resolveTemplate, insertToken } from '@/lib/seoTemplate';
 import { sliceForRequests, mergeBatchResults, estimateRemainingMs, SEO_BATCH_MAX } from '@/lib/seoBatch';
@@ -146,9 +147,32 @@ export default function SeoTab({ projectId, store, widget = false }) {
   const [applyingLinks, setApplyingLinks] = useState(false);
 
   const [batch, setBatch] = useState(null); // { suggestions, ... } pending review
-  const [genBatch, setGenBatch] = useState(false);
-  const [run, setRun] = useState(null); // { key, startedAt, estimateMs, done, total, detail }
-  const cancelRun = useRef(false);
+  const [run, setRun] = useState(null); // { key, startedAt, ... } — the SINGLE-call timer (see runAi)
+  // The batch is NOT a local loop any more. It lives in the task runner, above the
+  // tab switch, so leaving this tab cannot stop it or lose its progress. Single
+  // calls (generateOne, the audit, the link apply, the backfill) still use the
+  // local timer below — they are the follow-ups listed in the PR.
+  const RUN_KEY = 'seo:batch';
+  const { tasks, startTask } = useTaskRunner();
+  const batchRun = tasks[RUN_KEY];
+  const genBatch = batchRun?.status === 'running';
+
+  // The batch's RESULT lives in the runner, so this tab can be unmounted and
+  // rebuilt and still show what happened — the review list AND the wording of the
+  // note. The ref applies each result once, so a re-render does not overwrite a
+  // selection the operator has since changed.
+  const appliedBatch = useRef(null);
+  useEffect(() => {
+    const r = batchRun?.result;
+    if (batchRun?.status === 'done' && r && appliedBatch.current !== r) {
+      appliedBatch.current = r;
+      if (r.suggestions?.length) {
+        setBatch({ ...r, checked: Object.fromEntries(r.suggestions.map((s) => [s.id, true])) });
+      }
+      if (r.note) setNote(r.note);
+    }
+    if (batchRun?.status === 'error' && batchRun.error) setErr(batchRun.error);
+  }, [batchRun?.status, batchRun?.result, batchRun?.error]);
   const [applying, setApplying] = useState(false);
 
   const [defaults, setDefaults] = useState(null); // { enabled, title, description, post_types }
@@ -350,7 +374,6 @@ export default function SeoTab({ projectId, store, widget = false }) {
         startedAt={run.startedAt}
         estimateMs={run.estimateMs}
         detail={run.detail}
-        onCancel={run.total > 1 ? () => { cancelRun.current = true; } : undefined}
       />
     </div>
   ) : null);
@@ -376,103 +399,106 @@ export default function SeoTab({ projectId, store, widget = false }) {
     [items],
   );
 
+  // Start the batch in the runner. The loop below runs in the RUNNER's scope, not
+  // this component's: unmounting the tab runs React's cleanup here, not on the
+  // work. Everything the tab needs afterwards — including the wording of the note
+  // — is returned as the task's result, so this tab can be destroyed and rebuilt
+  // and still show what happened.
   const generateBatch = async () => {
     if (missing.length === 0) { setNote('Every published item already has a title and a description.'); return; }
-    setGenBatch(true); setErr(null); setNote(null); setBatch(null);
-    cancelRun.current = false;
-    const startedAt = Date.now();
+    setErr(null); setNote(null);
     // Bounded per click: what this generates has to be applyable in one
     // bulk_set_seo (see SEO_BATCH_MAX). The remainder stays counted as missing.
     const work = missing.slice(0, SEO_BATCH_MAX);
-    // One request per slice of items, and each request now STREAMS its progress.
+    // One request per slice of items, and each request STREAMS its progress.
     //
     // Slicing stays: a request that is one model call is what keeps it inside the
     // platform's request envelope, and it is what makes a partial batch worth
-    // keeping. What changed on 2026-09-23 is that a slice no longer answers in
-    // total silence — the server emits a start event with its own measured ETA and
-    // an event per completed model call, so bytes are always flowing. An idle
-    // connection was what got cut, and a cut before Express answered arrived with
-    // no CORS headers, which is why the browser could only say "Failed to fetch".
+    // keeping. A slice no longer answers in total silence — the server emits a
+    // start event with its own measured ETA and an event per completed model call,
+    // so bytes are always flowing. An idle connection was what got cut, and a cut
+    // before Express answered arrived with no CORS headers, which is why the
+    // browser could only say "Failed to fetch".
     const slices = sliceForRequests(work);
-    setRun({
-      key: 'batch', startedAt, estimateMs: null, done: 0, total: slices.length,
-      detail: `batch 0 of ${slices.length}`,
-    });
-    try {
-      const results = [];
-      let failure = null;
-      // The server's own ETA for the request in flight, in ms. Kept per request —
-      // it is replaced by the next event, and reset when the next slice starts.
-      let serverRemainingMs = null;
-      let itemsDone = 0;
-      for (let i = 0; i < slices.length; i += 1) {
-        if (cancelRun.current) break;
-        serverRemainingMs = null;
-        itemsDone = 0;
-        // Fires as each NDJSON line arrives, so the clock and the ETA move while
-        // the model is still working rather than only when a slice lands.
-        const onStage = (evt) => {
-          if (evt.type !== 'stage') return;
-          if (Number.isFinite(evt.etaSeconds)) serverRemainingMs = evt.etaSeconds * 1000;
-          if (Number.isFinite(evt.done)) itemsDone = evt.done;
-          const elapsedMs = Date.now() - startedAt;
-          // What is left for the WHOLE batch: what the server says this request
-          // still needs, plus a measured average for the slices not started. The
-          // per-slice average comes from slices that actually finished, so before
-          // the first one the server's own estimate is the only honest number.
-          const sliceMs = i > 0 ? elapsedMs / i : serverRemainingMs;
-          const remaining = serverRemainingMs == null && sliceMs == null
-            ? null
-            : (serverRemainingMs ?? sliceMs) + (slices.length - i - 1) * (sliceMs ?? 0);
-          setRun((cur) => (cur ? {
-            ...cur,
-            detail: `batch ${i + 1} of ${slices.length}${itemsDone ? ` · ${itemsDone}/${slices[i].length} in this batch` : ''}`,
-            estimateMs: remaining == null ? null : elapsedMs + remaining,
-          } : cur));
-        };
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          const r = await base44.functions.invokeStream(
-            'generateSeoMeta',
-            { projectId, items: slices[i].map((it) => ({ id: it.id })), stream: true },
-            onStage,
-          );
-          results.push(r.data);
-        } catch (e) { failure = e; break; } // keep the slices that did answer
-        const done = i + 1;
-        const elapsedMs = Date.now() - startedAt;
-        const remaining = estimateRemainingMs({ done, total: slices.length, elapsedMs });
-        setRun((cur) => (cur ? {
-          ...cur, done, detail: `batch ${done} of ${slices.length}`,
-          estimateMs: remaining == null ? null : elapsedMs + remaining,
-        } : cur));
-      }
+    const startedAt = Date.now();
 
-      const merged = mergeBatchResults(results);
-      writeLastMs('batch', Date.now() - startedAt);
-      if (merged.suggestions.length) {
-        setBatch({ ...merged, checked: Object.fromEntries(merged.suggestions.map((s) => [s.id, true])) });
-        const empty = work.length - merged.generated;      // asked for, nothing came back
-        const capped = missing.length - work.length;        // beyond this click's cap
-        const tail = [
-          empty > 0 ? `${empty} came back empty` : null,
-          capped > 0 ? `${capped} still waiting (click again for the next ${SEO_BATCH_MAX})` : null,
-        ].filter(Boolean).join(' · ');
-        // A streamed failure arrives as the terminal event, and base44Client's
-        // reader turns it into a thrown error whose `.data` is that event — so
-        // this reads the same wording whether the failure happened before the
-        // first byte (a normal JSON error) or after it (a streamed one).
-        if (failure) setNote(`Stopped at ${merged.generated} of ${missing.length} — ${failure?.data?.error || failure?.data?.message || failure.message}`);
-        else if (cancelRun.current) setNote(`Stopped — ${merged.generated} of ${missing.length} generated. The rest are still listed as missing.`);
-        else if (tail) setNote(`${merged.generated} generated · ${tail}`);
-      } else if (failure) {
-        setErr(failure?.data?.error || failure.message);
-      } else if (cancelRun.current) {
-        setNote('Stopped before anything was generated.');
-      } else {
-        setErr('No suggestions came back — try again.');
-      }
-    } finally { setRun(null); setGenBatch(false); }
+    await startTask(
+      { key: RUN_KEY, label: 'SEO metadata', total: slices.length, estimateMs: null },
+      async ({ progress, cancelled }) => {
+        const results = [];
+        let failure = null;
+        // The server's own ETA for the request in flight, in ms. Kept per request —
+        // it is replaced by the next event, and reset when the next slice starts.
+        let serverRemainingMs = null;
+        let itemsDone = 0;
+        for (let i = 0; i < slices.length; i += 1) {
+          if (cancelled()) break;
+          serverRemainingMs = null;
+          itemsDone = 0;
+          // Fires as each NDJSON line arrives, so the clock and the ETA move while
+          // the model is still working rather than only when a slice lands.
+          const onStage = (evt) => {
+            if (evt.type !== 'stage') return;
+            if (Number.isFinite(evt.etaSeconds)) serverRemainingMs = evt.etaSeconds * 1000;
+            if (Number.isFinite(evt.done)) itemsDone = evt.done;
+            const elapsedMs = Date.now() - startedAt;
+            // What is left for the WHOLE batch: what the server says this request
+            // still needs, plus a measured average for the slices not started. The
+            // per-slice average comes from slices that actually finished, so before
+            // the first one the server's own estimate is the only honest number.
+            const sliceMs = i > 0 ? elapsedMs / i : serverRemainingMs;
+            const remaining = serverRemainingMs == null && sliceMs == null
+              ? null
+              : (serverRemainingMs ?? sliceMs) + (slices.length - i - 1) * (sliceMs ?? 0);
+            progress({
+              done: i, total: slices.length,
+              detail: `batch ${i + 1} of ${slices.length}${itemsDone ? ` · ${itemsDone}/${slices[i].length} in this batch` : ''}`,
+              estimateMs: remaining == null ? null : elapsedMs + remaining,
+            });
+          };
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await base44.functions.invokeStream(
+              'generateSeoMeta',
+              { projectId, items: slices[i].map((it) => ({ id: it.id })), stream: true },
+              onStage,
+            );
+            results.push(r.data);
+          } catch (e) { failure = e; break; } // keep the slices that did answer
+          const done = i + 1;
+          const elapsedMs = Date.now() - startedAt;
+          const remaining = estimateRemainingMs({ done, total: slices.length, elapsedMs });
+          progress({
+            done, total: slices.length, detail: `batch ${done} of ${slices.length}`,
+            estimateMs: remaining == null ? null : elapsedMs + remaining,
+          });
+        }
+
+        const merged = mergeBatchResults(results);
+        writeLastMs('batch', Date.now() - startedAt);
+        // A failure that produced NOTHING is the task failing, and the runner
+        // carries the reason. A failure with some slices already answered is a
+        // partial result, and the note below says where it stopped.
+        if (!merged.suggestions.length && failure) throw failure;
+        return {
+          ...merged,
+          // The tail of the note is computed HERE, from the numbers this run
+          // actually saw, so the tab can be rebuilt later and still say the truth.
+          note: (() => {
+            if (!merged.suggestions.length) return cancelled() ? 'Stopped before anything was generated.' : null;
+            const empty = work.length - merged.generated;
+            const capped = missing.length - work.length;
+            const tail = [
+              empty > 0 ? `${empty} came back empty` : null,
+              capped > 0 ? `${capped} still waiting (click again for the next ${SEO_BATCH_MAX})` : null,
+            ].filter(Boolean).join(' · ');
+            if (failure) return `Stopped at ${merged.generated} of ${missing.length} — ${failure?.data?.error || failure?.data?.message || failure.message}`;
+            if (cancelled()) return `Stopped — ${merged.generated} of ${missing.length} generated. The rest are still listed as missing.`;
+            return tail ? `${merged.generated} generated · ${tail}` : null;
+          })(),
+        };
+      },
+    );
   };
 
   const applyBatch = async () => {
@@ -1238,7 +1264,10 @@ export default function SeoTab({ projectId, store, widget = false }) {
           </Btn>
         </div>
 
-        {timerFor('batch')}
+        {/* No timer here for the batch: it runs in the task runner, above the tab
+            switch, and the runner's strip is on screen from every tab. A timer
+            drawn by this component is a timer that stops being drawn the moment
+            the operator leaves — which is the bug this replaced. */}
 
         {audit && (
           <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink-max">
