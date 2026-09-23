@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Loader2, Send, RefreshCw, Check, AlertTriangle, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { useTaskRunner, useTaskResult } from '../TaskRunner';
 
 // TRAFFIC tab of the WEBSITE panel — the first workflow: tell IndexNow about a
 // URL when it goes live or changes, and keep a record of what was submitted and
@@ -67,17 +68,30 @@ export default function TrafficTab({ projectId }) {
     finally { setBusy(null); }
   };
 
+  // The backfill submits URLs in batches to a third party on the operator's
+  // behalf — the longest thing this tab does, and the one whose ledger is the
+  // evidence. Both the run and its result live in the runner.
+  const { tasks, startTask } = useTaskRunner();
+  const backfillTask = tasks['traffic:backfill'];
+  useTaskResult('traffic:backfill', (r) => {
+    setNote(r.note);
+    // The ledger is the proof of what was submitted, so it is re-read when the
+    // result lands — including when that lands after a tab switch.
+    load();
+  });
+
   const backfill = async () => {
-    setBusy('backfill'); setErr(null); setNote(null);
-    try {
+    setErr(null); setNote(null);
+    await startTask({ key: 'traffic:backfill', label: 'Submitting URLs', total: 1 }, async ({ cancelled }) => {
+      if (cancelled()) return null;
       const r = await call(projectId, 'backfill');
       const res = r?.result || {};
-      setNote(res.submitted
-        ? `Submitted ${res.submitted} URL${res.submitted === 1 ? '' : 's'} in ${res.batches} batch${res.batches === 1 ? '' : 'es'}${res.ok ? '' : ' — some batches did not succeed, see the ledger'}.`
-        : (res.note || 'Nothing needed submitting.'));
-      await load();
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setBusy(null); }
+      return {
+        note: res.submitted
+          ? `Submitted ${res.submitted} URL${res.submitted === 1 ? '' : 's'} in ${res.batches} batch${res.batches === 1 ? '' : 'es'}${res.ok ? '' : ' — some batches did not succeed, see the ledger'}.`
+          : (res.note || 'Nothing needed submitting.'),
+      };
+    });
   };
 
   const keyServed = status?.key_served;
@@ -158,10 +172,10 @@ export default function TrafficTab({ projectId }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={backfill} disabled={!!busy || !status.enabled}
+            <button onClick={backfill} disabled={!!busy || backfillTask?.status === 'running' || !status.enabled}
               title={status.enabled ? 'Submit the site\'s existing published URLs' : 'Turn the switch on first'}
               className="h-[30px] px-3 border border-primary/30 text-primary/80 hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
-              {busy === 'backfill' ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
+              {backfillTask?.status === 'running' ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
               Submit existing pages
             </button>
             <span className="text-ink-max">up to {status.backfill_max} per run, skipping anything already accepted</span>

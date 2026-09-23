@@ -5,8 +5,7 @@ import {
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import SearchConsolePanel from './SearchConsolePanel';
-import EtaTimer from './EtaTimer';
-import { useTaskRunner } from '../TaskRunner';
+import { useTaskRunner, useTaskResult } from '../TaskRunner';
 import { serpPreview } from '@/lib/serpPreview';
 import { TEMPLATE_TOKENS, TOKEN_HELP, resolveTemplate, insertToken } from '@/lib/seoTemplate';
 import { sliceForRequests, mergeBatchResults, estimateRemainingMs, SEO_BATCH_MAX } from '@/lib/seoBatch';
@@ -133,46 +132,56 @@ export default function SeoTab({ projectId, store, widget = false }) {
   const [note, setNote] = useState(null);
 
   const [audit, setAudit] = useState(null); // { issues, counts, scanned }
-  const [auditing, setAuditing] = useState(false);
 
   const [edit, setEdit] = useState(null); // the item being edited + form
   const [saving, setSaving] = useState(false);
-  const [genOne, setGenOne] = useState(false);
   const [links, setLinks] = useState(null); // { links, dropped, title }
   const [kw, setKw] = useState(null);          // { keywords, competitors, disclosure }
-  const [kwBusy, setKwBusy] = useState(false);
   const [competitors, setCompetitors] = useState('');
-  const [loadingLinks, setLoadingLinks] = useState(false);
   const [linkPlan, setLinkPlan] = useState(null); // dry-run result awaiting APPLY
-  const [applyingLinks, setApplyingLinks] = useState(false);
 
   const [batch, setBatch] = useState(null); // { suggestions, ... } pending review
-  const [run, setRun] = useState(null); // { key, startedAt, ... } — the SINGLE-call timer (see runAi)
-  // The batch is NOT a local loop any more. It lives in the task runner, above the
-  // tab switch, so leaving this tab cannot stop it or lose its progress. Single
-  // calls (generateOne, the audit, the link apply, the backfill) still use the
-  // local timer below — they are the follow-ups listed in the PR.
+  // NO loop in this tab owns its own run or its own result any more. Every one of
+  // them lives in the task runner, above the tab switch — the WORK so leaving the
+  // tab cannot stop it, and the RESULT so coming back shows the answer instead of
+  // a blank. What is left here is presentation.
   const RUN_KEY = 'seo:batch';
   const { tasks, startTask } = useTaskRunner();
   const batchRun = tasks[RUN_KEY];
   const genBatch = batchRun?.status === 'running';
 
+  // Every migrated single-call loop goes through here: it hands the runner a
+  // worker, keeps this action's own last duration fresh so the strip's estimate is
+  // a measurement rather than a guess (what the old local timer did), and gives
+  // every task one shape.
+  const task = (key, label, worker) => startTask(
+    { key, label, total: 1, estimateMs: readLastMs(key) },
+    async (api) => {
+      const t0 = Date.now();
+      try { return await worker(api); } finally { writeLastMs(key, Date.now() - t0); }
+    },
+  );
+
+  // Which loops are in flight is the RUNNER's answer, not a second copy of it.
+  const running = {
+    audit: tasks['seo:audit']?.status === 'running',
+    links: tasks['seo:links']?.status === 'running',
+    linkWrite: ['seo:linkplan', 'seo:linkapply'].some((k) => tasks[k]?.status === 'running'),
+    keywords: tasks['seo:keywords']?.status === 'running',
+    one: tasks['seo:one']?.status === 'running',
+    blog: tasks['seo:blog']?.status === 'running',
+  };
+
   // The batch's RESULT lives in the runner, so this tab can be unmounted and
   // rebuilt and still show what happened — the review list AND the wording of the
   // note. The ref applies each result once, so a re-render does not overwrite a
   // selection the operator has since changed.
-  const appliedBatch = useRef(null);
-  useEffect(() => {
-    const r = batchRun?.result;
-    if (batchRun?.status === 'done' && r && appliedBatch.current !== r) {
-      appliedBatch.current = r;
-      if (r.suggestions?.length) {
-        setBatch({ ...r, checked: Object.fromEntries(r.suggestions.map((s) => [s.id, true])) });
-      }
-      if (r.note) setNote(r.note);
+  useTaskResult(RUN_KEY, (r) => {
+    if (r.suggestions?.length) {
+      setBatch({ ...r, checked: Object.fromEntries(r.suggestions.map((s) => [s.id, true])) });
     }
-    if (batchRun?.status === 'error' && batchRun.error) setErr(batchRun.error);
-  }, [batchRun?.status, batchRun?.result, batchRun?.error]);
+    if (r.note) setNote(r.note);
+  });
   const [applying, setApplying] = useState(false);
 
   const [defaults, setDefaults] = useState(null); // { enabled, title, description, post_types }
@@ -184,7 +193,6 @@ export default function SeoTab({ projectId, store, widget = false }) {
   const [filling, setFilling] = useState(false);
 
   const [blog, setBlog] = useState(null); // { form fields } | { draft }
-  const [genBlog, setGenBlog] = useState(false);
   const [posting, setPosting] = useState(false);
 
   const limits = ctx?.limits || DEFAULT_LIMITS;
@@ -226,20 +234,23 @@ export default function SeoTab({ projectId, store, widget = false }) {
   };
 
   const runAudit = async () => {
-    setAuditing(true); setErr(null);
-    try {
+    setErr(null); setNote(null);
+    await task('seo:audit', 'Site audit', async ({ cancelled }) => {
+      if (cancelled()) return null;
       const a = await call(projectId, 'audit', { limit: 100 });
       if (a?.ok === false) throw new Error(a.message || 'The site rejected the audit.');
-      setAudit(a);
-      setNote(a.issues?.length
-        ? `${a.issues.length} issue${a.issues.length === 1 ? '' : 's'} across ${a.scanned} item${a.scanned === 1 ? '' : 's'}.`
-        : `Nothing to fix across ${a.scanned} item${a.scanned === 1 ? '' : 's'}.`);
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setAuditing(false); }
+      return a;
+    });
   };
+  useTaskResult('seo:audit', (a) => {
+    setAudit(a);
+    setNote(a.issues?.length
+      ? `${a.issues.length} issue${a.issues.length === 1 ? '' : 's'} across ${a.scanned} item${a.scanned === 1 ? '' : 's'}.`
+      : `Nothing to fix across ${a.scanned} item${a.scanned === 1 ? '' : 's'}.`);
+  });
 
   const openItem = (it) => {
-    setErr(null); setNote(null); setBatch(null); setGenOne(false); setLinks(null); setLinkPlan(null); setKw(null);
+    setErr(null); setNote(null); setBatch(null); setLinks(null); setLinkPlan(null); setKw(null);
     setEdit({
       id: it.id, title: it.title, type: it.type, url: it.url, status: it.status,
       form: {
@@ -276,64 +287,83 @@ export default function SeoTab({ projectId, store, widget = false }) {
   };
 
   const suggestLinks = async () => {
-    setLoadingLinks(true); setErr(null); setNote(null); setLinkPlan(null);
-    try {
-      const r = await runAi('links', 'reading the page and picking links',
-        () => base44.functions.invoke('suggestInternalLinks', { projectId, id: edit.id }).then((x) => x.data));
+    setErr(null); setNote(null); setLinkPlan(null);
+    const itemId = edit.id;
+    await task('seo:links', 'Internal links', async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const r = await base44.functions.invoke('suggestInternalLinks', { projectId, id: itemId }).then((x) => x.data);
       if (!r) throw new Error('No suggestion came back — try again.');
-      setLinks({ ...r, checked: Object.fromEntries((r.links || []).map((l, i) => [i, true])) });
-      if (r.note) setNote(r.note);
-      else if (!r.links?.length) setNote('Nothing worth linking from that page yet.');
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setLoadingLinks(false); }
+      // The ITEM is carried out with the result: this loop belongs to the page that
+      // was open, and the tab may be rebuilt with a different one open by the time
+      // it lands. Storing the id is what lets the result find its way home — or be
+      // ignored honestly rather than applied to the wrong page.
+      return { ...r, itemId };
+    });
   };
+  useTaskResult('seo:links', (r) => {
+    if (r.itemId !== edit?.id) return; // the operator has moved to another page
+    setLinks({ ...r, checked: Object.fromEntries((r.links || []).map((l, i) => [i, true])) });
+    if (r.note) setNote(r.note);
+    else if (!r.links?.length) setNote('Nothing worth linking from that page yet.');
+  });
 
   // Dry run first: the plugin shows the exact sentence each link would land in,
   // and refuses anything whose phrase is not really in the text.
   const planLinks = async () => {
     const chosen = (links?.links || []).map((l, i) => ({ l, i })).filter(({ i }) => links.checked[i]).map(({ l }) => l);
     if (!chosen.length) return;
-    setApplyingLinks(true); setErr(null); setNote(null); setLinkPlan(null);
-    try {
-      const r = await call(projectId, 'bulk_add_links', {
-        dry_run: true,
-        items: chosen.map((l) => ({ id: edit.id, anchor: l.anchor, url: l.url })),
-      });
+    setErr(null); setNote(null); setLinkPlan(null);
+    const itemId = edit.id;
+    const payload = chosen.map((l) => ({ id: itemId, anchor: l.anchor, url: l.url }));
+    await task('seo:linkplan', 'Checking link placement', async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const r = await call(projectId, 'bulk_add_links', { dry_run: true, items: payload });
       if (r?.ok === false) throw new Error(r.message || 'The site rejected the request.');
-      setLinkPlan(r);
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setApplyingLinks(false); }
+      return { ...r, itemId };
+    });
   };
+  useTaskResult('seo:linkplan', (r) => {
+    if (r.itemId !== edit?.id) return;
+    setLinkPlan(r);
+  });
 
   const applyLinks = async () => {
     const chosen = (linkPlan?.added || []).map((a) => ({ id: a.id, anchor: a.anchor, url: a.url }));
     if (!chosen.length) return;
-    setApplyingLinks(true); setErr(null); setNote(null);
-    try {
-      const r = await call(projectId, 'bulk_add_links', { items: chosen });
+    setErr(null); setNote(null);
+    const payload = chosen;
+    await task('seo:linkapply', 'Adding links', async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const r = await call(projectId, 'bulk_add_links', { items: payload });
       if (r?.ok === false) throw new Error(r.message || 'The site rejected the change.');
-      setNote(`Added ${r?.count ?? chosen.length} link${(r?.count ?? chosen.length) === 1 ? '' : 's'} to this page. WordPress kept a revision, so you can undo it.`);
-      setLinkPlan(null); setLinks(null);
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setApplyingLinks(false); }
+      return { count: r?.count ?? payload.length };
+    });
   };
+  useTaskResult('seo:linkapply', (r) => {
+    setNote(`Added ${r.count} link${r.count === 1 ? '' : 's'} to this page. WordPress kept a revision, so you can undo it.`);
+    setLinkPlan(null); setLinks(null);
+  });
 
   const runKeywords = async () => {
-    setKwBusy(true); setErr(null); setNote(null); setKw(null);
-    try {
-      // Eight, matching MAX_COMPETITORS in server/src/lib/keywordResearch.js —
-      // scripts/verify-keywords.mjs compares the two, because a UI that caps
-      // lower than the server is a limit nobody can see or explain.
-      const list = competitors.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 8);
-      const r = await runAi('keywords', 'researching what people search for',
-        () => base44.functions.invoke('researchKeywords', {
-          projectId, id: edit.id, competitors: list,
-        }).then((x) => x.data));
-      setKw(r);
-      if (!r?.keywords?.length) setNote('No keyword signals came back — try again, or add a competitor address.');
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setKwBusy(false); }
+    setErr(null); setNote(null); setKw(null);
+    // Eight, matching MAX_COMPETITORS in server/src/lib/keywordResearch.js —
+    // scripts/verify-keywords.mjs compares the two, because a UI that caps
+    // lower than the server is a limit nobody can see or explain.
+    const list = competitors.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 8);
+    const itemId = edit.id;
+    await task('seo:keywords', 'Keyword research', async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const r = await base44.functions.invoke('researchKeywords', {
+        projectId, id: itemId, competitors: list,
+      }).then((x) => x.data);
+      return { ...r, itemId };
+    });
   };
+  useTaskResult('seo:keywords', (r) => {
+    if (r.itemId !== edit?.id) return;
+    setKw(r);
+    if (!r?.keywords?.length) setNote('No keyword signals came back — try again, or add a competitor address.');
+  });
 
   const save = async () => {
     setSaving(true); setErr(null); setNote(null);
@@ -349,47 +379,24 @@ export default function SeoTab({ projectId, store, widget = false }) {
     finally { setSaving(false); }
   };
 
-  // Every AI action goes through here, so the operator gets the same honest
-  // feedback everywhere: a clock that ticks from the first moment (a bare spinner
-  // is what "it just sits there, looks frozen" was), and a remaining estimate
-  // taken from this action's own last run rather than a hardcoded guess.
-  const runAi = async (key, detail, fn) => {
-    const startedAt = Date.now();
-    setRun({ key, startedAt, estimateMs: readLastMs(key), detail, done: 0, total: 1 });
-    try {
-      return await fn();
-    } finally {
-      writeLastMs(key, Date.now() - startedAt);
-      setRun(null);
-    }
-  };
-
-  // Renders the timer only for the run that is actually in flight (they are
-  // mutually exclusive — one operator, one click at a time). The wrapper lives
-  // here so every call site is a single `{timerFor(...)}` with no duplicate
-  // element construction.
-  const timerFor = (...keys) => (run && keys.includes(run.key) ? (
-    <div className="mt-2">
-      <EtaTimer
-        startedAt={run.startedAt}
-        estimateMs={run.estimateMs}
-        detail={run.detail}
-      />
-    </div>
-  ) : null);
-
   const generateOne = async () => {
-    setGenOne(true); setErr(null); setNote(null);
-    try {
-      const r = await runAi('one', 'writing metadata for this page',
-        () => base44.functions.invoke('generateSeoMeta', { projectId, items: [{ id: edit.id }] }).then((x) => x.data));
+    setErr(null); setNote(null);
+    const itemId = edit.id;
+    await task('seo:one', 'Writing metadata', async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const r = await base44.functions.invoke('generateSeoMeta', { projectId, items: [{ id: itemId }] }).then((x) => x.data);
       const s = r?.suggestions?.[0];
       if (!s) throw new Error('No suggestion came back — try again.');
-      setEdit((cur) => ({ ...cur, suggestion: s }));
-      if (r.title_only) setNote('Only the title was available to read — check the suggestion against the page before saving.');
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setGenOne(false); }
+      // The suggestion belongs to ONE page. Carried with its id so a rebuild can
+      // put it back on that page — and leave it alone if a different one is open.
+      return { itemId, suggestion: s, titleOnly: !!r.title_only };
+    });
   };
+  useTaskResult('seo:one', ({ itemId, suggestion, titleOnly }) => {
+    if (itemId !== edit?.id) return;
+    setEdit((cur) => (cur ? { ...cur, suggestion } : cur));
+    if (titleOnly) setNote('Only the title was available to read — check the suggestion against the page before saving.');
+  });
 
   // The batch targets content a human would target: published, and missing
   // either half of its metadata. Rewriting a title someone deliberately wrote
@@ -597,15 +604,19 @@ export default function SeoTab({ projectId, store, widget = false }) {
   };
 
   const generateBlog = async () => {
-    setGenBlog(true); setErr(null); setNote(null);
-    try {
-      const r = await runAi('blog', 'writing the draft',
-        () => base44.functions.invoke('generateBlogPost', { projectId, ...blog.form }).then((x) => x.data));
+    setErr(null); setNote(null);
+    const form = blog.form;
+    await task('seo:blog', 'Writing the draft', async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const r = await base44.functions.invoke('generateBlogPost', { projectId, ...form }).then((x) => x.data);
       if (!r?.draft) throw new Error('No draft came back — try again.');
-      setBlog({ form: blog.form, draft: r.draft, warnings: r.warnings, linkable: r.linkable });
-    } catch (e) { setErr(e?.data?.error || e.message); }
-    finally { setGenBlog(false); }
+      return { form, draft: r.draft, warnings: r.warnings, linkable: r.linkable };
+    });
   };
+  useTaskResult('seo:blog', (r) => {
+    setBlog(r);
+    setView('blog'); // the draft is the answer; returning to the tab should show it
+  });
 
   // ── not available on this site's plugin build ────────────────────────────
   if (store && store.connected && store.seo_available === false) {
@@ -682,21 +693,19 @@ export default function SeoTab({ projectId, store, widget = false }) {
                 <ExternalLink size={10} /> edit in WordPress
               </a>
             )}
-            <button onClick={generateOne} disabled={genOne}
+            <button onClick={generateOne} disabled={running.one}
               className="ml-auto h-[32px] px-2.5 text-[10px] border border-primary/40 text-primary hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
-              {genOne ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} WRITE IT FOR ME
+              {running.one ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} WRITE IT FOR ME
             </button>
-            <button onClick={suggestLinks} disabled={loadingLinks} title="Which of your other pages this one should link to"
+            <button onClick={suggestLinks} disabled={running.links} title="Which of your other pages this one should link to"
               className="h-[32px] px-2.5 text-[10px] border border-primary/40 text-primary hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
-              {loadingLinks ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />} LINK IDEAS
+              {running.links ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />} LINK IDEAS
             </button>
-            <button onClick={runKeywords} disabled={kwBusy} title="What people actually search for, and what competing pages target"
+            <button onClick={runKeywords} disabled={running.keywords} title="What people actually search for, and what competing pages target"
               className="h-[32px] px-2.5 text-[10px] border border-primary/40 text-primary hover:border-primary disabled:opacity-40 flex items-center gap-1.5">
-              {kwBusy ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} KEYWORD IDEAS
+              {running.keywords ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} KEYWORD IDEAS
             </button>
           </div>
-          {timerFor('one', 'links', 'keywords')}
-
           <div className="space-y-1">
             <div className="text-[9px] text-primary/35 uppercase tracking-wider">Competitor pages to compare (optional, up to 8)</div>
             <input className={inputCls} value={competitors} onChange={(e) => rememberCompetitors(e.target.value)}
@@ -838,8 +847,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
               )}
               {(links.links || []).length > 0 && (
                 <div className="flex items-center gap-2">
-                  <Btn kind="primary" onClick={planLinks} disabled={applyingLinks}>
-                    {applyingLinks ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                  <Btn kind="primary" onClick={planLinks} disabled={running.linkWrite}>
+                    {running.linkWrite ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                     REVIEW {(links.links || []).filter((_, i) => links.checked[i]).length}
                   </Btn>
                   <Btn onClick={() => setLinks(null)}><X size={12} /> Close</Btn>
@@ -869,8 +878,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
                 Nothing has been written yet — this is the sentence each link would land in. Your text is never deleted, and WordPress keeps a revision.
               </div>
               <div className="flex items-center gap-2">
-                <Btn kind="primary" onClick={applyLinks} disabled={applyingLinks || !linkPlan.added?.length}>
-                  {applyingLinks ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} ADD LINKS
+                <Btn kind="primary" onClick={applyLinks} disabled={running.linkWrite || !linkPlan.added?.length}>
+                  {running.linkWrite ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} ADD LINKS
                 </Btn>
                 <Btn onClick={() => setLinkPlan(null)}><X size={12} /> Cancel</Btn>
               </div>
@@ -1188,8 +1197,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
 
         <div className="p-3 border-t border-primary/20 shrink-0 flex items-center gap-2">
           {!b.draft && !b.created && (
-            <Btn kind="primary" onClick={generateBlog} disabled={genBlog}>
-              {genBlog ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} WRITE IT
+            <Btn kind="primary" onClick={generateBlog} disabled={running.blog}>
+              {running.blog ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} WRITE IT
             </Btn>
           )}
           {b.draft && (
@@ -1197,8 +1206,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
               <Btn kind="primary" onClick={createBlog} disabled={posting || !b.draft.title.trim() || !b.draft.content.trim()}>
                 {posting ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} SAVE AS DRAFT
               </Btn>
-              <Btn onClick={generateBlog} disabled={genBlog}>
-                {genBlog ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Rewrite
+              <Btn onClick={generateBlog} disabled={running.blog}>
+                {running.blog ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Rewrite
               </Btn>
             </>
           )}
@@ -1250,8 +1259,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
         </div>
 
         <div className="flex items-center gap-2">
-          <Btn onClick={runAudit} disabled={auditing}>
-            {auditing ? <Loader2 size={11} className="animate-spin" /> : <AlertTriangle size={11} />} AUDIT
+          <Btn onClick={runAudit} disabled={running.audit}>
+            {running.audit ? <Loader2 size={11} className="animate-spin" /> : <AlertTriangle size={11} />} AUDIT
           </Btn>
           <Btn onClick={generateBatch} disabled={genBatch} kind={missing.length ? 'primary' : 'ghost'}>
             {genBatch ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} FILL MISSING ({missing.length})

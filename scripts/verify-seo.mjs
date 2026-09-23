@@ -644,7 +644,13 @@ check('the SEO panel slices the batch', has(seoPanelSrc, 'sliceForRequests('), t
 check('…and stitches the responses back', has(seoPanelSrc, 'mergeBatchResults('), true);
 check('…and bounds one click to what it can apply', has(seoPanelSrc, 'SEO_BATCH_MAX'), true);
 check('…and no longer sends the whole batch in one request', has(seoPanelSrc, 'missing.slice(0, 25)'), false);
-check('…and shows a live timer while an AI action runs', has(seoPanelSrc, 'EtaTimer'), true);
+// The timer moved OUT of the tab and into the shared task runner (2026-09-24):
+// a timer drawn by the tab stops being drawn the moment the operator leaves it,
+// which is the bug the runner was built for. Asserted in both halves — the tab
+// runs its actions through the runner, and the runner is what renders the clock.
+check('…and its AI actions run under the shared task runner', has(seoPanelSrc, 'useTaskRunner()'), true);
+check('…which is what shows the live timer', has(read('src/components/matrix/TaskRunner.jsx'), 'EtaTimer'), true);
+check('…and the tab no longer draws one of its own', has(seoPanelSrc, 'EtaTimer'), false);
 
 
 // ── 7b. the batch streams, and both ends agree on the events ───────────────

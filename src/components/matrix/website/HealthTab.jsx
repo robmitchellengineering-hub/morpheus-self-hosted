@@ -4,6 +4,7 @@ import {
   Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { useTaskRunner, useTaskResult } from '../TaskRunner';
 
 // SITE HEALTH tab — what WordPress's own Site Health screen and Morpheus's own
 // checks say about the operator's live site, in one place.
@@ -501,8 +502,6 @@ const fixAllWords = (t) => {
 };
 
 export default function HealthTab({ projectId }) {
-  const [scan, setScan] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const [policy, setPolicy] = useState(null);       // the saved policy + the server's own wording
@@ -518,39 +517,60 @@ export default function HealthTab({ projectId }) {
   // flight, so one finding's button can spin without freezing the page.
   const [fixingIds, setFixingIds] = useState([]);
   const [fixResults, setFixResults] = useState({});     // finding id -> { state, ok, fix } | { state: 'rejected', message, code }
-  const [fixAllRunning, setFixAllRunning] = useState(false);
   const [fixAllConfirming, setFixAllConfirming] = useState(false);
-  const [fixAllProgress, setFixAllProgress] = useState(null); // { index, total, label }
-  const [fixAllReport, setFixAllReport] = useState(null);     // the run's own tally, in words
   // The Updates section, so an `updates` finding can send the operator to it.
   const updatesRef = useRef(null);
   const [updatesFlash, setUpdatesFlash] = useState(false);
   const flashTimer = useRef(null);
 
+  // The scan runs in the task runner like everything else, so leaving the tab does
+  // not cancel it and its findings are still here when the operator comes back.
+  const { tasks, startTask } = useTaskRunner();
+  const scanTask = tasks['health:scan'];
+  // The scan's findings are the run's RESULT, read straight out of the runner: a
+  // mirror in tab state would be a second copy that a tab switch empties.
+  const scan = scanTask?.result ?? null;
+  // The previous scan stays on screen while this one runs. Blanking the tab would
+  // hide exactly the findings the operator is reading.
+  const loading = scanTask?.status === 'running';
+
   const run = useCallback(async (force) => {
-    // The previous scan stays on screen while this one runs. Blanking the tab
-    // would hide exactly the findings the operator is reading.
-    setLoading(true); setErr(null);
-    try {
+    setErr(null);
+    await startTask({ key: 'health:scan', label: 'Site health scan', total: 1 }, async ({ cancelled }) => {
+      if (cancelled()) return null;
       const res = await base44.functions.invoke('siteHealth', { projectId, action: 'scan', force: !!force });
       if (!res?.data) throw new Error('The scan came back empty — try again.');
-      setScan(res.data);
-      // The scan carries the policy, so there is no second round trip to make.
-      // It seeds the draft once: a later scan must not overwrite unsaved edits.
-      if (res.data.policy) { setPolicy(res.data.policy); setPolicyErr(null); setDraft((d) => d || editableOf(res.data.policy)); }
-    } catch (e) {
-      setErr(e?.data?.error || e.message);
-      // The schedule is Morpheus's own data, not WordPress's, so a failed scan
-      // must not take the one writable control down with it. If this read fails
-      // too the scan error above is on screen and RESCAN retries both.
-      try {
-        const res = await base44.functions.invoke('siteHealth', { projectId, action: 'policy' });
-        if (res?.data) { setPolicy(res.data); setDraft((d) => d || editableOf(res.data)); }
-      } catch { /* the scan error above is the message that matters */ }
-    } finally { setLoading(false); }
-  }, [projectId]);
+      return res.data;
+    });
+  }, [projectId, startTask]);
 
-  useEffect(() => { run(false); }, [run]);
+  useTaskResult('health:scan', (data) => {
+    // The scan carries the policy, so there is no second round trip to make. It
+    // seeds the draft once: a later scan must not overwrite unsaved edits.
+    if (data.policy) { setPolicy(data.policy); setPolicyErr(null); setDraft((d) => d || editableOf(data.policy)); }
+  });
+
+  // A failed scan: surface the reason, and still read the policy. The schedule is
+  // Morpheus's own data, not WordPress's, so a failed scan must not take the one
+  // writable control down with it. If this read fails too the scan error above is
+  // on screen and RESCAN retries both.
+  useEffect(() => {
+    if (scanTask?.status !== 'error') return;
+    setErr(scanTask.error);
+    base44.functions.invoke('siteHealth', { projectId, action: 'policy' })
+      .then((res) => { if (res?.data) { setPolicy(res.data); setDraft((d) => d || editableOf(res.data)); } })
+      .catch(() => { /* the scan error is the message that matters */ });
+  }, [scanTask?.status, scanTask?.error, projectId]);
+
+  // Scan once when the tab opens — unless a run already exists, in which case its
+  // result is applied above and starting another would only overwrite it.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current || scanTask) return;
+    started.current = true;
+    run(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A manual run, in one of two modes. `confirm: true` is required per
   // invocation — the policy says what MAY happen on a schedule, this says a
@@ -669,32 +689,45 @@ export default function HealthTab({ projectId }) {
   // Sequential by construction — a for..of with an await — because two writers on
   // one live site is how a rollback gets tangled. Guided and updates findings are
   // never in `autoFindings`, so they can never be included.
+  // FIX ALL runs in the task runner too. It is the longer of the two loops here
+  // (one signed round trip per finding), so it is the one that most needs to
+  // survive being left — and its tally is a RESULT, so it has to come back with it.
+  const fixAllTask = tasks['health:fixall'];
+  const fixAllRunning = fixAllTask?.status === 'running';
+  const fixAllProgress = fixAllRunning && fixAllTask.total
+    ? { index: fixAllTask.done, total: fixAllTask.total, label: fixAllTask.detail }
+    : null;
+  const fixAllReport = fixAllTask?.result?.report ?? null;
+  useTaskResult('health:fixall', () => {}); // the tally is read above, from the runner
+
   const runFixAll = async () => {
     if (fixAllRunning || anyFixInFlight || autoFindings.length === 0) return;
     setFixAllConfirming(false);
-    setFixAllReport(null);
-    setFixAllRunning(true);
-    const total = autoFindings.length;
-    const tally = { done: 0, unverified: 0, failed: 0, declined: 0, rejected: 0 };
-    try {
-      for (let i = 0; i < autoFindings.length; i += 1) {
-        const f = autoFindings[i];
-        setFixAllProgress({ index: i + 1, total, label: f.label || f.id });
-        const r = await applyFix(f, { rescan: false });
+    const findings = autoFindings.map((f) => ({ id: f.id, label: f.label || f.id }));
+    const total = findings.length;
+    await startTask({ key: 'health:fixall', label: 'FIX ALL', total }, async ({ progress, cancelled }) => {
+      const tally = { done: 0, unverified: 0, failed: 0, declined: 0, rejected: 0 };
+      for (let i = 0; i < findings.length; i += 1) {
+        // The strip's Stop is real: it is checked BETWEEN findings, which is the
+        // only place a stop can land without leaving a half-applied fix behind.
+        if (cancelled()) break;
+        const f = findings[i];
+        progress({ done: i, total, detail: f.label });
+        const full = autoFindings.find((x) => x.id === f.id);
+        // eslint-disable-next-line no-await-in-loop
+        const r = await applyFix(full, { rescan: false });
         if (r?.rejected) tally.rejected += 1;
         else if (r?.ok !== true) tally.declined += 1;
         else if (r?.fix?.verified === false) tally.unverified += 1;
         else if (r?.fix?.error) tally.failed += 1;
         else tally.done += 1;
+        progress({ done: i + 1, total, detail: f.label });
       }
-    } finally {
-      setFixAllRunning(false);
-      setFixAllProgress(null);
-      setFixAllReport(fixAllWords(tally));
       // One scan at the very end, so what is on screen afterwards is the site as
       // it now is rather than this run's word for it.
       await run(true);
-    }
+      return { report: fixAllWords(tally) };
+    });
   };
 
   const setField = (key, value) => {

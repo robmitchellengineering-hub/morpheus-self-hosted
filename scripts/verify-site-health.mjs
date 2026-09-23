@@ -270,7 +270,10 @@ check('a fix that worked re-reads the site itself', /if \(payload\.ok === true &
 check('…exactly once, so the page does not scan in a loop', (fixBody.match(/await run\(true\)/g) || []).length, 1);
 check('…and a declined or rejected fix re-checks nothing', /if \(payload\.ok === true &&/.test(fixBody) && !/^\s*await run\(true\);$/m.test(fixBody), true);
 check('the rescan is a real dependency of the callback', /\}, \[projectId, run\]\)/.test(fixBody), true);
-check('FIX ALL opts out of the per-item scan', /applyFix\(f, \{ rescan: false \}\)/.test(fixAllBody), true);
+// The VARIABLE was renamed when FIX ALL moved onto the task runner (it carries a
+// plain {id,label} now); the claim is that the loop still opts out of the per-item
+// scan, so the assertion is on the option rather than on the argument's name.
+check('FIX ALL opts out of the per-item scan', /applyFix\(\w+, \{ rescan: false \}\)/.test(fixAllBody), true);
 check('…so nothing scans inside the loop', /applyFix\(f\)(?!,)/.test(fixAllBody), false);
 
 // ── the plugin's own update channel ─────────────────────────────────────────
