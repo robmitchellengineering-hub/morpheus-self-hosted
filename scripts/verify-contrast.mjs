@@ -139,9 +139,16 @@ ok('the Command Deck declares its own theme in the app',
 ok('the app-wide element rules are reset inside the deck',
   /\[data-theme='deck'\]\s*h1[\s\S]*?\[data-theme='deck'\]\s*a\s*\{[^}]*color:\s*inherit/.test(css), deckBoundary.trim());
 // Listed individually: an exemption for h1 alone would fix the one element Rob
-// saw and leave the next heading to be repainted by the same rule.
+// saw and leave the next heading to be repainted by the same rule. Built as a
+// count and compared to zero — this check was first written as an `ok()` whose
+// second argument was an array of the MISSING levels, which is always truthy and
+// so always passed; the mutation that removed h4 from the reset is what caught
+// it. Mutation-test the guard, not just the code.
+const missingHeadingLevels = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+  .filter((h) => !new RegExp(`\\[data-theme='deck'\\]\\s*${h}\\s*[,{]`).test(css));
 ok('the reset covers every heading level, not just the ones seen broken',
-  ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].filter((h) => !new RegExp(`\\[data-theme='deck'\\]\\s*${h}\\s*[,{]`).test(css)), []);
+  missingHeadingLevels.length === 0,
+  `not reset inside the deck: ${missingHeadingLevels.join(', ')}`);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
