@@ -1603,15 +1603,14 @@ class Morpheus_SEO {
 	 * here (the finding would never be offered on the site that needs it).
 	 * Everything else has to match: this test is what proves the physical file
 	 * is the one a crawler receives.
+	 *
+	 * The implementation MOVED to helpers.php (morpheus_bodies_match) when the
+	 * same question was asked about wp-content/debug.log: one rule, two files
+	 * asking it. This method stays so every existing caller is unchanged, and it
+	 * delegates rather than keeping a second copy that could drift.
 	 */
 	public static function bodies_match( $a, $b ) {
-		if ( ! is_string( $a ) || ! is_string( $b ) ) {
-			return false;
-		}
-		$norm = function ( $s ) {
-			return rtrim( str_replace( array( "\r\n", "\r" ), "\n", $s ) );
-		};
-		return $norm( $a ) === $norm( $b );
+		return morpheus_bodies_match( $a, $b );
 	}
 
 	/** Do two URLs point at the same sitemap? Scheme and a trailing slash are not the difference. */

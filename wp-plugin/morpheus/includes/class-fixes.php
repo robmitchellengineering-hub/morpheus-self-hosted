@@ -31,6 +31,29 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Morpheus_Fixes {
 
 	/**
+	 * Where the LAST attempt at each finding is kept: one option, capped.
+	 *
+	 * WHY THIS EXISTS
+	 *
+	 * A refused fix used to leave no trace. The debug.log fix correctly declined
+	 * to move a file that was not being served, the panel rescanned, the same
+	 * count came back, and NOTHING on screen said why — so a working refusal
+	 * looked exactly like a broken button, and the owner pressed it again. The
+	 * record is written here (the only place that acts on the site) and read
+	 * back into the scan, so it survives a reload and cannot be produced by the
+	 * panel's own memory. Not special-cased to one finding: the robots.txt
+	 * quarantine and every future fix write the same record.
+	 *
+	 * WHAT IT IS NOT: a claim. It records what happened, never that the finding
+	 * is resolved — the finding's own status still comes from the check, so a
+	 * recorded attempt can never turn an unrun or failed fix into a "done".
+	 */
+	const ATTEMPTS_OPTION = 'morpheus_fix_attempts';
+
+	/** How many finding ids the record keeps. Newest wins when it is full. */
+	const MAX_ATTEMPTS = 20;
+
+	/**
 	 * The registry, keyed by the id the scan produces.
 	 *
 	 * `label` is the button. `warning` is shown before an action that has a real
@@ -248,7 +271,14 @@ class Morpheus_Fixes {
 			'debug_enabled' => array(
 				'kind'  => 'guided',
 				'label' => 'Stop logging errors to a public file',
-				'does'  => 'WP_DEBUG_LOG is writing wp-content/debug.log, which is readable over the web. Which fix you want is your call — Morpheus will not decide how much debugging you keep.',
+				// NO READABILITY CLAIM HERE. This sentence is the fallback for a
+				// finding that arrived without one; WordPress's test says debug
+				// mode is ON, which is not the same claim as "the log is readable
+				// over the web". Morpheus attaches the VERIFIED answer per scan
+				// (see Morpheus_Health::describe_public_debug_log()), because a
+				// static claim appended to WordPress's test was wrong on a host
+				// whose front controller answers every /wp-content path with 200.
+				'does'  => 'WP_DEBUG_LOG is on, so WordPress writes wp-content/debug.log. Whether that file is reachable over the web is a separate question, and Morpheus answers it from the file itself rather than from the URL\'s status. Which fix you want is your call — Morpheus will not decide how much debugging you keep.',
 				'steps' => array(
 					array( 'text' => 'For a live site, add this to wp-config.php above the "stop editing" line: define( \'WP_DEBUG\', false );' ),
 					array( 'text' => 'Or keep debugging and move the log outside the web root: define( \'WP_DEBUG_LOG\', \'/home/your-account/debug.log\' );' ),
@@ -470,19 +500,31 @@ class Morpheus_Fixes {
 	 *
 	 * A finding that PASSES needs no action, so it is not unmapped — the count is
 	 * only of findings that ask for something and have no way to get it.
+	 *
+	 * A finding may carry its own sentence for the action under `action_does`,
+	 * written by the check that produced it. It is used in place of the
+	 * registry's static sentence because some of these findings sit on top of a
+	 * WordPress test whose subject the registry cannot know: `debug_enabled` is
+	 * "debug mode is on", and only the scan can say whether the log it writes is
+	 * actually being served. Appending a static claim there is how Morpheus told
+	 * an owner his log was readable when his host was answering 200 with its own
+	 * HTML page — so the scan's verified sentence wins, and the static one is
+	 * only the fallback.
 	 */
 	public static function annotate( &$findings ) {
 		$unmapped = array();
 		foreach ( $findings as $i => $f ) {
 			$entry = self::for_id( $f['id'] ?? '' );
 			if ( $entry ) {
+				$verified = isset( $f['action_does'] ) && is_string( $f['action_does'] ) ? trim( $f['action_does'] ) : '';
 				$findings[ $i ]['fix'] = array(
 					'kind'    => $entry['kind'],
 					'label'   => $entry['label'],
-					'does'    => $entry['does'],
+					'does'    => '' !== $verified ? $verified : $entry['does'],
 					'warning' => $entry['warning'] ?? null,
 					'steps'   => $entry['steps'] ?? array(),
 				);
+				unset( $findings[ $i ]['action_does'] );
 				continue;
 			}
 			$status = $f['status'] ?? '';
@@ -491,6 +533,108 @@ class Morpheus_Fixes {
 			}
 		}
 		return $unmapped;
+	}
+
+	// ── What the last attempt at each finding did ───────────────────────────
+
+	/**
+	 * The recorded attempts, sanitised, keyed by finding id.
+	 *
+	 * An unrecognised outcome reads as a REFUSAL, never as a success: this record
+	 * is shown to an operator who may act on it, and the only safe direction for
+	 * an unknown value is "we cannot claim this worked".
+	 */
+	public static function attempts() {
+		$all = get_option( self::ATTEMPTS_OPTION, array() );
+		if ( ! is_array( $all ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( $all as $id => $row ) {
+			if ( ! is_string( $id ) || '' === $id || ! is_array( $row ) ) {
+				continue;
+			}
+			$out[ $id ] = array(
+				'outcome' => ( 'done' === ( $row['outcome'] ?? '' ) ) ? 'done' : 'refused',
+				'code'    => isset( $row['code'] ) && is_string( $row['code'] ) && '' !== $row['code'] ? $row['code'] : null,
+				'message' => isset( $row['message'] ) && is_string( $row['message'] ) ? trim( $row['message'] ) : '',
+				'at'      => isset( $row['at'] ) && is_string( $row['at'] ) && '' !== $row['at'] ? $row['at'] : null,
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * Put each finding's last attempt on the finding itself.
+	 *
+	 * Both scans call this (class-clean and class-health), so a finding carries
+	 * its record wherever it is rendered — including the robots.txt finding,
+	 * which is produced by the health scan and included in the clean one.
+	 */
+	public static function attach_attempts( &$findings ) {
+		$attempts = self::attempts();
+		if ( ! $attempts ) {
+			return;
+		}
+		foreach ( $findings as $i => $f ) {
+			$id = isset( $f['id'] ) ? (string) $f['id'] : '';
+			if ( '' !== $id && isset( $attempts[ $id ] ) ) {
+				$findings[ $i ]['last_attempt'] = $attempts[ $id ];
+			}
+		}
+	}
+
+	/**
+	 * Record what one run of one fix did — called for EVERY mechanism, success or
+	 * refusal, so the panel can say what happened without inventing it.
+	 *
+	 * A later run replaces the earlier record for the same id (it is the LAST
+	 * attempt, not a history): a fix that starts working must stop being shown as
+	 * refused.
+	 */
+	private static function record_attempt( $id, $result ) {
+		if ( ! is_string( $id ) || '' === $id || ! is_array( $result ) ) {
+			return;
+		}
+		// `done` has to be earned by all three: the site said it worked, it was
+		// not rolled back, and the site did not report a failure. Anything else —
+		// including a shape we do not recognise — is a refusal.
+		$done = ! empty( $result['ok'] )
+			&& empty( $result['restored'] )
+			&& ( ! array_key_exists( 'verified', $result ) || false !== $result['verified'] )
+			&& empty( $result['error'] );
+
+		$message = '';
+		// For a refusal the REASON is the useful sentence; for a success it is
+		// what the site says it did. Both fall back, so a shape that carries
+		// only one of them still gets a sentence.
+		$preferred = $done ? array( 'did', 'note', 'error' ) : array( 'error', 'note', 'did' );
+		foreach ( $preferred as $key ) {
+			if ( isset( $result[ $key ] ) && is_string( $result[ $key ] ) && '' !== trim( $result[ $key ] ) ) {
+				$message = trim( $result[ $key ] );
+				break;
+			}
+		}
+
+		$all = self::attempts();
+		$all[ $id ] = array(
+			'outcome' => $done ? 'done' : 'refused',
+			'code'    => isset( $result['code'] ) && is_string( $result['code'] ) && '' !== $result['code'] ? $result['code'] : null,
+			'message' => $message,
+			'at'      => gmdate( 'c' ),
+		);
+
+		// Capped, newest kept: one option cannot grow without bound because a
+		// site keeps trying. ISO-8601 UTC sorts lexicographically, which is why
+		// the timestamp is stored in that shape.
+		if ( count( $all ) > self::MAX_ATTEMPTS ) {
+			uasort( $all, function ( $a, $b ) {
+				return strcmp( (string) $b['at'], (string) $a['at'] );
+			} );
+			$all = array_slice( $all, 0, self::MAX_ATTEMPTS, true );
+		}
+
+		update_option( self::ATTEMPTS_OPTION, $all, false );
 	}
 
 	// ── Doing it ────────────────────────────────────────────────────────────
@@ -525,24 +669,39 @@ class Morpheus_Fixes {
 
 		switch ( $entry['fix'] ) {
 			case 'wp_config_define':
-				return self::fix_wp_config_define( $id, $entry['args']['name'], $entry['args']['value'] );
+				$result = self::fix_wp_config_define( $id, $entry['args']['name'], $entry['args']['value'] );
+				break;
 			case 'set_option':
-				return self::fix_set_option( $id, $entry['args']['name'], $entry['args']['value'] );
+				$result = self::fix_set_option( $id, $entry['args']['name'], $entry['args']['value'] );
+				break;
 			case 'make_backup_dir':
-				return self::fix_make_backup_dir( $id );
+				$result = self::fix_make_backup_dir( $id );
+				break;
 			case 'spawn_cron':
-				return self::fix_spawn_cron( $id );
+				$result = self::fix_spawn_cron( $id );
+				break;
 			case 'quarantine_robots_txt':
-				return self::fix_quarantine_robots_txt( $id );
+				$result = self::fix_quarantine_robots_txt( $id );
+				break;
 			case 'quarantine_uploads_php':
-				return self::fix_quarantine_uploads_php( $id );
+				$result = self::fix_quarantine_uploads_php( $id );
+				break;
 			case 'quarantine_root_config_backups':
-				return self::fix_quarantine_root_config_backups( $id );
+				$result = self::fix_quarantine_root_config_backups( $id );
+				break;
 			case 'quarantine_public_debug_log':
-				return self::fix_quarantine_public_debug_log( $id );
+				$result = self::fix_quarantine_public_debug_log( $id );
+				break;
 			default:
-				return array( 'ok' => false, 'id' => $id, 'code' => 'NO_MECHANISM', 'error' => 'The registry names a mechanism that does not exist. Nothing was changed.' );
+				$result = array( 'ok' => false, 'id' => $id, 'code' => 'NO_MECHANISM', 'error' => 'The registry names a mechanism that does not exist. Nothing was changed.' );
 		}
+
+		// EVERY mechanism records its last attempt, including the refusals. A
+		// refusal that leaves no trace is indistinguishable from a broken button
+		// to the person who pressed it — the panel rescans, the count is
+		// unchanged, and nothing says why.
+		self::record_attempt( $id, $result );
+		return $result;
 	}
 
 	/**
@@ -902,23 +1061,31 @@ class Morpheus_Fixes {
 		return self::quarantine_result( $id, $quarantined, $refused, 'No config backup could be moved out of the web root' );
 	}
 
-	/** Quarantine a wp-content/debug.log that is answering over HTTP. */
+	/** Quarantine a wp-content/debug.log that the URL is actually serving. */
 	private static function fix_quarantine_public_debug_log( $id ) {
-		$file = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
-		if ( ! is_file( $file ) ) {
+		if ( ! class_exists( 'Morpheus_Clean' ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_SCANNER', 'error' => 'This build of the Morpheus plugin has no clean scanner, so Morpheus cannot confirm whether the log is being served. Nothing was changed.' );
+		}
+
+		// THE SAME QUESTION THE SCAN ASKED, asked again now — not a second rule.
+		// The owner's false positive came from a scan that decided "readable" one
+		// way and a fix that decided it another; one function answers both, so
+		// they cannot disagree. `debug_log_state()` fetches the URL and compares
+		// its bytes with the bytes on disk; the scan is cached, so the file may
+		// have changed since.
+		$state = Morpheus_Clean::debug_log_state();
+		if ( null === $state ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'UNKNOWN', 'error' => 'Morpheus could not get an answer from ' . content_url( 'debug.log' ) . ', so it could not confirm that the log is being served and did not move anything. Nothing was changed.' );
+		}
+		if ( empty( $state['exists'] ) ) {
 			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_FILE', 'error' => 'There is no wp-content/debug.log any more — something removed it since the scan. Nothing was changed; re-scan the site.' );
 		}
-
-		// Re-ask the LIVE question before moving anything: if the log is not
-		// actually being served, moving it changes nothing, and the honest answer
-		// is to say so rather than to report a fix that did nothing.
-		$url  = content_url( 'debug.log' );
-		$body = self::fetch_public( add_query_arg( 'morpheus-verify', time(), $url ) );
-		if ( is_string( $body ) && ! self::body_is_log( $body ) ) {
-			return array( 'ok' => false, 'id' => $id, 'code' => 'NOT_SERVED', 'error' => 'The debug log is not being served at ' . $url . ' — the host answers with something else. Moving the file would change nothing, so Morpheus did not. Nothing was changed.' );
+		if ( empty( $state['served'] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NOT_SERVED', 'error' => 'The debug log is not being served at ' . $state['url'] . ' — the host answers with something that is not this file. Moving it would change nothing, so Morpheus did not. Nothing was changed.' );
 		}
 
-		$r = self::quarantine_file( $file, $url );
+		$file = $state['file'];
+		$r    = self::quarantine_file( $file, $state['url'] );
 		$quarantined = ( ! empty( $r['moved'] ) && empty( $r['restored'] ) ) ? array( $r ) : array();
 		$refused     = $quarantined ? array() : array( array( 'file' => 'wp-content/debug.log', 'why' => $r['error'] ) );
 		$result      = self::quarantine_result( $id, $quarantined, $refused, 'The public debug log could not be quarantined' );
@@ -1171,15 +1338,6 @@ class Morpheus_Fixes {
 			return null;
 		}
 		return wp_remote_retrieve_body( $res );
-	}
-
-	/** The same "is this a PHP error log" test class-clean.php uses. */
-	private static function body_is_log( $body ) {
-		$head = substr( (string) $body, 0, 4000 );
-		if ( preg_match( '/^\[[^\]]{6,40}\]\s*PHP\s/i', trim( $head ) ) ) {
-			return true;
-		}
-		return (bool) preg_match( '/PHP (Warning|Notice|Fatal error|Deprecated|Parse error|Recoverable)/i', $head );
 	}
 
 	// ── File plumbing ───────────────────────────────────────────────────────

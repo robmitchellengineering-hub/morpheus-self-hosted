@@ -427,6 +427,180 @@ if ( is_file( $debuglog ) ) {
 	skip( 'debug log: quarantine', 'no wp-content/debug.log to quarantine in this boot' );
 }
 
+// ── 4e. the debug log is judged by the BYTES served, not by the status ──────
+//
+// THE FALSE POSITIVE THIS SECTION EXISTS FOR. A host whose front controller
+// answers EVERY path under wp-content with 200 and its own HTML page — a
+// `try_files … /index.php` rule, a custom 404 that returns 200, a WAF
+// interstitial — serves a body for a file that is not there. The old check read
+// that body (it contained the words "PHP Warning", from a WP error page) as a
+// leak. The rule now is the one the robots.txt check uses: the URL's bytes
+// against the file's bytes.
+//
+// The host is simulated through WordPress's own `pre_http_request` seam, so the
+// assertion is about OUR comparison and not about Playground's static router.
+// The stub is STATEFUL on purpose: it serves the log while the file is on disk
+// and 404s once it has been moved, which is what a real web server does — a
+// stub that kept saying 200 would make the fix's own after-the-fact check
+// refuse, and the harness would be testing the stub.
+
+section( '4e. the debug log: the URL\'s bytes decide, not the status' );
+
+// 4d moved the fixture away; put it back for this section.
+file_put_contents( $debuglog, $log_body );
+
+$fallback_body = '<!doctype html><html><body><h1>Page not found</h1><p>PHP Warning: this page is a stack trace, not the log</p></body></html>';
+
+/** A host that answers every wp-content path with its own HTML page. */
+$serve_fallback = function ( $pre, $args, $url ) use ( $fallback_body ) {
+	// The quarantined backup's URL also contains "debug.log"; that probe is the
+	// deny rule's business (see 4c), not this stub's.
+	if ( false === strpos( (string) $url, 'debug.log' ) || false !== strpos( (string) $url, 'morpheus-bak' ) ) {
+		return $pre;
+	}
+	return array( 'headers' => array(), 'body' => $fallback_body, 'response' => array( 'code' => 200, 'message' => 'OK' ), 'cookies' => array(), 'filename' => null );
+};
+/** A host that serves the file while it exists, and 404s after it is moved. */
+$serve_log = function ( $pre, $args, $url ) use ( $debuglog, $log_body ) {
+	if ( false === strpos( (string) $url, 'debug.log' ) || false !== strpos( (string) $url, 'morpheus-bak' ) ) {
+		return $pre;
+	}
+	$there = is_file( $debuglog );
+	return array(
+		'headers'  => array(),
+		'body'     => $there ? $log_body : 'Not Found',
+		'response' => array( 'code' => $there ? 200 : 404, 'message' => $there ? 'OK' : 'Not Found' ),
+		'cookies'  => array(),
+		'filename' => null,
+	);
+};
+
+// The rule itself, directly — a pure function, so a failure here is the rule and
+// not the boot.
+ok( Morpheus_Clean::served_is_the_file( $log_body, $log_body ) === true, 'the rule: a URL returning the file IS serving it' );
+ok( Morpheus_Clean::served_is_the_file( $log_body, $log_body . "\n" ) === true, 'the rule: a trailing newline from a proxy is still the file' );
+ok( Morpheus_Clean::served_is_the_file( $log_body, $fallback_body ) === false, 'the rule: an HTML error page is NOT the file, whatever status it arrived with' );
+ok( Morpheus_Clean::served_is_the_file( $log_body, '' ) === false, 'the rule: an empty response is NOT the file' );
+ok( Morpheus_Clean::served_is_the_file( '', $fallback_body ) === false, 'the rule: an empty file has nothing to leak' );
+
+// Clear only THIS finding's record — 4d already attempted it several times. The
+// other findings' records are kept on purpose: they are what proves the record
+// is not a debug-log special case.
+$left = Morpheus_Fixes::attempts();
+unset( $left['morpheus_public_debug_log'] );
+update_option( Morpheus_Fixes::ATTEMPTS_OPTION, $left, false );
+
+// (a) the owner's host: 200, a 12 KB HTML page, and no file being served.
+add_filter( 'pre_http_request', $serve_fallback, 10, 3 );
+Morpheus_Clean::forget();
+$scan_fallback = Morpheus_Clean::scan( true );
+$dbg_fallback  = clean_finding( $scan_fallback, 'morpheus_public_debug_log' );
+ok( null !== $dbg_fallback, 'fallback host: the check still runs (a check that vanishes reads as a pass)' );
+ok( 'good' === ( $dbg_fallback['status'] ?? '' ), 'fallback host: NO finding — the file exists and is not what the URL serves (got "' . ( $dbg_fallback['status'] ?? '—' ) . '")' );
+ok( false !== strpos( (string) ( $dbg_fallback['description'] ?? '' ), 'not being served over the web' ), 'fallback host: …and the description says so in the operator\'s words' );
+ok( ! isset( $dbg_fallback['last_attempt'] ), 'fallback host: with nothing ever attempted there is no record to show' );
+
+// (b) the same file, and a URL that really is handing it out.
+remove_filter( 'pre_http_request', $serve_fallback, 10 );
+add_filter( 'pre_http_request', $serve_log, 10, 3 );
+Morpheus_Clean::forget();
+$scan_served = Morpheus_Clean::scan( true );
+$dbg_served  = clean_finding( $scan_served, 'morpheus_public_debug_log' );
+ok( 'critical' === ( $dbg_served['status'] ?? '' ), 'served: a URL returning the log\'s own bytes IS a finding (got "' . ( $dbg_served['status'] ?? '—' ) . '")' );
+ok( clean_names( $dbg_served, 'debug.log' ), 'served: …naming the file' );
+
+// ── 4f. a refused attempt is recorded, survives the scan, and is replaced ───
+
+section( '4f. a refused fix records its attempt, and a later success replaces it' );
+
+// The refusal first: the host is answering with something that is not the log,
+// so the fix must decline rather than move a file nobody is being served.
+remove_filter( 'pre_http_request', $serve_log, 10 );
+add_filter( 'pre_http_request', $serve_fallback, 10, 3 );
+$log_bytes_before = file_get_contents( $debuglog );
+$r4 = Morpheus_Fixes::apply( 'morpheus_public_debug_log' );
+ok( empty( $r4['ok'] ), 'refusal: the fix declines (code ' . ( $r4['code'] ?? '—' ) . ')' );
+ok( 'NOT_SERVED' === ( $r4['code'] ?? '' ), 'refusal: …with the NOT_SERVED code the panel understands' );
+ok( is_file( $debuglog ) && file_get_contents( $debuglog ) === $log_bytes_before, 'refusal: …and the log is exactly where it was' );
+
+$attempts = Morpheus_Fixes::attempts();
+$rec      = $attempts['morpheus_public_debug_log'] ?? null;
+ok( is_array( $rec ), 'record: the refusal left a record' );
+ok( 'refused' === ( $rec['outcome'] ?? '' ), 'record: …as a refusal, never as a done' );
+ok( 'NOT_SERVED' === ( $rec['code'] ?? '' ), 'record: …carrying the code' );
+ok( false !== strpos( (string) ( $rec['message'] ?? '' ), 'not being served' ), 'record: …and the site\'s own reason, in words' );
+ok( ! empty( $rec['at'] ), 'record: …and when it happened' );
+// NOT special-cased to the debug log: the earlier quarantine attempts are in the
+// same record, which is the whole point of putting it in apply().
+ok( isset( $attempts['morpheus_uploads_php'] ), 'record: another fix\'s attempt is recorded too (this is not a debug-log special case)' );
+ok( isset( $attempts['morpheus_root_config_backup'] ), 'record: …and so is the config-backup one' );
+
+// The SCAN returns it with the finding — which is what makes it survive a reload
+// and what the panel renders on the row.
+Morpheus_Clean::forget();
+$scan_refused = Morpheus_Clean::scan( true );
+$dbg_refused  = clean_finding( $scan_refused, 'morpheus_public_debug_log' );
+ok( 'good' === ( $dbg_refused['status'] ?? '' ), 'record: the finding\'s own status is unchanged by a record (a record is not a claim)' );
+ok( 'refused' === ( $dbg_refused['last_attempt']['outcome'] ?? '' ), 'record: the scan carries the refusal on the finding' );
+ok( 'NOT_SERVED' === ( $dbg_refused['last_attempt']['code'] ?? '' ), 'record: …with its code' );
+ok( false !== strpos( (string) ( $dbg_refused['last_attempt']['message'] ?? '' ), 'not being served' ), 'record: …and its reason' );
+
+// And a later SUCCESS replaces it: a fix that starts working must stop being
+// shown as refused.
+remove_filter( 'pre_http_request', $serve_fallback, 10 );
+add_filter( 'pre_http_request', $serve_log, 10, 3 );
+add_filter( 'pre_http_request', $deny_quarantine, 10, 3 );
+$r5 = Morpheus_Fixes::apply( 'morpheus_public_debug_log' );
+$row5 = clean_qrow( $r5, 'debug.log' );
+ok( ! empty( $r5['ok'] ) && null !== $row5, 'success: with the URL serving it, the log is quarantined' );
+ok( ! is_file( $debuglog ), 'success: …and is no longer at the served path' );
+$rec2 = Morpheus_Fixes::attempts()['morpheus_public_debug_log'] ?? null;
+ok( 'done' === ( $rec2['outcome'] ?? '' ), 'record: the success REPLACED the refusal' );
+ok( 'NOT_SERVED' !== ( $rec2['code'] ?? '' ), 'record: …and the old refusal code is gone, not merged' );
+Morpheus_Clean::forget();
+$scan_done = Morpheus_Clean::scan( true );
+$dbg_done  = clean_finding( $scan_done, 'morpheus_public_debug_log' );
+ok( 'done' === ( $dbg_done['last_attempt']['outcome'] ?? '' ), 'record: the fresh scan carries the success' );
+ok( 'good' === ( $dbg_done['status'] ?? '' ), 'record: …and the finding is still judged by the check, not by the record' );
+
+// (c) WordPress's own debug test is annotated with the VERIFIED answer, not a
+// fixed sentence. `action_does` is the seam; annotate() is what turns it into
+// the `fix.does` the panel renders.
+$by_hand = array( array( 'id' => 'debug_enabled', 'label' => 'Debug mode', 'status' => 'recommended', 'action_does' => 'SENTENCE THE SCAN MEASURED' ) );
+Morpheus_Fixes::annotate( $by_hand );
+ok( 'SENTENCE THE SCAN MEASURED' === ( $by_hand[0]['fix']['does'] ?? '' ), 'annotation: annotate() uses the scan\'s verified sentence' );
+ok( ! array_key_exists( 'action_does', $by_hand[0] ), 'annotation: …and the raw seam does not leak into the payload' );
+$fallback_annotated = array( array( 'id' => 'debug_enabled', 'label' => 'Debug mode', 'status' => 'recommended' ) );
+Morpheus_Fixes::annotate( $fallback_annotated );
+ok( false === strpos( (string) ( $fallback_annotated[0]['fix']['does'] ?? '' ), 'readable over the web' ), 'annotation: the registry fallback makes no readability claim' );
+
+// The live scan: present only when WordPress registers its debug test, which is
+// the same conditional the panel meets.
+remove_filter( 'pre_http_request', $serve_log, 10 );
+add_filter( 'pre_http_request', $serve_fallback, 10, 3 );
+file_put_contents( $debuglog, $log_body ); // re-create, so the fallback host has a file to not serve
+$health_fallback = Morpheus_Health::scan( true );
+$debug_test      = null;
+foreach ( (array) ( $health_fallback['tests'] ?? array() ) as $t ) {
+	if ( 'debug_enabled' === ( $t['id'] ?? '' ) ) {
+		$debug_test = $t;
+	}
+}
+if ( null === $debug_test ) {
+	skip( 'annotation: WordPress\'s debug_enabled test was annotated from the verified answer', 'this boot does not register core\'s debug_enabled test, so there is no WordPress finding to annotate' );
+} else {
+	$does = (string) ( $debug_test['fix']['does'] ?? '' );
+	ok( '' !== $does, 'annotation: the WordPress debug test carries Morpheus\'s sentence' );
+	ok( false === strpos( $does, 'readable over the web' ), 'annotation: …which does NOT claim the log is readable' );
+	ok( false !== strpos( $does, 'not being served over the web' ), 'annotation: …and says what was verified about this host' );
+}
+
+// Leave the filters and the fixture the way this harness found them.
+remove_filter( 'pre_http_request', $serve_fallback, 10 );
+remove_filter( 'pre_http_request', $deny_quarantine, 10 );
+@rename( (string) ( $row5['backup'] ?? '' ), $debuglog );
+delete_option( Morpheus_Fixes::ATTEMPTS_OPTION );
+
 // ── 5. the guided findings are refused, and nothing is touched ──────────────
 
 section( '5. a modified core file is reported and NEVER touched' );

@@ -179,6 +179,86 @@ check "the undo is named, with the backup filename" \
 check "nothing claims a file was deleted" \
   "$(ev "/nothing deleted/.test(document.body.textContent)")" "true"
 
+# ── 2c. the debug log that is NOT being served, and a refusal you can read ──
+#
+# THE TWO FAULTS, DRIVEN IN A REAL BROWSER.
+#
+# The mock serves a real /wp-content/debug.log and decides the finding the way
+# the plugin does: fetch the URL, compare the bytes. `?mode=` flips the host
+# between "serves the file" and "answers every /wp-content path with its own
+# HTML page" — the owner's host, which answers 200 either way.
+#
+#   1. mode=served  → the debug log IS a finding, and it is in the safe press;
+#   2. flip to fallback BETWEEN the scan and the press → the fix re-asks, sees a
+#      host that is not serving the file, REFUSES, and records the reason;
+#   3. the fresh scan reads that reason back FROM THE SITE and the panel shows it
+#      on the row — including after a full page reload, which is the half the
+#      old panel could not do (the reason lived only in React state, and a
+#      refused attempt therefore looked like a broken button).
+echo
+echo "The debug log on a host that answers 200 with its own page (the false positive):"
+fixture() { curl -s "$SITE_ORIGIN/__fixture/debug-log?$1" >/dev/null; }
+open_health() {
+  pwr goto "$FULL_URL" >/dev/null
+  sleep 2
+  ev "(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='HEALTH');if(!b)return false;b.click();return true})()" >/dev/null
+  wait_for "the health scan finished" "document.body.innerText.includes('Site health') && /([Nn]othing critical|[Ee]very check passed|needs? fixing)/.test(document.body.innerText)"
+}
+scan_site() {
+  pw click "getByRole('button', { name: 'SCAN MY SITE' })" >/dev/null
+  wait_for "the clean findings rendered" "document.body.innerText.includes('CLEAN MY SITE') && /can be quarantined|need looking at now|worth reviewing/.test(document.body.innerText)"
+}
+toggle_clear() { pw click "getByRole('button', { name: 'NOTHING TO CLEAN' })" >/dev/null; sleep 1; }
+
+fixture "clear=attempts&mode=served"
+open_health
+check "with the URL serving the log, the annotation reports the verified leak" \
+  "$(ev "document.body.textContent.includes('returns this file\\'s own contents')")" "true"
+check "…and never the old static claim" \
+  "$(ev "!document.body.textContent.includes('which is readable over the web')")" "true"
+scan_site
+check "with the URL serving the log, it IS a finding with its own press" \
+  "$(ev "document.body.textContent.includes('Quarantine the public debug log')")" "true"
+check "…and it is in the safe press (3 now, not 2)" \
+  "$(ev "!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('CLEAN MY SITE') && b.textContent.includes('3'))")" "true"
+
+# The host stops serving the file between the scan and the press. This is the
+# contradiction the owner hit: a scan that said critical, a fix that declined.
+fixture "mode=fallback"
+pw click "getByRole('button', { name: 'CLEAN MY SITE' })" >/dev/null
+sleep 1
+pw click "getByRole('button', { name: 'QUARANTINE 3' })" >/dev/null
+wait_for "the run finished and reported itself" "document.body.innerText.includes('CLEAN MY SITE finished')"
+check "the tally names the refusal rather than hiding it" \
+  "$(ev "/2 quarantined and verified/.test(document.body.textContent) && /1 declined by the site/.test(document.body.textContent)")" "true"
+toggle_clear
+check "the debug log is NOT an attention finding when the URL is not serving it" \
+  "$(ev "!document.body.textContent.includes('Quarantine the public debug log')")" "true"
+check "…and the row says it exists on disk and is not being served" \
+  "$(ev "document.body.textContent.includes('not being served over the web')")" "true"
+check "the refusal shows on the row, with the code the site sent" \
+  "$(ev "/Last attempt refused/.test(document.body.textContent) && document.body.textContent.includes('NOT_SERVED')")" "true"
+check "…and no success is claimed for it" \
+  "$(ev "!/Last successful fix/.test(document.body.textContent)")" "true"
+
+# A RELOAD, then a fresh scan: the reason can only come from the SITE's record
+# now — the panel's own state is gone. This is what "survives a reload" means.
+echo
+echo "…and the same reason after a full page reload (it comes from the site):"
+fixture "mode=fallback"
+open_health
+check "on the fallback host the annotation says the log is not served" \
+  "$(ev "document.body.textContent.includes('not being served over the web')")" "true"
+check "…and makes no readability claim" \
+  "$(ev "!document.body.textContent.includes('which is readable over the web')")" "true"
+scan_site
+toggle_clear
+check "the recorded refusal is still on the row after the reload" \
+  "$(ev "/Last attempt refused/.test(document.body.textContent) && document.body.textContent.includes('NOT_SERVED')")" "true"
+check "…with the site's own reason, not a generic one" \
+  "$(ev "document.body.textContent.includes('the host answers with something that is not this file')")" "true"
+fixture "clear=attempts&mode=fallback"
+
 # ── 3. CHAT: a message in, a reply out ────────────────────────────────────
 echo
 echo "CHAT tab (a widget token calling chatWithMorpheus → the mock model):"

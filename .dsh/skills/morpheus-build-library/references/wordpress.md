@@ -177,6 +177,69 @@ The rules, each learned from getting it wrong first:
   throws at the first request that reaches it. A guard can assert the import; the
   browser is what finds it.
 
+## "Is this file being served?" is a byte comparison, never a status
+
+The debug log is the second file whose *served* state decides a finding (the
+first is the physical robots.txt). The rule is the same one, and it is now
+shared: fetch the site's own URL and compare the bytes it returns with the bytes
+on disk — `morpheus_bodies_match()` in `helpers.php`, called by
+`Morpheus_Clean::debug_log_state()` and `Morpheus_SEO::robots_txt_state()`.
+
+It is **not** the HTTP status and **not** the shape of the body. A host whose
+front controller answers every path under `wp-content` with 200 and its own HTML
+page — `try_files … /index.php`, a custom 404 that returns 200, a WAF
+interstitial — serves a body for a file that is not there, and a WordPress error
+page rendered while debugging contains the words "PHP Warning". The first
+version of this check decided "readable" from 200 plus a log-shaped body and told
+a live site's owner his log was leaking when his host answered a 12 KB HTML page
+for filenames that did not exist.
+
+The scan and the FIX call the same function on purpose: the owner's experience
+was a scan that said `critical` and a fix that answered `NOT_SERVED` — two rules
+for one fact, disagreeing in front of him. When the file exists but is not what
+the URL serves, the honest verdict is `good` ("the log exists on disk and is not
+being served over the web"), never "needs attention".
+
+Morpheus also annotates WordPress's own `debug_enabled` Site Health test (which
+says debug MODE is on). That appended sentence must be the VERIFIED answer: the
+registry's static `does` is only a fallback, and the scan writes `action_does`
+per finding (`Morpheus_Fixes::annotate()` prefers it). A static readability
+claim appended to somebody else's test is how the false positive reached the
+operator twice.
+
+## A refusal must leave a record, or it reads as a broken button
+
+`Morpheus_Fixes::apply()` records the LAST attempt per finding — outcome, code,
+message, time — in one capped option (`morpheus_fix_attempts`), for **every**
+mechanism including the refusals. Both scans return it on the finding
+(`Morpheus_Fixes::attach_attempts()`), and the panel renders it on the row.
+
+It is a record and never a claim, and the code says so rather than the prose:
+only an explicit `done` (ok + verified + not restored + no error) reads as
+success, an unknown outcome reads as a refusal, a later run REPLACES the earlier
+record, and the finding's own status is untouched by it. The reason it exists:
+a refused fix used to reset the panel to the same count with nothing on screen
+saying why, so the operator pressed it several times and concluded the button
+was broken.
+
+## The harness seams for the debug-log rule
+
+`pre_http_request` is the stub for both hosts: return the log's own bytes and
+the finding fires; return the host's HTML page and it must not. The stub has to
+be **stateful** — serve the file only while it is on disk, 404 after the fix
+moves it — or the fix's own after-the-fact probe sees a "still serving" answer
+and refuses, and the harness is then testing the stub. The dock rig has the same
+fixture as a real route: `/wp-content/debug.log` plus a dev-only
+`/__fixture/debug-log?mode=served|fallback&clear=attempts`, so the browser can
+be driven across the scan→press boundary where the host changes its mind.
+
+## The physical robots.txt section above, and this one, share a rule
+
+Both were fixed by comparing served bytes; if a third file ever needs the same
+question asked, use `morpheus_bodies_match()` and follow the shape in
+`debug_log_state()` — one function that both the scan and the fix call, so the
+two can never disagree about a live site.
+
 ## Do not gate a feature on a third-party plugin's presence
 
 The SEO module briefly rendered its fields behind `defined('WPSEO_VERSION')`, so

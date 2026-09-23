@@ -36,6 +36,11 @@ import {
   cleanFindings, cleanSummary, cleanLimits, safeSet, reportOnly,
   cleanQuarantineEvidence, cleanUndoLine,
 } from '../server/src/lib/siteClean.js';
+// The attempt record is turned into the operator's sentence by the same pure
+// module the health panel's findings go through — asserted here as BEHAVIOUR,
+// because "a recorded attempt must not read as a success" is a rule, not a
+// string.
+import { attemptRecord, attemptLine } from '../server/src/lib/siteHealth.js';
 // Pure and dependency-free on purpose: this is the app half of the guided-step
 // link rule, and testing the REAL function here is stronger than any regex over
 // its source. See lib/siteLink.js for why it exists at all.
@@ -280,7 +285,23 @@ check('it caches, so a re-open re-reads rather than re-hashes', /set_transient\(
 check('a forced scan bypasses the cache', /if \( ! \$force \) \{/.test(phpClean), true);
 check('the cache is its own key, not the health scan\'s', /CACHE_KEY = 'morpheus_clean_scan'/.test(phpClean), true);
 check('the module is loaded by the plugin bootstrap', /require_once MORPHEUS_DIR \. 'includes\/class-clean\.php'/.test(phpBootstrap), true);
-check('the plugin version moved for the new action', /MORPHEUS_VERSION', '0\.8\.4'/.test(phpBootstrap), true);
+// "At or beyond", not equality: pinning the exact version made this check fail
+// the first time an unrelated change bumped the plugin, which is a gate failing
+// for a reason that is not the code. The claim is that the release that ADDED
+// the clean action is in, and — since the served-bytes rule and the attempt
+// record change what a scan can be trusted to say — that the current build is
+// past it.
+const versionOf = (src) => (src.match(/MORPHEUS_VERSION',\s*'([\d.]+)'/) || [, ''])[1];
+const atLeast = (v, min) => {
+  const a = String(v).split('.').map(Number);
+  const b = String(min).split('.').map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return true;
+};
+check('the plugin version moved for the new action', atLeast(versionOf(phpBootstrap), '0.8.4'), true);
+check('…and past it for the served-bytes rule and the attempt record', atLeast(versionOf(phpBootstrap), '0.8.5'), true);
 check('the app names the release that added it', /MIN_CLEAN_PLUGIN_VERSION = '0\.8\.4'/.test(jsClient), true);
 // A build older than that IGNORES the body and answers a health scan with no
 // `findings` — "nothing found" would be the worst possible reading of that.
@@ -507,6 +528,175 @@ const staleRobots = safeSet(cleanFindings({ findings: [{ id: 'morpheus_stale_rob
 check('a stale robots.txt IS offered for the press', staleRobots.map((f) => f.id), ['morpheus_stale_robots_txt']);
 const goodRobots = safeSet(cleanFindings({ findings: [{ id: 'morpheus_stale_robots_txt', status: 'good', fix: robotsFix }] }));
 check('a robots.txt that reads good is NOT offered for the press', goodRobots, []);
+
+console.log('\n9. the debug log: a finding only when the URL serves THAT file');
+
+// THE FALSE POSITIVE THIS SECTION EXISTS FOR. The check used to decide "readable
+// over the web" from an HTTP 200 plus a body that looked like a PHP log. On a
+// live site whose host answers EVERY path under wp-content with 200 and its own
+// HTML page (`try_files … /index.php`, a custom 404 returning 200, a WAF
+// interstitial), that reported a credential-shaped leak for a filename that was
+// not being served at all — and a WordPress error page rendered while debugging
+// contains the words "PHP Warning", so even the body-shape test was fooled.
+//
+// The rule is the one the robots.txt check already used: fetch the site's own
+// URL and compare the bytes it returns with the bytes on disk. A file that is
+// not what the URL serves is debris, not a leak.
+const cleanCode = stripPhp(phpClean);
+const debugStateFn = phpClean.slice(
+  phpClean.indexOf('public static function debug_log_state('),
+  phpClean.indexOf('public static function served_is_the_file('),
+);
+const servedRuleFn = phpClean.slice(
+  phpClean.indexOf('public static function served_is_the_file('),
+  phpClean.indexOf('private static function public_debug_log('),
+);
+const debugCheckFn = phpClean.slice(
+  phpClean.indexOf('private static function public_debug_log('),
+  phpClean.indexOf('// ── 4. Core checksums'),
+);
+check('the debug-log state function was parsed (parser sanity)', debugStateFn.length > 400, true);
+check('…the rule it decides with', servedRuleFn.length > 200, true);
+check('…and the check that reports it', debugCheckFn.length > 400, true);
+
+check('the rule is the served BYTES, not the status or a body shape', /morpheus_bodies_match\(/.test(stripPhp(servedRuleFn)), true);
+check('…compared with the bytes read from disk', /file_get_contents\( \$file/.test(stripPhp(debugStateFn)), true);
+check('…fetched from the file\'s own URL, cache defeated', /self::fetch\( add_query_arg\( 'morpheus-verify'/.test(stripPhp(debugStateFn)), true);
+check('…and deciding NOTHING when the site does not answer', /null === \$served[\s\S]{0,160}?return null;/.test(stripPhp(debugStateFn)), true);
+check('…and nothing when the file cannot be read', /! is_string\( \$on_disk \)[\s\S]{0,80}?return null;/.test(stripPhp(debugStateFn)), true);
+// The two verdicts, each tied to the branch that reaches it — a literal inside a
+// branch that cannot run is exactly the shape that passes while behaviour is gone.
+check('a file that is not what the URL serves is `good`, not a finding', /empty\( \$state\['served'\] \)[\s\S]{0,400}?'good'/.test(stripPhp(debugCheckFn)), true);
+check('…and the description says so in the operator\'s words', /not being served over the web/.test(phpClean), true);
+check('a file the URL DOES serve is critical', /return self::finding\([\s\S]*?'critical'/.test(stripPhp(debugCheckFn)), true);
+check('an empty log has nothing to leak', /empty\( \$state\['empty'\] \)/.test(stripPhp(debugCheckFn)), true);
+check('an unanswered question is `unknown`, not a pass', /null === \$state[\s\S]{0,500}?'unknown'/.test(stripPhp(debugCheckFn)), true);
+// The old heuristic must be GONE, not merely bypassed: left in place it is a
+// second rule for the same fact, waiting to be called again.
+check('the old body-shape heuristic is gone from the scanner', /looks_like_log/.test(cleanCode), false);
+
+// The scan and the fix must ask the SAME question. The owner's experience was a
+// scan that said critical and a fix that answered NOT_SERVED — two rules for one
+// fact, disagreeing in front of him. The fix now calls the scan's own function.
+const debugFixFn = phpFixes.slice(
+  phpFixes.indexOf('private static function fix_quarantine_public_debug_log('),
+  phpFixes.indexOf('private static function quarantine_file('),
+);
+check('the debug-log fix was parsed (parser sanity)', debugFixFn.length > 500, true);
+check('the fix asks the scan\'s own function rather than a second rule', /Morpheus_Clean::debug_log_state\(\)/.test(stripPhp(debugFixFn)), true);
+check('…refusing NOT_SERVED when the URL serves something else', /empty\( \$state\['served'\] \)[\s\S]{0,200}?'NOT_SERVED'/.test(stripPhp(debugFixFn)), true);
+check('…refusing to guess when the site will not answer', /null === \$state[\s\S]{0,200}?'UNKNOWN'/.test(stripPhp(debugFixFn)), true);
+check('…and no longer deciding readability from a body shape', /body_is_log/.test(stripPhp(phpFixes)), false);
+// ONE definition of "the URL is serving this file", shared with robots.txt.
+check('the comparison is the shared one, not a second implementation',
+  /function morpheus_bodies_match\(/.test(read('wp-plugin/morpheus/includes/helpers.php')), true);
+check('…and the SEO module delegates to it rather than keeping a copy',
+  /return morpheus_bodies_match\( \$a, \$b \);/.test(stripPhp(read('wp-plugin/morpheus/includes/seo/class-seo.php'))), true);
+
+console.log('\n10. the sentence appended to WordPress\'s debug test is the VERIFIED one');
+
+// The other half of the same mistake: the finding appears under WordPress Site
+// Health · Security with Morpheus's own sentence appended, and that sentence
+// claimed "readable over the web" from nothing at all. The scan must attach the
+// answer it actually measured, and the registry must not carry the claim.
+const healthCode = stripPhp(read('wp-plugin/morpheus/includes/class-health.php'));
+check('the health scan writes the verified sentence onto the debug test', /describe_public_debug_log\( \$tests \)/.test(healthCode), true);
+check('…from the same served-bytes function the clean scan uses', /debug_log_state\(\)/.test(healthCode), true);
+check('…after the tests ran and BEFORE annotation (so the sentence is the one attached)',
+  healthCode.indexOf('describe_public_debug_log( $tests )') > 0
+  && healthCode.indexOf('describe_public_debug_log( $tests )') < healthCode.indexOf('Morpheus_Fixes::annotate( $tests )'), true);
+const debugEntry = registryBlock.slice(registryBlock.indexOf("'debug_enabled'"), registryBlock.indexOf("'woocommerce_secure_connection'"));
+check('the registry entry was parsed (parser sanity)', debugEntry.length > 200, true);
+check('the registry does not claim the log is readable over the web', /readable over the web/.test(debugEntry), false);
+check('…and annotate() prefers the scan\'s verified sentence when it has one',
+  /action_does/.test(stripPhp(phpFixes)) && /'' !== \$verified \? \$verified : \$entry\['does'\]/.test(stripPhp(phpFixes)), true);
+// A per-finding sentence the panel never reads is the "declared and never read"
+// shape: annotate() has to be the thing that turns it into `fix.does`.
+check('…which is what the panel renders', /'does'\s*=>\s*'' !== \$verified/.test(stripPhp(phpFixes)), true);
+
+console.log('\n11. a refused attempt leaves a record, and a record is never a claim');
+
+// THE SECOND FAULT. The debug.log fix correctly declined to move a file nobody
+// was being served — and nothing on screen said so. The panel rescanned, the
+// same count came back, and a working refusal was indistinguishable from a
+// broken button. The record is written by the plugin (the only thing that acts
+// on the site), returned with the finding, and survives a reload.
+check('the record is one option, capped',
+  /ATTEMPTS_OPTION = 'morpheus_fix_attempts'/.test(stripPhp(phpFixes)) && /MAX_ATTEMPTS = \d+/.test(stripPhp(phpFixes)), true);
+// EVERY mechanism, not just the debug log: the robots.txt quarantine and every
+// future fix write the same record.
+check('every mechanism records its attempt, refusals included', /self::record_attempt\( \$id, \$result \);/.test(stripPhp(phpFixes)), true);
+// ONE call site, after the switch, on the result the mechanism produced — so a
+// fix added later cannot quietly skip the record.
+const applyCode = stripPhp(phpFixes);
+const applySwitch = applyCode.slice(applyCode.indexOf("switch ( $entry['fix'] )"), applyCode.indexOf('self::record_attempt( $id, $result );'));
+check('…from one place, on the mechanism\'s own result, before it is returned',
+  (applyCode.match(/self::record_attempt\( \$id, \$result \);/g) || []).length === 1
+  && /self::record_attempt\( \$id, \$result \);\s*\n\s*return \$result;/.test(applyCode), true);
+check('…and no mechanism returns before it does', /case '[a-z_]+':\s*\n\s*return self::/.test(applySwitch), false);
+check('the record is written by the fix, never by a scan', /update_option\( self::ATTEMPTS_OPTION/.test(stripPhp(phpFixes)), true);
+check('…and the clean scan still writes nothing but its cache',
+  /update_option\( *self::ATTEMPTS_OPTION/.test(cleanCode) || /update_option\( *Morpheus_Fixes::ATTEMPTS_OPTION/.test(cleanCode), false);
+check('a later run REPLACES the earlier record for the same id (last attempt, not history)', /\$all\[ \$id \] = array\(/.test(stripPhp(phpFixes)), true);
+check('the cap keeps the newest records', /array_slice\( \$all, 0, self::MAX_ATTEMPTS, true \)/.test(stripPhp(phpFixes)), true);
+// Truthfulness, as code: only an explicit `done` is a success, and `done` has to
+// be earned by ok + verified + not-restored + no error.
+check('an unknown outcome reads as a refusal, never as done', /'done' === \( \$row\['outcome'\] \?\? '' \)/.test(stripPhp(phpFixes)), true);
+check('`done` has to be earned: ok, verified, not restored, no error',
+  /empty\( \$result\['ok'\] \)[\s\S]{0,300}?empty\( \$result\['restored'\] \)[\s\S]{0,300}?false !== \$result\['verified'\][\s\S]{0,200}?empty\( \$result\['error'\] \)/.test(stripPhp(phpFixes)), true);
+for (const field of ["'outcome'", "'code'", "'message'", "'at'"]) {
+  check(`the record carries ${field}`, new RegExp(`${field}\\s*=>`).test(stripPhp(phpFixes)), true);
+}
+check('both scans return it with the finding',
+  /Morpheus_Fixes::attach_attempts\( \$findings \)/.test(cleanCode)
+  && /Morpheus_Fixes::attach_attempts\( \$tests \)/.test(healthCode), true);
+check('a finding with no record simply has none', /isset\( \$attempts\[ \$id \] \)/.test(stripPhp(phpFixes)), true);
+
+console.log('\n12. the panel shows the record as a record');
+
+// The app half, as BEHAVIOUR on the real functions.
+const refused = { outcome: 'refused', code: 'NOT_SERVED', message: 'The debug log is not being served at https://shop.example/wp-content/debug.log — the host answers with something that is not this file.', at: '2026-09-23T12:00:00+00:00' };
+check('a refusal is a refusal, in the site\'s own words, with its code and time',
+  attemptLine(refused),
+  'Last attempt refused (2026-09-23 12:00 UTC) [NOT_SERVED]: The debug log is not being served at https://shop.example/wp-content/debug.log — the host answers with something that is not this file.');
+check('a done attempt is the only thing that reads as success', /^Last successful fix/.test(attemptLine({ outcome: 'done', message: 'renamed 1 file with a timestamp — nothing was deleted' })), true);
+check('…and a refusal never reads as success', /success/i.test(attemptLine(refused)), false);
+check('an UNKNOWN outcome is not a success', /^Last attempt refused/.test(attemptLine({ outcome: 'wat', message: 'something' })), true);
+check('a missing outcome is not a success', /^Last attempt refused/.test(attemptLine({ message: 'something' })), true);
+check('a record with no message falls back to its code, never to a success',
+  attemptLine({ outcome: 'refused', code: 'NOT_SERVED' }),
+  'Last attempt refused [NOT_SERVED]: the site answered NOT_SERVED');
+check('a record with nothing in it is no line at all', [attemptLine(null), attemptLine({}), attemptLine('nonsense')], [null, null, null]);
+check('an invalid timestamp does not invent one', attemptLine({ outcome: 'refused', message: 'x', at: 'not-a-date' }), 'Last attempt refused: x');
+check('the record is sanitised, and an unknown outcome is kept as a refusal',
+  attemptRecord({ outcome: 'done', message: '  x  ', at: '2026-09-23T12:00:00+00:00', code: 7 }),
+  { outcome: 'done', code: null, message: 'x', at: '2026-09-23T12:00:00+00:00' });
+
+// It must travel on the finding the panel renders, and must not change what the
+// finding IS — a record is not a result.
+const recorded = cleanFindings({
+  findings: [{
+    id: 'morpheus_public_debug_log',
+    label: 'The debug log is not readable over the web',
+    status: 'good',
+    fix: { kind: 'auto', label: 'Quarantine the public debug log', does: 'x', steps: [] },
+    last_attempt: refused,
+  }],
+})[0];
+check('the clean mapper carries the record onto the finding', recorded.last_attempt?.outcome, 'refused');
+check('…and the sentence the panel renders', /^Last attempt refused/.test(recorded.attempt_line), true);
+check('…without touching the finding\'s own status', recorded.status, 'good');
+check('…so a `good` finding with a record is still not in the safe set',
+  safeSet([recorded]), []);
+check('…and a record does not change the counts',
+  cleanSummary({ findings: [{ id: 'morpheus_public_debug_log', status: 'good', fix: { kind: 'auto' }, last_attempt: refused }] }).good, 1);
+check('a `done` record does not lift an unanswered finding into the safe set',
+  safeSet(cleanFindings({ findings: [{ id: 'morpheus_public_debug_log', status: 'unknown', fix: { kind: 'auto' }, last_attempt: { outcome: 'done', message: 'x' } }] })), []);
+// …and the panel must actually render it, on a finding that has no press. A
+// server field nothing draws is the same silence this change exists to remove.
+check('the panel renders the record on a finding row', /<LastAttempt line=\{t\.attempt_line\}/.test(ui), true);
+check('…outside the withFix guard, so a passed check shows its refusal too',
+  ui.indexOf('<LastAttempt line={t.attempt_line}') < ui.indexOf('{t.fix && withFix ? ('), true);
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {

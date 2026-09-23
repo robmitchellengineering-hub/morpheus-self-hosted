@@ -69,7 +69,18 @@ class Morpheus_Health {
 		// registered action is reported rather than left as prose (see class-fixes.php).
 		$tests    = self::direct_tests();
 		$own      = self::own_checks( $host );
+		// WordPress's `debug_enabled` test says debug mode is ON. Morpheus used to
+		// append a STATIC sentence to it claiming the log is "readable over the
+		// web" — a claim nothing had checked. Replace it with the verified answer
+		// BEFORE annotation, so what the panel shows for that test is what was
+		// actually measured.
+		self::describe_public_debug_log( $tests );
 		$unmapped = array_merge( Morpheus_Fixes::annotate( $tests ), Morpheus_Fixes::annotate( $own ) );
+		// What the last attempt at each of these did, so a refusal the operator
+		// already met is on the row they are looking at — read from the site, so
+		// it survives a reload (class-fixes.php::record_attempt()).
+		Morpheus_Fixes::attach_attempts( $tests );
+		Morpheus_Fixes::attach_attempts( $own );
 
 		$result = array(
 			'scan_version'      => 1,
@@ -168,6 +179,59 @@ class Morpheus_Health {
 			return null;
 		}
 		return is_callable( $entry ) ? $entry : null;
+	}
+
+	/**
+	 * Give WordPress's `debug_enabled` test the VERIFIED answer about the log.
+	 *
+	 * WHY THIS IS NOT A SENTENCE IN THE REGISTRY
+	 *
+	 * WordPress's test asks whether debug MODE is on, and it is right to say so.
+	 * Morpheus annotates it with what it can add — whether the log WordPress
+	 * writes is reachable — and that annotation used to be a fixed sentence
+	 * asserting "readable over the web". Nothing had checked it, and it was
+	 * false on a live site whose host answers every /wp-content path with 200
+	 * and its own HTML page: the operator was told his log leaked when it did
+	 * not. The sentence now comes from Morpheus_Clean::debug_log_state() — the
+	 * SAME served-bytes answer the clean scan uses, so the two screens cannot
+	 * disagree — and when the question cannot be answered it says THAT rather
+	 * than guessing either way.
+	 *
+	 * `action_does` is read by Morpheus_Fixes::annotate() in place of the
+	 * registry's static sentence (class-fixes.php).
+	 */
+	private static function describe_public_debug_log( &$tests ) {
+		$index = null;
+		foreach ( $tests as $i => $f ) {
+			if ( 'debug_enabled' === ( $f['id'] ?? '' ) ) {
+				$index = $i;
+				break;
+			}
+		}
+		// WordPress only registers this test when WP_DEBUG is on, so its absence
+		// is an answer of its own — and no fetch is spent on a site not logging.
+		if ( null === $index ) {
+			return;
+		}
+
+		$url = content_url( 'debug.log' );
+		if ( ! class_exists( 'Morpheus_Clean' ) ) {
+			$tests[ $index ]['action_does'] = 'WP_DEBUG_LOG is on, so WordPress writes wp-content/debug.log. This build of the plugin cannot check whether that file is reachable over the web, so it does not claim either way.';
+			return;
+		}
+
+		$state = Morpheus_Clean::debug_log_state();
+		if ( null === $state ) {
+			$tests[ $index ]['action_does'] = 'WP_DEBUG_LOG is on, so WordPress writes wp-content/debug.log. Morpheus asked ' . $url . ' whether that file is served and got no answer, so whether it is readable over the web is UNCONFIRMED — not a pass, and not a leak.';
+		} elseif ( empty( $state['exists'] ) ) {
+			$tests[ $index ]['action_does'] = 'WP_DEBUG_LOG is on, but there is no wp-content/debug.log on disk right now, so nothing is being leaked by one.';
+		} elseif ( ! empty( $state['empty'] ) ) {
+			$tests[ $index ]['action_does'] = 'WP_DEBUG_LOG is on and wp-content/debug.log exists, but the file is empty — there is nothing in it to leak over the web.';
+		} elseif ( empty( $state['served'] ) ) {
+			$tests[ $index ]['action_does'] = 'WP_DEBUG_LOG is on, so WordPress writes wp-content/debug.log. Morpheus requested ' . $url . ' and was served something that is not this file, so the log exists on disk and is not being served over the web.';
+		} else {
+			$tests[ $index ]['action_does'] = 'WP_DEBUG_LOG is on AND ' . $url . ' returns this file\'s own contents to anyone who asks, with no login. Move the log outside the web root or switch WP_DEBUG_LOG off — CLEAN MY SITE quarantines the file itself.';
+		}
 	}
 
 	private static function async_tests() {
