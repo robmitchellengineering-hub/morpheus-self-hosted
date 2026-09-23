@@ -64,7 +64,7 @@ export default function Start() {
   }, [authChecked, isAuthenticated, navigateToLogin, loadStore]);
 
   return (
-    <div className="min-h-dvh bg-background text-primary font-mono safe-px">
+    <div className="min-h-dvh bg-background text-ink font-mono safe-px">
       <div className="max-w-md mx-auto min-h-dvh flex flex-col border-x border-primary/15">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-primary/20 shrink-0">
           <button onClick={() => navigate(project ? `/workspace/${project.id}` : '/workspace')}
@@ -84,7 +84,7 @@ export default function Start() {
         </div>
 
         {loading && !project && (
-          <div className="p-6 flex items-center gap-2 text-primary/60 text-xs">
+          <div className="p-6 flex items-center gap-2 text-ink/60 text-xs">
             <Loader2 size={14} className="animate-spin" /> Opening your website construct…
           </div>
         )}
@@ -95,7 +95,7 @@ export default function Start() {
 
         {project && !loading && (
           <>
-            <p className="px-4 pt-4 text-[11px] text-primary/50 leading-relaxed">
+            <p className="px-4 pt-4 text-[11px] text-ink/50 leading-relaxed">
               This is where Morpheus takes over the running of your WordPress site — deploys, products, content and SEO,
               from here and from your phone. Nothing is changed on your site until you publish something.
             </p>

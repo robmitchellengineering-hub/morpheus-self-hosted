@@ -104,7 +104,7 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
         {err && <div className="m-4 mb-0 text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
 
         <div className="flex-1 min-h-0 flex flex-col">
-          {loading && <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+          {loading && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
 
           {!loading && tab === 'setup' && (
             <div className="flex-1 overflow-y-auto scrollbar-matrix">
@@ -122,38 +122,38 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
             <div className="flex-1 overflow-y-auto scrollbar-matrix">
               {connected
                 ? <DeployTab projectId={projectId} />
-                : <div className="p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>}
+                : <div className="p-4 text-[12px] text-ink/50">Connect your site in the Setup tab first.</div>}
             </div>
           )}
 
           {!loading && tab === 'shop' && (
             connected
               ? <ShopTab store={store} projectId={projectId} />
-              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+              : <div className="flex-1 p-4 text-[12px] text-ink/50">Connect your site in the Setup tab first.</div>
           )}
 
           {!loading && tab === 'pages' && (
             connected
               ? <PagesTab projectId={projectId} store={store} />
-              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+              : <div className="flex-1 p-4 text-[12px] text-ink/50">Connect your site in the Setup tab first.</div>
           )}
 
           {!loading && tab === 'seo' && (
             connected
               ? <SeoTab projectId={projectId} store={store} />
-              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+              : <div className="flex-1 p-4 text-[12px] text-ink/50">Connect your site in the Setup tab first.</div>
           )}
 
           {!loading && tab === 'traffic' && (
             connected
               ? <TrafficTab projectId={projectId} />
-              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+              : <div className="flex-1 p-4 text-[12px] text-ink/50">Connect your site in the Setup tab first.</div>
           )}
 
           {!loading && tab === 'health' && (
             connected
               ? <div className="flex-1 overflow-y-auto scrollbar-matrix"><HealthTab projectId={projectId} /></div>
-              : <div className="flex-1 p-4 text-[12px] text-primary/50">Connect your site in the Setup tab first.</div>
+              : <div className="flex-1 p-4 text-[12px] text-ink/50">Connect your site in the Setup tab first.</div>
           )}
 
           {!loading && tab === 'embed' && (

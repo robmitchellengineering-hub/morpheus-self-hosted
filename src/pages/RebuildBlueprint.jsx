@@ -157,7 +157,7 @@ export default function RebuildBlueprint() {
   const sizeKb = doc?.content_size ? (doc.content_size / 1024).toFixed(1) : '0';
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-3xl mx-auto px-6 py-12 safe-top">
         <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
@@ -168,12 +168,12 @@ export default function RebuildBlueprint() {
           <FileText size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">REBUILD BLUEPRINT</h1>
         </div>
-        <p className="text-primary/60 text-sm mb-8">
+        <p className="text-ink/60 text-sm mb-8">
           // The complete standalone reconstruction blueprint for Morpheus itself. Drop this + the published APK into any AI agent to rebuild the full stack without Base44.
         </p>
 
         {loading && (
-          <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading blueprint...
           </div>
         )}
@@ -184,20 +184,20 @@ export default function RebuildBlueprint() {
 
         {!loading && doc && (
           <div className="space-y-4 mb-6">
-            <div className="flex items-center gap-2 text-xs text-primary/60">
+            <div className="flex items-center gap-2 text-xs text-ink/60">
               <CheckCircle size={14} className="text-primary" />
-              Version: <span className="text-primary">{new Date(doc.version).toLocaleString()}</span>
+              Version: <span className="text-ink">{new Date(doc.version).toLocaleString()}</span>
               <span className="text-primary/65">|</span>
               {sizeKb} KB
             </div>
-            <div className="border border-primary/20 bg-primary/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-primary/70 font-mono whitespace-pre-wrap">
+            <div className="border border-primary/20 bg-primary/5 p-4 max-h-80 overflow-y-auto scrollbar-matrix text-xs text-ink/70 font-mono whitespace-pre-wrap">
               {doc.content?.substring(0, 3000)}{doc.content?.length > 3000 ? '\n\n... (truncated — download for full document)' : ''}
             </div>
           </div>
         )}
 
         {!loading && !doc && !error && (
-          <p className="text-primary/75 text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
+          <p className="text-ink/75 text-sm italic text-center py-12">No blueprint generated yet. Press GENERATE to create one.</p>
         )}
 
         <div className="flex flex-wrap items-center gap-3">

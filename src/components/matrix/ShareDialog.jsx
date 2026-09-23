@@ -133,7 +133,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
         </div>
 
         {success && (
-          <div className="mb-4 p-3 border border-primary bg-primary/5 text-primary text-sm flex items-center gap-2">
+          <div className="mb-4 p-3 border border-primary bg-primary/5 text-ink text-sm flex items-center gap-2">
             <CheckCircle size={16} className="shrink-0" />
             {tab === 'github' && typeof success === 'string' && success.startsWith('http') ? (
               <a href={success} target="_blank" rel="noreferrer" className="underline hover:neon-glow flex items-center gap-1 break-all">
@@ -166,14 +166,14 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
             <div className="space-y-4">
               {project?.github_repo && (
                 <div className="p-3 border border-primary/40 bg-primary/5 text-sm space-y-2">
-                  <div className="flex items-center gap-2 text-primary">
+                  <div className="flex items-center gap-2 text-ink">
                     <CheckCircle size={14} className="shrink-0" />
                     <span>Synced to</span>
                     <a href={`https://github.com/${project.github_repo}`} target="_blank" rel="noreferrer" className="underline hover:neon-glow flex items-center gap-1 break-all">
                       {project.github_repo} <ExternalLink size={11} className="shrink-0" />
                     </a>
                   </div>
-                  <p className="text-primary/50 text-xs">Every chat edit pushes here automatically — no need to re-push manually.</p>
+                  <p className="text-ink/50 text-xs">Every chat edit pushes here automatically — no need to re-push manually.</p>
                   <div className="flex items-center gap-3 flex-wrap">
                     <button onClick={handleSyncFromGithub} disabled={syncing} className="flex items-center gap-1.5 text-xs text-primary/60 hover:text-primary disabled:opacity-30">
                       {syncing ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />} Sync from GitHub (pull in edits made directly on the repo)
@@ -183,7 +183,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
                     </button>
                   </div>
                   {syncResult && (
-                    <p className="text-primary/50 text-xs">
+                    <p className="text-ink/50 text-xs">
                       Synced {syncResult.fileCount} file(s) at HEAD ({syncResult.fetched} pulled, {syncResult.fileCount - syncResult.fetched} already current)
                       {syncResult.removed ? `, ${syncResult.removed} removed (deleted upstream)` : ''}.
                     </p>
@@ -192,9 +192,9 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
               )}
               <div>
                 <label className="text-xs text-primary/50 uppercase tracking-wider">{project?.github_repo ? 'Push to a different repository' : 'Repository Name'}</label>
-                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus={!project?.github_repo} />
+                <input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder={slug || 'my-construct'} className="w-full mt-1 bg-transparent border border-primary/30 text-ink px-3 py-2 outline-none focus:border-primary text-sm" autoFocus={!project?.github_repo} />
               </div>
-              <label className="flex items-center gap-2 text-sm text-primary/70 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm text-ink/70 cursor-pointer">
                 <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} className="accent-primary" />
                 Private repository
               </label>
@@ -207,7 +207,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
           <div className="space-y-4">
             {!drive.connected ? (
               <div className="p-3 border border-primary/40 bg-primary/5 text-sm space-y-3">
-                <p className="text-primary/70">Connect Google Drive to mirror this project's files there instead of (well, alongside — Postgres still keeps a full copy in this phase) Morpheus's own database.</p>
+                <p className="text-ink/70">Connect Google Drive to mirror this project's files there instead of (well, alongside — Postgres still keeps a full copy in this phase) Morpheus's own database.</p>
                 <button onClick={drive.connect} className="flex items-center gap-1.5 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2 font-bold">
                   <HardDrive size={12} /> CONNECT GOOGLE DRIVE
                 </button>
@@ -215,11 +215,11 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
             ) : (
               <>
                 <div className="p-3 border border-primary/40 bg-primary/5 text-sm space-y-2">
-                  <div className="flex items-center gap-2 text-primary">
+                  <div className="flex items-center gap-2 text-ink">
                     <CheckCircle size={14} className="shrink-0" />
                     <span>Drive connected{drive.email ? ` · ${drive.email}` : ''}</span>
                   </div>
-                  <p className="text-primary/50 text-xs">
+                  <p className="text-ink/50 text-xs">
                     This project is currently in <strong className="text-primary">{project?.storage_mode === 'drive' ? 'Drive' : 'Postgres (default)'}</strong> mode.
                   </p>
                   {project?.storage_mode === 'drive' ? (
@@ -244,7 +244,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
                       </button>
                     </div>
                     {driveResult && (
-                      <p className="text-primary/50 text-xs">
+                      <p className="text-ink/50 text-xs">
                         {typeof driveResult.created === 'number'
                           ? `Pushed ${driveResult.totalFiles} file(s) — ${driveResult.created} created, ${driveResult.updated} updated${driveResult.failed ? `, ${driveResult.failed} failed` : ''}.`
                           : `Pulled ${driveResult.fileCount} file(s) — ${driveResult.fetched} fetched${driveResult.removed ? `, ${driveResult.removed} removed` : ''}.`}
@@ -264,7 +264,7 @@ export default function ShareDialog({ open, onClose, project, onUploadGithub, on
           <div className="space-y-4">
             <div>
               <label className="text-xs text-primary/50 uppercase tracking-wider">Email Address</label>
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="operator@matrix.net" type="email" className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="operator@matrix.net" type="email" className="w-full mt-1 bg-transparent border border-primary/30 text-ink px-3 py-2 outline-none focus:border-primary text-sm" autoFocus />
             </div>
             <button onClick={handleEmail} disabled={loading || !email.trim()} className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider flex items-center justify-center gap-2">
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />} SEND FILES

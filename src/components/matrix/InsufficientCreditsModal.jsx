@@ -84,7 +84,7 @@ export default function InsufficientCreditsModal() {
             <X size={16} />
           </button>
         </div>
-        <p className="text-primary/70 text-sm mb-4 leading-relaxed">
+        <p className="text-ink/70 text-sm mb-4 leading-relaxed">
           {detail.message || "This action needs more credits than your account currently has."}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -98,8 +98,8 @@ export default function InsufficientCreditsModal() {
               <div className="text-xs font-display tracking-wider text-primary flex items-center gap-1.5">
                 <Coins size={12} /> {block.credits.toLocaleString()} CREDITS
               </div>
-              <div className="text-[10px] text-primary/55 mt-1">~${block.intendedNetUsd.toFixed(2)} + card fees</div>
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-primary">
+              <div className="text-[10px] text-ink/55 mt-1">~${block.intendedNetUsd.toFixed(2)} + card fees</div>
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-ink">
                 {buyingIndex === i ? <Loader2 size={12} className="animate-spin" /> : null}
                 {buyingIndex === i ? 'Redirecting…' : 'Buy'}
               </div>
@@ -107,7 +107,7 @@ export default function InsufficientCreditsModal() {
           ))}
         </div>
         {error && <p className="text-red-400 text-xs mt-3">// {error}</p>}
-        <p className="text-[10px] text-primary/45 mt-3">
+        <p className="text-[10px] text-ink/45 mt-3">
           // Secure checkout via Stripe. You'll come back here once it's done.
         </p>
       </div>

@@ -28,6 +28,7 @@ const HARD = [
   'verify-working-copy.mjs',
   'verify-keywords.mjs',
   'verify-contrast.mjs',
+  'verify-prose-ink.mjs',
   'verify-traffic.mjs',
   'verify-photo-drive.mjs',
   'verify-dock.mjs',

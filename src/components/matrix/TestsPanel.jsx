@@ -50,10 +50,10 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
               value={spec}
               onChange={e => setSpec(e.target.value)}
               placeholder="// e.g. focus on the API layer, include edge cases for auth..."
-              className="w-full h-24 bg-background text-primary text-sm border border-primary/30 px-3 py-2 outline-none focus:border-primary/60 resize-none scrollbar-matrix"
+              className="w-full h-24 bg-background text-ink text-sm border border-primary/30 px-3 py-2 outline-none focus:border-primary/60 resize-none scrollbar-matrix"
               disabled={running}
             />
-            <p className="text-xs text-primary/75 mt-1">// Morpheus will analyze all files and generate tests + CI pipeline</p>
+            <p className="text-xs text-ink/75 mt-1">// Morpheus will analyze all files and generate tests + CI pipeline</p>
           </div>
 
           {error && (
@@ -65,18 +65,18 @@ export default function TestsPanel({ open, onClose, project, onGenerate }) {
 
           {result && (
             <div className="space-y-3">
-              <div className="flex items-start gap-2 text-primary text-sm border border-primary/30 p-3">
+              <div className="flex items-start gap-2 text-ink text-sm border border-primary/30 p-3">
                 <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
                 <div>
                   <p>{result.reply}</p>
                   {result.testCount > 0 && (
-                    <p className="text-xs text-primary/50 mt-1">{result.testCount} test file(s) generated</p>
+                    <p className="text-xs text-ink/50 mt-1">{result.testCount} test file(s) generated</p>
                   )}
                   {result.fileOperations?.length > 0 && (
                     <div className="mt-2 space-y-1">
                       {result.fileOperations.map((op, i) => (
-                        <div key={i} className="text-xs text-primary/60 font-mono">
-                          <span className="text-primary/75">[{op.action}]</span> {op.path}
+                        <div key={i} className="text-xs text-ink/60 font-mono">
+                          <span className="text-ink/75">[{op.action}]</span> {op.path}
                         </div>
                       ))}
                     </div>

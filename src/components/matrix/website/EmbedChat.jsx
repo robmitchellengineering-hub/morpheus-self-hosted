@@ -190,12 +190,12 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
     <div className="flex flex-col h-[520px]">
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-3">
         {historyLoaded && messages.length === 0 && !sending && (
-          <div className="text-[12px] text-primary/55 leading-relaxed">
-            <div className="flex items-center gap-1.5 text-primary/80 mb-1"><Sparkles size={13} /> Ask Morpheus about {projectName || 'your site'}</div>
+          <div className="text-[12px] text-ink/55 leading-relaxed">
+            <div className="flex items-center gap-1.5 text-ink/80 mb-1"><Sparkles size={13} /> Ask Morpheus about {projectName || 'your site'}</div>
             {mode === 'context'
               ? 'Questions, ideas, a plan for a change — this is a discussion. Nothing here changes the site.'
               : 'Describe a change and Morpheus builds it for real — same pipeline as the full workspace. A turn that changes files gets a SHIP button right here.'}
-            {pageUrl && <div className="mt-1.5 text-primary/40">It knows you’re looking at this page — ask about “this” or “here” and it’ll answer for what’s in front of you.</div>}
+            {pageUrl && <div className="mt-1.5 text-ink/40">It knows you’re looking at this page — ask about “this” or “here” and it’ll answer for what’s in front of you.</div>}
           </div>
         )}
 
@@ -204,8 +204,8 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
             <div className={m.role === 'user' ? 'text-right' : ''}>
               <div className={`inline-block max-w-[85%] text-left px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words border ${
                 m.role === 'user'
-                  ? 'border-primary/30 bg-primary/5 text-primary/90'
-                  : 'border-primary/15 text-primary/80'
+                  ? 'border-primary/30 bg-primary/5 text-ink/90'
+                  : 'border-primary/15 text-ink/80'
               }`}>
                 {m.content}
               </div>
@@ -216,7 +216,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                 {(!m.actionState || m.actionState === 'pending') && (
                   <>
                     <div className="flex items-center gap-1.5 text-yellow-500/90">
-                      <AlertTriangle size={12} /> Are you sure? <span className="text-primary/80">{m.proposedAction.label}</span>
+                      <AlertTriangle size={12} /> Are you sure? <span className="text-ink/80">{m.proposedAction.label}</span>
                     </div>
                     {canStore ? (
                       <div className="flex items-center gap-2">
@@ -230,21 +230,21 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                         </button>
                       </div>
                     ) : (
-                      <div className="text-primary/45">This widget's token can't run shop actions — do it from the SHOP or PAGES tab instead.</div>
+                      <div className="text-ink/45">This widget's token can't run shop actions — do it from the SHOP or PAGES tab instead.</div>
                     )}
                   </>
                 )}
                 {m.actionState === 'running' && (
-                  <div className="flex items-center gap-1.5 text-primary/60"><Loader2 size={11} className="animate-spin" /> Working…</div>
+                  <div className="flex items-center gap-1.5 text-ink/60"><Loader2 size={11} className="animate-spin" /> Working…</div>
                 )}
                 {m.actionState === 'done' && (
-                  <div className="flex items-center gap-1.5 text-primary"><Check size={12} /> Done — {m.proposedAction.label}</div>
+                  <div className="flex items-center gap-1.5 text-ink"><Check size={12} /> Done — {m.proposedAction.label}</div>
                 )}
                 {m.actionState === 'error' && (
                   <div className="text-red-400">Failed: {m.actionError || 'unknown error'}</div>
                 )}
                 {m.actionState === 'cancelled' && (
-                  <div className="text-primary/45">Cancelled — nothing changed.</div>
+                  <div className="text-ink/45">Cancelled — nothing changed.</div>
                 )}
               </div>
             )}
@@ -254,13 +254,13 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                 {(!m.bulkState || m.bulkState === 'pending') && (
                   <>
                     <div className="flex items-center gap-1.5 text-yellow-500/90">
-                      <AlertTriangle size={12} /> Are you sure? <span className="text-primary/80">{m.proposedBulkAction.label}</span>
+                      <AlertTriangle size={12} /> Are you sure? <span className="text-ink/80">{m.proposedBulkAction.label}</span>
                     </div>
-                    <ul className="text-primary/70 space-y-0.5">
+                    <ul className="text-ink/70 space-y-0.5">
                       {m.proposedBulkAction.items.map((it) => <li key={it.id}>· {it.label}</li>)}
                     </ul>
                     {m.proposedBulkAction.unresolved.length > 0 && (
-                      <div className="text-primary/45">
+                      <div className="text-ink/45">
                         Couldn't match: {m.proposedBulkAction.unresolved.join(', ')} — check the name and ask again.
                       </div>
                     )}
@@ -276,7 +276,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                         </button>
                       </div>
                     ) : (
-                      <div className="text-primary/45">This widget's token can't run shop actions — do it from the SHOP or PAGES tab instead.</div>
+                      <div className="text-ink/45">This widget's token can't run shop actions — do it from the SHOP or PAGES tab instead.</div>
                     )}
                   </>
                 )}
@@ -286,7 +286,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                       const r = m.bulkResults?.[ii];
                       const status = r?.status;
                       return (
-                        <div key={it.id} className={`flex items-center gap-1.5 ${status === 'error' ? 'text-red-400' : status === 'done' ? 'text-primary' : 'text-primary/60'}`}>
+                        <div key={it.id} className={`flex items-center gap-1.5 ${status === 'error' ? 'text-red-400' : status === 'done' ? 'text-ink' : 'text-ink/60'}`}>
                           {status === 'running' && <Loader2 size={11} className="animate-spin shrink-0" />}
                           {status === 'done' && <Check size={11} className="shrink-0" />}
                           {status === 'error' && <X size={11} className="shrink-0" />}
@@ -298,7 +298,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                   </div>
                 )}
                 {m.bulkState === 'cancelled' && (
-                  <div className="text-primary/45">Cancelled — nothing changed.</div>
+                  <div className="text-ink/45">Cancelled — nothing changed.</div>
                 )}
               </div>
             )}
@@ -306,22 +306,22 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
         ))}
 
         {sending && (
-          <div className="flex items-center gap-2 text-[11px] text-primary/50">
+          <div className="flex items-center gap-2 text-[11px] text-ink/50">
             <Loader2 size={12} className="animate-spin" /> {stage || (mode === 'build' ? 'Morpheus is building' : 'Morpheus is thinking')}…
           </div>
         )}
 
         {lastBuild && (
           <div className="border border-primary/30 bg-primary/5 px-3 py-2.5 space-y-2 text-[11px]">
-            <div className="flex items-center gap-1.5 text-primary/85">
+            <div className="flex items-center gap-1.5 text-ink/85">
               <Check size={12} /> {lastBuild.paths.length} file{lastBuild.paths.length === 1 ? '' : 's'} changed
             </div>
             <div className="space-y-0.5 max-h-16 overflow-y-auto scrollbar-matrix">
-              {lastBuild.paths.map((p) => <div key={p} className="text-[10px] text-primary/50 font-mono truncate">{p}</div>)}
+              {lastBuild.paths.map((p) => <div key={p} className="text-[10px] text-ink/50 font-mono truncate">{p}</div>)}
             </div>
 
             {!canShip && (
-              <div className="text-primary/45">Saved to the project. This widget's token can't ship — open the WEBSITE panel's DEPLOY tab to send it live.</div>
+              <div className="text-ink/45">Saved to the project. This widget's token can't ship — open the WEBSITE panel's DEPLOY tab to send it live.</div>
             )}
 
             {canShip && !ship?.shipped && (
@@ -339,12 +339,12 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
 
             {diff && (
               diff.changed
-                ? <div className="text-primary/60">{diff.createCount} new · {diff.updateCount} changed · {diff.deleteCount} deleted</div>
-                : <div className="text-primary/45">Nothing to deploy — the site already matches this.</div>
+                ? <div className="text-ink/60">{diff.createCount} new · {diff.updateCount} changed · {diff.deleteCount} deleted</div>
+                : <div className="text-ink/45">Nothing to deploy — the site already matches this.</div>
             )}
 
             {ship?.shipped === false && ship.reason === 'no-changes' && (
-              <div className="text-primary/45">Nothing to ship — the repo already matches this project.</div>
+              <div className="text-ink/45">Nothing to ship — the repo already matches this project.</div>
             )}
             {ship?.blocked && <div className="text-red-400">Syntax check failed — nothing was pushed.</div>}
 
@@ -354,13 +354,13 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
                   <GitPullRequest size={11} /> PR #{ship.prNumber} <ExternalLink size={10} />
                 </a>
                 {(!merge || merge.phase === 'polling') && (
-                  <div className="flex items-center gap-1.5 text-primary/55">
+                  <div className="flex items-center gap-1.5 text-ink/55">
                     <Loader2 size={11} className="animate-spin" /> {merge?.result?.note || 'Waiting for checks, then merging…'}
                   </div>
                 )}
                 {merge?.phase === 'failed' && <div className="text-red-400">{merge.result.message || 'Checks failed — see the PR.'}</div>}
                 {merge?.phase === 'merged' && (
-                  <div className="flex items-center gap-1.5 text-primary"><Check size={12} /> Merged{merge.result.deploy?.triggered ? ' — deployed live.' : '.'}</div>
+                  <div className="flex items-center gap-1.5 text-ink"><Check size={12} /> Merged{merge.result.deploy?.triggered ? ' — deployed live.' : '.'}</div>
                 )}
               </div>
             )}
@@ -383,7 +383,7 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
 
       <div className="p-3 flex items-end gap-2">
         <textarea
-          className="flex-1 bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50 resize-none"
+          className="flex-1 bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-ink focus:outline-none focus:border-primary/50 resize-none"
           rows={2}
           placeholder={mode === 'build' ? 'Describe the change…' : 'Ask about your site…'}
           value={input}

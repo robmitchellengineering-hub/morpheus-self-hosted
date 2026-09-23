@@ -184,7 +184,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
           )}
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-primary font-mono text-sm">
+          <div className="flex items-center gap-1 text-ink font-mono text-sm">
             <Timer size={14} /> {timerStr}
             {etaStr && <span className="text-primary/50 text-xs ml-1">/ ETA {etaStr}</span>}
           </div>
@@ -201,8 +201,8 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
       </div>
       <div className="max-h-32 overflow-y-auto scrollbar-matrix p-3 space-y-0.5">
         {logs.map((log, i) => (
-          <div key={i} className="text-xs text-primary/60 font-mono">
-            <span className="text-primary/65">{log.time} </span>
+          <div key={i} className="text-xs text-ink/60 font-mono">
+            <span className="text-ink/65">{log.time} </span>
             {log.msg}
           </div>
         ))}
@@ -210,7 +210,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
       </div>
       {phase === 'done' && finalStatus && (
         <div className="border-t border-primary/20 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-primary text-sm">
+          <div className="flex items-center gap-2 text-ink text-sm">
             <CheckCircle size={14} /> Build complete!
           </div>
           {finalStatus.assets?.map((a, i) => (
@@ -230,7 +230,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
           <div className="flex items-center gap-2 text-red-500 text-sm">
             <AlertTriangle size={14} /> Pipeline stuck after {iteration} attempt(s)
           </div>
-          <p className="text-[10px] text-primary/60 leading-relaxed">
+          <p className="text-[10px] text-ink/60 leading-relaxed">
             // The AI couldn't auto-fix the last failure. Open the chat, describe the build error to Morpheus, and ask for a fix — then run the pipeline again.
           </p>
         </div>

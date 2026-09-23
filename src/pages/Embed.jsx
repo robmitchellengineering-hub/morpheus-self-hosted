@@ -85,7 +85,7 @@ export default function Embed() {
   const chatOnly = ctx && tabs.length === 0;
 
   return (
-    <div ref={rootRef} className="min-h-[200px] bg-background text-primary font-mono">
+    <div ref={rootRef} className="min-h-[200px] bg-background text-ink font-mono">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-primary/20">
         <Globe size={15} className="text-primary" />
         <span className="font-display tracking-wider text-[13px]">
@@ -96,11 +96,11 @@ export default function Embed() {
       {err && <div className="m-4 text-red-400 text-[12px] border border-red-500/30 px-3 py-2">{err}</div>}
 
       {!ctx && !err && (
-        <div className="p-6 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+        <div className="p-6 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>
       )}
 
       {ctx && chatOnly && (
-        <div className="p-6 text-[12px] text-primary/60 leading-relaxed">
+        <div className="p-6 text-[12px] text-ink/60 leading-relaxed">
           This embed has no panels enabled — open it in Morpheus for the full workspace.
           <a href="https://morpheus.nz/workspace" target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-1 text-primary/80 hover:text-primary ml-1">open <ExternalLink size={10} /></a>
@@ -140,7 +140,7 @@ export default function Embed() {
           {tab === 'shop' && (
             store
               ? <ShopTab store={store} projectId={ctx.projectId} />
-              : <div className="p-4 text-[12px] text-primary/50">The connected store isn’t reachable right now.</div>
+              : <div className="p-4 text-[12px] text-ink/50">The connected store isn’t reachable right now.</div>
           )}
           {tab === 'pages' && <PagesTab projectId={ctx.projectId} store={store} />}
           {/* widget: this render is driven by a widget token, so owner-only actions

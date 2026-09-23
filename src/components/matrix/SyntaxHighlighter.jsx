@@ -114,7 +114,7 @@ export default function SyntaxHighlighter({ content, language, filePath }) {
     <>
       {highlighted.map((tokens, i) => (
         <div key={i} className="flex">
-          <span className="text-primary/25 select-none w-8 text-right pr-3 shrink-0">{i + 1}</span>
+          <span className="text-ink/25 select-none w-8 text-right pr-3 shrink-0">{i + 1}</span>
           <span className="whitespace-pre-wrap break-all flex-1">
             {tokens.length === 0 ? '\u00A0' : tokens.map((tok, j) => (
               <span key={j} style={{ color: COLORS[tok.type] || COLORS.default }}>{tok.text}</span>

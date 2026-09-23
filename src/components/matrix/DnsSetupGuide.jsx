@@ -156,7 +156,7 @@ export default function DnsSetupGuide({ service }) {
             <div className="text-[10px] text-primary/75 uppercase mb-1">API Key (env var)</div>
             <div className="space-y-0.5">
               {guide.envSteps.map((step, i) => (
-                <div key={i} className="text-[10px] text-primary/50 font-mono leading-relaxed">{step}</div>
+                <div key={i} className="text-[10px] text-ink/50 font-mono leading-relaxed">{step}</div>
               ))}
             </div>
           </div>
@@ -165,7 +165,7 @@ export default function DnsSetupGuide({ service }) {
             <div className="text-[10px] text-primary/75 uppercase mb-1">Custom Domain (DNS)</div>
             <div className="space-y-0.5">
               {guide.domainSteps.map((step, i) => (
-                <div key={i} className="text-[10px] text-primary/50 font-mono leading-relaxed">{step}</div>
+                <div key={i} className="text-[10px] text-ink/50 font-mono leading-relaxed">{step}</div>
               ))}
             </div>
           </div>

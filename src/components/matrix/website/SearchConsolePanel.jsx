@@ -15,7 +15,10 @@ import { base44 } from '@/api/base44Client';
 // lib/searchConsoleInsights.js's payload has no field for an estimate.
 
 const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
-const faint = 'text-[9px] text-primary/30';
+// prose helper text, so ink: resolved by usage — every use is a span/div of
+// faint helper copy. The neighbouring `micro` keeps green because it is an
+// uppercase label, and `btn` because it is a button.
+const faint = 'text-ink/30';
 const btn = 'inline-flex items-center gap-1.5 px-2.5 h-[28px] border border-primary/25 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary/50 disabled:opacity-40 disabled:hover:border-primary/25';
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
@@ -131,7 +134,7 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
       <div className="flex items-center justify-between gap-2">
         <button className={btn} onClick={() => { setOpen((v) => !v); if (!open && status?.connected && status?.property) loadOverview(days); }} disabled={busy === 'status'}>
           {busy === 'status' || busy === 'overview' ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} SEARCH CONSOLE
-          {status?.connected ? <span className="text-primary/50 normal-case tracking-normal">· {status.property || 'no property chosen'}</span> : null}
+          {status?.connected ? <span className="text-ink/50 normal-case tracking-normal">· {status.property || 'no property chosen'}</span> : null}
         </button>
         {open ? (
           <button className={btn} onClick={() => loadOverview(days)} disabled={!status?.property || busy === 'overview'} title="Refresh from Google">
@@ -147,13 +150,13 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
           {/* Not connected — one tap to Google, and the panel says what it will ask for. */}
           {status && !status.connected ? (
             <div className="space-y-2">
-              <div className="text-[10px] text-primary/60">
+              <div className="text-[10px] text-ink/60">
                 Connect your own Google Search Console to see the real queries, clicks, impressions, CTR and average
-                position for your site. Read-only: Morpheus is asking to <span className="text-primary/80">view</span> your
+                position for your site. Read-only: Morpheus is asking to <span className="text-ink/80">view</span> your
                 search performance and nothing else.
               </div>
               {widget ? (
-                <div className="text-[10px] text-primary/60 border border-primary/20 px-2.5 py-2">
+                <div className="text-[10px] text-ink/60 border border-primary/20 px-2.5 py-2">
                   Search Console is not connected for this site yet. Connecting needs your Google account, so it has
                   to be done from Morpheus itself (WEBSITE → SEO → SEARCH CONSOLE) — not from an embedded page.
                 </div>
@@ -170,8 +173,8 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
           {/* Connected, but no property chosen yet. */}
           {status?.connected && !status?.property ? (
             <div className="space-y-2">
-              <div className="text-[10px] text-primary/60">
-                Connected as <span className="text-primary/80">{status.email}</span>. Choose which property to read —
+              <div className="text-[10px] text-ink/60">
+                Connected as <span className="text-ink/80">{status.email}</span>. Choose which property to read —
                 Google lists what this account can see.
               </div>
               <div className="flex items-center gap-2">
@@ -185,7 +188,7 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
                   {properties.map((p) => (
                     <button key={p.siteUrl} onClick={() => selectProperty(p.siteUrl)} disabled={!p.readable || busy === 'select'}
                       className="w-full text-left border border-primary/15 px-2.5 py-1.5 hover:border-primary/40 disabled:opacity-40">
-                      <div className="text-[11px] text-primary/85 break-all">{p.siteUrl}</div>
+                      <div className="text-[11px] text-ink/85 break-all">{p.siteUrl}</div>
                       <div className={faint}>
                         {p.permissionLevel}
                         {p.readable ? '' : ' — Google says this account cannot read performance for it'}
@@ -194,7 +197,7 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
                   ))}
                 </div>
               ) : (
-                <div className="text-[10px] text-primary/50">
+                <div className="text-[10px] text-ink/50">
                   This Google account has no Search Console properties. Add and verify your site at{' '}
                   <a className="underline" href="https://search.google.com/search-console" target="_blank" rel="noreferrer">search.google.com/search-console</a>{' '}
                   first, then list again.
@@ -207,7 +210,7 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
           {status?.connected && status?.property ? (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-[10px] text-primary/60 break-all">{status.property}</div>
+                <div className="text-[10px] text-ink/60 break-all">{status.property}</div>
                 <button className={btn} onClick={disconnect} disabled={busy === 'disconnect'}>DISCONNECT</button>
               </div>
 
@@ -220,10 +223,10 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
                 ))}
               </div>
 
-              {busy === 'overview' && !data ? <div className="text-[10px] text-primary/40">Reading your search performance from Google…</div> : null}
+              {busy === 'overview' && !data ? <div className="text-[10px] text-ink/40">Reading your search performance from Google…</div> : null}
 
               {data ? (data.empty ? (
-                <div className="text-[10px] text-primary/50">
+                <div className="text-[10px] text-ink/50">
                   Google returned no search data for this property in the last {data.days} days. That is a real answer —
                   the call succeeded. A brand-new or unindexed site looks exactly like this.
                 </div>
@@ -241,8 +244,8 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
                     <div className={micro}>striking distance · positions 8–20, at least 20 impressions</div>
                     {data.strikingDistance.length ? data.strikingDistance.map((r) => (
                       <Row key={r.key}>
-                        <div className="text-[11px] text-primary/85 break-all">{r.key}</div>
-                        <div className="text-[10px] text-primary/55 text-right whitespace-nowrap">
+                        <div className="text-[11px] text-ink/85 break-all">{r.key}</div>
+                        <div className="text-[10px] text-ink/55 text-right whitespace-nowrap">
                           #{pos(r.position)} · {num(r.impressions)} impr · {pct(r.ctr)}
                         </div>
                       </Row>
@@ -257,8 +260,8 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
                     <div className={micro}>low ctr · versus your own median for the same positions</div>
                     {data.lowCtr.length ? data.lowCtr.map((r) => (
                       <Row key={r.key} cols="grid-cols-[1fr_auto]">
-                        <div className="text-[11px] text-primary/85 break-all">{r.key}</div>
-                        <div className="text-[10px] text-primary/55 text-right whitespace-nowrap">
+                        <div className="text-[11px] text-ink/85 break-all">{r.key}</div>
+                        <div className="text-[10px] text-ink/55 text-right whitespace-nowrap">
                           {pct(r.ctr)} vs {pct(r.bandMedianCtr)} at #{pos(r.position)} · {num(r.impressions)} impr
                         </div>
                       </Row>
@@ -280,8 +283,8 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
                       <div className={micro}>top queries</div>
                       {data.topQueries.map((r) => (
                         <Row key={`q-${r.key}`}>
-                          <div className="text-[11px] text-primary/80 break-all">{r.key}</div>
-                          <div className="text-[10px] text-primary/55 text-right whitespace-nowrap">
+                          <div className="text-[11px] text-ink/80 break-all">{r.key}</div>
+                          <div className="text-[10px] text-ink/55 text-right whitespace-nowrap">
                             {num(r.clicks)} clicks · #{pos(r.position)}
                           </div>
                         </Row>
@@ -291,8 +294,8 @@ export default function SearchConsolePanel({ onNote, widget = false }) {
                       <div className={micro}>top pages</div>
                       {data.topPages.map((r) => (
                         <Row key={`p-${r.key}`}>
-                          <div className="text-[11px] text-primary/80 break-all">{String(r.key).replace(/^https?:\/\/[^/]+/, '') || '/'}</div>
-                          <div className="text-[10px] text-primary/55 text-right whitespace-nowrap">
+                          <div className="text-[11px] text-ink/80 break-all">{String(r.key).replace(/^https?:\/\/[^/]+/, '') || '/'}</div>
+                          <div className="text-[10px] text-ink/55 text-right whitespace-nowrap">
                             {num(r.clicks)} clicks · {num(r.impressions)} impr
                           </div>
                         </Row>

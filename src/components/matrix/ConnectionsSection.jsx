@@ -201,7 +201,7 @@ export default function ConnectionsSection({ connections, onChange }) {
       <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
         <Globe size={14} /> CONNECTIONS
       </h2>
-      <p className="text-xs text-primary/50 mb-4">
+      <p className="text-xs text-ink/50 mb-4">
         // Link your hosting and infrastructure accounts. Cloudflare + Supabase enable live deploy with log pulling. All credentials are used by generated backend code and deploy pipelines.
       </p>
       <div className="space-y-4">
@@ -225,13 +225,13 @@ export default function ConnectionsSection({ connections, onChange }) {
                       className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-primary/5 transition-colors"
                     >
                       <Icon size={14} className={isConnected ? 'text-primary shrink-0' : 'text-primary/50 shrink-0'} />
-                      <span className={`text-sm flex-1 ${isConnected ? 'text-primary' : 'text-primary/70'}`}>{p.label}</span>
+                      <span className={`text-sm flex-1 ${isConnected ? 'text-ink' : 'text-ink/70'}`}>{p.label}</span>
                       {isConnected && <Check size={12} className="text-primary shrink-0" />}
                       {isExpanded ? <ChevronDown size={14} className="text-primary/75 shrink-0" /> : <ChevronRight size={14} className="text-primary/75 shrink-0" />}
                     </button>
                     {isExpanded && (
                       <div className="px-3 pb-3 pt-1 space-y-3 border-t border-primary/10">
-                        <p className="text-xs text-primary/75">{p.description}</p>
+                        <p className="text-xs text-ink/75">{p.description}</p>
                         {p.setupUrl && (
                           <a href={p.setupUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary/60 hover:text-primary underline">
                             <ExternalLink size={10} /> Get token / setup guide
@@ -250,7 +250,7 @@ export default function ConnectionsSection({ connections, onChange }) {
                                   value={connections[p.id]?.[f.key] || ''}
                                   onChange={e => updateField(p.id, f.key, e.target.value)}
                                   placeholder={f.placeholder}
-                                  className="flex-1 bg-background text-primary border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-primary/20"
+                                  className="flex-1 bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20"
                                 />
                                 {isSecret && (
                                   <button
@@ -262,7 +262,7 @@ export default function ConnectionsSection({ connections, onChange }) {
                                   </button>
                                 )}
                               </div>
-                              {f.hint && <p className="text-[10px] text-primary/65 mt-1">{f.hint}</p>}
+                              {f.hint && <p className="text-[10px] text-ink/65 mt-1">{f.hint}</p>}
                             </div>
                           );
                         })}

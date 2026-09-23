@@ -37,12 +37,12 @@ function AssetCard({ asset, onDelete }) {
           : <span className="text-[10px] uppercase tracking-widest text-primary/40">{asset.kind}</span>}
       </div>
       <div className="p-2 flex flex-col gap-1 min-w-0">
-        <div className="text-[11px] text-primary truncate" title={asset.name}>{asset.name}</div>
+        <div className="text-[11px] text-ink truncate" title={asset.name}>{asset.name}</div>
         <button onClick={copy} title="Copy the url the builder will use" className="flex items-center gap-1 text-[10px] text-primary/50 hover:text-primary font-mono truncate">
           {copied ? <Check size={10} className="shrink-0 text-primary" /> : <Copy size={10} className="shrink-0" />}
           <span className="truncate">{asset.url}</span>
         </button>
-        <div className="flex items-center justify-between text-[10px] text-primary/40">
+        <div className="flex items-center justify-between text-[10px] text-ink/40">
           <span>{asset.source === 'repo' ? 'in your repo' : 'your link'}{asset.width ? ` · ${asset.width}×${asset.height}` : ''}</span>
           <button onClick={async () => { setDeleting(true); try { await onDelete(asset.id); } finally { setDeleting(false); } }} className="text-primary/40 hover:text-red-400">
             {deleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
@@ -123,7 +123,7 @@ export default function MediaPanel({ open, onClose, projectId, onCountChange }) 
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <p className="text-[11px] text-primary/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+        <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
           Content for the site — photos, posters, ads. Morpheus stores only the link, never the file.
           Listed assets are offered to the builder by name, so you can say “put the spring poster in the hero”.
         </p>
@@ -151,10 +151,10 @@ export default function MediaPanel({ open, onClose, projectId, onCountChange }) 
               {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-2 py-1.5 flex items-start gap-1.5"><AlertTriangle size={11} className="shrink-0 mt-0.5" /><span>{err}</span></div>}
               {tab === 'url' && (
                 <>
-                  <input value={urlForm.url} onChange={(e) => setUrlForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://your-cdn.com/spring-poster.jpg" className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+                  <input value={urlForm.url} onChange={(e) => setUrlForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://your-cdn.com/spring-poster.jpg" className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
                   <div className="flex gap-2">
-                    <input value={urlForm.name} onChange={(e) => setUrlForm((f) => ({ ...f, name: e.target.value }))} placeholder="name (e.g. Spring Poster)" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
-                    <input value={urlForm.alt} onChange={(e) => setUrlForm((f) => ({ ...f, alt: e.target.value }))} placeholder="alt text" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-primary focus:outline-none focus:border-primary/50" />
+                    <input value={urlForm.name} onChange={(e) => setUrlForm((f) => ({ ...f, name: e.target.value }))} placeholder="name (e.g. Spring Poster)" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
+                    <input value={urlForm.alt} onChange={(e) => setUrlForm((f) => ({ ...f, alt: e.target.value }))} placeholder="alt text" className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50" />
                   </div>
                   <button onClick={addUrl} disabled={busy || !urlForm.url.trim()} className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-[11px] disabled:opacity-30">
                     {busy ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} ADD LINK
@@ -164,7 +164,7 @@ export default function MediaPanel({ open, onClose, projectId, onCountChange }) 
               {tab === 'device' && (
                 hasRepo ? (
                   <>
-                    <div className="text-[11px] text-primary/50">Uploads commit straight into <span className="font-mono text-primary/70">{repo}</span> under <span className="font-mono">public/assets/</span>. Nothing is stored on Morpheus.</div>
+                    <div className="text-[11px] text-ink/50">Uploads commit straight into <span className="font-mono text-ink/70">{repo}</span> under <span className="font-mono">public/assets/</span>. Nothing is stored on Morpheus.</div>
                     <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.woff2,.woff" className="hidden" onChange={(e) => addFile(e.target.files?.[0])} />
                     <button onClick={() => fileInputRef.current?.click()} disabled={busy} className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-[11px] disabled:opacity-30">
                       {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} CHOOSE FILE
@@ -181,18 +181,18 @@ export default function MediaPanel({ open, onClose, projectId, onCountChange }) 
             </div>
 
             <div className="flex-1 overflow-y-auto scrollbar-matrix p-3">
-              {!state && <div className="flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
-              {state && assets.length === 0 && <p className="text-primary/50 italic text-xs">No assets yet. Add a link or upload one above.</p>}
+              {!state && <div className="flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+              {state && assets.length === 0 && <p className="text-ink/50 italic text-xs">No assets yet. Add a link or upload one above.</p>}
               <div className="grid grid-cols-2 gap-2">
                 {assets.map((a) => <AssetCard key={a.id} asset={a} onDelete={del} />)}
               </div>
               {assets.some((a) => a.source === 'repo') && !state?.error && (
-                <p className="text-[10px] text-primary/35 mt-3 leading-relaxed">
+                <p className="text-[10px] text-ink/35 mt-3 leading-relaxed">
                   Repo assets preview from <span className="font-mono">raw.githubusercontent.com</span> — that needs the repo to be public.
                   The deployed site serves them from <span className="font-mono">/assets/…</span> regardless.
                 </p>
               )}
-              <p className="text-[10px] text-primary/35 mt-2">
+              <p className="text-[10px] text-ink/35 mt-2">
                 For a real connected library (Google Drive, your own bucket) — coming with the plugin. See <Link to="/settings" className="underline">Settings</Link>.
               </p>
             </div>

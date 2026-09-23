@@ -12,8 +12,8 @@ function HealthRow({ c }) {
     <div className="flex items-start gap-2 text-[11px] py-1">
       {c.ok ? <Check size={13} className="text-primary mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="text-red-400 mt-0.5 shrink-0" />}
       <div className="min-w-0">
-        <span className={c.ok ? 'text-primary/80' : 'text-red-400'}>{c.name}</span>
-        {c.detail && <span className="text-primary/35"> — {c.detail}</span>}
+        <span className={c.ok ? 'text-ink/80' : 'text-red-400'}>{c.name}</span>
+        {c.detail && <span className="text-ink/35"> — {c.detail}</span>}
       </div>
     </div>
   );
@@ -99,13 +99,13 @@ export default function DeployTab({ projectId }) {
 
   const busy = shipping || merge?.phase === 'polling';
 
-  if (loading) return <div className="p-4 flex items-center gap-2 text-primary/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>;
+  if (loading) return <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>;
 
   if (state?.notReady) {
     return (
-      <div className="p-4 text-[12px] text-primary/55 leading-relaxed">
+      <div className="p-4 text-[12px] text-ink/55 leading-relaxed">
         {state.reason || 'Finish Setup first, then point the plugin at your repo.'}
-        <div className="text-[10px] text-primary/40 mt-2 leading-relaxed">
+        <div className="text-[10px] text-ink/40 mt-2 leading-relaxed">
           The Deploy tab needs: (1) this project connected to a GitHub repo (Share → Export to GitHub), and (2) the plugin’s repo + a GitHub token set in Settings → Morpheus.
         </div>
       </div>
@@ -120,8 +120,8 @@ export default function DeployTab({ projectId }) {
         <>
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5 text-[10px] text-primary/40 uppercase tracking-wider"><GitBranch size={11} /> Target</div>
-            <div className="text-[12px] text-primary/80 font-mono break-all">{state.repo} · {state.branch}</div>
-            <div className="text-[11px] text-primary/45 break-all">{state.siteUrl?.replace(/^https?:\/\//, '')}</div>
+            <div className="text-[12px] text-ink/80 font-mono break-all">{state.repo} · {state.branch}</div>
+            <div className="text-[11px] text-ink/45 break-all">{state.siteUrl?.replace(/^https?:\/\//, '')}</div>
             {state.plugin && (
               <div className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide px-2 py-1 border mt-1 ${state.plugin.armed ? 'text-yellow-500/90 border-yellow-500/40' : 'text-primary/60 border-primary/30'}`}>
                 {state.plugin.armed ? <ShieldAlert size={11} /> : <ShieldCheck size={11} />}
@@ -129,7 +129,7 @@ export default function DeployTab({ projectId }) {
               </div>
             )}
             {state.plugin && !state.plugin.configured && (
-              <div className="text-[10px] text-primary/40">Deploy module not configured on the plugin yet — set the repo + a GitHub token in Settings → Morpheus for it to write files.</div>
+              <div className="text-[10px] text-ink/40">Deploy module not configured on the plugin yet — set the repo + a GitHub token in Settings → Morpheus for it to write files.</div>
             )}
           </div>
 
@@ -152,16 +152,16 @@ export default function DeployTab({ projectId }) {
           </div>
 
           {verify && (verify.ok
-            ? <div className="text-[11px] text-primary/70 flex items-center gap-1.5"><Check size={12} /> {verify.checkedFiles} script file{verify.checkedFiles === 1 ? '' : 's'} clean</div>
+            ? <div className="text-[11px] text-ink/70 flex items-center gap-1.5"><Check size={12} /> {verify.checkedFiles} script file{verify.checkedFiles === 1 ? '' : 's'} clean</div>
             : <div className="space-y-1">{verify.errors.map((e, i) => <div key={i} className="text-[10px] text-red-400 font-mono">{e.file}:{e.line} — {e.text}</div>)}</div>
           )}
 
-          {diff && !diff.changed && <div className="text-[11px] text-primary/55">Nothing to deploy — the site’s repo already matches this project.</div>}
+          {diff && !diff.changed && <div className="text-[11px] text-ink/55">Nothing to deploy — the site’s repo already matches this project.</div>}
           {diff && diff.changed && (
             <div className="space-y-1.5">
-              <div className="text-[11px] text-primary/70">{diff.createCount} new · {diff.updateCount} changed · {diff.deleteCount} deleted</div>
+              <div className="text-[11px] text-ink/70">{diff.createCount} new · {diff.updateCount} changed · {diff.deleteCount} deleted</div>
               <div className="max-h-40 overflow-y-auto scrollbar-matrix border border-primary/15 p-2 space-y-0.5">
-                {diff.changedPaths.map((p) => <div key={p} className="text-[10px] text-primary/60 font-mono">{p}</div>)}
+                {diff.changedPaths.map((p) => <div key={p} className="text-[10px] text-ink/60 font-mono">{p}</div>)}
                 {diff.deletePaths.map((p) => <div key={p} className="text-[10px] text-red-400/70 font-mono">− {p}</div>)}
               </div>
             </div>
@@ -175,7 +175,7 @@ export default function DeployTab({ projectId }) {
             </button>
 
             {ship?.shipped === false && ship.reason === 'no-changes' && (
-              <div className="text-[11px] text-primary/55">Nothing to ship — the repo already matches this project.</div>
+              <div className="text-[11px] text-ink/55">Nothing to ship — the repo already matches this project.</div>
             )}
             {ship?.blocked && <div className="text-[11px] text-red-400">Syntax check failed — nothing was pushed. Fix it in chat and ship again.</div>}
 
@@ -185,7 +185,7 @@ export default function DeployTab({ projectId }) {
                   <GitPullRequest size={12} /> PR #{ship.prNumber} — {ship.summary} <ExternalLink size={10} />
                 </a>
                 {(!merge || merge.phase === 'polling') && (
-                  <div className="flex items-center gap-1.5 text-primary/55">
+                  <div className="flex items-center gap-1.5 text-ink/55">
                     <Loader2 size={11} className="animate-spin" /> {merge?.result?.note || 'Waiting for checks, then merging…'}
                   </div>
                 )}
@@ -194,9 +194,9 @@ export default function DeployTab({ projectId }) {
                 )}
                 {merge?.phase === 'merged' && (
                   <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-primary"><Check size={12} /> Merged.</div>
+                    <div className="flex items-center gap-1.5 text-ink"><Check size={12} /> Merged.</div>
                     {merge.result.deploy && (
-                      <div className="text-primary/60">
+                      <div className="text-ink/60">
                         {merge.result.deploy.triggered
                           ? (state.plugin?.armed ? 'Plugin deployed the change to the live site.' : 'Plugin acknowledged (not armed — reported the diff, wrote nothing).')
                           : `Deploy webhook not fired: ${merge.result.deploy.reason || merge.result.deploy.error || 'unknown'}`}
@@ -208,8 +208,8 @@ export default function DeployTab({ projectId }) {
             )}
           </div>
 
-          <div className="border border-primary/20 bg-primary/[0.03] px-3 py-2.5 text-[10px] text-primary/50 leading-relaxed">
-            To make changes, use <span className="text-primary/70">chat</span> in this project — they land in the file tree, then ship here. The plugin only writes to the live server when <span className="text-primary/70">Armed</span> in Settings → Morpheus.
+          <div className="border border-primary/20 bg-primary/[0.03] px-3 py-2.5 text-[10px] text-ink/50 leading-relaxed">
+            To make changes, use <span className="text-ink/70">chat</span> in this project — they land in the file tree, then ship here. The plugin only writes to the live server when <span className="text-ink/70">Armed</span> in Settings → Morpheus.
           </div>
         </>
       )}

@@ -202,7 +202,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   value={logSearch}
                   onChange={e => setLogSearch(e.target.value)}
                   placeholder="search build logs…"
-                  className="w-full bg-background text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
+                  className="w-full bg-background text-ink border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-ink/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -214,7 +214,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   </button>
                 )}
               </div>
-              <span className="text-xs text-primary/50 shrink-0 tabular-nums">
+              <span className="text-xs text-ink/50 shrink-0 tabular-nums">
                 {logQuery ? `${filteredLogs.length}/${logs.length}` : `${logs.length} events`}
               </span>
             </div>
@@ -225,7 +225,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   <Loader2 size={20} className="animate-spin text-primary/60" />
                 </div>
               ) : filteredLogs.length === 0 ? (
-                <p className="text-primary/75 italic text-sm p-4">No build events recorded yet. Start building to generate logs.</p>
+                <p className="text-ink/75 italic text-sm p-4">No build events recorded yet. Start building to generate logs.</p>
               ) : (
                 <div className="divide-y divide-primary/10">
                   {filteredLogs.map((log, idx) => {
@@ -242,15 +242,15 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="text-xs font-bold tracking-wider" style={{ color: meta.color }}>{meta.label}</span>
-                                <span className="text-primary/70 text-xs truncate">{toolLabel}</span>
+                                <span className="text-ink/70 text-xs truncate">{toolLabel}</span>
                               </div>
                               <button onClick={() => copyLog(log, idx)} className="text-primary/65 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Copy this log entry">
                                 {copiedId === idx ? <Check size={12} className="text-primary" /> : <Copy size={12} />}
                               </button>
                             </div>
-                            <p className="text-primary/75 text-xs mt-0.5">{new Date(log.timestamp).toLocaleString()}</p>
+                            <p className="text-ink/75 text-xs mt-0.5">{new Date(log.timestamp).toLocaleString()}</p>
                             {log.credits > 0 && <span className="text-yellow-500/60 text-xs">⚡ {log.credits} credits</span>}
-                            <p className={`text-primary/70 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'max-h-16 overflow-hidden' : ''}`}>{log.details}</p>
+                            <p className={`text-ink/70 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'max-h-16 overflow-hidden' : ''}`}>{log.details}</p>
                             {log.toolchain && (
                               <div className="mt-1.5 flex flex-wrap gap-1">
                                 <span className="text-primary/75 text-xs border border-primary/20 px-1.5 py-0.5">SDK {log.toolchain.sdk}</span>
@@ -259,7 +259,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                                 {log.toolchain.coder_model && <span className="text-cyan-400/60 text-xs border border-cyan-400/20 px-1.5 py-0.5">coder: {log.toolchain.coder_model}</span>}
                                 {log.toolchain.reviewer_model && <span className="text-yellow-400/70 text-xs border border-yellow-400/20 px-1.5 py-0.5">reviewer: {log.toolchain.reviewer_model}</span>}
                                 {log.toolchain.client_tools && (
-                                  <span className="text-primary/75 text-xs border border-primary/20 px-1.5 py-0.5">
+                                  <span className="text-ink/75 text-xs border border-primary/20 px-1.5 py-0.5">
                                     client: {Object.entries(log.toolchain.client_tools).map(([k, v]) => `${k}@${v}`).join(', ')}
                                   </span>
                                 )}
@@ -283,18 +283,18 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
           <ChatHistoryTab project={project} />
         ) : tab === 'decisions' ? (
           <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-2">
-            {!decisions && <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+            {!decisions && <div className="flex items-center gap-2 text-ink/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
             {decisions && !decisions.migrated && (
-              <p className="text-primary/75 italic text-sm">Decisions log not available yet on this deployment.</p>
+              <p className="text-ink/75 italic text-sm">Decisions log not available yet on this deployment.</p>
             )}
             {decisions?.migrated && decisions.decisions.length === 0 && (
-              <p className="text-primary/75 italic text-sm">No decisions logged yet. Each build that changes files records what it did and why here, and the recent ones are fed back to the planner.</p>
+              <p className="text-ink/75 italic text-sm">No decisions logged yet. Each build that changes files records what it did and why here, and the recent ones are fed back to the planner.</p>
             )}
             {decisions?.decisions?.map((d) => (
               <div key={d.id} className="border border-primary/20 p-3">
-                <p className="text-primary text-sm">{d.summary}</p>
-                {d.rationale && d.rationale !== '—' && <p className="text-primary/60 text-xs mt-1 leading-relaxed">{d.rationale}</p>}
-                <p className="text-primary/40 text-[11px] mt-1.5">{new Date(d.created_date).toLocaleString()}{d.ref ? ` · ${d.ref}` : ''}</p>
+                <p className="text-ink text-sm">{d.summary}</p>
+                {d.rationale && d.rationale !== '—' && <p className="text-ink/60 text-xs mt-1 leading-relaxed">{d.rationale}</p>}
+                <p className="text-ink/40 text-[11px] mt-1.5">{new Date(d.created_date).toLocaleString()}{d.ref ? ` · ${d.ref}` : ''}</p>
               </div>
             ))}
           </div>
@@ -307,7 +307,7 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   value={snapSearch}
                   onChange={e => setSnapSearch(e.target.value)}
                   placeholder="search snapshots by label…"
-                  className="w-full bg-background text-primary border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-primary/30"
+                  className="w-full bg-background text-ink border border-primary/30 pl-8 pr-8 py-1.5 text-sm outline-none placeholder:text-ink/30"
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -319,22 +319,22 @@ export default function HistoryPanel({ open, onClose, snapshots, onRestore, proj
                   </button>
                 )}
               </div>
-              <span className="text-xs text-primary/50 shrink-0 tabular-nums">
+              <span className="text-xs text-ink/50 shrink-0 tabular-nums">
                 {snapQuery ? `${filteredSnaps.length}/${snapshots.length}` : `${snapshots.length} snaps`}
               </span>
             </div>
             <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-2">
               {snapshots.length === 0 ? (
-                <p className="text-primary/75 italic text-sm">No snapshots yet. Morpheus captures a snapshot before each build operation.</p>
+                <p className="text-ink/75 italic text-sm">No snapshots yet. Morpheus captures a snapshot before each build operation.</p>
               ) : filteredSnaps.length === 0 ? (
-                <p className="text-primary/75 italic text-sm">No snapshots match "{snapSearch}".</p>
+                <p className="text-ink/75 italic text-sm">No snapshots match "{snapSearch}".</p>
               ) : (
                 filteredSnaps.map(s => (
                   <div key={s.id} className="border border-primary/20 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-primary text-sm truncate">{s.label}</p>
-                        <p className="text-primary/75 text-xs mt-0.5">{new Date(s.created_date).toLocaleString()}</p>
+                        <p className="text-ink text-sm truncate">{s.label}</p>
+                        <p className="text-ink/75 text-xs mt-0.5">{new Date(s.created_date).toLocaleString()}</p>
                       </div>
                       {confirmId === s.id ? (
                         <div className="flex gap-1 shrink-0">

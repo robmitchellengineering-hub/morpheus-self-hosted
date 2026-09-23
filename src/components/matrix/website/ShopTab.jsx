@@ -20,7 +20,7 @@ function Field({ label, hint, children }) {
     <label className="block">
       <div className="text-[10px] text-primary/45 uppercase tracking-wider mb-1">{label}</div>
       {children}
-      {hint && <div className="text-[9px] text-primary/35 mt-0.5">{hint}</div>}
+      {hint && <div className="text-[9px] text-ink/35 mt-0.5">{hint}</div>}
     </label>
   );
 }
@@ -76,7 +76,7 @@ export default function ShopTab({ store, projectId }) {
 
   if (!store?.store_available) {
     return (
-      <div className="p-4 text-[11px] text-primary/50 leading-relaxed">
+      <div className="p-4 text-[11px] text-ink/50 leading-relaxed">
         {store?.online
           ? 'WooCommerce isn’t active on this site — activate it to manage products here.'
           : 'Can’t reach the plugin right now. Check the site is up and the plugin is active, then reopen this panel.'}
@@ -273,7 +273,7 @@ export default function ShopTab({ store, projectId }) {
   const formBody = (mode) => (
     <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-4">
       {result && mode === 'add' && (
-        <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-primary/80 leading-relaxed">
+        <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] text-ink/80 leading-relaxed">
           <div className="flex items-center gap-1.5 text-primary font-bold mb-1">
             <Check size={13} /> {result.published ? 'Published' : 'Saved as draft'}
           </div>
@@ -287,7 +287,7 @@ export default function ShopTab({ store, projectId }) {
         </div>
       )}
       {result && mode === 'edit' && (
-        <div className="border border-primary/40 bg-primary/5 px-3 py-2 text-[11px] text-primary/80 flex items-center gap-1.5">
+        <div className="border border-primary/40 bg-primary/5 px-3 py-2 text-[11px] text-ink/80 flex items-center gap-1.5">
           <Check size={13} className="text-primary" /> Saved{result.published === false ? ' (draft)' : ''}.
         </div>
       )}
@@ -344,7 +344,7 @@ export default function ShopTab({ store, projectId }) {
                 <img src={p.url} alt="" className="w-full h-full object-cover" />
                 {i === 0 && <span className="absolute bottom-0 left-0 text-[8px] bg-primary text-black px-1">MAIN</span>}
                 {p.existing
-                  ? <span className="absolute bottom-0 right-0 text-[8px] bg-black/70 text-primary/70 px-1">on site</span>
+                  ? <span className="absolute bottom-0 right-0 text-[8px] bg-black/70 text-ink/70 px-1">on site</span>
                   : (
                     <button onClick={() => setPhotos((ps) => ps.filter((x) => x.url !== p.url))}
                       className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-primary/40 text-primary/60 hover:text-red-400 text-[10px] leading-none">×</button>
@@ -375,7 +375,7 @@ export default function ShopTab({ store, projectId }) {
             {analyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             {analyzing ? 'MORPHEUS IS LOOKING…' : `AUTO-FILL FROM ${photos.length === 1 ? 'PHOTO' : `${photos.length} PHOTOS`}`}
           </button>
-          <div className="text-[9px] text-primary/35 -mt-2">
+          <div className="text-[9px] text-ink/35 -mt-2">
             Reads all the photos together — name, category, brand, price, stock, copy. All editable after.
           </div>
           {photoNote && (
@@ -391,7 +391,7 @@ export default function ShopTab({ store, projectId }) {
         {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
         {generating ? 'MORPHEUS IS WRITING…' : 'WRITE COPY WITH MORPHEUS'}
       </button>
-      <div className="text-[9px] text-primary/35 -mt-2">
+      <div className="text-[9px] text-ink/35 -mt-2">
         Uses the name, category, brand and photo. Type rough notes in the boxes below first and Morpheus will polish them.
       </div>
 
@@ -438,7 +438,7 @@ export default function ShopTab({ store, projectId }) {
           <button onClick={backToList} className="flex items-center gap-1 text-[11px] text-primary/60 hover:text-primary">
             <ChevronLeft size={14} /> Products
           </button>
-          <span className="text-[11px] text-primary/80 truncate ml-1">{editName || 'Edit product'}</span>
+          <span className="text-[11px] text-ink/80 truncate ml-1">{editName || 'Edit product'}</span>
           {editStatus && (
             <span className={`ml-auto text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${editStatus === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
               {editStatus === 'publish' ? 'live' : editStatus}
@@ -468,13 +468,13 @@ export default function ShopTab({ store, projectId }) {
       {view === 'edit' && (
         <>
           {loadingEdit
-            ? <div className="flex items-center gap-2 text-primary/60 text-xs p-4"><Loader2 size={13} className="animate-spin" /> Loading…</div>
+            ? <div className="flex items-center gap-2 text-ink/60 text-xs p-4"><Loader2 size={13} className="animate-spin" /> Loading…</div>
             : formBody('edit')}
           {!loadingEdit && (
             <div className="p-3 border-t border-primary/20 shrink-0 space-y-2">
               {confirmDelete ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-primary/70 flex-1">Move to trash? You can restore it on your site.</span>
+                  <span className="text-[11px] text-ink/70 flex-1">Move to trash? You can restore it on your site.</span>
                   <button onClick={() => setConfirmDelete(false)} className="h-[36px] px-3 text-[11px] border border-primary/30 text-primary/70">Cancel</button>
                   <button onClick={doDelete} disabled={saving}
                     className="h-[36px] px-3 text-[11px] bg-red-500/80 text-white hover:bg-red-500 disabled:opacity-40 flex items-center gap-1">
@@ -512,7 +512,7 @@ export default function ShopTab({ store, projectId }) {
       {view === 'list' && (
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-3">
           <div className="flex items-center gap-2 mb-2">
-            <input className="flex-1 bg-black/30 border border-primary/20 px-2.5 h-[34px] text-[12px] text-primary focus:outline-none focus:border-primary/50"
+            <input className="flex-1 bg-black/30 border border-primary/20 px-2.5 h-[34px] text-[12px] text-ink focus:outline-none focus:border-primary/50"
               placeholder="Search products" value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { setProducts(null); loadProducts(); } }} />
@@ -521,20 +521,20 @@ export default function ShopTab({ store, projectId }) {
               <RefreshCw size={11} />
             </button>
           </div>
-          {loadingList && <div className="flex items-center gap-2 text-primary/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
-          {!loadingList && products && products.length === 0 && <div className="text-[11px] text-primary/45 py-3">No products found.</div>}
+          {loadingList && <div className="flex items-center gap-2 text-ink/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Loading…</div>}
+          {!loadingList && products && products.length === 0 && <div className="text-[11px] text-ink/45 py-3">No products found.</div>}
           <div className="space-y-1.5">
             {(products || []).map((p) => (
               <div key={p.id}
                 className="border border-primary/15 hover:border-primary/40 transition-colors">
                 <button onClick={() => openEdit(p.id)} className="w-full text-left px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[12px] text-primary/85 truncate">{p.name}</span>
+                    <span className="text-[12px] text-ink/85 truncate">{p.name}</span>
                     <span className={`text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${p.status === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
                       {p.status === 'publish' ? 'live' : p.status}
                     </span>
                   </div>
-                  <div className="text-[10px] text-primary/40 mt-0.5">
+                  <div className="text-[10px] text-ink/40 mt-0.5">
                     {p.sku ? `${p.sku} · ` : ''}{p.price ? `${sym}${p.price}` : 'no price'}{p.stock != null ? ` · ${p.stock} in stock` : ''}
                   </div>
                 </button>

@@ -42,11 +42,11 @@ export default function ImportGithubDialog({ open, onClose, onImport }) {
                 value={repoInput}
                 onChange={e => setRepoInput(e.target.value)}
                 placeholder="owner/repo or https://github.com/owner/repo"
-                className="w-full mt-1 bg-transparent border border-primary/30 text-primary px-3 py-2 outline-none focus:border-primary text-sm"
+                className="w-full mt-1 bg-transparent border border-primary/30 text-ink px-3 py-2 outline-none focus:border-primary text-sm"
                 autoFocus
                 onKeyDown={e => e.key === 'Enter' && handleImport()}
               />
-              <p className="text-xs text-primary/65 mt-1">// Pull an existing repo into the Matrix</p>
+              <p className="text-xs text-ink/65 mt-1">// Pull an existing repo into the Matrix</p>
             </div>
             <div>
               <label className="text-xs text-primary/50 uppercase tracking-wider">Compile Target</label>

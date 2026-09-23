@@ -125,7 +125,7 @@ export default function CostTracker() {
   const { monthlyFixed, annualExtra, monthlyEquivalent } = computeTotals(items);
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono">
+    <div className="relative min-h-screen bg-background text-ink font-mono">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 safe-top">
         <Link to="/" className="inline-flex items-center gap-1.5 text-primary/60 hover:text-primary text-sm mb-6 transition-colors">
@@ -154,14 +154,14 @@ export default function CostTracker() {
             )
           )}
         </div>
-        <p className="text-primary/60 text-sm mb-8">
+        <p className="text-ink/60 text-sm mb-8">
           // Everything it costs to host and run Morpheus, checked by hand against each provider's billing dashboard. Admin-only — not published anywhere public.
         </p>
 
         {error && <div className="text-danger text-sm border border-danger/30 px-3 py-2 mb-4">{error}</div>}
 
         {loading ? (
-          <div className="flex items-center gap-2 text-primary/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading...
           </div>
         ) : (
@@ -184,7 +184,7 @@ export default function CostTracker() {
             <div className="overflow-x-auto border border-primary/20">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-primary/20 text-primary/50 text-left">
+                  <tr className="border-b border-primary/20 text-ink/50 text-left">
                     <th className="px-3 py-2 font-normal">SERVICE</th>
                     <th className="px-3 py-2 font-normal">CATEGORY</th>
                     <th className="px-3 py-2 font-normal">MONTHLY</th>
@@ -200,26 +200,26 @@ export default function CostTracker() {
                       {editing ? (
                         <>
                           <td className="px-3 py-2">
-                            <input value={item.service} onChange={(e) => updateItem(idx, 'service', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-primary" />
+                            <input value={item.service} onChange={(e) => updateItem(idx, 'service', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-ink" />
                           </td>
                           <td className="px-3 py-2">
-                            <select value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-primary">
+                            <select value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-ink">
                               {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" step="0.01" value={item.monthly} onChange={(e) => updateItem(idx, 'monthly', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-primary" />
+                            <input type="number" step="0.01" value={item.monthly} onChange={(e) => updateItem(idx, 'monthly', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-ink" />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" step="0.01" value={item.annual} onChange={(e) => updateItem(idx, 'annual', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-primary" />
+                            <input type="number" step="0.01" value={item.annual} onChange={(e) => updateItem(idx, 'annual', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-20 text-ink" />
                           </td>
                           <td className="px-3 py-2">
-                            <select value={item.tier} onChange={(e) => updateItem(idx, 'tier', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 text-primary">
+                            <select value={item.tier} onChange={(e) => updateItem(idx, 'tier', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 text-ink">
                               {TIER_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                             </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input value={item.note} onChange={(e) => updateItem(idx, 'note', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-primary" />
+                            <input value={item.note} onChange={(e) => updateItem(idx, 'note', e.target.value)} className="bg-background border border-primary/30 px-2 py-1 w-full text-ink" />
                           </td>
                           <td className="px-3 py-2">
                             <button onClick={() => removeItem(idx)} className="text-danger/70 hover:text-danger transition-colors">
@@ -229,15 +229,15 @@ export default function CostTracker() {
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-2 text-primary">{item.service}</td>
-                          <td className="px-3 py-2 text-primary/60">{item.category}</td>
+                          <td className="px-3 py-2 text-ink">{item.service}</td>
+                          <td className="px-3 py-2 text-ink/60">{item.category}</td>
                           <td className="px-3 py-2 text-primary/80">{num(item.monthly) > 0 ? `$${num(item.monthly).toFixed(2)}` : '—'}</td>
                           <td className="px-3 py-2 text-primary/80">{num(item.annual) > 0 ? `$${num(item.annual).toFixed(2)}` : '—'}</td>
                           <td className="px-3 py-2">
                             <span className={item.tier === 'free' ? 'text-info' : 'text-success'}>{item.tier === 'free' ? 'FREE TIER' : 'PAID'}</span>
                             {item.flag === 'watch' && <span className="ml-1.5 text-warning">⚠ WATCH</span>}
                           </td>
-                          <td className="px-3 py-2 text-primary/50">{item.note}</td>
+                          <td className="px-3 py-2 text-ink/50">{item.note}</td>
                         </>
                       )}
                     </tr>
@@ -259,16 +259,16 @@ export default function CostTracker() {
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
                   rows={3}
-                  className="w-full bg-background border border-primary/30 px-3 py-2 text-primary/80 text-xs"
+                  className="w-full bg-background border border-primary/30 px-3 py-2 text-ink/80 text-xs"
                   placeholder="Anything worth flagging — watch-list items, pending confirmations, etc."
                 />
               ) : (
-                <p className="text-primary/60 text-xs whitespace-pre-wrap">{summary || '(none)'}</p>
+                <p className="text-ink/60 text-xs whitespace-pre-wrap">{summary || '(none)'}</p>
               )}
             </div>
 
             {updatedDate && (
-              <p className="mt-6 text-[10px] text-primary/40">Last updated: {new Date(updatedDate).toLocaleString()}</p>
+              <p className="mt-6 text-[10px] text-ink/40">Last updated: {new Date(updatedDate).toLocaleString()}</p>
             )}
           </>
         )}

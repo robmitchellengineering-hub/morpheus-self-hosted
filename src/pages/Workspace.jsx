@@ -185,7 +185,7 @@ export default function Workspace() {
 
   if (!ws.currentProject) {
     return (
-      <div ref={listRef} className="relative min-h-screen bg-background text-primary font-mono">
+      <div ref={listRef} className="relative min-h-screen bg-background text-ink font-mono">
         <MatrixRain opacity={0.05} />
         <div className="pointer-events-none fixed inset-0 opacity-[0.05]" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--primary) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--primary) / 0.5) 1px, transparent 1px)', backgroundSize: '44px 44px' }} />
         <div className="relative z-10"><PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} /></div>
@@ -203,8 +203,8 @@ export default function Workspace() {
               </Button>
             </div>
           </div>
-          <p className="text-primary/60 mb-3 text-sm">// Choose an existing project or jack into a new one</p>
-          <p className="text-primary/60 mb-4 text-sm">// Set your connections and check capabilities to make sure Morpheus can publish</p>
+          <p className="text-ink/60 mb-3 text-sm">// Choose an existing project or jack into a new one</p>
+          <p className="text-ink/60 mb-4 text-sm">// Set your connections and check capabilities to make sure Morpheus can publish</p>
           <div className="flex flex-col sm:flex-row gap-3 mb-8">
             <HelpHint id="connections" title="Connections" body="Set up and review your integrations — GitHub, hosting platforms (Cloudflare, Vercel, Supabase, etc.), and databases. Shows what's connected and a live Morpheus capability matrix of what you can do end-to-end.">
               <button onClick={() => setShowConnections(true)} className="flex flex-col items-start gap-0.5 px-6 py-3 border border-primary/50 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
@@ -239,7 +239,7 @@ export default function Workspace() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search constructs..."
-                className="flex-1 bg-transparent text-primary text-sm outline-none placeholder:text-primary/30 min-w-0"
+                className="flex-1 bg-transparent text-ink text-sm outline-none placeholder:text-ink/30 min-w-0"
               />
               {search && <button onClick={() => setSearch('')} className="text-primary/50 hover:text-primary shrink-0"><X size={14} /></button>}
             </div>
@@ -262,8 +262,8 @@ export default function Workspace() {
                   <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div className="min-w-0 flex-1">
                     <p className="text-red-400 text-sm font-bold">Couldn't load your constructs</p>
-                    <p className="text-primary/70 text-xs mt-1 break-words">{ws.loadError}</p>
-                    <p className="text-primary/50 text-xs mt-2">
+                    <p className="text-ink/70 text-xs mt-1 break-words">{ws.loadError}</p>
+                    <p className="text-ink/50 text-xs mt-2">
                       Your work has not been deleted — the list simply couldn't be read. Don't create anything to
                       "replace" it until this clears.
                     </p>
@@ -279,7 +279,7 @@ export default function Workspace() {
             )}
             {!ws.loadError && visibleProjects.length === 0 && (
               <div className="border border-dashed border-primary/20 px-4 py-8 text-center space-y-3">
-                <p className="text-primary/60 italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty.'}</p>
+                <p className="text-ink/60 italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty.'}</p>
                 {!search && (
                   <button onClick={() => navigate('/start')}
                     className="inline-flex items-center gap-2 px-4 py-2.5 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors text-[12px] tracking-wider">
@@ -287,7 +287,7 @@ export default function Workspace() {
                   </button>
                 )}
                 {!search && (
-                  <p className="text-[10px] text-primary/35 leading-relaxed max-w-xs mx-auto">
+                  <p className="text-[10px] text-ink/35 leading-relaxed max-w-xs mx-auto">
                     For a site you already have: connect it, and Morpheus runs the deploys, the shop, the content and the SEO
                     from here. It opens a construct for it.
                   </p>
@@ -305,16 +305,16 @@ export default function Workspace() {
                         if (e.key === 'Enter') { e.preventDefault(); saveRename(p); }
                         if (e.key === 'Escape') { setRenameId(null); }
                       }}
-                      className="w-full bg-black/40 border border-primary/40 px-2 py-1.5 text-primary text-sm focus:outline-none focus:border-primary" />
-                    <div className="text-[10px] text-primary/35 mt-1">Enter to save · Escape to cancel</div>
+                      className="w-full bg-black/40 border border-primary/40 px-2 py-1.5 text-ink text-sm focus:outline-none focus:border-primary" />
+                    <div className="text-[10px] text-ink/35 mt-1">Enter to save · Escape to cancel</div>
                   </div>
                 ) : (
                   <button onClick={() => navigate('/workspace/' + p.id)} className="w-full text-left p-4 pr-24">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-primary group-hover:neon-glow">{p.name}</span>
+                      <span className="text-ink group-hover:neon-glow">{p.name}</span>
                       <Badge variant="outline" className="rounded-none border-primary/40 bg-transparent text-primary/70 font-mono text-[10px] uppercase tracking-wider">{p.status}</Badge>
                     </div>
-                    {p.description && <p className="text-primary/50 text-sm mt-1.5">{p.description}</p>}
+                    {p.description && <p className="text-ink/50 text-sm mt-1.5">{p.description}</p>}
                   </button>
                 )}
                 {/* Renaming lives here as well as inside the construct: this list
@@ -351,7 +351,7 @@ export default function Workspace() {
   }
 
   return (
-    <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
+    <div className="relative h-workspace-mobile bg-background text-ink font-mono flex flex-col overflow-hidden safe-top">
       <ProjectBar project={ws.currentProject} onRename={ws.renameProject} onExport={ws.exportProject} onNew={() => setShowNew(true)} onBack={() => navigate('/workspace')} onUpdateTarget={ws.updateCompileTarget} onShare={() => setShowShare(true)} onHistory={() => setShowHistory(true)} onFeature={() => setShowFeature(true)} activeFeature={activeFeature} onMedia={() => setShowMedia(true)} assetCount={assetCount} onBrand={() => setShowBrand(true)} brandSet={brandSet} onPublish={ws.currentProject?.compile_target === 'web-app' ? () => setShowPublish(true) : undefined} publishMissing={publishMissing} onForms={ws.currentProject?.compile_target === 'web-app' ? () => setShowForms(true) : undefined} formsOn={formsOn} onDomain={ws.currentProject?.compile_target === 'web-app' ? () => setShowDomain(true) : undefined} domainSet={domainSet} onContent={ws.currentProject?.compile_target === 'web-app' ? () => setShowContent(true) : undefined} onWebsite={ws.currentProject?.compile_target === 'web-app' ? () => setShowWebsite(true) : undefined} websiteConnected={websiteConnected} onTests={() => setShowTests(true)} onUsage={() => setShowUsage(true)} onMarket={() => setShowMarket(true)} onSeller={() => setShowSeller(true)} onCompile={() => setShowCompile(true)} onSyncDeps={ws.updateDependencies} onRebuild={() => setShowRebuild(true)} onBackend={() => setShowBackend(true)} onPipeline={() => { setShowPipeline(true); setMobileTab('chat'); }} onTogglePolish={ws.togglePolishUi} />
       {ws.currentProject?.compile_target === 'web-app' && (
         <FirstRunChecklist

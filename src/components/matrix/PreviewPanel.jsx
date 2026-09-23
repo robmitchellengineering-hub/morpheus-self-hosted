@@ -345,7 +345,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
                 type="number"
                 value={customW}
                 onChange={e => setCustomW(e.target.value)}
-                className="w-14 text-xs bg-background text-primary border border-primary/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-background text-ink border border-primary/40 px-1 py-1 outline-none"
                 title="Width (px)"
               />
               <span className="text-primary/50 text-xs">×</span>
@@ -353,7 +353,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
                 type="number"
                 value={customH}
                 onChange={e => setCustomH(e.target.value)}
-                className="w-14 text-xs bg-background text-primary border border-primary/40 px-1 py-1 outline-none"
+                className="w-14 text-xs bg-background text-ink border border-primary/40 px-1 py-1 outline-none"
                 title="Height (px)"
               />
             </div>
@@ -393,11 +393,11 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
         </div>
       )}
       {isSelfDev && selfDevState === 'prototype' && (
-        <div className="flex items-start gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 shrink-0 text-[11px] text-primary/60 font-mono">
+        <div className="flex items-start gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 shrink-0 text-[11px] text-ink/60 font-mono">
           <span className="shrink-0 text-primary/40">TOUCHED:</span>
           <span className="truncate">{selfDevFrontendPaths.join(', ')}</span>
           {selfDevPreviewStale && (
-            <span className="shrink-0 text-primary/40 flex items-center gap-1 ml-auto pl-2">
+            <span className="shrink-0 text-ink/40 flex items-center gap-1 ml-auto pl-2">
               (preview from an earlier turn — click <RefreshCw size={9} className="inline" /> to update)
             </span>
           )}
@@ -406,13 +406,13 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
       <div ref={stageRef} className="flex-1 bg-[#0a0a0a] relative overflow-hidden">
         {isSelfDev && selfDevState === 'idle' ? (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6">
-            <div className="text-primary/50 text-xs font-mono text-center max-w-xs leading-relaxed">
+            <div className="text-ink/50 text-xs font-mono text-center max-w-xs leading-relaxed">
               // No preview yet — ask Morpheus to change something. A scoped mockup of just the touched UI file(s) will appear here. Backend-only changes (server/*) never trigger a build.
             </div>
           </div>
         ) : isSelfDev && selfDevState === 'backend-only' ? (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6">
-            <div className="text-primary/60 text-xs font-mono text-center max-w-sm leading-relaxed space-y-2">
+            <div className="text-ink/60 text-xs font-mono text-center max-w-sm leading-relaxed space-y-2">
               <p>// Backend-only change — no visual preview needed.</p>
               <p className="truncate">Touched: {selfDevBackendPaths.join(', ')}</p>
               <p>Verify via PUSH TO PRODUCTION + the Admin Panel's Ops Console (logs / DB console), or ask Morpheus to walk through the logic in chat.</p>
@@ -421,7 +421,7 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
         ) : building && !html ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-background gap-2">
             <Loader2 size={24} className="animate-spin text-primary/60" />
-            <span className="text-primary/60 text-xs font-mono">
+            <span className="text-ink/60 text-xs font-mono">
               {isSelfDev ? 'Generating scoped prototype...' : isNative ? 'Generating rapid prototype...' : 'Building preview...'}
             </span>
           </div>
@@ -469,12 +469,12 @@ export default function PreviewPanel({ files, projectId, compileTarget, onClose,
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-primary/75 text-sm font-mono">
+          <div className="flex items-center justify-center h-full text-ink/75 text-sm font-mono">
             No files to preview
           </div>
         )}
         {isFramed && !building && html && (
-          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-primary/50 text-[10px] font-mono bg-black/70 px-2 py-0.5 border border-primary/20 pointer-events-none whitespace-nowrap">
+          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-ink/50 text-[10px] font-mono bg-black/70 px-2 py-0.5 border border-primary/20 pointer-events-none whitespace-nowrap">
             {dw}×{dh} · {Math.round(scale * 100)}%
           </div>
         )}

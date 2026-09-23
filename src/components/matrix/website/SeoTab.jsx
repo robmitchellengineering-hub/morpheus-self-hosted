@@ -81,7 +81,7 @@ function Field({ label, hint, right, children }) {
         {right}
       </div>
       {children}
-      {hint && <div className="text-[9px] text-primary/35 mt-0.5">{hint}</div>}
+      {hint && <div className="text-[9px] text-ink/35 mt-0.5">{hint}</div>}
     </label>
   );
 }
@@ -99,13 +99,13 @@ function SuggestionRow({ s, checked, onToggle }) {
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-primary/85 truncate">{s.title || `#${s.id}`}</span>
+            <span className="text-[11px] text-ink/85 truncate">{s.title || `#${s.id}`}</span>
             {s.type && <span className="text-[9px] text-primary/35 uppercase shrink-0">{s.type}</span>}
             {!s.grounded && <span className="text-[9px] text-yellow-500/70 shrink-0" title="Only the title was read — the model did not see the page text.">title-only</span>}
           </div>
-          <div className="text-[11px] text-primary mt-1 break-words">{s.seo_title}</div>
-          <div className="text-[10px] text-primary/60 mt-0.5 break-words">{s.seo_description}</div>
-          {s.focus_keyword && <div className="text-[9px] text-primary/40 mt-0.5">keyword: {s.focus_keyword}</div>}
+          <div className="text-[11px] text-ink mt-1 break-words">{s.seo_title}</div>
+          <div className="text-[10px] text-ink/60 mt-0.5 break-words">{s.seo_description}</div>
+          {s.focus_keyword && <div className="text-[9px] text-ink/40 mt-0.5">keyword: {s.focus_keyword}</div>}
           {s.warnings?.length > 0 && (
             <div className="mt-1 text-[9px] text-yellow-500/80 flex items-start gap-1">
               <AlertTriangle size={9} className="mt-[2px] shrink-0" />
@@ -552,7 +552,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
         <div className="text-[12px] text-yellow-500/85 border border-yellow-500/30 px-3 py-2 leading-relaxed">
           This site is running the Morpheus plugin version {store.version || 'older than 0.5'} — it doesn't have the SEO module yet.
         </div>
-        <div className="text-[11px] text-primary/55 leading-relaxed">
+        <div className="text-[11px] text-ink/55 leading-relaxed">
           Reinstall the plugin from the SETUP tab and the SEO tab appears. Your connection and settings are kept.
         </div>
       </div>
@@ -585,7 +585,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             className="flex items-center gap-1 text-[11px] text-primary/60 hover:text-primary">
             <ChevronLeft size={14} /> SEO
           </button>
-          <span className="text-[11px] text-primary/80 truncate ml-1">{edit.title || `#${edit.id}`}</span>
+          <span className="text-[11px] text-ink/80 truncate ml-1">{edit.title || `#${edit.id}`}</span>
           {edit.status && (
             <span className={`ml-auto text-[9px] uppercase px-1.5 py-0.5 border shrink-0 ${edit.status === 'publish' ? 'text-primary border-primary/50' : 'text-yellow-500/80 border-yellow-500/40'}`}>
               {edit.status === 'publish' ? 'live' : edit.status}
@@ -595,13 +595,13 @@ export default function SeoTab({ projectId, store, widget = false }) {
 
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-3">
           {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
-          {note && <div className="text-primary/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
+          {note && <div className="text-ink/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
 
           {(issuesById[edit.id] || []).length > 0 && (
             <div className="border border-yellow-500/30 px-3 py-2 space-y-1">
               <div className="text-[9px] text-yellow-500/85 uppercase tracking-wider">What the audit found here</div>
               {(issuesById[edit.id] || []).map((i, n) => (
-                <div key={n} className="text-[10px] text-primary/70 flex items-start gap-1.5">
+                <div key={n} className="text-[10px] text-ink/70 flex items-start gap-1.5">
                   <span className={`uppercase text-[9px] shrink-0 ${i.severity === 'high' ? 'text-red-400' : i.severity === 'medium' ? 'text-yellow-500/85' : 'text-primary/40'}`}>{i.severity}</span>
                   <span>{i.message}</span>
                 </div>
@@ -639,7 +639,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <div className="text-[9px] text-primary/35 uppercase tracking-wider">Competitor pages to compare (optional, up to 8)</div>
             <input className={inputCls} value={competitors} onChange={(e) => rememberCompetitors(e.target.value)}
               placeholder="rival1.com/repairs, rival2.com" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-            <div className="text-[9px] text-primary/30">
+            <div className="text-[9px] text-ink/30">
               Morpheus reads what those pages say about themselves — their title, description and headings. When Search Console is
               connected, your site's own queries come first, with Google's real impressions, clicks and average position on them. It
               does not guess at anyone's traffic, and there are no invented search volumes anywhere in this panel.
@@ -688,9 +688,9 @@ export default function SeoTab({ projectId, store, widget = false }) {
                         <span className="text-yellow-500/80">{c.url.replace(/^https?:\/\//, '')} — {c.error}</span>
                       ) : (
                         <>
-                          <div className="text-primary/75 truncate">{c.title || c.url.replace(/^https?:\/\//, '')}</div>
+                          <div className="text-ink/75 truncate">{c.title || c.url.replace(/^https?:\/\//, '')}</div>
                           {c.headings?.length > 0 && (
-                            <div className="text-primary/40 text-[9px] truncate">{c.headings.join(' · ')}</div>
+                            <div className="text-ink/40 text-[9px] truncate">{c.headings.join(' · ')}</div>
                           )}
                         </>
                       )}
@@ -704,15 +704,15 @@ export default function SeoTab({ projectId, store, widget = false }) {
                   <div key={row.phrase} className="border border-primary/15 px-2.5 py-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="text-[11px] text-primary/85 break-words">{row.display || row.phrase}</div>
-                        <div className="text-[9px] text-primary/40 mt-0.5 flex flex-wrap gap-1.5">
+                        <div className="text-[11px] text-ink/85 break-words">{row.display || row.phrase}</div>
+                        <div className="text-[9px] text-ink/40 mt-0.5 flex flex-wrap gap-1.5">
                           {/* Labels and provenance come from the payload: the
                               server builds them, so the two surfaces that mount
                               this tab cannot drift apart on what a row is. */}
                           {(row.source_labels || []).map((label) => (
                             <span key={label} className="border border-primary/20 px-1 py-0.5">{label}</span>
                           ))}
-                          {row.provenance && <span className="text-primary/30">from: {row.provenance}</span>}
+                          {row.provenance && <span className="text-ink/30">from: {row.provenance}</span>}
                         </div>
                         {/* Google's own numbers for this query, copied exactly —
                             the only measured figures in this list. */}
@@ -732,7 +732,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
                 ))}
               </div>
 
-              <div className="text-[9px] text-primary/40 leading-relaxed border-t border-primary/10 pt-2">{kw.disclosure}</div>
+              <div className="text-[9px] text-ink/40 leading-relaxed border-t border-primary/10 pt-2">{kw.disclosure}</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setKw(null)} className="text-[10px] text-primary/45 hover:text-primary/80">Close</button>
               </div>
@@ -750,7 +750,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
               <div className="text-[10px] text-primary/60 uppercase tracking-wider flex items-center gap-1.5">
                 <Link2 size={10} /> link ideas
               </div>
-              {(links.links || []).length === 0 && <div className="text-[10px] text-primary/50">Nothing to suggest for this page.</div>}
+              {(links.links || []).length === 0 && <div className="text-[10px] text-ink/50">Nothing to suggest for this page.</div>}
               {(links.links || []).map((l, i) => (
                 <div key={`${l.url}-${i}`} className={`border px-2.5 py-2 ${links.checked[i] ? 'border-primary/30' : 'border-primary/10 opacity-60'}`}>
                   <div className="flex items-start gap-2">
@@ -761,9 +761,9 @@ export default function SeoTab({ projectId, store, widget = false }) {
                       </span>
                     </button>
                     <div className="min-w-0">
-                      <div className="text-[11px] text-primary">“{l.anchor}”</div>
-                      <div className="text-[10px] text-primary/60 mt-0.5 break-words">→ {l.target || l.url}</div>
-                      {l.why && <div className="text-[9px] text-primary/40 mt-0.5">{l.why}</div>}
+                      <div className="text-[11px] text-ink">“{l.anchor}”</div>
+                      <div className="text-[10px] text-ink/60 mt-0.5 break-words">→ {l.target || l.url}</div>
+                      {l.why && <div className="text-[9px] text-ink/40 mt-0.5">{l.why}</div>}
                     </div>
                   </div>
                 </div>
@@ -793,9 +793,9 @@ export default function SeoTab({ projectId, store, widget = false }) {
               </div>
               {(linkPlan.added || []).map((a, i) => (
                 <div key={i} className="border border-primary/15 px-2.5 py-2">
-                  <div className="text-[11px] text-primary">“{a.anchor}”</div>
-                  <div className="text-[9px] text-primary/35 break-words">{a.url}</div>
-                  {a.context && <div className="text-[9px] text-primary/50 mt-1 leading-relaxed break-words font-mono">{a.context}</div>}
+                  <div className="text-[11px] text-ink">“{a.anchor}”</div>
+                  <div className="text-[9px] text-ink/35 break-words">{a.url}</div>
+                  {a.context && <div className="text-[9px] text-ink/50 mt-1 leading-relaxed break-words font-mono">{a.context}</div>}
                 </div>
               ))}
               {linkPlan.skipped?.length > 0 && (
@@ -803,7 +803,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
                   {linkPlan.skipped.length} refused: {linkPlan.skipped.map((s) => s.reason).join('; ')}
                 </div>
               )}
-              <div className="text-[9px] text-primary/40">
+              <div className="text-[9px] text-ink/40">
                 Nothing has been written yet — this is the sentence each link would land in. Your text is never deleted, and WordPress keeps a revision.
               </div>
               <div className="flex items-center gap-2">
@@ -820,7 +820,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <input className={inputCls} value={f.seo_title} onChange={(e) => set('seo_title', e.target.value)} />
           </Field>
           {!f.seo_title && edit.effective_title && (
-            <div className="text-[9px] text-primary/35 -mt-2">Currently search sees: “{edit.effective_title}”</div>
+            <div className="text-[9px] text-ink/35 -mt-2">Currently search sees: “{edit.effective_title}”</div>
           )}
 
           <Field label="Meta description" right={<Counter value={f.seo_description} min={limits.desc_min} max={limits.desc_max} />}
@@ -836,13 +836,13 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <div className="text-[9px] text-primary/35 uppercase tracking-wider mb-2">Roughly how it will read in a search result</div>
             <div className="text-[13px] text-[#8ab4f8] leading-snug break-words">{preview.title || '(no title)'}</div>
             <div className="text-[10px] text-[#5bb974] mt-0.5 truncate">{preview.breadcrumb || edit.url}</div>
-            <div className="text-[11px] text-primary/60 mt-1 leading-relaxed break-words">
+            <div className="text-[11px] text-ink/60 mt-1 leading-relaxed break-words">
               {preview.description || 'No description — a search engine will invent one from the page.'}
             </div>
             {preview.titleTruncated && <div className="text-[9px] text-yellow-500/80 mt-1">The title is cut off at this length.</div>}
             {preview.descriptionTruncated && <div className="text-[9px] text-yellow-500/80 mt-0.5">The description is cut off at this length.</div>}
-            {preview.usedFallback && <div className="text-[9px] text-primary/35 mt-1">Showing what the site would use on its own where a field is empty.</div>}
-            <div className="text-[9px] text-primary/25 mt-1">An approximation — search engines re-write and re-cut snippets themselves.</div>
+            {preview.usedFallback && <div className="text-[9px] text-ink/35 mt-1">Showing what the site would use on its own where a field is empty.</div>}
+            <div className="text-[9px] text-ink/25 mt-1">An approximation — search engines re-write and re-cut snippets themselves.</div>
           </div>
 
           <Field label="Focus keyword" hint="the phrase you want this page found for — used by the audit to check it appears in the title">
@@ -861,8 +861,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
               checked={f.noindex} onChange={(e) => set('noindex', e.target.checked)} />
             <span className="text-[11px] leading-relaxed">
-              <span className={f.noindex ? 'text-yellow-500/90' : 'text-primary/70'}>Keep this out of search results (noindex)</span>
-              <span className="block text-[9px] text-primary/40 mt-0.5">
+              <span className={f.noindex ? 'text-yellow-500/90' : 'text-ink/70'}>Keep this out of search results (noindex)</span>
+              <span className="block text-[9px] text-ink/40 mt-0.5">
                 Use for a thank-you page, a test page, or anything you don't want strangers landing on. It stays live on the site — it just stops being listed.
               </span>
             </span>
@@ -915,14 +915,14 @@ export default function SeoTab({ projectId, store, widget = false }) {
             className="flex items-center gap-1 text-[11px] text-primary/60 hover:text-primary">
             <ChevronLeft size={14} /> SEO
           </button>
-          <span className="text-[11px] text-primary/80 ml-1">Site defaults</span>
+          <span className="text-[11px] text-ink/80 ml-1">Site defaults</span>
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-3">
           {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
-          {note && <div className="text-primary/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
+          {note && <div className="text-ink/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
 
-          <p className="text-[11px] text-primary/50 leading-relaxed">
+          <p className="text-[11px] text-ink/50 leading-relaxed">
             What a title and description look like for anything you have not set by hand — new pages included, as they are created.
             {!ctx?.owns_head && (
               <span className="block mt-1 text-yellow-500/85">
@@ -935,8 +935,8 @@ export default function SeoTab({ projectId, store, widget = false }) {
             <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
               checked={!!d.enabled} onChange={(e) => setD('enabled', e.target.checked)} />
             <span className="text-[11px] leading-relaxed">
-              <span className={d.enabled ? 'text-primary/80' : 'text-primary/50'}>Use these defaults</span>
-              <span className="block text-[9px] text-primary/40 mt-0.5">
+              <span className={d.enabled ? 'text-ink/80' : 'text-ink/50'}>Use these defaults</span>
+              <span className="block text-[9px] text-ink/40 mt-0.5">
                 Off means WordPress's own values are used: the post title, and nothing for the description.
               </span>
             </span>
@@ -971,7 +971,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-primary/35 mt-1">
+            <div className="text-[9px] text-ink/35 mt-1">
               {TEMPLATE_TOKENS.map((t) => `${t} = ${TOKEN_HELP[t]}`).join(' · ')}
             </div>
           </div>
@@ -981,7 +981,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
               Example — using “{sample.title || 'your first page'}”
             </div>
             <div className="text-[13px] text-[#8ab4f8] leading-snug break-words">{exampleTitle || '(no title)'}</div>
-            <div className="text-[11px] text-primary/60 mt-1 leading-relaxed break-words">{exampleDesc || 'No description.'}</div>
+            <div className="text-[11px] text-ink/60 mt-1 leading-relaxed break-words">{exampleDesc || 'No description.'}</div>
           </div>
 
           <div className="border border-primary/15 p-3 space-y-2">
@@ -1005,13 +1005,13 @@ export default function SeoTab({ projectId, store, widget = false }) {
               <div className="space-y-1.5 max-h-[35vh] overflow-y-auto scrollbar-matrix">
                 {(fillPlan.preview || []).map((r) => (
                   <div key={r.id} className="border border-primary/15 px-2.5 py-2">
-                    <div className="text-[11px] text-primary/85 truncate">{r.title || `#${r.id}`}</div>
-                    {r.seo_title && <div className="text-[10px] text-primary mt-0.5 break-words">{r.seo_title}</div>}
-                    {r.seo_description && <div className="text-[10px] text-primary/55 mt-0.5 break-words">{r.seo_description}</div>}
+                    <div className="text-[11px] text-ink/85 truncate">{r.title || `#${r.id}`}</div>
+                    {r.seo_title && <div className="text-[10px] text-ink mt-0.5 break-words">{r.seo_title}</div>}
+                    {r.seo_description && <div className="text-[10px] text-ink/55 mt-0.5 break-words">{r.seo_description}</div>}
                   </div>
                 ))}
               </div>
-              <div className="text-[9px] text-primary/40 leading-relaxed">
+              <div className="text-[9px] text-ink/40 leading-relaxed">
                 Nothing has been written yet — this is exactly what APPLY would save. Items that already have a title or
                 description are left alone. These values are saved onto each page, so switching the defaults off later
                 will not remove them.
@@ -1047,18 +1047,18 @@ export default function SeoTab({ projectId, store, widget = false }) {
             className="flex items-center gap-1 text-[11px] text-primary/60 hover:text-primary">
             <ChevronLeft size={14} /> SEO
           </button>
-          <span className="text-[11px] text-primary/80 ml-1">New blog post</span>
+          <span className="text-[11px] text-ink/80 ml-1">New blog post</span>
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-3">
           {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
-          {note && <div className="text-primary/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
+          {note && <div className="text-ink/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
 
           {!b.draft && !b.created && (
             <>
-              <p className="text-[11px] text-primary/50 leading-relaxed">
+              <p className="text-[11px] text-ink/50 leading-relaxed">
                 Morpheus writes the post using your business profile and links to pages you already have. It lands as a
-                <span className="text-primary/75"> draft</span> — you read it before it goes public.
+                <span className="text-ink/75"> draft</span> — you read it before it goes public.
               </p>
               <Field label="Topic" hint="leave empty and it picks the most useful thing your business could publish">
                 <input className={inputCls} value={b.form.topic} onChange={(e) => setBlog({ ...b, form: { ...b.form, topic: e.target.value } })} />
@@ -1107,14 +1107,14 @@ export default function SeoTab({ projectId, store, widget = false }) {
                   <span>{b.warnings.join(' · ')}</span>
                 </div>
               )}
-              {b.linkable > 0 && <div className="text-[9px] text-primary/35">Written with {b.linkable} of your existing pages available to link to.</div>}
+              {b.linkable > 0 && <div className="text-[9px] text-ink/35">Written with {b.linkable} of your existing pages available to link to.</div>}
             </>
           )}
 
           {b.created && (
             <div className="border border-primary/40 bg-primary/5 px-3 py-2.5 text-[11px] space-y-1.5">
               <div className="flex items-center gap-1.5 text-primary font-bold"><Check size={13} /> Draft created</div>
-              <div className="text-primary/70">It's on your site as a draft. Publish it from WordPress when you're happy with it.</div>
+              <div className="text-ink/70">It's on your site as a draft. Publish it from WordPress when you're happy with it.</div>
               {b.created.edit_url && (
                 <a href={b.created.edit_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary/70 hover:text-primary">
                   <ExternalLink size={11} /> Open it in WordPress
@@ -1156,7 +1156,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-2.5">
         {ownerLine && (
-          <div className="text-[10px] text-primary/50 leading-relaxed border border-primary/15 px-3 py-2">
+          <div className="text-[10px] text-ink/50 leading-relaxed border border-primary/15 px-3 py-2">
             {ownerLine}
             {ctx.sitemap_url && (
               <a href={ctx.sitemap_url} target="_blank" rel="noreferrer" className="ml-1 text-primary/70 hover:text-primary inline-flex items-center gap-1">
@@ -1172,12 +1172,12 @@ export default function SeoTab({ projectId, store, widget = false }) {
         )}
 
         {err && <div className="text-red-400 text-[11px] border border-red-500/30 px-3 py-2">{err}</div>}
-        {note && <div className="text-primary/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
+        {note && <div className="text-ink/80 text-[11px] border border-primary/40 bg-primary/5 px-3 py-2">{note}</div>}
 
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-1.5 bg-black/30 border border-primary/20 px-2 h-[34px]">
             <Search size={11} className="text-primary/35 shrink-0" />
-            <input className="flex-1 bg-transparent text-[12px] text-primary focus:outline-none min-w-0"
+            <input className="flex-1 bg-transparent text-[12px] text-ink focus:outline-none min-w-0"
               placeholder="Search content" value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') load(); }} />
@@ -1205,14 +1205,14 @@ export default function SeoTab({ projectId, store, widget = false }) {
         {timerFor('batch')}
 
         {audit && (
-          <div className="border border-primary/15 px-3 py-2 text-[10px] text-primary/55">
+          <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink/55">
             <div className="flex items-center gap-3">
               <span className="text-red-400">{audit.counts?.high || 0} high</span>
               <span className="text-yellow-500/85">{audit.counts?.medium || 0} medium</span>
               <span>{audit.counts?.low || 0} low</span>
               <span className="ml-auto">{audit.scanned} scanned</span>
             </div>
-            <div className="text-primary/35 mt-1">
+            <div className="text-ink/35 mt-1">
               High = missing or duplicated metadata on something that is live. Tap an item to fix it.
             </div>
           </div>
@@ -1245,9 +1245,9 @@ export default function SeoTab({ projectId, store, widget = false }) {
         )}
 
         {loading && items == null && (
-          <div className="flex items-center gap-2 text-primary/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Reading your site…</div>
+          <div className="flex items-center gap-2 text-ink/60 text-xs py-3"><Loader2 size={13} className="animate-spin" /> Reading your site…</div>
         )}
-        {!loading && items && items.length === 0 && <div className="text-[11px] text-primary/45 py-3">No pages, posts or products found.</div>}
+        {!loading && items && items.length === 0 && <div className="text-[11px] text-ink/45 py-3">No pages, posts or products found.</div>}
 
         <div className="space-y-1.5">
           {(items || []).map((it) => {
@@ -1258,7 +1258,7 @@ export default function SeoTab({ projectId, store, widget = false }) {
               <button key={it.id} onClick={() => openItem(it)}
                 className="w-full text-left border border-primary/15 hover:border-primary/40 transition-colors px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-primary/85 truncate">{it.title || '(untitled)'}</span>
+                  <span className="text-[12px] text-ink/85 truncate">{it.title || '(untitled)'}</span>
                   <span className="flex items-center gap-1 shrink-0">
                     {worst && <span className={`text-[9px] uppercase px-1.5 py-0.5 border ${badge}`}>{issues.length}</span>}
                     {it.noindex && <span className="text-[9px] uppercase px-1.5 py-0.5 border border-yellow-500/40 text-yellow-500/80">noindex</span>}
@@ -1267,15 +1267,15 @@ export default function SeoTab({ projectId, store, widget = false }) {
                     </span>
                   </span>
                 </div>
-                <div className="text-[10px] text-primary/45 mt-0.5 truncate">{it.effective_title}</div>
+                <div className="text-[10px] text-ink/45 mt-0.5 truncate">{it.effective_title}</div>
                 <div className="text-[9px] mt-0.5 flex items-center gap-2">
                   {/* "from default" is a third state: the page HAS a title in
                       search results, it just isn't one anybody wrote on the
                       item — saying "no SEO title" there would be false. */}
-                  <span className={it.seo_title ? 'text-primary/40' : it.inherited_title ? 'text-primary/30' : 'text-yellow-500/70'}>
+                  <span className={it.seo_title ? 'text-ink/40' : it.inherited_title ? 'text-ink/30' : 'text-yellow-500/70'}>
                     {it.seo_title ? 'title set' : it.inherited_title ? 'title from default' : 'no SEO title'}
                   </span>
-                  <span className={it.seo_description ? 'text-primary/40' : it.inherited_description ? 'text-primary/30' : 'text-yellow-500/70'}>
+                  <span className={it.seo_description ? 'text-ink/40' : it.inherited_description ? 'text-ink/30' : 'text-yellow-500/70'}>
                     {it.seo_description ? 'description set' : it.inherited_description ? 'description from default' : 'no description'}
                   </span>
                   {it.type && <span className="text-primary/25 uppercase">{it.type}</span>}

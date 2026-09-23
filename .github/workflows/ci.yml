@@ -134,6 +134,13 @@ jobs:
       - name: contrast
         run: node scripts/verify-contrast.mjs
 
+      # The green/ink convention the tokens cannot express: the brand green marks
+      # titles, labels, badges and actions, and ink carries the prose. Asserted
+      # from BOTH sides — prose that is still green fails, and so does a sweep
+      # that stripped the green off the titles, because the brand is the point.
+      - name: prose-ink rule
+        run: node scripts/verify-prose-ink.mjs
+
       # The photo widget on Alice Stats: what counts as a Drive folder, what
       # counts as an acceptable photo, and above all that a 403 (this connection
       # cannot write there) never reads like a 404 (no such folder) — plus the

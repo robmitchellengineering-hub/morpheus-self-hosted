@@ -78,7 +78,7 @@ export default function DeleteConfirmDialog({ open, onClose, onConfirm, projectN
         </div>
 
         <div className="p-5">
-          <p className="text-primary/50 text-xs mb-1">// target: <span className="text-primary">{projectName}</span></p>
+          <p className="text-ink/50 text-xs mb-1">// target: <span className="text-ink">{projectName}</span></p>
           <p className="text-red-400/90 text-sm leading-relaxed mb-5">{message}</p>
 
           <div className="flex gap-3">

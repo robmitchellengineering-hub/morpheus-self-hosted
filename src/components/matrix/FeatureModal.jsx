@@ -87,11 +87,11 @@ export default function FeatureModal({ open, onClose, projectId, onActiveChange 
             </div>
           )}
 
-          {loading && <div className="flex items-center gap-2 text-primary/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+          {loading && <div className="flex items-center gap-2 text-ink/60 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
 
           {state.migrated && !loading && !f && (
             <div className="space-y-3">
-              <p className="text-primary/70 text-sm leading-relaxed">
+              <p className="text-ink/70 text-sm leading-relaxed">
                 Describe a feature you want to add. It'll be broken into small, shippable steps — the planner gets the goal + step list + current step on every build turn, so a multi-turn feature stays on track instead of drifting.
               </p>
               <textarea
@@ -99,7 +99,7 @@ export default function FeatureModal({ open, onClose, projectId, onActiveChange 
                 onChange={(e) => setGoal(e.target.value)}
                 rows={4}
                 placeholder="e.g. Add a comments system — users can leave threaded comments on any item, with edit/delete and a count badge."
-                className="w-full bg-black/40 border border-primary/30 text-primary text-sm p-2 font-mono focus:border-primary/60 outline-none resize-y"
+                className="w-full bg-black/40 border border-primary/30 text-ink text-sm p-2 font-mono focus:border-primary/60 outline-none resize-y"
               />
               <button onClick={plan} disabled={planning || goal.trim().length < 10} className="flex items-center gap-1.5 text-xs px-3 h-[34px] text-black bg-primary hover:bg-primary/90 font-bold disabled:opacity-40">
                 {planning ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} {planning ? 'PLANNING…' : 'PLAN FEATURE'}
@@ -110,20 +110,20 @@ export default function FeatureModal({ open, onClose, projectId, onActiveChange 
           {f && (
             <div className="space-y-3">
               <div>
-                <p className="text-primary font-display tracking-wide text-sm">{f.title}</p>
-                <p className="text-primary/60 text-xs mt-1 leading-relaxed">{f.goal}</p>
-                <p className="text-primary/50 text-[11px] mt-1">{f.doneCount}/{f.totalSteps} steps done</p>
+                <p className="text-ink font-display tracking-wide text-sm">{f.title}</p>
+                <p className="text-ink/60 text-xs mt-1 leading-relaxed">{f.goal}</p>
+                <p className="text-ink/50 text-[11px] mt-1">{f.doneCount}/{f.totalSteps} steps done</p>
               </div>
 
               <ul className="space-y-1.5">
                 {f.steps.map((s) => (
-                  <li key={s.n} className={`flex items-start gap-2 border px-2.5 py-2 text-xs ${s.status === 'active' ? 'border-primary/50 bg-primary/5' : s.status === 'done' ? 'border-primary/15 text-primary/50' : 'border-primary/15 text-primary/70'}`}>
+                  <li key={s.n} className={`flex items-start gap-2 border px-2.5 py-2 text-xs ${s.status === 'active' ? 'border-primary/50 bg-primary/5' : s.status === 'done' ? 'border-primary/15 text-ink/50' : 'border-primary/15 text-ink/70'}`}>
                     <span className="mt-0.5 shrink-0">
                       {s.status === 'done' ? <Check size={12} className="text-primary" /> : s.status === 'active' ? <Dot size={12} className="text-primary" /> : <Circle size={10} className="text-primary/40" />}
                     </span>
                     <span className="flex-1 min-w-0">
                       <span className={s.status === 'done' ? 'line-through' : ''}>{s.n}. {s.title}</span>
-                      {s.ref && <span className="text-primary/40 ml-1">({s.ref})</span>}
+                      {s.ref && <span className="text-ink/40 ml-1">({s.ref})</span>}
                     </span>
                     {s.status !== 'done' ? (
                       <button onClick={() => act('completeStep', { stepN: s.n })} disabled={busy} title="Mark this step done" className="shrink-0 text-[10px] text-primary/70 hover:text-primary border border-primary/30 px-1.5 py-0.5 hover:bg-primary/10 disabled:opacity-40">DONE</button>
@@ -145,10 +145,10 @@ export default function FeatureModal({ open, onClose, projectId, onActiveChange 
               <p className="text-primary/40 text-[11px] uppercase tracking-wider mb-1.5">Past features</p>
               <ul className="space-y-1">
                 {state.recent.map((r) => (
-                  <li key={r.id} className="text-xs text-primary/50 flex items-center gap-2">
-                    <span className={`text-[10px] px-1 border ${r.status === 'done' ? 'border-primary/30 text-primary/60' : 'border-primary/15'}`}>{r.status}</span>
+                  <li key={r.id} className="text-xs text-ink/50 flex items-center gap-2">
+                    <span className={`text-[10px] px-1 border ${r.status === 'done' ? 'border-primary/30 text-ink/60' : 'border-primary/15'}`}>{r.status}</span>
                     <span className="truncate">{r.title}</span>
-                    <span className="text-primary/30 shrink-0">{r.doneCount}/{r.totalSteps}</span>
+                    <span className="text-ink/30 shrink-0">{r.doneCount}/{r.totalSteps}</span>
                   </li>
                 ))}
               </ul>

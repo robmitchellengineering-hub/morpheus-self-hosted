@@ -119,14 +119,14 @@ export default function BackendDocs() {
   };
 
   return (
-    <div className="relative min-h-screen bg-background text-primary font-mono overflow-hidden">
+    <div className="relative min-h-screen bg-background text-ink font-mono overflow-hidden">
       <MatrixRain opacity={0.04} />
       <div className="relative z-10 max-w-2xl mx-auto px-6 py-16 safe-top flex flex-col items-center justify-center min-h-screen text-center">
         <FileText size={48} className="text-primary mb-4 neon-glow" />
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">BACKEND FUNCTIONS REFERENCE</h1>
-        <p className="text-primary/60 text-sm mb-8">// Complete documentation of all 35 backend functions — logic, inputs, outputs, and internal flows.</p>
+        <p className="text-ink/60 text-sm mb-8">// Complete documentation of all 35 backend functions — logic, inputs, outputs, and internal flows.</p>
         {loading ? (
-          <div className="flex items-center gap-2 text-primary/60">
+          <div className="flex items-center gap-2 text-ink/60">
             <Loader2 size={16} className="animate-spin" /> loading document...
           </div>
         ) : (
@@ -140,7 +140,7 @@ export default function BackendDocs() {
           </button>
         )}
         {!loading && !generating && (
-          <p className="text-primary/40 text-xs mt-4">~{Math.round(content.length / 1000)}KB · 35 functions · 15 shared modules</p>
+          <p className="text-ink/40 text-xs mt-4">~{Math.round(content.length / 1000)}KB · 35 functions · 15 shared modules</p>
         )}
       </div>
     </div>

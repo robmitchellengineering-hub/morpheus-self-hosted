@@ -130,7 +130,7 @@ export default function EmbedTab({ projectId, connected }) {
 
   return (
     <div className="p-4 space-y-5">
-      <p className="text-[11px] text-primary/50 leading-relaxed">
+      <p className="text-[11px] text-ink/50 leading-relaxed">
         Put a Morpheus panel on your own site. Each token is scoped to this project and the actions you pick — and acts as you, so treat it like a password.
       </p>
 
@@ -145,7 +145,7 @@ export default function EmbedTab({ projectId, connected }) {
       <div className="border border-primary/20 p-3 space-y-3">
         <div className="text-[10px] text-primary/40 uppercase tracking-wider">New token</div>
         <input
-          className="w-full bg-black/30 border border-primary/20 px-2.5 h-[38px] text-[12px] text-primary focus:outline-none focus:border-primary/50"
+          className="w-full bg-black/30 border border-primary/20 px-2.5 h-[38px] text-[12px] text-ink focus:outline-none focus:border-primary/50"
           placeholder="label (e.g. “storefront footer”)" value={label} onChange={(e) => setLabel(e.target.value)} />
         <div className="flex flex-wrap gap-2">
           {ALL_SCOPES.map((s) => (
@@ -158,7 +158,7 @@ export default function EmbedTab({ projectId, connected }) {
         <label className="flex items-start gap-2 text-[10px] cursor-pointer">
           <input type="checkbox" className="mt-0.5 accent-[color:var(--primary,#4f8cff)]"
             checked={dock} onChange={(e) => setDock(e.target.checked)} />
-          <span className={dock ? 'text-primary/70' : 'text-primary/40'}>
+          <span className={dock ? 'text-ink/70' : 'text-ink/40'}>
             Floating widget — a small button in the corner that opens the panel over the page, instead of sitting inline on one page.
             {dock && ' Switch it on in the Morpheus WordPress plugin (Settings → Morpheus → Dock) and paste this token there — the plugin prints it for you only, so a theme update can’t delete it. Without the plugin, paste the snippet where it loads for you only (e.g. a PHP snippet gated to logged-in admins). It carries the token, so anyone the page sends it to can act as you.'}
           </span>
@@ -172,16 +172,16 @@ export default function EmbedTab({ projectId, connected }) {
       {fresh && (
         <div className="border border-primary/40 bg-primary/5 p-3 space-y-2">
           <div className="text-[11px] text-primary font-bold">Copy this now — it won’t be shown again.</div>
-          <div className="text-[10px] text-primary/60">Token</div>
+          <div className="text-[10px] text-ink/60">Token</div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-primary/80 break-all">{fresh.token}</code>
+            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-ink/80 break-all">{fresh.token}</code>
             <button onClick={() => copy(fresh.token, 'tok')} className="text-primary/50 hover:text-primary shrink-0">
               {copied === 'tok' ? <Check size={13} /> : <Copy size={13} />}
             </button>
           </div>
-          <div className="text-[10px] text-primary/60 flex items-center gap-1"><Code size={10} /> Embed snippet</div>
+          <div className="text-[10px] text-ink/60 flex items-center gap-1"><Code size={10} /> Embed snippet</div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-primary/80 break-all">{snippet(fresh.token, dock)}</code>
+            <code className="flex-1 text-[10px] bg-black/40 border border-primary/20 px-2 py-1.5 text-ink/80 break-all">{snippet(fresh.token, dock)}</code>
             <button onClick={() => copy(snippet(fresh.token, dock), 'snip')} className="text-primary/50 hover:text-primary shrink-0">
               {copied === 'snip' ? <Check size={13} /> : <Copy size={13} />}
             </button>
@@ -192,9 +192,9 @@ export default function EmbedTab({ projectId, connected }) {
       {/* list */}
       <div className="space-y-1.5">
         <div className="text-[10px] text-primary/40 uppercase tracking-wider">Tokens</div>
-        {notice && <div className="text-[10px] text-primary/70 border border-primary/15 bg-primary/5 px-3 py-2">{notice}</div>}
-        {tokens == null && <div className="text-[11px] text-primary/40 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> loading…</div>}
-        {tokens?.length === 0 && <div className="text-[11px] text-primary/40">None yet.</div>}
+        {notice && <div className="text-[10px] text-ink/70 border border-primary/15 bg-primary/5 px-3 py-2">{notice}</div>}
+        {tokens == null && <div className="text-[11px] text-ink/40 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> loading…</div>}
+        {tokens?.length === 0 && <div className="text-[11px] text-ink/40">None yet.</div>}
         {(tokens || []).map((t) => {
           const open = editing === t.id;
           const dirty = open && !sameScopes(editScopes, editOriginal);
@@ -207,8 +207,8 @@ export default function EmbedTab({ projectId, connected }) {
             <div key={t.id} className={`border ${t.revoked ? 'border-primary/10' : 'border-primary/15'}`}>
               <div className={`px-3 py-2 flex items-center justify-between gap-2 ${t.revoked ? 'opacity-50' : ''}`}>
                 <div className="min-w-0">
-                  <div className="text-[11px] text-primary/80 truncate">{t.label || 'unlabelled'} {t.revoked && <span className="text-red-400/70">· revoked</span>}</div>
-                  <div className="text-[9px] text-primary/35 font-mono">{t.prefix}… · {t.scopes.join(' · ')}{t.last_used_at ? ' · used' : ' · never used'}</div>
+                  <div className="text-[11px] text-ink/80 truncate">{t.label || 'unlabelled'} {t.revoked && <span className="text-red-400/70">· revoked</span>}</div>
+                  <div className="text-[9px] text-ink/35 font-mono">{t.prefix}… · {t.scopes.join(' · ')}{t.last_used_at ? ' · used' : ' · never used'}</div>
                 </div>
                 {!t.revoked && (
                   <div className="flex items-center gap-2 shrink-0">
@@ -224,23 +224,23 @@ export default function EmbedTab({ projectId, connected }) {
               </div>
 
               {t.revoked && (
-                <div className="px-3 pb-2 text-[9px] text-primary/40">Revoked — its scopes can no longer be changed.</div>
+                <div className="px-3 pb-2 text-[9px] text-ink/40">Revoked — its scopes can no longer be changed.</div>
               )}
 
               {open && !t.revoked && (
                 <div className="px-3 pb-3 pt-2 border-t border-primary/15 space-y-2">
-                  <div className="text-[9px] text-primary/35">This keeps the same token, so the snippet already pasted on your site keeps working.</div>
+                  <div className="text-[9px] text-ink/35">This keeps the same token, so the snippet already pasted on your site keeps working.</div>
                   <div className="flex flex-wrap gap-x-3 gap-y-1.5">
                     {ALL_SCOPES.map((s) => (
                       <label key={s.id} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
                         <input type="checkbox" className="accent-[color:var(--primary,#4f8cff)]"
                           checked={editScopes.includes(s.id)} onChange={() => toggleEditScope(s.id)} />
-                        <span className={editScopes.includes(s.id) ? 'text-primary/70' : 'text-primary/40'}>{s.label}</span>
+                        <span className={editScopes.includes(s.id) ? 'text-ink/70' : 'text-ink/40'}>{s.label}</span>
                       </label>
                     ))}
                   </div>
                   {editErr && <div className="text-red-400 text-[10px] border border-red-500/30 px-2 py-1.5">{editErr}</div>}
-                  {hint && <div className="text-[9px] text-primary/35">{hint}</div>}
+                  {hint && <div className="text-[9px] text-ink/35">{hint}</div>}
                   <div className="flex items-center gap-2">
                     <button onClick={() => saveScopes(t.id)} disabled={!canSave}
                       className="flex items-center justify-center gap-1.5 h-[32px] px-3 bg-primary text-black font-bold text-[10px] hover:bg-[#39ff14] disabled:opacity-40">

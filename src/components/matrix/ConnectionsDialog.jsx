@@ -183,7 +183,7 @@ export default function ConnectionsDialog({ open, onClose }) {
           <div className="flex items-center gap-2 min-w-0">
             <Plug size={16} className="text-primary shrink-0" />
             <span className="text-primary font-display tracking-wider neon-glow">CONNECTIONS</span>
-            <span className="text-xs text-primary/60 ml-1 truncate">{connectedCount}/{totalCount} connected</span>
+            <span className="text-xs text-ink/60 ml-1 truncate">{connectedCount}/{totalCount} connected</span>
           </div>
           <button onClick={onClose} className="text-primary/60 hover:text-primary shrink-0"><X size={18} /></button>
         </div>
@@ -199,7 +199,7 @@ export default function ConnectionsDialog({ open, onClose }) {
 
           {/* Hosting / infra platforms (reuses the Settings connections UI) */}
           {loading ? (
-            <div className="flex items-center gap-2 text-primary/60 text-sm py-6 justify-center"><Loader2 size={14} className="animate-spin" /> Loading connections...</div>
+            <div className="flex items-center gap-2 text-ink/60 text-sm py-6 justify-center"><Loader2 size={14} className="animate-spin" /> Loading connections...</div>
           ) : (
             <ConnectionsSection connections={connections} onChange={setConnections} />
           )}
@@ -207,7 +207,7 @@ export default function ConnectionsDialog({ open, onClose }) {
           {/* Capability matrix */}
           <section className="border border-primary/30 p-4">
             <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2"><Zap size={14} /> MORPHEUS CAPABILITY</h2>
-            <p className="text-xs text-primary/50 mb-3">// What Morpheus can do end-to-end right now, given your connections. Blocked items show exactly what to connect.</p>
+            <p className="text-xs text-ink/50 mb-3">// What Morpheus can do end-to-end right now, given your connections. Blocked items show exactly what to connect.</p>
             <div className="space-y-2">
               {CAPABILITIES.map(cap => {
                 const isReady = cap.requires.every(r => ready[r]);
@@ -217,14 +217,14 @@ export default function ConnectionsDialog({ open, onClose }) {
                       {isReady ? <Check size={14} className="text-primary shrink-0 mt-0.5" /> : <XCircle size={14} className="text-primary/40 shrink-0 mt-0.5" />}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-sm ${isReady ? 'text-primary' : 'text-primary/70'}`}>{cap.label}</span>
+                          <span className={`text-sm ${isReady ? 'text-ink' : 'text-ink/70'}`}>{cap.label}</span>
                           <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${isReady ? 'border-primary/40 text-primary' : 'border-primary/20 text-primary/50'}`}>
                             {isReady ? 'READY' : 'BLOCKED'}
                           </span>
                         </div>
-                        <p className="text-[11px] text-primary/55 mt-0.5">{cap.description}</p>
+                        <p className="text-[11px] text-ink/55 mt-0.5">{cap.description}</p>
                         {!isReady && (
-                          <div className="mt-2 text-[11px] text-primary/65 space-y-1.5">
+                          <div className="mt-2 text-[11px] text-ink/65 space-y-1.5">
                             <p>// {cap.instructions}</p>
                             {cap.links.length > 0 && (
                               <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -255,7 +255,7 @@ export default function ConnectionsDialog({ open, onClose }) {
 
           {/* footer */}
         <div className="border-t border-primary/20 px-4 py-3 shrink-0 flex items-center justify-between gap-3">
-          <p className="text-[10px] text-primary/50">// Hosting credentials save to your private settings. GitHub uses OAuth.</p>
+          <p className="text-[10px] text-ink/50">// Hosting credentials save to your private settings. GitHub uses OAuth.</p>
           <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-xs font-bold disabled:opacity-40 min-h-[44px] shrink-0">
             {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
             {saving ? 'SAVING' : saved ? 'SAVED' : 'SAVE CONNECTIONS'}

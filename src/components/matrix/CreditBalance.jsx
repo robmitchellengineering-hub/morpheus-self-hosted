@@ -83,17 +83,17 @@ export default function CreditBalance() {
       <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
         <Coins size={14} /> CREDITS
       </h2>
-      <p className="text-xs text-primary/50 mb-4">
+      <p className="text-xs text-ink/50 mb-4">
         // Every AI action costs a small number of credits — new accounts start with 200 free. Buy more any time; no subscription, no expiry.
       </p>
 
       {banner?.kind === 'success' && (
-        <div className="flex items-center gap-2 border border-primary/40 bg-primary/5 px-3 py-2 mb-4 text-xs text-primary">
+        <div className="flex items-center gap-2 border border-primary/40 bg-primary/5 px-3 py-2 mb-4 text-xs text-ink">
           <Check size={14} /> Payment received — your balance updates within a few seconds.
         </div>
       )}
       {banner?.kind === 'cancelled' && (
-        <div className="flex items-center gap-2 border border-primary/20 px-3 py-2 mb-4 text-xs text-primary/60">
+        <div className="flex items-center gap-2 border border-primary/20 px-3 py-2 mb-4 text-xs text-ink/60">
           <X size={14} /> Checkout cancelled — no charge was made.
         </div>
       )}
@@ -103,7 +103,7 @@ export default function CreditBalance() {
         {loadingBalance ? (
           <Loader2 size={14} className="animate-spin text-primary/50" />
         ) : (
-          <span className="text-lg font-display text-primary">{balance != null ? balance.toFixed(2) : '—'} credits</span>
+          <span className="text-lg font-display text-ink">{balance != null ? balance.toFixed(2) : '—'} credits</span>
         )}
       </div>
 
@@ -116,8 +116,8 @@ export default function CreditBalance() {
             className="text-left border border-primary/20 hover:border-primary/50 p-3 transition-colors disabled:opacity-40"
           >
             <div className="text-xs font-display tracking-wider text-primary">{block.credits.toLocaleString()} CREDITS</div>
-            <div className="text-[10px] text-primary/55 mt-1">~${block.intendedNetUsd.toFixed(2)} + card fees</div>
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-primary">
+            <div className="text-[10px] text-ink/55 mt-1">~${block.intendedNetUsd.toFixed(2)} + card fees</div>
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-ink">
               {buyingIndex === i ? <Loader2 size={12} className="animate-spin" /> : null}
               {buyingIndex === i ? 'Redirecting…' : 'Buy'}
             </div>
@@ -126,7 +126,7 @@ export default function CreditBalance() {
       </div>
 
       {error && <p className="text-red-400 text-xs mt-3">// {error}</p>}
-      <p className="text-[10px] text-primary/45 mt-3">
+      <p className="text-[10px] text-ink/45 mt-3">
         // Secure checkout via Stripe. Card fees are added on top so Morpheus receives the full credit value shown above.
       </p>
     </section>

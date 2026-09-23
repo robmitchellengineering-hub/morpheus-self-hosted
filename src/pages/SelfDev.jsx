@@ -488,11 +488,11 @@ export default function SelfDev() {
 
   if (initializing || !ws.currentProject) {
     return (
-      <div className="relative min-h-screen bg-background text-primary font-mono flex items-center justify-center">
+      <div className="relative min-h-screen bg-background text-ink font-mono flex items-center justify-center">
         <MatrixRain opacity={0.05} />
         <div className="relative z-10 flex flex-col items-center gap-3">
           <Loader2 size={28} className="animate-spin text-primary/60" />
-          <p className="text-primary/60 text-sm">// {syncing ? 'Syncing morpheus-self-hosted…' : 'Loading self-dev workspace…'}</p>
+          <p className="text-ink/60 text-sm">// {syncing ? 'Syncing morpheus-self-hosted…' : 'Loading self-dev workspace…'}</p>
           {syncResult?.ok === false && <p className="text-red-500 text-xs max-w-md text-center">{syncResult.error}</p>}
         </div>
       </div>
@@ -500,7 +500,7 @@ export default function SelfDev() {
   }
 
   return (
-    <div className="relative h-workspace-mobile bg-background text-primary font-mono flex flex-col overflow-hidden safe-top">
+    <div className="relative h-workspace-mobile bg-background text-ink font-mono flex flex-col overflow-hidden safe-top">
       <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-3 min-w-0">
@@ -582,7 +582,7 @@ export default function SelfDev() {
             can't push the workspace off-screen; successes auto-dismiss. */}
         <div className="max-h-[34vh] overflow-y-auto scrollbar-matrix">
         {notice && (
-          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${notice.kind === 'error' ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-primary/20 bg-primary/5 text-primary/70'}`}>
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${notice.kind === 'error' ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-primary/20 bg-primary/5 text-ink/70'}`}>
             <span className="flex items-center gap-2 min-w-0">
               {notice.kind === 'error' ? <XCircle size={11} className="shrink-0" /> : <Info size={11} className="shrink-0" />}
               <span className="truncate">{notice.text}</span>
@@ -591,14 +591,14 @@ export default function SelfDev() {
           </div>
         )}
         {syncResult?.ok && (
-          <div className="flex items-center gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1 text-[11px] text-primary/60">
+          <div className="flex items-center gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1 text-[11px] text-ink/60">
             <CheckCircle2 size={11} /> Synced {syncResult.fileCount} files from {syncResult.repoFullName}@{syncResult.branch}
             {typeof syncResult.fetched === 'number' ? ` (${syncResult.fetched} changed)` : ''}
             {syncResult.removed > 0 ? ` (${syncResult.removed} removed locally)` : ''}.
           </div>
         )}
         {verifyResult && (
-          <div className={`border-t px-4 py-1.5 text-[11px] ${verifyResult.ok ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+          <div className={`border-t px-4 py-1.5 text-[11px] ${verifyResult.ok ? 'border-primary/20 bg-primary/5 text-ink/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-2">
                 {verifyResult.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
@@ -622,7 +622,7 @@ export default function SelfDev() {
           </div>
         )}
         {pushResult && (
-          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${pushResult.ok ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${pushResult.ok ? 'border-primary/20 bg-primary/5 text-ink/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
             <span className="flex items-center gap-2">
               {pushResult.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
               {pushResult.ok
@@ -659,7 +659,7 @@ export default function SelfDev() {
           </div>
         )}
         {prWatch && (
-          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${prWatch.phase === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-400' : prWatch.phase === 'merged' ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-primary/15 bg-primary/5 text-primary/60'}`}>
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${prWatch.phase === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-400' : prWatch.phase === 'merged' ? 'border-primary/20 bg-primary/5 text-ink/70' : 'border-primary/15 bg-primary/5 text-ink/60'}`}>
             <span className="flex items-center gap-2 min-w-0">
               {prWatch.phase === 'checking' && <><Loader2 size={11} className="animate-spin shrink-0" /> <span className="truncate">PR #{prWatch.prNumber} open — waiting for checks{prWatch.pending?.length ? ` (${prWatch.pending.join(', ')})` : ' (Netlify deploy preview)'}… <a href={prWatch.prUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary">view</a> · <a href={buildDeployPreviewUrl(prWatch.prNumber)} target="_blank" rel="noreferrer" className="underline hover:text-primary">VIEW LIVE PREVIEW</a></span></>}
               {prWatch.phase === 'merged' && <><CheckCircle2 size={11} className="shrink-0" /> PR #{prWatch.prNumber} merged to main ({prWatch.mergeCommitSha?.slice(0, 7)}) — deploying.</>}
@@ -677,7 +677,7 @@ export default function SelfDev() {
           </div>
         )}
         {deployWatch && (
-          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${deployWatch.phase === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-400' : deployWatch.phase === 'deployed' ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-primary/15 bg-primary/5 text-primary/60'}`}>
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${deployWatch.phase === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-400' : deployWatch.phase === 'deployed' ? 'border-primary/20 bg-primary/5 text-ink/70' : 'border-primary/15 bg-primary/5 text-ink/60'}`}>
             <span className="flex items-center gap-2">
               {deployWatch.phase === 'building' && <><Loader2 size={11} className="animate-spin" /> Deploying — Northflank build {deployWatch.build || '…'}{deployWatch.deploy ? `, deployment ${deployWatch.deploy}` : ''}</>}
               {deployWatch.phase === 'deployed' && <><CheckCircle2 size={11} /> Deployed — production is live on this push.</>}
@@ -689,7 +689,7 @@ export default function SelfDev() {
           </div>
         )}
         {smoke && (
-          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${smoke.phase === 'fail' ? 'border-red-500/30 bg-red-500/10 text-red-400' : smoke.phase === 'pass' ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-primary/15 bg-primary/5 text-primary/60'}`}>
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${smoke.phase === 'fail' ? 'border-red-500/30 bg-red-500/10 text-red-400' : smoke.phase === 'pass' ? 'border-primary/20 bg-primary/5 text-ink/70' : 'border-primary/15 bg-primary/5 text-ink/60'}`}>
             <span className="flex items-center gap-2 min-w-0">
               {smoke.phase === 'running' && <><Loader2 size={11} className="animate-spin shrink-0" /> Smoke-checking production endpoints…</>}
               {smoke.phase === 'pass' && <><CheckCircle2 size={11} className="shrink-0" /> Smoke check passed — API, auth, functions and the frontend all responding.</>}
@@ -699,7 +699,7 @@ export default function SelfDev() {
           </div>
         )}
         {migrations && (
-          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${migrations.error || migrations.failed > 0 ? 'border-red-500/30 bg-red-500/10 text-red-400' : migrations.manual > 0 ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500/90' : 'border-primary/20 bg-primary/5 text-primary/70'}`}>
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${migrations.error || migrations.failed > 0 ? 'border-red-500/30 bg-red-500/10 text-red-400' : migrations.manual > 0 ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500/90' : 'border-primary/20 bg-primary/5 text-ink/70'}`}>
             <span className="flex items-center gap-2 min-w-0">
               <ListChecks size={11} className="shrink-0" />
               <span className="truncate">
@@ -725,7 +725,7 @@ export default function SelfDev() {
           </div>
         )}
         {(lastPush || deployWatch?.phase === 'failed' || smoke?.phase === 'fail') && !revertResult && (
-          <div className="flex items-center justify-between gap-2 border-t border-yellow-500/20 bg-yellow-500/5 px-4 py-1.5 text-[11px] text-primary/60">
+          <div className="flex items-center justify-between gap-2 border-t border-yellow-500/20 bg-yellow-500/5 px-4 py-1.5 text-[11px] text-ink/60">
             <span>// Last push {lastPush?.commitSha ? lastPush.commitSha.slice(0, 7) : ''} can be rolled back — one commit, production redeploys to the pre-push state.</span>
             <button onClick={doRevert} disabled={reverting || !lastPush?.commitSha} className="text-[10px] text-yellow-500/90 border border-yellow-500/40 px-2 py-0.5 hover:bg-yellow-500/10 disabled:opacity-40 shrink-0 flex items-center gap-1">
               {reverting ? <Loader2 size={10} className="animate-spin" /> : null} REVERT LAST PUSH
@@ -733,7 +733,7 @@ export default function SelfDev() {
           </div>
         )}
         {revertResult && (
-          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${revertResult.ok ? 'border-primary/20 bg-primary/5 text-primary/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+          <div className={`flex items-center justify-between gap-2 border-t px-4 py-1.5 text-[11px] ${revertResult.ok ? 'border-primary/20 bg-primary/5 text-ink/70' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
             <span className="flex items-center gap-2">
               {revertResult.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
               {revertResult.ok
@@ -745,7 +745,7 @@ export default function SelfDev() {
         )}
         </div>
         {contextPaths.size > 0 && (
-          <div className="flex items-start gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1.5 text-[11px] text-primary/70 flex-wrap">
+          <div className="flex items-start gap-2 border-t border-primary/20 bg-primary/5 px-4 py-1.5 text-[11px] text-ink/70 flex-wrap">
             <span className="uppercase tracking-wider text-primary/50 shrink-0 mt-0.5">AI context ({contextPaths.size}):</span>
             {Array.from(contextPaths).map((p) => (
               <span key={p} className="flex items-center gap-1 border border-primary/25 px-1.5 py-0.5">
@@ -813,8 +813,8 @@ export default function SelfDev() {
               <AlertTriangle size={18} />
               <span className="font-display tracking-wider">PUSH TO PRODUCTION</span>
             </div>
-            <p className="text-primary/70 text-sm mb-4 leading-relaxed">
-              A verification pass (esbuild syntax + import/export checks over the whole workspace) runs first and blocks on any error. The changed files then go to a <span className="text-primary">self-dev/…</span> branch on the real <span className="text-primary">morpheus-self-hosted</span> repo as one commit, and Morpheus opens a PR. Once Netlify's deploy-preview build and every other check pass, it squash-merges to <span className="text-primary">main</span> automatically — Northflank and Netlify redeploy production from there. If a check fails, main is left untouched. Still review the changes in the editor and preview yourself.
+            <p className="text-ink/70 text-sm mb-4 leading-relaxed">
+              A verification pass (esbuild syntax + import/export checks over the whole workspace) runs first and blocks on any error. The changed files then go to a <span className="text-ink">self-dev/…</span> branch on the real <span className="text-ink">morpheus-self-hosted</span> repo as one commit, and Morpheus opens a PR. Once Netlify's deploy-preview build and every other check pass, it squash-merges to <span className="text-ink">main</span> automatically — Northflank and Netlify redeploy production from there. If a check fails, main is left untouched. Still review the changes in the editor and preview yourself.
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowPushConfirm(false)} disabled={pushing} className={`${btnBase} text-primary/70 hover:text-primary border-primary/30 hover:border-primary/60`}>CANCEL</button>

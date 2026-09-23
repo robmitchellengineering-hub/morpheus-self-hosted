@@ -97,7 +97,7 @@ export default function ExternalSources({ projectId, externalFiles, onRefresh })
           </button>
         </div>
       </div>
-      <p className="text-xs text-primary/65 mb-2">Add external apps, files, or programs to include in backend planning.</p>
+      <p className="text-xs text-ink/65 mb-2">Add external apps, files, or programs to include in backend planning.</p>
       <input
         ref={fileInputRef}
         type="file"
@@ -112,14 +112,14 @@ export default function ExternalSources({ projectId, externalFiles, onRefresh })
             value={pasteName}
             onChange={e => setPasteName(e.target.value)}
             placeholder="filename.js"
-            className="w-full bg-background text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20"
+            className="w-full bg-background text-ink border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink/20"
           />
           <textarea
             value={pasteContent}
             onChange={e => setPasteContent(e.target.value)}
             placeholder="// paste code here..."
             rows={5}
-            className="w-full bg-background text-primary border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-primary/20 font-mono resize-y"
+            className="w-full bg-background text-ink border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink/20 font-mono resize-y"
           />
           <div className="flex items-center gap-2">
             <button
@@ -138,7 +138,7 @@ export default function ExternalSources({ projectId, externalFiles, onRefresh })
           {externalFiles.map(f => (
             <div key={f.id} className="flex items-center gap-2 text-xs border border-primary/10 px-2 py-1.5">
               <FileCode size={12} className="text-primary/60 shrink-0" />
-              <span className="text-primary/80 truncate flex-1">{f.path.replace('external/', '')}</span>
+              <span className="text-ink/80 truncate flex-1">{f.path.replace('external/', '')}</span>
               <button onClick={() => handleDelete(f)} className="text-primary/65 hover:text-red-500 shrink-0">
                 <Trash2 size={12} />
               </button>

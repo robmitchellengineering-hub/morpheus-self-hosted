@@ -45,22 +45,22 @@ export default function MorpheusPipelineStatus({ stages }) {
           const remaining = isActive ? Math.round(s.etaSeconds - (Date.now() - s.startedAt) / 1000) : null;
           return (
             <div key={`${s.stage}-${i}`} className="flex items-baseline gap-2">
-              <span className={isActive ? 'text-primary animate-pulse' : 'text-primary/50'} aria-hidden="true">
+              <span className={isActive ? 'text-ink animate-pulse' : 'text-ink/50'} aria-hidden="true">
                 {isActive ? '>' : '✓'}
               </span>
-              <span className={isActive ? 'text-primary' : 'text-primary/50'}>{s.label}</span>
+              <span className={isActive ? 'text-ink' : 'text-ink/50'}>{s.label}</span>
               {isActive && (
-                <span className="text-primary/60 text-xs tabular-nums">
+                <span className="text-ink/60 text-xs tabular-nums">
                   {remaining > 0 ? `~${formatDuration(remaining)} remaining` : 'finishing up...'}
                 </span>
               )}
               {!isActive && s.elapsedSeconds != null && (
-                <span className="text-primary/35 text-xs tabular-nums">{formatDuration(s.elapsedSeconds)}</span>
+                <span className="text-ink/35 text-xs tabular-nums">{formatDuration(s.elapsedSeconds)}</span>
               )}
             </div>
           );
         })}
-        <div className="text-primary/40 text-[10px] pt-0.5">total elapsed: {formatDuration(totalElapsedSeconds)}</div>
+        <div className="text-ink/40 text-[10px] pt-0.5">total elapsed: {formatDuration(totalElapsedSeconds)}</div>
       </div>
     </div>
   );

@@ -133,12 +133,12 @@ export default function FirstRunChecklist({ project, onOpenWebsite, onOpenConnec
           const Icon = s.icon;
           return (
             <div key={s.key} className="flex items-start gap-2.5">
-              <span className={`shrink-0 mt-[3px] ${s.done ? 'text-primary' : 'text-primary/35'}`}>
+              <span className={`shrink-0 mt-[3px] ${s.done ? 'text-ink' : 'text-ink/35'}`}>
                 {s.done ? <Check size={13} /> : <Circle size={13} />}
               </span>
               <div className="min-w-0 flex-1">
-                <div className={`text-[11px] ${s.done ? 'text-primary/45' : 'text-primary/85'}`}>{s.title}</div>
-                {!s.done && <div className="text-[10px] text-primary/45 leading-relaxed mt-0.5">{s.body}</div>}
+                <div className={`text-[11px] ${s.done ? 'text-ink/45' : 'text-ink/85'}`}>{s.title}</div>
+                {!s.done && <div className="text-[10px] text-ink/45 leading-relaxed mt-0.5">{s.body}</div>}
               </div>
               {s.action && (
                 <button onClick={s.action.onClick}
@@ -151,7 +151,7 @@ export default function FirstRunChecklist({ project, onOpenWebsite, onOpenConnec
         })}
 
         {loadingSite && (
-          <div className="text-[10px] text-primary/35 flex items-center gap-1.5">
+          <div className="text-[10px] text-ink/35 flex items-center gap-1.5">
             <Loader2 size={10} className="animate-spin" /> checking your site…
           </div>
         )}

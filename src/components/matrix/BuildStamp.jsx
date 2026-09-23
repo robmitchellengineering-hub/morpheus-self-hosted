@@ -41,13 +41,13 @@ export default function BuildStamp() {
   };
 
   return (
-    <div className="font-mono text-primary select-none">
+    <div className="font-mono text-ink select-none">
       {open ? (
         <div className="flex items-center gap-2 bg-black/90 border border-primary/40 px-2 py-1 text-[10px]">
           <CheckCircle2 size={11} className="text-primary/70 shrink-0" />
           <div className="flex flex-col leading-tight">
             <span className="text-primary/80">BUILD {new Date(buildTime).toLocaleTimeString()}</span>
-            <span className="text-primary/75">{formatAgo(buildTime)} · {new Date(buildTime).toLocaleDateString()}</span>
+            <span className="text-ink/75">{formatAgo(buildTime)} · {new Date(buildTime).toLocaleDateString()}</span>
           </div>
           <button onClick={handleRefresh} disabled={refreshing} className="ml-1 text-primary hover:text-black hover:bg-primary p-1 border border-primary/40 hover:border-primary transition-colors disabled:opacity-50" title="Hard refresh (cache-bust)">
             <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />

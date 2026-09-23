@@ -20,7 +20,7 @@ export default function MarketHowItWorks() {
               <div className="flex items-center gap-1.5 text-primary text-sm font-bold">
                 <Icon size={14} /> {title}
               </div>
-              <p className="text-primary/60 text-xs mt-1 leading-relaxed">{body}</p>
+              <p className="text-ink/60 text-xs mt-1 leading-relaxed">{body}</p>
             </div>
           </div>
         ))}

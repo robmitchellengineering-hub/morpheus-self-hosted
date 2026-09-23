@@ -56,10 +56,10 @@ function HeuristicStepList({ steps, elapsedSeconds }) {
         const isDone = i < activeIndex;
         return (
           <div key={s.label} className="flex items-baseline gap-2 text-xs">
-            <span className={isActive ? 'text-primary animate-pulse' : isDone ? 'text-primary/50' : 'text-primary/30'} aria-hidden="true">
+            <span className={isActive ? 'text-ink animate-pulse' : isDone ? 'text-ink/50' : 'text-ink/30'} aria-hidden="true">
               {isDone ? '✓' : isActive ? '>' : '·'}
             </span>
-            <span className={isActive ? 'text-primary' : isDone ? 'text-primary/50' : 'text-primary/30'}>{s.label}</span>
+            <span className={isActive ? 'text-ink' : isDone ? 'text-ink/50' : 'text-ink/30'}>{s.label}</span>
           </div>
         );
       })}
@@ -394,11 +394,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="p-4 space-y-4">
-          <div className="text-sm text-primary/60">
+          <div className="text-sm text-ink/60">
             Target: <span className="text-primary uppercase">{target}</span>
           </div>
           {target === 'source' && (
-            <p className="text-xs text-primary/50">
+            <p className="text-xs text-ink/50">
               // Source target doesn't need compilation. Use the ZIP button to download raw source.
             </p>
           )}
@@ -432,7 +432,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               )}
               {preview && !preview.error && (
                 <div className="space-y-2 border border-primary/20 bg-background p-3">
-                  <div className="text-xs text-primary/60">// BUILD PREVIEW — {preview.label} on {preview.runner}</div>
+                  <div className="text-xs text-ink/60">// BUILD PREVIEW — {preview.label} on {preview.runner}</div>
                   {preview.validation?.warnings?.length > 0 && (
                     <div className="text-[10px] text-yellow-500/80">
                       {preview.validation.warnings.map((w, i) => <div key={i}>! {w}</div>)}
@@ -441,17 +441,17 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   {preview.generatedFiles?.length > 0 && (
                     <div>
                       <div className="text-[10px] text-primary/50 mb-1">AUTO-GENERATED FILES ({preview.generatedFiles.length}):</div>
-                      <ul className="text-[10px] text-primary/70 space-y-0.5">
+                      <ul className="text-[10px] text-ink/70 space-y-0.5">
                         {preview.generatedFiles.map(f => <li key={f} className="font-mono">+ {f}</li>)}
                       </ul>
                     </div>
                   )}
-                  <div className="text-[10px] text-primary/50">
+                  <div className="text-[10px] text-ink/50">
                     ARTIFACT: {preview.artifact?.artifactName || preview.artifact?.glob} ({preview.totalFiles} files)
                   </div>
                   <details className="border border-primary/20">
                     <summary className="text-[10px] text-primary/60 cursor-pointer px-2 py-1 hover:text-primary">WORKFLOW YAML (click to expand)</summary>
-                    <pre className="text-[9px] text-primary/50 overflow-x-auto max-h-48 p-2 scrollbar-matrix whitespace-pre-wrap">{preview.workflow}</pre>
+                    <pre className="text-[9px] text-ink/50 overflow-x-auto max-h-48 p-2 scrollbar-matrix whitespace-pre-wrap">{preview.workflow}</pre>
                   </details>
                 </div>
               )}
@@ -460,12 +460,12 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           {phase === 'compiling' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1 text-primary/70 text-sm">
+                <div className="flex items-center gap-1 text-ink/70 text-sm">
                   <Timer size={13} className="text-primary/50" /> <span className="font-mono tabular-nums">{dispatchTimerStr}</span>
                 </div>
                 {attempt > 1 && <span className="text-[10px] text-primary/50 font-display tracking-wider">ATTEMPT {attempt}</span>}
               </div>
-              <div className="text-primary/60 text-sm">
+              <div className="text-ink/60 text-sm">
                 {dispatchRetryAttempt > 0
                   ? `GitHub is still catching up — retrying automatically (${dispatchRetryAttempt}/${MAX_DISPATCH_RETRIES})...`
                   : (attempt > 1 ? 'Recompiling to test AI fix...' : 'Dispatching build to GitHub Actions...')}
@@ -479,7 +479,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           {phase === 'polling' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between border border-primary/20 bg-primary/5 px-3 py-2">
-                <div className="flex items-center gap-3 text-primary font-mono text-sm">
+                <div className="flex items-center gap-3 text-ink font-mono text-sm">
                   <span className="flex items-center gap-1"><Timer size={14} /> {timerStr}</span>
                   {etaStr && <span className="text-primary/60 text-xs">ETA {etaStr}</span>}
                 </div>
@@ -491,14 +491,14 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                 <BigSpinner />
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-primary/70 text-sm">{status?.message || 'Build queued...'}</div>
+                    <div className="text-ink/70 text-sm">{status?.message || 'Build queued...'}</div>
                     {attempt > 1 && <span className="text-[10px] text-primary/50 font-display tracking-wider shrink-0 ml-2">ATTEMPT {attempt}</span>}
                   </div>
                   {status?.stepProgress && (
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs text-primary/70">
+                      <div className="flex items-center justify-between text-xs text-ink/70">
                         <span className="font-mono">STEP {status.stepProgress.completed}/{status.stepProgress.total}</span>
-                        <span className="text-primary/50 truncate ml-2 text-right">{status.stepProgress.currentStep}</span>
+                        <span className="text-ink/50 truncate ml-2 text-right">{status.stepProgress.currentStep}</span>
                       </div>
                       <div className="h-1.5 bg-primary/10 border border-primary/20 overflow-hidden">
                         <div
@@ -524,20 +524,20 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           )}
           {phase === 'saving' && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-primary text-sm">
+              <div className="flex items-center gap-2 text-ink text-sm">
                 <Loader2 size={16} className="animate-spin" /> Saving compiled app to your files...
               </div>
-              <p className="text-xs text-primary/50">
+              <p className="text-xs text-ink/50">
                 // Downloading the binary from GitHub and storing it under _compiled/. This takes a few seconds — don't close this panel.
               </p>
             </div>
           )}
           {phase === 'done' && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-primary text-sm">
+              <div className="flex items-center gap-2 text-ink text-sm">
                 <CheckCircle size={16} /> Build complete!
               </div>
-              <p className="text-xs text-primary/50">
+              <p className="text-xs text-ink/50">
                 // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
               </p>
               {status?.assets?.length === 0 && (
@@ -569,10 +569,10 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               )}
               {(target === 'rpi-distro' || target === 'linux-distro') && (
                 <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-primary text-sm">
+                  <div className="flex items-center gap-2 text-ink text-sm">
                     <Wifi size={14} /> {target === 'rpi-distro' ? 'Write to a Pi over the network' : 'Write to a server over the network'}
                   </div>
-                  <p className="text-xs text-primary/60">
+                  <p className="text-xs text-ink/60">
                     // Enter your Pi's SSH details and Morpheus builds a command that pulls the image from storage and writes it to the device — no SD card swapping.
                   </p>
                   <button onClick={() => setShowNetFlash(true)} className="flex items-center gap-2 w-full justify-center py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold">
@@ -582,10 +582,10 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               )}
               {onBuildBackend && (
                 <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-primary text-sm">
+                  <div className="flex items-center gap-2 text-ink text-sm">
                     <Server size={14} /> Does your app need a backend?
                   </div>
-                  <p className="text-xs text-primary/60">
+                  <p className="text-xs text-ink/60">
                     // Congrats on the compile! If your app needs a server, database, or API, Morpheus can auto-generate and deploy one now.
                   </p>
                   <button onClick={onBuildBackend} className="flex items-center gap-2 w-full justify-center py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold">
@@ -608,14 +608,14 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
 
               {/* Fix-loop guide — gives people the mental model so the
                   iterative diagnose → fix → recompile cycle isn't a mystery. */}
-              <div className="border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary/65 space-y-0.5">
+              <div className="border border-primary/20 bg-primary/5 p-2.5 text-xs text-ink/65 space-y-0.5">
                 <p className="text-primary/80 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
-                  <RefreshCw size={10} className="animate-spin" /> FIX LOOP <span className="text-primary/50 normal-case tracking-normal font-normal">// runs automatically</span>
+                  <RefreshCw size={10} className="animate-spin" /> FIX LOOP <span className="text-ink/50 normal-case tracking-normal font-normal">// runs automatically</span>
                 </p>
                 <p>// 1. AI reads the build logs and auto-fixes what it can.</p>
                 <p>// 2. Morpheus recompiles to test the fix — no action needed.</p>
                 <p>// 3. Fails again? It loops again. Stops only when stuck or you hit STOP.</p>
-                <p className="text-primary/45 pt-0.5">// Each fix is saved to your files — you never lose progress.</p>
+                <p className="text-ink/45 pt-0.5">// Each fix is saved to your files — you never lose progress.</p>
               </div>
 
               {error && error !== 'Build failed. Fetching logs and diagnosing...' && (
@@ -624,7 +624,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
 
               {status?.assets?.length > 0 && (
                 <div className="space-y-1.5 border border-primary/30 bg-primary/5 p-2">
-                  <div className="text-xs text-primary/70">// DIRECT DOWNLOADS (from GitHub — requires access)</div>
+                  <div className="text-xs text-ink/70">// DIRECT DOWNLOADS (from GitHub — requires access)</div>
                   {status.assets.map((a, i) => (
                     <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-1.5 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
                       <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
@@ -636,7 +636,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               {status?.logs?.length > 0 && (
                 <details className="border border-primary/20 bg-background">
                   <summary className="text-xs text-primary/60 cursor-pointer px-3 py-1.5 hover:text-primary">BUILD LOGS (click to expand)</summary>
-                  <pre className="text-[10px] text-primary/50 overflow-x-auto max-h-48 p-3 scrollbar-matrix whitespace-pre-wrap">{status.logs.map(l => `=== ${l.job} ===\n${l.log}`).join('\n\n')}</pre>
+                  <pre className="text-[10px] text-ink/50 overflow-x-auto max-h-48 p-3 scrollbar-matrix whitespace-pre-wrap">{status.logs.map(l => `=== ${l.job} ===\n${l.log}`).join('\n\n')}</pre>
                 </details>
               )}
               {repoUrl && (
@@ -655,7 +655,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                 <>
                   <DiagnosisPanel diagnosis={diagnosis} onRedeploy={() => handleCompile(false)} redeployLabel="RECOMPILE" onAskMorpheus={() => onAskMorpheus?.(diagnosis)} />
                   {diagnosis.needsUserAction?.length > 0 && !diagnosis.autoFixed?.length && (
-                    <p className="text-[10px] text-primary/50 leading-relaxed">
+                    <p className="text-[10px] text-ink/50 leading-relaxed">
                       // Ask Morpheus to fix the remaining issues in chat, then reopen COMPILE and run again to test.
                     </p>
                   )}
