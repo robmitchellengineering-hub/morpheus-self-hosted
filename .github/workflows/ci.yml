@@ -127,12 +127,22 @@ jobs:
 
       # if: always() — the artifacts are the whole point of a failure, and a
       # step that only runs on failure would leave the passing case with nothing.
+      #
+      # `include-hidden-files: true` IS LOAD-BEARING: the output directory is
+      # `.render-smoke/`, and upload-artifact@v4 SKIPS dot-directories by
+      # default. Without this the first run of this job passed and printed
+      # "No files were found with the provided path: .render-smoke/" — so on a
+      # real failure the screenshots and report.json would have been discarded,
+      # which is the exact "red advisory job nobody can debug" outcome the
+      # screenshot step exists to prevent. Verified on CI, not assumed: the run
+      # after this change uploads the artifact.
       - name: Upload failure screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: render-smoke
           path: .render-smoke/
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
 
