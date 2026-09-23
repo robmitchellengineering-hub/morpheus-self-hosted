@@ -662,7 +662,13 @@ console.log('\n7b. the batch streams, and both ends agree on the events');
 const seoFn = read('server/src/functions/generateSeoMeta.js');
 const apiSrc = read('src/api/base44Client.js');
 const timingSrc = read('server/src/lib/timingStats.js');
-const billingSrc = read('server/src/lib/billing.js');
+// The per-role output estimates — including the `seo` entry this file asserts
+// about — live in billingEstimate.js, not billing.js. They were MOVED there on
+// 2026-09-23 so the rule could be tested as behaviour in CI's no-install guards
+// job: billing.js reaches the Prisma client through db.js, and a guard that
+// imported it would kill that job (the incident that created
+// verify-guards-no-install.mjs). Reading billing.js here silently found nothing.
+const billingSrc = read('server/src/lib/billingEstimate.js');
 const chatFn = read('server/src/functions/chatWithMorpheus.js');
 const aiSrc = read('server/src/ai.js');
 // LINE comments only. A block-comment regex is not safe on a source file this
@@ -726,8 +732,31 @@ check('the role it left is genuinely shared by others',
   (read('server/src/lib/contextSummary.js').includes("role: 'diagnosis'")
     && read('server/src/lib/deckMemory.js').includes("role: 'diagnosis'")), true);
 // Forking the role must not silently re-price the call.
-check('the forked role keeps the same pre-call output estimate',
-  /seo:\s*2000\b/.test(billingSrc) && /diagnosis:\s*2000\b/.test(billingSrc), true);
+//
+// UPDATED 2026-09-23, and the change is the point. This asserted `seo: 2000` —
+// the number inherited from `diagnosis` — on the reasoning that a role fork must
+// not change what a batch reserves. That reasoning was right and the number was
+// wrong: the SEO call is capped at `seoCallMaxTokens(5)` = 8,000 output tokens,
+// so reserving 2,000 was a 4x under-reservation against a HARD hold
+// (`reserveCredits` throws 402, no overdraft grace) — it let through a call the
+// balance could not cover. Rob: "Well raise it it needs to work."
+//
+// So the rule is no longer "the fork keeps the old number". It is "the
+// reservation matches the call": the caller's own bound wins, and the per-role
+// number is only a fallback for a caller that passed none. Both halves are
+// asserted here because this file owns the SEO side; the estimator's own
+// behaviour is covered in verify-billing-clamp.mjs.
+const seoFallback = Number((billingSrc.match(/seo:\s*(\d+)/) || [])[1]);
+check('the SEO fallback reserve is the SEO call cap, not the old inherited guess',
+  seoFallback >= 8000, true);
+check('and the diagnosis role is untouched by that change',
+  /diagnosis:\s*2000\b/.test(billingSrc), true);
+// The bar the number has to clear, taken from the code that sets it.
+const seoCaps = [...read('server/src/lib/seoPrompts.js').matchAll(/SEO_MIN_CALL_TOKENS\s*=\s*(\d+)/g)].map((m) => Number(m[1]));
+check('the fallback clears the SEO minimum cap (parser sanity)',
+  seoCaps.length >= 1 && seoFallback >= seoCaps[0], true);
+check('and the estimator prefers the caller\'s bound over any fallback',
+  /Number\.isFinite\(cap\) && cap > 0\) return cap/.test(read('server/src/lib/billingEstimate.js')), true);
 check('the role is overridable like the others',
   has(read('src/pages/AdminPanel.jsx'), `'${SEO_AI_ROLE}'`), true);
 

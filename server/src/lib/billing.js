@@ -68,19 +68,13 @@ export const CREDIT_RATE_USD = 0.005; // $5 / 1,000 credits, decided 2026-09-01
 const ESTIMATE_SAFETY_MULTIPLIER = 1.4;
 const CHARS_PER_TOKEN = 4; // rough, standard heuristic for a pre-call estimate only
 
-// Per-role *output* token expectations, used only to size the pre-call
-// estimate -- the real charge always reconciles against actual usage (Step 2's
-// real metering) once the call completes, regardless of how this guesses.
-const ROLE_OUTPUT_ESTIMATE = { planner: 1500, coder: 3000, reviewer: 1500, diagnosis: 2000,
-  // The SEO batch moved off `diagnosis` to its own timing role. Pinned to the
-  // SAME output estimate it had there, so forking the role changes what the ETA
-  // averages over and nothing about what a batch reserves up front. Its call cap
-  // is seoCallMaxTokens(5) = 8000 output tokens, so 2000 is already the smaller
-  // number; raising it would reserve more credits before every batch and is a
-  // pricing decision, not a timing one — left as it was.
-  seo: 2000,
-};
-const DEFAULT_OUTPUT_ESTIMATE = 1500;
+// Per-role *output* token expectations, and the rule that decides which number
+// a reservation uses. Both live in billingEstimate.js — a module with no imports
+// — so a guard can assert the rule as behaviour without reaching the Prisma
+// client through this file. See its header for why that matters and what the
+// rule was getting wrong.
+export { ROLE_OUTPUT_ESTIMATE, DEFAULT_OUTPUT_ESTIMATE, estimateOutputTokens } from './billingEstimate.js';
+import { estimateOutputTokens } from './billingEstimate.js';
 
 // Token-block purchase denominations. Revised 2026-09-02: round $2/$4/$8
 // blocks (was $1.87/$5/$10, a Step 3 placeholder) -- picked to sit close to
@@ -173,9 +167,9 @@ async function getModelMarkup(modelId) {
 // DeepSeek call that's Pro's peak rate at 2x, always, so the reservation
 // lands close to what reconcileAgainstActualUsage will actually charge
 // instead of needing a large top-up at reconcile time.
-export async function estimatePreCallCredits(prompt, role, model) {
+export async function estimatePreCallCredits(prompt, role, model, maxTokens) {
   const inputTokens = Math.ceil(String(prompt || '').length / CHARS_PER_TOKEN);
-  const outputTokens = ROLE_OUTPUT_ESTIMATE[role] || DEFAULT_OUTPUT_ESTIMATE;
+  const outputTokens = estimateOutputTokens(role, maxTokens);
   const rate = await resolveBillingRate(model);
   const estimatedUsd = computeCostUsd(inputTokens, outputTokens, rate) * ESTIMATE_SAFETY_MULTIPLIER;
   const markup = await resolveBillingMarkup(model);
