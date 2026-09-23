@@ -71,3 +71,31 @@ When you change a dock tab, run `drive` and say what you saw. Until this rig
 existed, the dock was asserted by source-reading guards alone — nothing had ever
 put it in a browser.
 
+## The dock's panel is placed by arithmetic, and only a browser can check it
+
+The floating panel's position is decided in `public/plugin.js`'s `reposition()`
+from the toggle's rect and the viewport. That arithmetic has already been wrong
+once, in a way no guard could see and no user would report as anything but "the
+button did nothing": the panel opened **off the bottom of the screen** on any
+viewport shorter than ~742px, because the decision compared the toggle's distance
+from the top against the raw `data-panel-height` instead of the height the
+stylesheet actually gives the panel (`min(panelHeight, 80vh)`) and the room on
+each side.
+
+Two rules for anyone touching it:
+
+- **Measure room per side, from the toggle, and use the size the panel will
+  really get** — the same clamps the stylesheet applies. A raw attribute value is
+  not a size.
+- **Never let the panel be bigger than the room it chose.** Shrinking is always
+  better than spilling: a panel that hangs past the edge is a panel whose controls
+  cannot be reached, and it looks like the toggle is broken.
+
+`drive` now asserts this — panel fully inside the viewport at 720/800/900/1000,
+on a narrow viewport, on a very short one, at saved drag positions near an edge
+and near the bottom, and for `bottom-left` (the `flip-h` side) — and it fails
+loudly with the measured box. That check is the only real one: CI has no browser,
+so there is deliberately no source-reading guard pretending to cover it. Run
+`drive` after touching `reposition()`, the panel's CSS, `data-panel-height` or
+`data-panel-width`.
+

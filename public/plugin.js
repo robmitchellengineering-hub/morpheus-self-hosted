@@ -125,6 +125,11 @@
     var panelH = parseInt(script.getAttribute('data-panel-height'), 10) || 600;
     var side = onLeft ? 'left' : 'right';
     var otherSide = onLeft ? 'right' : 'left';
+    // The gap between the toggle and the panel, and the clearance kept between
+    // the panel and the edge of the viewport. PANEL_GAP is used by the
+    // stylesheet below AND by reposition(), so it is declared once here.
+    var PANEL_GAP = 64;
+    var EDGE_MARGIN = 8;
     var POS_KEY = 'morpheus_dock_pos_v1';
 
     var host = document.createElement('div');
@@ -143,12 +148,12 @@
         'cursor:grab;box-shadow:0 6px 20px rgba(0,0,0,.4);user-select:none;transition:background .15s;touch-action:none;}',
       '.toggle:hover{background:#0a1f12;}',
       '.toggle:active{cursor:grabbing;}',
-      '.panel{position:absolute;bottom:64px;' + side + ':0;width:min(' + panelW + 'px,94vw);' +
+      '.panel{position:absolute;bottom:' + PANEL_GAP + 'px;' + side + ':0;width:min(' + panelW + 'px,94vw);' +
         'height:min(' + panelH + 'px,80vh);border-radius:14px;overflow:hidden;' +
         'border:1px solid rgba(57,255,20,.35);box-shadow:0 16px 48px rgba(0,0,0,.5);' +
         'background:#05130a;display:none;}',
       '.panel.open{display:block;}',
-      '.panel.flip-v{bottom:auto;top:64px;}',
+      '.panel.flip-v{bottom:auto;top:' + PANEL_GAP + 'px;}',
       '.panel.flip-h{' + side + ':auto;' + otherSide + ':0;}',
       '.panel iframe{width:100%;height:100%;border:0;display:block;}',
       '.close{position:absolute;top:6px;' + side + ':8px;z-index:1;width:22px;height:22px;border-radius:999px;' +
@@ -186,14 +191,49 @@
       panel.appendChild(frame);
     }
 
-    // Flip the panel toward whichever side of the toggle actually has room,
-    // so wherever the dock has been dragged to, opening it never clips off
-    // the edge of the viewport.
+    // Put the panel on whichever side of the toggle has more room, and never
+    // let it be larger than the room it chose. A panel that hangs past the edge
+    // of the screen is one whose controls cannot be reached, which reads to the
+    // operator as "the button did nothing" — the exact failure this replaced.
+    //
+    // The size asked for is the size the stylesheet will actually give the
+    // panel: width min(panelW, 94vw), height min(panelH, 80vh). Using the raw
+    // data-panel-height instead is what used to send it off the bottom of a
+    // short viewport: at 720px a 600px panel is really 576, and the toggle sits
+    // closer to the top than 600 + the gap, so the old test said "flip down"
+    // into a space that did not exist.
     function reposition() {
       var r = host.getBoundingClientRect();
-      panel.classList.toggle('flip-v', r.top < panelH + 72);
-      var roomOnSide = onLeft ? (window.innerWidth - r.right) : r.left;
-      panel.classList.toggle('flip-h', roomOnSide < panelW);
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var wantW = Math.min(panelW, Math.round(vw * 0.94));
+      var wantH = Math.min(panelH, Math.round(vh * 0.8));
+
+      // How much room each side of the toggle really has, measured from the
+      // edge the panel would sit against, less a clearance so it never touches
+      // the viewport edge.
+      var roomAbove = r.bottom - PANEL_GAP - EDGE_MARGIN;
+      var roomBelow = vh - r.top - PANEL_GAP - EDGE_MARGIN;
+      var roomLeft = r.right - EDGE_MARGIN;
+      var roomRight = vw - r.left - EDGE_MARGIN;
+
+      // Unflipped, the panel hangs above the toggle and extends towards the
+      // middle of the screen from its own side; flip-v / flip-h put it on the
+      // other side. Prefer the roomier side, whichever way the dock was dragged.
+      var flipV = roomBelow > roomAbove;
+      var naturalH = onLeft ? roomRight : roomLeft;
+      var otherH = onLeft ? roomLeft : roomRight;
+      var flipH = otherH > naturalH;
+      panel.classList.toggle('flip-v', flipV);
+      panel.classList.toggle('flip-h', flipH);
+
+      // Then shrink to fit when even the roomier side is too small. Cleared
+      // rather than set when the stylesheet's own size fits, so the normal size
+      // stays defined in exactly one place.
+      var roomV = Math.max(0, flipV ? roomBelow : roomAbove);
+      var roomH = Math.max(0, flipH ? otherH : naturalH);
+      panel.style.height = wantH > roomV ? roomV + 'px' : '';
+      panel.style.width = wantW > roomH ? roomH + 'px' : '';
     }
 
     function setOpen(next) {

@@ -121,37 +121,134 @@ echo "  ok    screenshot .playwright/out/dock-rig-full.png"
 # that actually puts it on the operator's site: the tag the WordPress plugin
 # prints, the shadow-root toggle, and the iframe the loader creates. The mock
 # WordPress serves a front page carrying that exact tag.
+#
+# The panel's PLACEMENT is asserted here, not just its existence. A panel that
+# renders correctly but sits off the bottom of the screen is the bug this section
+# was written after: the toggle looked dead because its panel opened past the
+# fold. The viewport is set explicitly (page.setViewportSize, not a window
+# resize) so the short-viewport case is the same on every machine.
 echo
 echo "public/plugin.js on the site's own page (the floating dock):"
 MOCK_WP_URL="http://localhost:${DOCK_RIG_MOCK_WP_PORT:-4600}"
+
+PANEL_OPEN_JS="(()=>{const h=document.querySelector('[data-morpheus-dock]');const p=h&&h.shadowRoot&&h.shadowRoot.querySelector('.panel');return !!(p&&p.classList.contains('open'))})()"
+# The whole question: with the panel open, is every edge of it on screen?
+PANEL_INSIDE_JS="(()=>{const h=document.querySelector('[data-morpheus-dock]');const p=h&&h.shadowRoot&&h.shadowRoot.querySelector('.panel');if(!p||!p.classList.contains('open'))return false;const r=p.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth})()"
+PANEL_GEOM_JS="(()=>{const h=document.querySelector('[data-morpheus-dock]');const p=h&&h.shadowRoot&&h.shadowRoot.querySelector('.panel');if(!p)return 'no panel';const r=p.getBoundingClientRect();return 'box '+Math.round(r.left)+','+Math.round(r.top)+' '+Math.round(r.right)+','+Math.round(r.bottom)+' of '+innerWidth+'x'+innerHeight+' size '+Math.round(r.width)+'x'+Math.round(r.height)+' flipV='+p.classList.contains('flip-v')+' flipH='+p.classList.contains('flip-h')+' open='+p.classList.contains('open')})()"
+TOGGLE_POS_JS="(()=>{const r=document.querySelector('[data-morpheus-dock]').getBoundingClientRect();return Math.round(r.left)+','+Math.round(r.top)})()"
+
+viewport() { pwr run-code "async page => { await page.setViewportSize({ width: $1, height: $2 }); }" >/dev/null; }
+clear_saved_pos() { scripts/pw localstorage-delete morpheus_dock_pos_v1 >/dev/null 2>&1; }
+save_pos() { ev "(()=>{localStorage.setItem('morpheus_dock_pos_v1',JSON.stringify({left:$1,top:$2}));return 'set'})()" >/dev/null; }
+open_dock() { # url
+  pwr goto "$1" >/dev/null
+  sleep 2
+  pw click "getByRole('button', { name: 'Open or drag Morpheus' })" >/dev/null 2>&1
+  sleep 1
+}
+check_panel_inside() { # label
+  if [ "$(ev "$PANEL_INSIDE_JS")" = "true" ]; then
+    echo "  ok    $1"
+  else
+    echo "  FAIL  $1 — panel is not fully in the viewport: $(ev "$PANEL_GEOM_JS")"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
+# url width height savedLeft savedTop — a blank left/top means the default
+# CSS position (bottom-right, or bottom-left for the ?position= case).
+dock_case() {
+  local label="$1" url="$2" w="$3" h="$4" sl="${5:-}" st="${6:-}"
+  viewport "$w" "$h"
+  clear_saved_pos
+  [ -n "$sl" ] && save_pos "$sl" "$st"
+  open_dock "$url"
+  check_panel_inside "$label"
+}
+
+# The origin has to be the host page before its localStorage can be cleared, or
+# a position saved by an earlier run leaks into the "default position" cases.
 pwr goto "$MOCK_WP_URL/" >/dev/null
 sleep 2
 check "the loader mounted the floating toggle" \
   "$(ev "!!(document.querySelector('[data-morpheus-dock]')?.shadowRoot?.querySelector('.toggle'))")" "true"
+
+# The default position, at the heights that decide whether this bites.
+dock_case "default bottom-right, 720px viewport (the reported height)" "$MOCK_WP_URL/" 1280 720
+dock_case "default bottom-right, 800px viewport" "$MOCK_WP_URL/" 1280 800
+dock_case "default bottom-right, 900px viewport" "$MOCK_WP_URL/" 1280 900
+dock_case "default bottom-right, 1000px viewport" "$MOCK_WP_URL/" 1280 1000
+dock_case "narrow 380px-wide viewport (width, not height, is the squeeze)" "$MOCK_WP_URL/" 380 720
+dock_case "very short 240px viewport (shrink to the room, do not overflow)" "$MOCK_WP_URL/" 1280 240
+# Saved drag positions: localStorage is restored on load, so these are their own
+# geometry rather than variations on the default.
+dock_case "saved position at the left edge and the bottom" "$MOCK_WP_URL/" 1280 720 6 660
+dock_case "saved position mid-height, where neither side fits the full panel" "$MOCK_WP_URL/" 1280 720 600 334
+# bottom-left: the flip-h path in the other direction.
+dock_case "bottom-left, default position" "$MOCK_WP_URL/?position=bottom-left" 1280 720
+dock_case "bottom-left, saved position at the right edge" "$MOCK_WP_URL/?position=bottom-left" 1280 720 1216 660
+
+# ── 5b. the dock still behaves ───────────────────────────────────────────
+# Placement is not worth much if the toggle stopped toggling. Click, Escape and
+# a real pointer drag, each verified rather than assumed.
+echo
+echo "Behaviour (the panel must still open, close and drag):"
+viewport 1280 720
+clear_saved_pos
+pwr goto "$MOCK_WP_URL/" >/dev/null
+sleep 2
 # The toggle opens on pointerup, not on click — a synthetic .click() never opens
-# it, so this has to be a real Playwright click (which pierces the open shadow
+# it, so these have to be real Playwright clicks (which pierce the open shadow
 # root) rather than page JS.
-pw click "getByRole('button', { name: 'Open or drag Morpheus' })" >/dev/null 2>&1 \
-  && OPENED=yes || OPENED=no
-check "clicking the toggle opens the panel" "$OPENED" "yes"
+pw click "getByRole('button', { name: 'Open or drag Morpheus' })" >/dev/null 2>&1
+sleep 1
+check "clicking the toggle opens the panel" "$(ev "$PANEL_OPEN_JS")" "true"
 wait_for "the panel's iframe is the embed, with the page it was opened over" \
   "(()=>{const f=document.querySelector('[data-morpheus-dock]')?.shadowRoot?.querySelector('iframe');return !!f && f.src.includes('/embed?token=') && f.src.includes('pageUrl=')})()"
 sleep 2
 FOUND="$(pw find --regex "/Dock rig fixture/")"
 check "the embed really rendered inside the iframe" "$(echo "$FOUND" | grep -q 'No matches found' && echo no || echo yes)" "yes"
-CONSOLE2="$(pw console error)"
-check "the host page console has no errors" "$(echo "$CONSOLE2" | grep -o 'Errors: [0-9]*' | head -1)" "Errors: 0"
 pw screenshot --filename="$SHOTS/dock-rig-pluginjs.png" >/dev/null
 echo "  ok    screenshot .playwright/out/dock-rig-pluginjs.png"
 
-# Reported, NOT asserted. This rig already found a real defect here: in the
-# default bottom-right position the panel's flip decision pushes it below the
-# fold on a 720px-tall viewport (measured: panel top 726 / bottom 1304 in a
-# 720px viewport, while removing `flip-v` puts it at top 74 / bottom 652). It is
-# printed on every run so the next person sees it, but the rig's own pass/fail is
-# about the rig, not about a source bug it is not here to fix.
-GEOMETRY="$(ev "(()=>{const h=document.querySelector('[data-morpheus-dock]');const p=h.shadowRoot?.querySelector('.panel');if(!p)return 'no panel';const r=p.getBoundingClientRect();return 'top '+Math.round(r.top)+' bottom '+Math.round(r.bottom)+' of '+innerHeight+', flip-v='+p.classList.contains('flip-v')+', fully visible: '+(r.top>=0&&r.bottom<=innerHeight)})()")"
-echo "  note  floating panel geometry: $GEOMETRY"
+pw press Escape >/dev/null 2>&1
+sleep 1
+check "Escape closes the panel" "$(ev "$PANEL_OPEN_JS")" "false"
+pw click "getByRole('button', { name: 'Open or drag Morpheus' })" >/dev/null 2>&1
+sleep 1
+check "a click reopens it" "$(ev "$PANEL_OPEN_JS")" "true"
+check_panel_inside "…and the reopened panel is still fully visible"
+
+BEFORE_POS="$(ev "$TOGGLE_POS_JS")"
+pwr run-code "async page => { const t = page.locator('[data-morpheus-dock] .toggle'); const b = await t.boundingBox(); if (!b) return 'no box'; const sx = b.x + b.width / 2, sy = b.y + b.height / 2; await page.mouse.move(sx, sy); await page.mouse.down(); await page.mouse.move(sx - 500, sy - 260, { steps: 12 }); await page.mouse.up(); return 'dragged'; }" >/dev/null
+sleep 1
+AFTER_POS="$(ev "$TOGGLE_POS_JS")"
+check "the toggle still drags ($BEFORE_POS -> $AFTER_POS)" "$([ -n "$BEFORE_POS" ] && [ "$BEFORE_POS" != "$AFTER_POS" ] && echo yes || echo no)" "yes"
+check "the dragged position is still saved for next time" "$(ev "!!localStorage.getItem('morpheus_dock_pos_v1')")" "true"
+check_panel_inside "the panel is fully visible after the drag"
+pw click "getByRole('button', { name: 'Open or drag Morpheus' })" >/dev/null 2>&1
+sleep 1
+check "a click closes it again" "$(ev "$PANEL_OPEN_JS")" "false"
+
+# Resizing with the panel open is a real path (rotate a phone, drag a window) and
+# it has its own way to go stale: a height set inline for the old viewport must
+# not survive into the new one.
+echo
+echo "Resize while the panel is open:"
+pw click "getByRole('button', { name: 'Open or drag Morpheus' })" >/dev/null 2>&1
+sleep 1
+viewport 1000 1000
+sleep 1
+check_panel_inside "growing the viewport keeps it inside"
+viewport 1280 600
+sleep 1
+check_panel_inside "shrinking the viewport re-fits it"
+viewport 360 640
+sleep 1
+check_panel_inside "a phone-sized viewport keeps it inside"
+
+CONSOLE2="$(pw console error)"
+check "the host page console has no errors" "$(echo "$CONSOLE2" | grep -o 'Errors: [0-9]*' | head -1)" "Errors: 0"
 
 # ── 6. a narrowed token really is narrowed ───────────────────────────────
 echo

@@ -47,19 +47,23 @@ const json = (res, status, payload) => {
  * the iframe it creates, and the /embed page inside it — rather than only the
  * embed URL that a human would otherwise have to paste.
  *
+ * `?position=bottom-left` prints `data-position` too, so the flip-h geometry can
+ * be driven as well as the default bottom-right.
+ *
  * The token is read from the rig's own state file at request time (the file is
  * gitignored and local), never baked into this script.
  */
-function hostPage() {
+function hostPage(position) {
   let token = '';
   try { token = JSON.parse(readFileSync(STATE_FILE, 'utf8')).tokens.full.token; } catch { /* not seeded yet */ }
+  const positionAttr = position ? ` data-position="${position}"` : '';
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Rig Fixture Site</title></head>
 <body style="font-family:system-ui;background:#0b0b0b;color:#e6e6e6;margin:0;padding:32px">
   <h1>Rig Fixture Site</h1>
   <p id="fixture-note">A host page for the dock rig. The Morpheus dock below is public/plugin.js
   loading the same tag the WordPress plugin prints for a logged-in administrator.</p>
-  ${token ? `<script src="${EMBED_ORIGIN}/plugin.js" data-token="${token}" data-dock="1"></script>` : '<!-- not seeded yet: no widget token in state.json -->'}
+  ${token ? `<script src="${EMBED_ORIGIN}/plugin.js" data-token="${token}" data-dock="1"${positionAttr}></script>` : '<!-- not seeded yet: no widget token in state.json -->'}
 </body></html>`;
 }
 
@@ -142,13 +146,17 @@ function signatureOk(req, raw) {
 
 let posts = 0;
 function respond(req, res, raw) {
-  const path = (req.url || '').split('?')[0];
+  const url = new URL(req.url || '/', `http://localhost:${PORT}`);
+  const path = url.pathname;
 
   // The site's own front page — with the dock tag on it, for /wp-admin's admin.
   if (req.method === 'GET' && (path === '/' || path === '/index.php')) {
-    console.log('[mock-wp] GET / (host page with the dock tag)');
+    // Only the value the loader understands, so a query string can never put
+    // arbitrary markup into this page.
+    const position = url.searchParams.get('position') === 'bottom-left' ? 'bottom-left' : '';
+    console.log(`[mock-wp] GET / (host page with the dock tag${position ? `, position=${position}` : ''})`);
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    return res.end(hostPage());
+    return res.end(hostPage(position));
   }
 
   // A browser asks for this unprompted; without it the rig's "no console errors"
