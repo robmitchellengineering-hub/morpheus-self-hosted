@@ -648,6 +648,12 @@ ok( strpos( $live_body, 'Sitemap: ' . home_url( '/wp-sitemap.xml' ) ) !== false,
 //    site answer the cache-busting re-fetch with a body that is neither the old
 //    file nor a robots.txt that advertises anything — which is what a genuinely
 //    broken end state looks like.
+//
+//    This case accepts EITHER reason on purpose, and that tolerance is honest
+//    about what it proves: its probe body fails on BOTH counts, so the sitemap
+//    clause alone would catch it. It is about "a fix that cannot verify rolls
+//    back", not about which branch decided. Case 7b below carries the specific
+//    claim for the other branch — do not read this one as covering both.
 @file_put_contents( $robots_file, $stale_body );
 clearstatcache();
 $GLOBALS['morpheus_robots_probe'] = function ( $url ) use ( $stale_body ) {
@@ -660,6 +666,37 @@ ok( file_exists( $robots_file ), 'robots: the file is back in the root' );
 ok( file_get_contents( $robots_file ) === $stale_body, 'robots: …with its original contents' );
 ok( strpos( (string) $rolled['error'], 'does not advertise' ) !== false || strpos( (string) $rolled['error'], 'still serving' ) !== false, 'robots: …and the failure says why' );
 ok( ! empty( $rolled['backup'] ), 'robots: …and still names the file it used, so the operator can find it' );
+
+// 7b. THE "STILL SERVING THE OLD FILE" BRANCH, ON ITS OWN.
+//
+// The site keeps handing back the bytes that were just moved AND those bytes
+// advertise a live sitemap. That second half is the point: it leaves the sitemap
+// clause with nothing to complain about, so the ONLY thing that can refuse this
+// outcome is the comparison against the body that was quarantined. Delete that
+// comparison and this run reports a VERIFIED fix while the file is still being
+// served — a false success, which is the one thing this screen must never show.
+//
+// Asserting the reason matters as much as asserting the failure: a "does not
+// advertise" here would mean the sitemap clause decided it and this case would
+// be proving nothing about the branch it exists for.
+$still_body = "User-agent: *\nDisallow: /wp-admin/\nSitemap: " . home_url( '/wp-sitemap.xml' ) . "\n";
+@file_put_contents( $robots_file, $still_body );
+clearstatcache();
+$GLOBALS['morpheus_robots_probe'] = function ( $url ) use ( $still_body ) {
+	// /robots.txt only: the sitemap fetches stay REAL, so the Sitemap line in
+	// this body genuinely answers 200 and cannot be what decides the verdict.
+	return strpos( $url, '/robots.txt' ) !== false ? $still_body : null;
+};
+$still_served = Morpheus_Fixes::apply( 'morpheus_stale_robots_txt' );
+ok( ( $still_served['verified'] ?? null ) === false, 'robots: still serving the old file is NOT reported as verified' );
+ok( ( $still_served['restored'] ?? null ) === true, 'robots: …and the file was put back' );
+ok( file_exists( $robots_file ) && file_get_contents( $robots_file ) === $still_body, 'robots: …in the root, with its original contents' );
+ok( strpos( (string) $still_served['error'], 'still serving' ) !== false, 'robots: …and the reason is the STILL-SERVING one' );
+ok( strpos( (string) $still_served['error'], 'does not advertise' ) === false, 'robots: …NOT the sitemap clause, which this case isolates from' );
+
+// Case 8 below builds on case 7's state, so put the stale body back.
+@file_put_contents( $robots_file, $stale_body );
+clearstatcache();
 
 // 8. A warm cache must not undo a fix that worked: the old body is still handed
 //    to a plain request, and the real dynamic file answers behind it.

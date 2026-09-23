@@ -1053,6 +1053,15 @@ const verifyFn = fnBody(fixesCode, 'verify_quarantined_robots');
 check('the verifier was parsed (parser sanity)', verifyFn.length > 400, true);
 check('verification re-fetches the live /robots.txt', has(verifyFn, "home_url( '/robots.txt' )") && has(verifyFn, 'Morpheus_SEO::fetch_robots_txt()'), true);
 check('…requires the old body to be gone', /if \( Morpheus_SEO::bodies_match\( \$previous, \$live \) \) \{\s*\n\s*return array\( 'ok' => false/.test(verifyFn), true);
+// AND IT IS DECIDED BEFORE THE SITEMAP CLAUSE. Order is load-bearing, not
+// cosmetic: a site still serving the old bytes whose body also advertises a live
+// sitemap has nothing for the sitemap clause to complain about, so if that
+// clause ran first the still-serving comparison would never be reached and the
+// fix would be reported VERIFIED while the file was still being served. The
+// `lastIndexOf` is deliberate — the same comparison also appears once in the
+// cache-buster branch above, and it is the LATER one that must precede `$missing`.
+check('…and the still-serving test precedes the sitemap clause (or a still-served body with a live sitemap slips through)',
+  verifyFn.lastIndexOf('Morpheus_SEO::bodies_match( $previous, $live )') < verifyFn.indexOf('$missing = array();'), true);
 check('…requires every sitemap the site serves to be advertised', has(verifyFn, 'dynamic_sitemap_urls()') && has(verifyFn, 'advertises( $live,'), true);
 check('…and cannot confirm anything from a site that will not answer', /null === \$live/.test(verifyFn), true);
 check('…retries behind a cache-buster before calling it a failure', has(verifyFn, 'morpheus-verify'), true);
@@ -1129,6 +1138,12 @@ check('…and that the outcome names where the backup is', has(noYoastHarness, '
 check('…and that the dynamic robots.txt is served afterwards', has(noYoastHarness, 'robots: the dynamic robots.txt advertises the sitemap the site serves'), true);
 check('…and that a fix which cannot verify rolls the file back', has(noYoastHarness, 'robots: a fix that cannot verify is NOT reported as verified'), true);
 check('…and that the file really is back', has(noYoastHarness, "robots: …with its original contents"), true);
+// Case 7's probe body fails on BOTH counts, so on its own it would stay green if
+// the still-serving comparison were deleted — this is the case that isolates it,
+// and it is the one whose mutation was observed to fail. See the comment on 7b.
+check('…and that a still-served old body is refused on its own', has(noYoastHarness, 'robots: still serving the old file is NOT reported as verified'), true);
+check('…and that the still-serving reason is the one given', has(noYoastHarness, 'robots: …and the reason is the STILL-SERVING one'), true);
+check('…and that the case proves the sitemap clause did not decide it', has(noYoastHarness, 'robots: …NOT the sitemap clause, which this case isolates from'), true);
 check('…and that a warm cache does not undo a working fix', has(noYoastHarness, 'robots: a warm cache does not undo a fix that actually worked'), true);
 
 // ── summary ─────────────────────────────────────────────────────────────────
