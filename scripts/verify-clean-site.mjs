@@ -445,6 +445,23 @@ check('the wp-admin links use admin_url(), not a hard-coded /wp-admin/',
 // fallback, injected below the registry) is a guided step like any other.
 check('…including the Site Health fallback link', linkValues.some((v) => /admin_url\( 'site-health\.php' \)/.test(v)), true);
 
+// THE OTHER PLACE PLUGIN URLS REACH THE APP. `class-health.php::links()` lifts
+// core's own action hrefs into the findings list, and core's filter can hand it a
+// root-relative one — its own comment says so. The app resolves a leading '/' as
+// a second line of defence, so removing this resolution does NOT break the
+// product: a mutation deleting it passed this guard, which is exactly why the
+// plugin must not be allowed to rely on the app. Asserted here rather than left
+// to the app-side checks, because "it happens to be caught downstream" is how
+// this bug class came back once already.
+const healthLinksBody = (() => {
+  const src = stripPhp(read('wp-plugin/morpheus/includes/class-health.php'));
+  const i = src.indexOf('function links(');
+  return i < 0 ? '' : src.slice(i, i + 2000);
+})();
+check('the health class links() body was located (parser sanity)', healthLinksBody.length > 200, true);
+check('…and it resolves a root-relative core action href against the site',
+  /strpos\(\s*\$url,\s*'\/'\s*\)/.test(healthLinksBody) && /home_url\(\s*\$url\s*\)/.test(healthLinksBody), true);
+
 // The app half, as BEHAVIOUR: the real resolver, not a regex over its source.
 check('a root-relative step link resolves against the connected site',
   resolveSiteLink('/wp-admin/users.php?role=administrator', 'https://shop.example'), 'https://shop.example/wp-admin/users.php?role=administrator');
