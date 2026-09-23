@@ -195,6 +195,33 @@ silent `403`. So `verify-seo.mjs`, `verify-pairing.mjs` and
 PHP** and compare them with what the JS sends. A rename on either side now fails
 a check instead of surfacing as a mystery at runtime.
 
+## A link the plugin sends is rendered INSIDE the app, so it must be absolute
+
+Every guided step in `class-fixes.php` carried a root-relative path
+(`/wp-admin/users.php?role=administrator`). The panel renders the value straight
+into an `href`, so the browser resolved it against **the app's own origin** —
+morpheus.nz — and it hit the app's catch-all route: the operator clicking a link
+to their own site got Morpheus's "Page Not Found / the AI hasn't implemented this
+page yet" screen. Every guided instruction was a dead link, on every site.
+
+Two rules now, because the plugin and the app ship separately and either half
+alone would leave the window open:
+
+* the plugin builds each link with `admin_url( … )` — which also respects a site
+  whose wp-admin is not at `/wp-admin/`, which a literal path cannot — and
+  `class-health.php` resolves a root-relative core action href against the site
+  before forwarding it;
+* the panel resolves any value still beginning `/` against the connected site's
+  own URL (`src/lib/siteLink.js`), so an older plugin's payload or a new finding
+  opens the customer's site instead of the app's 404.
+
+`scripts/verify-clean-site.mjs` asserts both halves — it parses the `'link' =>`
+values out of the PHP and behaviour-tests the resolver, and asserts the panel
+actually calls it — and the plugin harness asserts the same links are absolute
+and on the boot's own host. The defect was found by a person clicking, so the
+dock rig (`scripts/dock-rig-drive.sh`) also reads the rendered href and requires
+it to be the fixture site, never the app origin.
+
 ## A stale opcode cache reports the old version
 
 If Plugins shows `0.5.6` while the site's `/status` still says `0.4.5`, that is a

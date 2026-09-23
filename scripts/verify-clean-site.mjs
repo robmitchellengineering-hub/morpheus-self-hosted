@@ -36,6 +36,10 @@ import {
   cleanFindings, cleanSummary, cleanLimits, safeSet, reportOnly,
   cleanQuarantineEvidence, cleanUndoLine,
 } from '../server/src/lib/siteClean.js';
+// Pure and dependency-free on purpose: this is the app half of the guided-step
+// link rule, and testing the REAL function here is stronger than any regex over
+// its source. See lib/siteLink.js for why it exists at all.
+import { resolveSiteLink } from '../src/lib/siteLink.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -409,6 +413,83 @@ const panel = read('src/components/matrix/WebsitePanel.jsx');
 const embed = read('src/pages/Embed.jsx');
 check('the WEBSITE panel mounts the tab that carries it', /website\/HealthTab/.test(panel), true);
 check('the dock mounts the same tab', /website\/HealthTab/.test(embed), true);
+
+console.log('\n8. every guided step link points at the CUSTOMER site, never at the app');
+
+// The bug this guard was written for: every guided step in class-fixes.php
+// carried a root-relative path, the panel rendered it in an href, and the value
+// resolved against the ORIGIN THE APP IS LOADED FROM — morpheus.nz — so it hit
+// the app's own catch-all route and showed Morpheus's "Page Not Found / the AI
+// hasn't implemented this page yet" screen. The operator clicking a link to
+// their own site was told the page did not exist.
+//
+// Both halves are asserted because they ship separately: the plugin must send
+// absolute URLs, AND the app must not depend on that being true.
+const linkValues = [...stripPhp(registryBlock).matchAll(/'link'\s*=>\s*([^\n]+)/g)]
+  .map((m) => m[1].replace(/[\s,]+$/, ''));
+check('the guided-step links were parsed out of the PHP (parser sanity)', linkValues.length >= 10, true);
+// A literal beginning with `/` is the exact defect. Parsed out of the source (and
+// out of the comment-stripped source), so a comment mentioning the old path
+// cannot satisfy it and a rewording cannot hide it.
+const rootRelative = linkValues.filter((v) => /^['"]\//.test(v));
+check('…and none is a root-relative path', rootRelative, []);
+// Everything else must be built by a helper that respects where the site's
+// admin actually lives. `admin_url()` is the one for a wp-admin screen and is
+// what the bug report asked for; home_url()/site_url() cover the site root.
+const notSiteBuilt = linkValues.filter((v) => !/^['"]https?:\/\//.test(v)
+  && !/^(admin_url|home_url|site_url)\s*\(/.test(v));
+check('…and every one is built from a site-URL helper or is absolute', notSiteBuilt, []);
+check('the wp-admin links use admin_url(), not a hard-coded /wp-admin/',
+  linkValues.filter((v) => /^admin_url\(/.test(v)).length >= 12, true);
+// The one link a finding with no screen of its own gets (the Site Health
+// fallback, injected below the registry) is a guided step like any other.
+check('…including the Site Health fallback link', linkValues.some((v) => /admin_url\( 'site-health\.php' \)/.test(v)), true);
+
+// The app half, as BEHAVIOUR: the real resolver, not a regex over its source.
+check('a root-relative step link resolves against the connected site',
+  resolveSiteLink('/wp-admin/users.php?role=administrator', 'https://shop.example'), 'https://shop.example/wp-admin/users.php?role=administrator');
+check('…and a trailing slash on the site URL does not double up',
+  resolveSiteLink('/wp-admin/x.php', 'https://shop.example/'), 'https://shop.example/wp-admin/x.php');
+check('an absolute step link is left exactly as the site sent it',
+  resolveSiteLink('https://shop.example/wp-admin/x.php', 'https://shop.example'), 'https://shop.example/wp-admin/x.php');
+// A protocol-relative value is not "already absolute" for our purposes: it must
+// not be able to send the operator to a third-party origin from a link the site
+// sent us.
+check('a protocol-relative value cannot navigate off the customer site',
+  resolveSiteLink('//evil.example/x', 'https://shop.example'), 'https://shop.example//evil.example/x');
+check('with no connected site there is nothing to resolve against',
+  resolveSiteLink('/wp-admin/x.php', ''), '/wp-admin/x.php');
+check('a missing link stays missing', resolveSiteLink(null, 'https://shop.example'), null);
+check('an empty link stays empty', resolveSiteLink('', 'https://shop.example'), '');
+
+// …and the panel actually USES it. A correct resolver nothing calls is the
+// "declared and never read" shape (verification card): the module tests above
+// would stay green while the page kept the bug.
+check('the panel imports the resolver', /import \{ resolveSiteLink \} from '@\/lib\/siteLink'/.test(ui), true);
+check('the guided step link renders through it', /href=\{resolveSiteLink\(s\.link, siteUrl\)\}/.test(ui), true);
+check('a core action link renders through it too', /href=\{resolveSiteLink\(l\.url, siteUrl\)\}/.test(ui), true);
+check('the panel resolves against the connected site, not a constant', /const siteUrl = site\?\.url \|\| ''/.test(ui), true);
+check('the site URL is threaded to the fix box that renders the step',
+  /onJumpToUpdates=\{onJumpToUpdates\} siteName=\{siteName\} siteUrl=\{siteUrl\}/.test(ui), true);
+check('…and to every Finding that renders a step link',
+  (ui.match(/siteName=\{siteName\} siteUrl=\{siteUrl\}/g) || []).length >= 4, true);
+
+// ── the stale-robots finding reaches the CLEAN MY SITE press ────────────────
+//
+// Morpheus_Health::robots_check() returns a finding with no `fix` of its own;
+// Morpheus_Fixes::annotate() attaches the registry's by id. The clean scan
+// appends that finding and then annotates, so the finding the press sees is
+// `auto` — and the app's safe set takes it when it ASKS for something and drops
+// it when it reads `good`. A `good` finding has nothing to quarantine, and a
+// press that renamed a file in response to a passed check is the change this
+// whole feature refuses to make.
+check('the clean scan annotates the robots finding with its registry fix',
+  /Morpheus_Health::robots_finding\(\)/.test(phpClean) && /Morpheus_Fixes::annotate\( \$findings \)/.test(phpClean), true);
+const robotsFix = { kind: 'auto', label: 'Quarantine the stale robots.txt', does: 'x' };
+const staleRobots = safeSet(cleanFindings({ findings: [{ id: 'morpheus_stale_robots_txt', status: 'recommended', fix: robotsFix }] }));
+check('a stale robots.txt IS offered for the press', staleRobots.map((f) => f.id), ['morpheus_stale_robots_txt']);
+const goodRobots = safeSet(cleanFindings({ findings: [{ id: 'morpheus_stale_robots_txt', status: 'good', fix: robotsFix }] }));
+check('a robots.txt that reads good is NOT offered for the press', goodRobots, []);
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {

@@ -4,6 +4,7 @@ import {
   Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown, ShieldAlert, Eraser, Info,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { resolveSiteLink } from '@/lib/siteLink';
 import { useTaskRunner, useTaskResult } from '../TaskRunner';
 
 // SITE HEALTH tab — what WordPress's own Site Health screen and Morpheus's own
@@ -245,7 +246,7 @@ function FixResult({ result }) {
  */
 function FixBox({
   t, fix, busy = false, paused = false, result, onFix, onRescan, scanning = false,
-  onJumpToUpdates, siteName,
+  onJumpToUpdates, siteName, siteUrl,
 }) {
   // Local to this finding: step two of the confirm, and whether the guide is open.
   const [confirming, setConfirming] = useState(false);
@@ -294,7 +295,11 @@ function FixBox({
                   <span className="min-w-0 flex-1 space-y-0.5">
                     <span className="block text-[10px] text-ink-max leading-relaxed break-words">{s.text}</span>
                     {s.link ? (
-                      <a href={s.link} target="_blank" rel="noreferrer"
+                      // Resolved against the CONNECTED SITE, never the origin this
+                      // panel is loaded from — a root-relative step link must not
+                      // land on the app's own 404. See lib/siteLink.js for why the
+                      // plugin sending absolute URLs does not retire this.
+                      <a href={resolveSiteLink(s.link, siteUrl)} target="_blank" rel="noreferrer"
                         className="inline-flex items-center gap-1 text-[10px] text-primary/80 underline break-all hover:text-primary">
                         <ExternalLink size={10} className="shrink-0" /> Open this step
                       </a>
@@ -362,7 +367,7 @@ function FixBox({
 
 /** One finding, rendered so the server's own source label is unmissable. */
 function Finding({
-  t, quiet = false, siteName, fixBusy = false, fixPaused = false, fixResult,
+  t, quiet = false, siteName, siteUrl, fixBusy = false, fixPaused = false, fixResult,
   onFix, onRescan, scanning = false, onJumpToUpdates,
   // CLEAN MY SITE withholds the control on a finding that already reads `good`:
   // a check that passed must not offer a press that changes the site, or the
@@ -387,7 +392,7 @@ function Finding({
         {t.description}
       </p>
       {links.map((l, i) => (
-        <a key={`${l.url}-${i}`} href={l.url} target="_blank" rel="noreferrer"
+        <a key={`${l.url}-${i}`} href={resolveSiteLink(l.url, siteUrl)} target="_blank" rel="noreferrer"
           className="flex items-start gap-1.5 text-[11px] text-primary/80 underline break-all hover:text-primary">
           <ExternalLink size={11} className="mt-[2px] shrink-0" />{l.label || l.url}
         </a>
@@ -417,7 +422,7 @@ function Finding({
       {t.fix && withFix ? (
         <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult}
           onFix={onFix} onRescan={onRescan} scanning={scanning}
-          onJumpToUpdates={onJumpToUpdates} siteName={siteName} />
+          onJumpToUpdates={onJumpToUpdates} siteName={siteName} siteUrl={siteUrl} />
       ) : null}
     </div>
   );
@@ -745,6 +750,10 @@ export default function HealthTab({ projectId }) {
   // is offered only when there is work AND permission AND a writable site.
   const showApplyControl = updateTotal > 0 && !!policy && applyTargets > 0 && apply?.ok !== false;
   const siteName = site?.name || site?.url || 'this site';
+  // The connected site's own base URL, for resolving a plugin-supplied step link
+  // that is still root-relative (see lib/siteLink.js). Empty when no site is
+  // connected, which is the one case with nothing to resolve against.
+  const siteUrl = site?.url || '';
 
   // Only the attention list carries FIX ALL, and only its `auto` findings: a
   // guided finding needs a person and an `updates` finding belongs to the
@@ -1027,7 +1036,7 @@ export default function HealthTab({ projectId }) {
                     </div>
                   ) : null}
                   {attention.map((t, i) => (
-                    <Finding key={`${t.id}-${i}`} t={t} siteName={siteName}
+                    <Finding key={`${t.id}-${i}`} t={t} siteName={siteName} siteUrl={siteUrl}
                       fixBusy={fixingIds.includes(t.id)}
                       fixPaused={fixAllRunning}
                       fixResult={fixResults[t.id]}
@@ -1046,7 +1055,7 @@ export default function HealthTab({ projectId }) {
                   Everything else · {rest.length} {showAll ? 'HIDE' : 'SHOW'}
                 </button>
                 {showAll && rest.map((t, i) => (
-                  <Finding key={`${t.id}-${i}`} t={t} quiet siteName={siteName}
+                  <Finding key={`${t.id}-${i}`} t={t} quiet siteName={siteName} siteUrl={siteUrl}
                     fixBusy={fixingIds.includes(t.id)}
                     fixPaused={fixAllRunning}
                     fixResult={fixResults[t.id]}
@@ -1196,7 +1205,7 @@ export default function HealthTab({ projectId }) {
                       that would change a site in response to a check that passed. */}
                   <div className="space-y-2">
                     {cleanAttention.map((t, i) => (
-                      <Finding key={`clean-${t.id}-${i}`} t={t} siteName={siteName}
+                      <Finding key={`clean-${t.id}-${i}`} t={t} siteName={siteName} siteUrl={siteUrl}
                         fixBusy={fixingIds.includes(t.id)}
                         fixPaused={cleanRunning || fixAllRunning}
                         fixResult={fixResults[t.id]}
@@ -1210,7 +1219,7 @@ export default function HealthTab({ projectId }) {
                           <Check size={12} /> Nothing to clean · {cleanNothingToDo.length} {cleanShowClear ? 'HIDE' : 'SHOW'}
                         </button>
                         {cleanShowClear ? cleanNothingToDo.map((t, i) => (
-                          <Finding key={`clean-clear-${t.id}-${i}`} t={t} quiet withFix={false} siteName={siteName}
+                          <Finding key={`clean-clear-${t.id}-${i}`} t={t} quiet withFix={false} siteName={siteName} siteUrl={siteUrl}
                             fixBusy={fixingIds.includes(t.id)}
                             fixPaused={cleanRunning || fixAllRunning}
                             fixResult={fixResults[t.id]}

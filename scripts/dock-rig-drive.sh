@@ -124,6 +124,23 @@ check "the guided finding is shown with its own sentence" \
   "$(ev "document.body.innerText.includes('Re-installing WordPress over a live site is your decision')")" "true"
 check "a guided finding is NOT given its own press" \
   "$(ev "!document.body.innerText.includes('Replace the modified core files') && document.body.innerText.includes('GUIDE ME')")" "true"
+
+# A guided step's link must open the CUSTOMER's wp-admin, never the app. The mock
+# site answers the guided steps with root-relative paths (the exact shape the
+# plugin used to send), so this is the browser half of the fix: the panel has to
+# resolve them against the connected site. If it does not, the href resolves
+# against this origin (the app) and the click lands on Morpheus's own 404 — which
+# is the defect a person found by clicking, so it is checked by clicking.
+SITE_ORIGIN="http://localhost:${DOCK_RIG_MOCK_WP_PORT:-4600}"
+STEP_LINKS_JS="[...document.querySelectorAll('a')].filter(a=>a.textContent.includes('Open this step')).map(a=>a.href)"
+ev "(()=>{const bs=[...document.querySelectorAll('button')].filter(b=>b.textContent.includes('GUIDE ME'));bs.forEach(b=>b.click());return bs.length})()" >/dev/null
+sleep 1
+check "a guided step link is on screen to inspect" "$(ev "(${STEP_LINKS_JS}).length > 0")" "true"
+check "every guided step link is on the fixture site" \
+  "$(ev "(${STEP_LINKS_JS}).filter(h=>!h.startsWith('${SITE_ORIGIN}/')).join(' ')")" ""
+check "…and none resolves to the app's own origin" \
+  "$(ev "(${STEP_LINKS_JS}).filter(h=>h.startsWith(location.origin)).join(' ')")" ""
+echo "        guided step links -> $(ev "(${STEP_LINKS_JS}).join(' ')")"
 # The section label is styled uppercase, so `innerText` returns the TRANSFORMED
 # text ("WHAT THIS SCAN DID NOT REACH") — presence of the authored sentence has to
 # be read from textContent.

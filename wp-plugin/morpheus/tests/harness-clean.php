@@ -487,6 +487,62 @@ foreach ( Morpheus_Fixes::registry() as $id => $entry ) {
 }
 ok( $no_explanation === array(), 'every automatic fix explains what it will do', $no_explanation );
 
+// The stale-robots finding's action is attached BY ID, not carried by the check.
+// Morpheus_Health::robots_check() returns the finding with no `fix` key of its
+// own; Morpheus_Fixes::annotate() is what gives it the registry's quarantine.
+// Assert that mechanism directly, because a registry entry the annotation never
+// reaches is a finding with no press that looks perfectly mapped in source.
+$robots_bare     = array( array( 'id' => 'morpheus_stale_robots_txt', 'status' => 'recommended', 'label' => 'robots.txt is built by WordPress' ) );
+$robots_unmapped = Morpheus_Fixes::annotate( $robots_bare );
+ok( ( $robots_bare[0]['fix']['kind'] ?? '' ) === 'auto', 'robots: annotate() attaches the automatic quarantine to the finding by id' );
+ok( ( $robots_bare[0]['fix']['label'] ?? '' ) === 'Quarantine the stale robots.txt', 'robots: …and it is the quarantine the registry names' );
+ok( $robots_unmapped === array(), 'robots: …so the finding is never counted UNMAPPED' );
+// A `good` robots finding is annotated too — the STATUS is what keeps it out of
+// the press, in the app's safe set (scripts/verify-clean-site.mjs), so the plugin
+// must not be the place that decides it.
+$robots_good = array( array( 'id' => 'morpheus_stale_robots_txt', 'status' => 'good' ) );
+Morpheus_Fixes::annotate( $robots_good );
+ok( array_key_exists( 'fix', $robots_good[0] ), 'robots: annotate() attaches the fix even when the check reads good' );
+
+// ── 6b. every guided step link is an absolute URL on THIS site ──────────────
+//
+// The defect this pins down: every guided step carried a root-relative
+// '/wp-admin/…'. The Morpheus app renders the value straight into an href, so a
+// path resolves against the ORIGIN THE APP IS LOADED FROM — morpheus.nz — hits
+// the app's own catch-all route, and shows Morpheus's "Page Not Found / the AI
+// hasn't implemented this page yet" screen. The operator clicking a link to
+// their own site was told the page did not exist. `admin_url()` also respects a
+// site whose wp-admin does not live at /wp-admin/, which a literal cannot.
+//
+// Asserted on the REAL registry, walking the actual link values — a text search
+// that a comment can satisfy is not a check.
+
+section( '6b. every guided step link is an absolute URL on this site' );
+
+$site_host = wp_parse_url( home_url(), PHP_URL_HOST );
+$relative  = array();
+$offsite   = array();
+$links     = 0;
+foreach ( Morpheus_Fixes::registry() as $id => $entry ) {
+	foreach ( (array) ( $entry['steps'] ?? array() ) as $step ) {
+		$link = (string) ( $step['link'] ?? '' );
+		if ( '' === $link ) {
+			continue;
+		}
+		$links++;
+		$parts = wp_parse_url( $link );
+		if ( empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
+			$relative[] = $id . ' → ' . $link;
+		} elseif ( 0 !== strcasecmp( (string) $parts['host'], (string) $site_host ) ) {
+			$offsite[] = $id . ' → ' . $link;
+		}
+	}
+}
+ok( $links >= 10, "the registry's guided step links were found to assert against ($links)" );
+ok( $relative === array(), 'no guided step link is a root-relative path' . ( $relative ? ' — ' . implode( ', ', $relative ) : '' ) );
+ok( $offsite === array(), 'every guided step link is on this site' . ( $offsite ? ' — ' . implode( ', ', $offsite ) : '' ) );
+ok( ! empty( wp_parse_url( home_url(), PHP_URL_HOST ) ), 'this boot has a site host to compare against (parser sanity)' );
+
 // ── 7. a good site produces no attention-worthy finding ─────────────────────
 //
 // THE FIXTURES ARE REMOVED and the site is made to look like a site that has been
