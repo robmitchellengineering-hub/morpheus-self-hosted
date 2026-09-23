@@ -301,11 +301,12 @@ export default function SeoTab({ projectId, store, widget = false }) {
     });
   };
   useTaskResult('seo:links', (r) => {
-    if (r.itemId !== edit?.id) return; // the operator has moved to another page
+    // `false` = I could not place this YET, do not consume it.
+    if (r.itemId !== edit?.id) return false; // not this page — keep it for when it is
     setLinks({ ...r, checked: Object.fromEntries((r.links || []).map((l, i) => [i, true])) });
     if (r.note) setNote(r.note);
     else if (!r.links?.length) setNote('Nothing worth linking from that page yet.');
-  });
+  }, [edit?.id]);
 
   // Dry run first: the plugin shows the exact sentence each link would land in,
   // and refuses anything whose phrase is not really in the text.
@@ -360,10 +361,11 @@ export default function SeoTab({ projectId, store, widget = false }) {
     });
   };
   useTaskResult('seo:keywords', (r) => {
-    if (r.itemId !== edit?.id) return;
+    // `false` = I could not place this YET, do not consume it.
+    if (r.itemId !== edit?.id) return false; // not this page — keep it for when it is
     setKw(r);
     if (!r?.keywords?.length) setNote('No keyword signals came back — try again, or add a competitor address.');
-  });
+  }, [edit?.id]);
 
   const save = async () => {
     setSaving(true); setErr(null); setNote(null);
@@ -393,10 +395,11 @@ export default function SeoTab({ projectId, store, widget = false }) {
     });
   };
   useTaskResult('seo:one', ({ itemId, suggestion, titleOnly }) => {
-    if (itemId !== edit?.id) return;
+    // `false` = I could not place this YET, do not consume it.
+    if (itemId !== edit?.id) return false; // not this page — keep it for when it is
     setEdit((cur) => (cur ? { ...cur, suggestion } : cur));
     if (titleOnly) setNote('Only the title was available to read — check the suggestion against the page before saving.');
-  });
+  }, [edit?.id]);
 
   // The batch targets content a human would target: published, and missing
   // either half of its metadata. Rewriting a title someone deliberately wrote
