@@ -141,6 +141,18 @@ export function mergeSeoSuggestions(lists) {
  * Pure apart from `ask`: no model, no site, so scripts/verify-seo.mjs can drive
  * every branch with a fake asker.
  */
+/**
+ * The AI role the SEO batch calls under — its own slot so lib/timingStats.js
+ * averages SEO calls against SEO calls.
+ *
+ * It used to pass `diagnosis`, which four much smaller callers also use, so the
+ * ETA was an average of other people's work. The name lives here rather than at
+ * the call site because the guard has to assert it is the same value that is
+ * seeded in timingStats and sized in billing; a second spelling of "seo" in
+ * another file is exactly how those three drift apart.
+ */
+export const SEO_AI_ROLE = 'seo';
+
 export async function generateSeoInChunks(items, ask, options = {}) {
   const { size = SEO_ITEMS_PER_CALL, onGiveUp } = options;
   const out = [];

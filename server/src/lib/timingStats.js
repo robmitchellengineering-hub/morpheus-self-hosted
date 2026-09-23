@@ -22,6 +22,15 @@ const SEED_MS = {
   planner: 45000,
   coder: 95000,
   reviewer: 45000,
+  // The SEO batch gets its own slot rather than sharing `diagnosis`. It shared
+  // that role with four much smaller calls (product copy, keyword research,
+  // internal links, context summary), so its rolling average was an average of
+  // other people's work — and with no entry here at all the first estimate was
+  // the generic DEFAULT_SEED_MS. The number below is a first-call placeholder
+  // chosen from the call's shape (one structured-JSON answer per 5 items, up to
+  // seoCallMaxTokens(5) = 8000 output tokens — the same order as coder/reviewer);
+  // the rolling average over the last 20 real SEO calls replaces it immediately.
+  seo: 45000,
 };
 const DEFAULT_SEED_MS = 60000;
 

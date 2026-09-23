@@ -26,7 +26,7 @@ import {
   buildLinkPrompt, normalizeLinkSuggestions, MAX_LINKS,
   MAX_BATCH, SEO_ITEMS_PER_CALL, SEO_TOKENS_PER_ITEM, SEO_REASONING_FLOOR,
   SEO_MIN_CALL_TOKENS, SEO_MAX_CALL_TOKENS,
-  chunkSeoItems, seoCallMaxTokens, mergeSeoSuggestions, generateSeoInChunks,
+  chunkSeoItems, seoCallMaxTokens, mergeSeoSuggestions, generateSeoInChunks, SEO_AI_ROLE,
 } from '../server/src/lib/seoPrompts.js';
 import { TEMPLATE_TOKENS } from '../src/lib/seoTemplate.js';
 import {
@@ -645,6 +645,129 @@ check('…and stitches the responses back', has(seoPanelSrc, 'mergeBatchResults(
 check('…and bounds one click to what it can apply', has(seoPanelSrc, 'SEO_BATCH_MAX'), true);
 check('…and no longer sends the whole batch in one request', has(seoPanelSrc, 'missing.slice(0, 25)'), false);
 check('…and shows a live timer while an AI action runs', has(seoPanelSrc, 'EtaTimer'), true);
+
+
+// ── 7b. the batch streams, and both ends agree on the events ───────────────
+//
+// 2026-09-23, Rob: "the first batch of 5 started, the timer ran, the ETA never
+// appeared, then Failed to fetch". One request was five sequential model calls
+// with ZERO bytes written until all of them finished, so the connection looked
+// idle and the ingress cut it — and a request cut before Express answers has no
+// CORS headers, which is why the browser could only say "Failed to fetch". The
+// fix is the shape chatWithMorpheus already had, so the contracts below are all
+// about the two ends agreeing on that shape. Every one of them fails at runtime
+// as a spinner that never moves, or an error message that says nothing.
+console.log('\n7b. the batch streams, and both ends agree on the events');
+
+const seoFn = read('server/src/functions/generateSeoMeta.js');
+const apiSrc = read('src/api/base44Client.js');
+const timingSrc = read('server/src/lib/timingStats.js');
+const billingSrc = read('server/src/lib/billing.js');
+const chatFn = read('server/src/functions/chatWithMorpheus.js');
+const aiSrc = read('server/src/ai.js');
+// LINE comments only. A block-comment regex is not safe on a source file this
+// size — chatWithMorpheus.js contains a `/*` inside a string, and stripping from
+// there to the next `*/` deleted 60,000 characters and made the framing check
+// fail on its own tooling. Every pattern below carries its own `type:` or `role:`
+// prefix instead, so prose that merely describes the thing cannot satisfy it.
+const stripJs = (src) => src.replace(/(^|\s)\/\/[^\n]*/g, '$1');
+const seoFnCode = stripJs(seoFn);
+const apiCode = stripJs(apiSrc);
+const seoPanelStream = stripJs(read('src/components/matrix/website/SeoTab.jsx'));
+const uniq = (list) => [...new Set(list)].sort();
+
+// The vocabulary, parsed from EACH side rather than from a comment on either.
+const serverEmits = uniq([...seoFnCode.matchAll(/type:\s*'([a-z]+)'/g)].map((m) => m[1]));
+const clientActsOn = uniq([...(apiCode.match(/const handleLine = [\s\S]*?\n  \};/) || [''])[0]
+  .matchAll(/(?:evt|finalEvent)\.type === '([a-z]+)'/g)].map((m) => m[1]));
+check('the server emits events at all (parser sanity)', serverEmits.length >= 3, true);
+check('the client acts on events at all (parser sanity)', clientActsOn.length >= 2, true);
+check('every event the client acts on is one the server emits',
+  clientActsOn.filter((t) => !serverEmits.includes(t)), []);
+check('the server emits a terminal result', serverEmits.includes('result'), true);
+check('the server emits a terminal error', serverEmits.includes('error'), true);
+check('progress events are stage events', serverEmits.includes('stage'), true);
+// A heartbeat is only safe because the reader ignores a type it does not know.
+check('the server emits an event the client deliberately ignores', serverEmits.includes('ping'), true);
+check('…and the client has no case for it, so it is ignored by construction',
+  clientActsOn.includes('ping'), false);
+// One stage event would mean the ETA is announced and then nothing moves.
+check('the server emits more than one stage event', (seoFnCode.match(/type: 'stage'/g) || []).length >= 2, true);
+
+// NDJSON, and the headers that keep a proxy from buffering it.
+check('the handler writes NDJSON', has(seoFnCode, "application/x-ndjson"), true);
+check('and tells the proxy not to buffer', has(seoFnCode, "'X-Accel-Buffering': 'no'"), true);
+check('chat and the SEO batch frame it the same way',
+  has(stripJs(chatFn), "application/x-ndjson") && has(seoFnCode, "application/x-ndjson"), true);
+
+// The ETA is the SAME estimator chat uses, on a role of its own.
+const estimates = (src) => /estimateCallMs\(\s*[A-Za-z_$]/.test(src);
+check('chat\'s ETA comes from estimateCallMs', estimates(chatFn), true);
+check('the SEO batch\'s ETA comes from the same function', estimates(seoFnCode), true);
+check('the SEO handler imports that estimator, not a copy',
+  /import \{[^}]*estimateCallMs[^}]*\} from '\.\.\/lib\/timingStats\.js'/.test(seoFn), true);
+check('…and does not invent a number of its own', /etaSeconds:\s*\d{2,}/.test(seoFnCode), false);
+// A null or missing ETA is the "estimating…" state the operator already saw
+// forever; the event has to carry a real number.
+check('the ETA is a rounded number of seconds', /etaSeconds:\s*Math\.round\(/.test(seoFnCode), true);
+check('the SEO role has its own seed, so the first estimate is not the generic one',
+  new RegExp(`\\b${SEO_AI_ROLE}:\\s*\\d+`).test(timingSrc), true);
+check('the SEO role is recorded under that same name in ai.js', /recordCallDuration\(role,/.test(aiSrc), true);
+check('…for every call, whatever the role', /if \(!role \|\| !Number\.isFinite\(ms\)/.test(timingSrc), true);
+// The call site uses the CONSTANT, so the value can only be the one this guard
+// imported — a second literal 'seo' in another file is how the three maps drift.
+check('the SEO call passes that role to invokeAI',
+  /role:\s*SEO_AI_ROLE\s*,/.test(seoFnCode), true);
+check('…and that constant is the value the other maps are keyed by',
+  SEO_AI_ROLE, 'seo');
+// The whole point of the fork: it must NOT share the role four smaller callers use.
+check('the SEO call no longer shares the diagnosis role', /role:\s*'diagnosis'/.test(seoFnCode), false);
+check('the role it left is genuinely shared by others',
+  (read('server/src/lib/contextSummary.js').includes("role: 'diagnosis'")
+    && read('server/src/lib/deckMemory.js').includes("role: 'diagnosis'")), true);
+// Forking the role must not silently re-price the call.
+check('the forked role keeps the same pre-call output estimate',
+  /seo:\s*2000\b/.test(billingSrc) && /diagnosis:\s*2000\b/.test(billingSrc), true);
+check('the role is overridable like the others',
+  has(read('src/pages/AdminPanel.jsx'), `'${SEO_AI_ROLE}'`), true);
+
+// NEGOTIATION. The client opts in; a caller that does not gets plain JSON.
+check('the client opts in', /stream:\s*true/.test(seoPanelStream), true);
+check('the server only streams when asked', /body\?\.stream === true/.test(seoFnCode), true);
+check('…and otherwise runs the same work and returns it',
+  /if \(!\(body\?\.stream === true\)[\s\S]{0,200}return run\(/.test(seoFnCode), true);
+// A server that answers with one JSON object, while the client asked to stream,
+// is what a deploy window looks like. The reader must not call that an error.
+check('the reader still accepts a whole JSON payload',
+  /finalEvent = \{ type: 'result', data: whole \}/.test(apiCode), true);
+check('…and only when the object is not one of our events', /!whole\.type/.test(apiCode), true);
+
+// A failure AFTER the first byte cannot set a status code, so it travels as the
+// terminal event — and the client must turn that into the real message.
+check('a streamed failure is emitted as the terminal event',
+  /catch \(err\) \{[\s\S]{0,700}type: 'error'/.test(seoFnCode), true);
+check('…carrying a message', /type: 'error',\s*\n\s*message:/.test(seoFnCode), true);
+check('…and the field the client already reads for a function error',
+  /error: err\?\.message/.test(seoFnCode), true);
+check('the client turns a terminal error into a thrown error',
+  /finalEvent\.type === 'error'/.test(apiCode) && /new Error\(finalEvent\.message/.test(apiCode), true);
+check('the panel reads that wording back',
+  has(seoPanelStream, 'failure?.data?.error'), true);
+
+// BEFORE the first byte, a real status code — so cheap validation failures are
+// not downgraded to a 200 with an error inside it.
+const headAt = seoFnCode.indexOf('res.writeHead(');
+check('the handler writes its head (parser sanity)', headAt > 0, true);
+for (const [label, needle] of [
+  ['a missing projectId', "throw Object.assign(new Error('projectId required')"],
+  ['no items picked', "throw Object.assign(new Error('Pick at least one page or post to generate for.')"],
+  ['too many items', 'Generate for at most'],
+]) {
+  const at = seoFnCode.indexOf(needle);
+  check(`${label} is refused before the first byte`, at > 0 && at < headAt, true);
+}
+check('and the stream is opened before the model is called',
+  headAt < seoFnCode.indexOf('await run('), true);
 
 // ── 8. the site entity is emitted, and nothing partial is invented ─────────
 //

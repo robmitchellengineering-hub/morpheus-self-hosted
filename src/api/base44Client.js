@@ -218,6 +218,7 @@ async function invokeStream(name, body, onStage) {
     else if (evt.type === 'result' || evt.type === 'error') finalEvent = evt;
   };
 
+  let raw = '';
   if (res.body?.getReader) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -225,7 +226,12 @@ async function invokeStream(name, body, onStage) {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      // ONE decode per chunk, appended to both: the decoder carries state for a
+      // multi-byte character split across chunks, so decoding the same chunk
+      // twice is not the same string twice.
+      const text = decoder.decode(value, { stream: true });
+      buffer += text;
+      raw += text;
       let idx;
       while ((idx = buffer.indexOf('\n')) >= 0) {
         handleLine(buffer.slice(0, idx));
@@ -241,6 +247,17 @@ async function invokeStream(name, body, onStage) {
     text.split('\n').forEach(handleLine);
   }
 
+  // A server that does not stream answers with ONE plain JSON object, and a
+  // client that asked for a stream would otherwise report "connection closed"
+  // for a perfectly good response — which is exactly what a deploy window looks
+  // like (the frontend ships separately from the backend). An object with no
+  // `type` field is not one of our events, so it can only be the whole payload.
+  if (!finalEvent) {
+    const whole = safeParseJsonLine(String(raw).trim());
+    if (whole && typeof whole === 'object' && !Array.isArray(whole) && !whole.type) {
+      finalEvent = { type: 'result', data: whole };
+    }
+  }
   if (!finalEvent) throw new Error('Connection closed before Morpheus finished responding.');
   if (finalEvent.type === 'error') {
     const err = new Error(finalEvent.message || 'Internal error');

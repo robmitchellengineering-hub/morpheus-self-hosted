@@ -16,8 +16,9 @@ import { invokeAI } from '../ai.js';
 import { getWpConnection, wpSeo } from '../lib/wpPlugin.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { getBrand } from '../lib/projectBrand.js';
+import { estimateCallMs } from '../lib/timingStats.js';
 import {
-  buildSeoPrompt, SEO_SCHEMA, normalizeSuggestions,
+  buildSeoPrompt, SEO_SCHEMA, normalizeSuggestions, SEO_AI_ROLE, SEO_ITEMS_PER_CALL,
   MAX_BATCH, MAX_GROUNDING_CHARS, oneLine, blockText,
   seoCallMaxTokens, mergeSeoSuggestions, generateSeoInChunks,
 } from '../lib/seoPrompts.js';
@@ -61,7 +62,34 @@ async function loadItem(conn, id) {
   };
 }
 
-export default async function handler({ user, body }) {
+/**
+ * The SEO batch, streamed.
+ *
+ * WHY (2026-09-23, Rob: the first batch of 5 started, the timer ran, the ETA
+ * never appeared, then "Failed to fetch")
+ *
+ * The panel slices the batch, so one request is meant to be one model call. It
+ * was not: this handler read the site, then held the connection in TOTAL silence
+ * for as long as the model took — up to AI_FETCH_TIMEOUT_MS (180s) — and answered
+ * with one JSON blob at the end. Nothing flowed, so nothing proved the connection
+ * was alive, and the ingress in front of Express cut it. Because CORS is added BY
+ * Express, a request cut before Express answers arrives with no CORS headers, and
+ * the browser can only report the bare "Failed to fetch" — which is why the
+ * message said nothing at all.
+ *
+ * So it now has the shape chatWithMorpheus already has: a start event with an ETA,
+ * an event per completed model call, and exactly one terminal event. Bytes flowing
+ * is the whole point twice over — it keeps the connection from looking idle, and a
+ * failure AFTER the first byte comes back as NDJSON through Express's CORS headers,
+ * so the panel shows the real reason instead of "Failed to fetch".
+ *
+ * NEGOTIATION: the client opts in with `stream: true` in the body. Not the Accept
+ * header, because functions.invoke and functions.invokeStream send byte-identical
+ * requests today (same headers), so a header could not tell them apart — and a
+ * caller that sends no `stream` field (an older deployed bundle, curl, a widget
+ * token) gets exactly today's plain JSON response and status codes.
+ */
+export default async function handler({ user, body, res }) {
   const projectId = body?.projectId;
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
 
@@ -76,6 +104,72 @@ export default async function handler({ user, body }) {
   if (ids.length === 0) throw Object.assign(new Error('Pick at least one page or post to generate for.'), { status: 400 });
   if (ids.length > MAX_BATCH) throw Object.assign(new Error(`Generate for at most ${MAX_BATCH} items at a time (${ids.length} asked for).`), { status: 400 });
 
+  // Everything above is cheap argument checking, so it happens BEFORE any byte is
+  // written and still answers with a real status code. Streaming starts below, and
+  // from there a failure has to travel in the terminal event — the status is
+  // already sent.
+  if (!(body?.stream === true) || !res || typeof res.writeHead !== 'function') {
+    return run({ user, projectId, ids });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no', // don't buffer, flush each line (the chat path does the same)
+  });
+  const emit = (event) => { try { res.write(JSON.stringify(event) + '\n'); } catch { /* client went away */ } };
+
+  // The ETA is the app's OWN measured average for this role (timingStats), not a
+  // guess and not the 60s generic seed — see SEO_AI_ROLE.
+  const perCallMs = estimateCallMs(SEO_AI_ROLE);
+  const startedAt = Date.now();
+  emit({
+    type: 'stage', stage: 'seo', status: 'start', label: 'Writing metadata',
+    etaSeconds: Math.round(perCallMs / 1000), done: 0, total: ids.length,
+  });
+
+  // A heartbeat, because the worst case is ONE model call: no call boundary means
+  // no progress event, and a single 180s silence is exactly what got cut. Ignored
+  // by the client's reader (it only acts on stage/result/error), so it costs the
+  // UI nothing.
+  const beat = setInterval(() => {
+    emit({ type: 'ping', elapsedMs: Date.now() - startedAt });
+  }, 15000);
+  beat.unref?.();
+
+  let done = 0;
+  const onProgress = (items) => {
+    done += items;
+    const remainingMs = Math.max(0, perCallMs - (Date.now() - startedAt)) + perCallMs * Math.max(0, Math.ceil((ids.length - done) / SEO_ITEMS_PER_CALL));
+    emit({
+      type: 'stage', stage: 'seo', status: 'progress', label: 'Writing metadata',
+      done, total: ids.length, etaSeconds: Math.round(remainingMs / 1000),
+    });
+  };
+
+  try {
+    const payload = await run({ user, projectId, ids, onProgress });
+    emit({ type: 'result', data: payload });
+  } catch (err) {
+    // The status code is long gone, so the error travels as the terminal event.
+    // `message` is what base44Client's reader surfaces; `error` is what SeoTab
+    // already reads off a thrown function error, so both are set and the panel
+    // shows the same wording on either path.
+    emit({
+      type: 'error',
+      message: err?.message || 'Internal error',
+      error: err?.message || 'Internal error',
+      ...(err?.code ? { code: err.code } : {}),
+      ...(err?.status ? { status: err.status } : {}),
+    });
+  } finally {
+    clearInterval(beat);
+    try { res.end(); } catch { /* already closed */ }
+  }
+}
+
+/** The work itself — unchanged, except that it reports each completed call. */
+async function run({ user, projectId, ids, onProgress = () => {} }) {
   const project = await prisma.project.findFirst({
     where: { id: projectId, created_by_id: user.id },
     select: { name: true, description: true },
@@ -134,9 +228,13 @@ export default async function handler({ user, body }) {
       userId: user.id,
       prompt,
       schema: SEO_SCHEMA,
-      role: 'diagnosis',
+      // Its OWN role — see SEO_AI_ROLE. The estimate this handler streams is the
+      // rolling average of SEO calls, which only exists because they are recorded
+      // under a role nothing else uses.
+      role: SEO_AI_ROLE,
       maxTokens: seoCallMaxTokens(chunk.length),
     });
+    onProgress(chunk.length);
     return Array.isArray(result?.suggestions) ? result.suggestions : [];
   };
 

@@ -393,7 +393,7 @@ async function resolveEndpoint(settings, role) {
  * @param {string} opts.prompt
  * @param {object} [opts.schema] JSON schema — when set, forces a structured JSON response
  * @param {string[]} [opts.fileUrls] reference file URLs (images sent as vision content parts)
- * @param {'planner'|'coder'|'reviewer'|'diagnosis'} [opts.role]
+ * @param {'planner'|'coder'|'reviewer'|'diagnosis'|'seo'} [opts.role]
  * @param {number} [opts.maxTokens] optional output cap. For short, bounded output (a structured
  *   verdict, a single mockup doc) pass a small value — that's the single biggest lever on
  *   wall-clock latency for a non-streamed call, since the request blocks until the model stops
