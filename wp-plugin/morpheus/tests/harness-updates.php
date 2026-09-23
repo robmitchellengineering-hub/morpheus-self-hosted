@@ -192,6 +192,19 @@ $msg = is_wp_error( $tampered_entry ) ? $tampered_entry->get_error_message()
 	: ( is_wp_error( $tampered_inner ) ? $tampered_inner->get_error_message() : '' );
 ok( strpos( (string) $msg, 'checksum' ) !== false, 'the refusal names the checksum, so the operator can act on it' );
 ok( $installed_version() === '1.0.0', 'the site is still running the OLD version — a refused update broke nothing' );
+// THE LOOP, asserted. Rob, 2026-09-23: "youve created an unupdatable logic loop
+// failure in the setup." A mismatch left the held manifest in place, so the
+// retry the error message asked for compared the same package against the same
+// stale hash and failed identically, forever. The held copy must be gone.
+ok( false === get_transient( Morpheus_Updates::CACHE_KEY ),
+	'a refused update DROPS the stale held checksum, so the next attempt re-reads the live manifest' );
+
+// NOT asserted here: that the refusal also drops WordPress's cached update
+// offer — which class-updates.php does, and should. This harness cannot observe
+// it: WordPress's own installer clears `update_plugins` on its way through, so
+// the assertion passed whether or not the plugin cleared it. A mutation proved
+// that, and a check that cannot fail is worse than no check. Stated rather than
+// left implied, so nobody reads the green as covering it.
 
 file_put_contents( $tampered_zip, $original_zip ); // put the real package back
 
@@ -204,6 +217,11 @@ $unv_entry = is_array( $unverifiable ) ? ( $unverifiable[ $fixture_base ] ?? nul
 $unv_inner = is_array( $unv_entry ) ? ( $unv_entry['result'] ?? null ) : $unv_entry;
 ok( is_wp_error( $unv_entry ) || is_wp_error( $unv_inner ) || $unv_inner === false, 'an unverifiable package FAILS the update' );
 ok( $installed_version() === '1.0.0', 'and the old version is still the one running' );
+// Same reasoning as the mismatch: a remembered miss is held for fifteen minutes
+// (MISS_TTL), so "try again in a few minutes" was advice the cache would not
+// honour either.
+ok( false === get_transient( Morpheus_Updates::CACHE_KEY ),
+	'an unverifiable update also drops the remembered failure, so the retry re-reads' );
 
 // ── 4. the guard is wired where it has to be ────────────────────────────────
 ok( (bool) has_filter( 'upgrader_pre_download', array( 'Morpheus_Updates', 'verify_download' ) ), 'the verification hook is registered on the upgrader' );
