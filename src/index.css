@@ -287,9 +287,31 @@
     @apply border-border outline-ring/50;
   }
 
+  /* Body copy is the READABLE near-white (--text-ink), not --foreground.
+     --foreground is the bright Matrix green: using it here meant every piece of
+     text that carried no colour class of its own rendered green, which is what
+     made small prose hard to read. Green now means "heading, number or glow",
+     and body text has to opt IN to it rather than opt out.
+
+     Same rule the Alice Stats page arrived at on 2026-09-12, promoted to the
+     default for the whole app (Rob, 2026-09-22): small text legible, colour
+     reserved for things that mean something. */
   body {
-    @apply bg-background text-foreground font-body;
+    @apply bg-background text-ink font-body;
     overscroll-behavior: none;
+  }
+
+  /* Headings keep the brand green, including the ones with no class of their
+     own. Tailwind text-* utilities still win where a component sets one. */
+  h1, h2, h3, h4, h5, h6 {
+    color: hsl(var(--heading));
+  }
+
+  /* A link is an action, so it carries the action colour and is distinguishable
+     from static prose at a glance. --accent is cyan in every dark theme; the
+     light theme defines its own. */
+  a {
+    color: hsl(var(--accent));
   }
 
   /* Block text-selection highlight menus on UI controls (Android WebView);
