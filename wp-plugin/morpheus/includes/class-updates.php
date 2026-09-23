@@ -224,9 +224,14 @@ class Morpheus_Updates {
 		$expected = $manifest && ! empty( $manifest['sha256'] ) ? strtolower( (string) $manifest['sha256'] ) : '';
 		if ( '' === $expected ) {
 			morpheus_log( 'update_rejected', array( 'reason' => 'no published checksum available' ) );
+			// Same reasoning as the mismatch below: a remembered failure is held
+			// for fifteen minutes (MISS_TTL), so "try again in a few minutes" was
+			// advice the cache would not honour. Drop it, and the retry really
+			// does re-read.
+			delete_transient( self::CACHE_KEY );
 			return new WP_Error(
 				'morpheus_update_unverifiable',
-				'The Morpheus update could not be verified — its published checksum was unavailable — so it was NOT installed. Try again in a few minutes; if it keeps happening, download the plugin from morpheus.nz and upload it manually.'
+				'The Morpheus update could not be verified — its published checksum was unavailable — so it was NOT installed. The failed check has been cleared: try again in a few minutes, and if it keeps happening, download the plugin from morpheus.nz and upload it manually.'
 			);
 		}
 
@@ -245,10 +250,27 @@ class Morpheus_Updates {
 				'expected' => $expected,
 				'actual'   => $actual,
 			) );
+			// DROP WHAT WE COMPARED AGAINST, so that the next attempt is a
+			// different attempt. Rob, 2026-09-23, after this refused his update:
+			// "youve created an unupdatable logic loop failure in the setup."
+			//
+			// He was right, and the loop was here. A mismatch means this site is
+			// holding a manifest from before a rebuild — one whose hash was
+			// published for a digest that then changed. Retrying re-downloads the
+			// package and compares it against the SAME held hash, so it says the
+			// same thing every time, and WordPress's own "Check again" does not
+			// clear the plugin's cache. The message told the operator to try
+			// again, and trying again could not work.
+			//
+			// Clearing the held copy makes the retry meaningful: the next press
+			// re-reads the live manifest. The verification itself is untouched —
+			// a genuine tamper fails again, against the current hash.
+			delete_transient( self::CACHE_KEY );
+			delete_site_transient( 'update_plugins' );
 			return new WP_Error(
 				'morpheus_update_hash_mismatch',
 				sprintf(
-					'The Morpheus update did not match its published checksum (expected %s, got %s), so it was NOT installed. Try again; if it keeps happening, download the plugin from morpheus.nz and upload it manually.',
+					'The Morpheus update did not match the checksum this site was holding — it had %s, and the package is %s — so it was NOT installed. The held checksum was out of date and has been cleared: press Update again and it will check against the current one. If it still fails, download the plugin from morpheus.nz and upload it manually.',
 					substr( $expected, 0, 12 ) . '…',
 					substr( $actual, 0, 12 ) . '…'
 				)

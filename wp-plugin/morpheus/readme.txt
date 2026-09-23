@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.0
+Stable tag: 0.8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -69,6 +69,18 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.1 =
+* Fixed: **a failed update no longer leaves the site unable to update.** When the
+  download did not match the checksum this site was holding, the plugin kept
+  holding it — so the retry its own error message asked for compared the same
+  package against the same stale checksum and failed identically, every time.
+  WordPress's "Check again" does not clear the plugin's cache either. The held
+  checksum is now dropped the moment it fails to match, so pressing Update again
+  really does check against the current one. The verification itself is
+  unchanged: nothing installs without matching what the manifest says now.
+* Fixed: the refused update's message now says which checksum the SITE was
+  holding and which the package has, and that the held one has been cleared.
 
 = 0.8.0 =
 * New: **the plugin prints the Morpheus dock itself**, so it survives a theme
