@@ -169,6 +169,16 @@ jobs:
       - name: Dock rules
         run: node scripts/verify-dock.mjs
 
+      # The plugin package: the published SHA-256 has to describe the bytes that
+      # are actually served, and packing the same source twice has to produce the
+      # same bytes. `zip -rq` stamped each file's mtime into the archive, so every
+      # rebuild republished a new hash for identical code — and a site holding the
+      # previous hash in its one-hour cache had its update refused, with WordPress
+      # "Check again" saying the same thing. That is how valiantmusic.com.au
+      # became unable to update at all.
+      - name: Plugin pack determinism
+        run: node scripts/verify-plugin-pack.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,
