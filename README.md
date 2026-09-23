@@ -66,6 +66,51 @@ For a production frontend build: `npm run build` produces `dist/`, which
 `/uploads` reverse-proxy config it relies on if you deploy `dist/` behind
 your own web server instead.
 
+### Driving the embeddable dock locally
+
+The dock is `public/plugin.js` → `/embed?token=…` → `src/pages/Embed.jsx`: the
+same tab components as the app's WEBSITE panel, scoped by a **widget token**
+instead of a user session. None of the steps above produce a token to open it
+with, so it has its own rig:
+
+```bash
+node scripts/dev-dock-rig.mjs up      # stack + mocks + fixture data + 2 widget tokens
+node scripts/dev-dock-rig.mjs url     # prints the /embed?token=… URL to open
+node scripts/dev-dock-rig.mjs drive   # scripts/pw: render it, click it, read the console
+node scripts/dev-dock-rig.mjs status  # what is running, and what is seeded
+node scripts/dev-dock-rig.mjs down    # stop everything the rig started
+```
+
+What it does, and what it assumes:
+
+- It **reuses the embedded Postgres cluster** from `npm run dev:db` (starting it
+  if it is not up) but works in its **own database** (`morpheus_dock_rig`), so a
+  second session on the same machine cannot read, reset or delete this one's
+  rows. It refuses to push a schema at any database whose name does not end in
+  `_dock_rig`.
+- It starts a **mock OpenAI-compatible provider** on :4599 and a **mock
+  WordPress plugin** on :4600. The rig forces `LLM_BASE_URL`/`LLM_MODEL` at the
+  mock and blanks the broker and fallback tiers, so no real model call can be
+  made or paid for whatever `server/.env` says. The mock WordPress HMAC-verifies
+  every signed POST against the secret stored on the connection row, so a green
+  run cannot come from an unsigned request.
+- It creates `server/.env` from `server/.env.example` if you have not already,
+  filling in local-dev values for `NODE_ENV`, `JWT_SECRET` and
+  `ENCRYPTION_KEY`. It never overwrites a value you have set, and it never
+  commits the file.
+- It seeds a fixture owner, a `web-app` project (the target the WEBSITE surface
+  needs), the WordPress connection, and **two widget tokens** — `full` (every
+  scope) and `chat-only` — through the real server code, so only each token's
+  SHA-256 is stored, exactly as in production. The plaintext is written only to
+  the gitignored `server/data/dock-rig/state.json`; `url` prints it and `drive`
+  redacts it out of its own output.
+- `drive` needs the browser to be drivable — see the `playwright-cli` skill
+  (`scripts/pw`, never `playwright-cli` directly). It writes screenshots to
+  `.playwright/out/`.
+- Ports are backend 4500, frontend 5173, mocks 4599 and 4600. If something else
+  holds one, override with `DOCK_RIG_BACKEND_PORT`, `DOCK_RIG_FRONTEND_PORT`,
+  `DOCK_RIG_MOCK_LLM_PORT` or `DOCK_RIG_MOCK_WP_PORT`.
+
 ## Hosting the frontend on a free static host, separately from the backend
 
 You don't need the backend running anywhere reachable to put the UI up for

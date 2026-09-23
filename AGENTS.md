@@ -48,6 +48,14 @@ preserve existing conventions (the doc-comment style at the top of most
   `dev:db:reset` manage it. Then: backend `cd server && npm install && node src/index.js` (port 4500);
   frontend `npm install && npm run dev` (Vite, port 5173, proxies `/api`). Or
   `docker compose up --build` for the whole stack. There is no `base44 dev`.
+- **The dock (the embeddable widget) needs its own rig,** because none of the above
+  produces a widget token to open `/embed?token=…` with:
+  `node scripts/dev-dock-rig.mjs up` starts the same stack **plus** a mock AI provider and
+  a mock WordPress, then seeds a fixture owner, a `web-app` project, a site connection and
+  two widget tokens through the real server code. `node scripts/dev-dock-rig.mjs url` prints
+  the embed URL and `node scripts/dev-dock-rig.mjs drive` drives it through `scripts/pw`.
+  It runs in its own database, and it forces the LLM at the mock so no real model call can
+  be made. Full description: `README.md` → "Driving the embeddable dock locally".
 - **Before finishing code changes, run the relevant checks:** frontend
   `npm run lint` (eslint, rules-of-hooks enabled) and `npm run build`; backend
   has no separate lint — verify with a build/bundle check.
