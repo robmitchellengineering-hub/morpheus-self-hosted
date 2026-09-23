@@ -130,6 +130,10 @@ jobs:
       - name: Keyword research rules
         run: node scripts/verify-keywords.mjs
 
+        # The theme's own readability rule: body-copy tokens must clear WCAG AA.
+        - name: contrast
+          run: node scripts/verify-contrast.mjs
+
       # The photo widget on Alice Stats: what counts as a Drive folder, what
       # counts as an acceptable photo, and above all that a 403 (this connection
       # cannot write there) never reads like a 404 (no such folder) — plus the

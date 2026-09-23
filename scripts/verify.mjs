@@ -27,6 +27,7 @@ const HARD = [
   'verify-pairing.mjs',
   'verify-working-copy.mjs',
   'verify-keywords.mjs',
+  'verify-contrast.mjs',
   'verify-traffic.mjs',
   'verify-photo-drive.mjs',
   'verify-prod-sql.mjs',
