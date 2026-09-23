@@ -243,6 +243,116 @@ Morpheus_Settings::render();
 $screen_off = (string) ob_get_clean();
 ok( strpos( $screen_off, 'Not printing.' ) !== false, 'and says so, with a reason, when it is switched off' );
 
+// ── one-tap setup: the signed route ─────────────────────────────────────────
+// Installing the plugin used to end with a person copying the embed token out of
+// Morpheus → WEBSITE → EMBED and pasting it into Settings → Morpheus by hand.
+// This route lets the owner's own account do it instead, over the same signed
+// channel every other site operation uses.
+//
+// What is asserted here is the part that fails on a live site: that an unsigned
+// caller cannot write it, that a token the SETTINGS SCREEN would refuse cannot
+// arrive by push and be stored anyway, that the response never carries the
+// credential back out, and that a site configured this way really does print the
+// tag afterwards — the last one being the entire point of the feature.
+echo "\n== one-tap setup: the signed route ==\n";
+
+delete_option( 'morpheus_settings' );
+$fresh = Morpheus_Settings::get();
+$fresh['webhook_secret'] = 'sec_' . wp_generate_password( 24, false );
+$fresh['dock_enabled']   = 0;
+$fresh['widget_token']   = '';
+update_option( 'morpheus_settings', $fresh );
+$SECRET = $fresh['webhook_secret'];
+
+ok( get_rest_url() !== '', 'the REST API is loaded (parser sanity)' );
+ok( class_exists( 'WP_REST_Request' ), 'WP_REST_Request is available' );
+ok( method_exists( 'Morpheus_Dock', 'handle' ), 'the dock route handler exists' );
+ok( has_action( 'rest_api_init', array( 'Morpheus_Dock', 'register_routes' ) ) !== false,
+	'the route is registered on rest_api_init' );
+
+/**
+ * Post to the dock route the way the app does: JSON body, HMAC over the RAW
+ * body, timestamp inside it.
+ *
+ * @param array       $payload
+ * @param string|null $secret  pass '' to sign with the wrong secret
+ * @param bool        $sign
+ * @return WP_REST_Response
+ */
+function dock_post( $payload, $secret, $sign = true ) {
+	$raw = wp_json_encode( array_merge( $payload, array( 'at' => gmdate( 'c' ) ) ) );
+	$req = new WP_REST_Request( 'POST', '/morpheus/v1/dock' );
+	$req->set_header( 'Content-Type', 'application/json' );
+	$req->set_body( $raw );
+	if ( $sign ) {
+		$req->set_header( 'X-Morpheus-Signature', 'sha256=' . hash_hmac( 'sha256', $raw, $secret ) );
+	}
+	return Morpheus_Dock::handle( $req );
+}
+
+// An unsigned request must not be able to point this site's dock at a token of
+// someone else's choosing.
+$unsigned = dock_post( array( 'action' => 'set', 'enabled' => true, 'widget_token' => $TOKEN ), $SECRET, false );
+ok( $unsigned->get_status() === 401, 'an unsigned request is refused with 401' );
+$wrong = dock_post( array( 'action' => 'set', 'enabled' => true, 'widget_token' => $TOKEN ), 'not-the-secret' );
+ok( $wrong->get_status() === 401, 'a wrongly-signed request is refused with 401' );
+ok( Morpheus_Settings::get( 'dock_enabled' ) === 0, 'and neither of them switched the dock on' );
+ok( Morpheus_Settings::get( 'widget_token' ) === '', 'and neither of them stored a token' );
+
+// A token the settings screen would call invalid must not be storable by push.
+$bad = dock_post( array( 'action' => 'set', 'enabled' => true, 'widget_token' => 'ghp_' . str_repeat( 'a', 40 ) ), $SECRET );
+ok( $bad->get_status() === 400, 'a token that is not an embed token is refused with 400' );
+ok( $bad->get_data()['error'] === 'invalid_token', 'and says which refusal it was' );
+ok( Morpheus_Settings::get( 'dock_enabled' ) === 0, 'and the refusal did not switch the dock on' );
+ok( Morpheus_Settings::get( 'widget_token' ) === '', 'and the refusal did not store the bad token' );
+ok( isset( $bad->get_data()['note'] ) && $bad->get_data()['note'] !== '',
+	'and the refusal still carries a note the app can show' );
+
+// The real thing.
+$set = dock_post( array( 'action' => 'set', 'enabled' => true, 'widget_token' => $TOKEN ), $SECRET );
+ok( $set->get_status() === 200, 'a signed set with a valid token is accepted' );
+$data = $set->get_data();
+ok( Morpheus_Settings::get( 'dock_enabled' ) === 1, 'and the dock is switched on' );
+ok( Morpheus_Settings::get( 'widget_token' ) === $TOKEN, 'and the token is stored' );
+ok( ! empty( $data['ok'] ) && $data['enabled'] === true, 'and the reply says it is on' );
+ok( $data['configured'] === true, 'and that it is configured' );
+ok( $data['note'] === '', 'and the note is empty, which is what "Ready" means' );
+
+// THE CREDENTIAL MUST NOT COME BACK. Asserted against the serialised reply, not
+// against a field name, because a leak would be a substring somewhere.
+$json_set = wp_json_encode( $data );
+ok( strpos( $json_set, $TOKEN ) === false, 'the reply does not contain the token' );
+ok( strpos( $json_set, 'wgt_' ) === false, 'and does not contain even the token prefix' );
+
+// …and the site really does print afterwards. This is the whole feature.
+wp_set_current_user( $admin_id );
+$after = dock_footer();
+ok( strpos( $after, 'data-token="' . $TOKEN . '"' ) !== false, 'and the footer now prints the tag it was given' );
+ok( strpos( $after, 'data-dock="1"' ) !== false, 'with the dock variant set' );
+
+// `get` reports the state for a future "is my site printing?" read.
+$got = dock_post( array( 'action' => 'get' ), $SECRET );
+ok( $got->get_status() === 200, 'get is accepted' );
+$gdata = $got->get_data();
+ok( ! empty( $gdata['ok'] ) && $gdata['enabled'] === true && $gdata['configured'] === true, 'get reports the state' );
+$json_get = wp_json_encode( $gdata );
+ok( strpos( $json_get, $TOKEN ) === false, 'and get does not hand the token back either' );
+ok( strpos( $json_get, 'wgt_' ) === false, 'not even the prefix' );
+
+// A one-tap setup that cannot be undone from the same place is half a feature.
+$off = dock_post( array( 'action' => 'set', 'enabled' => false ), $SECRET );
+ok( $off->get_status() === 200, 'the signed set can switch it off without a token' );
+ok( Morpheus_Settings::get( 'dock_enabled' ) === 0, 'and it is off' );
+wp_set_current_user( $admin_id );
+ok( dock_footer() === '', 'and the tag stops being printed' );
+
+// An action the route does not have is named, not a generic 404.
+$unknown = dock_post( array( 'action' => 'nonsense' ), $SECRET );
+ok( $unknown->get_status() === 400, 'an unknown action is refused with 400' );
+ok( $unknown->get_data()['error'] === 'unknown_action', 'and names the refusal' );
+
+wp_set_current_user( $admin_id );
+
 // Finally: the tag we print and the tag the loader reads are two halves of one
 // contract, and the Node guard scripts/verify-dock.mjs compares them against
 // public/plugin.js. Asserted there rather than here, because plugin.js is not

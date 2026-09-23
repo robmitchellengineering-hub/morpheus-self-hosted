@@ -59,6 +59,15 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   traffic: ['trafficAction'],
 };
 
+// DELIBERATELY ABSENT FROM EVERY SCOPE ABOVE: dockAction.
+//
+// A dock token is the credential the dock ACTS AS. dockAction writes the token
+// the site's dock will use — so a token that could call it could point the site
+// at a different account, which is privilege escalation with an extra step. It is
+// owner-session-only like every other function, and verify-dock.mjs asserts the
+// exclusion by name here, because this failure is silent: the call would simply
+// work.
+
 export function isMissingWidgetTable(err) {
   const m = err && typeof err.message === 'string' ? err.message : '';
   return err?.code === 'P2021' || err?.code === 'P2022'

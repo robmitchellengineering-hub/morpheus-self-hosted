@@ -264,6 +264,24 @@ export async function wpTraffic(conn, action, data = {}) {
 }
 
 /**
+ * One-tap dock setup (plugin 0.8.2+).
+ *
+ * The site owns the dock: it holds the token and it decides whether to print.
+ * This is the signed call that hands it the token the owner just minted, so a
+ * person never carries a credential between two screens by hand.
+ *
+ * The response is the SITE's verdict — `{ ok, enabled, configured, note }` — and
+ * never the token, so callers cannot echo it back by accident. A refusal carries
+ * the same three fields as a success, which is what lets the panel show the
+ * site's own reason rather than a generic failure.
+ */
+export const MIN_DOCK_ACTION_PLUGIN_VERSION = '0.8.2';
+
+export async function wpDock(conn, action, data = {}) {
+  return wpCall(conn, 'dock', { action, ...data });
+}
+
+/**
  * Site health + maintenance scan (plugin 0.6.0+).
  *
  * The only endpoint that returns the site's own configuration — plugin names and

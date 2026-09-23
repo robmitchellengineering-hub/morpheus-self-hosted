@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Plus, Copy, Check, Trash2, Code } from 'lucide-react';
+import { Loader2, Plus, Copy, Check, Trash2, Code, Send } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // EMBED tab of the WEBSITE panel — mint a scoped widget token and copy the
@@ -44,6 +44,14 @@ export default function EmbedTab({ projectId, connected }) {
   const [editErr, setEditErr] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
+
+  // One-tap dock setup. The app holds the plaintext token ONLY in the moment it
+  // is minted — listWidgetTokens returns a prefix and a hash, never the secret —
+  // so this can only ever push the token that was just created. That is exactly
+  // the first-install moment it exists for, and it is why the control sits on the
+  // fresh-token panel rather than on every row.
+  const [sending, setSending] = useState(false);
+  const [dockState, setDockState] = useState(null); // { ok, enabled, configured, note }
 
   const load = useCallback(async () => {
     setErr(null);
@@ -120,6 +128,25 @@ export default function EmbedTab({ projectId, connected }) {
     } finally { setSaving(false); }
   };
 
+  // Push the freshly minted token to the site and switch the dock on. The
+  // verdict shown is the SITE's — its own note when it refuses, so the operator
+  // reads why the site said no rather than a generic failure.
+  const sendToSite = async (token, enable) => {
+    setSending(true);
+    setDockState(null);
+    try {
+      const { data } = await base44.functions.invoke('dockAction', {
+        projectId,
+        action: 'set',
+        enabled: enable,
+        ...(enable ? { widgetToken: token } : {}),
+      });
+      setDockState(data);
+    } catch (e) {
+      setDockState({ ok: false, enabled: false, configured: false, note: e?.data?.error || e.message || 'The request failed.' });
+    } finally { setSending(false); }
+  };
+
   const copy = async (text, key) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -186,6 +213,33 @@ export default function EmbedTab({ projectId, connected }) {
               {copied === 'snip' ? <Check size={13} /> : <Copy size={13} />}
             </button>
           </div>
+
+          {/* ONE TAP, or the manual route. The snippet above stays exactly where
+              it is: a site with no Morpheus pairing still needs it, and a setup
+              that only works one way is not a setup an operator can debug. */}
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={() => sendToSite(fresh.token, true)} disabled={sending || !connected}
+              title={connected ? 'Push this token to your site and switch the dock on' : 'Connect your site in Setup first'}
+              className="flex items-center justify-center gap-1.5 h-[32px] px-3 bg-primary text-black font-bold text-[10px] hover:bg-[#39ff14] disabled:opacity-40">
+              {sending ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} SEND TO MY SITE
+            </button>
+            {dockState?.enabled && (
+              <button onClick={() => sendToSite(fresh.token, false)} disabled={sending}
+                className="h-[32px] px-3 border border-primary/15 text-primary/50 text-[10px] hover:text-primary disabled:opacity-40">
+                TURN OFF
+              </button>
+            )}
+          </div>
+          {!connected && (
+            <div className="text-[9px] text-ink-max">Connect your site in Setup first — without the connection Morpheus has no signed channel to switch the dock on, and the snippet above is the way in.</div>
+          )}
+          {dockState && (
+            <div className={`text-[10px] border px-2 py-1.5 ${dockState.ok && dockState.configured && !dockState.note ? 'border-primary/30 text-ink-max' : 'border-yellow-500/30 text-ink-max'}`}>
+              {dockState.ok && dockState.configured && !dockState.note
+                ? 'Ready — the site will print the dock for you on every page you load while signed in.'
+                : (dockState.note || 'The site did not accept that.')}
+            </div>
+          )}
         </div>
       )}
 
@@ -225,6 +279,12 @@ export default function EmbedTab({ projectId, connected }) {
 
               {t.revoked && (
                 <div className="px-3 pb-2 text-[9px] text-ink-max">Revoked — its scopes can no longer be changed.</div>
+              )}
+
+              {!t.revoked && (
+                <div className="px-3 pb-2 text-[9px] text-ink-max">
+                  To put this on your site in one tap, mint a new token — Morpheus only holds a token in the moment it is created, so an older one can only be moved by hand (Settings → Morpheus → Dock).
+                </div>
               )}
 
               {open && !t.revoked && (

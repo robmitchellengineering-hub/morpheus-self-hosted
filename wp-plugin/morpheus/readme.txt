@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.1
+Stable tag: 0.8.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -69,6 +69,17 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.2 =
+* Added: **one-tap dock setup.** The owner's Morpheus account can now switch the
+  dock on at the site itself, over the same signed channel the other site
+  operations use, instead of copying an embed token out of WEBSITE -> EMBED and
+  pasting it into Settings -> Morpheus by hand. That copy-and-paste is a person
+  carrying a credential between two screens, which is both how a live token ends
+  up somewhere it should not and the step that goes wrong on a phone.
+* Added: a signed `POST /wp-json/morpheus/v1/dock` route taking `get` and `set`,
+  validating the pushed token with the same rule the settings screen uses, and
+  returning the site's own verdict. The response never contains the token.
 
 = 0.8.1 =
 * Fixed: **a failed update no longer leaves the site unable to update.** When the
