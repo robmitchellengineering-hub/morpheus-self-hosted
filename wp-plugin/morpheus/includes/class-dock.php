@@ -223,4 +223,140 @@ class Morpheus_Dock {
 			esc_attr( $s['token'] )
 		);
 	}
+
+	// ── one-tap setup ───────────────────────────────────────────────────────
+
+	/**
+	 * The signed route the owner's own Morpheus account uses to set this up.
+	 *
+	 * The manual route is "copy the embed token out of WEBSITE → EMBED and paste
+	 * it into Settings → Morpheus by hand", which is a person carrying a
+	 * credential between two screens — the step that ends with a live token in a
+	 * chat transcript, and the step that goes wrong on a phone. The app already
+	 * holds the token and already has a signed channel to this site, so it can
+	 * do it here instead.
+	 *
+	 * SIGNED, like /deploy and /maintenance, and for a stronger reason than
+	 * either: this WRITES the credential the dock acts as. An unsigned caller
+	 * must not be able to point this site's dock at a token of their choosing.
+	 */
+	public static function register_routes() {
+		register_rest_route( MORPHEUS_REST_NS, '/dock', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle' ),
+		) );
+	}
+
+	/**
+	 * What a caller is told about the dock.
+	 *
+	 * THE TOKEN IS NOT IN HERE, and that is the point of this method existing
+	 * rather than callers assembling the array themselves: the echo is what
+	 * would turn a write-only endpoint into a read of the site's credential.
+	 * What comes back is what the settings screen shows its operator — on/off,
+	 * whether it is actually configured, and the one-line verdict from
+	 * status_note(), which is '' when the tag will print.
+	 *
+	 * @return array
+	 */
+	public static function state() {
+		$s = self::settings();
+		return array(
+			'enabled'    => (bool) $s['enabled'],
+			'configured' => self::is_valid_token( $s['token'] ) && self::loader_url( $s['host'] ) !== '',
+			'note'       => self::status_note( false ),
+		);
+	}
+
+	/**
+	 * `get` reads the state, `set` writes it.
+	 *
+	 * Every refusal carries the same three fields a success does, so the app can
+	 * show the site's own reason instead of a generic failure — the whole value
+	 * of pushing from the app is that the operator sees what the SITE thinks.
+	 */
+	public static function handle( WP_REST_Request $request ) {
+		$body = Morpheus_REST::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : '';
+
+		// Never the token — see state().
+		morpheus_log( 'dock', array( 'action' => $action, 'enabled' => ! empty( $body['enabled'] ) ) );
+
+		if ( 'get' === $action ) {
+			return new WP_REST_Response( array_merge( array( 'ok' => true ), self::state() ), 200 );
+		}
+		if ( 'set' === $action ) {
+			return self::apply( $body );
+		}
+		return Morpheus_REST::err(
+			'unknown_action',
+			'The dock route handles "get" and "set".',
+			400,
+			self::state()
+		);
+	}
+
+	/**
+	 * `set` — validate first, write second, and refuse without writing anything.
+	 *
+	 * The token is judged by the SAME function the settings screen's verdict
+	 * uses, so a token the screen would call invalid cannot arrive by push and
+	 * be stored anyway. Turning it OFF is a first-class action, because a
+	 * one-tap setup that cannot be undone from the same place is half a feature.
+	 *
+	 * @param array $body
+	 * @return WP_REST_Response
+	 */
+	private static function apply( array $body ) {
+		$o = Morpheus_Settings::get();
+
+		if ( empty( $body['enabled'] ) ) {
+			$o['dock_enabled'] = 0;
+			update_option( Morpheus_Settings::OPTION, $o, false );
+			return new WP_REST_Response( array_merge( array( 'ok' => true ), self::state() ), 200 );
+		}
+
+		$token = isset( $body['widget_token'] ) ? trim( (string) $body['widget_token'] ) : '';
+		if ( ! self::is_valid_token( $token ) ) {
+			return Morpheus_REST::err(
+				'invalid_token',
+				'That is not an embed token (they start with "wgt_"), so nothing was saved.',
+				400,
+				self::state()
+			);
+		}
+
+		// The app may name the host it is served from; it is judged by the same
+		// rule the screen uses, and a bad one is refused rather than stored.
+		if ( isset( $body['host'] ) && trim( (string) $body['host'] ) !== '' ) {
+			$host = trim( (string) $body['host'] );
+			if ( self::loader_url( $host ) === '' ) {
+				return Morpheus_REST::err(
+					'invalid_host',
+					'The Morpheus address must be a full https:// URL, so nothing was saved.',
+					400,
+					self::state()
+				);
+			}
+			$o['dock_host'] = $host;
+		}
+		if ( self::loader_url( isset( $o['dock_host'] ) ? $o['dock_host'] : '' ) === '' ) {
+			return Morpheus_REST::err(
+				'invalid_host',
+				'The saved Morpheus address is not a full https:// URL, so nothing was saved.',
+				400,
+				self::state()
+			);
+		}
+
+		$o['widget_token'] = sanitize_text_field( $token );
+		$o['dock_enabled'] = 1;
+		update_option( Morpheus_Settings::OPTION, $o, false );
+
+		return new WP_REST_Response( array_merge( array( 'ok' => true ), self::state() ), 200 );
+	}
 }
