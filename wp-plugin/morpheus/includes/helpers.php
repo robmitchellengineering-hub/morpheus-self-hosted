@@ -100,6 +100,37 @@ function morpheus_git_blob_sha( $content ) {
 }
 
 /**
+ * Do two response bodies carry the same bytes, line endings aside?
+ *
+ * THE ONE DEFINITION OF "the URL is serving this file". Two places ask that
+ * question — Morpheus_SEO::robots_txt_state() about a physical robots.txt, and
+ * Morpheus_Clean::debug_log_state() about wp-content/debug.log — and an HTTP
+ * status cannot answer it. A host whose front controller answers every path
+ * under wp-content with 200 plus its own HTML page (a `try_files … /index.php`
+ * rule, a custom 404 that returns 200, a WAF interstitial) serves a body for a
+ * file that is not there at all. Comparing the bytes the URL returns with the
+ * bytes on disk is the only test that survives that, so both callers share it.
+ *
+ * Line endings and trailing whitespace are normalised because a host or a proxy
+ * can rewrite those on the way out without changing a single byte of meaning —
+ * and a comparison one `\r` too strict would decide a served log is "not
+ * served", which would miss a real leak. Everything else has to match.
+ *
+ * Moved out of Morpheus_SEO verbatim (2026-09-23); that method now delegates to
+ * this, so the SEO side's behaviour is unchanged and there is still ONE
+ * implementation of the rule.
+ */
+function morpheus_bodies_match( $a, $b ) {
+	if ( ! is_string( $a ) || ! is_string( $b ) ) {
+		return false;
+	}
+	$norm = function ( $s ) {
+		return rtrim( str_replace( array( "\r\n", "\r" ), "\n", $s ) );
+	};
+	return $norm( $a ) === $norm( $b );
+}
+
+/**
  * Constant-time compare of the incoming signature against what we expect.
  *
  * @param string $raw_body   the exact request body bytes

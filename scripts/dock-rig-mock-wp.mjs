@@ -33,12 +33,80 @@ const EMBED_ORIGIN = process.env.MOCK_WP_EMBED_ORIGIN || 'http://localhost:5173'
 const PORT = Number(process.env.MOCK_WP_PORT || 4600);
 const SECRET = process.env.MOCK_WP_SECRET || '';
 const NS = '/wp-json/morpheus/v1';
-const PLUGIN_VERSION = '0.8.4';
+const PLUGIN_VERSION = '0.8.5';
 
 const json = (res, status, payload) => {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(payload));
 };
+
+// ── the debug-log fixture, and the rule that judges it ─────────────────────
+//
+// WHY THIS IS STATE, NOT A CANNED FINDING
+//
+// The false positive this rig exists to exercise came from a host that answers
+// EVERY path under wp-content with 200 and its own HTML page — so "readable
+// over the web" cannot be decided from a status or a body shape, only from
+// whether the URL is handing out THE BYTES ON DISK. A mock whose clean payload
+// simply hard-coded `status: 'good'` would pass whatever the plugin did, so this
+// serves a real `/wp-content/debug.log` route, and the finding is computed the
+// way the plugin computes it: fetch the URL, compare the bytes.
+//
+// `mode` is flipped from the drive script through /__fixture/debug-log, which is
+// how one browser run sees both hosts:
+//   served   — the URL returns the log's own bytes (a real leak)
+//   fallback — the URL returns the host's own HTML page (the owner's host)
+let debugLogMode = process.env.MOCK_WP_DEBUG_LOG === 'served' ? 'served' : 'fallback';
+const DEBUG_LOG_BODY = "[23-Sep-2026 12:00:00 UTC] PHP Warning:  fixture line written by the rig\n";
+const FALLBACK_BODY = '<!doctype html><html><head><title>Page not found</title></head><body><h1>Nothing here</h1><p>PHP Warning: this is a stack trace inside the host\'s own error page, not the log.</p></body></html>';
+
+/** What the URL would answer — the same bytes the GET route below sends. */
+const debugLogBody = () => (debugLogMode === 'served' ? DEBUG_LOG_BODY : FALLBACK_BODY);
+
+/**
+ * Is the URL serving the file that is on disk? Two real requests, not a guess:
+ * one for the URL, and the disk body is the fixture above. This mirrors
+ * Morpheus_Clean::debug_log_state() — bytes first, status never.
+ */
+async function debugLogServed() {
+  const res = await fetch(`http://localhost:${PORT}/wp-content/debug.log`);
+  const body = await res.text();
+  const norm = (s) => s.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd();
+  const disk = norm(DEBUG_LOG_BODY);
+  return norm(body).slice(0, disk.length) === disk;
+}
+
+/** The last attempt at each finding — the plugin's own one-option record. */
+const attempts = {};
+
+function recordAttempt(id, attempt) {
+  attempts[id] = { at: new Date().toISOString(), ...attempt };
+}
+
+/** The clean-scan finding for the log, exactly as the plugin's check would. */
+async function debugLogFinding() {
+  const served = await debugLogServed();
+  const finding = served
+    ? {
+      id: 'morpheus_public_debug_log',
+      label: 'The debug log is not readable over the web',
+      status: 'critical',
+      description: `http://localhost:${PORT}/wp-content/debug.log returns the log's own bytes to anyone who asks, with no login. Morpheus renames the file with a timestamp rather than deleting it.`,
+      details: [{ file: 'wp-content/debug.log', size: DEBUG_LOG_BODY.length, mtime_iso: '2026-09-23T12:00:00+00:00' }],
+      fix: { kind: 'auto', label: 'Quarantine the public debug log', does: 'Renames wp-content/debug.log to a timestamped backup.', warning: null, steps: [] },
+    }
+    : {
+      id: 'morpheus_public_debug_log',
+      label: 'The debug log is not readable over the web',
+      status: 'good',
+      description: `A wp-content/debug.log exists on disk (${DEBUG_LOG_BODY.length} bytes), and it is not being served over the web: the host answered with something that is not this file. Nothing in the log is readable from outside, so there is nothing here to clean.`,
+      fix: { kind: 'auto', label: 'Quarantine the public debug log', does: 'Renames wp-content/debug.log to a timestamped backup.', warning: null, steps: [] },
+    };
+  if (attempts.morpheus_public_debug_log) {
+    finding.last_attempt = attempts.morpheus_public_debug_log;
+  }
+  return finding;
+}
 
 /**
  * A real WordPress page carrying the tag the plugin prints for its own admin:
@@ -68,8 +136,15 @@ function hostPage(position) {
 }
 
 // ── the site, as a fixture ─────────────────────────────────────────────────
-function health() {
+async function health() {
   const checkedAt = Math.floor(Date.now() / 1000) - 3600; // an hour ago: fresh
+  // WordPress's own test says debug mode is ON. Morpheus's sentence about the
+  // LOG must be the verified answer — the old static one claimed "readable over
+  // the web" and was false on the fallback host, which is the whole defect.
+  const servedLog = await debugLogServed();
+  const debugDoes = servedLog
+    ? `WP_DEBUG_LOG is on AND http://localhost:${PORT}/wp-content/debug.log returns this file's own contents to anyone who asks, with no login.`
+    : 'WP_DEBUG_LOG is on, so WordPress writes wp-content/debug.log. Morpheus requested http://localhost:' + PORT + '/wp-content/debug.log and was served something that is not this file, so the log exists on disk and is not being served over the web.';
   return {
     ok: true,
     wp_version: '6.7.1',
@@ -87,7 +162,24 @@ function health() {
     tests: [
       { id: 'php_version', label: 'PHP Version', status: 'good', badge: 'Performance', description: 'PHP 8.2.33 is supported and current.', links: [] },
       { id: 'rest_api', label: 'REST API availability', status: 'good', badge: 'Security', description: 'The REST API is reachable.', links: [] },
-      { id: 'debug_enabled', label: 'Debug mode', status: 'recommended', badge: '', description: 'Debug logging is on for a production site.', links: [{ url: `http://localhost:${PORT}/wp-admin/`, label: 'Manage' }] },
+      {
+        id: 'debug_enabled',
+        label: 'Debug mode',
+        status: 'recommended',
+        badge: '',
+        description: 'Debug logging is on for a production site.',
+        links: [{ url: `http://localhost:${PORT}/wp-admin/`, label: 'Manage' }],
+        // The registry entry, annotated with the verified answer — the same
+        // shape Morpheus_Fixes::annotate() builds from `action_does`.
+        fix: {
+          kind: 'guided',
+          label: 'Stop logging errors to a public file',
+          does: debugDoes,
+          warning: null,
+          steps: [{ text: 'For a live site, add this to wp-config.php above the "stop editing" line: define( \'WP_DEBUG\', false );' }],
+        },
+        ...(attempts.debug_enabled ? { last_attempt: attempts.debug_enabled } : {}),
+      },
     ],
     own_checks: [
       { id: 'morpheus_plugin_version', label: 'Morpheus plugin', status: 'good', badge: '', description: `Morpheus plugin ${PLUGIN_VERSION} is installed and current.`, links: [] },
@@ -116,7 +208,12 @@ function health() {
  * purpose: the "what this scan did not reach" panel is part of the answer and a
  * fixture that omitted it would let a regression there pass.
  */
-function clean() {
+async function clean() {
+  // The debug-log finding is computed from what this server is ACTUALLY serving
+  // right now (see debugLogServed()), and carries the site's recorded attempt —
+  // so the drive script can flip the host and watch the row change, and a reload
+  // reads the reason back from here rather than from the browser's memory.
+  const debugFinding = await debugLogFinding();
   return {
     ok: true,
     scan_version: 1,
@@ -177,13 +274,7 @@ function clean() {
         details: [{ file: 'wp-content/plugins/akismet/akismet.php', size: 2400, mtime_iso: '2026-09-22T01:00:00+00:00' }],
         fix: { kind: 'guided', label: 'Compare the recent file changes', does: 'A plugin or theme update produces exactly this list.', warning: null, steps: [{ text: 'Line the timestamps up against what you installed.' }] },
       },
-      {
-        id: 'morpheus_public_debug_log',
-        label: 'The debug log is not readable over the web',
-        status: 'good',
-        description: 'There is no wp-content/debug.log on this site, so nothing is being leaked by one.',
-        fix: { kind: 'auto', label: 'Quarantine the public debug log', does: 'Renames wp-content/debug.log to a timestamped backup.', warning: null, steps: [] },
-      },
+      debugFinding,
       {
         id: 'morpheus_stale_robots_txt',
         label: 'robots.txt is built by WordPress, and its sitemap answers',
@@ -269,7 +360,7 @@ function signatureOk(req, raw) {
 }
 
 let posts = 0;
-function respond(req, res, raw) {
+async function respond(req, res, raw) {
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   const path = url.pathname;
 
@@ -281,6 +372,31 @@ function respond(req, res, raw) {
     console.log(`[mock-wp] GET / (host page with the dock tag${position ? `, position=${position}` : ''})`);
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(hostPage(position));
+  }
+
+  // ── the debug.log fixture: the URL's bytes, and who is allowed to look ────
+  //
+  // The GET that decides the finding. `fallback` answers with the host's own
+  // HTML page for every /wp-content path (the owner's host); `served` hands out
+  // the log's own bytes. A host that answers 200 either way is exactly why the
+  // rule cannot look at the status.
+  if (req.method === 'GET' && path === '/wp-content/debug.log') {
+    const served = debugLogMode === 'served';
+    console.log(`[mock-wp] GET /wp-content/debug.log  mode=${debugLogMode} -> ${served ? '200 text/plain (the log)' : '200 text/html (the host\'s page)'}`);
+    res.writeHead(200, { 'content-type': served ? 'text/plain; charset=utf-8' : 'text/html; charset=utf-8' });
+    return res.end(debugLogBody());
+  }
+
+  // Dev-only controls for the drive script: flip what the log URL serves, and
+  // clear the recorded attempts. Never part of a WordPress route.
+  if (req.method === 'GET' && path === '/__fixture/debug-log') {
+    const mode = url.searchParams.get('mode');
+    if (mode === 'served' || mode === 'fallback') debugLogMode = mode;
+    if (url.searchParams.get('clear') === 'attempts') {
+      for (const k of Object.keys(attempts)) delete attempts[k];
+    }
+    console.log(`[mock-wp] FIXTURE debug-log mode=${debugLogMode}`);
+    return json(res, 200, { mode: debugLogMode, attempts });
   }
 
   // A browser asks for this unprompted; without it the rig's "no console errors"
@@ -322,8 +438,8 @@ function respond(req, res, raw) {
   // A rename on either side here would make CLEAN MY SITE render a health scan,
   // which reads as "nothing found" — so the rig drives the real dispatch.
   if (path === `${NS}/health`) {
-    if (asAction === 'clean') { console.log('[mock-wp]   action=clean -> the clean scan'); return json(res, 200, clean()); }
-    return json(res, 200, health());
+    if (asAction === 'clean') { console.log('[mock-wp]   action=clean -> the clean scan'); return json(res, 200, await clean()); }
+    return json(res, 200, await health());
   }
   if (path === `${NS}/store`) {
     if (asAction === 'context') return json(res, 200, STORE_CONTEXT);
@@ -354,17 +470,32 @@ function respond(req, res, raw) {
     if (!CLEAN_AUTO.includes(findingId)) {
       return json(res, 409, { ok: false, code: 'NOT_AUTOMATIC', error: 'mock-wp: this finding needs a person' });
     }
+
+    // THE DEBUG LOG IS DECIDED AT FIX TIME, not from the scan — the same
+    // re-ask the plugin does (Morpheus_Clean::debug_log_state()), so a host
+    // that is not serving the file produces a REFUSAL, not a rename that
+    // changed nothing. The refusal is recorded exactly as class-fixes.php
+    // records it, which is what the panel renders on the row.
+    if (findingId === 'morpheus_public_debug_log' && !(await debugLogServed())) {
+      const error = `The debug log is not being served at http://localhost:${PORT}/wp-content/debug.log — the host answers with something that is not this file. Moving it would change nothing, so Morpheus did not. Nothing was changed.`;
+      recordAttempt(findingId, { outcome: 'refused', code: 'NOT_SERVED', message: error });
+      console.log('[mock-wp]   morpheus_public_debug_log -> NOT_SERVED (recorded)');
+      return json(res, 409, { ok: false, id: findingId, code: 'NOT_SERVED', error, restored: false });
+    }
+
     const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
     const file = findingId === 'morpheus_uploads_php' ? 'wp-content/uploads/2026/09/loader.php'
       : findingId === 'morpheus_root_config_backup' ? 'wp-config.php.bak'
         : findingId === 'morpheus_public_debug_log' ? 'wp-content/debug.log'
           : 'robots.txt';
     const backup = `/home/fixture/${file.split('/').pop()}.morpheus-bak-${stamp}`;
+    const did = 'renamed 1 file with a timestamp — nothing was deleted';
+    recordAttempt(findingId, { outcome: 'done', code: 'QUARANTINED', message: did });
     return json(res, 200, {
       ok: true,
       id: findingId,
       code: 'QUARANTINED',
-      did: 'renamed 1 file with a timestamp — nothing was deleted',
+      did,
       quarantined: [{ file, backup, verified: true, restored: false, served: false }],
       refused: [],
       verified: true,
@@ -378,8 +509,8 @@ function respond(req, res, raw) {
 createServer((req, res) => {
   let raw = '';
   req.on('data', (d) => { raw += d; });
-  req.on('end', () => {
-    try { respond(req, res, raw); } catch (err) { json(res, 500, { error: err.message }); }
+  req.on('end', async () => {
+    try { await respond(req, res, raw); } catch (err) { json(res, 500, { error: err.message }); }
   });
 }).listen(PORT, () => {
   console.log(`[mock-wp] mock WordPress plugin on http://localhost:${PORT} (plugin ${PLUGIN_VERSION})`);

@@ -237,6 +237,23 @@ check('…with the kind intact', withFix.map((f) => f.fix.kind).sort(), ['auto',
 check('…and the button label', withFix.find((f) => f.fix.kind === 'auto').fix.label, 'Disable it');
 check('a finding with no action still comes through', findings({ tests: [{ id: 'x', label: 'X', status: 'good' }] })[0].fix, null);
 
+// The site's RECORD of the last attempt at a finding travels with it, so a
+// refusal the operator already met is on the row they are looking at — and it
+// survives a reload because it comes from the scan, not from the panel. The
+// sentence is derived from the site's own outcome/code/message by attemptLine();
+// only an explicit `done` reads as success, and an absent record is no line at
+// all rather than a reassuring one. (The clean scan's mapper is asserted in
+// scripts/verify-clean-site.mjs; this is the health mapper's half.)
+const recorded = findings({
+  tests: [{ id: 'debug_enabled', label: 'Debug mode', status: 'recommended', last_attempt: { outcome: 'refused', code: 'NOT_SERVED', message: 'the host answers with something else', at: '2026-09-23T12:00:00+00:00' } }],
+  own_checks: [{ id: 'morpheus_loopback', label: 'Loopback', status: 'good', last_attempt: { outcome: 'done', message: 'asked WordPress to run the overdue events' } }],
+});
+check('the health mapper carries the site\'s recorded attempt', recorded[0].last_attempt?.outcome, 'refused');
+check('…as the sentence the panel renders', recorded[0].attempt_line, 'Last attempt refused (2026-09-23 12:00 UTC) [NOT_SERVED]: the host answers with something else');
+check('…and the finding\'s own status is untouched by it', recorded[0].status, 'recommended');
+check('a done record reads as the last successful fix', /^Last successful fix/.test(recorded[1].attempt_line), true);
+check('a finding with no record carries no line', findings({ tests: [{ id: 'x', label: 'X', status: 'good' }] })[0].attempt_line, null);
+
 // A button must never be built from something unrenderable.
 check('the four kinds are the only ones', FIX_KINDS, ['auto', 'guided', 'updates', 'none']);
 check('an unknown kind is refused, not rendered', normaliseFix({ kind: 'magic', label: 'x' }), null);

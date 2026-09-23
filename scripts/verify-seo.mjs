@@ -1032,7 +1032,10 @@ check('the quarantine handler was parsed (parser sanity)', quarantineFn.length >
 check('the registry registers the finding as automatic', /'morpheus_stale_robots_txt'\s*=>\s*array\(\s*'kind'\s*=>\s*'auto'/.test(fixesCode), true);
 // The silent failure this catches: a registry naming a mechanism the switch
 // does not handle answers NO_MECHANISM at runtime and looks like a site bug.
-check('…naming a mechanism the switch actually handles', /'fix'\s*=>\s*'quarantine_robots_txt'/.test(fixesCode) && /case 'quarantine_robots_txt':\s*\n\s*return self::fix_quarantine_robots_txt\( \$id \);/.test(fixesCode), true);
+// The case now ASSIGNS and breaks (every mechanism's result is recorded before
+// it is returned, so the shared refusal record cannot be skipped), so the
+// assertion is on that shape rather than on an immediate `return`.
+check('…naming a mechanism the switch actually handles', /'fix'\s*=>\s*'quarantine_robots_txt'/.test(fixesCode) && /case 'quarantine_robots_txt':\s*\n\s*\$result = self::fix_quarantine_robots_txt\( \$id \);/.test(fixesCode), true);
 
 check('the fix RENAMES the file', has(quarantineFn, '@rename( $file, $backup )'), true);
 check('…and never deletes anything', /@?unlink\s*\(/.test(quarantineFn), false);

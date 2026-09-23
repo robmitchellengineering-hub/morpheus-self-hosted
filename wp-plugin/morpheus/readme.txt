@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.4
+Stable tag: 0.8.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,27 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.5 =
+* Fixed: **a false "publicly readable debug.log" finding.** The check used to
+  conclude "readable" from the URL's HTTP status and the shape of the body. On a
+  host whose front controller answers every path under wp-content with 200 and
+  its own HTML page (`try_files ... /index.php`, a custom 404 that returns 200,
+  a WAF interstitial), that reported a leak that was not there. The check now
+  compares the bytes the URL returns with the bytes on disk, exactly as the
+  robots.txt check already did, and a file that is not what the URL serves reads
+  "good — the log exists on disk and is not being served over the web".
+* Fixed: the sentence Morpheus appends to WordPress's own `debug_enabled` Site
+  Health test no longer asserts the log is readable over the web. It reports the
+  verified answer, and says so plainly when the question cannot be answered.
+* Fixed: **a refused fix left no trace.** A fix that declined to act (the
+  debug.log quarantine correctly refusing to move a file nobody is being served)
+  rescanned to the same count with nothing on screen saying why, so a working
+  refusal looked like a broken button. The plugin now records the last attempt
+  per finding — outcome, code, message and time, in one capped option — the
+  scan returns it with the finding, and the panel shows it on that row. A later
+  successful run replaces the record, and a record never turns an unrun fix
+  into a "done".
 
 = 0.8.4 =
 * Added: **CLEAN MY SITE** — a scan for the things only code on the server can

@@ -61,6 +61,62 @@ export function normaliseFix(fix) {
   };
 }
 
+/**
+ * The record of the LAST attempt at one finding, as the site wrote it.
+ *
+ * WHY THIS IS DERIVED HERE AND NOT IN THE PANEL
+ *
+ * A refused fix used to leave no trace: the site declined, the panel rescanned
+ * to the same count, and nothing on screen said why — so a working refusal read
+ * exactly like a broken button. The plugin now keeps the last attempt per
+ * finding and the scan returns it, which means the reason survives a reload and
+ * comes from the site rather than from the panel's own state. Turning it into a
+ * sentence is a rule about what an operator is told, so it lives here with the
+ * other rules and is asserted directly.
+ *
+ * WHAT IT REFUSES: to read as success. Only an explicit `done` is a success;
+ * anything else — a missing outcome, an unknown string, a shape we have never
+ * seen — is treated as a refusal, because a record that claims a fix worked
+ * when it did not is worse than no record at all.
+ */
+export function attemptRecord(attempt) {
+  if (!attempt || typeof attempt !== 'object') return null;
+  const outcome = attempt.outcome === 'done' ? 'done' : 'refused';
+  const code = typeof attempt.code === 'string' && attempt.code ? attempt.code : null;
+  const message = typeof attempt.message === 'string' ? attempt.message.trim() : '';
+  const at = typeof attempt.at === 'string' && attempt.at ? attempt.at : null;
+  if (!message && !code && !at) return null;
+  return { outcome, code, message, at };
+}
+
+/** An ISO instant as the operator reads it, in UTC — the record's own clock. */
+function attemptWhen(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+/**
+ * The line under a finding saying what the last attempt did, or null when there
+ * was none. Null rather than a reassuring sentence: an absent record is not a
+ * successful one.
+ *
+ * The site's CODE is carried in the sentence too, because it is the one part of
+ * a refusal that is the same on every site and is what a host or a support
+ * conversation asks for; the message is the site's own words beside it.
+ */
+export function attemptLine(attempt) {
+  const record = attemptRecord(attempt);
+  if (!record) return null;
+  const when = record.at ? attemptWhen(record.at) : null;
+  const stamp = when ? ` (${when})` : '';
+  const code = record.code ? ` [${record.code}]` : '';
+  const why = record.message || (record.code ? `the site answered ${record.code}` : 'the site did not say why');
+  return record.outcome === 'done'
+    ? `Last successful fix${stamp}${code}: ${why}`
+    : `Last attempt refused${stamp}${code}: ${why}`;
+}
+
 /** Every finding in one list, worst first, each tagged with where it came from. */
 export function findings(scan = {}) {
   const out = [];
@@ -76,6 +132,9 @@ export function findings(scan = {}) {
       // is what would make every finding unactionable while the engine below was
       // fully working — the guard asserts it survives this mapper.
       fix: normaliseFix(t.fix),
+      // What the last attempt at this finding did, from the site's own record.
+      last_attempt: attemptRecord(t.last_attempt),
+      attempt_line: attemptLine(t.last_attempt),
       source: 'wordpress',
       sourceLabel: SOURCE_LABELS.wordpress,
     });
@@ -89,6 +148,8 @@ export function findings(scan = {}) {
       description: c.description || '',
       links: Array.isArray(c.links) ? c.links : [],
       fix: normaliseFix(c.fix),
+      last_attempt: attemptRecord(c.last_attempt),
+      attempt_line: attemptLine(c.last_attempt),
       source: 'morpheus',
       sourceLabel: SOURCE_LABELS.morpheus,
     });

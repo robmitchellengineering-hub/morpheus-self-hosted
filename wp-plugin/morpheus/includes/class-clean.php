@@ -212,6 +212,15 @@ class Morpheus_Clean {
 		// here cannot quietly become a description with no way to act on it.
 		$unmapped = Morpheus_Fixes::annotate( $findings );
 
+		// What the LAST attempt at each of these did, if there was one. A refusal
+		// that leaves the finding looking untouched reads to the operator as a
+		// broken button — the panel rescans, the count is the same, and nothing
+		// on screen says why. The record is read from the site (one option), not
+		// from the panel's memory, so it survives a reload and belongs to the
+		// site rather than to whoever pressed it. A record is never a claim: the
+		// finding's own status is unchanged by it.
+		Morpheus_Fixes::attach_attempts( $findings );
+
 		$result = array(
 			'scan_version'   => 1,
 			'plugin_version' => MORPHEUS_VERSION,
@@ -523,17 +532,104 @@ class Morpheus_Clean {
 
 	// ── 3. A publicly readable debug.log ────────────────────────────────────
 
+	/** How much of the log is read to compare with what the URL serves. */
+	const DEBUG_LOG_MAX_BYTES = 2097152; // 2 MB
+
+	/**
+	 * Is wp-content/debug.log the file the web server is actually SERVING?
+	 *
+	 * THE RULE, AND WHY AN HTTP STATUS CANNOT ANSWER IT
+	 *
+	 * "Readable over the web" was once decided from the response — a 200 and a
+	 * body that looked like a PHP log. That is not the same question, and it is
+	 * wrong on a host whose front controller answers EVERY path under
+	 * wp-content with 200 and its own HTML page (`try_files … /index.php`, a
+	 * custom 404 that returns 200, a WAF interstitial). Seen live: the owner's
+	 * host answered 200 with a 12 KB text/html page for a filename that
+	 * certainly does not exist, and the scan reported a credential-shaped leak
+	 * that was not there. A WordPress error page rendered while debugging also
+	 * contains the words "PHP Warning", so even a body-shape test is fooled.
+	 *
+	 * The only honest test is the one Morpheus_SEO::robots_txt_state() already
+	 * uses for a physical robots.txt: fetch the site's own URL and compare those
+	 * bytes with the bytes on disk (morpheus_bodies_match(), the same
+	 * comparison, so the two checks cannot disagree). A file that is not what
+	 * the URL serves is debris, not a leak.
+	 *
+	 * Serves both the scan and the fix, on purpose: the owner once pressed a fix
+	 * whose scan had said critical and which then answered NOT_SERVED, because
+	 * the two asked the question differently. One function, one answer.
+	 *
+	 * @return array|null Null when the site did not answer, so nothing is decided.
+	 *                    Otherwise: file, url, exists, empty, served, size, mtime.
+	 */
+	public static function debug_log_state() {
+		$file = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+		$url  = content_url( 'debug.log' );
+		$base = array(
+			'file'   => $file,
+			'url'    => $url,
+			'exists' => false,
+			'empty'  => false,
+			'served' => false,
+			'size'   => 0,
+			'mtime'  => null,
+		);
+
+		if ( ! is_file( $file ) ) {
+			return $base;
+		}
+		$on_disk = @file_get_contents( $file, false, null, 0, self::DEBUG_LOG_MAX_BYTES );
+		if ( ! is_string( $on_disk ) ) {
+			return null; // There, but we cannot read it — so we cannot judge it.
+		}
+
+		$base['exists'] = true;
+		$base['empty']  = ( '' === trim( $on_disk ) );
+		$base['size']   = (int) @filesize( $file );
+		$base['mtime']  = (int) @filemtime( $file );
+
+		$served = self::fetch( add_query_arg( 'morpheus-verify', time(), $url ), 8 );
+		if ( null === $served ) {
+			// The site did not answer for its own log. Whether that URL serves
+			// the file is then unknowable from in here, and guessing is how a
+			// finding gets invented for a file nobody is serving.
+			return null;
+		}
+		$base['served'] = self::served_is_the_file( $on_disk, $served );
+		return $base;
+	}
+
+	/**
+	 * Is the URL handing out the bytes on disk?
+	 *
+	 * PUBLIC and pure so the harness can exercise the rule directly rather than
+	 * only through a boot: a fallback page is not the file, the file itself is,
+	 * and an empty file has nothing to leak however it is served.
+	 */
+	public static function served_is_the_file( $on_disk, $served ) {
+		if ( ! is_string( $on_disk ) || ! is_string( $served ) || '' === trim( $on_disk ) ) {
+			return false;
+		}
+		// The file's own bytes at the start of the response: a host that pads a
+		// trailing newline, or a proxy that appends a footer, is still handing
+		// the log out — and morpheus_bodies_match() normalises the line endings
+		// and trailing whitespace that such middleboxes rewrite.
+		$head = substr( $served, 0, strlen( $on_disk ) );
+		return morpheus_bodies_match( $on_disk, $head );
+	}
+
 	/**
 	 * DETECTION RULE: `wp-content/debug.log` exists on disk AND the URL
-	 * `wp-content/debug.log` answers over HTTP with a body that looks like a PHP
-	 * error log.
+	 * `wp-content/debug.log` returns THAT FILE'S OWN BYTES.
 	 *
-	 * WHY BOTH HALVES: the file existing is normal while someone is debugging; it
-	 * is the PUBLIC READABILITY that leaks full file paths, plugin versions,
-	 * database error text and sometimes credentials. Asking over HTTP is the only
-	 * honest test of that — a filesystem check cannot know what the web server
-	 * does with the path. And requiring the body to look like a log stops a host
-	 * that answers 200 with its own error page from being reported as a leak.
+	 * WHY BOTH HALVES: the file existing is normal while someone is debugging;
+	 * it is the PUBLIC READABILITY that leaks full file paths, plugin versions,
+	 * database error text and sometimes credentials. Asking over HTTP is part of
+	 * the honest test — a filesystem check cannot know what the web server does
+	 * with the path — but the answer that matters is whether the bytes coming
+	 * back are the file, not what status or shape they arrived with. See
+	 * debug_log_state() for the host that fooled the old rule.
 	 *
 	 * WHY THE FIX IS `auto`: renaming a log file cannot break a running site —
 	 * PHP holds the old file handle until the request ends, and WordPress
@@ -541,7 +637,7 @@ class Morpheus_Clean {
 	 * change that stops it coming back is the real fix.
 	 */
 	private static function public_debug_log( &$skipped, &$limits ) {
-		$file = WP_CONTENT_DIR . '/debug.log';
+		$file = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
 		$logging = defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG;
 
 		if ( ! file_exists( $file ) ) {
@@ -555,51 +651,49 @@ class Morpheus_Clean {
 			);
 		}
 
-		$url  = content_url( 'debug.log' );
-		$body = self::fetch( add_query_arg( 'morpheus-verify', time(), $url ), 8 );
-		$limits['debug_log_url'] = $url;
+		$state = self::debug_log_state();
+		$limits['debug_log_url'] = content_url( 'debug.log' );
 
-		if ( null === $body ) {
-			self::skip( $skipped, 'public_debug_log', 'the site did not answer a request for ' . $url . ' (it may be offline to itself, or the request timed out), so whether the log is publicly readable could not be established' );
+		if ( null === $state ) {
+			self::skip( $skipped, 'public_debug_log', 'the site did not answer a request for ' . $limits['debug_log_url'] . ' (it may be offline to itself, or the request timed out), so whether the log is publicly readable could not be established' );
 			return self::finding(
 				'morpheus_public_debug_log',
 				'The debug log is not readable over the web',
 				'unknown',
-				'A wp-content/debug.log exists (' . size_format( (int) @filesize( $file ) ) . '), but this scan could not get an answer from ' . $url . ', so it cannot say whether the file is readable over the web. That is an unanswered question, not a pass.'
+				'A wp-content/debug.log exists (' . size_format( (int) @filesize( $file ) ) . '), but this scan could not get an answer from ' . $limits['debug_log_url'] . ', so it cannot say whether the file is readable over the web. That is an unanswered question, not a pass.'
 			);
 		}
 
-		if ( ! self::looks_like_log( $body ) ) {
+		if ( ! empty( $state['empty'] ) ) {
 			return self::finding(
 				'morpheus_public_debug_log',
 				'The debug log is not readable over the web',
 				'good',
-				'A wp-content/debug.log exists, but the URL does not return a PHP error log — the host answers with something else, so the contents are not being handed out.'
+				'A wp-content/debug.log exists on disk but is empty, so there is nothing in it to leak over the web.'
 			);
 		}
 
-		$size = (int) @filesize( $file );
+		if ( empty( $state['served'] ) ) {
+			// The owner's host is exactly this: a file on disk, and a URL that
+			// answers with something else entirely. A finding here would send
+			// Morpheus to move a file nobody is being served.
+			return self::finding(
+				'morpheus_public_debug_log',
+				'The debug log is not readable over the web',
+				'good',
+				'A wp-content/debug.log exists on disk (' . size_format( $state['size'] ) . '), and it is not being served over the web: ' . $state['url'] . ' answered with something that is not this file (a host that routes every path through its front controller answers 200 with its own page). Nothing in the log is readable from outside, so there is nothing here to clean.'
+			);
+		}
+
+		$size = (int) $state['size'];
+		$url  = (string) $state['url'];
 		return self::finding(
 			'morpheus_public_debug_log',
 			'The debug log is not readable over the web',
 			'critical',
-			$url . ' returns ' . size_format( $size ) . ' of PHP error log to anyone who asks, with no login. Those lines carry full server file paths, plugin and theme versions, database error text and sometimes credentials — everything someone needs to pick a target. Morpheus renames the file with a timestamp rather than deleting it, then re-requests the URL to confirm it has stopped answering; WordPress will create a fresh log on the next warning, so switch WP_DEBUG_LOG off or move it outside the web root to stop that.',
-			array( self::row( 'wp-content/debug.log', $size, (int) @filemtime( $file ), $url ) )
+			$url . ' returns ' . size_format( $size ) . ' of PHP error log to anyone who asks, with no login — the bytes it answers with are this file\'s own bytes. Those lines carry full server file paths, plugin and theme versions, database error text and sometimes credentials — everything someone needs to pick a target. Morpheus renames the file with a timestamp rather than deleting it, then re-requests the URL to confirm it has stopped answering; WordPress will create a fresh log on the next warning, so switch WP_DEBUG_LOG off or move it outside the web root to stop that.',
+			array( self::row( 'wp-content/debug.log', $size, (int) $state['mtime'], $url ) )
 		);
-	}
-
-	/** Does a body look like a PHP error log rather than a host's error page? */
-	private static function looks_like_log( $body ) {
-		if ( ! is_string( $body ) || '' === trim( $body ) ) {
-			return false;
-		}
-		$head = substr( $body, 0, 4000 );
-		// WordPress's own format: "[23-Sep-2026 16:02:00 UTC] PHP Warning:  …".
-		if ( preg_match( '/^\[[^\]]{6,40}\]\s*PHP\s/i', trim( $head ) ) ) {
-			return true;
-		}
-		// A log rotated or appended by a host: the timestamp may not be first.
-		return (bool) preg_match( '/PHP (Warning|Notice|Fatal error|Deprecated|Parse error|Recoverable)/i', $head );
 	}
 
 	// ── 4. Core checksums ───────────────────────────────────────────────────

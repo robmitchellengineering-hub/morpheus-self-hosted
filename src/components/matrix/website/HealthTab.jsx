@@ -365,6 +365,32 @@ function FixBox({
   );
 }
 
+/**
+ * What the LAST attempt at this finding did, as the SITE recorded it.
+ *
+ * This is a record, not a result: it is read back out of the scan payload, so it
+ * is still there after a reload, and it never turns the finding green or counts
+ * it as done. The sentence is the server's (`attempt_line`, derived from the
+ * site's own outcome/code/message) — the panel never composes one, and never
+ * upgrades an unknown outcome to a success.
+ */
+function LastAttempt({ line, outcome }) {
+  if (!line) return null;
+  const done = outcome === 'done';
+  return (
+    <div className={`border px-2.5 py-1.5 ${done ? 'border-green-500/25' : 'border-yellow-500/30'}`}>
+      <div className={`text-[10px] leading-relaxed break-words ${done ? 'text-green-400/90' : 'text-yellow-500/85'}`}>
+        {line}
+      </div>
+      <div className={faint}>
+        {done
+          ? 'Recorded by the site on the last run. The finding below is still what the check says.'
+          : 'Recorded by the site on the last run, so this is why nothing changed — the check itself still decides the finding below.'}
+      </div>
+    </div>
+  );
+}
+
 /** One finding, rendered so the server's own source label is unmissable. */
 function Finding({
   t, quiet = false, siteName, siteUrl, fixBusy = false, fixPaused = false, fixResult,
@@ -397,6 +423,11 @@ function Finding({
           <ExternalLink size={11} className="mt-[2px] shrink-0" />{l.label || l.url}
         </a>
       ))}
+      {/* What the last attempt did, when the site has a record of one. Above the
+          fix control deliberately, and OUTSIDE the `withFix` guard: a finding
+          that reads `good` shows no press, and the reason its press was refused
+          is exactly what the operator came back to read. */}
+      <LastAttempt line={t.attempt_line} outcome={t.last_attempt?.outcome} />
       {/* The evidence the finding is built from: the files, sizes and dates the
           scan actually read. Rendered as sent and never summarised into a count —
           "3 files" without the names is exactly what an operator cannot act on,

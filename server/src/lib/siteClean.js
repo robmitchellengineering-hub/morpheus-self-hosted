@@ -44,7 +44,7 @@
 // Nothing here re-implements a detection rule: two implementations would be two
 // answers to one question.
 
-import { normaliseFix, severityRank, SOURCE_LABELS } from './siteHealth.js';
+import { normaliseFix, severityRank, SOURCE_LABELS, attemptRecord, attemptLine } from './siteHealth.js';
 
 /**
  * The action the app sends to the plugin's ONE signed health route.
@@ -144,6 +144,14 @@ export function cleanFindings(scan = {}) {
       links: Array.isArray(f.links) ? f.links : [],
       details: Array.isArray(f.details) ? f.details : [],
       fix: normaliseFix(f.fix),
+      // The site's record of the LAST attempt at this finding, if there was one.
+      // A refusal used to be invisible: the panel rescanned to the same count
+      // with nothing saying why. It is carried on the finding — not decided here
+      // — so a reload reads it back from the site, and it is rendered as a
+      // RECORD, never as a claim: `attemptLine()` turns only an explicit `done`
+      // into a success sentence, and the finding's own status is untouched.
+      last_attempt: attemptRecord(f.last_attempt),
+      attempt_line: attemptLine(f.last_attempt),
       // Every clean finding is ours: WordPress's Site Health has no opinion about
       // a PHP file in uploads/. Kept as a field anyway so a future check that
       // quotes WordPress cannot be presented as ours by accident.
