@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 // Runtime verification for CORS origin resolution.
 //
 // Run: node scripts/verify-cors.mjs
@@ -6,7 +7,7 @@
 // browser it may reflect an arbitrary origin AND send credentials. The previous
 // implementation did exactly that whenever CORS_ORIGIN was unset.
 
-import { resolveCors, DEFAULT_CORS_ORIGIN } from '../server/src/lib/corsOrigin.js'
+import { resolveCors, safeReturnUrl, DEFAULT_CORS_ORIGIN } from '../server/src/lib/corsOrigin.js'
 
 let pass = 0, fail = 0
 const check = (name, got, want) => {
@@ -59,6 +60,33 @@ for (const i of inputs) {
   if (r.wildcard && r.credentials) violations.push(String(i))
 }
 check('no input produces wildcard + credentials', violations, [])
+
+// ── where Stripe may send a buyer back to ───────────────────────────────────
+// createTokenCheckout used to hand the client's successUrl/cancelUrl to Stripe
+// verbatim, so the post-payment redirect was caller-controlled. The price was
+// never at risk (the block is looked up server-side by index), but an open
+// redirect on a payment flow is a real finding, and it stops being theoretical
+// once a widget token can buy credits. Asserted as behaviour, not as source.
+console.log('\nWhere Stripe may send a buyer back to')
+const APP = 'https://morpheus.nz'
+check('the buyer may return to the page they were on, same origin',
+  safeReturnUrl(`${APP}/workspace?tab=seo`, '/?credits=success', APP), `${APP}/workspace?tab=seo`)
+check('a FOREIGN origin is not used', safeReturnUrl('https://evil.example/steal', '/?credits=success', APP), `${APP}/?credits=success`)
+check('…not even as a prefix or a lookalike', safeReturnUrl('https://morpheus.nz.evil.example/x', '/?credits=success', APP), `${APP}/?credits=success`)
+check('…and a SUBDOMAIN is a different origin', safeReturnUrl('https://evil.morpheus.nz/x', '/?credits=success', APP), `${APP}/?credits=success`)
+check('a javascript: URL is refused', safeReturnUrl('javascript:alert(1)', '/?credits=success', APP), `${APP}/?credits=success`)
+check('a protocol-relative URL is refused', safeReturnUrl('//evil.example/x', '/?credits=success', APP), `${APP}/?credits=success`)
+check('nothing at all still lands somewhere real', safeReturnUrl(undefined, '/?credits=success', APP), `${APP}/?credits=success`)
+check('garbage still lands somewhere real', safeReturnUrl('not a url', '/?credits=cancelled', APP), `${APP}/?credits=cancelled`)
+check('and with no usable base the documented dev default is used',
+  safeReturnUrl('https://evil.example/', '/?credits=success', undefined), `${DEFAULT_CORS_ORIGIN}/?credits=success`)
+
+// The call site has to actually use it, or the rule never runs.
+const checkoutSrc = readFileSync(new URL('../server/src/functions/createTokenCheckout.js', import.meta.url), 'utf8')
+check('checkout validates the return URL rather than trusting it',
+  /safeReturnUrl\(successUrl/.test(checkoutSrc) && /safeReturnUrl\(cancelUrl/.test(checkoutSrc), true)
+check('…and the raw client values never reach Stripe',
+  /success_url: successUrl|success_url: \b(successUrl)\b/.test(checkoutSrc), false)
 
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) { console.log(`${fail} FAILED\n`); process.exit(1) }
