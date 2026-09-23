@@ -106,7 +106,12 @@ What it does, and what it assumes:
   redacts it out of its own output.
 - `drive` needs the browser to be drivable — see the `playwright-cli` skill
   (`scripts/pw`, never `playwright-cli` directly). It writes screenshots to
-  `.playwright/out/`.
+  `.playwright/out/`. Besides the tabs, it asserts the floating panel's
+  **placement** on `public/plugin.js`'s host page: at 720, 800, 900 and 1000px
+  viewport heights, on a narrow and a very short viewport, at saved drag
+  positions near an edge and near the bottom, and for `bottom-left`. A panel that
+  opens off the screen fails the run with the measured box, because a panel
+  nobody can reach reads to the operator as a broken button.
 - Ports are backend 4500, frontend 5173, mocks 4599 and 4600. If something else
   holds one, override with `DOCK_RIG_BACKEND_PORT`, `DOCK_RIG_FRONTEND_PORT`,
   `DOCK_RIG_MOCK_LLM_PORT` or `DOCK_RIG_MOCK_WP_PORT`.
