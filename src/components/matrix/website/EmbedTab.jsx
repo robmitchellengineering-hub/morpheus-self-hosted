@@ -160,7 +160,7 @@ export default function EmbedTab({ projectId, connected }) {
             checked={dock} onChange={(e) => setDock(e.target.checked)} />
           <span className={dock ? 'text-primary/70' : 'text-primary/40'}>
             Floating widget — a small button in the corner that opens the panel over the page, instead of sitting inline on one page.
-            {dock && ' Put the snippet where it loads for you only (e.g. a PHP snippet gated to logged-in admins) — it carries the token, so anyone the page sends it to can act as you.'}
+            {dock && ' Switch it on in the Morpheus WordPress plugin (Settings → Morpheus → Dock) and paste this token there — the plugin prints it for you only, so a theme update can’t delete it. Without the plugin, paste the snippet where it loads for you only (e.g. a PHP snippet gated to logged-in admins). It carries the token, so anyone the page sends it to can act as you.'}
           </span>
         </label>
         <button onClick={create} disabled={creating}

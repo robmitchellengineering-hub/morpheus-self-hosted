@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.7.1
+Stable tag: 0.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -37,6 +37,10 @@ the shared secret, so nothing is invented or copied by hand.
 * **Working copy** — if the theme is not in a repository yet, the plugin can hand its own theme over
   so one can be created for you. Text files only; images and fonts stay on the site, where they are
   served from.
+* **Dock** — the floating Morpheus button, on your own site, for you only. Switch it on in Settings →
+  Morpheus and the plugin prints it on every page you open while signed in as an administrator; a
+  visitor, an editor or a shop manager never receives it. It is a plugin feature rather than a
+  snippet pasted into your theme, so a theme update cannot take it away.
 
 **Updates.** This plugin registers the standard WordPress update channel, so it updates from your own
 Plugins screen — and the download is verified against a published SHA-256 before it is installed.
@@ -65,6 +69,25 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.0 =
+* New: **the plugin prints the Morpheus dock itself**, so it survives a theme
+  update. Until now the only way to get the floating Morpheus button onto a site
+  was to paste its `<script>` tag into the theme (or a snippets plugin) by hand.
+  A theme update deletes that, and the dock then simply stops appearing — with
+  nothing on the site or in wp-admin saying why. Turn it on in Settings →
+  Morpheus, paste the embed token from Morpheus → WEBSITE → EMBED, and the plugin
+  prints the tag on every page **for a signed-in administrator only**. A visitor,
+  a subscriber, an editor or a shop manager never receives it, because the token
+  it carries acts as the owner. A page that carries the token is also opted out of
+  the page cache, so a cached copy can never be served to someone else.
+* New: Settings → Morpheus says whether the dock is printing, and the one reason
+  it is not — switched off, no token, a token that is not an embed token, or an
+  address that is not `https://`. A screen that says "ready" while nothing is
+  printed is how the original problem cost an afternoon.
+* Fixed: the dock mounts **once** even where the old hand-pasted snippet is still
+  in the theme alongside the plugin's own tag. Two tags used to mean two floating
+  buttons.
 
 = 0.7.1 =
 * Fixed: **the site's own schema entity now actually exists.** `emit_schema()`'s

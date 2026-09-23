@@ -30,6 +30,7 @@ const HARD = [
   'verify-contrast.mjs',
   'verify-traffic.mjs',
   'verify-photo-drive.mjs',
+  'verify-dock.mjs',
   'verify-prod-sql.mjs',
   'verify-billing-clamp.mjs',
   'verify-guards-no-install.mjs',

@@ -79,4 +79,16 @@ $PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
   -- /tests/harness-maintenance.php
 
 echo
+echo "== harness: the dock — who gets the tag, and who must never get it (PHP ${PHP_VERSION}) =="
+# No blueprint: the dock is a plain-WordPress feature — it has nothing to do
+# with WooCommerce or with which SEO plugin is active, and a boot without them
+# is the one that proves the tag does not depend on either. Its own boot for the
+# same reason as the others: it creates a user and writes the plugin's settings
+# option, and a shared WordPress could show either to the next harness.
+$PG php --php "$PHP_VERSION" --wp latest --verbosity quiet \
+  --auto-mount "$PLUGIN_DIR" \
+  --mount "$PLUGIN_DIR/tests:/tests" \
+  -- /tests/harness-dock.php
+
+echo
 echo "All plugin harnesses passed."

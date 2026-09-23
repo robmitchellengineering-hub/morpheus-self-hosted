@@ -21,6 +21,9 @@ class Morpheus_Settings {
 			'site_url'      => '',    // used for the post-deploy health check; defaults to home_url()
 			'health_paths'  => "/\n/shop/\n/cart/", // one per line
 			'armed'         => 0,     // 0 = the deploy endpoint reports only; 1 = it writes files
+			'dock_enabled'  => 0,     // 0 = the site prints no dock; 1 = it prints one, for administrators only
+			'widget_token'  => '',    // the WEBSITE → EMBED token (wgt_…) the dock acts as
+			'dock_host'     => 'https://morpheus.nz', // where plugin.js is served from
 		);
 	}
 
@@ -110,6 +113,28 @@ class Morpheus_Settings {
 		}
 		$out['armed'] = empty( $in['armed'] ) ? 0 : 1;
 
+		if ( isset( $in['widget_token'] ) ) {
+			$tok = trim( $in['widget_token'] );
+			// keep the stored token if the field was left blank (masked on render)
+			if ( $tok !== '' && $tok !== self::mask( $out['widget_token'] ) ) {
+				$out['widget_token'] = sanitize_text_field( $tok );
+			}
+		}
+		if ( isset( $in['dock_host'] ) ) {
+			$host = trim( $in['dock_host'] );
+			// A bare host is what an operator types. Give it the scheme instead
+			// of storing "morpheus.nz" and then refusing to print for a reason
+			// that reads as our bug. A typed http:// is left as typed —
+			// class-dock refuses it and the screen below says why, which is the
+			// honest outcome rather than a silent rewrite to https.
+			if ( $host !== '' && ! preg_match( '#^[a-z][a-z0-9+.-]*://#i', $host ) ) {
+				$host = 'https://' . $host;
+			}
+			$defaults      = self::defaults();
+			$out['dock_host'] = $host === '' ? $defaults['dock_host'] : esc_url_raw( $host );
+		}
+		$out['dock_enabled'] = empty( $in['dock_enabled'] ) ? 0 : 1;
+
 		return $out;
 	}
 
@@ -141,6 +166,10 @@ class Morpheus_Settings {
 		$code     = $paired ? '' : Morpheus_Pairing::current_code();
 		$left     = $paired ? 0 : Morpheus_Pairing::seconds_left();
 		$done     = isset( $_GET['morpheus_done'] ) ? sanitize_key( wp_unslash( $_GET['morpheus_done'] ) ) : '';
+		// '' means the dock WILL be printed for an administrator; anything else is
+		// the one reason it will not. Computed from the stored settings rather
+		// than this request, because this request is wp-admin.
+		$dock_note = Morpheus_Dock::status_note( false );
 		?>
 		<div class="wrap">
 			<h1>Morpheus <span style="font-size:13px;color:#888;">v<?php echo esc_html( MORPHEUS_VERSION ); ?></span></h1>
@@ -230,6 +259,47 @@ class Morpheus_Settings {
 						<td>
 							<label><input name="<?php echo self::OPTION; ?>[armed]" type="checkbox" value="1" <?php checked( $o['armed'], 1 ); ?>> Let a deploy request write files</label>
 							<p class="description">Off: the endpoint reports what it would change. On: it writes the changed files, health-checks the site, and restores a snapshot if anything breaks. Add <code>?dry=1</code> to the endpoint URL to force a report even when armed.</p>
+						</td>
+					</tr>
+					<tr>
+						<th style="padding-top:26px;vertical-align:top;"><h2 style="margin:0;">Dock</h2></th>
+						<td style="padding-top:26px;">
+							<p class="description" style="margin-top:0;">
+								The floating Morpheus button, printed on this site's own pages. It is printed for a
+								<strong>signed-in administrator only</strong> — never for a visitor and never for anyone
+								else's account, because the embed token it carries acts as you.
+							</p>
+							<p style="margin:10px 0;padding:9px 12px;border-left:4px solid <?php echo $dock_note === '' ? '#1f7a4d' : '#b26a00'; ?>;background:#f6f7f4;">
+								<?php if ( $dock_note === '' ) : ?>
+									<strong style="color:#1f7a4d;">Ready.</strong> The dock is printed on every page you open while signed in.
+								<?php else : ?>
+									<strong style="color:#b26a00;">Not printing.</strong> <?php echo esc_html( $dock_note ); ?>
+								<?php endif; ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="md-dockenabled">Print the dock</label></th>
+						<td>
+							<label><input name="<?php echo self::OPTION; ?>[dock_enabled]" id="md-dockenabled" type="checkbox" value="1" <?php checked( $o['dock_enabled'], 1 ); ?>> Put the Morpheus button on this site's pages</label>
+							<p class="description">Leave this off and put nothing on the site at all. Nothing is printed to a visitor either way.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="md-widgettoken">Embed token</label></th>
+						<td>
+							<input name="<?php echo self::OPTION; ?>[widget_token]" id="md-widgettoken" type="password" class="regular-text" value="<?php echo esc_attr( self::mask( $o['widget_token'] ) ); ?>" autocomplete="off">
+							<p class="description">
+								In Morpheus open your project → <strong>WEBSITE → EMBED</strong> and copy the token from the snippet there
+								(the part after <code>data-token=</code>, starting <code>wgt_</code>). Leave blank to keep the stored token.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="md-dockhost">Morpheus address</label></th>
+						<td>
+							<input name="<?php echo self::OPTION; ?>[dock_host]" id="md-dockhost" type="text" class="regular-text" value="<?php echo esc_attr( $o['dock_host'] ); ?>" placeholder="https://morpheus.nz">
+							<p class="description">Where <code>plugin.js</code> is served from. Must be <code>https://</code> — the token travels with the page, so a plain-http address is refused.</p>
 						</td>
 					</tr>
 				</table>

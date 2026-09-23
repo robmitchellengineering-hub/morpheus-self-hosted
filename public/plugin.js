@@ -12,9 +12,12 @@
  *
  *   Floating dock — data-dock="1" instead renders a small toggle button
  *   fixed in a screen corner; clicking it opens the panel over the page.
- *   Meant for a site-wide, admin-only embed (gate the <script> tag itself
- *   server-side — e.g. a PHP snippet that only prints it for a logged-in
- *   admin — so the token is never sent to an ordinary visitor's browser).
+ *   Meant for a site-wide, admin-only embed, so the tag must be produced
+ *   server-side and only for a logged-in admin — otherwise the token is
+ *   handed to an ordinary visitor's browser. The Morpheus WordPress plugin
+ *   (includes/class-dock.php, 0.8+) prints it that way; a site without the
+ *   plugin can print the same tag from a PHP snippet gated to admins.
+ *   Only one dock mounts however many copies of the tag are present.
  *   Built in a shadow root so the host page's CSS can't bleed in or out.
  *   Optional attributes: data-position ("bottom-right" default, or
  *   "bottom-left"), data-panel-width (px, default 380), data-panel-height
@@ -48,6 +51,16 @@
     (pageUrl ? '&pageUrl=' + encodeURIComponent(pageUrl) : '') +
     (pageTitle ? '&pageTitle=' + encodeURIComponent(pageTitle) : '');
   var isDock = script.getAttribute('data-dock') === '1';
+
+  // The dock can legitimately arrive twice: the Morpheus WordPress plugin
+  // prints it (0.8+), and a site that had the <script> pasted into its theme by
+  // hand still carries that copy. Two copies would mean two floating buttons
+  // fighting over the same corner, so the first to run wins and the rest stop
+  // here. Per lock, not global: an inline embed on a page is unaffected.
+  if (isDock) {
+    if (window.__morpheusDockMounted) return;
+    window.__morpheusDockMounted = true;
+  }
 
   if (isDock) {
     if (document.body) mountDock();

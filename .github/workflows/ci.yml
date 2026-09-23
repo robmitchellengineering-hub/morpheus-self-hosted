@@ -152,6 +152,16 @@ jobs:
       - name: Traffic rules
         run: node scripts/verify-traffic.mjs
 
+      # The dock: the button the site prints for its own administrator. The tag
+      # PHP prints must be the tag public/plugin.js reads, the token rule must
+      # admit what widgetToken.js issues, the capability must be manage_options
+      # and the only gate, the cache opt-out must sit AFTER the decision (before
+      # it, the whole site quietly stops being cacheable), a fresh install must
+      # print nothing, and the loader must mount one dock even on a site that
+      # still has the old hand-pasted theme snippet.
+      - name: Dock rules
+        run: node scripts/verify-dock.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,
