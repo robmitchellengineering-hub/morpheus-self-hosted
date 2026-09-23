@@ -567,6 +567,69 @@ check('no tab draws the run strip for itself',
 check('the runner says where its state lives',
   contains(runnerSrc, 'THIS MODULE owns the state') && contains(runnerSrc, 'A TAB owns only the presentation'), true)
 
+
+// ── 11c. EVERY client-driven loop is owned by the runner, not by a tab ──────
+//
+// 2026-09-24, Rob: "Yes we need to fix them all" — after the SEO batch was moved
+// above the tab switch, the other loops in these tabs still died the same way.
+//
+// The half that is easy to miss is the RESULT. Moving only the work means the job
+// finishes while the operator is on another tab and the answer is still gone when
+// they come back — the worst of both. So each check below is about the result as
+// much as the run, and the keys are asserted so two actions in one tab cannot
+// overwrite each other's.
+const LOOP_TABS = ['SeoTab', 'HealthTab', 'TrafficTab'].map((n) => `src/components/matrix/website/${n}.jsx`)
+const loopSrc = LOOP_TABS.map((f) => read(f))
+const loopKeys = loopSrc.flatMap((src) => [...src.matchAll(/task\('([a-z0-9:]+)'|key: '([a-z0-9:]+)'/g)].map((m) => m[1] || m[2])
+  .concat([...src.matchAll(/RUN_KEY = '([a-z0-9:]+)'/g)].map((m) => m[1])))
+
+check('the migrated tabs were read (parser sanity)', loopSrc.every((src) => src.length > 2000), true)
+check('every loop declares a key (parser sanity)', loopKeys.length >= 10, true)
+check('the task keys are exactly the migrated loops', [...loopKeys].sort(),
+  ['health:fixall', 'health:scan', 'seo:audit', 'seo:batch', 'seo:blog', 'seo:keywords',
+    'seo:linkapply', 'seo:linkplan', 'seo:links', 'seo:one', 'traffic:backfill'])
+check('…and no two loops share a key', new Set(loopKeys).size, loopKeys.length)
+
+// NO tab owns a run — or a result — in local state. These are the setters that
+// used to hold them; a loop reverted to local state brings one back, which is the
+// regression this half is for.
+const ORPHANED_SETTERS = [
+  'setAuditing', 'setKwBusy', 'setGenOne', 'setGenBlog', 'setLoadingLinks', 'setApplyingLinks',
+  'setFixAllRunning', 'setFixAllProgress', 'setFixAllReport', 'setScan(', "setBusy('backfill')",
+]
+// The state NAMES too, not only the setters: a loop reverted to local state can
+// declare `const [scan, setScan] = useState(null)` and never call the setter yet,
+// which is the regression in its purest form — and a check that only searched for
+// the setter CALL passed it. (Found by mutation L3, which did exactly that.)
+const ORPHANED_STATES = [
+  // NOT `loading`: SeoTab has a legitimate `loading` for its item list, which is
+  // not a run state. Every other name here belonged to a migrated loop.
+  'auditing', 'kwBusy', 'genOne', 'genBlog', 'loadingLinks', 'applyingLinks',
+  'fixAllRunning', 'fixAllProgress', 'fixAllReport', 'scan',
+]
+const declaredStates = (src) => [...src.matchAll(/const\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*set[A-Za-z_$][\w$]*\s*\]\s*=\s*useState/g)].map((m) => m[1])
+
+for (const [i, src] of loopSrc.entries()) {
+  const label = LOOP_TABS[i].split('/').pop()
+  check(`${label} keeps no run or result in local state`,
+    ORPHANED_SETTERS.filter((setter) => contains(src, setter)), [])
+  check(`${label} declares no run or result state`,
+    declaredStates(src).filter((n) => ORPHANED_STATES.includes(n)), [])
+  // …and reads them back out of the runner instead, which is what makes a
+  // remount show the answer rather than a blank.
+  check(`${label} reads its results back from the runner`,
+    (src.match(/useTaskResult\(/g) || []).length >= 1, true)
+  // The strip's Stop has to be real: a cancel button that no longer cancels is
+  // worse than none. Every loop a tab starts must check it.
+  const started = (src.match(/startTask\(|await task\(/g) || []).length
+  const cancels = (src.match(/cancelled\(\)/g) || []).length
+  check(`${label} checks the cancel in every loop it starts (${cancels} checks / ${started} starts)`,
+    cancels >= started, true)
+}
+// …and the strip is where the cancel comes from, so it must pass one on.
+const runnerSrc2 = read(RUNNER)
+check('the strip offers a cancel', contains(runnerSrc2, 'onCancel(t.key)') || contains(runnerSrc2, 'onCancel:'), true)
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

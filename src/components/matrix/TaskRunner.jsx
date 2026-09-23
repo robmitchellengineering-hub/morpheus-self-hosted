@@ -160,6 +160,36 @@ export function TaskRunner({ children }) {
   );
 }
 
+/**
+ * Read a task's RESULT back out, once per result.
+ *
+ * This is the half that is easy to miss. Moving the WORK into the runner keeps it
+ * alive across a tab switch; if the result stays in the tab, the work finishes
+ * while the operator is elsewhere and the answer is still gone when they come
+ * back — the worst of both. So every migrated loop hands its result to the runner
+ * and rebuilds its view from here, which is what makes a remount show the answer
+ * rather than a blank.
+ *
+ * `apply` is called once per distinct result (the ref), not on every render, so a
+ * selection the operator has since changed is not overwritten.
+ */
+export function useTaskResult(key, apply) {
+  const { tasks } = useTaskRunner();
+  const task = tasks[key];
+  const applied = useRef(null);
+  const fn = useRef(apply);
+  fn.current = apply;
+  useEffect(() => {
+    const r = task?.result;
+    if (task?.status === 'done' && r && applied.current !== r) {
+      applied.current = r;
+      fn.current(r);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, task?.status, task?.result]);
+  return task;
+}
+
 /** The runner's own hook. A tab uses this; nothing else owns the state. */
 export function useTaskRunner() {
   const ctx = useContext(TaskRunnerContext);
