@@ -184,6 +184,9 @@ function FixResult({ result }) {
             The previous state was put back, so nothing was left changed this time.
           </div>
         ) : null}
+        {result.quarantine?.undo ? (
+          <div className={faint}>{result.quarantine.undo}</div>
+        ) : null}
         {f.note ? <div className={`${faint} leading-relaxed break-words`}>{f.note}</div> : null}
       </div>
     );
@@ -200,6 +203,9 @@ function FixResult({ result }) {
       </div>
       {f.restored === true ? (
         <div className="text-[10px] text-yellow-500/85 leading-relaxed">The previous state was put back.</div>
+      ) : null}
+      {result.quarantine?.undo ? (
+        <div className={faint}>{result.quarantine.undo}</div>
       ) : null}
       {f.note ? <div className={`${faint} leading-relaxed break-words`}>{f.note}</div> : null}
       <div className={faint}>RESCAN above re-reads the site, so this line is checked rather than assumed.</div>
@@ -614,7 +620,7 @@ export default function HealthTab({ projectId }) {
       // The policy travels with the fix, so the panel above stays right without
       // a second round trip. Unsaved edits are never overwritten by it.
       if (payload.policy) { setPolicy(payload.policy); setPolicyErr(null); setDraft((d) => d || editableOf(payload.policy)); }
-      setFixResults((r) => ({ ...r, [id]: { state: 'settled', ok: payload.ok === true, fix: payload.fix } }));
+      setFixResults((r) => ({ ...r, [id]: { state: 'settled', ok: payload.ok === true, fix: payload.fix, quarantine: payload.quarantine || null } }));
       // A fix that succeeded re-reads the site, so the finding it just resolved
       // stops being on screen by itself. Leaving a fixed finding sitting there
       // until someone finds RESCAN is the dead end this panel exists to avoid.

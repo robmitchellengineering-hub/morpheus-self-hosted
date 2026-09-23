@@ -169,3 +169,41 @@ If Plugins shows `0.5.6` while the site's `/status` still says `0.4.5`, that is 
 stale PHP opcode cache on the host, not a failed install — a cache clear fixes
 it. The fix is on the host's side, so do not go looking for a plugin bug.
 
+## A physical robots.txt silently disables the whole robots filter
+
+WordPress builds `/robots.txt` dynamically — core, plus
+`Morpheus_SEO::filter_robots_txt()` — **only while no physical file exists**. A
+real file always wins, the filter never runs, and nothing in wp-admin mentions
+it. A file left behind by a removed SEO plugin therefore goes on advertising
+`Sitemap: …/sitemap_index.xml` (404) while the sitemap the site actually serves
+is never advertised — and the owner often cannot delete it, because the hosting
+panel is held by somebody else. Hence the panel's **quarantine** fix: rename
+`robots.txt` to `robots.txt.morpheus-bak-YYYYMMDDHHMMSS` beside it (never
+delete), re-read the live `/robots.txt`, and rename it straight back if the site
+does not come up serving WordPress's own.
+
+The check is deliberately hard to trigger: it fetches the site's own
+`/robots.txt` and compares those bytes with the bytes on disk, so a file that is
+not being *served* is never reported, and a file that already advertises a live
+sitemap is left alone. Two traps in judging staleness:
+
+* a sitemap URL is live only if it answers **200 itself**. This plugin's own
+  legacy-sitemap redirect turns the removed plugin's path into a 301, so a
+  redirect-following check calls the very site that needs the fix healthy.
+* the sitemap to compare against is **whatever the `robots_txt` filter chain
+  emits**, never `home_url( '/wp-sitemap.xml' )`. Hard-coding ours makes every
+  correctly-Yoast-configured physical file look stale — and the fix would then
+  take a working robots.txt away.
+
+## The Playground static-file race (harness only)
+
+Once a physical `robots.txt` has existed in Playground's `/wordpress`, its
+static-file router answers roughly **one `/robots.txt` request in five** with a
+bare 500 ("Could not read /wordpress/robots.txt") — with a query string as well
+as without, and before WordPress runs at all. A harness that asserts on the live
+`/robots.txt` therefore has to retry (`morpheus_live_robots()` in
+`tests/harness-noyoast.php`), and the plugin's own read retries too
+(`Morpheus_SEO::fetch_robots_txt()`), because a single blip must not decide
+whether a file in the site root is moved. A real host falls through to the front
+controller.
+

@@ -478,6 +478,205 @@ foreach ( (array) $rules as $pattern => $target ) {
 }
 ok( $rule_hit === 1, 'the legacy sitemap path is rewritten (one rule)' );
 
+echo "\n== no-Yoast boot: a stale physical robots.txt is quarantined, never deleted ==\n";
+// The live failure this covers: Yoast was removed, /sitemap_index.xml started
+// 404ing, and a physical robots.txt left on the host kept advertising it. A
+// physical file always wins — WordPress only builds /robots.txt while none
+// exists — so the filter above NEVER RUNS on that site and nothing in wp-admin
+// mentions the file. The owner held the hosting account but not the cPanel
+// login (a third party had it), so deleting the file was not available to him.
+// Hence a quarantine with a visible undo.
+//
+// A harness is the only place these claims can be checked: they are about what
+// the WEB SERVER actually serves, which needs a running WordPress.
+
+$robots_file = ABSPATH . 'robots.txt';
+$stale_body  = "User-agent: *\nDisallow: /wp-admin/\n# START YOAST BLOCK\nSitemap: " . home_url( '/sitemap_index.xml' ) . "\n# END YOAST BLOCK\n";
+
+function morpheus_clear_robots_backups() {
+	foreach ( (array) ( glob( ABSPATH . 'robots.txt.morpheus-bak-*' ) ?: array() ) as $f ) {
+		@unlink( $f );
+	}
+}
+morpheus_clear_robots_backups();
+
+// The one hook that lets this harness drive the HTTP side: `pre_http_request`
+// short-circuits wp_remote_get() so the site can be made to answer with bytes
+// that differ from what is on disk — which is how "the file is not the one being
+// served" and "the change did not verify" are produced on demand. Left null it
+// does nothing at all, so every other fetch in this file is a real one.
+$GLOBALS['morpheus_robots_probe'] = null;
+add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
+	$probe = $GLOBALS['morpheus_robots_probe'] ?? null;
+	if ( is_callable( $probe ) ) {
+		$body = $probe( $url );
+		if ( is_string( $body ) ) {
+			return array(
+				'headers'  => array(),
+				'body'     => $body,
+				'response' => array( 'code' => 200, 'message' => 'OK' ),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		}
+	}
+	return $pre;
+}, 10, 3 );
+
+/**
+ * The live /robots.txt, retried.
+ *
+ * WordPress Playground's static-file router intermittently answers a
+ * /robots.txt request with a bare 500 ("Could not read /wordpress/robots.txt")
+ * even once no such file exists any more — measured at roughly one request in
+ * five, with a query string as well as without, and happening before WordPress
+ * runs at all. A real host falls through to the front controller, which is the
+ * whole premise of this feature. The retry keeps these assertions about the
+ * plugin rather than about that race; the plugin's own read retries too, for
+ * the same reason (see Morpheus_SEO::fetch_robots_txt()).
+ */
+function morpheus_live_robots( $url = null, $tries = 8 ) {
+	$url  = $url ? $url : home_url( '/robots.txt' );
+	$last = array( 'code' => 0, 'body' => '' );
+	for ( $i = 0; $i < $tries; $i++ ) {
+		$r = wp_remote_get( $url, array( 'timeout' => 15 ) );
+		if ( ! is_wp_error( $r ) ) {
+			$last = array(
+				'code' => (int) wp_remote_retrieve_response_code( $r ),
+				'body' => (string) wp_remote_retrieve_body( $r ),
+			);
+			if ( $last['code'] < 500 ) {
+				return $last;
+			}
+		}
+		usleep( 150000 );
+	}
+	return $last;
+}
+
+// ── the judgement ──────────────────────────────────────────────────────────
+
+// 1. No physical file at all: WordPress serves its own, so there is no finding.
+@unlink( $robots_file );
+clearstatcache();
+$state = Morpheus_SEO::robots_txt_state();
+ok( is_array( $state ) && $state['physical'] === false && $state['stale'] === false, 'robots: no physical file is not a finding' );
+
+// 2. A GOOD physical file — served, and advertising a sitemap that answers.
+//    This is the over-eagerness test: the fix MOVES A FILE, so a file that is
+//    doing its job must produce nothing to press.
+@file_put_contents( $robots_file, "User-agent: *\nDisallow: /wp-admin/\nSitemap: " . home_url( '/wp-sitemap.xml' ) . "\n" );
+clearstatcache();
+$state = Morpheus_SEO::robots_txt_state();
+ok( is_array( $state ) && $state['served'] === true, 'robots: a good physical file is the one being served' );
+ok( is_array( $state ) && $state['stale'] === false, 'robots: a good physical file produces NO finding' );
+
+// 3. The file that is NOT the one being served is not a problem either. A host
+//    whose docroot differs from ABSPATH, or a server that ignores the file,
+//    looks exactly like this — and moving the file would change nothing.
+$GLOBALS['morpheus_robots_probe'] = function ( $url ) use ( $stale_body ) {
+	return strpos( $url, '/robots.txt' ) !== false ? "User-agent: *\nDisallow: /\n" : null;
+};
+$not_served = Morpheus_SEO::robots_txt_state();
+ok( is_array( $not_served ) && $not_served['physical'] === true && $not_served['served'] === false, 'robots: a file that is not served is recognised as such' );
+ok( is_array( $not_served ) && $not_served['stale'] === false, 'robots: a file that is not served is not a finding' );
+
+// 4. The live failure: a stale file that IS served.
+$GLOBALS['morpheus_robots_probe'] = null;
+@file_put_contents( $robots_file, $stale_body );
+clearstatcache();
+$state = Morpheus_SEO::robots_txt_state();
+ok( is_array( $state ) && $state['served'] === true, 'robots: the stale file is the one being served' );
+ok( is_array( $state ) && $state['stale'] === true, 'robots: the stale file IS a finding' );
+ok( strpos( (string) $state['reason'], '/sitemap_index.xml' ) !== false, 'robots: the reason names the sitemap URL that does not answer' );
+ok( strpos( (string) $state['reason'], home_url( '/wp-sitemap.xml' ) ) !== false, 'robots: the reason names the sitemap the site actually serves' );
+
+// And the judgement is on the URL the file NAMES, not on wherever it redirects
+// to. This boot has already flushed Morpheus's legacy-sitemap rewrite rule
+// (above), so the removed plugin's path answers with a redirect — and a
+// redirect-following check would call that healthy, which is precisely how the
+// live site's robots.txt would keep advertising a location that is not its
+// sitemap.
+$legacy_direct = Morpheus_SEO::fetch_url( home_url( '/sitemap_index.xml' ), false );
+$legacy_follow = Morpheus_SEO::fetch_url( home_url( '/sitemap_index.xml' ) );
+ok( 200 !== $legacy_direct['code'], 'robots: the advertised sitemap URL does not itself answer 200' );
+ok( 200 === $legacy_follow['code'], 'robots: …even though following the redirect reaches one (why the check must not follow)' );
+
+// The health scan produces it as a finding WITH an action, under the id the app
+// sends back to /fix. A finding with no registered action is counted unmapped,
+// which is the gap this asserts is not there.
+$scan_own = array();
+foreach ( (array) Morpheus_Health::scan()['own_checks'] as $c ) {
+	if ( ( $c['id'] ?? '' ) === 'morpheus_stale_robots_txt' ) { $scan_own = $c; }
+}
+ok( ! empty( $scan_own ), 'robots: the health scan reports the check' );
+ok( ( $scan_own['status'] ?? '' ) === 'recommended', 'robots: a stale served file is a recommendation, not silence' );
+ok( ( $scan_own['fix']['kind'] ?? '' ) === 'auto', 'robots: the finding carries an automatic fix' );
+ok( ( $scan_own['fix']['label'] ?? '' ) === 'Quarantine the stale robots.txt', 'robots: the action is the quarantine' );
+ok( ! empty( $scan_own['fix']['warning'] ), 'robots: the consequence is stated BEFORE the button' );
+
+// ── the fix ────────────────────────────────────────────────────────────────
+
+// 5. A file that is not the one being served is REFUSED: moving it would look
+//    like a fix and change nothing.
+$GLOBALS['morpheus_robots_probe'] = function ( $url ) use ( $stale_body ) {
+	return strpos( $url, '/robots.txt' ) !== false ? "User-agent: *\nDisallow: /\n" : null;
+};
+$refused = Morpheus_Fixes::apply( 'morpheus_stale_robots_txt' );
+ok( ( $refused['code'] ?? '' ) === 'NOT_SERVED', 'robots: the fix refuses a file that is not being served' );
+ok( file_exists( $robots_file ), 'robots: …and moved nothing' );
+ok( file_get_contents( $robots_file ) === $stale_body, 'robots: …leaving the file exactly as it was' );
+
+// 6. The happy path: quarantine, verify, and the dynamic file is served after.
+$GLOBALS['morpheus_robots_probe'] = null;
+$res = Morpheus_Fixes::apply( 'morpheus_stale_robots_txt' );
+ok( ! empty( $res['ok'] ) && ! empty( $res['verified'] ), 'robots: the fix reports a VERIFIED quarantine' );
+ok( ! file_exists( $robots_file ), 'robots: the physical file is gone from the root' );
+ok( ! empty( $res['backup'] ), 'robots: the result names a backup' );
+ok( ! empty( $res['backup'] ) && file_exists( $res['backup'] ), 'robots: …which exists — QUARANTINED, not deleted' );
+ok( preg_match( '#^robots\.txt\.morpheus-bak-\d{14}$#', basename( (string) $res['backup'] ) ) === 1, 'robots: …under the documented timestamped name' );
+ok( strpos( (string) $res['did'], (string) $res['backup'] ) !== false, 'robots: the outcome says where the backup is' );
+
+$live      = morpheus_live_robots();
+$live_body = $live['body'];
+ok( 200 === $live['code'], 'robots: the live /robots.txt still answers 200' );
+ok( $live_body !== $stale_body, 'robots: the live /robots.txt is no longer the old file' );
+ok( strpos( $live_body, 'YOAST' ) === false, 'robots: the leftover Yoast block is no longer served' );
+ok( strpos( $live_body, 'Sitemap: ' . home_url( '/wp-sitemap.xml' ) ) !== false, 'robots: the dynamic robots.txt advertises the sitemap the site serves' );
+
+// 7. A fix that CANNOT verify puts the file straight back. The probe makes the
+//    site answer the cache-busting re-fetch with a body that is neither the old
+//    file nor a robots.txt that advertises anything — which is what a genuinely
+//    broken end state looks like.
+@file_put_contents( $robots_file, $stale_body );
+clearstatcache();
+$GLOBALS['morpheus_robots_probe'] = function ( $url ) use ( $stale_body ) {
+	return strpos( $url, 'morpheus-verify' ) !== false ? "User-agent: *\nDisallow: /\n" : $stale_body;
+};
+$rolled = Morpheus_Fixes::apply( 'morpheus_stale_robots_txt' );
+ok( ( $rolled['verified'] ?? null ) === false, 'robots: a fix that cannot verify is NOT reported as verified' );
+ok( ( $rolled['restored'] ?? null ) === true, 'robots: …and the file was put back' );
+ok( file_exists( $robots_file ), 'robots: the file is back in the root' );
+ok( file_get_contents( $robots_file ) === $stale_body, 'robots: …with its original contents' );
+ok( strpos( (string) $rolled['error'], 'does not advertise' ) !== false || strpos( (string) $rolled['error'], 'still serving' ) !== false, 'robots: …and the failure says why' );
+ok( ! empty( $rolled['backup'] ), 'robots: …and still names the file it used, so the operator can find it' );
+
+// 8. A warm cache must not undo a fix that worked: the old body is still handed
+//    to a plain request, and the real dynamic file answers behind it.
+$dynamic_body = (string) apply_filters( 'robots_txt', "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n", true );
+$GLOBALS['morpheus_robots_probe'] = function ( $url ) use ( $stale_body, $dynamic_body ) {
+	return strpos( $url, 'morpheus-verify' ) !== false ? $dynamic_body : $stale_body;
+};
+$cached = Morpheus_Fixes::apply( 'morpheus_stale_robots_txt' );
+ok( ( $cached['verified'] ?? null ) === true, 'robots: a warm cache does not undo a fix that actually worked' );
+ok( ! empty( $cached['note'] ), 'robots: …and the cache is reported rather than hidden' );
+
+$GLOBALS['morpheus_robots_probe'] = null;
+morpheus_clear_robots_backups();
+@unlink( $robots_file );
+clearstatcache();
+delete_transient( 'morpheus_health_scan' );
+
 echo "\n== no-Yoast boot: the STORE module's SEO fields work too ==\n";
 // This is the path that used to be a silent no-op without Yoast: create a page
 // through the STORE module with SEO fields and read them back.
