@@ -652,6 +652,50 @@ check('…and its AI actions run under the shared task runner', has(seoPanelSrc,
 check('…which is what shows the live timer', has(read('src/components/matrix/TaskRunner.jsx'), 'EtaTimer'), true);
 check('…and the tab no longer draws one of its own', has(seoPanelSrc, 'EtaTimer'), false);
 
+// ── the run survives a slice that does not answer ──────────────────────────
+// Rob, 2026-09-23, on a 58-item run: "managed to do 10 before a network timeout",
+// the app saying "Connection closed before Morpheus finished responding." Ten is
+// two slices of five. The loop broke on the FIRST failure, so one hiccup cost
+// every remaining slice — 10 done, 48 stranded. These assert the three parts of
+// the fix, because each is separately droppable and each is invisible until a
+// connection drops in production.
+console.log('\nThe batch survives a slice that fails');
+// Up to the batch merge, not to the first closing brace: the first `\n          }`
+// is the end of the inner onStage arrow, which made this capture a fragment and
+// fail five checks on its own tooling rather than on the code.
+const batchLoop = (seoPanelSrc.match(/for \(let i = 0; i < slices\.length[\s\S]*?const merged = mergeBatchResults/) || [''])[0];
+check('the batch loop was located (parser sanity)', batchLoop.length > 200, true);
+// 1. a failed slice is retried before it counts as lost
+check('a failed slice is retried once', /attempt < 2/.test(batchLoop), true);
+check('…and the retry waits before trying again', /setTimeout\(res, 1500\)/.test(batchLoop), true);
+// 2. the first failure no longer ends the run. The old form was a bare break in
+//    the catch; asserting its absence is the point, not a style preference.
+check('the first failure no longer ends the run',
+  /catch \(e\) \{ failure = e; break; \}/.test(seoPanelSrc), false);
+check('…it carries on to the remaining slices', /consecutiveFailures >= 2\) break;/.test(batchLoop) && /continue;/.test(batchLoop), true);
+// THE RULE, not the string. Asserting that the old `catch (e) { …; break; }` is
+// gone only catches that exact spelling: a mutation that broke early a different
+// way passed it. Every `break` in this loop must be one of the two sanctioned
+// exits — cancelled, or two failures in a row — so any other way of ending the
+// run early fails here, however it is written.
+const breakSites = [...batchLoop.matchAll(/break;/g)]
+  .map((m) => batchLoop.slice(Math.max(0, m.index - 200), m.index));
+check('every early exit from the batch loop is a sanctioned one (parser sanity)', breakSites.length >= 2, true);
+check('…and no other break ends the run early',
+  breakSites.filter((src) => !/cancelled\(\)/.test(src) && !/consecutiveFailures >= 2/.test(src)), []);
+// 3. two in a row IS the end — the safety valve that stops hammering a dead server
+check('two failures in a row stop the run', /consecutiveFailures >= 2\) break;/.test(batchLoop), true);
+check('…and a success resets the run of failures', /consecutiveFailures = 0;/.test(batchLoop), true);
+// 4. the note tells the truth about a gap in the middle rather than claiming a stop
+check('the failed batches are reported to the operator',
+  /did not answer — click again for those/.test(seoPanelSrc), true);
+check('…and "stopped" is reserved for a run that actually stopped',
+  /const stopped = cancelled\(\) \|\| consecutiveFailures >= 2;/.test(seoPanelSrc), true);
+// The slice size is the other half: a request that is five model calls is long,
+// and long is what gets cut. Asserted as a ceiling, not an exact value.
+check('the per-request slice is small enough to finish inside the envelope',
+  SEO_REQUEST_ITEMS <= 2, true);
+
 
 // ── 7b. the batch streams, and both ends agree on the events ───────────────
 //

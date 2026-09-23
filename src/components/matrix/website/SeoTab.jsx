@@ -434,6 +434,11 @@ export default function SeoTab({ projectId, store, widget = false }) {
       async ({ progress, cancelled }) => {
         const results = [];
         let failure = null;
+        // Slices that answered nothing, and how many have failed in a row. Both
+        // live outside the loop on purpose: "two in a row" is the whole rule, so
+        // the counter cannot be per-iteration.
+        const failed = [];
+        let consecutiveFailures = 0;
         // The server's own ETA for the request in flight, in ms. Kept per request —
         // it is replaced by the next event, and reset when the next slice starts.
         let serverRemainingMs = null;
@@ -463,15 +468,50 @@ export default function SeoTab({ projectId, store, widget = false }) {
               estimateMs: remaining == null ? null : elapsedMs + remaining,
             });
           };
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            const r = await base44.functions.invokeStream(
-              'generateSeoMeta',
-              { projectId, items: slices[i].map((it) => ({ id: it.id })), stream: true },
-              onStage,
-            );
-            results.push(r.data);
-          } catch (e) { failure = e; break; } // keep the slices that did answer
+          let answered = null;
+          for (let attempt = 0; attempt < 2 && answered === null; attempt += 1) {
+            if (cancelled()) break;
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              const r = await base44.functions.invokeStream(
+                'generateSeoMeta',
+                { projectId, items: slices[i].map((it) => ({ id: it.id })), stream: true },
+                onStage,
+              );
+              answered = r.data;
+            } catch (e) {
+              // A CUT CONNECTION IS USUALLY A MOMENT, NOT A VERDICT.
+              //
+              // Rob, 2026-09-23, on a 58-item run: "managed to do 10 before a
+              // network timeout", and the app said "Connection closed before
+              // Morpheus finished responding." The loop below used to break on the
+              // first failure, so one hiccup cost every remaining slice — 10 done
+              // of 58, with 48 stranded. Retry once; and if it is still failing,
+              // carry on with the rest. The slices that answered are kept either
+              // way, and the note names the ones that did not.
+              failure = e;
+              if (attempt === 0) {
+                // eslint-disable-next-line no-await-in-loop
+                await new Promise((res) => setTimeout(res, 1500));
+              }
+            }
+          }
+          if (answered === null) {
+            failed.push({ at: i + 1, items: slices[i].length });
+            consecutiveFailures += 1;
+            // Two in a row is not a hiccup — that is the server or the network
+            // being down, and firing the remaining slices at it helps nobody.
+            // Stop, keep what answered, and say where it stopped.
+            progress({
+              done: results.length, total: slices.length,
+              detail: `batch ${i + 1} of ${slices.length} failed — ${consecutiveFailures > 1 ? 'stopping' : 'continuing'}`,
+              estimateMs: null,
+            });
+            if (consecutiveFailures >= 2) break;
+            continue;
+          }
+          consecutiveFailures = 0;
+          results.push(answered);
           const done = i + 1;
           const elapsedMs = Date.now() - startedAt;
           const remaining = estimateRemainingMs({ done, total: slices.length, elapsedMs });
@@ -493,13 +533,23 @@ export default function SeoTab({ projectId, store, widget = false }) {
           // actually saw, so the tab can be rebuilt later and still say the truth.
           note: (() => {
             if (!merged.suggestions.length) return cancelled() ? 'Stopped before anything was generated.' : null;
-            const empty = work.length - merged.generated;
+            // `failed` slices did not answer, so they are neither empty nor
+            // generated — subtracting them keeps the two counts from describing
+            // the same items twice.
+            const missed = failed.reduce((n, f) => n + f.items, 0);
+            const empty = work.length - merged.generated - missed;
             const capped = missing.length - work.length;
             const tail = [
+              missed > 0 ? `${missed} in ${failed.length} batch${failed.length > 1 ? 'es' : ''} did not answer — click again for those` : null,
               empty > 0 ? `${empty} came back empty` : null,
               capped > 0 ? `${capped} still waiting (click again for the next ${SEO_BATCH_MAX})` : null,
             ].filter(Boolean).join(' · ');
-            if (failure) return `Stopped at ${merged.generated} of ${missing.length} — ${failure?.data?.error || failure?.data?.message || failure.message}`;
+            // "Stopped" now means it actually stopped — cancelled, or two slices
+            // in a row failed. A failure it carried on past is a gap in the middle,
+            // not an ending, and saying "stopped" there would be a lie about a run
+            // that is still holding the rest of its slices.
+            const stopped = cancelled() || consecutiveFailures >= 2;
+            if (stopped && failure) return `Stopped at ${merged.generated} of ${missing.length} — ${failure?.data?.error || failure?.data?.message || failure.message}`;
             if (cancelled()) return `Stopped — ${merged.generated} of ${missing.length} generated. The rest are still listed as missing.`;
             return tail ? `${merged.generated} generated · ${tail}` : null;
           })(),

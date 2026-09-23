@@ -17,7 +17,20 @@
 // request again and it goes back to being multi-call. scripts/verify-seo.mjs
 // asserts the relationship, because it is a contract across a boundary no
 // compiler checks.
-export const SEO_REQUEST_ITEMS = 5;
+// DOWN FROM 5 TO 2 (2026-09-23), on measured evidence rather than caution. Rob
+// ran FILL MISSING over 58 items and got ten before the stream was cut: "managed
+// to do 10 before a network timeout", reported by the app as "Connection closed
+// before Morpheus finished responding." Ten is two slices of five, so each
+// request was still living long enough to be cut somewhere in front of the
+// server. Streaming did its job — the bytes flowed and the failure was legible —
+// but a request that is five model calls is simply long, and the only thing that
+// shortens it is carrying fewer items.
+//
+// Two rather than one: it halves the exposure while keeping the request count
+// sane for a batch of 25. One is the next step if this still gets cut, and the
+// loop now retries a failed slice and carries on, so the cost of being wrong
+// here is a slower run rather than a lost one.
+export const SEO_REQUEST_ITEMS = 2;
 
 // How many items one click of FILL MISSING works on. Bounded on purpose:
 //
