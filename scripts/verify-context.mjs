@@ -299,6 +299,58 @@ const ciScripts = [...ci.matchAll(/node (scripts\/[\w.-]+\.mjs)/g)].map((m) => m
 check('CI references at least one script', ciScripts.length > 0, true)
 check('all of them exist', ciScripts.filter((s) => !existsSync(join(REPO, s))), [])
 
+// ═══ 5b. The workflow files are ones GitHub will actually run ═══════════════
+// WHY THIS EXISTS — 2026-09-23, and it went unnoticed for an hour and a half.
+//
+// The contrast commit added its step to ci.yml indented eight spaces where every
+// sibling uses six. That is not "one step does not run": GitHub refuses the whole
+// FILE, so the run fails in 0s with no jobs at all — no lint, no guards, no boot
+// smoke, on every push and every pull request. `gh pr checks` then reports only
+// the Netlify preview, and a PR whose code checks never ran reads as mergeable
+// and CLEAN. Two commits reached main through that hole before anyone looked.
+//
+// §5 above could not catch it: the scripts CI *names* all existed. §8 could not
+// either: every guard was listed in verify.mjs and in ci.yml. The one thing that
+// broke was the file those lists live in.
+//
+// A YAML parser would be the real answer and cannot be used here — this runs in
+// CI's no-install guards job, and verify-guards-no-install.mjs fails any guard
+// that reaches a package. So this checks the two structural rules whose breach
+// is both silent and total, at the granularity that actually catches the way
+// this file gets broken by a person or an agent editing it: a sequence entry
+// that does not line up with its siblings, and a tab.
+const workflowFiles = readdirSync(join(REPO, '.github/workflows')).filter((f) => /\.ya?ml$/.test(f)).sort()
+check('workflow files were found (parser sanity)', workflowFiles.length >= 1, true)
+
+const misaligned = []
+const tabbed = []
+// A GitHub step always begins with one of these keys at the dash. Anything else
+// starting with `- ` is a nested sequence (an `args:` list, a `with:` value) and
+// is legitimately deeper — so the check must not treat those as steps, or it
+// would fail on a perfectly good workflow.
+const STEP_ENTRY = /^\s*- (name|uses|run|id|if|shell|working-directory|timeout-minutes|continue-on-error):/
+for (const file of workflowFiles) {
+  const lines = read(`.github/workflows/${file}`).split('\n')
+  let stepsIndent = null
+  let entryIndent = null
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^\s*\t/.test(line)) tabbed.push(`${file}:${i + 1}`)
+    if (/^\s*$/.test(line) || /^\s*#/.test(line)) continue
+    const indent = line.match(/^ */)[0].length
+    if (/^\s*steps:\s*$/.test(line)) { stepsIndent = indent; entryIndent = null; continue }
+    if (stepsIndent === null) continue
+    if (indent <= stepsIndent) { stepsIndent = null; entryIndent = null; continue }
+    if (!STEP_ENTRY.test(line)) continue
+    if (entryIndent === null) entryIndent = indent
+    else if (indent !== entryIndent) {
+      misaligned.push(`${file}:${i + 1} is a step at column ${indent}, but this block's other steps are at ${entryIndent}`)
+    }
+  }
+}
+check('no workflow line is indented with a tab', tabbed, [])
+check('every step in a steps: block lines up with its siblings', misaligned, [])
+
 // ═══ 6. the build library index matches its cards ═══════════════════════════
 // The library's whole value is that the INDEX is the cheap thing you read and the
 // cards are the detail you load on demand. Both halves fail silently on their
