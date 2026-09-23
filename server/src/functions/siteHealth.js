@@ -6,22 +6,34 @@
 //   scan   — read the site and report (via lib/siteScan.js, shared with the
 //            monthly schedule so there is one definition of a scan)
 //   policy — read or write what the owner allows, and when
+//   clean  — CLEAN MY SITE: the heavier scan for what is on the server that
+//            nobody asked for (lib/siteScan.js's scanCleanSite). Its own action
+//            and its own cache, because it checksums core, walks uploads/ and
+//            may download plugin packages — it must not run when a panel opens.
+//   fix    — apply ONE finding, by id, that the site's own registry marks `auto`
+//   updates— force the plugin's own update check
+//   apply  — apply the updates the policy allows, one snapshotted target at a time
 //
-// There is deliberately NO apply action. Applying updates writes to a live site
-// and needs a pre-update snapshot and a post-update check first; the policy that
-// will gate it is already settled and asserted (lib/siteMaintenance.js), so the
-// rules are in place before the ability arrives. A handler that accepted
-// "apply" and quietly did less than its name would be worse than one that
-// refuses.
+// There is deliberately NO bulk apply action for CLEAN MY SITE beyond `fix`: a
+// modified core file, a modified plugin file, an admin account and a cron hook
+// are reported and never applied, because re-downloading core over a live site
+// and removing an account are the owner's decisions.
 import { prisma } from '../db.js';
 import { getWpConnection, wpFix, wpUpdates } from '../lib/wpPlugin.js';
-import { scanSite } from '../lib/siteScan.js';
+import { scanSite, scanCleanSite } from '../lib/siteScan.js';
 import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
 import { applyAllowedUpdates } from '../lib/siteApply.js';
 import { describePolicy, nextRunAt, allowedKinds, runSummary, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
 import { quarantineEvidence, undoLine } from '../lib/robotsQuarantine.js';
+// Used by the `fix` branch below to name a plugin too old to know an action.
+// It was referenced and NEVER IMPORTED on main: `node --check` cannot see an
+// unresolved identifier, so every fix against a site that answered a non-200
+// threw "isPluginTooOld is not defined" instead of the sentence the operator
+// needs. The dock rig found it the moment CLEAN MY SITE's press ran for real.
+import { isPluginTooOld } from '../lib/siteHealth.js';
+import { cleanQuarantineEvidence, cleanUndoLine } from '../lib/siteClean.js';
 
-const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'updates']);
+const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'updates', 'clean']);
 
 export default async function handler({ user, body, req }) {
   const { projectId, action } = body || {};
@@ -101,10 +113,18 @@ export default async function handler({ user, body, req }) {
     // other finding. A rename on the plugin side makes it null rather than
     // wrong — see lib/robotsQuarantine.js.
     const evidence = quarantineEvidence(res.data, finding);
+    // The same promise for the CLEAN MY SITE quarantine fixes. One field on the
+    // wire (`quarantine`), two readers, and each only recognises its own finding
+    // ids — so a rename on either side is a missing undo line rather than a wrong
+    // one. A clean fix renames a LIST of files; the robots fix renames one.
+    const cleanEvidence = evidence ? null : cleanQuarantineEvidence(res.data, finding);
+    const undo = evidence ? undoLine(evidence) : cleanUndoLine(cleanEvidence);
     return {
       ok: res.data?.ok === true,
       fix: res.data || null,
-      quarantine: evidence ? { ...evidence, undo: undoLine(evidence) } : null,
+      quarantine: evidence
+        ? { ...evidence, undo }
+        : (cleanEvidence ? { ...cleanEvidence, undo } : null),
       // The caller re-scans after this; the policy travels so the panel does not
       // need a second round trip to stay right.
       policy: policyPayload(await getPolicy(projectId)),
@@ -147,6 +167,19 @@ export default async function handler({ user, body, req }) {
     }
 
     return { ok: outcome.ok, outcome, scan, policy: policyPayload(policy) };
+  }
+
+  if (action === 'clean') {
+    // CLEAN MY SITE. Its OWN action and its own cache on the plugin side,
+    // because the scan is heavy — a checksum pass over core, plugins and
+    // uploads/ — and must not ride along with the scan that runs when a panel
+    // opens. The panel has a separate button, and this is what it calls.
+    //
+    // Deliberately no policy gate and no confirmation: the scan only LOOKS. The
+    // one press that changes anything is the existing `fix` action below, which
+    // applies one finding the site's own registry marks `auto` — and every one
+    // of those renames a file and reports the undo.
+    return scanCleanSite(user, projectId, { force: body?.force === true });
   }
 
   const scan = await scanSite(user, projectId, { force: body?.force === true });

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2, RefreshCw, ExternalLink, AlertTriangle, Check, ShieldCheck, Server, Package, Clock,
-  Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown,
+  Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown, ShieldAlert, Eraser, Info,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useTaskRunner, useTaskResult } from '../TaskRunner';
@@ -23,6 +23,16 @@ import { useTaskRunner, useTaskResult } from '../TaskRunner';
 // and the payload's own words, so a finding with no fix (or `kind: 'none'`) gets
 // no button rather than a dead one; a fix never becomes a "Done" the site did not
 // report, and a fix that reported `verified: false` is never shown as done.
+//
+// CLEAN MY SITE below is a SECOND scan, not a mode of the one above, and it is
+// deliberately not run on its own: it checksums core, walks uploads/ and may
+// download plugin packages, so opening this panel must never spend it. The
+// operator presses SCAN MY SITE with their own finger, reads the findings, and
+// then one press quarantines the safe set — exactly the `auto` findings the
+// site's own registry names, one signed request each, sequenced by construction
+// so two writers never touch the live site at once. Guided findings carry the
+// instruction and no button; a "cleaned" line is only ever shown for a site
+// answer that says a file was actually renamed, and names the backup.
 
 const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
 // prose helper text, so ink: resolved by usage — every use is a span/div of
@@ -52,6 +62,14 @@ const sameEditable = (a, b) => !!a && !!b && EDITABLE.every((k) => a[k] === b[k]
 const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => i + 1);
 const HOURS_UTC = Array.from({ length: 24 }, (_, h) => h);
 const pad2 = (n) => String(n).padStart(2, '0');
+/** Bytes as a person reads them. The server sends bytes; the panel shows units. */
+const formatBytes = (n) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  if (v < 1024) return `${v} bytes`;
+  if (v < 1024 * 1024) return `${Math.round(v / 1024)} KB`;
+  return `${(v / (1024 * 1024)).toFixed(1)} MB`;
+};
 const ORD = (d) => `${d}${d % 10 === 1 && d !== 11 ? 'st' : d % 10 === 2 && d !== 12 ? 'nd' : d % 10 === 3 && d !== 13 ? 'rd' : 'th'}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const sel = 'mt-1 w-full bg-transparent border border-primary/20 px-1.5 py-1 text-[11px] text-primary/85 outline-none focus:border-primary/50 disabled:opacity-40';
@@ -346,6 +364,12 @@ function FixBox({
 function Finding({
   t, quiet = false, siteName, fixBusy = false, fixPaused = false, fixResult,
   onFix, onRescan, scanning = false, onJumpToUpdates,
+  // CLEAN MY SITE withholds the control on a finding that already reads `good`:
+  // a check that passed must not offer a press that changes the site, or the
+  // buttons on screen stop agreeing with the set the bulk press applies. The
+  // health panel keeps its controls, because `good` there is the same list an
+  // operator reads top-to-bottom rather than a work list.
+  withFix = true,
 }) {
   const links = t.links || [];
   return (
@@ -368,8 +392,29 @@ function Finding({
           <ExternalLink size={11} className="mt-[2px] shrink-0" />{l.label || l.url}
         </a>
       ))}
+      {/* The evidence the finding is built from: the files, sizes and dates the
+          scan actually read. Rendered as sent and never summarised into a count —
+          "3 files" without the names is exactly what an operator cannot act on,
+          and a path is the one thing they can paste into a file manager. */}
+      {Array.isArray(t.details) && t.details.length > 0 ? (
+        <details className="border border-primary/15" open={t.status === 'critical'}>
+          <summary className={`${micro} cursor-pointer px-2 py-1.5 select-none`}>
+            {t.details.length} file{t.details.length === 1 ? '' : 's'} to look at
+          </summary>
+          <div className="px-2 pb-2 space-y-1">
+            {t.details.map((d, i) => (
+              <div key={`${d.file}-${i}`} className="text-[10px] text-ink-max leading-relaxed break-all">
+                <span className="text-ink-max">{d.file}</span>
+                {d.size !== undefined ? <span className={faint}> · {formatBytes(d.size)}</span> : null}
+                {d.mtime_iso ? <span className={faint}> · changed {d.mtime_iso}</span> : null}
+                {d.note ? <span className={faint}> · {d.note}</span> : null}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
       {/* The action, when the payload carries one — and nothing at all when it does not. */}
-      {t.fix ? (
+      {t.fix && withFix ? (
         <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult}
           onFix={onFix} onRescan={onRescan} scanning={scanning}
           onJumpToUpdates={onJumpToUpdates} siteName={siteName} />
@@ -496,6 +541,17 @@ function ApplyReport({ outcome: o }) {
   );
 }
 
+/** The CLEAN MY SITE tally, in words, with a clause only for what happened. */
+const cleanWords = (t) => {
+  const said = [];
+  if (t.done) said.push(`${t.done} quarantined and verified`);
+  if (t.unverified) said.push(`${t.unverified} did not verify`);
+  if (t.failed) said.push(`${t.failed} failed`);
+  if (t.declined) said.push(`${t.declined} declined by the site`);
+  if (t.rejected) said.push(`${t.rejected} could not be sent`);
+  return `CLEAN MY SITE finished — ${said.join(', ') || 'nothing was changed'}. The findings below are from the fresh scan taken after it.`;
+};
+
 /** The FIX ALL tally in words, with a clause only for what actually happened. */
 const fixAllWords = (t) => {
   const said = [];
@@ -524,6 +580,11 @@ export default function HealthTab({ projectId }) {
   const [fixingIds, setFixingIds] = useState([]);
   const [fixResults, setFixResults] = useState({});     // finding id -> { state, ok, fix } | { state: 'rejected', message, code }
   const [fixAllConfirming, setFixAllConfirming] = useState(false);
+  // CLEAN MY SITE's step two: the press that names what will be quarantined,
+  // before anything is sent.
+  const [cleanConfirming, setCleanConfirming] = useState(false);
+  // The clean findings that already read `good`, behind a toggle.
+  const [cleanShowClear, setCleanShowClear] = useState(false);
   // The Updates section, so an `updates` finding can send the operator to it.
   const updatesRef = useRef(null);
   const [updatesFlash, setUpdatesFlash] = useState(false);
@@ -736,6 +797,80 @@ export default function HealthTab({ projectId }) {
     });
   };
 
+  // ── CLEAN MY SITE ────────────────────────────────────────────────────────
+  //
+  // A second scan with its own button and its own state. `runClean` is the ONLY
+  // thing that spends it — there is no effect that calls it — so opening the tab
+  // cannot trigger a checksum pass over the operator's site.
+  const cleanTask = tasks['health:clean'];
+  const clean = cleanTask?.result ?? null;
+  const cleanLoading = cleanTask?.status === 'running';
+  const cleanErr = cleanTask?.status === 'error' ? cleanTask.error : null;
+  const cleanDetail = clean?.limits_detail || null;
+  const cleanableIds = (clean?.cleanable || []).map((f) => f.id);
+  // The one press applies exactly what the SERVER derived as the safe set, and
+  // the loop iterates that list rather than re-filtering the findings here — a
+  // second filter is a second rule, and the rule is the server's.
+  // Worst-first, split by whether the finding asks for anything. A `good` finding
+  // is not hidden — an inventory with nothing wrong with it is still worth being
+  // able to read — but it is not presented as work either.
+  const cleanAttention = (clean?.findings || []).filter((f) => f.status !== 'good');
+  const cleanNothingToDo = (clean?.findings || []).filter((f) => f.status === 'good');
+  const cleanTaskRun = tasks['health:cleanapply'];
+  const cleanRunning = cleanTaskRun?.status === 'running';
+  const cleanProgress = cleanRunning && cleanTaskRun.total
+    ? { index: cleanTaskRun.done, total: cleanTaskRun.total, label: cleanTaskRun.detail }
+    : null;
+  const cleanReport = cleanTaskRun?.result?.report ?? null;
+  useTaskResult('health:cleanapply', () => {}); // the tally is read above, from the runner
+
+  const runClean = useCallback(async (force) => {
+    await startTask({ key: 'health:clean', label: 'Clean my site scan', total: 1 }, async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'clean', force: !!force });
+      if (!res?.data) throw new Error('The clean scan came back empty — try again.');
+      return res.data;
+    });
+  }, [projectId, startTask]);
+
+  // One press, every safe finding, one at a time, then ONE fresh clean scan. The
+  // sequencing is the same rule FIX ALL follows: two writers on one live site is
+  // how a rollback gets tangled, so it is a for..of with an await, never a
+  // Promise.all. Guided findings are not in `cleanableIds`, so they cannot be
+  // swept in by construction.
+  const runCleanSafe = async () => {
+    if (cleanRunning || anyFixInFlight || cleanableIds.length === 0) return;
+    setCleanConfirming(false);
+    const targets = (clean?.cleanable || []).map((f) => ({ id: f.id, label: f.label || f.id }));
+    const total = targets.length;
+    await startTask({ key: 'health:cleanapply', label: 'CLEAN MY SITE', total }, async ({ progress, cancelled }) => {
+      const tally = { done: 0, unverified: 0, failed: 0, declined: 0, rejected: 0 };
+      for (let i = 0; i < targets.length; i += 1) {
+        // The strip's Stop is real: checked BETWEEN findings, the only place a
+        // stop can land without leaving a half-applied fix behind.
+        if (cancelled()) break;
+        const t = targets[i];
+        progress({ done: i, total, detail: t.label });
+        const full = (clean?.cleanable || []).find((x) => x.id === t.id) || t;
+        const r = await applyFix(full, { rescan: false });
+        if (r?.rejected) tally.rejected += 1;
+        else if (r?.ok !== true) tally.declined += 1;
+        else if (r?.fix?.verified === false) tally.unverified += 1;
+        else if (r?.fix?.error) tally.failed += 1;
+        else tally.done += 1;
+        progress({ done: i + 1, total, detail: t.label });
+      }
+      // The scan at the end is the CLEAN one: this section's findings come back
+      // from the site as it now is, rather than this run's word for it. The
+      // health scan above is re-read too, because a quarantine can resolve a
+      // finding there (a stale robots.txt is in both lists) and leaving that
+      // stale would be the same dead end this panel exists to remove.
+      await runClean(true);
+      await run(true);
+      return { report: cleanWords(tally) };
+    });
+  };
+
   const setField = (key, value) => {
     setDraft((d) => ({ ...d, [key]: value }));
     setPolicySaved(null); setPolicyErr(null);
@@ -922,6 +1057,201 @@ export default function HealthTab({ projectId }) {
                 ))}
               </div>
             )}
+
+            {/* ── CLEAN MY SITE ──────────────────────────────────────────
+                A second, heavier scan with its own button. Nothing here runs on
+                its own: the operator presses SCAN MY SITE, reads the findings,
+                and only then may one press quarantine the safe set. */}
+            <Section title="CLEAN MY SITE" icon={<Eraser size={11} className="text-primary/45" />}>
+              <div className={faint}>
+                What is on the server that nobody asked for — every WordPress core file checked against
+                wordpress.org, your plugins checked against the package the author published, an inventory of
+                mu-plugins, any PHP file in uploads, the accounts that can reach wp-admin, scheduled hooks,
+                what changed this week, and any publicly readable debug.log or wp-config backup.
+                {' '}It is heavier than the scan above, so it runs only when you ask.
+              </div>
+
+              {!clean && !cleanLoading ? (
+                <button className={`${btn} w-full`} onClick={() => runClean(true)}>
+                  <ShieldAlert size={12} /> SCAN MY SITE
+                </button>
+              ) : cleanLoading ? (
+                <div className="flex items-center gap-2 text-[11px] text-ink-max">
+                  <Loader2 size={12} className="animate-spin" /> Scanning the server — this checksums files, so it takes longer…
+                </div>
+              ) : null}
+
+              {cleanErr ? (
+                <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+                  <div className="text-[11px] text-red-300/90 break-words">{cleanErr?.data?.error || cleanErr?.message || String(cleanErr)}</div>
+                  <div className={faint}>
+                    {clean ? 'Showing the previous clean scan below.' : 'Nothing was changed by a scan. Press SCAN MY SITE to try again.'}
+                  </div>
+                </div>
+              ) : null}
+
+              {clean ? (
+                <>
+                  <div className="text-[12px] text-ink-strong break-words">{clean.summary?.headline || 'The clean scan finished.'}</div>
+                  <div className="text-[10px] text-ink-max break-words">
+                    {[
+                      clean.summary?.critical ? `${clean.summary.critical} need attention` : null,
+                      clean.summary?.recommended ? `${clean.summary.recommended} to review` : null,
+                      clean.summary?.good ? `${clean.summary.good} clear` : null,
+                      clean.summary?.unknown ? `${clean.summary.unknown} unanswered` : null,
+                      `${clean.summary?.cleanable ?? 0} can be quarantined`,
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                  {clean.cached ? (
+                    <div className="text-[10px] text-ink-max">
+                      From a recent clean scan — SCAN MY SITE again for a fresh one. Nothing here runs on its own.
+                    </div>
+                  ) : null}
+                  {clean.duration_ms ? (
+                    // Measured, not claimed: the site reports what the pass cost
+                    // and what caps it ran under.
+                    <div className="text-[10px] text-ink-max">
+                      Took {(clean.duration_ms / 1000).toFixed(1)}s on the site
+                      {clean.limits?.hash_files !== undefined
+                        ? `, checksummed ${clean.limits.hash_files} core files`
+                        : ''}.
+                    </div>
+                  ) : null}
+
+                  {/* The single press. It appears ONLY when the server derived a
+                      non-empty safe set, so there is never a button that would
+                      do nothing. */}
+                  {(clean.summary?.cleanable || 0) > 0 ? (
+                    cleanRunning && cleanProgress ? (
+                      <div className="flex items-start gap-1.5 text-[10px] text-ink-max">
+                        <Loader2 size={12} className="mt-[1px] shrink-0 animate-spin" />
+                        <span className="break-words">
+                          Quarantining {cleanProgress.index} of {cleanProgress.total} — {cleanProgress.label}
+                        </span>
+                      </div>
+                    ) : cleanConfirming ? (
+                      <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
+                        <div className="text-[11px] text-ink-max leading-relaxed">
+                          Quarantine {cleanableIds.length} {cleanableIds.length === 1 ? 'thing' : 'things'} on {siteName} now?
+                          Nothing is deleted: each file is renamed with a timestamp, and Morpheus re-checks the site when it has finished.
+                        </div>
+                        <div className="space-y-1">
+                          {(clean.cleanable || []).map((f) => (
+                            <div key={`clean-${f.id}`} className="text-[10px] text-ink-max break-words">
+                              <span className="text-ink-max">{f.label || f.id}</span>
+                              {f.fix?.warning ? (
+                                <span className="block text-[9px] text-yellow-500/85 leading-relaxed">{f.fix.warning}</span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button className={`${btn} border-yellow-500/40`} onClick={runCleanSafe} disabled={anyFixInFlight}>
+                            <Eraser size={12} /> QUARANTINE {cleanableIds.length}
+                          </button>
+                          <button className={btn} onClick={() => setCleanConfirming(false)}>
+                            <X size={12} /> CANCEL
+                          </button>
+                        </div>
+                        <div className={faint}>
+                          Nothing has been sent yet. Only the things listed here are touched — everything the scan
+                          says needs a person (a modified core file, an account, a scheduled hook) has no button.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <button className={`${btn} w-full`} onClick={() => setCleanConfirming(true)} disabled={anyFixInFlight || cleanRunning}>
+                          <Eraser size={12} /> CLEAN MY SITE · {cleanableIds.length}
+                        </button>
+                        {anyFixInFlight || cleanRunning ? (
+                          <div className={faint}>One thing is still being sent — this starts once it has finished.</div>
+                        ) : null}
+                      </div>
+                    )
+                  ) : (
+                    <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink-max leading-relaxed">
+                      Nothing in this scan is safe for Morpheus to change on its own, and nothing it found reads
+                      clean either. Everything is listed below with what to do about it, and the things that need a
+                      person have no button — a modified core file, an account and a scheduled hook are instructions,
+                      not presses.
+                    </div>
+                  )}
+
+                  {cleanRunning ? (
+                    <div className={faint}>
+                      One thing at a time, so the site is never written to twice at once.
+                    </div>
+                  ) : null}
+                  {cleanReport && !cleanRunning ? (
+                    <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed break-words">
+                      {cleanReport}
+                    </div>
+                  ) : null}
+
+                  {/* The findings, worst first. Every one of them renders its own
+                      fix control from `fix.kind`, so a guided finding shows steps
+                      and an auto one shows its own press — never the other way
+                      round. A finding that already reads `good` asks for nothing,
+                      so it sits behind the toggle below rather than under a button
+                      that would change a site in response to a check that passed. */}
+                  <div className="space-y-2">
+                    {cleanAttention.map((t, i) => (
+                      <Finding key={`clean-${t.id}-${i}`} t={t} siteName={siteName}
+                        fixBusy={fixingIds.includes(t.id)}
+                        fixPaused={cleanRunning || fixAllRunning}
+                        fixResult={fixResults[t.id]}
+                        onFix={applyFix}
+                        onRescan={() => runClean(true)}
+                        scanning={cleanLoading} />
+                    ))}
+                    {cleanNothingToDo.length > 0 ? (
+                      <div className="space-y-2">
+                        <button className={btn} onClick={() => setCleanShowClear((v) => !v)}>
+                          <Check size={12} /> Nothing to clean · {cleanNothingToDo.length} {cleanShowClear ? 'HIDE' : 'SHOW'}
+                        </button>
+                        {cleanShowClear ? cleanNothingToDo.map((t, i) => (
+                          <Finding key={`clean-clear-${t.id}-${i}`} t={t} quiet withFix={false} siteName={siteName}
+                            fixBusy={fixingIds.includes(t.id)}
+                            fixPaused={cleanRunning || fixAllRunning}
+                            fixResult={fixResults[t.id]}
+                            onFix={applyFix}
+                            onRescan={() => runClean(true)}
+                            scanning={cleanLoading} />
+                        )) : null}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* What the scan did NOT reach. Never a footnote: "found
+                      nothing" and "stopped looking" read identically otherwise. */}
+                  {cleanDetail?.hasLimits ? (
+                    <div className="border border-yellow-500/30 px-2.5 py-2 space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <Info size={11} className="shrink-0 text-yellow-500/85" />
+                        <span className="text-[9px] uppercase tracking-wider text-yellow-500/85">What this scan did not reach</span>
+                      </div>
+                      {cleanDetail.caveat ? (
+                        <div className="text-[10px] text-yellow-500/85 leading-relaxed">{cleanDetail.caveat}</div>
+                      ) : null}
+                      {cleanDetail.skipped.map((s, i) => (
+                        <div key={`skip-${i}`} className="text-[10px] text-ink-max leading-relaxed break-words">
+                          <span className="text-ink-max">{s.check}</span>
+                          {s.reached !== null && s.of !== null ? ` (reached ${s.reached} of ${s.of})` : ''}
+                          {' — '}{s.reason}
+                        </div>
+                      ))}
+                      {cleanDetail.measured.map((m, i) => (
+                        <div key={`lim-${i}`} className={faint}>{m}</div>
+                      ))}
+                    </div>
+                  ) : cleanDetail?.measured?.length ? (
+                    <div className="space-y-0.5">
+                      {cleanDetail.measured.map((m, i) => <div key={`lim-${i}`} className={faint}>{m}</div>)}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </Section>
 
             {/* Where an `updates` finding sends the operator; the brief highlight is
                 how they know they arrived. */}

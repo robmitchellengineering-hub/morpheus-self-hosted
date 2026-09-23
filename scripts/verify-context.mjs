@@ -586,7 +586,10 @@ const loopKeys = loopSrc.flatMap((src) => [...src.matchAll(/task\('([a-z0-9:]+)'
 check('the migrated tabs were read (parser sanity)', loopSrc.every((src) => src.length > 2000), true)
 check('every loop declares a key (parser sanity)', loopKeys.length >= 10, true)
 check('the task keys are exactly the migrated loops', [...loopKeys].sort(),
-  ['health:fixall', 'health:scan', 'seo:audit', 'seo:batch', 'seo:blog', 'seo:keywords',
+  // CLEAN MY SITE added two: the heavy scan and the one press that quarantines
+  // the safe set. Both run in the runner for the same reason as FIX ALL — leaving
+  // the tab must not cancel a quarantine half-way through the set.
+  ['health:clean', 'health:cleanapply', 'health:fixall', 'health:scan', 'seo:audit', 'seo:batch', 'seo:blog', 'seo:keywords',
     'seo:linkapply', 'seo:linkplan', 'seo:links', 'seo:one', 'traffic:backfill'])
 check('…and no two loops share a key', new Set(loopKeys).size, loopKeys.length)
 

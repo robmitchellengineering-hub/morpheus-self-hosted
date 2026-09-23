@@ -301,6 +301,25 @@ export async function wpHealth(conn, { force = false } = {}) {
 }
 
 /**
+ * CLEAN MY SITE (plugin 0.8.4+): what is on the server that nobody asked for.
+ *
+ * The same signed /health route with a different action, so the auth, the
+ * timestamp window and the answer shape are identical and there is no second
+ * place for the signature check to be got wrong. It is its OWN request because
+ * the scan is heavy — a checksum pass over core, plugins and uploads — so the
+ * app decides when to spend it; opening the panel must not.
+ *
+ * A build older than 0.8.4 IGNORES the body and answers with a health scan, so a
+ * 200 is not proof the action ran. `scanCleanSite()` in lib/siteScan.js checks
+ * the payload shape, and this constant names the release that added the action.
+ */
+export const MIN_CLEAN_PLUGIN_VERSION = '0.8.4';
+
+export async function wpClean(conn, { force = false } = {}) {
+  return wpCall(conn, 'health', { action: 'clean', ...(force ? { force: true } : {}) });
+}
+
+/**
  * Site maintenance (plugin 0.6.0+): report what could be updated, or update it.
  *
  * `targets` are (kind, id) pairs and nothing else — no versions, no URLs. The

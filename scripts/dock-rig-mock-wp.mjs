@@ -33,7 +33,7 @@ const EMBED_ORIGIN = process.env.MOCK_WP_EMBED_ORIGIN || 'http://localhost:5173'
 const PORT = Number(process.env.MOCK_WP_PORT || 4600);
 const SECRET = process.env.MOCK_WP_SECRET || '';
 const NS = '/wp-json/morpheus/v1';
-const PLUGIN_VERSION = '0.8.2';
+const PLUGIN_VERSION = '0.8.4';
 
 const json = (res, status, payload) => {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -104,6 +104,130 @@ function health() {
     ],
   };
 }
+
+/**
+ * CLEAN MY SITE, as the plugin answers it.
+ *
+ * The findings carry the SAME shape class-clean.php builds, including `details`
+ * (the evidence rows) and the fix block, so the dock's CLEAN MY SITE section is
+ * exercised against the real payload rather than a convenient one. Two are
+ * `auto` — the ones the single press may quarantine — and the rest are `guided`,
+ * which must render steps and NO press. `limits` and `skipped` are non-empty on
+ * purpose: the "what this scan did not reach" panel is part of the answer and a
+ * fixture that omitted it would let a regression there pass.
+ */
+function clean() {
+  return {
+    ok: true,
+    scan_version: 1,
+    plugin_version: PLUGIN_VERSION,
+    wp_version: '6.7.1',
+    php_version: '8.2.33',
+    generated_at: new Date().toISOString(),
+    duration_ms: 4210,
+    cached: false,
+    limits: {
+      seconds: 4.21,
+      hash_files: 3224,
+      hash_files_cap: 4000,
+      uploads_scanned: 918,
+      uploads_cap: 6000,
+      package_plugins: 1,
+      package_plugins_cap: 3,
+      package_bytes: 133795,
+      package_bytes_cap: 4194304,
+    },
+    skipped: [
+      { check: 'plugin_checksums', reason: 'Morpheus itself is not hosted on wordpress.org, so there is no published package to compare its own files against' },
+    ],
+    unmapped: [],
+    findings: [
+      {
+        id: 'morpheus_uploads_php',
+        label: 'No PHP file is sitting in the uploads folder',
+        status: 'critical',
+        description: '2 files under wp-content/uploads can be run as PHP by the web server. Nothing legitimate puts executable code in a media library.',
+        details: [
+          { file: 'wp-content/uploads/2026/09/loader.php', size: 812, mtime_iso: '2026-09-22T01:04:00+00:00' },
+          { file: 'wp-content/uploads/2026/09/x.php', size: 240, mtime_iso: '2026-09-22T01:02:00+00:00' },
+        ],
+        fix: { kind: 'auto', label: 'Quarantine the PHP files in uploads', does: 'Renames each .php file to a timestamped backup beside it. Nothing is deleted.', warning: null, steps: [] },
+      },
+      {
+        id: 'morpheus_root_config_backup',
+        label: 'No copy of wp-config.php or .env is sitting in the site root',
+        status: 'critical',
+        description: 'Found wp-config.php.bak in the site root. wp-config.php holds the database password and every API key on the site.',
+        details: [{ file: 'wp-config.php.bak', size: 3120, mtime_iso: '2026-08-30T09:00:00+00:00' }],
+        fix: { kind: 'auto', label: 'Move the config backups out of the web root', does: 'Moves the copy out of the site root under a timestamped name.', warning: null, steps: [] },
+      },
+      {
+        id: 'morpheus_core_checksums',
+        label: 'Every WordPress core file matches the published version',
+        status: 'critical',
+        description: '1 core file out of 3224 does not match the published checksum. This is reported, never repaired from here.',
+        details: [{ file: 'wp-includes/version.php', size: 1100, mtime_iso: '2026-09-21T22:10:00+00:00' }],
+        fix: { kind: 'guided', label: 'Replace the modified core files', does: 'Re-installing WordPress over a live site is your decision.', warning: null, steps: [{ text: 'Take a full backup first.', link: '/wp-admin/update-core.php' }] },
+      },
+      {
+        id: 'morpheus_recent_files',
+        label: 'Nothing has changed on this site in the last 7 days',
+        status: 'recommended',
+        description: '6 files under core, your plugins or your active theme have changed in the last 7 days.',
+        details: [{ file: 'wp-content/plugins/akismet/akismet.php', size: 2400, mtime_iso: '2026-09-22T01:00:00+00:00' }],
+        fix: { kind: 'guided', label: 'Compare the recent file changes', does: 'A plugin or theme update produces exactly this list.', warning: null, steps: [{ text: 'Line the timestamps up against what you installed.' }] },
+      },
+      {
+        id: 'morpheus_public_debug_log',
+        label: 'The debug log is not readable over the web',
+        status: 'good',
+        description: 'There is no wp-content/debug.log on this site, so nothing is being leaked by one.',
+        fix: { kind: 'auto', label: 'Quarantine the public debug log', does: 'Renames wp-content/debug.log to a timestamped backup.', warning: null, steps: [] },
+      },
+      {
+        id: 'morpheus_stale_robots_txt',
+        label: 'robots.txt is built by WordPress, and its sitemap answers',
+        status: 'good',
+        description: 'There is no physical robots.txt in the site root, so WordPress builds it on every request.',
+        fix: { kind: 'auto', label: 'Quarantine the stale robots.txt', does: 'Renames robots.txt to a timestamped backup beside it.', warning: null, steps: [] },
+      },
+      {
+        id: 'morpheus_mu_plugins',
+        label: 'Nothing is loaded from mu-plugins that you did not put there',
+        status: 'good',
+        description: '1 file in wp-content/mu-plugins is auto-loaded on every request, invisible in the Plugins screen.',
+        details: [{ file: 'wp-content/mu-plugins/host-cache.php', size: 900, mtime_iso: '2026-09-01T00:00:00+00:00', note: 'loaded automatically' }],
+        fix: { kind: 'guided', label: 'Check the mu-plugins inventory', does: 'Only you can say which of these are yours.', warning: null, steps: [{ text: 'Read each file named in the finding.' }] },
+      },
+      {
+        id: 'morpheus_admin_users',
+        label: 'Every account that can reach wp-admin is one you recognise',
+        status: 'recommended',
+        description: '2 accounts can reach the admin area on this site. 1 registered within the last 7 days.',
+        details: [{ file: 'fixture-owner <owner@example.test>', mtime_iso: '2026-09-20T10:00:00+00:00', note: 'roles: administrator; registered in the last 7 days' }],
+        fix: { kind: 'guided', label: 'Review the administrator accounts', does: 'Morpheus never removes an account.', warning: null, steps: [{ text: 'Confirm you recognise every administrator.', link: '/wp-admin/users.php' }] },
+      },
+      {
+        id: 'morpheus_cron_unattributed',
+        label: 'Every scheduled task belongs to something installed on this site',
+        status: 'recommended',
+        description: '1 scheduled hook could not be attributed to WordPress or to any plugin this site runs.',
+        details: [{ file: 'fixture_leftover_hook', note: 'next run 2026-09-24T02:00:00+00:00' }],
+        fix: { kind: 'guided', label: 'Check the unattributed scheduled tasks', does: 'Morpheus will not unschedule anything.', warning: null, steps: [{ text: 'Search the hook name in the plugins you run.' }] },
+      },
+      {
+        id: 'morpheus_plugin_checksums',
+        label: 'Every plugin file matches the version wordpress.org publishes',
+        status: 'good',
+        description: '1 plugin package downloaded and compared file by file; every file matches.',
+        fix: { kind: 'guided', label: 'Re-install the affected plugin', does: 'Only if a file differs.', warning: null, steps: [{ text: 'Note the plugin named in the finding.' }] },
+      },
+    ],
+  };
+}
+
+/** The auto findings the single press may quarantine, and their mock results. */
+const CLEAN_AUTO = ['morpheus_uploads_php', 'morpheus_root_config_backup', 'morpheus_public_debug_log', 'morpheus_stale_robots_txt'];
 
 const STORE_CONTEXT = {
   ok: true,
@@ -194,7 +318,13 @@ function respond(req, res, raw) {
   try { payload = JSON.parse(raw || '{}'); } catch { /* treat as empty */ }
   const asAction = payload.action || '';
 
-  if (path === `${NS}/health`) return json(res, 200, health());
+  // The route the app sends BOTH scans to; the action decides which one it gets.
+  // A rename on either side here would make CLEAN MY SITE render a health scan,
+  // which reads as "nothing found" — so the rig drives the real dispatch.
+  if (path === `${NS}/health`) {
+    if (asAction === 'clean') { console.log('[mock-wp]   action=clean -> the clean scan'); return json(res, 200, clean()); }
+    return json(res, 200, health());
+  }
   if (path === `${NS}/store`) {
     if (asAction === 'context') return json(res, 200, STORE_CONTEXT);
     if (asAction === 'list_products') return json(res, 200, { ok: true, products: [] });
@@ -211,7 +341,37 @@ function respond(req, res, raw) {
   if (path === `${NS}/updates`) return json(res, 200, { ok: true, updates: { plugins: 1, themes: 0, core: 0 } });
   if (path === `${NS}/maintenance`) return json(res, 200, { ok: true, action: asAction, targets: [] });
   if (path === `${NS}/dock`) return json(res, 200, { ok: true, enabled: true, configured: true, note: 'mock-wp: dock token stored' });
-  if (path === `${NS}/fix`) return json(res, 409, { ok: false, code: 'NOT_AUTOMATIC', error: 'mock-wp: this finding needs a person' });
+  if (path === `${NS}/fix`) {
+    // A guided finding is declined, exactly as the real plugin declines it, so
+    // the rig proves the press never reaches one. An auto finding answers with a
+    // real quarantine result: the renamed file and its backup, which is what the
+    // panel turns into the operator's undo line.
+    // The app sends the finding under `finding` (lib/wpPlugin.js's wpFix), so the
+    // mock reads the same field the real plugin does — reading only `id` here made
+    // every press look declined, which is a mock bug that would have hidden a real
+    // one behind it.
+    const findingId = payload.finding || payload.id || '';
+    if (!CLEAN_AUTO.includes(findingId)) {
+      return json(res, 409, { ok: false, code: 'NOT_AUTOMATIC', error: 'mock-wp: this finding needs a person' });
+    }
+    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    const file = findingId === 'morpheus_uploads_php' ? 'wp-content/uploads/2026/09/loader.php'
+      : findingId === 'morpheus_root_config_backup' ? 'wp-config.php.bak'
+        : findingId === 'morpheus_public_debug_log' ? 'wp-content/debug.log'
+          : 'robots.txt';
+    const backup = `/home/fixture/${file.split('/').pop()}.morpheus-bak-${stamp}`;
+    return json(res, 200, {
+      ok: true,
+      id: findingId,
+      code: 'QUARANTINED',
+      did: 'renamed 1 file with a timestamp — nothing was deleted',
+      quarantined: [{ file, backup, verified: true, restored: false, served: false }],
+      refused: [],
+      verified: true,
+      restored: false,
+      error: null,
+    });
+  }
   return json(res, 404, { code: 'rest_no_route', message: `mock-wp: no route for ${path}` });
 }
 

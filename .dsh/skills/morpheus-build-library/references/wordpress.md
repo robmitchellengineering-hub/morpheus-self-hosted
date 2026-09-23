@@ -145,6 +145,38 @@ forever — and is exactly the site that needs them. The age is part of the answ
 and stop. Never ask the operator for FTP or SSH credentials.
 
 
+## CLEAN MY SITE
+
+The health scan asks whether the site is well. CLEAN MY SITE asks the harder
+question — what is on the server that nobody asked for — and it is a SEPARATE
+scan with its own cache and its own button, because it checksums core, walks the
+uploads tree and may download plugin packages. A scan that heavy must never run
+because a panel opened.
+
+The rules, each learned from getting it wrong first:
+
+* **A check that PASSED must not cause a change.** An `auto` fix on a finding
+  that reads `good` ("the debug log is not readable") has nothing to clean, so
+  the one press applies `auto` findings that ASK for something. The single press
+  is smaller than the registry, and that is correct.
+* **A rename is not a quarantine if the new name is still served.** Moving a
+  `.bak` to `wp-config.php.bak.morpheus-bak-…` inside the document root leaves it
+  just as readable. The only honest test is to request the new URL too, and to
+  REFUSE — putting the file back — when the host cannot be shown to deny it. On a
+  server that ignores `.htaccess` that means refusing, which is the right answer,
+  not a bug to work around.
+* **The caller names a finding; the plugin chooses every path.** The app sends an
+  id and nothing else, and each fix re-enumerates what to move from the plugin's
+  own literal allow-list at the moment it runs. A cached scan is never the
+  authority for a write.
+* **An exclusion prefix must be slash-bounded.** Our own plugin directory is
+  excluded from the recent-files list; without the trailing slash that prefix also
+  matched any plugin whose directory merely STARTS with the same word, silently
+  dropping real plugins from the check.
+* **An identifier that is used and never imported passes every syntax check** and
+  throws at the first request that reaches it. A guard can assert the import; the
+  browser is what finds it.
+
 ## Do not gate a feature on a third-party plugin's presence
 
 The SEO module briefly rendered its fields behind `defined('WPSEO_VERSION')`, so

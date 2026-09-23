@@ -248,7 +248,14 @@ check('a missing fix is null, not an empty object', normaliseFix(undefined), nul
 check('a warning is carried when the action needs one', normaliseFix({ kind: 'auto', label: 'x', warning: 'careful' }).warning, 'careful');
 
 // And the handler routes it to the site.
-check('the handler offers every health action', /ACTIONS = new Set\(\['scan', 'policy', 'apply', 'fix', 'updates'\]\)/.test(fn), true);
+// Parsed, not pinned: the set grew again when CLEAN MY SITE arrived (`clean`),
+// and an assertion listing members literally fails for the wrong reason each
+// time. What must hold is that the set is declared in ONE place and every member
+// is handled — the same shape as the loop above. Whether `clean` is safe is
+// asserted in scripts/verify-clean-site.mjs, which owns that subject.
+const actionSet = fn.match(/const ACTIONS = new Set\(\[([^\]]*)\]\)/);
+const actionNames = actionSet ? [...actionSet[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]) : [];
+check('the action set is declared once and includes every moved action', ['scan', 'policy', 'apply', 'fix', 'updates', 'clean'].every((a) => actionNames.includes(a)), true);
 check('…sending only the finding id to the site', /wpFix\(conn, finding\)/.test(fn), true);
 check('…and refusing an empty id', /finding id required/.test(fn), true);
 // A site declining (409) is an answer, not a failure.

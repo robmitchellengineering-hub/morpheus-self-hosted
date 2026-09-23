@@ -107,6 +107,109 @@ class Morpheus_Fixes {
 				'fix'   => 'spawn_cron',
 			),
 
+			// ── CLEAN MY SITE: the safe set ─────────────────────────────────
+			//
+			// These three are the ONLY automatic actions in the clean scan, and
+			// each one is a RENAME of a file that has no legitimate reason to
+			// exist there. Everything the clean scan finds that a person has to
+			// decide — a modified core file, a plugin file that does not match
+			// its published package, an admin account, a cron hook — is `guided`
+			// below and is never swept into a press. See class-clean.php.
+			//
+			// The mechanism lives here, with every other fix, because this class
+			// is the only place that WRITES. Each one re-enumerates what to move
+			// when it runs rather than trusting the cached scan, renames with a
+			// UTC timestamp, and reports the new name as the operator's undo.
+			'morpheus_uploads_php' => array(
+				'kind'    => 'auto',
+				'label'   => 'Quarantine the PHP files in uploads',
+				'does'    => 'Renames each .php file under wp-content/uploads to a timestamped backup beside it, so it can no longer be requested or run. Nothing is deleted, and every backup name is listed so it can be renamed back. Morpheus re-reads the folder afterwards and puts a file back if the rename did not verify.',
+				'warning' => 'If a plugin really does execute code from your uploads folder, that plugin will stop working until the file is renamed back. Nothing legitimate puts a .php file in a media library — but the backups are listed on screen, so this is reversible in one step.',
+				'fix'     => 'quarantine_uploads_php',
+			),
+			'morpheus_root_config_backup' => array(
+				'kind'    => 'auto',
+				'label'   => 'Move the config backups out of the web root',
+				'does'    => 'Moves wp-config.php.bak/.old/.orig/.save/.txt and any .env copy out of the site root, up one directory beside it, under a timestamped name. A backup file is served as plain text, so it is a full credential leak while it sits there. Nothing is deleted, and Morpheus re-requests the URL afterwards to confirm the file has stopped being served — if it has not, the file goes straight back.',
+				'warning' => 'The copy stops being reachable over the web. Its new name is on screen, and renaming it back restores it exactly. On a host where Morpheus cannot prove the new location is unreachable, it refuses and leaves the file where it was rather than move it somewhere it would still be readable.',
+				'fix'     => 'quarantine_root_config_backups',
+			),
+			'morpheus_public_debug_log' => array(
+				'kind'    => 'auto',
+				'label'   => 'Quarantine the public debug log',
+				'does'    => 'Renames wp-content/debug.log to a timestamped backup, so the error log stops being downloadable by anyone who asks, and re-requests the address to confirm it stopped — refusing and putting the file back if it cannot show that. WordPress creates a fresh log on the next warning, so switch WP_DEBUG_LOG off or move it outside the web root to stop it coming back.',
+				'warning' => 'Anything already in the log is kept in the backup — nothing is deleted — but the log stops being written at its old path until WordPress recreates it.',
+				'fix'     => 'quarantine_public_debug_log',
+			),
+
+			// ── CLEAN MY SITE: report only, never applied ───────────────────
+			//
+			// Each of these needs a person. Re-downloading core over a live site,
+			// re-installing a plugin, deleting an account and unscheduling a cron
+			// hook are all decisions an automated pass does not get to make, so
+			// there is deliberately no mechanism behind these entries — the steps
+			// are the whole action.
+			'morpheus_core_checksums' => array(
+				'kind'  => 'guided',
+				'label' => 'Replace the modified core files',
+				'does'  => 'A core file that does not match wordpress.org is reported, never repaired from here: re-installing WordPress over a live site is your decision, and the file may be a deliberate patch.',
+				'steps' => array(
+					array( 'text' => 'Note every file named in the finding. If you (or a developer) patched core deliberately, stop here and keep a record of why.' ),
+					array( 'text' => 'Take a full backup of the site — files and database — before touching core.' ),
+					array( 'text' => 'Re-install WordPress from the Dashboard. WordPress replaces core files and leaves your content, themes and plugins alone.', 'link' => '/wp-admin/update-core.php' ),
+					array( 'text' => 'Come back and scan again; Morpheus confirms the checksums itself.' ),
+				),
+			),
+			'morpheus_plugin_checksums' => array(
+				'kind'  => 'guided',
+				'label' => 'Re-install the affected plugin',
+				'does'  => 'A plugin file that does not match the package wordpress.org publishes means the code on disk is not the code the author shipped. Re-installing the same version is the clean fix.',
+				'steps' => array(
+					array( 'text' => 'Note the plugin named in the finding and the files listed under it.' ),
+					array( 'text' => 'Delete the plugin and install it again from the directory — same version, clean files.', 'link' => '/wp-admin/plugin-install.php' ),
+					array( 'text' => 'If the extra file is one you added deliberately, keep a note of it rather than deleting it on the strength of this check.' ),
+				),
+			),
+			'morpheus_mu_plugins' => array(
+				'kind'  => 'guided',
+				'label' => 'Check the mu-plugins inventory',
+				'does'  => 'Every file in mu-plugins is loaded on every request with no activation and no entry in the Plugins screen. Some are legitimate — hosts and agencies use them — but nothing in wp-admin lists them, so only you can say which are yours.',
+				'steps' => array(
+					array( 'text' => 'Open your site\'s files and look at wp-content/mu-plugins — your host\'s file manager does this if you have no FTP access.' ),
+					array( 'text' => 'Read each file named in the finding. Anything you do not recognise, send to whoever built the site before removing it.' ),
+					array( 'text' => 'To remove one, rename or delete it from the file manager. Morpheus will not touch these files itself.' ),
+				),
+			),
+			'morpheus_admin_users' => array(
+				'kind'  => 'guided',
+				'label' => 'Review the administrator accounts',
+				'does'  => 'Every account listed can reach wp-admin and change anything on the site. Morpheus never removes an account — this is a list to check.',
+				'steps' => array(
+					array( 'text' => 'Open the users list and confirm you recognise every administrator, and that the email address is one you control.', 'link' => '/wp-admin/users.php?role=administrator' ),
+					array( 'text' => 'For an account you do not recognise: change its password first, then remove it, then change the passwords of every other administrator.' ),
+					array( 'text' => 'A new administrator account is a standard way to keep access after a cleanup, so check the registration dates in the finding.' ),
+				),
+			),
+			'morpheus_cron_unattributed' => array(
+				'kind'  => 'guided',
+				'label' => 'Check the unattributed scheduled tasks',
+				'does'  => 'A scheduled hook nobody can attribute is usually a plugin that has been deactivated and left its timer behind. Morpheus will not unschedule anything: removing one can stop a shop\'s stock sync or a backup.',
+				'steps' => array(
+					array( 'text' => 'Search the hook name in the plugins you run, or ask your host whether it is theirs.' ),
+					array( 'text' => 'If it belongs to a plugin you removed, a cron plugin or WP-CLI can delete that one hook — leave the rest alone.' ),
+				),
+			),
+			'morpheus_recent_files' => array(
+				'kind'  => 'guided',
+				'label' => 'Compare the recent file changes',
+				'does'  => 'A plugin, theme or WordPress update produces exactly this list. The newest entry is the one to explain first — a code change you cannot account for is what to look at.',
+				'steps' => array(
+					array( 'text' => 'Line the timestamps up against what you installed or changed in the last week.' ),
+					array( 'text' => 'For anything you cannot explain, check the file\'s contents and its modification time against your backup for that date.' ),
+					array( 'text' => 'If a file you did not change is inside a plugin, the plugin checksum finding above may already name it.' ),
+				),
+			),
+
 			// ── Updates: the engine that already exists ─────────────────────
 			'plugin_version' => array(
 				'kind'  => 'updates',
@@ -398,6 +501,11 @@ class Morpheus_Fixes {
 	 * Nothing here is attempted without a backup where a backup is meaningful, and
 	 * every action is verified afterwards. A verification failure puts the old
 	 * state back.
+	 *
+	 * The caller names a FINDING, never a path: every mechanism decides for itself
+	 * what it may touch, from an allow-list in this file. That is what stops a
+	 * leaked widget token turning this route into arbitrary file moves on a
+	 * customer's site.
 	 */
 	public static function apply( $id ) {
 		$entry = self::for_id( $id );
@@ -426,6 +534,12 @@ class Morpheus_Fixes {
 				return self::fix_spawn_cron( $id );
 			case 'quarantine_robots_txt':
 				return self::fix_quarantine_robots_txt( $id );
+			case 'quarantine_uploads_php':
+				return self::fix_quarantine_uploads_php( $id );
+			case 'quarantine_root_config_backups':
+				return self::fix_quarantine_root_config_backups( $id );
+			case 'quarantine_public_debug_log':
+				return self::fix_quarantine_public_debug_log( $id );
 			default:
 				return array( 'ok' => false, 'id' => $id, 'code' => 'NO_MECHANISM', 'error' => 'The registry names a mechanism that does not exist. Nothing was changed.' );
 		}
@@ -706,6 +820,366 @@ class Morpheus_Fixes {
 		}
 
 		return array( 'ok' => true, 'note' => $note, 'why' => null );
+	}
+
+	// ── CLEAN MY SITE: quarantining the files that have no business being there ──
+	//
+	// WHY ALL THREE ARE THE SAME MECHANISM
+	//
+	// A PHP file under uploads/, a wp-config backup in the site root and a public
+	// debug.log are three versions of one problem: a file that is reachable when
+	// it should not be. One implementation means one undo contract, one
+	// verification step and one place to get the path safety right — and the
+	// operator sees the same sentence shape whichever one they press.
+	//
+	// WHAT MAKES IT SAFE
+	//
+	//   * the TARGET is chosen here, never sent by the caller: the app sends a
+	//     finding id and nothing else, and each fix re-enumerates what to move
+	//     from the plugin's own allow-list, at the moment it runs (the scan is
+	//     cached; a file may be gone or new);
+	//   * a RENAME, never a delete — and the new name is on screen;
+	//   * the move is verified twice: the backup must be byte-identical to what
+	//     was there and the original path must be empty, and for a file that was
+	//     being SERVED the URL is requested again and must stop returning it;
+	//   * anything that does not verify goes straight back, and the answer says
+	//     so rather than reporting a success it did not get.
+
+	/**
+	 * Quarantine the executable PHP files under uploads/.
+	 *
+	 * Re-asks the question rather than trusting the scan: `uploads_php_files()`
+	 * is the same enumeration the scan used, run now.
+	 */
+	private static function fix_quarantine_uploads_php( $id ) {
+		if ( ! class_exists( 'Morpheus_Clean' ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_SCANNER', 'error' => 'This build of the Morpheus plugin has no clean scanner, so Morpheus cannot confirm which files to move. Nothing was changed.' );
+		}
+		$found = Morpheus_Clean::uploads_php_files();
+		if ( ! $found['files'] ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_FILE', 'error' => 'There is no PHP file under ' . $found['base'] . ' any more — something removed it since the scan. Nothing was changed; re-scan the site.' );
+		}
+
+		$quarantined = array();
+		$refused     = array();
+		foreach ( $found['files'] as $file ) {
+			// A PHP file in the media library is not meant to be *served*, it is
+			// meant to be *executed*, so there is no URL to re-request. The move
+			// is still verified on disk: the backup exists, byte for byte, and
+			// the original path is empty.
+			$r = self::quarantine_file( $file, null );
+			if ( ! empty( $r['moved'] ) && empty( $r['restored'] ) ) {
+				$quarantined[] = $r;
+			} else {
+				$refused[] = array( 'file' => self::display_path( $file ), 'why' => $r['error'] );
+			}
+		}
+		return self::quarantine_result( $id, $quarantined, $refused, 'No PHP file under uploads/ could be moved' );
+	}
+
+	/** Move the wp-config/.env copies out of the site root. */
+	private static function fix_quarantine_root_config_backups( $id ) {
+		if ( ! class_exists( 'Morpheus_Clean' ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_SCANNER', 'error' => 'This build of the Morpheus plugin has no clean scanner, so Morpheus cannot confirm which files to move. Nothing was changed.' );
+		}
+		$found = Morpheus_Clean::root_config_backup_files();
+		if ( ! $found ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_FILE', 'error' => 'There is no wp-config or .env backup in the site root any more — something removed it since the scan. Nothing was changed; re-scan the site.' );
+		}
+
+		$quarantined = array();
+		$refused     = array();
+		foreach ( $found as $f ) {
+			// The whole point is the URL: a `.bak` is served as plain text, so
+			// this one is verified by asking for it again.
+			$r = self::quarantine_file( $f['path'], $f['url'] );
+			if ( ! empty( $r['moved'] ) && empty( $r['restored'] ) ) {
+				$quarantined[] = $r;
+			} else {
+				$refused[] = array( 'file' => $f['name'], 'why' => $r['error'] );
+			}
+		}
+		return self::quarantine_result( $id, $quarantined, $refused, 'No config backup could be moved out of the web root' );
+	}
+
+	/** Quarantine a wp-content/debug.log that is answering over HTTP. */
+	private static function fix_quarantine_public_debug_log( $id ) {
+		$file = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+		if ( ! is_file( $file ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_FILE', 'error' => 'There is no wp-content/debug.log any more — something removed it since the scan. Nothing was changed; re-scan the site.' );
+		}
+
+		// Re-ask the LIVE question before moving anything: if the log is not
+		// actually being served, moving it changes nothing, and the honest answer
+		// is to say so rather than to report a fix that did nothing.
+		$url  = content_url( 'debug.log' );
+		$body = self::fetch_public( add_query_arg( 'morpheus-verify', time(), $url ) );
+		if ( is_string( $body ) && ! self::body_is_log( $body ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NOT_SERVED', 'error' => 'The debug log is not being served at ' . $url . ' — the host answers with something else. Moving the file would change nothing, so Morpheus did not. Nothing was changed.' );
+		}
+
+		$r = self::quarantine_file( $file, $url );
+		$quarantined = ( ! empty( $r['moved'] ) && empty( $r['restored'] ) ) ? array( $r ) : array();
+		$refused     = $quarantined ? array() : array( array( 'file' => 'wp-content/debug.log', 'why' => $r['error'] ) );
+		$result      = self::quarantine_result( $id, $quarantined, $refused, 'The public debug log could not be quarantined' );
+		if ( $quarantined ) {
+			$result['note'] = 'WordPress creates a fresh wp-content/debug.log on the next warning, so this file will come back until WP_DEBUG_LOG is switched off or pointed outside the web root. The finding above carries the two lines that do that.';
+		}
+		return $result;
+	}
+
+	/**
+	 * Move ONE file out of harm's way, verify it, and put it back if it did not
+	 * take.
+	 *
+	 * @param string      $file absolute path
+	 * @param string|null $url  the URL it is served at, or null when it is not
+	 *                          meant to be served at all
+	 * @return array {moved, verified, restored, file, backup, error}
+	 */
+	private static function quarantine_file( $file, $url = null ) {
+		if ( ! is_file( $file ) ) {
+			return array( 'moved' => false, 'verified' => false, 'restored' => false, 'file' => $file, 'backup' => null, 'error' => 'the file is no longer there' );
+		}
+		$before = @file_get_contents( $file );
+		if ( ! is_string( $before ) ) {
+			return array( 'moved' => false, 'verified' => false, 'restored' => false, 'file' => $file, 'backup' => null, 'error' => 'the file could not be read, so Morpheus did not move it' );
+		}
+		$digest = md5( $before );
+
+		$target = self::quarantine_target( $file );
+		if ( is_wp_error( $target ) ) {
+			return array( 'moved' => false, 'verified' => false, 'restored' => false, 'file' => $file, 'backup' => null, 'error' => $target->get_error_message() );
+		}
+		$dest = $target['path'];
+		if ( file_exists( $dest ) ) {
+			return array( 'moved' => false, 'verified' => false, 'restored' => false, 'file' => $file, 'backup' => $dest, 'error' => 'a backup from this same second already exists at ' . $dest . ', and Morpheus will not overwrite the only copy of the original' );
+		}
+		if ( ! @rename( $file, $dest ) ) {
+			return array( 'moved' => false, 'verified' => false, 'restored' => false, 'file' => $file, 'backup' => $dest, 'error' => 'this host does not let PHP rename ' . self::display_path( $file ) . ' — the hosting account or the host has to move it by hand' );
+		}
+
+		/** Put the file back where it was, and say whether that worked. */
+		$give_back = function ( $why ) use ( $dest, $file ) {
+			$put_back = @rename( $dest, $file );
+			return array(
+				'moved'    => false,
+				'verified' => false,
+				'restored' => (bool) $put_back,
+				'file'     => $file,
+				'backup'   => $dest,
+				'error'    => $why . ( $put_back ? ' The file was renamed straight back, so the site is exactly as it was.' : ' Morpheus could NOT put the file back — it is still at ' . $dest . '.' ),
+			);
+		};
+
+		// Verification 1, on disk: the backup holds exactly what was there, and
+		// the original path is empty. This is the move itself, checked.
+		$intact = is_file( $dest ) && md5_file( $dest ) === $digest;
+		if ( ! $intact || is_file( $file ) ) {
+			return $give_back( 'the move did not verify.' );
+		}
+
+		// Verification 2, over HTTP, for a file that was being SERVED. Two
+		// questions, and the second is the one a rename alone cannot answer:
+		//   1. has the URL the finding named stopped handing the file out?
+		//   2. is the backup itself reachable, now that it has a different name?
+		// A quarantine that leaves the same bytes readable under a longer name is
+		// not a quarantine, so (2) failing is a refusal — and so is (2) being
+		// unanswerable when the backup sits inside the web root.
+		$served = null;
+		if ( is_string( $url ) && '' !== $url ) {
+			morpheus_purge_caches();
+
+			$original = self::probe_serves( $url, $digest );
+			if ( 'same' === $original ) {
+				return $give_back( 'the file was moved but ' . $url . ' still returns its contents, so the move did not stop it being served.' );
+			}
+			$served = 'different' === $original ? false : null;
+
+			if ( ! empty( $target['url'] ) ) {
+				$backup_probe = self::probe_serves( $target['url'], $digest );
+				if ( 'same' === $backup_probe ) {
+					return $give_back( 'the backup would be just as readable at ' . $target['url'] . ', so renaming the file would not have closed the leak.' );
+				}
+				if ( 'unreachable' === $backup_probe ) {
+					return $give_back( 'Morpheus could not confirm that ' . $target['url'] . ' stops handing the file out, and the backup sits inside the folder the site serves — so it did not leave a readable copy behind under a new name.' );
+				}
+			}
+		}
+
+		return array(
+			'moved'    => true,
+			// A move with no URL to re-request is verified by the disk check
+			// alone; `served` records what the HTTP re-check found, including
+			// "could not ask", so the panel never implies more than was seen.
+			'verified' => true,
+			'restored' => false,
+			'served'   => $served,
+			'url'      => ( is_string( $url ) && '' !== $url ) ? $url : null,
+			'file'     => $file,
+			'backup'   => $dest,
+			'outside'  => ! empty( $target['outside'] ),
+			'error'    => null,
+		);
+	}
+
+	/**
+	 * The one answer shape every quarantine fix returns.
+	 *
+	 * Kept in one place so `quarantined`, `refused`, `moved` and `verified` mean
+	 * the same thing whichever fix produced them — the app reads `quarantined`
+	 * to name the undo, and a shape that drifts per fix would silently drop it.
+	 */
+	private static function quarantine_result( $id, $quarantined, $refused, $nothing_moved_error ) {
+		if ( ! $quarantined ) {
+			return array(
+				'ok'        => false,
+				'id'        => $id,
+				'code'      => 'NOT_MOVED',
+				'error'     => $nothing_moved_error . ': ' . ( $refused ? $refused[0]['why'] : 'the site did not say why' ) . '. Nothing was changed.',
+				'refused'   => $refused,
+				'restored'  => false,
+			);
+		}
+
+		$rows = array();
+		foreach ( $quarantined as $q ) {
+			$rows[] = array(
+				'file'     => self::display_path( $q['file'] ),
+				'backup'   => $q['backup'],
+				'verified' => true,
+				'restored' => false,
+				// null = the URL could not be re-requested, so the operator is not
+				// told the leak was confirmed closed when it was only moved.
+				'served'   => array_key_exists( 'served', $q ) ? $q['served'] : null,
+				'url'      => array_key_exists( 'url', $q ) ? $q['url'] : null,
+			);
+		}
+		$count = count( $rows );
+		$note  = null;
+		foreach ( $rows as $r ) {
+			if ( $r['url'] && null === $r['served'] ) {
+				$note = 'The file is gone from its original path and the backup is byte-identical — but this scan could not re-request the URL afterwards, so whether it has stopped being served is unconfirmed.';
+				break;
+			}
+		}
+		if ( $refused ) {
+			$note = trim( (string) $note . ' ' . count( $refused ) . ' file(s) could not be moved: ' . $refused[0]['why'] . '.' );
+		}
+
+		return array(
+			'ok'          => true,
+			'id'          => $id,
+			'code'        => 'QUARANTINED',
+			'did'         => 'renamed ' . $count . ' file' . ( 1 === $count ? '' : 's' ) . ' with a timestamp — nothing was deleted',
+			'quarantined' => $rows,
+			'refused'     => $refused,
+			'verified'    => true,
+			'restored'    => false,
+			'error'       => null,
+			'note'        => $note ?: null,
+		);
+	}
+
+	/**
+	 * Where a quarantined file goes: OUT of the web root when the host allows it,
+	 * otherwise into this plugin's own protected state directory.
+	 *
+	 * WHY OUTSIDE FIRST: a rename inside the web root does not stop a `.bak`
+	 * being served — the new name is still a plain file under the document root.
+	 * Moving it one level above the WordPress installation takes it out of what
+	 * the server hands out, on the ordinary shared-hosting layout where the
+	 * WordPress directory IS the document root.
+	 *
+	 * WHY THE FALLBACK IS SAFE TO TRY: `morpheus-state` already exists, already
+	 * carries a Deny-from-all rule written at activation, and is on the deploy
+	 * deny-list — so a deploy can never touch it. It is not guaranteed to be
+	 * unreachable (a server that ignores .htaccess will still hand the file out),
+	 * which is exactly why the URL is re-requested afterwards and the file goes
+	 * back if it is still served.
+	 *
+	 * @return string|WP_Error
+	 */
+	private static function quarantine_target( $file ) {
+		$name   = basename( $file ) . '.morpheus-bak-' . gmdate( 'YmdHis' );
+		$parent = dirname( rtrim( str_replace( '\\', '/', ABSPATH ), '/' ) );
+
+		// (1) A directory beside the installation. On the ordinary shared-hosting
+		// layout the WordPress directory IS the document root, so its parent is
+		// not served at all — the strongest place a backup can be, and the answer
+		// for a credential copy.
+		//
+		// The filesystem root is excluded on purpose: it is not the site's to
+		// write, it is shared on many hosts, and a credential file dropped there
+		// is not obviously recoverable by the owner.
+		if ( '' !== $parent && '/' !== $parent && is_dir( $parent ) && is_writable( $parent ) ) {
+			return array( 'path' => rtrim( $parent, '/' ) . '/' . $name, 'url' => null, 'outside' => true );
+		}
+
+		// (2) This plugin's own state directory, which already carries a
+		// Deny-from-all rule and is on the deploy deny-list. Inside the web root,
+		// so it comes with a URL — and a file that was being SERVED is only
+		// quarantined here if that URL can be shown not to hand the file out.
+		// Without that check this would be a rename that left a .bak just as
+		// readable under a longer name.
+		$dir = trailingslashit( MORPHEUS_STATE_DIR ) . 'quarantine';
+		if ( ! wp_mkdir_p( $dir ) || ! is_writable( $dir ) ) {
+			return new WP_Error(
+				'morpheus_no_quarantine_target',
+				'there is nowhere Morpheus may put the file: the directory above the site is not writable and neither is ' . $dir
+			);
+		}
+		@file_put_contents( $dir . '/.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n" );
+		@file_put_contents( $dir . '/index.php', "<?php // Silence is golden.\n" );
+		return array(
+			'path'    => trailingslashit( $dir ) . $name,
+			'url'     => trailingslashit( WP_CONTENT_URL ) . 'morpheus-state/quarantine/' . rawurlencode( $name ),
+			'outside' => false,
+		);
+	}
+
+	/**
+	 * Ask a URL what it hands out, and classify the answer.
+	 *
+	 *   'same'        — the exact bytes of the file are being served
+	 *   'different'   — the URL answered with something else (a 404 page, a 403)
+	 *   'unreachable' — the site could not be asked at all
+	 *
+	 * The third is a real state, not a failure of the move: a host that blocks
+	 * loopback requests can never confirm this, and pretending otherwise either
+	 * way would be a guess.
+	 */
+	private static function probe_serves( $url, $digest ) {
+		$body = self::fetch_public( add_query_arg( 'morpheus-verify', time(), $url ) );
+		if ( null === $body ) {
+			return 'unreachable';
+		}
+		return md5( $body ) === $digest ? 'same' : 'different';
+	}
+
+	/** A path as the operator sees it: relative to the site root when it is under it. */
+	private static function display_path( $path ) {
+		$base = trailingslashit( str_replace( '\\', '/', ABSPATH ) );
+		$p    = str_replace( '\\', '/', (string) $path );
+		return 0 === strpos( $p, $base ) ? substr( $p, strlen( $base ) ) : $p;
+	}
+
+	/** GET a URL's body, or null when the site could not be asked at all. */
+	private static function fetch_public( $url ) {
+		$res = wp_remote_get( $url, array( 'timeout' => 8, 'redirection' => 3 ) );
+		if ( is_wp_error( $res ) ) {
+			return null;
+		}
+		return wp_remote_retrieve_body( $res );
+	}
+
+	/** The same "is this a PHP error log" test class-clean.php uses. */
+	private static function body_is_log( $body ) {
+		$head = substr( (string) $body, 0, 4000 );
+		if ( preg_match( '/^\[[^\]]{6,40}\]\s*PHP\s/i', trim( $head ) ) ) {
+			return true;
+		}
+		return (bool) preg_match( '/PHP (Warning|Notice|Fatal error|Deprecated|Parse error|Recoverable)/i', $head );
 	}
 
 	// ── File plumbing ───────────────────────────────────────────────────────

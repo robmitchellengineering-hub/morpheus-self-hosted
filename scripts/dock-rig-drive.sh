@@ -54,6 +54,10 @@ wait_for() { # label, js-expression that returns true when ready
 
 TABS_JS="['CHAT','DEPLOY','HEALTH','SHOP','PAGES','SEO','TRAFFIC'].filter(t=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===t)).join('|')"
 health_posts() { local n; n="$(grep -c 'POST /health' "$WP_LOG" 2>/dev/null)"; echo "${n:-0}"; }
+# Counts of the CLEAN action specifically. Deltas, never absolutes: the mock's log
+# persists across runs, so "the number is zero" would be a check that passes for
+# the wrong reason on a fresh log and fails for the wrong one on a used log.
+clean_scans() { local n; n="$(grep -c 'action=clean' "$WP_LOG" 2>/dev/null)"; echo "${n:-0}"; }
 
 if [ ! -f "$RIG/state.json" ]; then
   echo "  ✗ no rig state — run: node scripts/dev-dock-rig.mjs up" >&2
@@ -82,6 +86,7 @@ check "the widget names its project" "$(ev "document.body.innerText.includes('Do
 echo
 echo "HEALTH tab (a widget token calling siteHealth → signed POST to the site):"
 BASE="$(health_posts)"
+CLEAN_PRE="$(clean_scans)"
 check "HEALTH is clickable" \
   "$(ev "(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='HEALTH');if(!b)return false;b.click();return true})()")" "true"
 wait_for "the scan reports a headline" "document.body.innerText.includes('Site health') && /([Nn]othing critical|[Ee]very check passed|needs? fixing)/.test(document.body.innerText)"
@@ -94,6 +99,68 @@ echo "RESCAN (a click inside the tab, not just a render):"
 BEFORE="$(health_posts)"
 ev "(()=>{const b=[...document.querySelectorAll('button')].find(x=>/RESCAN/.test(x.textContent));if(!b)return false;b.click();return true})()" >/dev/null
 wait_for "RESCAN made a second signed round trip" "$(health_posts) > ${BEFORE:-0}"
+
+# ── 2b. CLEAN MY SITE: its own scan, then ONE press that quarantines ──────
+#
+# The heavier scan is a SEPARATE action on the same signed route, and the whole
+# point of the two-press rule is that opening this tab must not have run it. So
+# the assertion is a DELTA on the mock's own log line for action=clean: a render
+# that never reached the site fails, and a scan that ran on tab open would have
+# already produced the line before this click.
+echo
+echo "CLEAN MY SITE (action=clean → the plugin's own scanner, then one press):"
+CLEAN_BASE="$(clean_scans)"
+check "the clean scan did NOT run when the tab opened (two presses, not one)" "$CLEAN_BASE" "${CLEAN_PRE:-0}"
+check "SCAN MY SITE is there" \
+  "$(ev "!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('SCAN MY SITE'))")" "true"
+pw click "getByRole('button', { name: 'SCAN MY SITE' })" >/dev/null
+wait_for "the clean scan reached the site (a new action=clean POST)" "$(clean_scans) > ${CLEAN_BASE:-0}"
+wait_for "the clean findings rendered" "document.body.innerText.includes('CLEAN MY SITE') && /can be quarantined|need looking at now|worth reviewing/.test(document.body.innerText)"
+check "the auto finding is shown" "$(ev "document.body.innerText.includes('No PHP file is sitting in the uploads folder')")" "true"
+# A critical finding's evidence is OPEN, not collapsed behind a summary: the paths
+# are the thing the operator acts on.
+check "the evidence rows are shown, not just a count" "$(ev "document.body.innerText.includes('wp-content/uploads/2026/09/loader.php')")" "true"
+check "the guided finding is shown with its own sentence" \
+  "$(ev "document.body.innerText.includes('Re-installing WordPress over a live site is your decision')")" "true"
+check "a guided finding is NOT given its own press" \
+  "$(ev "!document.body.innerText.includes('Replace the modified core files') && document.body.innerText.includes('GUIDE ME')")" "true"
+# The section label is styled uppercase, so `innerText` returns the TRANSFORMED
+# text ("WHAT THIS SCAN DID NOT REACH") — presence of the authored sentence has to
+# be read from textContent.
+check "what the scan did not reach is shown" "$(ev "document.body.textContent.includes('What this scan did not reach')")" "true"
+# The safe set is the auto findings that ASK for something: two here (the uploads
+# PHP and the config backup). The two `good` auto findings are behind the toggle
+# and are not in the press, because a check that passed must not cause a change.
+check "the safe press offers exactly the two auto findings" \
+  "$(ev "!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('CLEAN MY SITE') && b.textContent.includes('2'))")" "true"
+check "the finding that already reads good is behind a toggle" \
+  "$(ev "[...document.querySelectorAll('button')].some(b=>b.textContent.includes('Nothing to clean'))")" "true"
+# …and when it is opened, the checks that PASSED offer no press: a button that
+# would change a site in response to a check that found nothing wrong is exactly
+# what the bulk set refuses to do, and the individual controls must agree.
+pw click "getByRole('button', { name: 'NOTHING TO CLEAN' })" >/dev/null
+sleep 1
+check "the checks that passed offer no press of their own" \
+  "$(ev "!document.body.textContent.includes('Quarantine the public debug log')")" "true"
+pw click "getByRole('button', { name: 'NOTHING TO CLEAN' })" >/dev/null
+sleep 1
+
+echo
+echo "The one press (confirm first, then quarantine):"
+pw click "getByRole('button', { name: 'CLEAN MY SITE' })" >/dev/null
+sleep 1
+check "the confirm names what will be quarantined" \
+  "$(ev "document.body.innerText.includes('Nothing is deleted')")" "true"
+check "the confirm shows the list before anything is sent" \
+  "$(ev "document.body.innerText.includes('QUARANTINE 2')")" "true"
+pw click "getByRole('button', { name: 'QUARANTINE 2' })" >/dev/null
+wait_for "the run finished and reported itself" "document.body.innerText.includes('CLEAN MY SITE finished')"
+check "the tally says what was quarantined and verified" \
+  "$(ev "/2 quarantined and verified/.test(document.body.textContent)")" "true"
+check "the undo is named, with the backup filename" \
+  "$(ev "/morpheus-bak-/.test(document.body.textContent)")" "true"
+check "nothing claims a file was deleted" \
+  "$(ev "/nothing deleted/.test(document.body.textContent)")" "true"
 
 # ── 3. CHAT: a message in, a reply out ────────────────────────────────────
 echo

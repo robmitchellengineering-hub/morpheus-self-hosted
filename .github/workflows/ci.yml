@@ -232,6 +232,16 @@ jobs:
       - name: Site health rules
         run: node scripts/verify-site-health.mjs
 
+      # CLEAN MY SITE removes files from someone's shop, so its rules are asserted
+      # as behaviour rather than eyeballed: the safe set is exactly the site's own
+      # `auto` entries (a modified core file can never enter it), no "cleaned" is
+      # ever shown without naming the backup that is the undo, what a capped scan
+      # skipped is part of the answer, and the app's action name is checked against
+      # the plugin's own switch — a rename there is a health scan where a clean one
+      # was asked for, which reads as "nothing found". Pure module — no install.
+      - name: Clean-my-site rules
+        run: node scripts/verify-clean-site.mjs
+
       # The code that may touch live sites unattended. Asserted before the
       # ability exists: scanning never implies applying, a major core update is
       # never automatic (even if smuggled into the policy), a monthly job stays
