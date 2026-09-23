@@ -126,6 +126,23 @@ ok('headings keep the brand green', /h1,\s*h2,\s*h3,\s*h4,\s*h5,\s*h6\s*\{\s*col
 // and it was unnecessary.
 ok('links carry the action colour', /\ba\s*\{\s*color:\s*hsl\(var\(--accent\)\)/.test(css.replace(/\s+/g, ' ')));
 
+// The deck is its own theme and must not be repainted by the three defaults
+// above. It is a light surface (dark walnut on cream) that declares
+// html[data-theme="deck"] while it is mounted, so an element-level rule inside
+// it does not merely override a preference — it puts Morpheus green on a walnut
+// bar and cyan on cream. Assert the boundary from both ends: the deck still
+// declares itself, and the three rules are still reset inside it.
+const deckShell = readFileSync(join(REPO, 'src/pages/CommandDeck/index.jsx'), 'utf8');
+const deckBoundary = (css.match(/\[data-theme='deck'\][^{]*\{[^}]*\}/) || [''])[0];
+ok('the Command Deck declares its own theme in the app',
+  /data-theme',\s*'deck'/.test(deckShell), deckShell.match(/data-theme[^\n]*/)?.[0] || '');
+ok('the app-wide element rules are reset inside the deck',
+  /\[data-theme='deck'\]\s*h1[\s\S]*?\[data-theme='deck'\]\s*a\s*\{[^}]*color:\s*inherit/.test(css), deckBoundary.trim());
+// Listed individually: an exemption for h1 alone would fix the one element Rob
+// saw and leave the next heading to be repainted by the same rule.
+ok('the reset covers every heading level, not just the ones seen broken',
+  ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].filter((h) => !new RegExp(`\\[data-theme='deck'\\]\\s*${h}\\s*[,{]`).test(css)), []);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\nThe theme no longer meets its own readability rule. Fix the token or the rule —');

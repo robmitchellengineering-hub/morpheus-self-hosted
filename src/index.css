@@ -314,6 +314,31 @@
     color: hsl(var(--accent));
   }
 
+  /* Command Deck is its own theme, and this is the boundary.
+
+     The deck already declares it: pages/CommandDeck/index.jsx swaps
+     html[data-theme="deck"] while it is mounted, and paints "Tweed & Walnut" —
+     dark walnut on cream, its palette in pages/CommandDeck/deckConstants.js —
+     with its own inline colours. It is a light surface, not one of Morpheus's
+     dark ones.
+
+     The three rules above are defaults for the dark surfaces. An element-level
+     rule beats a colour the element merely inherits, so inside the deck they
+     repainted it: the deck's h1 carries no colour of its own, so it turned
+     Morpheus green on a walnut bar instead of inheriting the cream it was
+     meant to, and a plain link turned cyan on cream.
+
+     Reset them to inherit inside the deck rather than giving those two elements
+     colours of their own: the next app-wide element rule would repaint the next
+     element, and the deck is not ours to restyle. Everything reached by
+     html[data-theme="deck"] is covered, whether or not it sits inside the
+     deck's own root element. */
+  [data-theme='deck'] h1, [data-theme='deck'] h2, [data-theme='deck'] h3,
+  [data-theme='deck'] h4, [data-theme='deck'] h5, [data-theme='deck'] h6,
+  [data-theme='deck'] a {
+    color: inherit;
+  }
+
   /* Block text-selection highlight menus on UI controls (Android WebView);
      keep inputs and text areas editable/selectable */
   button, a, select, .no-select {
