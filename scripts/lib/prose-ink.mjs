@@ -318,23 +318,7 @@ export function maskSource(src, { commentsOnly = false } = {}) {
   const top = () => stack[stack.length - 1];
   const strings = !commentsOnly;
 
-  /** Is `<` at `k` plausibly a JSX tag rather than a less-than comparison? */
-  const isTagAt = (k) => {
-    if (src[k] !== '<') return false;
-    if (src[k + 1] === '>') return true;                       // fragment <>
-    if (src[k + 1] === '/' && src[k + 2] === '>') return true;  // fragment </>
-    let j = k + 1;
-    if (src[j] === '/') j++;
-    const s = j;
-    while (j < n && /[\w.$:-]/.test(src[j])) j++;
-    if (j === s || !/^[A-Za-z]/.test(src[s])) return false;
-    let k2 = j;
-    while (k2 < n && /\s/.test(src[k2])) k2++;
-    // After the name a tag has an attribute, `>`, `/>` or nothing; a comparison
-    // has an operator (`a < b && c`), a call (`a < b.size`), or a literal.
-    const c = src[k2];
-    return c === '>' || c === '/' || c === '{' || (c !== undefined && /[A-Za-z_]/.test(c));
-  };
+    const isTagAt = (k) => isTagAtIn(src, k);
 
   let i = 0;
   while (i < n) {
@@ -447,6 +431,50 @@ export function maskSource(src, { commentsOnly = false } = {}) {
 }
 
 // ── JSX structure over the masked text ─────────────────────────────────────
+
+/**
+ * Is `<` at `k` plausibly a JSX tag rather than a less-than comparison? Shared by
+ * the masker and by scanTags, so structure and masking cannot disagree about
+ * where a tag begins.
+ */
+export function isTagAtIn(src, k) {
+  const n = src.length;
+  if (src[k] !== '<') return false;
+  if (src[k + 1] === '>') return true;                       // fragment <>
+  if (src[k + 1] === '/' && src[k + 2] === '>') return true;  // fragment </>
+  let j = k + 1;
+  if (src[j] === '/') j++;
+  const s = j;
+  while (j < n && /[\w.$:-]/.test(src[j])) j++;
+  if (j === s || !/^[A-Za-z]/.test(src[s])) return false;
+  let k2 = j;
+  while (k2 < n && /\s/.test(src[k2])) k2++;
+  // After the name a tag has an attribute, `>`, `/>` or nothing; a comparison
+  // has an operator (`a < b && c`), a call (`a < b.size`), or a literal.
+  const c = src[k2];
+  return c === '>' || c === '/' || c === '{' || (c !== undefined && /[A-Za-z_]/.test(c));
+}
+
+/**
+ * Every real JSX tag in the file, in source order, with offsets. This is what
+ * lets a caller reconstruct nesting — which the ink ladder needs, because an
+ * element with no size class of its own inherits the size of the element around
+ * it, and "the smaller the text, the more contrast" cannot be applied without
+ * knowing what size the text actually is.
+ */
+export function scanTags(src) {
+  const masked = maskSource(src);
+  const out = [];
+  for (let i = 0; i < masked.length; i++) {
+    if (masked[i] !== '<') continue;
+    if (!isTagAtIn(src, i)) continue;
+    const t = readTag(masked, i);
+    if (!t) continue;
+    out.push({ start: i, openEnd: t.openEnd, end: t.end, name: t.name, closing: t.closing, selfClosing: t.selfClosing });
+    i = t.end - 1;
+  }
+  return out;
+}
 
 /** Read the tag that starts at `lt` (which points at `<`); null if not a tag. */
 function readTag(masked, lt) {
@@ -635,7 +663,7 @@ function literalsIn(src, start, end) {
 // ── the scanner ────────────────────────────────────────────────────────────
 
 /** Every className attribute in the file, with the tag that owns it. */
-function scanElements(src) {
+export function scanElements(src, { pattern = null } = {}) {
   const masked = maskSource(src);
   const elements = [];
   const attr = /className\s*=\s*/g;
@@ -669,12 +697,20 @@ function scanElements(src) {
       continue;
     }
     const all = literals.map((l) => l.interior).join(' ');
-    if (!OCCURRENCE.test(all)) { OCCURRENCE.lastIndex = 0; continue; }
-    OCCURRENCE.lastIndex = 0;
+    // Callers that want a different token family (the ink ladder wants ink, not
+    // green) pass their own test; the default keeps this scanner's original job.
+    if (pattern) {
+      pattern.lastIndex = 0;
+      if (!pattern.test(all)) continue;
+    } else {
+      if (!OCCURRENCE.test(all)) { OCCURRENCE.lastIndex = 0; continue; }
+      OCCURRENCE.lastIndex = 0;
+    }
 
     const lt = owningTagStart(masked, m.index);
     const tag = lt >= 0 ? readTag(masked, lt) : null;
     elements.push({
+      openStart: lt,
       tag: tag ? tag.name : '?',
       attributed: Boolean(tag),
       dynamic: dynamic || literals.some((l) => l.template && l.interior.includes('${')),

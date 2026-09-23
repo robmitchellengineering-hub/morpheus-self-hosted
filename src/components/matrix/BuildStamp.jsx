@@ -47,7 +47,7 @@ export default function BuildStamp() {
           <CheckCircle2 size={11} className="text-primary/70 shrink-0" />
           <div className="flex flex-col leading-tight">
             <span className="text-primary/80">BUILD {new Date(buildTime).toLocaleTimeString()}</span>
-            <span className="text-ink/75">{formatAgo(buildTime)} · {new Date(buildTime).toLocaleDateString()}</span>
+            <span className="text-ink-max">{formatAgo(buildTime)} · {new Date(buildTime).toLocaleDateString()}</span>
           </div>
           <button onClick={handleRefresh} disabled={refreshing} className="ml-1 text-primary hover:text-black hover:bg-primary p-1 border border-primary/40 hover:border-primary transition-colors disabled:opacity-50" title="Hard refresh (cache-bust)">
             <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />

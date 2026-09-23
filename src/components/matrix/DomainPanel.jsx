@@ -58,7 +58,7 @@ function StatusRow({ label, ok, children }) {
     <div className="flex items-start gap-2 text-[11px]">
       <Icon size={13} className={`${color} mt-0.5 shrink-0`} />
       <div className="min-w-0">
-        <span className="text-ink/70">{label}</span>
+        <span className="text-ink-max">{label}</span>
         <div className={`${color} leading-snug`}>{children}</div>
       </div>
     </div>
@@ -226,13 +226,13 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
 
-        <p className="text-[11px] text-ink/45 leading-relaxed px-4 py-2 border-b border-primary/10">
+        <p className="text-[11px] text-ink-max leading-relaxed px-4 py-2 border-b border-primary/10">
           Your production domain and where it's hosted. The builder uses it for canonical / Open Graph / sitemap URLs.
           Morpheus stores only the domain — your site stays on your host, served from your repo.
           {state && state.isWeb === false && <span className="text-yellow-500/80"> This project isn't a web-app target.</span>}
         </p>
 
-        {!d && <div className="p-4 flex items-center gap-2 text-ink/60 text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+        {!d && <div className="p-4 flex items-center gap-2 text-ink-strong text-xs"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
         {err && <div className="m-4 text-red-400 text-xs border border-red-500/30 px-3 py-2">{err}</div>}
 
         {d && (
@@ -243,22 +243,22 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                 <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Domain</div>
                 <input value={d.domain} onChange={(e) => set('domain', e.target.value)}
                   placeholder="valiantmusic.com.au"
-                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50" />
-                <div className="text-[10px] text-ink/40 mt-1">Registrable domain, no https:// and no www — the www / apex choice is below.</div>
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink-max font-mono focus:outline-none focus:border-primary/50" />
+                <div className="text-[10px] text-ink-max mt-1">Registrable domain, no https:// and no www — the www / apex choice is below.</div>
               </section>
 
               {/* Host */}
               <section>
                 <div className="text-[11px] text-primary/55 tracking-widest uppercase mb-2">Hosted on</div>
                 <select value={d.host} onChange={(e) => set('host', e.target.value)}
-                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50">
+                  className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink-max focus:outline-none focus:border-primary/50">
                   <option value="">— choose —</option>
                   {hosts.map((h) => <option key={h} value={h}>{HOST_LABELS[h] || h}</option>)}
                 </select>
                 {d.host && d.host !== 'other' && (
                   <input value={d.hostSubdomain} onChange={(e) => set('hostSubdomain', e.target.value)}
                     placeholder={`your host subdomain (e.g. my-site.${d.host === 'github-pages' ? 'github.io' : d.host === 'vercel' ? 'vercel.app' : d.host === 'cloudflare-pages' ? 'pages.dev' : 'netlify.app'})`}
-                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50 mt-2" />
+                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink-max font-mono focus:outline-none focus:border-primary/50 mt-2" />
                 )}
               </section>
 
@@ -273,7 +273,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     </button>
                   ))}
                 </div>
-                <div className="text-[10px] text-ink/40 mt-1">The other one 301-redirects here.</div>
+                <div className="text-[10px] text-ink-max mt-1">The other one 301-redirects here.</div>
               </section>
 
               {/* DNS records */}
@@ -283,17 +283,17 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                   <div className="border border-primary/15">
                     {records.map((r, i) => (
                       <div key={i} className="px-2 py-1.5 border-b border-primary/10 last:border-0">
-                        <div className="flex items-center gap-2 font-mono text-[10px] text-ink/80">
-                          <span className="text-ink/50 w-12 shrink-0">{r.type}</span>
+                        <div className="flex items-center gap-2 font-mono text-[10px] text-ink-max">
+                          <span className="text-ink-max w-12 shrink-0">{r.type}</span>
                           <span className="w-8 shrink-0">{r.name}</span>
                           <span className="flex-1 min-w-0 break-all">{r.value}</span>
                           <CopyBtn text={r.value} />
                         </div>
-                        {r.note && <div className="text-[9px] text-ink/35 mt-0.5 pl-14">{r.note}</div>}
+                        {r.note && <div className="text-[9px] text-ink-max mt-0.5 pl-14">{r.note}</div>}
                       </div>
                     ))}
                   </div>
-                  {state.tlsNote && <div className="text-[10px] text-ink/45 mt-1.5 leading-snug">{state.tlsNote}</div>}
+                  {state.tlsNote && <div className="text-[10px] text-ink-max mt-1.5 leading-snug">{state.tlsNote}</div>}
                 </section>
               )}
               {dirty && <div className="text-[10px] text-yellow-500/70">Save to refresh the DNS records for this host.</div>}
@@ -329,10 +329,10 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                       <StatusRow label={`Redirect to ${status.redirect.expected}`} ok={status.redirect.ok}>
                         {status.redirect.ok == null ? 'could not determine' : status.redirect.ok ? 'other hostname redirects correctly' : 'the other hostname does not redirect here'}
                       </StatusRow>
-                      <div className="text-[9px] text-ink/30">checked {new Date(status.checkedAt).toLocaleTimeString()}</div>
+                      <div className="text-[9px] text-ink-max">checked {new Date(status.checkedAt).toLocaleTimeString()}</div>
                     </div>
                   )}
-                  {!status && !checkErr && !checking && <div className="text-[10px] text-ink/40">Run a check once DNS has had time to propagate (5–30 min after adding records).</div>}
+                  {!status && !checkErr && !checking && <div className="text-[10px] text-ink-max">Run a check once DNS has had time to propagate (5–30 min after adding records).</div>}
                 </section>
               )}
 
@@ -341,11 +341,11 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                 <section className="border border-primary/15 bg-black/20 p-3">
                   <div className="text-[11px] text-primary/60 tracking-widest uppercase mb-2 flex items-center gap-1.5"><BarChart3 size={12} /> Analytics</div>
                   {aErr && <div className="text-red-400 text-[10px] border border-red-500/30 px-2 py-1 mb-2">{aErr}</div>}
-                  <div className="text-[10px] text-ink/45 leading-snug mb-2">
+                  <div className="text-[10px] text-ink-max leading-snug mb-2">
                     Cookieless, privacy-friendly options only — the builder embeds the script and your own account collects the data. No cookie banner needed.
                   </div>
                   <select value={aDraft.provider} onChange={(e) => setAProvider(e.target.value)}
-                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink focus:outline-none focus:border-primary/50">
+                    className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-[11px] text-ink-max focus:outline-none focus:border-primary/50">
                     {Object.entries(analytics.providers).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}
                   </select>
 
@@ -356,21 +356,21 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                           <span className="text-[10px] text-primary/45 uppercase">{(A_FIELD_META[f] || [f])[0]}</span>
                           <input value={aDraft[f] || ''} onChange={(e) => setA(f, e.target.value)}
                             placeholder={(A_FIELD_META[f] || [f, ''])[1]}
-                            className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink font-mono focus:outline-none focus:border-primary/50 mt-0.5" />
+                            className="w-full bg-black/30 border border-primary/20 px-2 py-1 text-[11px] text-ink-max font-mono focus:outline-none focus:border-primary/50 mt-0.5" />
                         </label>
                       ))}
                     </div>
                   )}
 
                   {aDraft.provider && analytics.providers[aDraft.provider]?.note && (
-                    <div className="text-[9px] text-ink/35 leading-relaxed mt-2">{analytics.providers[aDraft.provider].note}</div>
+                    <div className="text-[9px] text-ink-max leading-relaxed mt-2">{analytics.providers[aDraft.provider].note}</div>
                   )}
 
                   {analytics.snippet && JSON.stringify(aDraft) === JSON.stringify(analytics.analytics) && (
                     <div className="mt-2">
                       <div className="text-[9px] text-primary/40 uppercase mb-1">Embedded in &lt;head&gt;</div>
                       <div className="flex items-start gap-2 bg-black/40 border border-primary/15 px-2 py-1.5">
-                        <code className="text-[9px] text-ink/70 break-all flex-1 leading-relaxed">{analytics.snippet}</code>
+                        <code className="text-[9px] text-ink-max break-all flex-1 leading-relaxed">{analytics.snippet}</code>
                         <CopyBtn text={analytics.snippet} />
                       </div>
                     </div>
@@ -381,7 +381,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     {aBusy ? <Loader2 size={10} className="animate-spin" /> : aSaved ? <Check size={10} /> : <BarChart3 size={10} />}
                     {aSaved ? 'SAVED' : aDraft.provider ? 'SAVE ANALYTICS' : 'SAVE (NONE)'}
                   </button>
-                  <span className="text-[9px] text-ink/35 ml-2">→ <span className="font-mono">.morpheus/analytics.json</span></span>
+                  <span className="text-[9px] text-ink-max ml-2">→ <span className="font-mono">.morpheus/analytics.json</span></span>
                 </section>
               )}
 
@@ -395,7 +395,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                       <div className="text-[10px] text-green-400/90 mb-1.5">● ON — checks {history.monitoring.url || 'the site'} every {history.monitoring.intervalMinutes || 15} min from a GitHub Action in your repo. Opens an issue if it's down.</div>
                       <div className="flex items-center gap-2">
                         <select value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value))}
-                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-ink focus:outline-none">
+                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-ink-max focus:outline-none">
                           {[15, 30, 60].map((n) => <option key={n} value={n}>every {n} min</option>)}
                         </select>
                         <button onClick={() => setupMonitor(monitorInterval)} disabled={monitorBusy}
@@ -410,12 +410,12 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     </>
                   ) : (
                     <>
-                      <div className="text-[10px] text-ink/45 leading-snug mb-1.5">
+                      <div className="text-[10px] text-ink-max leading-snug mb-1.5">
                         Add a check that runs on GitHub's schedule and opens an issue in your repo if the site stops responding. Needs a domain set above. Nothing runs on Morpheus.
                       </div>
                       <div className="flex items-center gap-2">
                         <select value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value))}
-                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-ink focus:outline-none">
+                          className="bg-black/30 border border-primary/20 px-2 py-1 text-[10px] text-ink-max focus:outline-none">
                           {[15, 30, 60].map((n) => <option key={n} value={n}>every {n} min</option>)}
                         </select>
                         <button onClick={() => setupMonitor(monitorInterval)} disabled={monitorBusy || !savedDomain}
@@ -437,13 +437,13 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                     Rolled back to {rollbackDone.rolledBackToSha.slice(0, 7)} as commit {rollbackDone.commitSha.slice(0, 7)}. Your host is redeploying now.
                   </div>
                 )}
-                {!history && !historyErr && <div className="text-[10px] text-ink/40 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading commits…</div>}
+                {!history && !historyErr && <div className="text-[10px] text-ink-max flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading commits…</div>}
                 {history && !history.connected && (
-                  <div className="text-[10px] text-ink/45 leading-snug">Connect this project to a GitHub repo (Export to GitHub) to see deploy history and roll back.</div>
+                  <div className="text-[10px] text-ink-max leading-snug">Connect this project to a GitHub repo (Export to GitHub) to see deploy history and roll back.</div>
                 )}
                 {history?.connected && (
                   <>
-                    <div className="text-[10px] text-ink/40 mb-1.5">{history.repo} · {history.branch} — your host redeploys on every commit.</div>
+                    <div className="text-[10px] text-ink-max mb-1.5">{history.repo} · {history.branch} — your host redeploys on every commit.</div>
                     <div className="border border-primary/15 divide-y divide-primary/10">
                       {history.commits.map((c) => {
                         const isHead = c.sha === history.headSha;
@@ -451,8 +451,8 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                           <div key={c.sha} className="px-2 py-1.5">
                             <div className="flex items-start gap-2">
                               <div className="min-w-0 flex-1">
-                                <div className="text-[10px] text-ink/80 truncate">{c.message}</div>
-                                <div className="text-[9px] text-ink/35 font-mono">
+                                <div className="text-[10px] text-ink-max truncate">{c.message}</div>
+                                <div className="text-[9px] text-ink-max font-mono">
                                   {c.shortSha} · {c.author}{c.date ? ` · ${relTime(c.date)}` : ''}{isHead ? ' · LIVE' : ''}
                                 </div>
                               </div>
@@ -469,7 +469,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                         );
                       })}
                     </div>
-                    <div className="text-[9px] text-ink/30 mt-1.5">Rollback lands a new commit that restores every file to that point — nothing is force-pushed or lost.</div>
+                    <div className="text-[9px] text-ink-max mt-1.5">Rollback lands a new commit that restores every file to that point — nothing is force-pushed or lost.</div>
                   </>
                 )}
               </section>
@@ -480,7 +480,7 @@ export default function DomainPanel({ open, onClose, projectId, onSetChange }) {
                 {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Globe size={12} />}
                 {saved ? 'SAVED' : 'SAVE DOMAIN'}
               </button>
-              <span className="text-[10px] text-ink/40">Written to <span className="font-mono">.morpheus/site.json</span>.</span>
+              <span className="text-[10px] text-ink-max">Written to <span className="font-mono">.morpheus/site.json</span>.</span>
             </div>
           </>
         )}

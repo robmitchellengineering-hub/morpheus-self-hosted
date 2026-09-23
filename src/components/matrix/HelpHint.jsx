@@ -48,7 +48,7 @@ export default function HelpHint({ id, title, body, children }) {
               <HelpCircle size={16} className="text-yellow-400 shrink-0" />
               <h3 className="text-sm font-display tracking-wider text-yellow-400">{title}</h3>
             </div>
-            <p className="text-xs text-ink/70 leading-relaxed whitespace-pre-wrap">{body}</p>
+            <p className="text-xs text-ink-strong leading-relaxed whitespace-pre-wrap">{body}</p>
             <button onClick={handleClose} className="mt-4 w-full py-2 border border-yellow-400/60 text-yellow-400 hover:bg-yellow-400 hover:text-black transition-colors text-xs font-bold tracking-wider">
               GOT IT — LET ME TRY
             </button>

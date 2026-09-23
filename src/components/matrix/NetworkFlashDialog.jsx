@@ -93,14 +93,14 @@ export default function NetworkFlashDialog({ open, onClose, projectId, target })
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="p-4 space-y-3">
-          <p className="text-xs text-ink/60">
+          <p className="text-xs text-ink-strong">
             // Enter the SSH details of a device already on your network. Morpheus builds a command
             you run from <b className="text-primary">your own machine</b> (not the cloud — the
             sandbox can't open SSH) — the remote pulls the image from storage and writes it to the
             target device. No disk swapping.
           </p>
           {loading && (
-            <div className="flex items-center gap-2 text-ink/60 text-sm">
+            <div className="flex items-center gap-2 text-ink text-sm">
               <Loader2 size={14} className="animate-spin" /> Locating compiled image...
             </div>
           )}
@@ -108,27 +108,27 @@ export default function NetworkFlashDialog({ open, onClose, projectId, target })
           <div className="grid grid-cols-2 gap-2">
             <div className="col-span-2">
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Host / IP</label>
-              <input value={host} onChange={e => setHost(e.target.value)} placeholder="192.168.1.50" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink/20" />
+              <input value={host} onChange={e => setHost(e.target.value)} placeholder="192.168.1.50" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink" />
             </div>
             <div>
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">User</label>
-              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="pi" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink/20" />
+              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="pi" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink" />
             </div>
             <div>
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Port</label>
-              <input value={port} onChange={e => setPort(e.target.value)} placeholder="22" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink/20" />
+              <input value={port} onChange={e => setPort(e.target.value)} placeholder="22" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink" />
             </div>
             <div className="col-span-2">
               <label className="block text-[10px] text-primary/60 uppercase tracking-wider mb-1">Target device on remote</label>
-              <input value={targetDevice} onChange={e => setTargetDevice(e.target.value)} placeholder="/dev/sda" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink/20" />
-              <p className="text-[10px] text-ink/50 mt-1">// The block device to overwrite on the Pi. The SSH user needs passwordless sudo (or connect as root).</p>
+              <input value={targetDevice} onChange={e => setTargetDevice(e.target.value)} placeholder="/dev/sda" className="w-full bg-background text-ink border border-primary/30 px-2.5 py-2 text-sm outline-none placeholder:text-ink" />
+              <p className="text-[10px] text-ink-max mt-1">// The block device to overwrite on the Pi. The SSH user needs passwordless sudo (or connect as root).</p>
             </div>
           </div>
           {ready && (
             <>
               <div className="border border-primary/30 bg-primary/5 p-2.5">
-                <div className="text-[10px] text-ink/60 mb-1">// RUN THIS FROM YOUR OWN MACHINE (not the Pi, not the cloud):</div>
-                <pre className="text-[10px] text-ink overflow-x-auto scrollbar-matrix whitespace-pre-wrap break-all">{command}</pre>
+                <div className="text-[10px] text-ink-max mb-1">// RUN THIS FROM YOUR OWN MACHINE (not the Pi, not the cloud):</div>
+                <pre className="text-[10px] text-ink-max overflow-x-auto scrollbar-matrix whitespace-pre-wrap break-all">{command}</pre>
               </div>
               <div className="flex gap-2">
                 <button onClick={copy} className="flex-1 flex items-center justify-center gap-2 py-2 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-xs font-bold">

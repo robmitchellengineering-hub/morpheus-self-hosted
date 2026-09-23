@@ -309,7 +309,7 @@ export default function AIDocs() {
           <Cpu size={48} className="text-primary neon-glow" />
         </div>
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">AI FUNCTIONS &amp; SETTINGS</h1>
-        <p className="text-ink/60 text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
+        <p className="text-ink text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
 
         {/* On-screen summary */}
         <div className="w-full max-w-md text-left mb-8 space-y-3">
@@ -321,8 +321,8 @@ export default function AIDocs() {
                 return (
                   <div key={p.name} className="flex items-center gap-1.5 text-xs">
                     <Icon size={12} className="text-primary" />
-                    <span className="text-ink">{p.name}</span>
-                    <span className="text-ink/40">({p.role})</span>
+                    <span className="text-ink-strong">{p.name}</span>
+                    <span className="text-ink-strong">({p.role})</span>
                   </div>
                 );
               })}
@@ -332,24 +332,24 @@ export default function AIDocs() {
             <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// FUNCTIONS BY CATEGORY</p>
             {[...new Set(AI_FUNCTIONS.map(f => f.category))].map(cat => (
               <div key={cat} className="text-xs mb-1">
-                <span className="text-ink/70">{cat}:</span>{' '}
-                <span className="text-ink/50">{AI_FUNCTIONS.filter(f => f.category === cat).map(f => f.name).join(', ')}</span>
+                <span className="text-ink-strong">{cat}:</span>{' '}
+                <span className="text-ink-strong">{AI_FUNCTIONS.filter(f => f.category === cat).map(f => f.name).join(', ')}</span>
               </div>
             ))}
           </div>
           <div className="border border-primary/30 bg-black/60 p-3">
             <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// MODEL TIERS</p>
             <div className="text-xs space-y-1">
-              <div><span className="text-ink">fast</span> <span className="text-ink/50">— GPT 5 Mini, Gemini Flash (coder)</span></div>
-              <div><span className="text-ink">balanced</span> <span className="text-ink/50">— GPT 5.4/5.6, Sonnet (reviewer)</span></div>
-              <div><span className="text-ink">high</span> <span className="text-ink/50">— Opus, Gemini Pro (planner, diagnosis)</span></div>
+              <div><span className="text-ink-strong">fast</span> <span className="text-ink-strong">— GPT 5 Mini, Gemini Flash (coder)</span></div>
+              <div><span className="text-ink-strong">balanced</span> <span className="text-ink-strong">— GPT 5.4/5.6, Sonnet (reviewer)</span></div>
+              <div><span className="text-ink-strong">high</span> <span className="text-ink-strong">— Opus, Gemini Pro (planner, diagnosis)</span></div>
             </div>
           </div>
         </div>
 
         {generating && (
           <div className="w-full max-w-xs mb-6">
-            <div className="flex items-center justify-between text-xs text-ink/70 mb-2">
+            <div className="flex items-center justify-between text-xs text-ink-strong mb-2">
               <span className="truncate">{status || 'Generating...'}</span>
               <span className="shrink-0 ml-2">{progress}%</span>
             </div>
@@ -366,8 +366,8 @@ export default function AIDocs() {
           {generating ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
           {generating ? 'GENERATING...' : 'GENERATE AI DOCS PDF'}
         </button>
-        {!generating && status && <p className="text-ink/40 text-xs mt-4">{status}</p>}
-        {!generating && !status && <p className="text-ink/40 text-xs mt-4">// Click to generate the complete AI functions & settings reference as PDF</p>}
+        {!generating && status && <p className="text-ink-strong text-xs mt-4">{status}</p>}
+        {!generating && !status && <p className="text-ink-strong text-xs mt-4">// Click to generate the complete AI functions & settings reference as PDF</p>}
         {pdfUrl && !generating && (
           <a href={pdfUrl} download="morpheus-ai-functions.pdf" target="_blank" rel="noopener noreferrer"
             className="mt-4 flex items-center gap-2 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-black font-bold transition-colors">

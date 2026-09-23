@@ -107,8 +107,8 @@ export default function Landing() {
       <MatrixRain opacity={0.22} />
       <div className="relative z-10 text-center px-6 max-w-2xl">
         <h1 className="font-display text-5xl md:text-7xl text-heading tracking-[0.3em] neon-glow mb-8">MORPHEUS</h1>
-        <p className="font-mono text-ink/70 text-sm md:text-base min-h-[3rem]">{typed}<span className="animate-pulse">_</span></p>
-        {showButtons && <p className="mt-4 text-xs text-ink/65 font-mono max-w-md mx-auto">// Chat with Morpheus to build real, standalone, deployable software. You own the code. No lock-in. No illusions.</p>}
+        <p className="font-mono text-ink text-sm md:text-base min-h-[3rem]">{typed}<span className="animate-pulse">_</span></p>
+        {showButtons && <p className="mt-4 text-xs text-ink-strong font-mono max-w-md mx-auto">// Chat with Morpheus to build real, standalone, deployable software. You own the code. No lock-in. No illusions.</p>}
         {showButtons && (
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
             <button onClick={enter} className="px-8 py-3 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-display tracking-wider neon-glow enter-pulse">
@@ -141,7 +141,7 @@ export default function Landing() {
             </button>
           </div>
         )}
-        {bluePillLine && <p className="mt-4 text-ink/75 text-xs italic max-w-md mx-auto leading-relaxed">"{bluePillLine}"</p>}
+        {bluePillLine && <p className="mt-4 text-ink-strong text-xs italic max-w-md mx-auto leading-relaxed">"{bluePillLine}"</p>}
 
         {/* Core principle + live capability list. Reads from the shared
             morpheusCapabilities module, so new features appear here automatically
@@ -155,8 +155,8 @@ export default function Landing() {
           <ul className="space-y-1.5 max-h-44 overflow-y-auto scrollbar-matrix pr-1">
             {MORPHEUS_CAPABILITIES.map((c) => (
               <li key={c.title} className="text-xs leading-snug">
-                <span className="text-ink font-mono">{c.title}</span>
-                <span className="text-ink/55 font-mono"> — {c.body}</span>
+                <span className="text-ink-strong font-mono">{c.title}</span>
+                <span className="text-ink-strong font-mono"> — {c.body}</span>
               </li>
             ))}
           </ul>
@@ -171,7 +171,7 @@ export default function Landing() {
           <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2 flex items-center gap-1.5">
             <ShieldCheck size={12} /> // PORTABLE MORPHEUS
           </p>
-          <p className="text-xs text-ink/70 leading-relaxed">
+          <p className="text-xs text-ink-strong leading-relaxed">
             Your data, kept private. Only accessible by you. VPN in for full-stack software development in your pocket — all private, all owned by you.
           </p>
         </div>}

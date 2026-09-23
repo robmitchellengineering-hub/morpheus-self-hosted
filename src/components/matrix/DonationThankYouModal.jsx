@@ -61,7 +61,7 @@ export default function DonationThankYouModal() {
           THANK YOU
         </h2>
 
-        <p className="text-ink/70 text-sm leading-relaxed mb-4">
+        <p className="text-ink text-sm leading-relaxed mb-4">
           {amount != null ? (
             <>Your <span className="text-primary font-bold">${amount.toLocaleString()}</span> just went straight into keeping Morpheus alive.</>
           ) : (
@@ -69,7 +69,7 @@ export default function DonationThankYouModal() {
           )}
         </p>
 
-        <p className="text-ink/60 text-xs leading-relaxed mb-4">
+        <p className="text-ink-strong text-xs leading-relaxed mb-4">
           // It covers the AI compute behind the 200 free credits every new account starts with, keeps the servers and infrastructure running, and funds what gets built next. Because of contributions like yours, Morpheus stays free to enter for anyone who wants to build real, deployable software — no lock-in, no paywall at the door.
         </p>
 

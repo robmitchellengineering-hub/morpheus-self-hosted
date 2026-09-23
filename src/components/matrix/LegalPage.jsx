@@ -21,8 +21,8 @@ export default function LegalPage({ title, updated, children }) {
 
       <div className="max-w-3xl mx-auto px-4 py-8 flex-1 w-full">
         <h1 className="text-2xl font-display tracking-wide neon-glow mb-1 text-heading">{title}</h1>
-        {updated && <p className="text-xs text-ink/45 mb-6">Last updated: {updated}</p>}
-        <div className="text-ink/75 text-sm leading-relaxed space-y-4 [&_h2]:text-primary [&_h2]:font-display [&_h2]:tracking-wider [&_h2]:text-sm [&_h2]:mt-6 [&_h2]:mb-2 [&_a]:text-primary [&_a]:underline [&_strong]:text-primary">
+        {updated && <p className="text-xs text-ink-strong mb-6">Last updated: {updated}</p>}
+        <div className="text-ink text-sm leading-relaxed space-y-4 [&_h2]:text-primary [&_h2]:font-display [&_h2]:tracking-wider [&_h2]:text-sm [&_h2]:mt-6 [&_h2]:mb-2 [&_a]:text-primary [&_a]:underline [&_strong]:text-primary">
           {children}
         </div>
       </div>

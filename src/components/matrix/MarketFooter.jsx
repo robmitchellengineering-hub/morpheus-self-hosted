@@ -8,21 +8,21 @@ export default function MarketFooter() {
   return (
     <footer className="border-t border-primary/20 mt-10 pt-6 pb-8">
       <div className="max-w-6xl mx-auto px-4 space-y-4">
-        <div className="flex items-center gap-2 text-ink/60">
+        <div className="flex items-center gap-2 text-ink">
           <Store size={14} />
           <span className="font-display tracking-wider text-xs">MORPHEUS MARKET</span>
         </div>
-        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-ink/55">
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-ink-strong">
           <Link to="/terms" className="hover:text-primary">Terms of Service</Link>
           <Link to="/privacy" className="hover:text-primary">Privacy Policy</Link>
           <Link to="/refund-policy" className="hover:text-primary">Refund Policy</Link>
           <Link to="/market" className="hover:text-primary">Browse Market</Link>
           <Link to="/" className="hover:text-primary">Home</Link>
         </div>
-        <p className="text-[10px] text-ink/45 leading-relaxed max-w-2xl">
+        <p className="text-[10px] text-ink-max leading-relaxed max-w-2xl">
           // Sellers agree to the Morpheus Marketplace Seller Agreement when publishing. Payments are processed by Stripe. Morpheus acts as the marketplace platform and is not the seller of record for individual listings.
         </p>
-        <p className="text-[10px] text-ink/40">© {new Date().getFullYear()} Morpheus. All transactions secured by Stripe.</p>
+        <p className="text-[10px] text-ink-max">© {new Date().getFullYear()} Morpheus. All transactions secured by Stripe.</p>
       </div>
     </footer>
   );

@@ -31,8 +31,8 @@ function Card({ children, className = '' }) {
 function Flag({ label, ok }) {
   return (
     <div className="flex items-center justify-between text-xs py-1.5 border-b border-primary/10 last:border-0">
-      <span className="text-ink/70">{label}</span>
-      <span className={ok ? 'text-ink' : 'text-ink/40'}>{ok ? 'CONFIGURED' : 'NOT SET'}</span>
+      <span className="text-ink-strong">{label}</span>
+      <span className={ok ? 'text-ink-strong' : 'text-ink-strong'}>{ok ? 'CONFIGURED' : 'NOT SET'}</span>
     </div>
   );
 }
@@ -56,7 +56,7 @@ function OverviewTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
   if (error) return <div className="text-red-500 text-sm border border-red-500/30 px-3 py-2">{error}</div>;
   if (!data) return null;
 
@@ -79,12 +79,12 @@ function OverviewTab() {
 
       <Card>
         <div className="text-xs text-primary/60 mb-2 tracking-wider">USAGE BY MODEL — LAST 30 DAYS</div>
-        {data.usageByModel30d.length === 0 && <div className="text-ink/40 text-xs italic py-4 text-center">No usage recorded yet.</div>}
+        {data.usageByModel30d.length === 0 && <div className="text-ink-strong text-xs italic py-4 text-center">No usage recorded yet.</div>}
         {data.usageByModel30d.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-ink/50 text-left border-b border-primary/10">
+                <tr className="text-ink-strong text-left border-b border-primary/10">
                   <th className="py-1.5 pr-3">MODEL</th>
                   <th className="py-1.5 pr-3">PROVIDER</th>
                   <th className="py-1.5 pr-3 text-right">CALLS</th>
@@ -96,11 +96,11 @@ function OverviewTab() {
               <tbody>
                 {data.usageByModel30d.map((r) => (
                   <tr key={`${r.provider}:${r.modelId}`} className="border-b border-primary/5 last:border-0">
-                    <td className="py-1.5 pr-3 text-ink/80">{r.modelId}</td>
-                    <td className="py-1.5 pr-3 text-ink/60">{r.provider}</td>
-                    <td className="py-1.5 pr-3 text-right text-ink/70">{r.calls}</td>
-                    <td className="py-1.5 pr-3 text-right text-ink/70">{r.inputTokens.toLocaleString()}</td>
-                    <td className="py-1.5 pr-3 text-right text-ink/70">{r.outputTokens.toLocaleString()}</td>
+                    <td className="py-1.5 pr-3 text-ink-strong">{r.modelId}</td>
+                    <td className="py-1.5 pr-3 text-ink-strong">{r.provider}</td>
+                    <td className="py-1.5 pr-3 text-right text-ink-strong">{r.calls}</td>
+                    <td className="py-1.5 pr-3 text-right text-ink-strong">{r.inputTokens.toLocaleString()}</td>
+                    <td className="py-1.5 pr-3 text-right text-ink-strong">{r.outputTokens.toLocaleString()}</td>
                     <td className="py-1.5 text-right text-primary/70">${r.costUsd.toFixed(4)}</td>
                   </tr>
                 ))}
@@ -179,14 +179,14 @@ function FreeUsageGrantsCard() {
   return (
     <Card>
       <div className="flex items-center gap-2 text-primary/60 text-xs mb-2 tracking-wider"><Gift size={13} /> FREE USAGE GRANTS</div>
-      <p className="text-ink/40 text-[11px] mb-3">Billing-exempt, same as an admin account — but no Admin Panel, ops console, or any other admin capability.</p>
+      <p className="text-ink-max text-[11px] mb-3">Billing-exempt, same as an admin account — but no Admin Panel, ops console, or any other admin capability.</p>
       <div className="flex gap-2 mb-3">
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') grant(); }}
           placeholder="account@example.com"
-          className="flex-1 bg-background border border-primary/30 px-2 py-1.5 text-xs text-ink placeholder:text-ink/30"
+          className="flex-1 bg-background border border-primary/30 px-2 py-1.5 text-xs text-ink-strong placeholder:text-ink-strong"
         />
         <button onClick={grant} disabled={saving || !email.trim()} className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs transition-colors disabled:opacity-40">
           {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} GRANT
@@ -194,14 +194,14 @@ function FreeUsageGrantsCard() {
       </div>
       {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
       {loading ? (
-        <div className="text-ink/40 text-xs italic py-2 text-center">Loading...</div>
+        <div className="text-ink-strong text-xs italic py-2 text-center">Loading...</div>
       ) : users.length === 0 ? (
-        <div className="text-ink/40 text-xs italic py-2 text-center">No accounts currently granted free usage.</div>
+        <div className="text-ink-strong text-xs italic py-2 text-center">No accounts currently granted free usage.</div>
       ) : (
         <div className="divide-y divide-primary/10">
           {users.map((u) => (
             <div key={u.id} className="flex items-center justify-between py-1.5 text-xs">
-              <span className="text-ink/80 truncate">{u.email}{u.role === 'admin' && <span className="text-ink/40"> (already admin — this has no extra effect)</span>}</span>
+              <span className="text-ink-strong truncate">{u.email}{u.role === 'admin' && <span className="text-ink-strong"> (already admin — this has no extra effect)</span>}</span>
               <button onClick={() => revoke(u)} className="text-red-500/70 hover:text-red-500 shrink-0 ml-2" title="Revoke">
                 <Trash2 size={13} />
               </button>
@@ -245,7 +245,7 @@ function DeepSeekBalanceCard({ status }) {
           No fallback configured — AI calls are failing platform-wide right now. Top up at platform.deepseek.com/top_up, or set FALLBACK_LLM_API_KEY/FALLBACK_LLM_BASE_URL/FALLBACK_LLM_MODEL.
         </div>
       )}
-      <div className="text-ink/40 text-[11px] mt-2">
+      <div className="text-ink-max text-[11px] mt-2">
         {status.checkedAt ? `Last checked ${new Date(status.checkedAt).toLocaleString()}` : 'Not checked yet.'} · Warning threshold editable in CONFIG (key: deepseek_balance_min_usd).
       </div>
     </Card>
@@ -319,7 +319,7 @@ function ModelsTab() {
     }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
   if (error) return <div className="text-red-500 text-sm border border-red-500/30 px-3 py-2">{error}</div>;
   if (!settings || !catalog) return null;
 
@@ -350,7 +350,7 @@ function ModelsTab() {
     <div className="space-y-4">
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">DEEPSEEK — LIVE MODEL</div>
-        <p className="text-ink/50 text-xs mb-3">
+        <p className="text-ink-strong text-xs mb-3">
           Switches which DeepSeek model actually serves calls platform-wide, no deploy needed. Retail
           already bills every DeepSeek call at 2.0&times; Pro's peak rate regardless of which one
           serves it, so this only changes real cost and margin, not what users are charged — Flash is
@@ -373,15 +373,15 @@ function ModelsTab() {
           ))}
           {savingKey === 'default_model' && <Loader2 size={13} className="animate-spin text-primary/60" />}
         </div>
-        <div className="text-ink/40 text-[11px] mt-2">
-          Effective now: <span className="text-ink/70 font-mono">{effectiveDefault || 'auto'}</span>
+        <div className="text-ink-max text-[11px] mt-2">
+          Effective now: <span className="text-ink-max font-mono">{effectiveDefault || 'auto'}</span>
           {!settings.settings.default_model && ' (from env LLM_MODEL — no admin override set yet)'}
         </div>
       </Card>
 
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">PLATFORM DEFAULT MODEL ROUTING</div>
-        <p className="text-ink/50 text-xs mb-3">
+        <p className="text-ink-strong text-xs mb-3">
           Overrides "Automatic" model discovery per role, platform-wide. Leave blank for existing auto-discovery / env-var behavior. Never overrides an operator's LLM_*_MODEL env pin or a user's own Settings choice.
         </p>
         <div className="space-y-2">
@@ -395,7 +395,7 @@ function ModelsTab() {
                   defaultValue={settings.settings[key] || ''}
                   onBlur={(e) => { if (e.target.value !== (settings.settings[key] || '')) saveOverride(role, e.target.value.trim()); }}
                   placeholder={settings.envDefaults[envKey] || 'auto'}
-                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
+                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong focus:outline-none focus:border-primary/50"
                 />
                 {savingKey === key && <Loader2 size={13} className="animate-spin text-primary/60" />}
               </div>
@@ -406,7 +406,7 @@ function ModelsTab() {
 
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">PLATFORM DEFAULT TEMPERATURE</div>
-        <p className="text-ink/50 text-xs mb-3">
+        <p className="text-ink-strong text-xs mb-3">
           The "think temperature" for each pipeline role — 0 is deterministic, 2 is maximally random. Everything (planner, coder, reviewer, diagnosis, and chat) ran at a single hardcoded 0.7 before this; role-specific here wins over "default", which wins over the built-in 0.7. Leave blank to keep that default.
         </p>
         <div className="space-y-2">
@@ -425,7 +425,7 @@ function ModelsTab() {
                     saveTempOverride(role, v);
                   }}
                   placeholder="0.7"
-                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
+                  className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong focus:outline-none focus:border-primary/50"
                 />
                 {savingKey === key && <Loader2 size={13} className="animate-spin text-primary/60" />}
               </div>
@@ -436,11 +436,11 @@ function ModelsTab() {
 
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">MARGIN — MODEL PRICING &amp; MARKUP</div>
-        <p className="text-ink/50 text-xs mb-3">$/M tokens x markup multiplier = billed rate. Blank price falls back to the static table.</p>
+        <p className="text-ink-strong text-xs mb-3">$/M tokens x markup multiplier = billed rate. Blank price falls back to the static table.</p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-ink/50 text-left border-b border-primary/10">
+              <tr className="text-ink-strong text-left border-b border-primary/10">
                 <th className="py-1.5 pr-2">MODEL</th>
                 <th className="py-1.5 pr-2">IN $/M</th>
                 <th className="py-1.5 pr-2">OUT $/M</th>
@@ -457,21 +457,21 @@ function ModelsTab() {
                 const setField = (field, value) => setDraft((cur) => ({ ...cur, [modelId]: { ...cur[modelId], [field]: value } }));
                 return (
                   <tr key={modelId} className="border-b border-primary/5 last:border-0">
-                    <td className="py-1.5 pr-2 text-ink/80">{modelId}</td>
+                    <td className="py-1.5 pr-2 text-ink-strong">{modelId}</td>
                     <td className="py-1.5 pr-2">
                       <input type="number" step="0.01" value={get('input_price_per_m', '') ?? ''}
                         onChange={(e) => setField('input_price_per_m', e.target.value)}
-                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink focus:outline-none focus:border-primary/50" />
+                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink-strong focus:outline-none focus:border-primary/50" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="number" step="0.01" value={get('output_price_per_m', '') ?? ''}
                         onChange={(e) => setField('output_price_per_m', e.target.value)}
-                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink focus:outline-none focus:border-primary/50" />
+                        className="w-20 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink-strong focus:outline-none focus:border-primary/50" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="number" step="0.1" value={get('markup_multiplier', 2.0) ?? 2.0}
                         onChange={(e) => setField('markup_multiplier', e.target.value)}
-                        className="w-16 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink focus:outline-none focus:border-primary/50" />
+                        className="w-16 bg-black/30 border border-primary/20 px-1.5 py-1 text-ink-strong focus:outline-none focus:border-primary/50" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="checkbox" checked={get('active', true) === true || get('active', true) === undefined}
@@ -548,7 +548,7 @@ function SettingsTab() {
     }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
 
   const entries = Object.entries(settings?.settings || {});
 
@@ -556,12 +556,12 @@ function SettingsTab() {
     <div className="space-y-4">
       <Card>
         <div className="text-xs text-primary/60 mb-1 tracking-wider">GENERAL CONFIG / FEATURE FLAGS</div>
-        <p className="text-ink/50 text-xs mb-3">
+        <p className="text-ink-strong text-xs mb-3">
           Free-form admin-editable key/value store. Model-routing keys (default_model, default_planner_model, etc.) are also editable here, but the Models &amp; Routing tab is the friendlier way to set those.
         </p>
         {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
 
-        {entries.length === 0 && <div className="text-ink/40 text-xs italic py-2">No overrides set — everything is on its default.</div>}
+        {entries.length === 0 && <div className="text-ink-strong text-xs italic py-2">No overrides set — everything is on its default.</div>}
         {entries.length > 0 && (
           <div className="space-y-1.5 mb-4">
             {entries.map(([key, value]) => (
@@ -578,9 +578,9 @@ function SettingsTab() {
 
         <div className="flex items-center gap-2 pt-3 border-t border-primary/10">
           <input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="key"
-            className="w-48 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50" />
+            className="w-48 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong focus:outline-none focus:border-primary/50" />
           <input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="value"
-            className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50" />
+            className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong focus:outline-none focus:border-primary/50" />
           <button onClick={addSetting} disabled={saving || !newKey.trim()}
             className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30">
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} SET
@@ -644,7 +644,7 @@ function TasksTab() {
     }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
 
   const open = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
@@ -660,7 +660,7 @@ function TasksTab() {
           onChange={(e) => setNewTitle(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
           placeholder="Add a task..."
-          className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
+          className="flex-1 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong focus:outline-none focus:border-primary/50"
         />
         <button onClick={addTask} disabled={saving || !newTitle.trim()}
           className="flex items-center gap-1 px-3 py-1.5 border border-primary/50 text-primary/80 hover:border-primary hover:text-primary text-xs disabled:opacity-30">
@@ -668,14 +668,14 @@ function TasksTab() {
         </button>
       </div>
 
-      {tasks.length === 0 && <div className="text-ink/40 text-xs italic py-4 text-center">Nothing on the list.</div>}
+      {tasks.length === 0 && <div className="text-ink-strong text-xs italic py-4 text-center">Nothing on the list.</div>}
 
       {open.length > 0 && (
         <div className="space-y-1 mb-3">
           {open.map((t) => (
             <div key={t.id} className="flex items-center gap-2 text-xs group">
               <button onClick={() => toggleDone(t)} className="w-4 h-4 border border-primary/40 flex items-center justify-center shrink-0 hover:border-primary" />
-              <span className="flex-1 text-ink/80">{t.title}</span>
+              <span className="flex-1 text-ink-strong">{t.title}</span>
               <button onClick={() => removeTask(t)} className="text-primary/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Trash2 size={13} />
               </button>
@@ -691,7 +691,7 @@ function TasksTab() {
               <button onClick={() => toggleDone(t)} className="w-4 h-4 border border-primary/40 bg-primary/30 flex items-center justify-center shrink-0">
                 <Check size={11} className="text-primary" />
               </button>
-              <span className="flex-1 text-ink/40 line-through">{t.title}</span>
+              <span className="flex-1 text-ink-strong line-through">{t.title}</span>
               <button onClick={() => removeTask(t)} className="text-primary/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Trash2 size={13} />
               </button>
@@ -866,12 +866,12 @@ function SelfDevManualCard() {
       <div className="flex items-center gap-2 text-xs text-primary/60 mb-1 tracking-wider">
         <FileText size={13} /> SELF-DEV &amp; ADMIN MANUAL
       </div>
-      <p className="text-ink/50 text-xs mb-3 leading-relaxed">
+      <p className="text-ink-strong text-xs mb-3 leading-relaxed">
         How to actually run Morpheus through Self-Dev and this Admin panel — written by AI directly from the current source of both, so it reflects what the code does right now. Re-generates automatically whenever a self-dev push changes one of the files it's built from; REGENERATE forces a fresh copy any time.
       </p>
 
       {loading && (
-        <div className="flex items-center gap-2 text-ink/60 text-xs py-4 justify-center">
+        <div className="flex items-center gap-2 text-ink-strong text-xs py-4 justify-center">
           <Loader2 size={14} className="animate-spin" /> Loading...
         </div>
       )}
@@ -879,16 +879,16 @@ function SelfDevManualCard() {
       {error && <div className="text-red-500 text-xs border border-red-500/30 px-2 py-1.5 mb-3">{error}</div>}
 
       {!loading && doc && (
-        <div className="flex items-center gap-2 text-xs text-ink/60 mb-3 flex-wrap">
+        <div className="flex items-center gap-2 text-xs text-ink-strong mb-3 flex-wrap">
           <CheckCircle2 size={14} className="text-primary" />
-          <span className="text-ink">{new Date(doc.version).toLocaleString()}</span>
+          <span className="text-ink-strong">{new Date(doc.version).toLocaleString()}</span>
           <span className="text-primary/30">|</span>
           {sizeKb} KB
           {triggerLabel && (<><span className="text-primary/30">|</span><span>{triggerLabel}</span></>)}
         </div>
       )}
 
-      {!loading && !doc && <div className="text-ink/40 text-xs italic mb-3">No manual generated yet. Press GENERATE to create one.</div>}
+      {!loading && !doc && <div className="text-ink-strong text-xs italic mb-3">No manual generated yet. Press GENERATE to create one.</div>}
 
       <div className="flex items-center gap-2 flex-wrap">
         <button
@@ -971,8 +971,8 @@ function NorthflankCard() {
       {statusError && <div className="text-red-500 text-xs mb-3">{statusError}</div>}
       {status?.configured && status.error && <div className="text-red-500 text-xs mb-3">{status.error}</div>}
       {status?.configured && status.service && (
-        <div className="text-xs text-ink/70 mb-3">
-          Build status: <span className="text-ink">{buildStatus || 'unknown'}</span>
+        <div className="text-xs text-ink-strong mb-3">
+          Build status: <span className="text-ink-strong">{buildStatus || 'unknown'}</span>
           {status.service?.name && <> — {status.service.name}</>}
         </div>
       )}
@@ -982,7 +982,7 @@ function NorthflankCard() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="search text (e.g. error)"
-          className="flex-1 min-w-[10rem] bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
+          className="flex-1 min-w-[10rem] bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong focus:outline-none focus:border-primary/50"
         />
         <input
           type="number"
@@ -990,9 +990,9 @@ function NorthflankCard() {
           onChange={(e) => setMinutes(e.target.value)}
           min={1}
           max={1440}
-          className="w-20 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-primary/50"
+          className="w-20 bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong focus:outline-none focus:border-primary/50"
         />
-        <span className="text-ink/40 text-xs">min</span>
+        <span className="text-ink-strong text-xs">min</span>
         <button
           onClick={loadLogs}
           disabled={loading}
@@ -1003,11 +1003,11 @@ function NorthflankCard() {
       </div>
       {logsError && <div className="text-red-500 text-xs mb-2">{logsError}</div>}
       {logs && (
-        <div className="max-h-80 overflow-y-auto scrollbar-matrix bg-black/40 border border-primary/10 p-2 font-mono text-[11px] text-ink/70 space-y-0.5">
-          {logs.length === 0 && <div className="text-ink/40 italic">No matching log lines.</div>}
+        <div className="max-h-80 overflow-y-auto scrollbar-matrix bg-black/40 border border-primary/10 p-2 font-mono text-[11px] text-ink-max space-y-0.5">
+          {logs.length === 0 && <div className="text-ink-max italic">No matching log lines.</div>}
           {logs.map((l, i) => (
             <div key={i} className="whitespace-pre-wrap break-all">
-              <span className="text-ink/40">{l.ts ? new Date(l.ts).toLocaleTimeString() : ''}</span> {l.log}
+              <span className="text-ink-max">{l.ts ? new Date(l.ts).toLocaleTimeString() : ''}</span> {l.log}
             </div>
           ))}
         </div>
@@ -1046,7 +1046,7 @@ function DbConsoleCard() {
   return (
     <Card>
       <div className="text-xs text-primary/60 mb-1 tracking-wider">DATABASE CONSOLE</div>
-      <p className="text-ink/50 text-xs mb-3 leading-relaxed">
+      <p className="text-ink-strong text-xs mb-3 leading-relaxed">
         Direct SQL against this deployment's own database. SELECT/WITH run immediately; INSERT/UPDATE/DELETE ask
         for confirmation first and are logged to the audit trail either way. Schema changes (DROP/ALTER/CREATE/
         TRUNCATE/...) aren't allowed here — that needs a real migration.
@@ -1056,7 +1056,7 @@ function DbConsoleCard() {
         onChange={(e) => setSql(e.target.value)}
         rows={4}
         spellCheck={false}
-        className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink font-mono focus:outline-none focus:border-primary/50 mb-2"
+        className="w-full bg-black/30 border border-primary/20 px-2 py-1.5 text-xs text-ink-strong font-mono focus:outline-none focus:border-primary/50 mb-2"
       />
       <div className="flex items-center gap-2 mb-3">
         <button
@@ -1076,7 +1076,7 @@ function DbConsoleCard() {
         <div className="overflow-x-auto max-h-80 overflow-y-auto scrollbar-matrix border border-primary/10">
           <table className="w-full text-[11px]">
             <thead>
-              <tr className="text-ink/50 text-left border-b border-primary/10 sticky top-0 bg-background">
+              <tr className="text-ink-max text-left border-b border-primary/10 sticky top-0 bg-background">
                 {result.rows[0]
                   ? Object.keys(result.rows[0]).map((c) => <th key={c} className="py-1 px-2">{c}</th>)
                   : <th className="py-1 px-2">(no columns)</th>}
@@ -1086,21 +1086,21 @@ function DbConsoleCard() {
               {result.rows.map((row, i) => (
                 <tr key={i} className="border-b border-primary/5 last:border-0">
                   {Object.values(row).map((v, j) => (
-                    <td key={j} className="py-1 px-2 text-ink/70 whitespace-pre-wrap break-all">
-                      {v === null ? <span className="text-ink/30 italic">null</span> : String(v)}
+                    <td key={j} className="py-1 px-2 text-ink-max whitespace-pre-wrap break-all">
+                      {v === null ? <span className="text-ink-max italic">null</span> : String(v)}
                     </td>
                   ))}
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="text-ink/40 text-[11px] px-2 py-1">
+          <div className="text-ink-max text-[11px] px-2 py-1">
             {result.rowCount} row(s){result.truncated ? ' (truncated to 500)' : ''}
           </div>
         </div>
       )}
       {result?.rowsAffected !== undefined && (
-        <div className="text-ink text-xs">{result.rowsAffected} row(s) affected.</div>
+        <div className="text-ink-strong text-xs">{result.rowsAffected} row(s) affected.</div>
       )}
 
       {confirmOpen && (
@@ -1110,8 +1110,8 @@ function DbConsoleCard() {
               <AlertTriangle size={18} />
               <span className="font-display tracking-wider">CONFIRM WRITE</span>
             </div>
-            <pre className="text-ink/80 text-xs bg-black/40 border border-primary/10 p-2 mb-4 overflow-x-auto whitespace-pre-wrap break-all">{sql}</pre>
-            <p className="text-ink/60 text-xs mb-4">This runs directly against production data and is logged to the audit trail. Are you sure?</p>
+            <pre className="text-ink-strong text-xs bg-black/40 border border-primary/10 p-2 mb-4 overflow-x-auto whitespace-pre-wrap break-all">{sql}</pre>
+            <p className="text-ink-strong text-xs mb-4">This runs directly against production data and is logged to the audit trail. Are you sure?</p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirmOpen(false)} className="px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary text-xs">
                 CANCEL
@@ -1152,7 +1152,7 @@ function StripeHealthCard() {
   if (loading) {
     return (
       <Card>
-        <div className="flex items-center gap-2 text-ink/60 text-xs py-4 justify-center">
+        <div className="flex items-center gap-2 text-ink-strong text-xs py-4 justify-center">
           <Loader2 size={14} className="animate-spin" /> Loading...
         </div>
       </Card>
@@ -1166,22 +1166,22 @@ function StripeHealthCard() {
         <button onClick={load} className="text-primary/50 hover:text-primary"><RefreshCw size={13} /></button>
       </div>
       {error && <div className="text-red-500 text-xs">{error}</div>}
-      {data?.configured === false && <div className="text-ink/40 text-xs italic">Stripe not configured.</div>}
+      {data?.configured === false && <div className="text-ink-strong text-xs italic">Stripe not configured.</div>}
       {data?.configured && data.error && <div className="text-red-500 text-xs">{data.error}</div>}
       {data?.configured && data.balance && (
-        <div className="text-xs text-ink/70 mb-2">
+        <div className="text-xs text-ink-strong mb-2">
           Available: {(data.balance.available || []).map((b) => `${(b.amount / 100).toFixed(2)} ${b.currency.toUpperCase()}`).join(', ') || '—'}
         </div>
       )}
       {data?.configured && !data.error && (
-        <div className={`text-xs mb-2 ${data.failedCount > 0 ? 'text-red-400' : 'text-ink/70'}`}>
+        <div className={`text-xs mb-2 ${data.failedCount > 0 ? 'text-red-400' : 'text-ink-strong'}`}>
           {data.failedCount} failed/disputed event(s) in the last 25.
         </div>
       )}
       {data?.recentEvents?.length > 0 && (
         <div className="max-h-40 overflow-y-auto scrollbar-matrix space-y-1">
           {data.recentEvents.slice(0, 10).map((e) => (
-            <div key={e.id} className={`text-[11px] flex justify-between gap-2 ${e.failed ? 'text-red-400' : 'text-ink/50'}`}>
+            <div key={e.id} className={`text-[11px] flex justify-between gap-2 ${e.failed ? 'text-red-400' : 'text-ink-max'}`}>
               <span className="truncate">{e.type}</span>
               <span className="shrink-0">{new Date(e.created * 1000).toLocaleString()}</span>
             </div>
@@ -1212,7 +1212,7 @@ function AuditLogTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
+  if (loading) return <div className="flex items-center gap-2 text-ink text-sm py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Loading...</div>;
   if (error) return <div className="text-red-500 text-sm border border-red-500/30 px-3 py-2">{error}</div>;
 
   return (
@@ -1221,16 +1221,16 @@ function AuditLogTab() {
         <div className="text-xs text-primary/60 tracking-wider">AUDIT LOG — LAST 100</div>
         <button onClick={load} className="text-primary/50 hover:text-primary"><RefreshCw size={13} /></button>
       </div>
-      {entries.length === 0 && <div className="text-ink/40 text-xs italic py-4 text-center">No admin actions logged yet.</div>}
+      {entries.length === 0 && <div className="text-ink-strong text-xs italic py-4 text-center">No admin actions logged yet.</div>}
       <div className="space-y-2 max-h-[32rem] overflow-y-auto scrollbar-matrix">
         {entries.map((e) => (
           <div key={e.id} className="text-xs border-b border-primary/10 pb-2 last:border-0">
-            <div className="flex items-center gap-2 text-ink/70">
+            <div className="flex items-center gap-2 text-ink-strong">
               <span className="font-bold text-primary/85">{e.action}</span>
-              <span className="text-ink/40">{new Date(e.created_date).toLocaleString()}</span>
-              <span className="text-ink/40">— {e.admin?.email || 'unknown'}</span>
+              <span className="text-ink-strong">{new Date(e.created_date).toLocaleString()}</span>
+              <span className="text-ink-strong">— {e.admin?.email || 'unknown'}</span>
             </div>
-            {e.details && <div className="text-ink/50 mt-1 break-all font-mono text-[11px]">{e.details}</div>}
+            {e.details && <div className="text-ink-max mt-1 break-all font-mono text-[11px]">{e.details}</div>}
           </div>
         ))}
       </div>
@@ -1258,7 +1258,7 @@ export default function AdminPanel() {
           <ShieldCheck size={24} className="text-primary neon-glow" />
           <h1 className="text-2xl md:text-3xl font-display tracking-widest neon-glow text-heading">ADMIN CONTROL PANEL</h1>
         </div>
-        <p className="text-ink/60 text-sm mb-8">
+        <p className="text-ink text-sm mb-8">
           // Model/routing control, margin visibility, monitoring, general config, and the maintenance punch-list — all in one place. Every write below is logged to the audit trail.
         </p>
 

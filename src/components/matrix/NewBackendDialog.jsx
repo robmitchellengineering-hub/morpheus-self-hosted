@@ -99,7 +99,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="my-api"
-              className="w-full bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20"
+              className="w-full bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink"
               autoFocus
             />
           </div>
@@ -110,14 +110,14 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
               onChange={e => setDescription(e.target.value)}
               placeholder="What does this backend do?"
               rows={3}
-              className="w-full bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20 resize-y"
+              className="w-full bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink resize-y"
             />
           </div>
 
           {/* File upload section */}
           <div>
             <label className="text-xs text-primary/50 uppercase mb-1 block">Source Files (optional)</label>
-            <p className="text-xs text-ink/65 mb-2">Upload your existing app or files — Morpheus will analyze them to plan the backend.</p>
+            <p className="text-xs text-ink-strong mb-2">Upload your existing app or files — Morpheus will analyze them to plan the backend.</p>
             <div className="flex items-center gap-1.5 mb-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -147,14 +147,14 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
                   value={pasteName}
                   onChange={e => setPasteName(e.target.value)}
                   placeholder="filename.js"
-                  className="w-full bg-background text-ink border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink/20"
+                  className="w-full bg-background text-ink-strong border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink-strong"
                 />
                 <textarea
                   value={pasteContent}
                   onChange={e => setPasteContent(e.target.value)}
                   placeholder="// paste code here..."
                   rows={4}
-                  className="w-full bg-background text-ink border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink/20 font-mono resize-y"
+                  className="w-full bg-background text-ink-strong border border-primary/30 px-2 py-1.5 text-xs outline-none placeholder:text-ink-strong font-mono resize-y"
                 />
                 <div className="flex items-center gap-2">
                   <button
@@ -173,7 +173,7 @@ export default function NewBackendDialog({ open, onClose, onCreate }) {
                 {files.map((f, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-xs border border-primary/10 px-2 py-1.5">
                     <FileCode size={12} className="text-primary/60 shrink-0" />
-                    <span className="text-ink/80 truncate flex-1">{f.path}</span>
+                    <span className="text-ink-strong truncate flex-1">{f.path}</span>
                     <button onClick={() => removeFile(idx)} className="text-primary/65 hover:text-red-500 shrink-0">
                       <Trash2 size={12} />
                     </button>

@@ -69,7 +69,7 @@ export default function ChatHistoryTab({ project }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="search all chat history…"
-            className="w-full bg-background text-ink border border-primary/30 pl-8 pr-8 py-2 text-sm outline-none placeholder:text-ink/30"
+            className="w-full bg-background text-ink border border-primary/30 pl-8 pr-8 py-2 text-sm outline-none placeholder:text-ink"
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
@@ -81,7 +81,7 @@ export default function ChatHistoryTab({ project }) {
             </button>
           )}
         </div>
-        <span className="text-xs text-ink/50 shrink-0 tabular-nums">
+        <span className="text-xs text-ink-strong shrink-0 tabular-nums">
           {q ? `${filtered.length}/${all.length}` : `${all.length} msgs`}
         </span>
       </div>
@@ -92,7 +92,7 @@ export default function ChatHistoryTab({ project }) {
             <Loader2 size={20} className="animate-spin text-primary/60" />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-ink/75 italic text-sm p-4">
+          <p className="text-ink italic text-sm p-4">
             {q ? `No messages match "${query}".` : 'No chat history yet. Start building to populate the record.'}
           </p>
         ) : (
@@ -111,14 +111,14 @@ export default function ChatHistoryTab({ project }) {
                           <span className={`text-xs font-bold tracking-wider ${isUser ? 'text-[#39ff14]/80' : 'text-primary'}`}>
                             {isUser ? 'OPERATOR' : 'MORPHEUS'}
                           </span>
-                          <span className="text-ink/50 text-xs">{new Date(m.created_date).toLocaleString()}</span>
+                          <span className="text-ink-strong text-xs">{new Date(m.created_date).toLocaleString()}</span>
                         </div>
                         <button onClick={() => copy(m)} className="text-primary/65 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Copy message">
                           {copiedId === m.id ? <Check size={12} className="text-primary" /> : <Copy size={12} />}
                         </button>
                       </div>
                       <p
-                        className={`text-ink/80 text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && q ? 'max-h-20 overflow-hidden' : ''}`}
+                        className={`text-ink-strong text-xs mt-1 font-mono whitespace-pre-wrap break-words ${!isExpanded && q ? 'max-h-20 overflow-hidden' : ''}`}
                         onClick={() => q && setExpandedId(isExpanded ? null : m.id)}
                       >
                         <MatchText content={m.content} query={q} />

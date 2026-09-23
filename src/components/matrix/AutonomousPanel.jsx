@@ -203,7 +203,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
             <span className="text-primary font-display tracking-wider text-sm">AUTONOMOUS MODE</span>
             {complete && <span className="text-xs text-primary border border-primary/40 px-2 py-0.5 neon-glow">COMPLETE</span>}
             {running && (
-              <div className="flex items-center gap-2 text-ink font-mono text-xs ml-2">
+              <div className="flex items-center gap-2 text-ink-strong font-mono text-xs ml-2">
                 <span className="flex items-center gap-1"><Timer size={12} /> {timerStr}</span>
                 {etaStr && <span className="text-primary/50">ETA {etaStr}</span>}
               </div>
@@ -217,7 +217,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
         <div className="flex-1 overflow-y-auto scrollbar-matrix p-4 space-y-3">
           {steps.length === 0 ? (
             <div>
-              <p className="text-ink/60 text-sm mb-3">// Jack out. Let Morpheus build autonomously. Provide a spec or let him assess and complete the current construct.</p>
+              <p className="text-ink text-sm mb-3">// Jack out. Let Morpheus build autonomously. Provide a spec or let him assess and complete the current construct.</p>
               <textarea
                 value={spec}
                 onChange={e => setSpec(e.target.value)}
@@ -232,12 +232,12 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs text-primary/50">STEP {s.step}</span>
                   {s.status === 'running' && <span className="text-xs text-primary animate-pulse">BUILDING...</span>}
-                  {s.status === 'done' && <span className="text-xs text-ink/70">{s.fileOps} files modified</span>}
+                  {s.status === 'done' && <span className="text-xs text-ink-strong">{s.fileOps} files modified</span>}
                   {s.outputMetrics?.coder?.totalTokens > 0 && (
-                    <span className="text-xs text-ink/75">~{s.outputMetrics.coder.totalTokens} tok out</span>
+                    <span className="text-xs text-ink-strong">~{s.outputMetrics.coder.totalTokens} tok out</span>
                   )}
                   {s.outputMetrics?.coder?.usage?.completion_tokens && (
-                    <span className="text-xs text-ink/75">{s.outputMetrics.coder.usage.completion_tokens} tok actual</span>
+                    <span className="text-xs text-ink-strong">{s.outputMetrics.coder.usage.completion_tokens} tok actual</span>
                   )}
                   {s.status === 'done' && s.reviewApproved && <span className="text-xs text-primary flex items-center gap-0.5"><CheckCircle size={10} /> REVIEW PASSED</span>}
                   {s.status === 'done' && s.reviewApproved === false && <span className="text-xs text-yellow-500 flex items-center gap-0.5"><AlertTriangle size={10} /> REVIEW FAILED — AUTO-FIXING</span>}
@@ -248,7 +248,7 @@ export default function AutonomousPanel({ open, onClose, project, onStep, onSend
                   {s.autoFixing && <span className="text-xs text-yellow-500 animate-pulse flex items-center gap-0.5"><Wrench size={10} /> AUTO-DIAGNOSING...</span>}
                   {s.isComplete && s.reviewApproved && <span className="text-xs text-primary neon-glow">CONSTRUCT COMPLETE</span>}
                 </div>
-                <p className="text-ink/70 text-sm whitespace-pre-wrap">{s.reply}</p>
+                <p className="text-ink text-sm whitespace-pre-wrap">{s.reply}</p>
                 {s.reviewIssues?.length > 0 && s.reviewApproved === false && (
                   <div className="mt-2 border border-yellow-500/30 bg-yellow-500/5 p-2 space-y-1">
                     {s.reviewIssues.filter(iss => iss.severity === 'critical').map((iss, j) => (

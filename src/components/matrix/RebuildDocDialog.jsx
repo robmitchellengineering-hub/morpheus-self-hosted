@@ -172,12 +172,12 @@ export default function RebuildDocDialog({ open, onClose }) {
           <button onClick={onClose} className="text-primary/60 hover:text-primary"><X size={18} /></button>
         </div>
         <div className="p-4 space-y-4 overflow-y-auto scrollbar-matrix">
-          <p className="text-xs text-ink/50">
+          <p className="text-xs text-ink-strong">
             // A living blueprint of Morpheus's full architecture. Drop this + the published APK into any AI agent to reconstruct the backend as a standalone self-hosted application.
           </p>
 
           {loading && (
-            <div className="flex items-center gap-2 text-ink/60 text-sm py-8 justify-center">
+            <div className="flex items-center gap-2 text-ink text-sm py-8 justify-center">
               <Loader2 size={16} className="animate-spin" /> Loading blueprint...
             </div>
           )}
@@ -188,20 +188,20 @@ export default function RebuildDocDialog({ open, onClose }) {
 
           {!loading && doc && (
             <>
-              <div className="flex items-center gap-2 text-xs text-ink/60">
+              <div className="flex items-center gap-2 text-xs text-ink-strong">
                 <CheckCircle size={14} className="text-primary" />
-                Version: <span className="text-ink">{new Date(doc.version).toLocaleString()}</span>
+                Version: <span className="text-ink-strong">{new Date(doc.version).toLocaleString()}</span>
                 <span className="text-primary/65">|</span>
                 {sizeKb} KB
               </div>
-              <div className="border border-primary/20 bg-primary/5 p-3 max-h-64 overflow-y-auto scrollbar-matrix text-xs text-ink/70 font-mono whitespace-pre-wrap">
+              <div className="border border-primary/20 bg-primary/5 p-3 max-h-64 overflow-y-auto scrollbar-matrix text-xs text-ink-strong font-mono whitespace-pre-wrap">
                 {doc.content.substring(0, 2000)}{doc.content.length > 2000 ? '\n\n... (truncated — download for full document)' : ''}
               </div>
             </>
           )}
 
           {!loading && !doc && !error && (
-            <p className="text-ink/75 text-sm italic text-center py-8">No blueprint generated yet. Press GENERATE to create one.</p>
+            <p className="text-ink text-sm italic text-center py-8">No blueprint generated yet. Press GENERATE to create one.</p>
           )}
         </div>
         <div className="flex items-center gap-2 border-t border-primary/20 px-4 py-3 shrink-0">

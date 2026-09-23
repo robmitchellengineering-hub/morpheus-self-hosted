@@ -91,7 +91,7 @@ function TimecardHeatmap({ data }) {
     <div className="inline-flex flex-col gap-[3px] min-w-[600px]">
       {[1, 2, 3, 4, 5, 6, 7].map((day) => (
         <div key={day} className="flex items-center gap-1.5">
-          <span className="w-7 text-[9px] text-ink/40 shrink-0">{DAY_LABELS[day - 1]}</span>
+          <span className="w-7 text-[9px] text-ink-max shrink-0">{DAY_LABELS[day - 1]}</span>
           <div className="flex gap-[2px]">
             {Array.from({ length: 24 }, (_, hour) => {
               const v = grid.get(`${day}-${hour}`) || 0;
@@ -295,7 +295,7 @@ export default function AliceStats() {
             {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} REFRESH
           </button>
         </div>
-        <p className="text-ink/60 text-sm mb-8">
+        <p className="text-ink text-sm mb-8">
           // Everything below is pulled live from public Wikimedia APIs, fresh on every load — nothing is stored. The photo widget above stores only your chosen Drive folder id, on this account. Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
         </p>
 
@@ -315,7 +315,7 @@ export default function AliceStats() {
             <strong className="text-primary">Aliceinthealice</strong> across Wikipedia, Wikidata, and Commons, where she
             holds "event organizer" rights recognising exactly that community-building work.
           </p>
-          <p className="text-ink/50 text-[11px]">
+          <p className="text-ink-max text-[11px]">
             Sources:{' '}
             <a href="https://wikimedia.org.au/wiki/User:Alice_Woods" target="_blank" rel="noreferrer" className="underline hover:text-primary/80">her Wikimedia Australia user page</a>
             {', '}
@@ -330,7 +330,7 @@ export default function AliceStats() {
         )}
 
         {loading && !perWiki ? (
-          <div className="flex items-center gap-2 text-ink/60 text-sm py-12 justify-center">
+          <div className="flex items-center gap-2 text-ink text-sm py-12 justify-center">
             <Loader2 size={16} className="animate-spin" /> Loading live Wikimedia data...
           </div>
         ) : (
@@ -373,7 +373,7 @@ export default function AliceStats() {
                   ) : (
                     <p className="text-xl text-ink">{value}</p>
                   )}
-                  {caption && <p className="text-ink/40 text-[9px] mt-1 leading-tight">{caption}</p>}
+                  {caption && <p className="text-ink-max text-[9px] mt-1 leading-tight">{caption}</p>}
                 </div>
               ))}
             </div>
@@ -416,7 +416,7 @@ export default function AliceStats() {
             <div className="overflow-x-auto border border-primary/20 mb-8">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-primary/20 text-ink/50 text-left">
+                  <tr className="border-b border-primary/20 text-ink-strong text-left">
                     <th className="px-3 py-2 font-normal">Wiki</th>
                     <th className="px-3 py-2 font-normal text-right">Live edits</th>
                     <th className="px-3 py-2 font-normal text-right">Deleted</th>
@@ -429,14 +429,14 @@ export default function AliceStats() {
                     return (
                       <tr key={w.id} className="border-b border-primary/10 last:border-0 align-top">
                         <td className="px-3 py-2">
-                          <span className="inline-flex items-center gap-2 text-ink">
+                          <span className="inline-flex items-center gap-2 text-ink-strong">
                             <WikiDot id={w.id} />
                             {w.label}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-right text-ink">{d ? fmt(d.live_edit_count) : 'no data'}</td>
-                        <td className="px-3 py-2 text-right text-ink/70">{d ? fmt(d.deleted_edit_count) : '—'}</td>
-                        <td className="px-3 py-2 text-right text-ink/70">{d ? fmt(d.creation_count) : '—'}</td>
+                        <td className="px-3 py-2 text-right text-ink-strong">{d ? fmt(d.live_edit_count) : 'no data'}</td>
+                        <td className="px-3 py-2 text-right text-ink-strong">{d ? fmt(d.deleted_edit_count) : '—'}</td>
+                        <td className="px-3 py-2 text-right text-ink-strong">{d ? fmt(d.creation_count) : '—'}</td>
                       </tr>
                     );
                   })}
@@ -487,8 +487,8 @@ export default function AliceStats() {
                 <div className="border border-primary/20 divide-y divide-primary/10 mb-8">
                   {topEdits.map((p, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-                      <span className="text-ink truncate">{p.page_title || p.full_page_title}</span>
-                      <span className="text-ink/40 shrink-0 ml-3">{fmt(p.count)} edits</span>
+                      <span className="text-ink-strong truncate">{p.page_title || p.full_page_title}</span>
+                      <span className="text-ink-strong shrink-0 ml-3">{fmt(p.count)} edits</span>
                     </div>
                   ))}
                 </div>
@@ -499,17 +499,17 @@ export default function AliceStats() {
             <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-2">RIGHT NOW — MOST RECENT ACTIVITY, ANY WIKI</p>
             <div className="border border-primary/20 divide-y divide-primary/10">
               {recentGrouped.length === 0 ? (
-                <div className="px-3 py-4 text-ink/40 text-xs text-center">No recent activity found.</div>
+                <div className="px-3 py-4 text-ink-strong text-xs text-center">No recent activity found.</div>
               ) : recentGrouped.map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
                   <div className="min-w-0 flex items-start gap-2">
                     <WikiDot id={c.project} />
                     <div className="min-w-0">
-                      <span className="text-ink truncate block">{c.title}{c.count > 1 ? ` — ${c.count} edits` : ''}</span>
-                      <span className={`text-[10px] ${TONE_TEXT[WIKI_TONE[c.project]] || 'text-ink/50'}`}>{c.project}</span>
+                      <span className="text-ink-strong truncate block">{c.title}{c.count > 1 ? ` — ${c.count} edits` : ''}</span>
+                      <span className={`text-[10px] ${TONE_TEXT[WIKI_TONE[c.project]] || 'text-ink-max'}`}>{c.project}</span>
                     </div>
                   </div>
-                  <span className="text-ink/40 shrink-0 text-[10px]">{timeAgo(c.timestamp)}</span>
+                  <span className="text-ink-max shrink-0 text-[10px]">{timeAgo(c.timestamp)}</span>
                 </div>
               ))}
             </div>

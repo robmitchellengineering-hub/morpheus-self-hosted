@@ -82,7 +82,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
   };
 
   if (loading) {
-    return <div className="flex items-center gap-2 text-ink/75 text-xs py-2"><Loader2 size={12} className="animate-spin" /> Loading backend config...</div>;
+    return <div className="flex items-center gap-2 text-ink-strong text-xs py-2"><Loader2 size={12} className="animate-spin" /> Loading backend config...</div>;
   }
 
   const activeKeys = apiKeys.filter(k => k.active);
@@ -105,7 +105,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             value={domainInput}
             onChange={e => setDomainInput(e.target.value)}
             placeholder="api.myapp.com"
-            className="flex-1 bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20"
+            className="flex-1 bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink"
           />
           <button
             onClick={saveDomain}
@@ -115,12 +115,12 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             {savingDomain ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} SET
           </button>
         </div>
-        <p className="text-[10px] text-ink/65 mt-1">
+        <p className="text-[10px] text-ink-max mt-1">
           // Auto-applied on deploy for Cloudflare Workers + Vercel. Render / Railway / Fly / Netlify: step-by-step DNS instructions shown in deploy results.
         </p>
         {customDomain && (
-          <p className="text-[10px] text-ink/50 mt-1 flex items-center gap-1">
-            <Check size={10} className="text-primary" /> Active: <span className="text-ink">{customDomain}</span>
+          <p className="text-[10px] text-ink-max mt-1 flex items-center gap-1">
+            <Check size={10} className="text-primary" /> Active: <span className="text-ink-max">{customDomain}</span>
           </p>
         )}
       </div>
@@ -130,7 +130,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
         <label className="block text-xs text-primary/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
           <Key size={12} /> API Keys ({activeKeys.length} active)
         </label>
-        <p className="text-[10px] text-ink/65 mb-2">
+        <p className="text-[10px] text-ink-max mb-2">
           // Keys are injected as env vars on deploy. The backend validates incoming requests against them. Full key shown only once — copy it now.
         </p>
 
@@ -140,7 +140,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             value={newKeyName}
             onChange={e => setNewKeyName(e.target.value)}
             placeholder="Key name (e.g. Mobile App)"
-            className="flex-1 bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink/20"
+            className="flex-1 bg-background text-ink border border-primary/30 px-3 py-2 text-sm outline-none placeholder:text-ink"
           />
           <button
             onClick={generateKey}
@@ -158,7 +158,7 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
               <AlertTriangle size={12} /> COPY NOW — shown only once
             </div>
             <div className="flex gap-2">
-              <code className="flex-1 text-xs text-ink font-mono break-all bg-black/50 px-2 py-1.5 border border-primary/20">{newKey}</code>
+              <code className="flex-1 text-xs text-ink-strong font-mono break-all bg-black/50 px-2 py-1.5 border border-primary/20">{newKey}</code>
               <button onClick={() => copyKey(newKey)} className="px-3 border border-primary/30 text-primary hover:bg-primary hover:text-black">
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
@@ -172,8 +172,8 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             {apiKeys.map(k => (
               <div key={k.id} className={`flex items-center gap-2 px-2 py-1.5 border ${k.active ? 'border-primary/20' : 'border-primary/10 opacity-40'}`}>
                 <Key size={12} className={k.active ? 'text-primary' : 'text-primary/65'} />
-                <span className="text-xs text-ink/70 flex-1 truncate">{k.name}</span>
-                <code className="text-xs text-ink/50 font-mono">{k.prefix}...</code>
+                <span className="text-xs text-ink-strong flex-1 truncate">{k.name}</span>
+                <code className="text-xs text-ink-strong font-mono">{k.prefix}...</code>
                 <span className={`text-[9px] uppercase px-1 ${k.active ? 'text-primary' : 'text-primary/65'}`}>{k.active ? 'ACTIVE' : 'REVOKED'}</span>
                 {k.active && (
                   <button
@@ -189,11 +189,11 @@ export default function BackendConfigSection({ projectId, apiHostService }) {
             ))}
           </div>
         ) : (
-          <p className="text-[10px] text-ink/65">// No API keys yet. Generate one to secure your backend endpoints.</p>
+          <p className="text-[10px] text-ink-max">// No API keys yet. Generate one to secure your backend endpoints.</p>
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 text-[10px] text-ink/65 pt-1 border-t border-primary/10">
+      <div className="flex items-center gap-1.5 text-[10px] text-ink-max pt-1 border-t border-primary/10">
         <RefreshCw size={10} /> Redeploy after changes to apply custom domain and API keys to the live backend.
       </div>
 

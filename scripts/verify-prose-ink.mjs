@@ -28,8 +28,9 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   scanSource, rawOccurrences, isDeckFile, DECK_PATHS, KNOWN_GREEN_CONSTANTS,
-  PROSE_TAGS, ACTION_TAGS, FIELD_TAGS, HEADING_TAGS, EMPHASIS_TAGS,
+  PROSE_TAGS, ACTION_TAGS, FIELD_TAGS, HEADING_TAGS, EMPHASIS_TAGS, maskSource,
 } from './lib/prose-ink.mjs';
+import { scanLadder, RUNG_FOR, RUNGS } from './lib/ink-ladder.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -102,7 +103,7 @@ for (const rel of files) {
   if (isDeckFile(rel)) continue;
   const src = readFileSync(join(REPO, rel), 'utf8');
   counts.ink += (src.match(/text-ink(?:\/\d+)?/g) || []).length;
-  counts.sweptInk += (src.match(/text-ink\/\d+/g) || []).length;
+  counts.sweptInk += (src.match(/text-ink(?:-strong|-max)?(?![\w-])/g) || []).length;
   for (const o of scanSource(src, rel)) {
     byReason.set(o.reason, (byReason.get(o.reason) || 0) + 1);
     if (o.verdict === 'convert') {
@@ -131,7 +132,7 @@ eq('no in-rule prose still carries the brand green', stillGreen, []);
 // number cannot see the failure it is meant to see: with 18 green headings and a
 // floor of 5, converting one heading is invisible. Growth still passes; ANY
 // reduction fails, and the message says what to do about it.
-const FLOORS = { headings: 18, titles: 86, labels: 379, badges: 4, actions: 760, metrics: 19, emphasis: 7 };
+const FLOORS = { headings: 18, titles: 86, labels: 379, badges: 4, actions: 760, metrics: 19, emphasis: 7, ink: 1161 };
 ok('green still marks headings', greenOn.headings >= FLOORS.headings, `headings: ${greenOn.headings} (pinned ${FLOORS.headings})`);
 ok('green still marks titles and headline sizes', greenOn.titles >= FLOORS.titles, `titles: ${greenOn.titles} (pinned ${FLOORS.titles})`);
 ok('green still marks uppercase / runtime labels', greenOn.labels >= FLOORS.labels, `labels: ${greenOn.labels} (pinned ${FLOORS.labels})`);
@@ -139,7 +140,7 @@ ok('green still marks badges', greenOn.badges >= FLOORS.badges, `badges: ${green
 ok('green still marks controls and structure (button/a/summary/th)', greenOn.actions >= FLOORS.actions, `controls: ${greenOn.actions} (pinned ${FLOORS.actions})`);
 ok('green still marks metrics and counters', greenOn.metrics >= FLOORS.metrics, `metrics: ${greenOn.metrics} (pinned ${FLOORS.metrics})`);
 ok('green still marks inline emphasis', greenOn.emphasis >= FLOORS.emphasis, `emphasis: ${greenOn.emphasis} (pinned ${FLOORS.emphasis})`);
-ok('the sweep is still applied (text-ink/N is in use)', counts.sweptInk >= 700, `text-ink/N: ${counts.sweptInk}`);
+ok('ink is in use across the tree', counts.sweptInk >= FLOORS.ink, `ink tokens: ${counts.sweptInk} (pinned ${FLOORS.ink})`);
 
 // ── 4. the class-constant decisions are pinned ──────────────────────────────
 // A class string in a constant has no tag to read, so it cannot be classified —
@@ -231,17 +232,92 @@ eq('a form label is prose now', PROSE_TAGS.has('label') && !ACTION_TAGS.has('lab
 // ── 7. Alice Stats: its prose is ink, its runtime labels are still green ────
 {
   const alice = readFileSync(join(REPO, 'src/pages/AliceStats.jsx'), 'utf8');
-  const swept = (alice.match(/text-ink\/\d+/g) || []).length;
+  const swept = (alice.match(/text-ink(?:-strong|-max)?(?![\w-])/g) || []).length;
   const labels = scanSource(alice, 'src/pages/AliceStats.jsx')
     .filter((o) => o.reason === 'runtime-capitals').length;
-  ok('Alice Stats prose was swept into ink', swept >= 6, `text-ink/N: ${swept}`);
+  ok('Alice Stats prose was swept into ink', swept >= 6, `ink tokens: ${swept}`);
   ok("Alice Stats' {x.toUpperCase()} labels kept their green", labels === 2, `runtime labels still green: ${labels}`);
 }
 
-// ── 8. the sweep and the guard share one implementation ────────────────────
-for (const script of ['scripts/verify-prose-ink.mjs', 'scripts/prose-ink-sweep.mjs']) {
+
+// ── 9. the ink ladder: ink is the floor, and small text gets the most ──────
+// One assertion does most of the work — no ink token carries an opacity modifier.
+// `text-ink/40` can only ever be dimmer than the floor, and "nothing duller than
+// ink" is the whole rule, so that check failing means the ladder is broken
+// wherever it failed. The rest pins the bands, so the rungs cannot drift apart
+// from the sizes they are meant to serve.
+console.log('\n9. the ink ladder');
+const OPACITY_INK = /text-ink(?:-strong|-max)?\/\d+/g;
+const dimmers = [];       // VIOLATION: an opacity modifier on an ink token
+const opacityUtils = [];  // REPORT ONLY: opacity-* on an element that carries text
+const wrongBand = [];
+const inkConstants = [];
+let inkTokens = 0;
+for (const rel of files) {
+  if (isDeckFile(rel)) continue;
+  const src = readFileSync(join(REPO, rel), 'utf8');
+  // The rule is documented as `text-ink/60` inside src/index.css, so a comment is
+  // not a violation — but nothing else is exempt, including class constants.
+  const commentMasked = maskSource(src, { commentsOnly: true });
+  for (const m of src.matchAll(OPACITY_INK)) {
+    if (commentMasked[m.index] === ' ' && src[m.index] !== ' ') continue;
+    dimmers.push(`${rel}:${src.slice(0, m.index).split('\n').length} ${m[0]}`);
+  }
+  const { occurrences, constants, dimmed } = scanLadder(src);
+  inkTokens += occurrences.length;
+  for (const o of occurrences) {
+    if (o.token !== o.to) {
+      wrongBand.push(`${rel}:${src.slice(0, o.offset).split('\n').length} ${o.tag} ${o.token} should be ${o.to} (${o.px === null ? 'no size found, floor' : `${o.px}px`})`);
+    }
+  }
+  for (const c of constants) inkConstants.push(`${rel} ${c.token}`);
+  for (const d of dimmed) opacityUtils.push(`${rel} ${d.util} on <${d.tag}>`);
+}
+if (dimmers.length) console.log(`          ${dimmers.slice(0, 8).join('\n          ')}`);
+eq('no ink token carries an opacity modifier', dimmers, []);
+if (wrongBand.length) console.log(`          ${wrongBand.slice(0, 8).join('\n          ')}`);
+eq('every ink rung matches the band its size resolves to', wrongBand, []);
+ok('ink tokens were found (parser sanity)', inkTokens >= 900, `ink tokens: ${inkTokens}`);
+// Reported, not swept: a class constant has no element, so no size. Both of them
+// resolved to nothing and took the floor.
+// `opacity-*` dims the whole element, so no token-level rule can see it. Reported
+// rather than asserted: the ones in this tree are icon buttons hidden until hover.
+console.log(`          REPORT ONLY — opacity-* on an element with text: ${opacityUtils.length}`);
+for (const d of opacityUtils.slice(0, 8)) console.log(`            ${d}`);
+console.log(`          ink in a class constant (no size to read): ${inkConstants.length}`);
+for (const c of inkConstants) console.log(`            ${c}`);
+
+{
+  // The bands, as behaviour. A rule that only lives in a comment is a rule that
+  // comes back the moment someone adds a component.
+  const band = (cls) => scanLadder(`<p className="${cls}">words here</p>`).occurrences.map((o) => o.to);
+  eq('an 11px element takes the top rung', band('text-ink/40 text-[11px]'), ['text-ink-max']);
+  eq('a 10px element takes the top rung', band('text-ink/40 text-[10px]'), ['text-ink-max']);
+  eq('a 9px element takes the top rung', band('text-ink/40 text-[9px]'), ['text-ink-max']);
+  eq('a 12px element (text-xs) takes the middle rung', band('text-ink/40 text-xs'), ['text-ink-strong']);
+  eq('a 13px element takes the middle rung', band('text-ink/40 text-[13px]'), ['text-ink-strong']);
+  eq('a 14px element (text-sm) sits at the floor', band('text-ink/40 text-sm'), ['text-ink']);
+  eq('a 16px element sits at the floor', band('text-ink/40 text-base'), ['text-ink']);
+  eq('bare ink on small text is promoted too', band('text-ink text-[10px]'), ['text-ink-max']);
+  eq('a rung already correct is left alone', band('text-ink-max text-[11px]'), ['text-ink-max']);
+  eq('a size inherited from the enclosing element is used',
+    scanLadder('<div className="text-xs"><p className="text-ink/50">words</p></div>').occurrences.map((o) => o.to), ['text-ink-strong']);
+  eq('the smallest declared size wins',
+    band('text-ink/40 text-sm md:text-xs'), ['text-ink-strong']);
+  // No size anywhere in the subtree: the floor, which is the safe direction.
+  eq('an unresolvable size falls back to the floor', band('text-ink/40'), ['text-ink']);
+  // The field is text-sm, so its placeholder sits at the floor — not at whatever
+  // the placeholder text would have been sized had it been a child element.
+  const field = scanLadder('<input className="text-sm placeholder:text-ink/30" />').occurrences.map((o) => o.to);
+  eq('a placeholder takes the size of its own field', field, ['text-ink']);
+  const smallField = scanLadder('<input className="text-[11px] placeholder:text-ink/30" />').occurrences.map((o) => o.to);
+  eq('a placeholder in a small field takes the top rung', smallField, ['text-ink-max']);
+}
+
+// ── 10. the rules and the guard share one implementation ───────────────────
+for (const script of ['scripts/verify-prose-ink.mjs', 'scripts/prose-ink-sweep.mjs', 'scripts/ink-ladder-sweep.mjs']) {
   const src = readFileSync(join(REPO, script), 'utf8');
-  ok(`${script} reads the shared rule`, /from '\.\/lib\/prose-ink\.mjs'/.test(src));
+  ok(`${script} reads a shared rule`, /from '\.\/lib\/(prose-ink|ink-ladder)\.mjs'/.test(src));
 }
 
 console.log(`\n  green kept: ${counts.green}   ink in use: ${counts.ink} (swept this branch: ${counts.sweptInk})`);

@@ -44,7 +44,7 @@ export default function CapabilityStatus({ connections }) {
       <h2 className="text-sm font-display tracking-wider mb-1 text-primary flex items-center gap-2">
         <Activity size={14} /> CAPABILITIES
       </h2>
-      <p className="text-xs text-ink/50 mb-4">
+      <p className="text-xs text-ink-strong mb-4">
         // Live status of every Morpheus capability. Green = ready, amber = needs a connection to activate.
       </p>
       <div className="grid grid-cols-1 gap-0">
@@ -54,7 +54,7 @@ export default function CapabilityStatus({ connections }) {
             <div key={c.title} className="flex items-center gap-2.5 py-1.5 border-b border-primary/10 last:border-0">
               <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass(status)}`} />
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-ink truncate">{c.title}</div>
+                <div className="text-xs text-ink-strong truncate">{c.title}</div>
               </div>
               <span className={`text-[10px] tracking-wider shrink-0 font-display ${labelClass(status)}`}>
                 {labelFor(status)}
