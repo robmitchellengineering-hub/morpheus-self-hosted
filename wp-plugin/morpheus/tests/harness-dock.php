@@ -170,6 +170,15 @@ ok( defined( 'DONOTCACHEPAGE' ), 'a response carrying the token opts out of the 
 ok( defined( 'DONOTCACHEOBJECT' ), 'and out of the object cache' );
 ok( Morpheus_Dock::status_note( true ) === '', 'the settings screen says nothing is wrong when nothing is' );
 
+// …and through the REAL hook, with WordPress's own footer scripts in the way.
+// The buffered call above proves what we print; this proves the page gets it,
+// which is the whole question — "the dock is not coming up on the page".
+ob_start();
+do_action( 'wp_footer' );
+$page_footer = (string) ob_get_clean();
+ok( strpos( $page_footer, 'plugin.js' ) !== false, 'the tag reaches the page through wp_footer itself' );
+ok( substr_count( $page_footer, $TOKEN ) === 1, 'and the token appears on the page exactly once' );
+
 // ── the operator's answer when it is not printing ───────────────────────────
 echo "\n== why not ==\n";
 update_option( 'morpheus_settings', array_merge( $saved, array( 'dock_enabled' => 0 ) ) );
@@ -203,6 +212,36 @@ foreach ( $matrix as $label => $overrides ) {
 	$says_ready  = Morpheus_Dock::status_note( false ) === '';
 	ok( $would_print === $says_ready, "the note agrees with the decision — $label" );
 }
+
+// ── the settings screen actually renders ────────────────────────────────────
+// The screen is the escape hatch: it is where the operator finds out why the
+// dock is not printing. A screen that fatals, or that renders a PHP notice
+// above the answer, is worse than no screen. Rendered here for real, because
+// "it should render" is what every broken wp-admin page was before it was
+// loaded once.
+//
+// submit_button() and friends live in wp-admin, which a CLI boot has not
+// loaded — the same trap the Site Health work hit.
+echo "\n== the settings screen renders ==\n";
+require_once ABSPATH . 'wp-admin/includes/template.php';
+require_once ABSPATH . 'wp-admin/includes/admin.php';
+wp_set_current_user( $admin_id );
+update_option( 'morpheus_settings', $saved );
+ob_start();
+Morpheus_Settings::render();
+$screen = (string) ob_get_clean();
+ok( strpos( $screen, '>Dock<' ) !== false, 'the screen has a Dock section' );
+ok( strpos( $screen, 'md-widgettoken' ) !== false, 'it offers the embed token field' );
+ok( strpos( $screen, 'Ready.' ) !== false, 'and says the dock is ready when it is' );
+ok( ! preg_match( '/(Notice|Warning|Deprecated|Fatal error):/', $screen ), 'it renders no PHP notice or warning' );
+// The credential must never be echoed back in the clear — on this screen or in
+// the HTML source the operator's browser receives.
+ok( strpos( $screen, $TOKEN ) === false, 'the stored token is never printed on the screen' );
+update_option( 'morpheus_settings', array_merge( $saved, array( 'dock_enabled' => 0 ) ) );
+ob_start();
+Morpheus_Settings::render();
+$screen_off = (string) ob_get_clean();
+ok( strpos( $screen_off, 'Not printing.' ) !== false, 'and says so, with a reason, when it is switched off' );
 
 // Finally: the tag we print and the tag the loader reads are two halves of one
 // contract, and the Node guard scripts/verify-dock.mjs compares them against
