@@ -383,6 +383,12 @@ model ProjectFile {
   content       String   @db.Text
   file_url      String?  // storage URL for large/binary files; content holds a text preview only
   language      String   @default("text")
+  // git blob sha of the upstream content this row was last synced from, so a
+  // self-dev sync can tell "upstream moved on" (safe to overwrite) from "edited
+  // here and not pushed" (must not be). Nullable on purpose — NULL means
+  // provenance unknown, which lib/selfDevSyncSafety.js treats conservatively.
+  // DDL: server/prisma/selfdev-add-file-synced-sha.sql (H8).
+  synced_sha    String?
 
   // Set only for a project with storage_mode="drive" -- the mirrored
   // Drive file's id and Drive's own modifiedTime, used exactly like
