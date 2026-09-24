@@ -230,7 +230,13 @@ export default function FlowDiagram() {
         </Link>
         <Network size={48} className="text-primary mb-4 neon-glow" />
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">FLOW DIAGRAM</h1>
-        <p className="text-ink text-sm mb-8">// Complete call graph of every Morpheus operation — what's called, how it's used, and the data flow between them. Generated live from the source code model.</p>
+        {/* Stale-document disclaimer. The page claimed it was "Generated live from the
+             source code model"; it is rendered from a hand-written data literal that
+             still describes the pre-rewrite Base44 stack (35 backend functions, 15
+             shared modules, 11 entities, a Deno runtime — against 123, 79, 54 and
+             Node/Express today). Correcting the claim is the honest minimum; the page
+             is parked for a real fix or removal. */}
+        <p className="text-ink text-sm mb-8">// This is a point-in-time snapshot of an EARLIER architecture. It is not generated from the current source and has not been maintained: parts of it describe the pre-rewrite Base44 stack (a Deno runtime, the @base44/sdk, model names that do not exist here) and are simply wrong. For what the system actually is, run `node scripts/context.mjs`.</p>
         {generating && (
           <div className="w-full max-w-xs mb-6">
             <div className="flex items-center justify-between text-xs text-ink-strong mb-2">

@@ -309,7 +309,11 @@ export default function AIDocs() {
           <Cpu size={48} className="text-primary neon-glow" />
         </div>
         <h1 className="text-2xl font-display tracking-widest neon-glow mb-2 text-heading">AI FUNCTIONS &amp; SETTINGS</h1>
-        <p className="text-ink text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. The exact AI settings and commands used to generate each function and how they work. Generated live from the source code.</p>
+        {/* Stale-document disclaimer: this page claimed to be "Generated live from the
+             source code" while rendering a hand-written literal (src/lib/aiFunctionsData.js)
+             that still names base44.asServiceRole.InvokeLLM and models that do not exist
+             here. See the flow diagram page for the same note. */}
+        <p className="text-ink text-sm mb-8">// Every AI function Morpheus uses — system prompts, model roles, JSON schemas, and workflows. This is a point-in-time snapshot of an EARLIER architecture. It is not generated from the current source and has not been maintained: parts of it describe the pre-rewrite Base44 stack (a Deno runtime, the @base44/sdk, model names that do not exist here) and are simply wrong. For what the system actually is, run `node scripts/context.mjs`.</p>
 
         {/* On-screen summary */}
         <div className="w-full max-w-md text-left mb-8 space-y-3">
