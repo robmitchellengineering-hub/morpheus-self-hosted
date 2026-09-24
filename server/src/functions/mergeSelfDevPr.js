@@ -16,6 +16,7 @@ import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { recordSyncedCommitSafely } from '../lib/selfDevDrift.js';
+import { markWorkspaceSynced } from '../lib/selfDevSyncState.js';
 
 export async function runMergeSelfDevPr(user, prNumber, { force = false, projectId = null, touchedManualSource = false, hasMigration = false } = {}) {
   const result = await getDeliveryAdapter('self-dev').merge({ user, prNumber, force });
@@ -51,6 +52,11 @@ export async function runMergeSelfDevPr(user, prNumber, { force = false, project
       () => prisma.project.update({ where: { id: project.id }, data: { synced_commit: mergeCommitSha } }),
       { context: 'mergeSelfDevPr' },
     );
+
+    // The merge put this workspace's content upstream, so every file's
+    // provenance becomes its own hash — otherwise the next sync reads the whole
+    // merged change as un-pushed local work and refuses to run.
+    await markWorkspaceSynced(project.id);
 
     if (touchedManualSource) {
       try {

@@ -17,6 +17,8 @@ import {
   shouldExclude as shouldSkip, gitBlobSha,
 } from '../lib/selfDevRepo.js';
 import { recordSyncedCommitSafely } from '../lib/selfDevDrift.js';
+import { assessLocalLoss, shouldRefuseSync, syncRefusalMessage } from '../lib/selfDevSyncSafety.js';
+import { readProvenance, recordProvenance } from '../lib/selfDevSyncState.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -95,6 +97,28 @@ export default async function handler({ user, body }) {
   const localShaByPath = new Map(localFiles.map((f) => [f.path, gitBlobSha(f.content)]));
   const localContentByPath = new Map(localFiles.map((f) => [f.path, f.content]));
 
+  // Stop before writing anything if this sync would destroy un-pushed work.
+  //
+  // 2026-09-24, demonstrated: the drift guard refused a stale push, told the
+  // operator to SYNC and re-apply, and the sync deleted the new file and
+  // reverted the edited one — so the advice cost exactly what it said to
+  // re-apply. The check has to happen BEFORE the first write, which is why it
+  // sits here rather than next to the deletions it implies.
+  const provenance = await readProvenance(project.id);
+  const localLoss = assessLocalLoss({
+    local: localFiles,
+    remote: blobs.map((b) => ({ path: b.path, sha: b.sha })),
+    syncedShaByPath: provenance,
+  });
+  if (shouldRefuseSync({ assessment: localLoss, acceptLocalLoss: body?.acceptLocalLoss === true })) {
+    throw Object.assign(new Error(syncRefusalMessage(localLoss)), {
+      status: 409,
+      code: 'SYNC_WOULD_LOSE_LOCAL_WORK',
+      modified: localLoss.modified,
+      orphaned: localLoss.orphaned,
+    });
+  }
+
   const toFetch = blobs.filter((item) => localShaByPath.get(item.path) !== item.sha);
   const toFetchPaths = new Set(toFetch.map((item) => item.path));
 
@@ -134,12 +158,30 @@ export default async function handler({ user, body }) {
       create: { created_by_id: user.id, project_id: project.id, path: f.path, content: f.content, language: detectLanguage(f.path) },
     });
   }
-  const keepPaths = new Set(ok.map((f) => f.path));
+  // A blob that FAILED to fetch must not be treated as "no longer upstream".
+  //
+  // `ok` is built from fetchedOk + the already-current files, so a failed fetch
+  // simply falls out of it — and the deletion below then removes the local row
+  // for a file that is still very much upstream. The mirror silently loses it
+  // and the sync point advances anyway. Keeping those paths here means a
+  // transient GitHub failure leaves the workspace short of an update it can
+  // retry, instead of short of a file it will never notice is missing.
+  const failedPaths = new Set(toFetch.filter((_, i) => !fetched[i]).map((item) => item.path));
+  const keepPaths = new Set([...ok.map((f) => f.path), ...failedPaths]);
   const existing = await prisma.projectFile.findMany({ where: { project_id: project.id }, select: { id: true, path: true } });
   const staleIds = existing.filter((f) => !keepPaths.has(f.path)).map((f) => f.id);
   if (staleIds.length > 0) {
     await prisma.projectFile.deleteMany({ where: { id: { in: staleIds } } });
   }
+
+  // Record what each file now corresponds to upstream. This is what makes the
+  // NEXT sync able to tell "upstream moved on" from "I edited this" — without
+  // it the check above protects only files that have never been upstream, and
+  // the demonstrated loss (an edited file reverted) would still get through.
+  const remoteShaByPath = new Map(blobs.map((b) => [b.path, b.sha]));
+  await recordProvenance(project.id, [...keepPaths]
+    .filter((p) => remoteShaByPath.has(p) && !failedPaths.has(p))
+    .map((p) => ({ path: p, sha: remoteShaByPath.get(p) })));
 
   // Record the sync point. This is what turns "is my workspace stale?" from an
   // assumption into a decidable question at push time (KNOWN-HAZARDS.md H9).

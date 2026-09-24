@@ -413,6 +413,13 @@ jobs:
       - name: The pipeline reports its own memory
         run: node scripts/verify-stage-observability.mjs
 
+      # SYNC FROM GITHUB used to destroy un-pushed work — demonstrated, not
+      # theorised: the drift guard refused a stale push, advised a sync, and the
+      # sync deleted the change it told the operator to re-apply. This asserts
+      # the rule that protects it, AND that a normal catch-up is still allowed.
+      - name: Sync cannot silently destroy un-pushed work
+        run: node scripts/verify-sync-safety.mjs
+
       # The run record: which stages are recorded, how an HTTP status becomes a
       # stage status, that a detail note stays a note, that the migration is
       # additive and idempotent (it ships ahead of an applier that has never

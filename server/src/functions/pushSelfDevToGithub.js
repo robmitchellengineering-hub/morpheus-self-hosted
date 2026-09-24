@@ -25,6 +25,7 @@ import { stampDecisionRef } from '../lib/selfDevDecisions.js';
 import { scopeExcludeFor, resolvePolicy, evaluatePushPolicy } from '../lib/enginePolicy.js';
 import { getGithubToken, getFileContent } from '../lib/github.js';
 import { evaluateDrift, readSyncedCommitSafely, recordSyncedCommitSafely } from '../lib/selfDevDrift.js';
+import { markWorkspaceSynced } from '../lib/selfDevSyncState.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -218,6 +219,18 @@ export default async function handler({ user, body }) {
       () => prisma.project.update({ where: { id: projectId }, data: { synced_commit: commitSha } }),
       { context: 'pushSelfDevToGithub' },
     );
+
+    // Same reasoning one level down: after a DIRECT push, upstream holds exactly
+    // what is in the workspace, so every file's provenance becomes its own
+    // content hash. Without this the next sync would read every file just
+    // shipped as "edited here and not pushed" and refuse — a false positive that
+    // would block the normal push → sync rhythm, which is worse than the loss
+    // this provenance exists to prevent.
+    //
+    // Only the direct path: a pull request is not upstream until it merges, and
+    // until then the local copy genuinely IS un-pushed work that a sync must not
+    // silently overwrite.
+    await markWorkspaceSynced(projectId);
 
     if (touchedManualSource) {
       try {
