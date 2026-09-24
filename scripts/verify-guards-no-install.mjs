@@ -29,8 +29,29 @@ import { fileURLToPath } from 'node:url';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CI = resolve(REPO, '.github/workflows/ci.yml');
 
-const STATIC_IMPORT = /^[ \t]*import\s+(?:[^'"\n]*\sfrom\s+)?['"]([^'"]+)['"]/gm;
+// An import STATEMENT, not an import LINE.
+//
+// The first version of this guard matched a single line, so a guard written as
+// `import {\n  a,\n  b,\n} from '../x.js';` was invisible to it — and the script
+// then reported "1 module(s) reached", i.e. pure, while having examined nothing
+// at all. That is precisely the failure this file exists to catch, and it hid
+// for a day: scripts/verify-selfdev-runs.mjs reached server/src/db.js and so
+// @prisma/client, passed HERE, and only failed in CI's real no-install job. The
+// detector now reads to the statement's semicolon, and check() below asserts it.
+const IMPORT_STATEMENT = /^[ \t]*import\b([\s\S]*?);/gm;
 const DYNAMIC_IMPORT = /^[ \t]*(?!\/\/)[^'"\n]*\bimport\(\s*['"]([^'"]+)['"]/gm;
+const SPECIFIER_AT_END = /['"]([^'"]+)['"]\s*$/;
+
+/** Every module specifier in a source file: static (in any layout) and dynamic. */
+function specifiersIn(source) {
+  const out = [];
+  for (const m of source.matchAll(IMPORT_STATEMENT)) {
+    const spec = SPECIFIER_AT_END.exec(m[1].trim());
+    if (spec) out.push(spec[1]);
+  }
+  for (const m of source.matchAll(DYNAMIC_IMPORT)) out.push(m[1]);
+  return out;
+}
 
 let failures = 0;
 let checks = 0;
@@ -69,13 +90,26 @@ function reachableModules(entry) {
     if (seen.has(file) || !existsSync(file)) continue;
     seen.add(file);
     const source = readFileSync(file, 'utf8');
-    for (const m of [...source.matchAll(STATIC_IMPORT), ...source.matchAll(DYNAMIC_IMPORT)]) {
-      const spec = m[1];
+    for (const spec of specifiersIn(source)) {
       if (spec.startsWith('.')) queue.push(resolve(dirname(file), spec));
     }
   }
   return seen;
 }
+
+// The detector's own test, before it is trusted to judge anything else. A guard
+// that reports a clean result because it could not see the code is the exact
+// failure mode this whole file exists to prevent.
+const DETECTOR_FIXTURE = [
+  "import {", '  alpha,', '  beta,', "} from '../server/src/lib/someModule.js';",
+  "import crypto from 'node:crypto';",
+  "import './a-side-effect.js';",
+  'const m = await import(`../functions/${name}.js`);',
+].join('\n');
+check('the detector sees a MULTI-LINE import', specifiersIn(DETECTOR_FIXTURE).includes('../server/src/lib/someModule.js'), true);
+check('the detector sees a single-line import', specifiersIn(DETECTOR_FIXTURE).includes('node:crypto'), true);
+check('the detector sees a side-effect import', specifiersIn(DETECTOR_FIXTURE).includes('./a-side-effect.js'), true);
+check('the detector ignores a template-literal dynamic import it cannot resolve', specifiersIn(DETECTOR_FIXTURE).some((s) => s.includes('${name}')), false);
 
 console.log(`\nNo-install guard — checking ${scripts.length} script(s) from the CI guards job\n`);
 
@@ -85,8 +119,7 @@ for (const script of scripts) {
   const modules = reachableModules(entry);
   for (const mod of modules) {
     const source = readFileSync(mod, 'utf8');
-    for (const m of [...source.matchAll(STATIC_IMPORT), ...source.matchAll(DYNAMIC_IMPORT)]) {
-      const spec = m[1];
+    for (const spec of specifiersIn(source)) {
       if (spec.startsWith('.') || spec.startsWith('node:')) continue;
       offenders.push({ script, from: relative(REPO, mod), pkg: spec });
     }
