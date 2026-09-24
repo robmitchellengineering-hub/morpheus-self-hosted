@@ -32,7 +32,15 @@ export const REQUIRED_CHECK_CONCLUSION = 'success';
 // fields of the jobs in .github/workflows/ci.yml, and scripts/verify-merge-gates.mjs
 // parses that workflow and fails if these drift apart — a rename on one side
 // without the other would otherwise silently disable the requirement.
-export const SELF_DEV_REQUIRED_CHECKS = ['guards (no install)', 'lint + build'];
+//
+// 'render' joined on 2026-09-24, after a day as an advisory job. The order is
+// the point: it had to PASS on real pull requests and be shown to FAIL on a
+// deliberately broken build (`: > dist/assets/main-*.js` → exit 1) before it
+// could stop a merge. A required gate nobody has watched go red is not a gate.
+// It is what makes "the app builds" different from "the app renders" — the
+// class of bug that shipped a dock panel off the bottom of the screen past
+// both a bundle check and an HTTP 200.
+export const SELF_DEV_REQUIRED_CHECKS = ['guards (no install)', 'lint + build', 'render'];
 
 /**
  * Decide whether every required gate ran and succeeded.
