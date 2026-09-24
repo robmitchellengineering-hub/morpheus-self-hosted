@@ -212,7 +212,14 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
     }
   };
 
+  // How much rework did this change actually need? Counted, because the only
+  // evidence anyone had was that reviewer calls outnumber coder calls 1.8:1 —
+  // which is equally consistent with "review catches a lot" and "the coder
+  // usually needs a second pass", and those point at opposite fixes.
+  let coderFixAttempts = 0;
+  const firstReviewHadCritical = review.issues.some((i) => i.severity === 'critical');
   for (let attempt = 1; !review.approved && review.issues.some(i => i.severity === 'critical') && attempt < MAX_REVIEW_ATTEMPTS; attempt++) {
+    coderFixAttempts++;
     onProgress?.({ stage: 'retry_coder', status: 'start' });
     const retry = await invokeAI({
       userId,
@@ -241,6 +248,11 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
 
   return {
     fileOps: currentOps,
+    // Rework attribution: how many coder fix passes the reviewer demanded, and
+    // whether the FIRST review found anything critical at all. The caller puts
+    // this in the turn's result, so it reaches the durable run record.
+    attempts: coderFixAttempts,
+    criticalFound: firstReviewHadCritical,
     reviewerModel: review.model,
     reviewSummary: review.summary,
     reviewed: true,

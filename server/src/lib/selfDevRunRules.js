@@ -87,6 +87,7 @@ export function summariseResult(result) {
     'fileCount', 'createCount', 'updateCount', 'deleteCount', 'deletePaths',
     'merged', 'alreadyMerged', 'state', 'blocked', 'blockReason', 'reason',
     'failing', 'migrations', 'revertedToSha', 'applied', 'needsManual',
+    'rework',
   ];
   const picked = {};
   for (const k of keep) {
