@@ -59,6 +59,7 @@ export default function StatusStrip() {
     // The server's clock at the moment it answered. Read once, like everything
     // else here, so this is the time of THIS request — not a ticking clock.
     { label: 'server utc time', value: status.utcTime || 'unavailable' },
+    { label: 'workspace files', value: status.workspaceFileCount == null ? 'unavailable' : String(status.workspaceFileCount) },
   ];
 
   return (
