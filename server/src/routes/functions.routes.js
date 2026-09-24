@@ -220,6 +220,10 @@ async function runFunction(name, filePath, req, res, next) {
   } finally {
     // Only the pipeline stages, and only if the body carried a run id or we can
     // mint one — a caller with no run id gets a run of one rather than no row.
+    // A handler that STREAMED its response returns nothing, so the record would
+    // be blank for exactly the stage that matters most. res.locals carries its
+    // out-of-band note; a real return value still wins when there is one.
+    if (!detail && res.locals?.morpheusStageDetail) detail = clampDetail(res.locals.morpheusStageDetail);
     if (SELF_DEV_STAGES[name]) {
       await recordStage({
         runId: req.body?.runId || null,

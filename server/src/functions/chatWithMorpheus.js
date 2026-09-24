@@ -1800,6 +1800,12 @@ OPERATOR SAYS: ${message}`;
       );
     }
 
+    // A streaming handler returns nothing the dispatcher can read, so the run
+    // record's chat stage has always been blank — for the stage that matters
+    // most. res.locals is the one channel that outlives the stream without
+    // inventing a second write path; the dispatcher reads it in its finally,
+    // after res.end(), and only when there was no return value to use.
+    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, reviewer: reviewerFixAttempts } }; } catch { /* no locals */ }
     emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
