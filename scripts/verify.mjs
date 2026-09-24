@@ -46,6 +46,7 @@ const HARD = [
   'verify-proving-ground.mjs',
   'verify-selfdev-runs.mjs',
   'verify-sync-safety.mjs',
+  'verify-provider-spend.mjs',
   'verify-stage-observability.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',

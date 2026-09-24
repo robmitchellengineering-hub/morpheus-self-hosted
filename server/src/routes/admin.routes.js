@@ -60,11 +60,28 @@ router.get('/overview', async (req, res) => {
     }));
     const totalCost30d = usageByModel30d.reduce((sum, r) => sum + r.costUsd, 0);
 
+    // What the provider actually charged, measured from the balance delta, next
+    // to the estimate the rest of this payload reports. The estimate runs about
+    // 2x the real bill (measured 2026-09-24), so the two belong side by side
+    // rather than one wearing the word "cost".
+    let actualProviderSpend30d = { available: false, reason: 'not measured' };
+    try {
+      const { spendOver, DEEPSEEK } = await import('../lib/providerSpendState.js');
+      actualProviderSpend30d = await spendOver(DEEPSEEK, 24 * 30);
+    } catch (err) {
+      actualProviderSpend30d = { available: false, reason: String(err?.message || err) };
+    }
+
     res.json({
       totalUsers,
       activeUsers7d: activeUserRows.length,
       usageByModel30d,
       totalCost30d,
+      // Named so the consumer cannot mistake it for a bill: it is a modelled
+      // figure from the static rate table, and costBasis says so in the payload
+      // rather than only in a comment.
+      costBasis: 'estimated-from-static-rate-table',
+      actualProviderSpend30d,
       // Presence-only — never the actual secret values. This is the closest
       // thing to an "error/incident feed" this v1 ships with: no dedicated
       // error-logging pipeline exists yet, so rather than fake one, this

@@ -420,6 +420,14 @@ jobs:
       - name: Sync cannot silently destroy un-pushed work
         run: node scripts/verify-sync-safety.mjs
 
+      # The platform reported an ESTIMATE from a static rate table as "cost", and
+      # measured it ran about 2x the real bill. This asserts the rules that turn
+      # two provider balance readings into the real number, that a top-up is not
+      # mistaken for a refund, and that the wording never calls the estimate a
+      # cost.
+      - name: Provider spend is measured, not modelled
+        run: node scripts/verify-provider-spend.mjs
+
       # The run record: which stages are recorded, how an HTTP status becomes a
       # stage status, that a detail note stays a note, that the migration is
       # additive and idempotent (it ships ahead of an applier that has never
