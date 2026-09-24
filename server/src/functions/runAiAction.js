@@ -62,7 +62,17 @@ ${sampleLines || '(no sample rows given)'}`;
       required: ['mappings'],
     },
     role: 'diagnosis',
-    maxTokens: 1200,
+    // 1200 was too small for the role, not for the answer. The mapping reply is
+    // ~100 tokens for eight columns, but `diagnosis` resolves to the deployment's
+    // DEFAULT model (deepseek-v4-pro in production, with no per-role override),
+    // which is a reasoning model — and reasoning is billed against this same
+    // output budget. Every call truncated and returned HTTP 500, so Morpheus
+    // Connect's only action did nothing for any app that used it.
+    //
+    // The budget is for the thinking, so it has to be sized for the thinking. This
+    // is still bounded well below the coder's 24000-64000, and the output itself
+    // is schema-limited to one small entry per column.
+    maxTokens: 8000,
   });
 
   const mappings = Array.isArray(result.mappings) ? result.mappings : [];

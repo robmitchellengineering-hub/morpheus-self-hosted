@@ -612,7 +612,14 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     // console log dive to discover it was actually the Planner's cap, not
     // the Coder's, that was failing every build. Now it's in the message
     // itself instead of requiring that every time.
-    throw new Error(`OUTPUT_TRUNCATED (role=${role || 'unknown'}, maxTokens=${maxTokens ?? 'unset'}): The AI response was cut off by the token limit before it could finish. Reduce the number of files per step (2-3 max) and retry.`);
+    // The advice has to match the caller. "Reduce the number of files per step" is
+    // right for a coder call and nonsense for a bounded one-shot action — it was
+    // what runAiAction reported while its mapping endpoint was failing, which
+    // sends the reader looking for files that do not exist.
+    const hint = role === 'coder'
+      ? ' Reduce the number of files per step (2-3 max) and retry.'
+      : ' The output budget was consumed before the answer was complete — the role runs on a reasoning model, whose thinking is billed against this same limit.';
+    throw new Error(`OUTPUT_TRUNCATED (role=${role || 'unknown'}, maxTokens=${maxTokens ?? 'unset'}): The AI response was cut off by the token limit before it could finish.${hint}`);
   }
 
   if (schema) {
