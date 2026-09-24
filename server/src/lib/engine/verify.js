@@ -24,6 +24,7 @@
 import { checkSyntax } from '../syntaxCheck.js';
 import { findBrokenImports } from '../importGraph.js';
 import { conventionViolations } from '../conventionChecks.js';
+import { coverageError } from './verificationCoverage.js';
 import * as esbuild from 'esbuild';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -130,6 +131,13 @@ export async function verifyProject(files, opts = {}) {
 
   // Pass 4 — house conventions (opt-in; see the header).
   for (const e of conventionViolations(kept, opts.conventionChecks)) errors.push(e);
+
+  // Pass 5 — did any of the above have anything to look at? "Nothing failed" is
+  // not "nothing to check": a pass from a check that examined nothing is not a
+  // pass, and it is the answer nobody goes back and questions. See
+  // verificationCoverage.js for the 37-file Python project this returned ok for.
+  const coverage = coverageError({ codeFiles: codeFiles.length, files: kept.length });
+  if (coverage) errors.push(coverage);
 
   const seen = new Set();
   const unique = errors.filter((e) => {
