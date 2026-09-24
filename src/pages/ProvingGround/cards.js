@@ -44,4 +44,11 @@ export const PROVING_GROUND_CARDS = [
     addedBy: 'DSH session',
     ref: 'the proving-ground harness itself',
   },
+  {
+    key: 'selfdev_hello',
+    title: 'Self-dev hello',
+    what: 'Renders a fixed marker and a live UTC clock that ticks once a second.',
+    addedBy: 'self-dev (first dogfood run)',
+    ref: 'first dogfood run',
+  },
 ];
