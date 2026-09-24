@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import {
   SELF_DEV_STAGES, MAX_DETAIL_CHARS, newRunId, isMissingRunsTable,
   statusForHttp, clampDetail, summariseResult,
-} from '../server/src/lib/selfDevRuns.js';
+} from '../server/src/lib/selfDevRunRules.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..');
