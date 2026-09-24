@@ -20,10 +20,10 @@ export default function ThemeReport() {
     <div className="space-y-2">
       <p className="text-xs font-mono text-ink-strong font-bold">THEME REPORT</p>
       <p className="text-[11px] font-mono text-ink-max">
-        data-theme: <span className="text-ink">{theme}</span>
+        data-theme: <span className="text-ink-max">{theme}</span>
       </p>
       <p className="text-[11px] font-mono text-ink-max">
-        prefers-color-scheme: <span className="text-ink">{prefersDark ? 'dark' : 'light'}</span>
+        prefers-color-scheme: <span className="text-ink-max">{prefersDark ? 'dark' : 'light'}</span>
       </p>
     </div>
   );
