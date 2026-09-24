@@ -466,6 +466,51 @@ console.log('\n12. the same rule, inside the build turn');
     !/^const OPACITY_INK = /m.test(inkSrc), 'this guard redeclares OPACITY_INK instead of importing it');
 }
 
+// ── 13. the auth/ui vocabulary stays out of the app surface ─────────────────
+// `--muted-foreground` is a real token, defined in tailwind.config.js and
+// src/index.css, and it belongs to exactly two places: the shadcn/ui primitives
+// under src/components/ui, and the auth pages (Login, Register, the password
+// resets, the consent screen, AuthLayout). Every one of those is built on the
+// shadcn token set end to end.
+//
+// The app surface — Command Deck, the matrix panels, the proving ground — uses the
+// ink ladder instead. Zero exceptions.
+//
+// Self-dev closed that gap on 2026-09-24 without meaning to: asked for a status
+// strip on the proving ground, it wrote an 11px caption with
+// `text-muted-foreground` — the auth vocabulary, inside the app surface, one
+// directory away from cards that all use `text-ink-max`. The ink guard cannot see
+// it, because it only inspects elements carrying an ink token, so the wrong
+// vocabulary is invisible to the rule that governs the right one. Naming the
+// boundary is the fix; sweeping the auth pages onto the ladder would be a restyle
+// of a user-visible surface on a guess about intent.
+console.log('\n13. the auth vocabulary stays in the auth surface');
+{
+  const AUTH_FILES = [
+    /^src\/components\/ui\//,
+    /^src\/components\/AuthLayout\.jsx$/,
+    /^src\/pages\/(Login|Register|ForgotPassword|ResetPassword|AuthCallback|OAuthConsent)\.jsx$/,
+  ];
+  const AUTH_TOKEN = /\btext-muted-foreground\b/;
+  const leaked = [];
+  let authUses = 0;
+
+  for (const rel of files) {
+    const src = readFileSync(join(REPO, rel), 'utf8');
+    // Comments are exempt: StatusStrip.jsx explains this history in one, and a guard
+    // that forbids describing a rule is a guard nobody can document.
+    const masked = maskSource(src, { commentsOnly: true });
+    const n = (masked.match(AUTH_TOKEN) || []).length;
+    if (n === 0) continue;
+    if (AUTH_FILES.some((re) => re.test(rel))) { authUses += n; continue; }
+    leaked.push(`${rel} (${n})`);
+  }
+
+  // Without this the rule passes vacuously the day the auth surface changes.
+  ok('the auth surface really is where that token lives', authUses >= 5, `found ${authUses} use(s) there`);
+  eq('and it is used nowhere else — the app surface keeps the ink ladder', leaked, []);
+}
+
 console.log(`\n  green kept: ${counts.green}   ink in use: ${counts.ink} (swept this branch: ${counts.sweptInk})`);
 console.log(`  headings ${greenOn.headings} · titles ${greenOn.titles} · labels ${greenOn.labels} · badges ${greenOn.badges} · actions ${greenOn.actions} · metrics ${greenOn.metrics}`);
 for (const [k, v] of [...byReason].sort((a, b) => b[1] - a[1])) console.log(`    ${String(v).padStart(5)}  ${k}`);
