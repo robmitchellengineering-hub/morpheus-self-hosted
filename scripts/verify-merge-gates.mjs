@@ -107,7 +107,8 @@ check('…and the gate names, so a caller never has to parse prose', /requiredCh
 const conflictAt = merge.indexOf("state: 'conflict', prNumber, prUrl:");
 const gateAt = merge.indexOf('const gate = requiredGateVerdict(checks.checks, requiredChecks);');
 const forceAt = merge.indexOf('if (!force) {');
-const mergeAt = merge.indexOf('const { merged, mergeCommitSha } = await mergePullRequest');
+// The call itself, inside its try — the merge the gate above has to precede.
+const mergeAt = merge.indexOf('mergeResult = await mergePullRequest(');
 check('both branches were found to order', conflictAt > -1 && gateAt > -1 && forceAt > -1 && mergeAt > -1, true);
 // A conflict is why GitHub never created the run, so it is answered first.
 check('the conflict answer comes before the gate verdict', conflictAt < gateAt, true);
@@ -182,6 +183,21 @@ check('the live check imports the declared gates', /import \{ SELF_DEV_REQUIRED_
 check('…and the shared comparison, not a reimplementation', /import \{ protectionVerdict, protectionMessage \} from '\.\.\/server\/src\/lib\/branchProtectionRules\.js';/.test(live), true);
 // Deliberate: verify.mjs must keep working with no token and no network.
 check('…and is NOT wired into verify.mjs', /check-branch-protection/.test(read('scripts/verify.mjs')), false);
+
+console.log('\n-- and a decline by GitHub itself is a state, not a throw --');
+// Branch protection moved part of the decision into GitHub. Before it, this call
+// could not realistically throw, so an unwrapped await was fine; now "the base
+// branch policy prohibits the merge" can come back, and an unhandled throw
+// replaces the caller's `merge_failed` state with an exception.
+check('the merge call is wrapped', /try \{\s*\n\s*mergeResult = await mergePullRequest\(/.test(merge), true);
+check('…reading the API\u2019s own message', /err\?\.details\?\.message \|\| err\?\.message/.test(merge), true);
+check('…distinguishing a policy decline from a transient one', /status === 405 && \/branch policy\|protected branch\//.test(merge), true);
+// The point of the policy message is that the operator is told which setting to
+// look at, so it must name the command that reads that setting.
+check('…and pointing at the check that explains it', /node scripts\/check-branch-protection\.mjs/.test(merge), true);
+// The generic sentence is what this replaced; if it survives, one of the two
+// paths above is dead code.
+check('the old "check the PR" catch-all is gone', /GitHub declined the merge — check the PR\./.test(merge), false);
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {
