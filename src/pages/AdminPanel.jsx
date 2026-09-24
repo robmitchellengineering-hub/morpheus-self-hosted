@@ -90,7 +90,11 @@ function OverviewTab() {
                   <th className="py-1.5 pr-3 text-right">CALLS</th>
                   <th className="py-1.5 pr-3 text-right">IN TOK</th>
                   <th className="py-1.5 pr-3 text-right">OUT TOK</th>
-                  <th className="py-1.5 text-right">COST</th>
+                  {/* Not "COST": this column is a modelled figure from the
+                      static rate table, measured 2026-09-24 at about 2x what the
+                      provider actually charged. The real number is the balance
+                      delta, shown under the table. */}
+                  <th className="py-1.5 text-right">EST. COST</th>
                 </tr>
               </thead>
               <tbody>
@@ -106,6 +110,11 @@ function OverviewTab() {
                 ))}
               </tbody>
             </table>
+            <p className="text-[11px] text-ink-max mt-3">
+              {data.actualProviderSpend30d?.available
+                ? `Actual provider spend (measured from the provider balance): $${data.actualProviderSpend30d.spendUsd.toFixed(2)} over the last 30 days. The EST. COST column above is a model from a static rate table and is not that number.`
+                : `Actual provider spend: unavailable — ${data.actualProviderSpend30d?.reason || 'not measured yet'}. The EST. COST column above is a model from a static rate table, not a bill.`}
+            </p>
           </div>
         )}
       </Card>

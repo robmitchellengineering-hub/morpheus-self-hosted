@@ -19,6 +19,7 @@
 import { sendMail } from './mailer.js';
 import { prisma } from '../db.js';
 import { getPlatformSetting } from './platformSettings.js';
+import { recordBalanceReading, DEEPSEEK } from './providerSpendState.js';
 
 const DEEPSEEK_BALANCE_URL = 'https://api.deepseek.com/user/balance';
 const DEFAULT_MIN_BALANCE_USD = 10; // "warning" threshold — configurable via admin Config tab (deepseek_balance_min_usd)
@@ -116,6 +117,13 @@ export async function checkBalanceAndAlert() {
     else if (totalUsd != null && totalUsd < minBalance) level = 'warning';
 
     status = { level, checkedAt: Date.now(), totalUsd, isAvailable, error: null };
+
+    // The reading was previously logged to stdout and thrown away, which is why
+    // "what did the last 30 days actually cost" could only be answered from the
+    // ESTIMATE. The delta between two readings IS the real spend, with no pricing
+    // table in the path. Best-effort: this poll's job is to warn before the
+    // balance hits zero, and bookkeeping must never be why that does not happen.
+    if (totalUsd != null) await recordBalanceReading(DEEPSEEK, totalUsd);
 
     if (level === 'unavailable') {
       const fallbackNote = hasFallbackConfigured()
