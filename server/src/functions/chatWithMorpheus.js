@@ -81,6 +81,29 @@ const STAGE_ROLE = {
 // callback shape (see reviewAndRetry) into the same emitted events, so the
 // reviewer/retry-coder/re-review steps show up as real steps too instead of
 // vanishing into one opaque "reviewing" phase.
+/**
+ * Resident memory, in MB, for the stage log.
+ *
+ * WHY THIS IS HERE. The 2026-09-24 dogfood run took the production container
+ * down mid-turn: no error in any log, no stack trace, no shutdown line — the
+ * last entry was a routine balance check and then the container entrypoint ran
+ * again. That is what an OOM kill looks like from inside a process, because the
+ * kernel never gives it the chance to say anything. Northflank reported the
+ * deploy as COMPLETED throughout, and every request in the window answered 503
+ * behind Envoy.
+ *
+ * Nothing in this pipeline had ever reported its own memory, so the only
+ * question worth asking — where did the peak come from? — could not be answered
+ * at all. A self-dev turn reads ~880 files for the research pass and then
+ * bundles the whole repository with esbuild for the deep-verify gate, in one
+ * request, on the smallest compute plan; any of those is a candidate and none of
+ * them was observable. These lines cost nothing and are flushed to stdout before
+ * any kill, so they survive it.
+ */
+function memMb() {
+  return Math.round(process.memoryUsage().rss / 1024 / 1024);
+}
+
 function makeStageEmitter(emit) {
   let index = 0;
   const startedAt = new Map();
@@ -95,13 +118,13 @@ function makeStageEmitter(emit) {
     // choke point every stage already passes through, so logging here
     // covers the whole turn for free — self-dev or not, this build or any
     // future one that goes quiet.
-    console.log(`[chatWithMorpheus] stage start: ${stage}`);
+    console.log(`[chatWithMorpheus] stage start: ${stage} rss=${memMb()}MB`);
   };
   const done = (stage) => {
     const t = startedAt.get(stage);
     const elapsedSeconds = t ? Math.round((Date.now() - t) / 1000) : undefined;
     emit({ type: 'stage', stage, status: 'done', label: STAGE_LABELS[stage], elapsedSeconds });
-    console.log(`[chatWithMorpheus] stage done: ${stage}${elapsedSeconds != null ? ` (${elapsedSeconds}s)` : ''}`);
+    console.log(`[chatWithMorpheus] stage done: ${stage}${elapsedSeconds != null ? ` (${elapsedSeconds}s)` : ''} rss=${memMb()}MB`);
   };
   return {
     start,
@@ -1508,7 +1531,12 @@ OPERATOR SAYS: ${message}`;
           return Array.from(byPath, ([path, content]) => ({ path, content }));
         };
         const adapter = getDeliveryAdapter('self-dev');
+        // The heaviest single step in a self-dev turn: every file of the
+        // workspace in memory at once, handed to esbuild. Its own memory line,
+        // because a stage-level reading would only bracket it, not show it.
+        console.log(`[chatWithMorpheus] deep-verify: ${fullFiles.length} file(s) in memory, rss=${memMb()}MB before bundling`);
         let deep = await adapter.verify({ files: applyVirtual() });
+        console.log(`[chatWithMorpheus] deep-verify: done, ok=${deep.ok} errors=${deep.errorCount}, rss=${memMb()}MB after bundling`);
         for (let attempt = 1; !deep.ok && attempt < MAX_GATE_ATTEMPTS; attempt++) {
           const badPaths = [...new Set(deep.errors.map((e) => e.file).filter(Boolean))];
           const curBlock = badPaths

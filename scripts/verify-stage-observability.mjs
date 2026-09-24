@@ -1,0 +1,74 @@
+// Verification that a self-dev turn reports its own memory.
+//
+// WHY THIS IS A GUARD AND NOT JUST A LOG LINE
+//
+// On 2026-09-24 a self-dev chat turn took the production container down with no
+// error anywhere: the last log entry was a routine balance check, then the
+// container entrypoint ran again. That is an OOM kill seen from inside the
+// process — the kernel never lets it speak — and Northflank reported the deploy
+// as COMPLETED the whole time. The pipeline had never reported its own memory,
+// so "where did the peak come from" was unanswerable.
+//
+// The lines that fix that are three console.log calls, which is exactly the kind
+// of change that gets tidied away later by someone who cannot see why it is
+// there. So the checks below pin the two things that make the instrument work:
+//
+//   1. it reports MEMORY at each stage boundary and around the bundle, and
+//   2. it writes to STDOUT, not to the response stream — a reading sent to the
+//      client dies with the request, and the whole point is that it survives a
+//      process that is about to be killed.
+//
+// Run: node scripts/verify-stage-observability.mjs
+
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.join(HERE, '..');
+const CHAT = 'server/src/functions/chatWithMorpheus.js';
+const src = readFileSync(path.join(REPO, CHAT), 'utf8');
+
+let failures = 0;
+let checks = 0;
+function check(name, actual, expected) {
+  checks++;
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(expected);
+  if (a === e) console.log(`  PASS  ${name}`);
+  else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
+}
+
+console.log('\nstage observability — verification\n');
+
+// ── 1. The reading exists and is in real units ──────────────────────────────
+console.log('1. the pipeline reports its own memory');
+check('a memory helper exists', /function memMb\(\)/.test(src), true);
+check('it reads resident memory', /process\.memoryUsage\(\)\.rss/.test(src), true);
+check('it converts bytes to MB', /\/\s*1024\s*\/\s*1024/.test(src), true);
+check('the log lines carry the unit, so a reader is not guessing', /rss=\$\{memMb\(\)\}MB/.test(src), true);
+check('the helper is documented with the incident that caused it', /OOM kill looks like from inside|OOM/i.test(src), true);
+
+// ── 2. Every stage boundary reports it ──────────────────────────────────────
+console.log('\n2. every stage boundary reports it');
+const emitter = src.slice(src.indexOf('function makeStageEmitter'), src.indexOf('function makeStageEmitter') + 1800);
+check('stage start reports memory', /console\.log\(`\[chatWithMorpheus\] stage start: \$\{stage\} rss=\$\{memMb\(\)\}MB`\)/.test(emitter), true);
+check('stage done reports memory', /stage done: \$\{stage\}[\s\S]{0,120}rss=\$\{memMb\(\)\}MB/.test(emitter), true);
+
+// ── 3. The heaviest step gets its own reading ───────────────────────────────
+console.log('\n3. the bundle — the heaviest single step — is bracketed');
+const verifyIdx = src.indexOf('deep-verify: ${fullFiles.length}');
+check('memory is logged before bundling', verifyIdx > -1, true);
+check('memory is logged after bundling', /deep-verify: done[\s\S]{0,120}rss=\$\{memMb\(\)\}MB after bundling/.test(src), true);
+check('the reading names how many files are held', /\$\{fullFiles\.length\} file\(s\) in memory/.test(src), true);
+check('the before-reading comes before the verify call', verifyIdx < src.indexOf('let deep = await adapter.verify('), true);
+
+// ── 4. It survives the process being killed ─────────────────────────────────
+console.log('\n4. the readings go somewhere that outlives the request');
+const memLines = src.split('\n').filter((l) => l.includes('rss=${memMb()}'));
+check('there is at least one such line', memLines.length > 0, true);
+check('every one of them writes to stdout', memLines.every((l) => l.includes('console.log')), true);
+check('none of them goes to the response stream', memLines.some((l) => l.includes('emit(')), false);
+
+console.log(`\n${failures === 0 ? '✓' : '✗'} ${checks - failures}/${checks} checks passed\n`);
+process.exit(failures === 0 ? 0 : 1);

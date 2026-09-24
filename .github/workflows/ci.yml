@@ -406,6 +406,13 @@ jobs:
       - name: Proving ground is admin-only and unreferenced
         run: node scripts/verify-proving-ground.mjs
 
+      # A self-dev turn must report its own memory, and must report it to STDOUT:
+      # on 2026-09-24 one took the production container down with no error
+      # anywhere, and the reading that answers "where did the peak come from" is
+      # worthless if it is sent to a response stream that dies with the request.
+      - name: The pipeline reports its own memory
+        run: node scripts/verify-stage-observability.mjs
+
       # The run record: which stages are recorded, how an HTTP status becomes a
       # stage status, that a detail note stays a note, that the migration is
       # additive and idempotent (it ships ahead of an applier that has never
