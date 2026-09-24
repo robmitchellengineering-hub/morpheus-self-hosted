@@ -52,14 +52,14 @@ check('the helper is documented with the incident that caused it', /OOM kill loo
 // ── 2. Every stage boundary reports it ──────────────────────────────────────
 console.log('\n2. every stage boundary reports it');
 const emitter = src.slice(src.indexOf('function makeStageEmitter'), src.indexOf('function makeStageEmitter') + 1800);
-check('stage start reports memory', /console\.log\(`\[chatWithMorpheus\] stage start: \$\{stage\} rss=\$\{memMb\(\)\}MB`\)/.test(emitter), true);
+check('stage start reports memory', /console\.log\(`\[chatWithMorpheus\] stage start: \$\{stage\} rss=\$\{memMb\(\)\}MB/.test(emitter), true);
 check('stage done reports memory', /stage done: \$\{stage\}[\s\S]{0,120}rss=\$\{memMb\(\)\}MB/.test(emitter), true);
 
 // ── 3. The heaviest step gets its own reading ───────────────────────────────
 console.log('\n3. the bundle — the heaviest single step — is bracketed');
 const verifyIdx = src.indexOf('deep-verify: ${fullFiles.length}');
 check('memory is logged before bundling', verifyIdx > -1, true);
-check('memory is logged after bundling', /deep-verify: done[\s\S]{0,120}rss=\$\{memMb\(\)\}MB after bundling/.test(src), true);
+check('memory is logged after bundling', /deep-verify: done[\s\S]{0,160}rss=\$\{memMb\(\)\}MB[\s\S]{0,40}after bundling/.test(src), true);
 check('the reading names how many files are held', /\$\{fullFiles\.length\} file\(s\) in memory/.test(src), true);
 check('the before-reading comes before the verify call', verifyIdx < src.indexOf('let deep = await adapter.verify('), true);
 
@@ -105,6 +105,35 @@ check('the dispatcher reads it', /res\.locals\?\.morpheusStageDetail/.test(route
 check('and only when no return value supplied one', /if \(!detail && res\.locals\?\.morpheusStageDetail\)/.test(routes), true);
 check('the read happens before the stage is recorded',
   routes.indexOf('morpheusStageDetail') < routes.indexOf('await recordStage({'), true);
+
+// ── 7. The CONTAINER's memory, which is what the kernel acts on ─────────────
+console.log('\n7. the container reading, not just this process');
+const { parseCgroupBytes, containerMemory, describeContainerMemory } = await import('../server/src/lib/containerMemory.js');
+check('a byte count parses', parseCgroupBytes('268435456'), 268435456);
+check('surrounding whitespace is tolerated', parseCgroupBytes(' 123456 \n'), 123456);
+check('v2 "max" means no limit, not zero', parseCgroupBytes('max'), null);
+check('v1 unlimited is not mistaken for a limit', parseCgroupBytes('9223372036854771712'), null);
+// The sentinel above is already rejected as an unsafe integer, so it does NOT
+// exercise the absurd-size rule. This does, which is the point: without it the
+// rule was unreachable and a mutation removing it changed nothing.
+check('an absurdly large limit is treated as no limit too', parseCgroupBytes('5000000000000'), null);
+check('zero is not a limit', parseCgroupBytes('0'), null);
+check('garbage is null, never NaN', parseCgroupBytes('abc'), null);
+check('empty is null', parseCgroupBytes(''), null);
+check('null is null', parseCgroupBytes(null), null);
+check('a missing cgroup tree reads as unavailable, not as zero',
+  containerMemory({ v2: '/definitely/not/here', v1: '/nor/here' }), null);
+check('unavailable says so in the log token', describeContainerMemory(null), 'cgroup=unavailable');
+check('usage alone is reported', describeContainerMemory({ usedBytes: 104857600, limitBytes: null }), 'cgroup=100MB');
+check('usage against a limit is reported',
+  describeContainerMemory({ usedBytes: 104857600, limitBytes: 536870912 }), 'cgroup=100/512MB');
+
+// The reason the module exists: rss alone describes one process, and the step
+// that kills the container runs in a child.
+check('the module records why rss is not enough', /child, invisible to it|CHILD process whose footprint is invisible/i.test(readFileSync(path.join(REPO, 'server/src/lib/containerMemory.js'), 'utf8')), true);
+const stageLines = src.split('\n').filter((l) => l.includes('rss=${memMb()}') && l.includes('console.log'));
+check('every self-memory log line also carries the container reading',
+  stageLines.length > 0 && stageLines.every((l) => l.includes('containerMb()')), true);
 
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${checks - failures}/${checks} checks passed\n`);
 process.exit(failures === 0 ? 0 : 1);
