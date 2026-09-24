@@ -32,9 +32,10 @@ const DEFAULT_ITEMS = [
   { service: 'Northflank (backend hosting)', category: 'Hosting', monthly: 5.4, annual: 0, tier: 'paid', flag: '', note: 'nf-compute-20 runtime (0.2 vCPU / 512 MB), resized 2026-09-24. Builds bill separately as build minutes.' },
   { service: 'Supabase (database)', category: 'Database', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'Free tier' },
   // Measured, not typed: the number comes from the provider balance delta
-  // (server/src/lib/providerSpend.js) and is added to the total below. A fixed
-  // figure here would be the same guess the EST. COST column used to be.
-  { service: 'DeepSeek API (LLM)', category: 'AI / LLM', monthly: 0, annual: 0, tier: 'metered', flag: '', note: 'Measured from the provider balance delta over 30 days — folded into the all-in total, not entered by hand.' },
+  // (server/src/lib/providerSpend.js) and is reported as its own figure beside
+  // hosting. A fixed figure here would be the same guess the EST. COST column
+  // used to be.
+  { service: 'DeepSeek API (LLM)', category: 'AI / LLM', monthly: 0, annual: 0, tier: 'metered', flag: '', note: 'Metered — measured from the provider balance delta and shown separately from hosting, never added into it. Not entered by hand.' },
   { service: 'GitHub', category: 'Other', monthly: 4, annual: 0, tier: 'paid', flag: '', note: 'Pro — 3,000 Actions minutes/month on private repos, and branch protection (which is what makes the merge gate enforceable by GitHub, not only by merge.js).' },
   { service: 'Cloudflare', category: 'Other', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'Free plan (DNS/registrar)' },
   { service: 'Stripe', category: 'Payments', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'No fixed fee — 2.65%+NZ$0.30 domestic / 3.65%+NZ$0.30 intl per transaction' },
@@ -136,11 +137,10 @@ export default function CostTracker() {
   };
 
   const { monthlyFixed, annualExtra, monthlyEquivalent } = computeTotals(items);
-  // The one line on this page that is not typed in. Infrastructure is a list of
-  // subscriptions a human knows the price of; the LLM bill is not — so it is
-  // measured, and the total below is the only place both are added together.
+  // Hosting costs are a list of subscriptions a human knows the price of; the LLM
+  // bill is metered and only knowable by measuring the provider balance. The two
+  // are reported side by side and deliberately never added together.
   const measuredSpend = providerSpend?.available ? providerSpend.spendUsd : null;
-  const allInMonthly = monthlyEquivalent + (measuredSpend || 0);
 
   return (
     <div className="relative min-h-screen bg-background text-ink font-mono">
@@ -173,7 +173,7 @@ export default function CostTracker() {
           )}
         </div>
         <p className="text-ink text-sm mb-8">
-          // Everything it costs to host and run Morpheus, checked by hand against each provider's billing dashboard. Admin-only — not published anywhere public.
+          // Everything it costs to host and run Morpheus, checked by hand against each provider's billing dashboard. Hosting subscriptions and metered LLM usage are counted separately, never added together. Admin-only — not published anywhere public.
         </p>
 
         {error && <div className="text-danger text-sm border border-danger/30 px-3 py-2 mb-4">{error}</div>}
@@ -184,7 +184,7 @@ export default function CostTracker() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
               <div className="border border-primary/20 bg-primary/5 p-4">
                 <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">MONTHLY FIXED</p>
                 <p className="text-xl text-primary neon-glow">${monthlyFixed.toFixed(2)}</p>
@@ -194,12 +194,19 @@ export default function CostTracker() {
                 <p className="text-xl text-primary neon-glow">${annualExtra.toFixed(2)}</p>
               </div>
               <div className="border border-success/30 bg-success/5 p-4">
-                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ALL-IN, MONTHLY EQUIVALENT</p>
-                <p className="text-xl text-success neon-glow">${allInMonthly.toFixed(2)}</p>
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">HOSTING, MONTHLY EQUIVALENT</p>
+                <p className="text-xl text-success neon-glow">${monthlyEquivalent.toFixed(2)}</p>
+                <p className="text-[10px] text-ink-max mt-1">Subscriptions only. Fixed + annual extras ÷ 12.</p>
+              </div>
+              <div className="border border-primary/30 bg-primary/5 p-4">
+                <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">DEEPSEEK API, LAST 30D</p>
+                <p className="text-xl text-primary neon-glow">
+                  {measuredSpend == null ? '—' : `$${measuredSpend.toFixed(2)}`}
+                </p>
                 <p className="text-[10px] text-ink-max mt-1">
                   {measuredSpend == null
-                    ? `Includes nothing for the LLM bill — not measured yet (${providerSpend?.reason || 'no readings'}).`
-                    : `Includes $${measuredSpend.toFixed(2)} of measured provider spend; infrastructure above is $${monthlyEquivalent.toFixed(2)}.`}
+                    ? `Metered, not measured yet (${providerSpend?.reason || 'no readings'}).`
+                    : `Measured from the provider balance over 30 days (${providerSpend.samples} reading${providerSpend.samples === 1 ? '' : 's'}). Metered — kept out of the hosting figure.`}
                 </p>
               </div>
             </div>
