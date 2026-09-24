@@ -62,7 +62,7 @@ jobs:
             echo "::warning file=src/MORPHEUS_DESIGN_PLAN.md::npm run build rewrote this file (hazard H3) — do not commit it unless the change is specifically about it."
           fi
 
-  # ADVISORY, and named so on purpose: this does not block a merge.
+  # REQUIRED as of 2026-09-24: a red render fails the merge gate, not just a look.
   #
   # The gap it closes: every other job here, and both of self-dev's own
   # verification tiers, are blind to whether a page RENDERS. engine/verify.js
@@ -74,7 +74,18 @@ jobs:
   # route in real Chrome, and asserts the route reached its destination and
   # rendered a locator naming that page, with a clean console.
   #
-  # ADVISORY means a flake is VISIBLE rather than FREE. What is deliberate here:
+  # It landed advisory on 2026-09-23 and was promoted the next day, which is the
+  # order that matters: a required gate that has never been seen to fail is not
+  # a gate, it is a hope. Both directions are now on the record —
+  #
+  #   * it PASSES on the real build (three consecutive pull requests);
+  #   * it FAILS on a deliberately broken one. Mutation: `: > dist/assets/main-*.js`
+  #     (an empty bundle, so the app never boots) → exit 1, "0/5 public routes
+  #     rendered", a screenshot per route and a report.json. Run locally with
+  #     `npm run build && node scripts/render-smoke.mjs`, which is also how a
+  #     red job here gets debugged.
+  #
+  # What keeps it from becoming a flaky gate, all of it deliberate:
   #
   #   * `timeout-minutes: 10` bounds the job, so a hung browser cannot hold a
   #     runner (and a merge) open indefinitely.
@@ -87,19 +98,18 @@ jobs:
   #     request is intercepted — so the check never reaches a live service and
   #     cannot pass or fail on the weather.
   #   * Ports are dynamic (`listen(0)`), so two runs can never collide.
+  #   * Route locators get 25s, sized for a slower runner and for Landing's
+  #     timed boot line — a tight timeout is how a render check becomes flaky.
   #   * On failure the script writes a screenshot per failed route plus
-  #     report.json, and the upload step below publishes them — a red advisory
+  #     report.json, and the upload step below publishes them — a red required
   #     job nobody can debug is worse than none.
   #
-  # PROMOTION TO A REQUIRED GATE IS ONE ARRAY ENTRY: add 'render (advisory)' to
-  # SELF_DEV_REQUIRED_CHECKS in server/src/lib/engine/requiredChecks.js. That is
-  # deliberately NOT done in the change that adds this job — it lands advisory
-  # so it can earn its reliability, and only after it has run clean across
-  # several real pull requests does a red one become a stop rather than a look.
-  # `scripts/verify-merge-gates.mjs` asserts the required list against the real
-  # job names here, so that promotion is a checked rename rather than a hope.
+  # To DEMOTE it (a genuine flake that cannot be fixed quickly), remove 'render'
+  # from SELF_DEV_REQUIRED_CHECKS in server/src/lib/engine/requiredChecks.js —
+  # one array entry, and scripts/verify-merge-gates.mjs asserts the list against
+  # the real job names here, so the two can never drift apart silently.
   render:
-    name: render (advisory)
+    name: render
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
