@@ -715,6 +715,33 @@ export async function mergePullRequest(token, repoFullName, prNumber, { method =
   return { merged: !!data.merged, mergeCommitSha: data.sha };
 }
 
+// Bring a pull request's head up to date with its base.
+//
+// Needed because branch protection can require branches to be up to date before
+// merging. GitHub then reports `mergeable_state: 'behind'` and refuses the merge
+// with a 405 even when every check on the head is green — and it will not update
+// the branch for you.
+//
+// The update lands a merge commit on the head. Because that is a new commit, the
+// required checks run again against it, which is the whole point of the setting:
+// the green you read before updating is not the green that gets merged. The
+// caller must wait for the new run rather than merging on the old one.
+//
+// 202 = accepted (the update is queued), 422 = nothing to do or not updatable.
+export async function updatePullRequestBranch(token, repoFullName, prNumber) {
+  const h = ghHeaders(token);
+  const res = await fetch(`${GH_API}/repos/${repoFullName}/pulls/${prNumber}/update-branch`, {
+    method: 'PUT', headers: h, body: JSON.stringify({}),
+  });
+  const data = await ghJson(res);
+  if (!res.ok) {
+    // The caller reports this verbatim: "already up to date" and "the branch has
+    // conflicts" are different problems, and only GitHub knows which it is.
+    return { ok: false, status: res.status, message: data.message || `HTTP ${res.status}` };
+  }
+  return { ok: true, status: res.status, message: data.message || 'Updating pull request branch.' };
+}
+
 // Delete a branch ref. 204 = deleted, 422 = already gone — both fine for the
 // "tidy up the merged self-dev branch" use.
 export async function deleteBranch(token, repoFullName, branch) {
