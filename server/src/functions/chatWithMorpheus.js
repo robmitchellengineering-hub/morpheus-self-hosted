@@ -1206,6 +1206,18 @@ OPERATOR SAYS: ${message}`;
     let appliedOps = [];
     let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
     let syntaxCritical = []; // files that still didn't parse after a fix attempt
+
+    // Rework attribution (2026-09-24): a third of code-producing turns need
+    // more than one coder pass, and the call data could not say WHICH of the
+    // three retry loops demanded it — the syntax gate, the bundle/deep-verify
+    // gate, or the reviewer. Identical numbers, opposite fixes: one is a bad
+    // coder prompt, another is a fragile import graph, the third is a strict
+    // reviewer. Counted per gate and carried in the turn's RESULT, not just a
+    // log line, so it lands in the durable run record where a run can be read
+    // back days later instead of reconstructed.
+    let syntaxFixAttempts = 0;
+    let bundleFixAttempts = 0;
+    let reviewerFixAttempts = 0;
     let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
     const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
     let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -1438,6 +1450,8 @@ OPERATOR SAYS: ${message}`;
           }
         }
         const reviewed = await reviewAndRetry(user.id, fileOps, reviewContext, plannerResult.plan, coderPrompt, stages.onProgress);
+        reviewerFixAttempts = reviewed.attempts || 0;
+        console.log(`[chatWithMorpheus] rework: syntax=${syntaxFixAttempts} bundle=${bundleFixAttempts} reviewer=${reviewerFixAttempts}${reviewed.criticalFound ? ' (reviewer found critical issues)' : ''} rss=${memMb()}MB`);
         fileOps = reviewed.fileOps;
         reviewerModel = reviewed.reviewerModel;
         reviewSummary = reviewed.reviewSummary;
@@ -1467,6 +1481,7 @@ OPERATOR SAYS: ${message}`;
           .map((op) => ({ path: op.path, content: op.content }));
         let syntaxErrors = await checkSyntax(changedCode());
         for (let attempt = 1; syntaxErrors.length > 0 && attempt < MAX_GATE_ATTEMPTS; attempt++) {
+          syntaxFixAttempts++;
           stages.start('verify');
           const badPaths = [...new Set(syntaxErrors.map((e) => e.file))];
           const curBlock = badPaths
@@ -1538,6 +1553,7 @@ OPERATOR SAYS: ${message}`;
         let deep = await adapter.verify({ files: applyVirtual() });
         console.log(`[chatWithMorpheus] deep-verify: done, ok=${deep.ok} errors=${deep.errorCount}, rss=${memMb()}MB after bundling`);
         for (let attempt = 1; !deep.ok && attempt < MAX_GATE_ATTEMPTS; attempt++) {
+          bundleFixAttempts++;
           const badPaths = [...new Set(deep.errors.map((e) => e.file).filter(Boolean))];
           const curBlock = badPaths
             .map((p) => fileOps.find((op) => op.path === p && typeof op.content === 'string'))
@@ -1784,7 +1800,7 @@ OPERATOR SAYS: ${message}`;
       );
     }
 
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // Mirrors functions.routes.js's normal error shape (message/code/needed/
