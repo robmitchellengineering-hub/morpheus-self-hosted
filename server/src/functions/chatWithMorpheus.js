@@ -18,6 +18,7 @@ import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
+import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
 import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
 import { selfDevToolsPromptBlock, runSelfDevToolCalls, formatSelfDevToolResultsBlock, extractScreenshotUrls } from '../lib/selfDevTools.js';
 import { getConstructContext } from '../lib/constructContext.js';
@@ -104,6 +105,19 @@ function memMb() {
   return Math.round(process.memoryUsage().rss / 1024 / 1024);
 }
 
+/**
+ * The CONTAINER's memory, beside the process's.
+ *
+ * rss= above describes one process. The heaviest step in a turn is esbuild — a
+ * child, invisible to it — and the OOM killer reads the cgroup, not the Node
+ * heap. A turn that reported rss=147MB against a 256MB plan therefore proved
+ * nothing about whether the container was about to be killed, which is exactly
+ * the mistake this corrects.
+ */
+function containerMb() {
+  return describeContainerMemory(containerMemory());
+}
+
 function makeStageEmitter(emit) {
   let index = 0;
   const startedAt = new Map();
@@ -118,13 +132,13 @@ function makeStageEmitter(emit) {
     // choke point every stage already passes through, so logging here
     // covers the whole turn for free — self-dev or not, this build or any
     // future one that goes quiet.
-    console.log(`[chatWithMorpheus] stage start: ${stage} rss=${memMb()}MB`);
+    console.log(`[chatWithMorpheus] stage start: ${stage} rss=${memMb()}MB ${containerMb()}`);
   };
   const done = (stage) => {
     const t = startedAt.get(stage);
     const elapsedSeconds = t ? Math.round((Date.now() - t) / 1000) : undefined;
     emit({ type: 'stage', stage, status: 'done', label: STAGE_LABELS[stage], elapsedSeconds });
-    console.log(`[chatWithMorpheus] stage done: ${stage}${elapsedSeconds != null ? ` (${elapsedSeconds}s)` : ''} rss=${memMb()}MB`);
+    console.log(`[chatWithMorpheus] stage done: ${stage}${elapsedSeconds != null ? ` (${elapsedSeconds}s)` : ''} rss=${memMb()}MB ${containerMb()}`);
   };
   return {
     start,
@@ -1451,7 +1465,7 @@ OPERATOR SAYS: ${message}`;
         }
         const reviewed = await reviewAndRetry(user.id, fileOps, reviewContext, plannerResult.plan, coderPrompt, stages.onProgress);
         reviewerFixAttempts = reviewed.attempts || 0;
-        console.log(`[chatWithMorpheus] rework: syntax=${syntaxFixAttempts} bundle=${bundleFixAttempts} reviewer=${reviewerFixAttempts}${reviewed.criticalFound ? ' (reviewer found critical issues)' : ''} rss=${memMb()}MB`);
+        console.log(`[chatWithMorpheus] rework: syntax=${syntaxFixAttempts} bundle=${bundleFixAttempts} reviewer=${reviewerFixAttempts}${reviewed.criticalFound ? ' (reviewer found critical issues)' : ''} rss=${memMb()}MB ${containerMb()}`);
         fileOps = reviewed.fileOps;
         reviewerModel = reviewed.reviewerModel;
         reviewSummary = reviewed.reviewSummary;
@@ -1549,9 +1563,9 @@ OPERATOR SAYS: ${message}`;
         // The heaviest single step in a self-dev turn: every file of the
         // workspace in memory at once, handed to esbuild. Its own memory line,
         // because a stage-level reading would only bracket it, not show it.
-        console.log(`[chatWithMorpheus] deep-verify: ${fullFiles.length} file(s) in memory, rss=${memMb()}MB before bundling`);
+        console.log(`[chatWithMorpheus] deep-verify: ${fullFiles.length} file(s) in memory, rss=${memMb()}MB ${containerMb()} before bundling`);
         let deep = await adapter.verify({ files: applyVirtual() });
-        console.log(`[chatWithMorpheus] deep-verify: done, ok=${deep.ok} errors=${deep.errorCount}, rss=${memMb()}MB after bundling`);
+        console.log(`[chatWithMorpheus] deep-verify: done, ok=${deep.ok} errors=${deep.errorCount}, rss=${memMb()}MB ${containerMb()} after bundling`);
         for (let attempt = 1; !deep.ok && attempt < MAX_GATE_ATTEMPTS; attempt++) {
           bundleFixAttempts++;
           const badPaths = [...new Set(deep.errors.map((e) => e.file).filter(Boolean))];
