@@ -378,3 +378,11 @@ jobs:
       # case-insensitively, the Alpine container does not.
       - name: Server imports resolve
         run: node scripts/verify-server-imports.mjs
+
+      # The operator credential's own guard: it pins the allow-list, proves the
+      # escape hatches (force / directToMain / acknowledgeDrift / scopePolicy)
+      # are stripped, checks the constant-time compare, and fails if a token
+      # value has been committed. A credential that drives production deserves
+      # a check that fails when someone widens it by accident.
+      - name: Operator drive is scoped and leak-free
+        run: node scripts/verify-operator-drive.mjs
