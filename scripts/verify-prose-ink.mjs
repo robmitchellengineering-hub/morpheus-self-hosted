@@ -31,6 +31,7 @@ import {
   PROSE_TAGS, ACTION_TAGS, FIELD_TAGS, HEADING_TAGS, EMPHASIS_TAGS, maskSource,
 } from './lib/prose-ink.mjs';
 import { scanLadder, RUNG_FOR, RUNGS, BAND_CEILING } from './lib/ink-ladder.mjs';
+import { buildScopedFilesContext } from '../server/src/lib/scopedContext.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -352,6 +353,47 @@ for (const script of ['scripts/verify-prose-ink.mjs', 'scripts/prose-ink-sweep.m
   const chat = readFileSync(join(REPO, 'server/src/functions/chatWithMorpheus.js'), 'utf8');
   ok('…and self-dev is still handed AGENTS.md to read',
     /SELF_DEV_ORIENTATION_FILES = \[[^\]]*'AGENTS\.md'/.test(chat));
+
+  // Reachable is not the same as arriving. The scoped context runs out at a byte
+  // budget spent in iteration order, and orientation files used to be emitted in
+  // whatever order the DB returned rows in — so a large research pick could push
+  // the house rules out and the model would write UI code having never seen the
+  // ladder. Orientation is spent first now, and that is asserted against the real
+  // builder rather than against the shape of its source.
+  {
+    const big = (path) => ({ path, content: 'x'.repeat(5000) });
+    const house = { path: 'AGENTS.md', content: 'x'.repeat(200) };
+    // AGENTS.md is second in row order, and a big focus file is first — the exact
+    // arrangement that used to decide the outcome.
+    const files = [big('src/pages/Picked.jsx'), house, big('src/other.jsx')];
+    const out = buildScopedFilesContext(
+      files, ['src/pages/Picked.jsx', 'src/other.jsx'], ['AGENTS.md'], 5100,
+    );
+    eq('the house rules are shown first, whatever order the rows arrive in', out.shown[0], 'AGENTS.md');
+    ok('…and the focus file still gets its slot', out.shown.includes('src/pages/Picked.jsx'));
+    ok('…while the budget is still respected', !out.shown.includes('src/other.jsx'), `shown: ${out.shown.join(', ')}`);
+    eq('…and nothing is shown twice', out.shown.length, new Set(out.shown).size);
+
+    // A path that is not in the project must be skipped, not throw and not burn
+    // budget — the orientation list is names, not rows.
+    const absent = buildScopedFilesContext(
+      [house], ['nope.js'], ['not-in-project.md', 'AGENTS.md'], 100000,
+    );
+    eq('a name with no file behind it is skipped, and the real ones still arrive',
+      absent.shown, ['AGENTS.md']);
+  }
+
+  // The ladder names three utility classes; tailwind.config.js is where they are
+  // defined. Without it the model is told three class names and shown no evidence
+  // they exist.
+  ok('…and the file defining those tokens is in the orientation set too',
+    /SELF_DEV_ORIENTATION_FILES = \[[^\]]*'tailwind\.config\.js'/.test(chat));
+
+  // Naming the contract is what makes it a rule rather than a file that happens to
+  // be in the context. KNOWN-HAZARDS.md has been named in this prompt all along;
+  // AGENTS.md never was, which is why its ladder went unread for a day.
+  ok('…and the prompt names AGENTS.md as the contract to follow',
+    /HOUSE RULES: AGENTS\.md is in the context above/.test(chat));
 }
 
 console.log(`\n  green kept: ${counts.green}   ink in use: ${counts.ink} (swept this branch: ${counts.sweptInk})`);

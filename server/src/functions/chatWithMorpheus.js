@@ -9,6 +9,7 @@ import { invokeAI } from '../ai.js';
 import { createSnapshot, applyFileOperations, applyEdits, logUsage, syncProjectFilesToGithub } from '../lib/projectUtils.js';
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
+import { buildScopedFilesContext } from '../lib/scopedContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
 import { estimateCallMs } from '../lib/timingStats.js';
@@ -359,7 +360,14 @@ const SELF_DEV_TOOL_MAX_CALLS_PER_ROUND = 3; // mirrors externalApis' cap-of-5, 
 // nothing points at them. Self-dev (Morpheus's own monorepo) and an ordinary
 // large project want different sets; a normal project's set is filtered to
 // whatever actually exists.
-const SELF_DEV_ORIENTATION_FILES = ['KNOWN-HAZARDS.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', 'package.json', 'server/package.json', 'server/prisma/schema.prisma', 'src/App.jsx'];
+//
+// SELF_DEV_ORIENTATION_FILES are guaranteed a context slot (buildScopedFilesContext
+// spends the byte budget on them first), so only add a file here if every self-dev
+// turn genuinely needs it — each one is paid for on every request. tailwind.config.js
+// earns its place as the source of truth for the token class names AGENTS.md's ink
+// ladder refers to; src/index.css does not (it is 18KB of theme CSS and is not what
+// decides which rung a piece of text takes).
+const SELF_DEV_ORIENTATION_FILES = ['KNOWN-HAZARDS.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', 'package.json', 'server/package.json', 'server/prisma/schema.prisma', 'src/App.jsx', 'tailwind.config.js'];
 const GENERIC_ORIENTATION_FILES = ['package.json', 'README.md', 'index.html', 'src/App.jsx', 'src/App.tsx', 'src/main.jsx', 'src/main.tsx', 'src/index.js', 'vite.config.js', 'styles.css', 'src/index.css', 'tailwind.config.js', 'requirements.txt', 'main.py', 'go.mod', 'Cargo.toml'];
 
 // Raised 60,000 -> 150,000 (2026-09-02): the operator can pin several files
@@ -544,25 +552,9 @@ Return JSON: { readNext: [up to 6 paths from the tree you need to read next — 
 // content only for `focusPaths` + `orientationPaths`. Returns the text and
 // the list of paths whose content was actually shown, so the coder loop can
 // top up anything it's about to edit that isn't here (see the chunk loop).
-function buildScopedFilesContext(files, focusPaths, orientationPaths) {
-  const tree = files.map((f) => f.path).sort().join('\n');
-  const wanted = new Set([...(Array.isArray(focusPaths) ? focusPaths : []), ...orientationPaths]);
-  const shown = [];
-  let used = 0;
-  const sections = [];
-  for (const f of files) {
-    if (!wanted.has(f.path)) continue;
-    if (used > SCOPED_MAX_CONTEXT_BYTES) break;
-    sections.push(`--- ${f.path} ---\n${f.content}`);
-    shown.push(f.path);
-    used += f.content.length;
-  }
-  const contentBlock = sections.join('\n\n') || '(no files selected yet)';
-  return {
-    shown,
-    text: `FULL REPO FILE TREE (${files.length} files total — every path listed exists, but only the files below have their CONTENT shown):\n${tree}\n\nRELEVANT FILE CONTENTS:\n${contentBlock}`,
-  };
-}
+// buildScopedFilesContext moved to ../lib/scopedContext.js — it is pure, and a
+// guard has to be able to assert that orientation files are spent first (see the
+// moved comment for why that ordering is a rule and not an implementation detail).
 
 function scopedContextNote(shownPaths, { selfDev = false, autoSelected = false } = {}) {
   const where = selfDev
@@ -575,7 +567,7 @@ SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
 - PLANNER: it is fine to plan a "create" for a genuinely new path. For an "update" to an EXISTING path you have not seen, still list it in plannedFiles — the coding step is handed that file's real current content when it implements it — but keep your plan notes about it high-level; do not describe a line-by-line rewrite from memory.
 - CODER: for any file whose current content you were not shown, make the smallest change that satisfies the plan and preserve everything else; never reconstruct a file you cannot see.
 - REVIEWER: the context is scoped. Do NOT flag an issue that depends on a file not shown here (e.g. "imports X which may not exist") — you cannot verify it either way, so treat unseen files as correct.
-- Prefer small, targeted, reviewable changes over sweeping rewrites.${selfDev ? " The operator reviews every change before pushing to production themselves." : ''}${selfDev ? "\n- KNOWN-HAZARDS.md is in the context above — a list of self-inflicted production breakages that have already happened here. PLANNER: do not plan anything that repeats one. REVIEWER: check every proposed change against every hazard in it and flag a violation as a CRITICAL issue." : ''}${selfDev ? "\n- DB SCHEMA: if you change server/prisma/schema.prisma, you MUST also add a matching migration file server/prisma/selfdev-<slug>.sql in the SAME change — idempotent, ADDITIVE-ONLY DDL (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, CREATE TYPE, ALTER TYPE ... ADD VALUE), one statement per line, in the same plain style as the existing server/prisma/*.sql files. Never DROP or retype an existing column in self-dev. The push is blocked if a schema change ships without its migration." : ''}`;
+- Prefer small, targeted, reviewable changes over sweeping rewrites.${selfDev ? " The operator reviews every change before pushing to production themselves." : ''}${selfDev ? "\n- KNOWN-HAZARDS.md is in the context above — a list of self-inflicted production breakages that have already happened here. PLANNER: do not plan anything that repeats one. REVIEWER: check every proposed change against every hazard in it and flag a violation as a CRITICAL issue." : ''}${selfDev ? "\n- HOUSE RULES: AGENTS.md is in the context above and is this repo's own contract. Its \"UI conventions\" section states the ink ladder — which text size may use text-ink, text-ink-strong or text-ink-max, and that an ink token never takes an opacity modifier. Follow it exactly; scripts/verify-prose-ink.mjs enforces that ladder on every build, so a wrong rung is a red CI gate even though the code is valid. That guard is where three consecutive self-dev changes failed." : ''}${selfDev ? "\n- DB SCHEMA: if you change server/prisma/schema.prisma, you MUST also add a matching migration file server/prisma/selfdev-<slug>.sql in the SAME change — idempotent, ADDITIVE-ONLY DDL (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, CREATE TYPE, ALTER TYPE ... ADD VALUE), one statement per line, in the same plain style as the existing server/prisma/*.sql files. Never DROP or retype an existing column in self-dev. The push is blocked if a schema change ships without its migration." : ''}`;
 }
 
 export default async function handler({ user, body, res }) {
@@ -726,7 +718,7 @@ export default async function handler({ user, body, res }) {
       });
       autoSelected = true;
     }
-    const built = buildScopedFilesContext(files, effectivePaths, orientation);
+    const built = buildScopedFilesContext(files, effectivePaths, orientation, SCOPED_MAX_CONTEXT_BYTES);
     filesContext = built.text;
     shownPaths = built.shown;
     if (mode === 'build') scopedNote = scopedContextNote(built.shown, { selfDev: isSelfDev, autoSelected });
@@ -1061,7 +1053,7 @@ OPERATOR SAYS: ${message}`;
       const research = await researchRepo(user.id, files, message,
         isSelfDev ? {} : { maxRounds: 2, maxFiles: 10 });
       researchNotes = research.notes || '';
-      const built = buildScopedFilesContext(files, research.readPaths || [], orientation);
+      const built = buildScopedFilesContext(files, research.readPaths || [], orientation, SCOPED_MAX_CONTEXT_BYTES);
       filesContext = built.text;
       shownPaths = built.shown;
       shownPathSet = new Set(shownPaths);
