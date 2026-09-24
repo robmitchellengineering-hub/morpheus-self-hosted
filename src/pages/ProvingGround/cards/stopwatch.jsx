@@ -57,7 +57,7 @@ export default function Stopwatch() {
         <button
           type="button"
           onClick={reset}
-          className="text-[11px] font-mono uppercase tracking-wider border border-primary/25 text-ink-max hover:border-primary/60 hover:text-ink-strong px-2 py-1 transition-colors"
+          className="text-[11px] font-mono uppercase tracking-wider border border-primary/25 text-ink-max hover:border-primary/60 hover:text-ink-max px-2 py-1 transition-colors"
         >
           Reset
         </button>
