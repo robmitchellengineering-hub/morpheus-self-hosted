@@ -97,5 +97,14 @@ check('it is on the run-record allow-list, so it survives the session',
   readFileSync(path.join(REPO, 'server/src/lib/selfDevRunRules.js'), 'utf8').includes("'rework'"), true);
 check('the rework reading also goes to stdout', /console\.log\(`\[chatWithMorpheus\] rework: syntax=\$\{syntaxFixAttempts\}/.test(src), true);
 
+// ── 6. A STREAMING handler can still reach the run record ───────────────────
+console.log('\n6. the streaming stage is not blank in the record');
+const routes = readFileSync(path.join(REPO, 'server/src/routes/functions.routes.js'), 'utf8');
+check('the chat turn publishes its detail out of band', /res\.locals\.morpheusStageDetail = \{ rework:/.test(src), true);
+check('the dispatcher reads it', /res\.locals\?\.morpheusStageDetail/.test(routes), true);
+check('and only when no return value supplied one', /if \(!detail && res\.locals\?\.morpheusStageDetail\)/.test(routes), true);
+check('the read happens before the stage is recorded',
+  routes.indexOf('morpheusStageDetail') < routes.indexOf('await recordStage({'), true);
+
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${checks - failures}/${checks} checks passed\n`);
 process.exit(failures === 0 ? 0 : 1);
