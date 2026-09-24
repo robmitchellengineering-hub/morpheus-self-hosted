@@ -51,11 +51,31 @@ export default async function handler({ user }) {
     runCountReason = err?.message || 'unknown error';
   }
 
+  // Counted the same way useWorkspace's loadFiles filters the workspace file
+  // tree: exclude backend/ and external/. Same best-effort rule as runCount —
+  // null means the query failed, not zero files.
+  let workspaceFileCount = null;
+  try {
+    const rows = await prisma.$queryRawUnsafe(
+      `select count(*)::int as n
+       from project_files
+       where project_id = (
+         select id from projects where project_type = 'self_dev' limit 1
+       )
+       and path not like 'backend/%'
+       and path not like 'external/%'`,
+    );
+    workspaceFileCount = Number(rows?.[0]?.n ?? 0);
+  } catch {
+    // null = unavailable; the status strip renders it distinctly.
+  }
+
   return {
     available: true,
     memory,
     runCount,
     runCountReason,
+    workspaceFileCount,
     // The constant, not a guess: this is the branch self-dev is configured to push to.
     branch: SELF_DEV_BRANCH,
     // The server's own clock, so a status strip can show what time this reading
