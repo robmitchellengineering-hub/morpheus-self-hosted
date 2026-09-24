@@ -44,13 +44,13 @@ export default function Stopwatch() {
     <div className="space-y-3">
       <p className="text-xs font-mono text-ink-strong font-bold">STOPWATCH</p>
 
-      <p className="text-2xl font-mono text-ink-strong tabular-nums">{elapsed.toFixed(1)}s</p>
+      <p className="text-2xl font-mono text-ink tabular-nums">{elapsed.toFixed(1)}s</p>
 
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => setRunning((r) => !r)}
-          className="text-[11px] font-mono uppercase tracking-wider border border-primary/40 text-ink-strong hover:border-primary px-2 py-1 transition-colors"
+          className="text-[11px] font-mono uppercase tracking-wider border border-primary/40 text-ink-max hover:border-primary px-2 py-1 transition-colors"
         >
           {running ? 'Stop' : 'Start'}
         </button>
