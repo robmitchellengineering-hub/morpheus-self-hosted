@@ -396,3 +396,12 @@ jobs:
       # a check that fails when someone widens it by accident.
       - name: Operator drive is scoped and leak-free
         run: node scripts/verify-operator-drive.mjs
+
+      # /proving-ground is an admin-only test surface, so "not customer facing"
+      # is a property that decays the moment someone links it. This asserts the
+      # route stays inside the adminOnly group, that nothing outside the page
+      # names it, and that its card registry and the files on disk agree in
+      # BOTH directions — a card that vanishes silently is the exact failure the
+      # page exists to catch.
+      - name: Proving ground is admin-only and unreferenced
+        run: node scripts/verify-proving-ground.mjs
