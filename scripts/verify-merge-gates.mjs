@@ -17,11 +17,19 @@
 // still match the workflow's own job names, and that the engine and the self-dev
 // adapter actually consult them.
 //
+// It also asserts that GitHub itself still enforces the same gates. Branch
+// protection was set by hand on 2026-09-24 with a `gh api` call, so before this
+// the requirement existed in two places that nothing compared: the constant in
+// requiredChecks.js and a setting in GitHub's UI. The comparison is pure
+// (server/src/lib/branchProtectionRules.js) precisely so it can be exercised
+// here, with no network; scripts/check-branch-protection.mjs does the live read.
+//
 // Run:  node scripts/verify-merge-gates.mjs
 import { readFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SELF_DEV_REQUIRED_CHECKS, requiredGateVerdict, requiredGateMessage } from '../server/src/lib/engine/requiredChecks.js';
+import { protectionVerdict } from '../server/src/lib/branchProtectionRules.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -115,6 +123,65 @@ check('self-dev passes them to its own repo\u2019s merge', /requiredChecks: SELF
 // must NOT claim a gate list: that would block every PR on a repo with no CI.
 const wp = read('server/src/lib/delivery/wordpress.js');
 check('the WordPress adapter declares no gates it cannot know', /requiredChecks/.test(wp), false);
+
+console.log('\n-- and GitHub is required to enforce them, not only merge.js --');
+// The pure comparison behind scripts/check-branch-protection.mjs, exercised here
+// because the live reading needs `gh` and a token while this must run with
+// nothing installed. Every drift branch is asserted to FAIL, which is the only
+// thing that makes the live check worth running.
+const protection = (contexts, extra = {}) => ({
+  required_status_checks: { strict: false, contexts },
+  enforce_admins: { enabled: false },
+  allow_force_pushes: { enabled: false },
+  allow_deletions: { enabled: false },
+  ...extra,
+});
+
+const agreed = protectionVerdict(protection(SELF_DEV_REQUIRED_CHECKS), SELF_DEV_REQUIRED_CHECKS);
+check('agreement reports ok', agreed.ok, true);
+check('…with every gate accounted for', agreed.missing.concat(agreed.extra), []);
+
+const dropped = protectionVerdict(protection(['guards (no install)', 'lint + build']), SELF_DEV_REQUIRED_CHECKS);
+check('a gate GitHub is not enforcing is caught', dropped.ok, false);
+check('…and named', dropped.missing, ['render']);
+
+const undeclared = protectionVerdict(protection([...SELF_DEV_REQUIRED_CHECKS, 'some other gate']), SELF_DEV_REQUIRED_CHECKS);
+check('a gate enforced but not declared is caught', undeclared.ok, false);
+check('…and named', undeclared.extra, ['some other gate']);
+
+const gone = protectionVerdict(null, SELF_DEV_REQUIRED_CHECKS);
+check('an unprotected branch is caught', gone.ok, false);
+check('…as unprotected, not as an unexplained empty list', gone.unprotected, true);
+check('…and every gate is reported missing', gone.missing, SELF_DEV_REQUIRED_CHECKS);
+
+const forced = protectionVerdict(protection(SELF_DEV_REQUIRED_CHECKS, { allow_force_pushes: { enabled: true } }), SELF_DEV_REQUIRED_CHECKS);
+check('allowing force-pushes on main is caught', forced.ok, false);
+
+// The deliberate settings must NOT read as drift, or the check is noise and gets
+// ignored — which is how a real drift slips through unnoticed.
+const deliberate = protectionVerdict(
+  protection(SELF_DEV_REQUIRED_CHECKS, {
+    required_status_checks: { strict: true, contexts: SELF_DEV_REQUIRED_CHECKS },
+    enforce_admins: { enabled: true },
+  }),
+  SELF_DEV_REQUIRED_CHECKS,
+);
+check('strict + admin enforcement still report ok', deliberate.ok, true);
+check('…because they are reported, not judged', [deliberate.strict, deliberate.adminsBypass], [true, false]);
+
+// GitHub returns contexts in whatever order it likes, and a string can carry
+// whitespace. Neither is drift; the engine's own matcher trims for the same
+// reason.
+check('context order is not drift', protectionVerdict(protection([...SELF_DEV_REQUIRED_CHECKS].reverse()), SELF_DEV_REQUIRED_CHECKS).ok, true);
+check('surrounding whitespace is not drift', protectionVerdict(protection(SELF_DEV_REQUIRED_CHECKS.map((n) => ` ${n} `)), SELF_DEV_REQUIRED_CHECKS).ok, true);
+
+console.log('\n-- and the live reading uses the same declared gates --');
+const live = read('scripts/check-branch-protection.mjs');
+check('the live check imports the declared gates', /import \{ SELF_DEV_REQUIRED_CHECKS \} from '\.\.\/server\/src\/lib\/engine\/requiredChecks\.js';/.test(live), true);
+// If it rebuilt the comparison locally, the two could drift and both would pass.
+check('…and the shared comparison, not a reimplementation', /import \{ protectionVerdict, protectionMessage \} from '\.\.\/server\/src\/lib\/branchProtectionRules\.js';/.test(live), true);
+// Deliberate: verify.mjs must keep working with no token and no network.
+check('…and is NOT wired into verify.mjs', /check-branch-protection/.test(read('scripts/verify.mjs')), false);
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {
