@@ -7,12 +7,23 @@
 //   1. per-file transform (syntax / JSX)              — lib/syntaxCheck.js
 //   2. bundle from real entry points (local imports)  — esbuild, npm external
 //   3. cross-file named-export check                  — lib/importGraph.js
+// plus an opt-in fourth:
+//   4. house conventions (`opts.conventionChecks`)    — lib/conventionChecks.js
+//
+// Check 4 exists because the gate that decides whether a change lands runs 33
+// guards on top of these, so a change could pass everything here and still fail
+// CI on a rule the writer was never shown in a form it could act on. Three
+// consecutive self-dev changes did exactly that (`rework: 0/0/0`, then a red
+// `prose-ink rule`). It is opt-in because these are Morpheus's own conventions —
+// a tenant's generated project has no ink ladder, and enforcing our house style on
+// someone else's code would be nonsense.
 //
 // It does NOT run `vite build` or `eslint` — the backend container has
 // neither. esbuild is a single dependency-free binary and covers the
 // failure modes that actually take a deploy down.
 import { checkSyntax } from '../syntaxCheck.js';
 import { findBrokenImports } from '../importGraph.js';
+import { conventionViolations } from '../conventionChecks.js';
 import * as esbuild from 'esbuild';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -116,6 +127,9 @@ export async function verifyProject(files, opts = {}) {
       text: `imports "${b.name}" from ${b.target}, which does not export it — a caller-breaking change to ${b.target}`,
     });
   }
+
+  // Pass 4 — house conventions (opt-in; see the header).
+  for (const e of conventionViolations(kept, opts.conventionChecks)) errors.push(e);
 
   const seen = new Set();
   const unique = errors.filter((e) => {

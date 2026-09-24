@@ -80,6 +80,10 @@ check('and whether the first review found anything critical', /criticalFound: fi
 
 check('the syntax gate counts its fix passes', /let syntaxFixAttempts = 0;/.test(src), true);
 check('the bundle gate counts its fix passes', /let bundleFixAttempts = 0;/.test(src), true);
+// The convention gate runs in the same fix loop as the bundle pass but is counted
+// apart from it — a house-rule violation is not a failure to bundle, and folding
+// them together would make the run record describe the wrong problem.
+check('the convention gate counts its fix passes', /let conventionFixAttempts = 0;/.test(src), true);
 // Positionally, because a counter incremented OUTSIDE its loop reads zero for
 // ever and would look exactly like "this gate never fires".
 const syntaxLoop = src.indexOf('for (let attempt = 1; syntaxErrors.length > 0');
@@ -88,10 +92,19 @@ check('the syntax count is incremented inside its own loop',
   src.indexOf('syntaxFixAttempts++;') > syntaxLoop && src.indexOf('syntaxFixAttempts++;') < bundleLoop, true);
 check('the bundle count is incremented inside its own loop',
   src.indexOf('bundleFixAttempts++;') > bundleLoop, true);
+check('the convention count is incremented inside the same loop, not before it',
+  src.indexOf('conventionFixAttempts++;') > bundleLoop, true);
 
 // The point of the exercise: it must reach the RESULT, which is what the
 // dispatcher records — a log line alone dies with the container.
-check('the turn returns the rework summary', /rework: \{ syntax: syntaxFixAttempts, bundle: bundleFixAttempts, reviewer: reviewerFixAttempts \}/.test(src), true);
+// This used to pin one exact literal. That failed for the wrong reason when a gate
+// was added (a formatting mismatch) and could miss a gate being dropped. The
+// property that matters is that EVERY gate is named: a gate that reworks without
+// reporting it is a rework nobody can see in the run record.
+for (const gate of ['syntax', 'bundle', 'convention', 'reviewer']) {
+  check(`the rework summary reports the ${gate} gate`,
+    new RegExp(`rework: \\{[^}]*\\b${gate}: `).test(src), true);
+}
 check('the rework summary reaches the result event', src.indexOf('rework: { syntax:') > src.indexOf("emit({ type: 'result'"), true);
 check('it is on the run-record allow-list, so it survives the session',
   readFileSync(path.join(REPO, 'server/src/lib/selfDevRunRules.js'), 'utf8').includes("'rework'"), true);

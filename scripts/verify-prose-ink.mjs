@@ -32,6 +32,9 @@ import {
 } from './lib/prose-ink.mjs';
 import { scanLadder, RUNG_FOR, RUNGS, BAND_CEILING } from './lib/ink-ladder.mjs';
 import { buildScopedFilesContext } from '../server/src/lib/scopedContext.js';
+// The opacity-modifier pattern moved into the shared module so the guard and the
+// in-loop check cannot disagree about what counts as a violation.
+import { OPACITY_INK, conventionViolations } from '../server/src/lib/conventionChecks.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -253,7 +256,9 @@ eq('a form label is prose now', PROSE_TAGS.has('label') && !ACTION_TAGS.has('lab
 // wherever it failed. The rest pins the bands, so the rungs cannot drift apart
 // from the sizes they are meant to serve.
 console.log('\n9. the ink ladder');
-const OPACITY_INK = /text-ink(?:-strong|-max)?\/\d+/g;
+// OPACITY_INK is imported from the shared rule module (see the import block) —
+// the in-loop check uses the same pattern, so a violation is either seen by both
+// or by neither.
 const dimmers = [];       // VIOLATION: an opacity modifier on an ink token
 const opacityUtils = [];  // REPORT ONLY: opacity-* on an element that carries text
 const wrongBand = [];
@@ -394,6 +399,71 @@ for (const script of ['scripts/verify-prose-ink.mjs', 'scripts/prose-ink-sweep.m
   // AGENTS.md never was, which is why its ladder went unread for a day.
   ok('…and the prompt names AGENTS.md as the contract to follow',
     /HOUSE RULES: AGENTS\.md is in the context above/.test(chat));
+}
+
+// ── 12. the build turn runs the SAME rule, and runs it ──────────────────────
+// The gap this closes: the turn verified syntax, bundling and exports, then CI ran
+// 33 guards on top of that. Three consecutive self-dev changes reported
+// rework 0/0/0 and failed CI on one step — prose-ink. So the rule now runs inside
+// the turn, against the server's own trusted copy of it.
+console.log('\n12. the same rule, inside the build turn');
+{
+  const one = (path, content) => [{ path, content }];
+  const phases = (files) => conventionViolations(files, ['ink']).map((v) => v.phase);
+
+  // Behavioural, not a source pattern: this is the check the coder will be handed,
+  // so what matters is that it flags what CI flags and stays quiet about the rest.
+  const wrong = conventionViolations(one('src/pages/X.jsx', '<div className="text-[11px]"><span className="text-ink">tiny</span></div>'), ['ink']);
+  eq('an 11px element on the bottom rung is a violation', wrong.map((v) => v.phase), ['convention:ink-band']);
+  ok('…whose message names the token that element needs', /requires text-ink-max/.test(wrong[0]?.text || ''), wrong[0]?.text);
+  ok('…and carries a line number the coder can go to', wrong[0]?.line === 1, String(wrong[0]?.line));
+
+  // A modifier is reported twice, and that is correct rather than a bug: `text-ink/60`
+  // is also not the token its band requires, so the ladder sees it too. Asserted as
+  // "includes", because pinning the exact pair would make this fail for the wrong
+  // reason if the ladder ever reports it once.
+  const dim = conventionViolations(one('src/pages/X.jsx', '<p className="text-sm hover:text-ink/60">words</p>'), ['ink']);
+  ok('an opacity modifier on ink is a violation', dim.some((v) => v.phase === 'convention:ink-opacity'));
+  ok('…and is named as a modifier, not merely as a wrong rung',
+    dim.some((v) => /never takes an opacity modifier/.test(v.text)));
+  eq('a correct rung is not a violation',
+    phases(one('src/pages/X.jsx', '<p className="text-sm text-ink">words</p>')), []);
+  // The Deck is deliberately its own theme; the guard exempts it and so must this.
+  eq('the Deck is exempt, exactly as the guard exempts it',
+    phases(one('src/pages/CommandDeck/DeckUI.jsx', '<span className="text-xs text-ink">x</span>')), []);
+  // A comment may document the rule — src/index.css mentions `text-ink/60` as prose.
+  eq('a comment documenting the rule is not a violation',
+    phases(one('src/pages/X.jsx', '// never write text-ink/60\n<p className="text-sm text-ink">x</p>')), []);
+  eq('a file outside src/ is not in scope',
+    phases(one('server/src/thing.js', 'const c = "text-ink/60";')), []);
+  eq('asking for no checks runs none', conventionViolations(one('src/pages/X.jsx', '<span className="text-ink">x</span>'), []), []);
+
+  // …and the turn actually asks for it. A perfect rule nobody runs is the bug.
+  const verifySrc = readFileSync(join(REPO, 'server/src/lib/engine/verify.js'), 'utf8');
+  ok('the build turn runs the convention pass', /conventionViolations\(kept, opts\.conventionChecks\)/.test(verifySrc));
+  // Opt-in is the safety property: a tenant's generated project has no ink ladder,
+  // so an absent list must run NOTHING rather than defaulting to everything. The
+  // markup is deliberately a real violation — a passing case would not distinguish
+  // "ran no checks" from "ran a check that found nothing".
+  eq('…and an absent list runs nothing at all',
+    conventionViolations(one('src/pages/X.jsx', '<div className="text-[11px]"><span className="text-ink">tiny</span></div>'), undefined), []);
+  // Matched against COMMENT-MASKED source. The first version of this assertion
+  // passed on the explanatory comment above the code, which contains the same words
+  // — so it proved the prose existed, not the wiring.
+  const selfDevSrc = readFileSync(join(REPO, 'server/src/lib/delivery/selfDev.js'), 'utf8');
+  ok('…and self-dev is the target that asks for it',
+    /conventionChecks:\s*Array\.isArray\(conventionChecks\)/.test(maskSource(selfDevSrc, { commentsOnly: true })));
+  const chatSrc = maskSource(readFileSync(join(REPO, 'server/src/functions/chatWithMorpheus.js'), 'utf8'), { commentsOnly: true });
+  ok('…and a turn where it fired is counted apart from the bundle gate',
+    /conventionFixAttempts\+\+/.test(chatSrc) && /convention: conventionFixAttempts/.test(chatSrc));
+
+  // One definition of the rule, or the loop and the gate drift apart silently.
+  const ladderLib = readFileSync(join(REPO, 'scripts/lib/ink-ladder.mjs'), 'utf8');
+  ok('the ladder has exactly one definition, re-exported to this guard',
+    /export \* from '\.\.\/\.\.\/server\/src\/lib\/inkLadder\.js'/.test(ladderLib));
+  const inkSrc = readFileSync(join(REPO, 'scripts/verify-prose-ink.mjs'), 'utf8');
+  ok('…and this guard does not define its own opacity pattern',
+    !/^const OPACITY_INK = /m.test(inkSrc), 'this guard redeclares OPACITY_INK instead of importing it');
 }
 
 console.log(`\n  green kept: ${counts.green}   ink in use: ${counts.ink} (swept this branch: ${counts.sweptInk})`);
