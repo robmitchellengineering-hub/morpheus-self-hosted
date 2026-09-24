@@ -1,4 +1,4 @@
-// Sync safety — telling an upstream change apart from un-pushed local work.
+// Sync safety — keeping un-pushed local work through a SYNC FROM GITHUB.
 //
 // THE BUG THIS EXISTS FOR (demonstrated 2026-09-24, not reasoned about)
 //
@@ -8,46 +8,58 @@
 // push — workspace already matches production." The recovery the guard
 // recommends destroys the change it tells you to re-apply.
 //
-// WHY IT COULD NOT TELL
+// THE SECOND BUG, FOUND BY WALKING INTO IT (2026-09-24, later)
 //
-// `importSelfDevRepo` overwrites any local file whose git-blob sha differs from
-// upstream's, and deletes any local row whose path is gone upstream. Both are
-// right for a mirror catching up. But "local sha differs from remote" describes
-// TWO situations at once:
+// The first fix REFUSED the sync whenever anything was at risk. That is correct
+// in isolation and useless in practice, because it deadlocks the pipeline: a
+// stale mirror makes the push refuse, un-pushed work makes the sync refuse, and
+// the only way out is to discard the work. The operator is stuck between two
+// guards, both of which are right.
 //
-//   * upstream moved on and the mirror is behind  -> must overwrite
-//   * the operator edited the file and has not pushed -> must NOT overwrite
+// So the sync PRESERVES rather than refuses. It fetches everything upstream
+// changed, keeps the files that carry local work, keeps files that exist only
+// here, advances the sync point to the new HEAD, and says what it kept. The
+// workspace is then genuinely based on the new HEAD with local edits on top —
+// which is exactly what the subsequent push wants to carry.
 //
-// The same ambiguity makes an absent-upstream path either "upstream deleted it"
-// or "I just created it". No diff can separate them; only provenance can. That
-// is `project_files.synced_sha`: the upstream blob sha each row was last known
-// to correspond to.
+// WHY IT STILL NEEDS PROVENANCE
+//
+// Overwriting is right for a mirror catching up and wrong for work in progress,
+// and "local sha differs from remote" describes both. `project_files.synced_sha`
+// — the upstream blob sha a row was last known to correspond to — separates them,
+// and separates a further case that matters:
+//
+//   upstream unchanged, local edited   -> a local-only edit; keep silently
+//   BOTH changed since the last sync   -> a conflict; keep, and say so
+//   not upstream at all, never was     -> a new file; keep
+//   upstream deleted, local untouched  -> drop it, that is the mirror's job
+//
+// The conflict case is the one the earlier design could not express, and it is
+// the one with consequences: preserving a conflict and then pushing it WILL
+// overwrite upstream's version of that file. That has to be said out loud rather
+// than discovered.
 //
 // Pure by design — no database, no network, no environment — so the rule that
 // decides whether someone's work survives can be tested with no install, which
 // is the same reason lib/selfDevRunRules.js and lib/selfDevDrift.js's evaluator
-// are pure. scripts/verify-sync-safety.mjs exercises it.
+// are pure.
 import { gitBlobSha } from './selfDevRepo.js';
 
 /**
- * @typedef {{ path: string, content: string }} LocalFile
- * @typedef {{ path: string, sha: string }} RemoteBlob
- */
-
-/**
- * What would be lost by syncing?
+ * What a sync would do to local work, path by path.
  *
  * @param {object} input
- * @param {LocalFile[]} input.local            current workspace rows
- * @param {RemoteBlob[]} input.remote          upstream tree (excluded paths already filtered)
- * @param {Map<string,string|null>} [input.syncedShaByPath]  provenance per path
- * @returns {{modified: string[], orphaned: string[], atRisk: number}}
+ * @param {Array<{path: string, content: string}>} input.local   workspace rows
+ * @param {Array<{path: string, sha: string}>} input.remote      upstream tree (excluded paths already filtered)
+ * @param {Map<string,string|null>} [input.syncedShaByPath]       provenance per path
  */
 export function assessLocalLoss({ local = [], remote = [], syncedShaByPath } = {}) {
   const provenance = syncedShaByPath instanceof Map ? syncedShaByPath : new Map();
   const remoteShaByPath = new Map(remote.map((r) => [r.path, r.sha]));
-  const modified = [];
-  const orphaned = [];
+  const modified = [];   // local edit, upstream did not touch it
+  const conflicts = [];  // both changed — keeping local overwrites upstream on push
+  const orphaned = [];   // exists only here
+  const deletions = [];  // upstream removed it and nobody edited it: safe to drop
 
   for (const file of local) {
     const localSha = gitBlobSha(file.content ?? '');
@@ -55,64 +67,82 @@ export function assessLocalLoss({ local = [], remote = [], syncedShaByPath } = {
     const synced = provenance.get(file.path) ?? null;
 
     if (remoteSha === undefined) {
-      // No longer upstream. Either upstream deleted it (safe to drop) or it was
-      // created here and has never been pushed (must not be lost).
-      //
-      // Provenance decides, EXCEPT that unknown provenance is treated as
-      // "protect": a file with no recorded provenance cannot be shown to have
-      // come from upstream, and the demonstrated loss was exactly this case — a
-      // card the chat had just created, which upstream had never seen.
-      const knownUpstreamCopy = synced !== null && localSha === synced;
-      if (!knownUpstreamCopy) orphaned.push(file.path);
+      // Gone upstream. With provenance proving we hold an untouched copy of what
+      // upstream had, this is upstream's deletion and the mirror should follow.
+      // Otherwise it cannot be shown to have come from upstream at all, so it is
+      // kept — which is the case that actually lost work.
+      if (synced !== null && localSha === synced) deletions.push(file.path);
+      else orphaned.push(file.path);
       continue;
     }
 
-    if (remoteSha === localSha) continue;          // already current
-    // Untouched since its last sync: upstream moved on, and overwriting is the
-    // whole point of syncing.
-    if (synced !== null && localSha === synced) continue;
+    if (remoteSha === localSha) continue;                  // already current
+    if (synced !== null && localSha === synced) continue;  // untouched: plain catch-up
+    // Unknown provenance is treated as catch-up, not as local work. Every row
+    // predating the column has none, so treating it as "edited" would make the
+    // first sync on any existing deployment preserve all 242 drifted files and
+    // never catch up. Overwriting an unknown file is the normal path; DELETING
+    // one is the case that cannot be undone, and that is handled above.
+    if (synced === null) continue;
 
-    // Either it was edited here, or provenance is unknown.
-    //
-    // Unknown provenance is NOT treated as local work here, and the asymmetry
-    // with the orphan case above is deliberate: every row that predates this
-    // column has none, so treating it as "edited" would make the first sync on
-    // any existing deployment refuse every drifted file — blocking the catch-up
-    // it exists to perform. Overwriting an unknown file is the normal path;
-    // DELETING an unknown file is the one that cannot be undone.
-    if (synced !== null) modified.push(file.path);
+    if (remoteSha === synced) modified.push(file.path);
+    else conflicts.push(file.path);
   }
 
-  return { modified, orphaned, atRisk: modified.length + orphaned.length };
+  return {
+    modified, conflicts, orphaned, deletions,
+    preserved: modified.length + conflicts.length + orphaned.length,
+  };
 }
 
 /**
- * Should the sync refuse rather than proceed?
+ * Turn an assessment into what the sync should actually do.
  *
- * Split out so the decision is a testable rule rather than a condition buried in
- * a handler — and so the guard can prove that an explicit acknowledgement is the
- * ONLY way past it, the same shape as the drift guard's acknowledgeDrift.
+ * `skipFetch` — do not pull upstream's version over this path. `skipDelete` — do
+ * not remove it. Both are local work being kept.
+ *
+ * `acceptLocalLoss` is the deliberate discard and the ONLY way to get the old
+ * behaviour: it skips nothing, and reports exactly what it is about to destroy,
+ * so the destructive path is a decision rather than a surprise.
  */
-export function shouldRefuseSync({ assessment, acceptLocalLoss = false } = {}) {
-  if (acceptLocalLoss) return false;
-  return Boolean(assessment && assessment.atRisk > 0);
+export function planSync({ assessment, acceptLocalLoss = false } = {}) {
+  const a = assessment || {};
+  const preserved = {
+    modified: a.modified || [],
+    conflicts: a.conflicts || [],
+    orphaned: a.orphaned || [],
+  };
+  if (acceptLocalLoss) {
+    return {
+      skipFetch: [],
+      skipDelete: [],
+      preserved: { modified: [], conflicts: [], orphaned: [] },
+      discarding: [...preserved.modified, ...preserved.conflicts, ...preserved.orphaned],
+    };
+  }
+  return {
+    skipFetch: [...preserved.modified, ...preserved.conflicts],
+    skipDelete: [...preserved.orphaned],
+    preserved,
+    discarding: [],
+  };
 }
 
 /**
- * The message a refused sync returns: what is at risk, and the two ways forward.
+ * What to tell the operator afterwards.
  *
- * Names the files. A refusal that lists nothing is a refusal the operator has to
- * guess their way past, and the whole failure being fixed here is that the
- * guidance said "re-apply your change" without saying what that would cost.
+ * Names the files, and names conflicts separately: those are the ones that will
+ * overwrite an upstream change when pushed, which is worth knowing before
+ * pushing rather than after.
  */
-export function syncRefusalMessage(assessment) {
+export function syncPreservedMessage(preserved = {}) {
+  const listed = (list) => `${list.slice(0, 8).join(', ')}${list.length > 8 ? ', …' : ''}`;
   const parts = [];
-  if (assessment?.modified?.length) {
-    parts.push(`${assessment.modified.length} file(s) edited here and not pushed: ${assessment.modified.slice(0, 8).join(', ')}${assessment.modified.length > 8 ? ', …' : ''}`);
+  if (preserved.modified?.length) parts.push(`${preserved.modified.length} kept local edit(s): ${listed(preserved.modified)}`);
+  if (preserved.orphaned?.length) parts.push(`${preserved.orphaned.length} file(s) that exist only here: ${listed(preserved.orphaned)}`);
+  if (preserved.conflicts?.length) {
+    parts.push(`${preserved.conflicts.length} CONFLICT(s) changed both here and upstream, so pushing will overwrite the upstream version: ${listed(preserved.conflicts)}`);
   }
-  if (assessment?.orphaned?.length) {
-    parts.push(`${assessment.orphaned.length} file(s) that exist here but not upstream: ${assessment.orphaned.slice(0, 8).join(', ')}${assessment.orphaned.length > 8 ? ', …' : ''}`);
-  }
-  return `Sync stopped — it would overwrite or delete un-pushed work. ${parts.join('. ')}. `
-    + 'Push the work first, or pass acceptLocalLoss to discard it deliberately.';
+  if (!parts.length) return '';
+  return `Sync kept un-pushed work rather than overwriting it. ${parts.join('. ')}.`;
 }

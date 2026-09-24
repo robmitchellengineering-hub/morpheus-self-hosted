@@ -17,7 +17,7 @@ import {
   shouldExclude as shouldSkip, gitBlobSha,
 } from '../lib/selfDevRepo.js';
 import { recordSyncedCommitSafely } from '../lib/selfDevDrift.js';
-import { assessLocalLoss, shouldRefuseSync, syncRefusalMessage } from '../lib/selfDevSyncSafety.js';
+import { assessLocalLoss, planSync, syncPreservedMessage } from '../lib/selfDevSyncSafety.js';
 import { readProvenance, recordProvenance } from '../lib/selfDevSyncState.js';
 
 const GH_API = 'https://api.github.com';
@@ -110,16 +110,15 @@ export default async function handler({ user, body }) {
     remote: blobs.map((b) => ({ path: b.path, sha: b.sha })),
     syncedShaByPath: provenance,
   });
-  if (shouldRefuseSync({ assessment: localLoss, acceptLocalLoss: body?.acceptLocalLoss === true })) {
-    throw Object.assign(new Error(syncRefusalMessage(localLoss)), {
-      status: 409,
-      code: 'SYNC_WOULD_LOSE_LOCAL_WORK',
-      modified: localLoss.modified,
-      orphaned: localLoss.orphaned,
-    });
-  }
+  const plan = planSync({ assessment: localLoss, acceptLocalLoss: body?.acceptLocalLoss === true });
+  const skipFetch = new Set(plan.skipFetch);
+  const skipDelete = new Set(plan.skipDelete);
+  const preservedMessage = syncPreservedMessage(plan.preserved);
+  if (preservedMessage) console.log(`[selfDevSync] ${preservedMessage}`);
 
-  const toFetch = blobs.filter((item) => localShaByPath.get(item.path) !== item.sha);
+  // A preserved path is NOT fetched: upstream's version does not go over the top
+  // of local work. Everything else syncs exactly as before.
+  const toFetch = blobs.filter((item) => !skipFetch.has(item.path) && localShaByPath.get(item.path) !== item.sha);
   const toFetchPaths = new Set(toFetch.map((item) => item.path));
 
   // Concurrency 20: well under GitHub's secondary-rate-limit threshold for
@@ -167,7 +166,7 @@ export default async function handler({ user, body }) {
   // transient GitHub failure leaves the workspace short of an update it can
   // retry, instead of short of a file it will never notice is missing.
   const failedPaths = new Set(toFetch.filter((_, i) => !fetched[i]).map((item) => item.path));
-  const keepPaths = new Set([...ok.map((f) => f.path), ...failedPaths]);
+  const keepPaths = new Set([...ok.map((f) => f.path), ...failedPaths, ...skipDelete]);
   const existing = await prisma.projectFile.findMany({ where: { project_id: project.id }, select: { id: true, path: true } });
   const staleIds = existing.filter((f) => !keepPaths.has(f.path)).map((f) => f.id);
   if (staleIds.length > 0) {
@@ -180,7 +179,10 @@ export default async function handler({ user, body }) {
   // the demonstrated loss (an edited file reverted) would still get through.
   const remoteShaByPath = new Map(blobs.map((b) => [b.path, b.sha]));
   await recordProvenance(project.id, [...keepPaths]
-    .filter((p) => remoteShaByPath.has(p) && !failedPaths.has(p))
+    // A preserved path's content is NOT upstream's, so recording upstream's sha
+    // for it would tell the next sync it is unmodified — and the local edit
+    // would then be overwritten by the sync after that.
+    .filter((p) => remoteShaByPath.has(p) && !failedPaths.has(p) && !skipFetch.has(p))
     .map((p) => ({ path: p, sha: remoteShaByPath.get(p) })));
 
   // Record the sync point. This is what turns "is my workspace stale?" from an
@@ -214,6 +216,9 @@ export default async function handler({ user, body }) {
     fetched: fetchedCount,
     skipped,
     removed: staleIds.length,
+    preserved: plan.preserved,
+    preservedMessage: preservedMessage || null,
+    discarded: plan.discarding,
     repoFullName: SELF_DEV_REPO_FULL_NAME,
     branch: SELF_DEV_BRANCH,
   };
