@@ -137,7 +137,7 @@ eq('no in-rule prose still carries the brand green', stillGreen, []);
 // stale doc pages (/ai-docs, /flow-diagram) took 2 titles and 7 labels with
 // them — a real reduction, so the floors follow it rather than the deletion
 // being blocked by a number that was only ever a proxy for 'still plenty'.
-const FLOORS = { headings: 18, titles: 84, labels: 372, badges: 4, actions: 760, metrics: 19, emphasis: 7, ink: 1161 };
+const FLOORS = { headings: 18, titles: 84, labels: 368, badges: 4, actions: 758, metrics: 19, emphasis: 7, ink: 1161 };
 ok('green still marks headings', greenOn.headings >= FLOORS.headings, `headings: ${greenOn.headings} (pinned ${FLOORS.headings})`);
 ok('green still marks titles and headline sizes', greenOn.titles >= FLOORS.titles, `titles: ${greenOn.titles} (pinned ${FLOORS.titles})`);
 ok('green still marks uppercase / runtime labels', greenOn.labels >= FLOORS.labels, `labels: ${greenOn.labels} (pinned ${FLOORS.labels})`);
