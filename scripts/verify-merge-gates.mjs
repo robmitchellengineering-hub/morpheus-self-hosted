@@ -199,6 +199,33 @@ check('…and pointing at the check that explains it', /node scripts\/check-bran
 // paths above is dead code.
 check('the old "check the PR" catch-all is gone', /GitHub declined the merge — check the PR\./.test(merge), false);
 
+console.log('\n-- and a head that is behind its base is updated, not merged --');
+// Required-branches-up-to-date is what makes `behind` a state rather than a race.
+// GitHub refuses the merge and will not update the branch itself, so the engine
+// has to — and then must NOT merge, because the update lands a merge commit that
+// re-runs the required checks. Merging on the head it just read would be merging
+// on a green that no longer describes what lands on main.
+const gh = read('server/src/lib/github.js');
+check('the update call targets the documented endpoint', /\/repos\/\$\{repoFullName\}\/pulls\/\$\{prNumber\}\/update-branch/.test(gh), true);
+check('…as a PUT, which is what a state change requires', /method: 'PUT', headers: h, body: JSON\.stringify\(\{\}\)/.test(gh), true);
+// The behind check is only possible because the PR read surfaces GitHub's own
+// verdict; if this field is dropped the branch silently stops being updated.
+check('…and the PR read still surfaces mergeable_state', /mergeableState: pr\.mergeable_state/.test(gh), true);
+
+const behindAt = merge.indexOf("checks.mergeableState === 'behind'");
+check('the engine consults mergeable_state', behindAt > -1, true);
+check('…before it decides whether the gates passed', behindAt < gateAt, true);
+check('…and after the conflict answer, which is the different problem', conflictAt < behindAt, true);
+check('…before the merge it is meant to prevent', behindAt < mergeAt, true);
+check('…actually updating the branch', /await updatePullRequestBranch\(token, repoFullName, prNumber\)/.test(merge), true);
+check('…and reporting pending rather than merging on the stale head', /note: 'branch updated/.test(merge), true);
+// A failed update is reported in GitHub's words, not swallowed into a bare retry.
+check('…and a refused update says why', /GitHub would not update it: \$\{updated\.message\}/.test(merge), true);
+// The header claimed branch protection was unavailable — true on the free plan,
+// false since Pro, and exactly the kind of comment that talks a later reader out
+// of a setting that is already on.
+check('the stale "protection is not available" header is gone', /isn't available on a private free-plan repo/.test(merge), false);
+
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {
   console.log('\nA merge that nothing verified is worse than a merge that waited.\n');

@@ -4,9 +4,13 @@
 // The WordPress delivery adapter reuses this as-is — the PR lives on GitHub
 // regardless of where the site is hosted.
 //
-// Branch protection / GitHub-native auto-merge isn't available on a private
-// free-plan repo, which is why this poll-and-merge exists at all.
-import { getPullRequestChecks, mergePullRequest, deleteBranch } from '../github.js';
+// Branch protection exists on this account (GitHub Pro, since 2026-09-24), so
+// `main` is enforced server-side as well as by the gate below. That is why a head
+// behind its base has to be brought up to date rather than merged, and why a
+// merge declined by policy has to be reported rather than thrown. The poll-and-
+// merge still exists because it drives self-dev's own pull requests — not because
+// GitHub cannot do it.
+import { getPullRequestChecks, mergePullRequest, deleteBranch, updatePullRequestBranch } from '../github.js';
 import { requiredGateVerdict, requiredGateMessage } from './requiredChecks.js';
 
 // A PR with genuinely no checks configured should still be mergeable — but a
@@ -52,6 +56,31 @@ export async function mergePrWhenGreen(token, repoFullName, prNumber, opts = {})
     // cause the operator has to act on.
     if (checks.mergeable === false) {
       return { merged: false, state: 'conflict', prNumber, prUrl: prUrlFor(prNumber), message: 'This PR conflicts with the base branch — sync, re-apply the change, and push again.' };
+    }
+
+    // A head that is behind its base. Branch protection requires branches to be up
+    // to date, so GitHub refuses this merge with a 405 even though every check on
+    // the head is green. Updating is not a retry — it lands a merge commit on the
+    // head, which re-runs the required checks, so the green read above is not the
+    // green that gets merged. Hence: update, and report pending rather than merge.
+    //
+    // This is answered before the gate verdict below on purpose. A run that never
+    // appeared and a head that is about to be replaced look identical from here,
+    // and telling the operator to close and reopen the PR when the real answer is
+    // "it was one commit behind" sends them to fix the wrong thing.
+    if (checks.mergeableState === 'behind') {
+      const updated = await updatePullRequestBranch(token, repoFullName, prNumber);
+      if (!updated.ok) {
+        return {
+          merged: false, state: 'merge_failed', prNumber, prUrl: prUrlFor(prNumber),
+          message: `This PR is behind its base branch and GitHub would not update it: ${updated.message}`,
+        };
+      }
+      return {
+        merged: false, state: 'pending', prNumber, prUrl: prUrlFor(prNumber), checks: checks.checks || [],
+        note: 'branch updated — waiting for the checks to run again against the new head',
+        message: 'This PR was behind its base branch, so it was brought up to date. The required checks are re-running against the new head — merge again once they are green.',
+      };
     }
 
     // Then: the gates that verify a change must have RUN, not merely have failed
