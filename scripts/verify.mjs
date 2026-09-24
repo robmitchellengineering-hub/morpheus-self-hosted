@@ -42,6 +42,7 @@ const HARD = [
   'verify-clean-site.mjs',
   'verify-site-maintenance.mjs',
   'verify-merge-gates.mjs',
+  'verify-operator-drive.mjs',
   'verify-server-imports.mjs',
   'boot-smoke.mjs',
 ];
