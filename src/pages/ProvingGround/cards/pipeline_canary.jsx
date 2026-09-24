@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { getApiBase } from '@/api/base44Client';
 
 // The seed card, and the template for every card after it.
 //
@@ -17,15 +18,30 @@ export default function PipelineCanary() {
 
   useEffect(() => {
     let alive = true;
-    // A relative path on purpose: the deployed app proxies /api to the backend,
-    // so this works on morpheus.nz and under the Vite dev proxy without needing
-    // to resolve the API base. `res.url` then reports where it actually landed,
-    // which is the useful half — it catches the ?api_base= trap by showing the
-    // real endpoint rather than the one we assumed.
-    fetch('/api/health')
+    // Use the resolved API base from the shared client instead of a
+    // relative '/api' path. On the production frontend a relative path
+    // resolves to the SPA fallback (HTTP 200 with index.html), which made
+    // this card show success while talking to nothing. getApiBase() uses
+    // the same runtime resolution the rest of the app already trusts.
+    fetch(`${getApiBase()}/health`)
       .then(async (res) => {
+        const contentType = res.headers.get('content-type') || '';
+        const isJson = contentType.includes('application/json');
         const text = await res.text();
-        if (alive) setState({ status: 'ok', code: res.status, url: res.url, body: text.slice(0, 160) });
+        if (!alive) return;
+        if (!isJson) {
+          setState({
+            status: 'error',
+            message: `Expected JSON from the API but received "${contentType}" — this is the app's fallback page, not the backend.`,
+          });
+          return;
+        }
+        try {
+          JSON.parse(text); // validate before reporting success
+          setState({ status: 'ok', code: res.status, url: res.url, body: text.slice(0, 160) });
+        } catch {
+          setState({ status: 'error', message: 'The API returned a 200 but the body is not valid JSON — likely the single-page-app fallback page.' });
+        }
       })
       .catch((err) => {
         if (alive) setState({ status: 'error', message: err.message });
