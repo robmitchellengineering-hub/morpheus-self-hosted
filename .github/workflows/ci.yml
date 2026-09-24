@@ -461,3 +461,10 @@ jobs:
       # endpoint 500'd on every call.
       - name: Every prisma delegate is a model that exists
         run: node scripts/verify-prisma-models.mjs
+
+      # Every gate asks whether new code works, never whether it should exist. The
+      # turn now checks the plan's new files against the repo before the coder
+      # writes — this asserts that pre-flight still runs, still reaches both coder
+      # prompts, and still only considers files that do not exist yet.
+      - name: The plan is checked against what already exists
+        run: node scripts/verify-reuse-preflight.mjs
