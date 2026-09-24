@@ -72,4 +72,11 @@ export const PROVING_GROUND_CARDS = [
     addedBy: 'self-dev',
     ref: 'coder model test',
   },
+  {
+    key: 'theme_report',
+    title: 'Theme report',
+    what: 'Shows which theme and colour scheme this browser is actually being served, so a theme that fails to apply is visible here.',
+    addedBy: 'self-dev',
+    ref: 'instrument verification run',
+  },
 ];
