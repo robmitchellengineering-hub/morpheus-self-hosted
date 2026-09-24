@@ -428,6 +428,13 @@ jobs:
       - name: Provider spend is measured, not modelled
         run: node scripts/verify-provider-spend.mjs
 
+      # Two admin docs claimed to be "Generated live from the source code" while
+      # rendering hand-written literals describing the pre-rewrite Base44 stack.
+      # A document that confidently describes deleted software is worse than none,
+      # and the disclaimer is a sentence somebody will tidy away.
+      - name: Stale documents declare themselves
+        run: node scripts/verify-doc-honesty.mjs
+
       # The run record: which stages are recorded, how an HTTP status becomes a
       # stage status, that a detail note stays a note, that the migration is
       # additive and idempotent (it ships ahead of an applier that has never
