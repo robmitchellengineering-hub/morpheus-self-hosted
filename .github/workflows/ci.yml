@@ -18,8 +18,19 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  # Deliberately no `push: branches: [main]`.
+  #
+  # It existed to catch a merge whose parts were each green on their own but broke
+  # main together. Branch protection now requires branches to be up to date, so a
+  # pull request is verified against the exact base its squash lands on and that
+  # case cannot arise — while the post-merge run re-tested the same tree at full
+  # price, about 47% of all runs.
+  #
+  # What it did NOT cover is a merge made with `--admin`, which bypasses the
+  # required checks. workflow_dispatch keeps that on demand instead of paying for
+  # it on every merge. After an admin merge, run this workflow from the Actions tab
+  # (or `gh workflow run ci.yml --ref main`).
+  workflow_dispatch:
 
 # A newer push to the same ref makes an in-flight run pointless.
 concurrency:
