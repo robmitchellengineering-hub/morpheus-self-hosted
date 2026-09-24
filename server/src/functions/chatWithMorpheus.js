@@ -1262,12 +1262,67 @@ OPERATOR SAYS: ${message}`;
         stages.done('api_check');
       }
 
+      // ── Existing-implementation pre-flight (2026-09-24) ──────────────────
+      // The same idea as the API check above, aimed inward. A plan can name a file
+      // to CREATE for a job this repo already does, and nothing in the pipeline
+      // notices: every gate asks whether the new code works, never whether it
+      // should exist. Self-dev did exactly that — it wrote a proving-ground status
+      // endpoint that bridged to lib/containerMemory.js by GUESSING export names
+      // (`getContainerMemoryMiB || getContainerMemory || getMemory || default`) and
+      // reimplemented cgroup parsing when the guesses missed, instead of reading the
+      // module that already does it. Lint, build, all 35 guards and the render check
+      // passed. The cost is not the wasted code, it is a second copy of a rule that
+      // will drift from the first.
+      //
+      // Only runs when the plan actually creates something, and only names files
+      // that do not exist yet — a plan that adds to an existing module has already
+      // found it.
+      const reuseSchema = {
+        type: 'object',
+        properties: {
+          reuse: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                planned: { type: 'string', description: 'the new file path from the list above' },
+                existing: { type: 'string', description: 'an existing path that already does this job' },
+                why: { type: 'string', description: 'one short sentence: what it already provides' },
+              },
+            },
+          },
+        },
+      };
+      let reuseBlock = '';
+      const plannedNew = (Array.isArray(plannerResult.plannedFiles) ? plannerResult.plannedFiles : [])
+        .filter((p) => typeof p === 'string' && p.trim() && !files.some((f) => f.path === p));
+      if (plannedNew.length > 0) {
+        try {
+          const reuseCheck = await invokeAI({
+            userId: user.id,
+            prompt: `${systemPrompt}\n\nA build plan is about to CREATE these files:\n${plannedNew.join('\n')}\n\nTHE PLAN:\n${plannerResult.plan}\n\nTHIS REPO ALREADY CONTAINS (paths only — you may not need all of them):\n${files.map((f) => f.path).join('\n')}\n\nFor each file above, does an EXISTING file already do that job? Name it. Omit a file entirely if nothing existing does the job. Be strict — naming a file that does not actually do the job is worse than naming nothing, because the coder will be told to use it.`,
+            schema: reuseSchema,
+            role: 'planner',
+            maxTokens: 4000,
+          });
+          const matches = (Array.isArray(reuseCheck.result?.reuse) ? reuseCheck.result.reuse : [])
+            .filter((r) => r && typeof r.planned === 'string' && typeof r.existing === 'string' && r.existing.trim());
+          if (matches.length > 0) {
+            reuseBlock = `\n\nDO NOT REINVENT — this repo already implements these:\n${matches.map((r) => `  ${r.planned}  →  use ${r.existing}${r.why ? ` (${r.why})` : ''}`).join('\n')}\nRead the existing file and import it. Create the new file ONLY if the existing module genuinely cannot do the job — and if you do, say why in your reply.`;
+          }
+        } catch (err) {
+          // Best-effort like the API check: a failed pre-flight must not block a build.
+          console.error('[chatWithMorpheus] existing-implementation check failed:', err.message);
+        }
+      }
+
+
       // coderPrompt (the full-plan version, no per-step file scoping) is kept
       // around for reviewAndRetry below — a critical-issue retry re-sends this
       // same base prompt plus the specific files that need fixing, so it needs
       // the complete, unscoped instructions rather than whichever chunk's
       // narrowed prompt happened to run last.
-      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nImplement this plan now. Write the actual code files.`;
+      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}${reuseBlock}\n\nImplement this plan now. Write the actual code files.`;
       const coderSchema = {
         type: 'object',
         properties: {
@@ -1325,7 +1380,7 @@ OPERATOR SAYS: ${message}`;
             .map((f) => `--- ${f.path} (current content) ---\n${f.content}`)
             .join('\n\n');
           const chunkCurrentBlock = chunkCurrent ? `\n\nCURRENT CONTENT OF THE FILE(S) FOR THIS STEP:\n${chunkCurrent}` : '';
-          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
+          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}${reuseBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
           const chunkCoder = await invokeAI({
             userId: user.id,
             prompt: chunkPrompt,

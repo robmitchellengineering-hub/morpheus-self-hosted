@@ -51,6 +51,7 @@ const HARD = [
   'verify-stage-observability.mjs',
   'verify-server-imports.mjs',
   'verify-prisma-models.mjs',
+  'verify-reuse-preflight.mjs',
   'boot-smoke.mjs',
 ];
 
