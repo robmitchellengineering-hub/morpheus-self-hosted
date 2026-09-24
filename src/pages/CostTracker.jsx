@@ -29,10 +29,13 @@ const DEFAULT_ITEMS = [
   { service: 'Netlify (frontend hosting)', category: 'Hosting', monthly: 9, annual: 0, tier: 'paid', flag: '', note: 'Personal plan, upgraded to fix a build-credit outage' },
   { service: 'morpheus.nz domain', category: 'Domain', monthly: 0, annual: 15.6, tier: 'paid', flag: '', note: 'Registrar/DNS: Cloudflare' },
   { service: 'Separate web hosting on morpheus.nz', category: 'Domain', monthly: 0, annual: 16, tier: 'paid', flag: 'watch', note: 'Provider not yet confirmed — verify and link' },
-  { service: 'Northflank (backend hosting)', category: 'Hosting', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'Free tier — watch for overage as usage grows' },
+  { service: 'Northflank (backend hosting)', category: 'Hosting', monthly: 5.4, annual: 0, tier: 'paid', flag: '', note: 'nf-compute-20 runtime (0.2 vCPU / 512 MB), resized 2026-09-24. Builds bill separately as build minutes.' },
   { service: 'Supabase (database)', category: 'Database', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'Free tier' },
-  { service: 'Gemini API (LLM)', category: 'AI / LLM', monthly: 0, annual: 0, tier: 'free', flag: 'watch', note: 'No Cloud Billing account linked — free tier causes 503 congestion' },
-  { service: 'GitHub', category: 'Other', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'Free tier' },
+  // Measured, not typed: the number comes from the provider balance delta
+  // (server/src/lib/providerSpend.js) and is added to the total below. A fixed
+  // figure here would be the same guess the EST. COST column used to be.
+  { service: 'DeepSeek API (LLM)', category: 'AI / LLM', monthly: 0, annual: 0, tier: 'metered', flag: '', note: 'Measured from the provider balance delta over 30 days — folded into the all-in total, not entered by hand.' },
+  { service: 'GitHub', category: 'Other', monthly: 4, annual: 0, tier: 'paid', flag: '', note: 'Pro — 3,000 Actions minutes/month on private repos, and branch protection (which is what makes the merge gate enforceable by GitHub, not only by merge.js).' },
   { service: 'Cloudflare', category: 'Other', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'Free plan (DNS/registrar)' },
   { service: 'Stripe', category: 'Payments', monthly: 0, annual: 0, tier: 'free', flag: '', note: 'No fixed fee — 2.65%+NZ$0.30 domestic / 3.65%+NZ$0.30 intl per transaction' },
 ];
@@ -56,12 +59,22 @@ export default function CostTracker() {
   const [updatedDate, setUpdatedDate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [providerSpend, setProviderSpend] = useState(null);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    // The LLM bill, from the provider's own balance rather than from a rate table.
+    // Its own try/catch: this page is a manual ledger and it must still render if
+    // the measurement is unavailable on a deployment that has no provider.
+    try {
+      const overview = await base44.admin.getOverview();
+      setProviderSpend(overview?.actualProviderSpend30d || null);
+    } catch {
+      setProviderSpend(null);
+    }
     try {
       const list = await base44.entities.CostSnapshot.list('-created_date', 1);
       if (list.length > 0) {
@@ -123,6 +136,11 @@ export default function CostTracker() {
   };
 
   const { monthlyFixed, annualExtra, monthlyEquivalent } = computeTotals(items);
+  // The one line on this page that is not typed in. Infrastructure is a list of
+  // subscriptions a human knows the price of; the LLM bill is not — so it is
+  // measured, and the total below is the only place both are added together.
+  const measuredSpend = providerSpend?.available ? providerSpend.spendUsd : null;
+  const allInMonthly = monthlyEquivalent + (measuredSpend || 0);
 
   return (
     <div className="relative min-h-screen bg-background text-ink font-mono">
@@ -177,7 +195,12 @@ export default function CostTracker() {
               </div>
               <div className="border border-success/30 bg-success/5 p-4">
                 <p className="text-[10px] text-primary/50 tracking-[0.2em] mb-1">ALL-IN, MONTHLY EQUIVALENT</p>
-                <p className="text-xl text-success neon-glow">${monthlyEquivalent.toFixed(2)}</p>
+                <p className="text-xl text-success neon-glow">${allInMonthly.toFixed(2)}</p>
+                <p className="text-[10px] text-ink-max mt-1">
+                  {measuredSpend == null
+                    ? `Includes nothing for the LLM bill — not measured yet (${providerSpend?.reason || 'no readings'}).`
+                    : `Includes $${measuredSpend.toFixed(2)} of measured provider spend; infrastructure above is $${monthlyEquivalent.toFixed(2)}.`}
+                </p>
               </div>
             </div>
 
