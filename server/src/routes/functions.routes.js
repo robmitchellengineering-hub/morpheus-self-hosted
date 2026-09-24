@@ -54,7 +54,7 @@ const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downl
 // now, since chatWithJarvis.js isn't yet the real, guarded caller and this
 // route is reachable directly the moment the file exists. Remove this once
 // Phase 3 (the chat trigger + deckWidgets.js append-only push guard) lands.
-const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'applySelfDevMigrations', 'buildDeckWidget']);
+const ADMIN_FUNCTIONS = new Set(['synthesizeUpdatesPlan', 'generateRebuildDoc', 'importSelfDevRepo', 'pushSelfDevToGithub', 'generateSelfDevPrototype', 'generateSelfDevManual', 'verifySelfDev', 'revertSelfDevPush', 'mergeSelfDevPr', 'smokeCheckSelfDev', 'applySelfDevMigrations', 'buildDeckWidget', 'getProvingGroundStatus']);
 
 router.all('/:name', async (req, res, next) => {
   const { name } = req.params;

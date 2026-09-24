@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, FlaskConical, AlertTriangle } from 'lucide-react';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import { PROVING_GROUND_CARDS } from './cards';
+import StatusStrip from './components/StatusStrip';
 
 // /proving-ground — an admin-only surface for LOOKING at a change that shipped
 // through self-dev, before it goes anywhere near a customer.
@@ -86,6 +87,8 @@ export default function ProvingGround() {
         <p className="text-[11px] text-ink-max mb-3">
           {PROVING_GROUND_CARDS.length} card(s) registered · {present.length} module(s) on disk
         </p>
+
+        <StatusStrip />
 
         <div className="grid gap-4 md:grid-cols-2">
           {PROVING_GROUND_CARDS.map((card) => {
