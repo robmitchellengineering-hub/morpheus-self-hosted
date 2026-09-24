@@ -75,12 +75,39 @@ export async function mergePrWhenGreen(token, repoFullName, prNumber, opts = {})
     }
   }
 
-  const { merged, mergeCommitSha } = await mergePullRequest(token, repoFullName, prNumber, {
-    method: 'squash',
-    commitTitle: commitTitle || `PR #${prNumber} (via Morpheus)`,
-  });
+  let mergeResult;
+  try {
+    mergeResult = await mergePullRequest(token, repoFullName, prNumber, {
+      method: 'squash',
+      commitTitle: commitTitle || `PR #${prNumber} (via Morpheus)`,
+    });
+  } catch (err) {
+    // GitHub enforces branch protection as well as the gate above, so a merge can
+    // be declined for a reason this function never checked: a required context
+    // GitHub expects but never received, a rule added to main since, or a check
+    // that a re-run invalidated. Until 2026-09-24 this call could not throw in
+    // practice, because main was unprotected — so the throw escaped as an
+    // exception instead of the `merge_failed` state the caller renders.
+    //
+    // The API's own sentence is the whole value here: "the base branch policy
+    // prohibits the merge" tells an operator which setting to look at, while
+    // "check the PR" sends them to read a page that looks green.
+    const said = String(err?.details?.message || err?.message || '').trim();
+    const policy = err?.status === 405 && /branch policy|protected branch/i.test(said);
+    return {
+      merged: false,
+      state: 'merge_failed',
+      prNumber,
+      prUrl: prUrlFor(prNumber),
+      message: policy
+        ? `${said.replace(/\.?$/, '.')} Every gate above passed, so main requires something this engine does not know about — run \`node scripts/check-branch-protection.mjs\` to see exactly what main enforces.`
+        : `GitHub declined the merge${said ? `: ${said}` : ''}.`,
+    };
+  }
+
+  const { merged, mergeCommitSha } = mergeResult;
   if (!merged) {
-    return { merged: false, state: 'merge_failed', prNumber, prUrl: prUrlFor(prNumber), message: 'GitHub declined the merge — check the PR.' };
+    return { merged: false, state: 'merge_failed', prNumber, prUrl: prUrlFor(prNumber), message: 'GitHub accepted the request but reported the pull request was not merged.' };
   }
 
   // Tidy up the throwaway branch — best effort.
