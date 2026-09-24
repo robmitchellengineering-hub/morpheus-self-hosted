@@ -58,4 +58,11 @@ export const PROVING_GROUND_CARDS = [
     addedBy: 'self-dev',
     ref: 'run-record dogfood',
   },
+  {
+    key: 'viewport_report',
+    title: 'Viewport report',
+    what: 'Shows the live viewport size and route, so a layout that only breaks at phone width is visible here.',
+    addedBy: 'self-dev',
+    ref: 'rework verification run',
+  },
 ];
