@@ -50,6 +50,7 @@ const HARD = [
   'verify-doc-honesty.mjs',
   'verify-stage-observability.mjs',
   'verify-server-imports.mjs',
+  'verify-prisma-models.mjs',
   'boot-smoke.mjs',
 ];
 

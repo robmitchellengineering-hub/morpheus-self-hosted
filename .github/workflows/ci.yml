@@ -453,3 +453,11 @@ jobs:
       # throws still leaves a row.
       - name: Self-dev run record is honest
         run: node scripts/verify-selfdev-runs.mjs
+
+      # Prisma only fails at runtime, on the request that reaches it, so a file can
+      # name a delegate that does not exist and stay green through lint, build, every
+      # other guard and the render check. Self-dev shipped exactly that on
+      # 2026-09-24 (`prisma.selfDevRun.count()` against a raw-SQL table) and the
+      # endpoint 500'd on every call.
+      - name: Every prisma delegate is a model that exists
+        run: node scripts/verify-prisma-models.mjs
