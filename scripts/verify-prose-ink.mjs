@@ -132,7 +132,12 @@ eq('no in-rule prose still carries the brand green', stillGreen, []);
 // number cannot see the failure it is meant to see: with 18 green headings and a
 // floor of 5, converting one heading is invisible. Growth still passes; ANY
 // reduction fails, and the message says what to do about it.
-const FLOORS = { headings: 18, titles: 86, labels: 379, badges: 4, actions: 760, metrics: 19, emphasis: 7, ink: 1161 };
+// Floors, not exact pins: the intent is that green still marks these things in
+// quantity across the app, and a corpus change moves them. Deleting the two
+// stale doc pages (/ai-docs, /flow-diagram) took 2 titles and 7 labels with
+// them — a real reduction, so the floors follow it rather than the deletion
+// being blocked by a number that was only ever a proxy for 'still plenty'.
+const FLOORS = { headings: 18, titles: 84, labels: 372, badges: 4, actions: 760, metrics: 19, emphasis: 7, ink: 1161 };
 ok('green still marks headings', greenOn.headings >= FLOORS.headings, `headings: ${greenOn.headings} (pinned ${FLOORS.headings})`);
 ok('green still marks titles and headline sizes', greenOn.titles >= FLOORS.titles, `titles: ${greenOn.titles} (pinned ${FLOORS.titles})`);
 ok('green still marks uppercase / runtime labels', greenOn.labels >= FLOORS.labels, `labels: ${greenOn.labels} (pinned ${FLOORS.labels})`);

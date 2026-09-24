@@ -32,8 +32,6 @@ const RefundPolicy = lazy(() => import('@/pages/RefundPolicy'));
 const BackendDocs = lazy(() => import('@/pages/BackendDocs'));
 const RebuildBlueprint = lazy(() => import('@/pages/RebuildBlueprint'));
 const Screenshots = lazy(() => import('@/pages/Screenshots'));
-const FlowDiagram = lazy(() => import('@/pages/FlowDiagram'));
-const AIDocs = lazy(() => import('@/pages/AIDocs'));
 const UpdatesPlan = lazy(() => import('@/pages/UpdatesPlan'));
 const CostTracker = lazy(() => import('@/pages/CostTracker'));
 const SelfDev = lazy(() => import('@/pages/SelfDev'));
@@ -183,8 +181,6 @@ function AnimatedRoutes() {
             <Route path="/backend-docs" element={<BackendDocs />} />
             <Route path="/rebuild-blueprint" element={<RebuildBlueprint />} />
             <Route path="/screenshots" element={<Screenshots />} />
-            <Route path="/flow-diagram" element={<FlowDiagram />} />
-            <Route path="/ai-docs" element={<AIDocs />} />
             <Route path="/updates-plan" element={<UpdatesPlan />} />
             <Route path="/cost-tracker" element={<CostTracker />} />
             <Route path="/self-dev" element={<SelfDev />} />
