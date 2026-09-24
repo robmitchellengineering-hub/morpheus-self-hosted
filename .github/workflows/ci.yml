@@ -468,3 +468,10 @@ jobs:
       # prompts, and still only considers files that do not exist yet.
       - name: The plan is checked against what already exists
         run: node scripts/verify-reuse-preflight.mjs
+
+      # verifyProject returned ok:true, errorCount:0, checkedFiles:0 for a 37-file
+      # Python desktop app — it reads only JS/TS, so every pass inside it had
+      # nothing to look at. "Nothing failed" is not "nothing to check", and every
+      # non-JS compile target sits in that position.
+      - name: A verifier that examined nothing does not report ok
+        run: node scripts/verify-verifier-coverage.mjs
