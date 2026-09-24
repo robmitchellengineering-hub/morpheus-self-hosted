@@ -1296,7 +1296,11 @@ OPERATOR SAYS: ${message}`;
       let reuseBlock = '';
       const plannedNew = (Array.isArray(plannerResult.plannedFiles) ? plannerResult.plannedFiles : [])
         .filter((p) => typeof p === 'string' && p.trim() && !files.some((f) => f.path === p));
-      if (plannedNew.length > 0) {
+      // Skipped outright on an empty project. This runs for every build, not just
+      // self-dev, and a greenfield project has nothing to reuse by definition — with
+      // no files every planned path counts as "new", so the check would fire on the
+      // first build of every project, spend a model call, and answer "nothing".
+      if (plannedNew.length > 0 && files.length > 0) {
         try {
           const reuseCheck = await invokeAI({
             userId: user.id,

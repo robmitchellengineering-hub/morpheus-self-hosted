@@ -60,7 +60,13 @@ check('…and builds a block telling the coder not to reinvent it', /DO NOT REIN
 check('…and only for files that do NOT exist yet',
   /!files\.some\(\(f\) => f\.path === p\)/.test(src));
 check('…and only when the plan actually creates something',
-  /const plannedNew = \(Array\.isArray\(plannerResult\.plannedFiles\)/.test(src) && /if \(plannedNew\.length > 0\)/.test(src));
+  /const plannedNew = \(Array\.isArray\(plannerResult\.plannedFiles\)/.test(src) && /plannedNew\.length > 0/.test(src));
+// This pre-flight runs for every build, not only self-dev, so an empty project must
+// short-circuit. With no files at all, every planned path counts as new, and the
+// check would spend a model call on the first build of every project to answer
+// "nothing exists" — which is true by definition and was already known.
+check('…and not at all on an empty project, where there is nothing to reuse',
+  /plannedNew\.length > 0 && files\.length > 0/.test(src));
 
 // ── and it reaches the code that writes ─────────────────────────────────────
 // A pre-flight whose answer never reaches the coder is worse than none: it costs a
