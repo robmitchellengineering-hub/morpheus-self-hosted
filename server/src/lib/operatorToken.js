@@ -78,6 +78,7 @@ export const OPERATOR_SCOPE_FUNCTIONS = [
   // Read-only state, so a run can be inspected without a database client.
   'getSelfDevFeatures',
   'getSelfDevDecisions',
+  'getSelfDevRuns',
 ];
 
 const OPERATOR_SCOPE_SET = new Set(OPERATOR_SCOPE_FUNCTIONS);

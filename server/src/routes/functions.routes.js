@@ -18,6 +18,7 @@ import { requireAuth, requireAdmin } from '../auth.js';
 import { widgetMayCall } from '../lib/widgetToken.js';
 import { deviceMayCall } from '../lib/deviceToken.js';
 import { prisma } from '../db.js';
+import { SELF_DEV_STAGES, recordStage, statusForHttp, summariseResult, clampDetail } from '../lib/selfDevRuns.js';
 import {
   isOperatorToken, operatorTokenConfigured, verifyOperatorToken, operatorMayCall,
   stripOperatorEscapeHatches, operatorWithinDailyCap, operatorTokenFingerprint,
@@ -174,17 +175,37 @@ async function handleOperatorCall(req, res, next, name, bearer) {
   return runFunction(name, path.join(FUNCTIONS_DIR, `${name}.js`), req, res, next);
 }
 
+/**
+ * Run a handler, and — for the handful of functions that ARE the self-dev
+ * pipeline — leave a durable row behind saying how long it took and how it
+ * ended.
+ *
+ * One place, so the record exists for BOTH drivers: a person clicking through
+ * /self-dev and an operator token from scripts/morpheus.mjs. Recording inside
+ * each handler would have meant five edits, five chances to miss one, and no row
+ * at all when a handler threw before its own logging line.
+ *
+ * The row is written AFTER the response has been sent (the dispatcher has
+ * already called res.json / the handler streamed), so it can delay nothing the
+ * caller waits for — but it IS awaited, so "the client got an answer" implies
+ * "the record exists". Recording must never break a request, and it never can:
+ * lib/selfDevRuns.js swallows its own errors and says why.
+ */
 async function runFunction(name, filePath, req, res, next) {
+  const startedAt = Date.now();
+  let detail = '';
   try {
     const mod = await import(`../functions/${name}.js`);
     const handler = mod.default;
     if (typeof handler !== 'function') return res.status(500).json({ error: `Function ${name} has no default export` });
 
     const result = await handler({ user: req.user || null, body: req.body || {}, query: req.query || {}, req, res });
+    detail = summariseResult(result);
     if (res.headersSent) return; // handler streamed its own response (e.g. a ZIP)
     res.json(result ?? { ok: true });
   } catch (err) {
     console.error(`[functions/${name}]`, err);
+    detail = clampDetail({ error: String(err?.message || err).slice(0, 300) });
     const body = { error: err.message || 'Internal error' };
     // Forward a typed error's extra machine-readable fields generically
     // (duck-typed, not imported here) so the frontend can react to specific
@@ -196,6 +217,19 @@ async function runFunction(name, filePath, req, res, next) {
     if (typeof err.needed === 'number') body.needed = err.needed;
     if (typeof err.available === 'number') body.available = err.available;
     res.status(err.status || 500).json(body);
+  } finally {
+    // Only the pipeline stages, and only if the body carried a run id or we can
+    // mint one — a caller with no run id gets a run of one rather than no row.
+    if (SELF_DEV_STAGES[name]) {
+      await recordStage({
+        runId: req.body?.runId || null,
+        fn: name,
+        status: statusForHttp(res.statusCode),
+        durationMs: Date.now() - startedAt,
+        detail,
+        userId: req.user?.id || null,
+      });
+    }
   }
 }
 

@@ -52,8 +52,8 @@ console.log('1. the allow-list is exactly what was agreed');
 // Pinned as a literal so that widening the credential's power is always a
 // deliberate edit to two files, never a side effect of adding a function.
 const EXPECTED_SCOPE = [
-  'chatWithMorpheus', 'getSelfDevDecisions', 'getSelfDevFeatures', 'importSelfDevRepo',
-  'mergeSelfDevPr', 'pushSelfDevToGithub', 'smokeCheckSelfDev', 'verifySelfDev',
+  'chatWithMorpheus', 'getSelfDevDecisions', 'getSelfDevFeatures', 'getSelfDevRuns',
+  'importSelfDevRepo', 'mergeSelfDevPr', 'pushSelfDevToGithub', 'smokeCheckSelfDev', 'verifySelfDev',
 ].sort();
 check('OPERATOR_SCOPE_FUNCTIONS is unchanged', [...OPERATOR_SCOPE_FUNCTIONS].sort(), EXPECTED_SCOPE);
 

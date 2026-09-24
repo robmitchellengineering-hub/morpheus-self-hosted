@@ -60,3 +60,6 @@ public/plugin-manifest.json
 
 # render-smoke artifacts (scripts/render-smoke.mjs): failure screenshots + report.json
 .render-smoke/
+
+# The operator CLI's current run id — local state, never shared.
+.morpheus-run

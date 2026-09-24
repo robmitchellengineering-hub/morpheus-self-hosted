@@ -39,7 +39,8 @@
 // shell history and in any transcript that quotes the command), and never
 // logged on failure. Only its fingerprint is ever shown, so a run can be
 // correlated without the value existing anywhere but that one file.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { operatorTokenFingerprint, OPERATOR_TOKEN_PREFIX } from '../server/src/lib/operatorToken.js';
@@ -81,6 +82,31 @@ if (!TOKEN.startsWith(OPERATOR_TOKEN_PREFIX)) {
   fail(`The configured token is not an operator token (expected the ${OPERATOR_TOKEN_PREFIX} prefix).`, 2);
 }
 
+// The run id groups the stages of one dogfood sequence. The server writes one
+// row per pipeline stage (server/src/lib/selfDevRuns.js) and groups them by
+// this, so `sync`, `chat`, `push`, `merge` and `smoke` have to agree on a value
+// across separate HTTP calls — which means it lives on disk between them, in a
+// small gitignored file rather than a shell variable, so running the commands in
+// separate invocations still produces one grouped run.
+//
+// `newrun` starts a fresh one; anything else reuses the current run, including
+// the many stages of a single sync → merge sequence.
+const RUN_FILE = process.env.MORPHEUS_RUN_FILE || path.join(REPO, 'server', '.morpheus-run');
+
+function currentRunId() {
+  try {
+    const existing = readFileSync(RUN_FILE, 'utf8').trim();
+    if (existing) return existing;
+  } catch { /* no run in progress — that is the normal first case */ }
+  return startNewRun();
+}
+
+function startNewRun() {
+  const fresh = crypto.randomUUID();
+  try { writeFileSync(RUN_FILE, fresh, { mode: 0o600 }); } catch { /* best effort */ }
+  return fresh;
+}
+
 /** Every request goes through here — one place that attaches the credential. */
 async function call(name, body = {}, { stream = false, timeoutMs = TIMEOUT_MS.default } = {}) {
   const controller = new AbortController();
@@ -89,7 +115,7 @@ async function call(name, body = {}, { stream = false, timeoutMs = TIMEOUT_MS.de
     const res = await fetch(`${BASE}/functions/${name}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, runId: currentRunId() }),
       signal: controller.signal,
     });
     if (!stream) {
@@ -172,13 +198,42 @@ async function streamChat(stream) {
 
 const [command, ...args] = process.argv.slice(2);
 
-console.log(`morpheus operator ${operatorTokenFingerprint(TOKEN)} → ${BASE}`);
+console.log(`morpheus operator ${operatorTokenFingerprint(TOKEN)} → ${BASE}  ·  run ${currentRunId().slice(0, 8)}`);
 
 switch (command) {
   case 'whoami': {
     // The cheapest read-only self-dev call there is: proves the token, the
     // allow-list and the self-dev workspace in one round trip.
     report('getSelfDevFeatures', await call('getSelfDevFeatures'));
+    break;
+  }
+
+  case 'newrun': {
+    console.log(`started run ${startNewRun().slice(0, 8)} — the next stages group under it`);
+    break;
+  }
+
+  case 'runs': {
+    // What the pipeline actually did, read back from the durable record rather
+    // than reconstructed from a job log or a chat message that claims a deploy.
+    const r = await call('getSelfDevRuns', { limit: Number(args[0]) || 5 });
+    if (!r.ok) { report('getSelfDevRuns', r); break; }
+    const d = r.body || {};
+    if (d.available === false) {
+      console.log(`✗ no run record on this deployment: ${d.reason}`);
+      process.exitCode = 1;
+      break;
+    }
+    if (!d.runs?.length) { console.log('no runs recorded yet'); break; }
+    for (const run of d.runs) {
+      console.log(`\nrun ${String(run.runId).slice(0, 8)}  ·  ${run.stages.length} stage(s)`);
+      for (const s of run.stages) {
+        const secs = s.durationMs == null ? '      ' : `${(s.durationMs / 1000).toFixed(1)}s`.padStart(7);
+        const at = String(s.at || '').slice(11, 19);
+        console.log(`  ${at}  ${String(s.stage).padEnd(7)} ${String(s.status).padEnd(7)} ${secs}  ${s.detail || ''}`);
+      }
+    }
+    console.log('');
     break;
   }
 
@@ -241,6 +296,8 @@ switch (command) {
     console.log(`
 commands:
   whoami                    confirm the token and show the self-dev features
+  newrun                    start a fresh run id (the stages below group under it)
+  runs [n]                  read back what the last runs actually did
   sync                      pull main into the self-dev workspace
   chat "<request>"          run one build turn against the workspace (streams)
   verify                    run the in-product verify gate

@@ -405,3 +405,11 @@ jobs:
       # page exists to catch.
       - name: Proving ground is admin-only and unreferenced
         run: node scripts/verify-proving-ground.mjs
+
+      # The run record: which stages are recorded, how an HTTP status becomes a
+      # stage status, that a detail note stays a note, that the migration is
+      # additive and idempotent (it ships ahead of an applier that has never
+      # run), and that the dispatcher records in a `finally` so a stage that
+      # throws still leaves a row.
+      - name: Self-dev run record is honest
+        run: node scripts/verify-selfdev-runs.mjs
