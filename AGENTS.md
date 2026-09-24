@@ -79,6 +79,25 @@ auto-diagnose failed deploys) → **revert** (one-click, `revertSelfDevPush.js`)
 history, not as status. For what is built and what is next right now, run
 `node scripts/reality.mjs`.
 
+## UI conventions
+
+Self-dev reads this file in full on every build (`SELF_DEV_ORIENTATION_FILES` in
+`server/src/functions/chatWithMorpheus.js`), so the house UI rules belong here.
+
+Morpheus's own UI is Tailwind with an **ink ladder**: the size of the text decides
+which ink token it may use. The wrong rung is a red `verify-prose-ink.mjs`.
+
+| text size | token |
+| --- | --- |
+| ≤11px | `text-ink-max` |
+| 12–13px | `text-ink-strong` |
+| ≥14px | `text-ink` |
+
+Never an opacity modifier on an ink token (`text-ink/60`), including on a variant
+such as `hover:text-ink-strong`. Green (`text-primary`) marks structure — headings,
+labels, badges, actions, metrics, inline emphasis; ink carries the prose. The rule
+and its floors live in `scripts/lib/ink-ladder.mjs`.
+
 ## Merge gate
 
 Three checks are required to merge into `main`, and since 2026-09-24 **GitHub

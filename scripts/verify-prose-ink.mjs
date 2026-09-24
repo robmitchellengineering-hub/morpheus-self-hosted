@@ -30,7 +30,7 @@ import {
   scanSource, rawOccurrences, isDeckFile, DECK_PATHS, KNOWN_GREEN_CONSTANTS,
   PROSE_TAGS, ACTION_TAGS, FIELD_TAGS, HEADING_TAGS, EMPHASIS_TAGS, maskSource,
 } from './lib/prose-ink.mjs';
-import { scanLadder, RUNG_FOR, RUNGS } from './lib/ink-ladder.mjs';
+import { scanLadder, RUNG_FOR, RUNGS, BAND_CEILING } from './lib/ink-ladder.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -323,6 +323,35 @@ for (const c of inkConstants) console.log(`            ${c}`);
 for (const script of ['scripts/verify-prose-ink.mjs', 'scripts/prose-ink-sweep.mjs', 'scripts/ink-ladder-sweep.mjs']) {
   const src = readFileSync(join(REPO, script), 'utf8');
   ok(`${script} reads a shared rule`, /from '\.\/lib\/(prose-ink|ink-ladder)\.mjs'/.test(src));
+}
+
+// ── 11. the rule self-dev is TOLD matches the rule this guard ENFORCES ─────
+// The ladder was enforced but never stated. Self-dev reads AGENTS.md in full on
+// every build, and until 2026-09-24 that file never mentioned ink — so the writer
+// guessed the rung and this guard caught it afterwards: three violations across two
+// proving-ground cards, each one a red CI run and a rework cycle. Prose in the
+// orientation file is what the writer actually applies, so the table is PARSED and
+// compared against the module rather than trusted to have been updated with it.
+{
+  const agents = readFileSync(join(REPO, 'AGENTS.md'), 'utf8');
+  const table = [...agents.matchAll(/^\|\s*([^|]+?)\s*\|\s*`(text-ink[^`]*)`\s*\|\s*$/gm)]
+    .map(([, size, token]) => ({ size, token }));
+
+  eq('AGENTS.md states every rung, and only the rungs', table.map((r) => r.token).sort(), [...RUNGS].sort());
+  const sizeOf = (token) => (table.find((r) => r.token === token)?.size || '(no row)');
+  ok('…with the top rung\'s ceiling matching the enforced one',
+    sizeOf('text-ink-max').includes(String(BAND_CEILING.max)), `got "${sizeOf('text-ink-max')}"`);
+  ok('…and the middle rung\'s ceiling matching too',
+    sizeOf('text-ink-strong').includes(String(BAND_CEILING.strong)), `got "${sizeOf('text-ink-strong')}"`);
+  // The shape that actually failed in practice: a modifier on ink, hover included.
+  ok('…and states the no-modifier rule, hover included',
+    /opacity modifier[\s\S]{0,200}hover:/i.test(agents));
+  // The whole fix rests on self-dev being given this file. If that list loses
+  // AGENTS.md the doc goes on saying the right thing to nobody, and every check
+  // above still passes — so the link itself is asserted here.
+  const chat = readFileSync(join(REPO, 'server/src/functions/chatWithMorpheus.js'), 'utf8');
+  ok('…and self-dev is still handed AGENTS.md to read',
+    /SELF_DEV_ORIENTATION_FILES = \[[^\]]*'AGENTS\.md'/.test(chat));
 }
 
 console.log(`\n  green kept: ${counts.green}   ink in use: ${counts.ink} (swept this branch: ${counts.sweptInk})`);
