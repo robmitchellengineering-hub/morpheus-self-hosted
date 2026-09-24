@@ -37,6 +37,15 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase();
 
+// The resolved API base — exposed so callers that need to hit a specific
+// backend endpoint (e.g. the proving-ground canary card) can build an
+// absolute URL from the same runtime resolution the rest of this client
+// already uses, instead of relying on a relative path that the SPA
+// fallback can swallow in production.
+export function getApiBase() {
+  return API_BASE;
+}
+
 const TOKEN_KEY = 'morpheus_token';
 
 // In-memory bearer override — set by the embeddable-widget surface (/embed)
