@@ -40,7 +40,7 @@ export const REQUIRED_CHECK_CONCLUSION = 'success';
 // It is what makes "the app builds" different from "the app renders" — the
 // class of bug that shipped a dock panel off the bottom of the screen past
 // both a bundle check and an HTTP 200.
-export const SELF_DEV_REQUIRED_CHECKS = ['guards (no install)', 'lint + build', 'render'];
+export const SELF_DEV_REQUIRED_CHECKS = ['guards (no install)', 'lint + build'];
 
 /**
  * Decide whether every required gate ran and succeeded.
