@@ -51,4 +51,11 @@ export const PROVING_GROUND_CARDS = [
     addedBy: 'self-dev (first dogfood run)',
     ref: 'first dogfood run',
   },
+  {
+    key: 'selfdev_runs',
+    title: 'Self-dev runs',
+    what: 'Reads the durable run record back through the API: every stage of the last few self-dev runs, with its status, duration and detail.',
+    addedBy: 'self-dev',
+    ref: 'run-record dogfood',
+  },
 ];
