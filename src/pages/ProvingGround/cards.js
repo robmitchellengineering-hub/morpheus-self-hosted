@@ -65,4 +65,11 @@ export const PROVING_GROUND_CARDS = [
     addedBy: 'self-dev',
     ref: 'rework verification run',
   },
+  {
+    key: 'stopwatch',
+    title: 'Stopwatch',
+    what: 'A start/stop/reset timer, used to check that stateful interaction and effect cleanup actually work on this page.',
+    addedBy: 'self-dev',
+    ref: 'coder model test',
+  },
 ];
