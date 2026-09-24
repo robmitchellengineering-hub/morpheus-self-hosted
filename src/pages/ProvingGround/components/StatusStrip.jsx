@@ -1,4 +1,4 @@
-// The Proving Ground's status strip: three read-only signals, read once on mount.
+// The Proving Ground's status strip: four read-only signals, read once on mount.
 //
 // Deliberately not a dashboard — no polling, no refresh button. It answers "what
 // state is this thing in right now" when an operator opens the page, and then
@@ -56,10 +56,13 @@ export default function StatusStrip() {
         : String(status.runCount),
     },
     { label: 'release branch', value: status.branch || 'main' },
+    // The server's clock at the moment it answered. Read once, like everything
+    // else here, so this is the time of THIS request — not a ticking clock.
+    { label: 'server utc time', value: status.utcTime || 'unavailable' },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       {stats.map((s) => (
         <div key={s.label} className="border border-primary/25 bg-black/30 p-3">
           <p className={LABEL}>{s.label}</p>

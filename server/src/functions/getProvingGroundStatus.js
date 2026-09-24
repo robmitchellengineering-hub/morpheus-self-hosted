@@ -58,5 +58,11 @@ export default async function handler({ user }) {
     runCountReason,
     // The constant, not a guess: this is the branch self-dev is configured to push to.
     branch: SELF_DEV_BRANCH,
+    // The server's own clock, so a status strip can show what time this reading
+    // was actually taken — and, by extension, whether the process answering is
+    // the one the operator thinks it is. ISO 8601 UTC, not a localised string:
+    // a formatted date would read differently depending on where the container
+    // believes it is.
+    utcTime: new Date().toISOString(),
   };
 }
