@@ -1223,6 +1223,11 @@ OPERATOR SAYS: ${message}`;
     // back days later instead of reconstructed.
     let syntaxFixAttempts = 0;
     let bundleFixAttempts = 0;
+    // Counted separately from `bundle` on purpose. The deep-verify fix loop now
+    // also carries Morpheus's house rules (lib/conventionChecks.js), and folding
+    // those into the bundle count would make the run record say the code failed to
+    // bundle when what it actually did was take the wrong ink rung.
+    let conventionFixAttempts = 0;
     let reviewerFixAttempts = 0;
     let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
     const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
@@ -1457,7 +1462,7 @@ OPERATOR SAYS: ${message}`;
         }
         const reviewed = await reviewAndRetry(user.id, fileOps, reviewContext, plannerResult.plan, coderPrompt, stages.onProgress);
         reviewerFixAttempts = reviewed.attempts || 0;
-        console.log(`[chatWithMorpheus] rework: syntax=${syntaxFixAttempts} bundle=${bundleFixAttempts} reviewer=${reviewerFixAttempts}${reviewed.criticalFound ? ' (reviewer found critical issues)' : ''} rss=${memMb()}MB ${containerMb()}`);
+        console.log(`[chatWithMorpheus] rework: syntax=${syntaxFixAttempts} bundle=${bundleFixAttempts} convention=${conventionFixAttempts} reviewer=${reviewerFixAttempts}${reviewed.criticalFound ? ' (reviewer found critical issues)' : ''} rss=${memMb()}MB ${containerMb()}`);
         fileOps = reviewed.fileOps;
         reviewerModel = reviewed.reviewerModel;
         reviewSummary = reviewed.reviewSummary;
@@ -1560,6 +1565,19 @@ OPERATOR SAYS: ${message}`;
         console.log(`[chatWithMorpheus] deep-verify: done, ok=${deep.ok} errors=${deep.errorCount}, rss=${memMb()}MB ${containerMb()} after bundling`);
         for (let attempt = 1; !deep.ok && attempt < MAX_GATE_ATTEMPTS; attempt++) {
           bundleFixAttempts++;
+          const isConvention = (e) => String(e?.phase || '').startsWith('convention:');
+          if (deep.errors.some(isConvention)) conventionFixAttempts++;
+          // A house-rule failure is not a broken bundle, and telling the coder to
+          // "fix the missing export" when it took the wrong ink rung sends it to
+          // the wrong place. The error text already names the token each element
+          // needs, so the instruction only has to say: apply exactly that.
+          const conventionOnly = deep.errors.length > 0 && deep.errors.every(isConvention);
+          const foundBy = conventionOnly
+            ? 'a house-rule check this repo enforces found'
+            : 'a real bundle + cross-file export check found';
+          const fixGuidance = conventionOnly
+            ? 'Fix ONLY the rule violations above — each one names the token that element must use, so apply exactly that and change nothing else. The rule is stated under "UI conventions" in AGENTS.md; scripts/verify-prose-ink.mjs enforces it on every build, so leaving it is a red CI gate.'
+            : 'fix ONLY what breaks the check above (a missing/renamed export a caller still needs, a bad import path). Never remove or rename an export without checking every caller first. Change nothing else.';
           const badPaths = [...new Set(deep.errors.map((e) => e.file).filter(Boolean))];
           const curBlock = badPaths
             .map((p) => fileOps.find((op) => op.path === p && typeof op.content === 'string'))
@@ -1576,7 +1594,7 @@ OPERATOR SAYS: ${message}`;
           try {
             const fix = await invokeAI({
               userId: user.id,
-              prompt: `${coderPrompt}\n\nThis change breaks the wider repo — a real bundle + cross-file export check found (fix attempt ${attempt} of ${MAX_GATE_ATTEMPTS - 1}):\n${deep.errors.slice(0, 20).map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} [${e.phase}] — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT of the file(s) you touched:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — fix ONLY what breaks the check above (a missing/renamed export a caller still needs, a bad import path). Never remove or rename an export without checking every caller first. Change nothing else.`,
+              prompt: `${coderPrompt}\n\n${conventionOnly ? 'This change breaks a house rule' : 'This change breaks the wider repo'} — ${foundBy} (fix attempt ${attempt} of ${MAX_GATE_ATTEMPTS - 1}):\n${deep.errors.slice(0, 20).map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} [${e.phase}] — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT of the file(s) you touched:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — ${fixGuidance}`,
               schema: coderSchema,
               fileUrls,
               role: 'coder',
@@ -1811,8 +1829,8 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
-    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, reviewer: reviewerFixAttempts } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts } }; } catch { /* no locals */ }
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // Mirrors functions.routes.js's normal error shape (message/code/needed/

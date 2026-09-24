@@ -49,11 +49,20 @@ export const selfDevDelivery = {
   // Does the workspace parse, bundle from the real entry points, and keep
   // its cross-file exports intact? `files` is the whole workspace
   // ([{ path, content }]); the caller loads it.
-  async verify({ files }) {
+  //
+  // `conventionChecks: ['ink']` adds Morpheus's own house rules to the same pass,
+  // so a wrong ink rung is an error the coder is handed inside this turn rather
+  // than a red `prose-ink rule` gate afterwards. Only this adapter asks for it —
+  // it is Morpheus's own repo, and these rules are meaningless in a tenant's
+  // generated project (see lib/conventionChecks.js).
+  async verify({ files, conventionChecks }) {
     return verifyProject(files, {
       exclude: shouldExclude,
       entryPoints: DEFAULT_ENTRY_POINTS,
       esbuildPlugins: [externalBase44],
+      conventionChecks: Array.isArray(conventionChecks) && conventionChecks.length
+        ? conventionChecks
+        : ['ink'],
     });
   },
 
