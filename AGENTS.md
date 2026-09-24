@@ -79,6 +79,30 @@ auto-diagnose failed deploys) → **revert** (one-click, `revertSelfDevPush.js`)
 history, not as status. For what is built and what is next right now, run
 `node scripts/reality.mjs`.
 
+## Merge gate
+
+Three checks are required to merge into `main`, and since 2026-09-24 **GitHub
+enforces this, not only `merge.js`**:
+
+`guards (no install)` · `lint + build` · `render`
+
+- The names live in `server/src/lib/engine/requiredChecks.js`
+  (`SELF_DEV_REQUIRED_CHECKS`). `scripts/verify-merge-gates.mjs` asserts they still
+  match ci.yml's job names *and* that branch protection still requires the same set —
+  otherwise the repo would claim three gates while GitHub enforced two or none.
+- `node scripts/check-branch-protection.mjs` reads the live setting. It needs `gh`
+  auth and is deliberately **not** in `scripts/verify.mjs`, which must keep working
+  with no token and no network; it prints `SKIPPED` loudly rather than passing quietly.
+- **Do not reach for `gh pr merge --admin` by habit.** A normal merge now fails with
+  "the base branch policy prohibits the merge" while a gate is red or still running,
+  and that is the point. `--admin` is the emergency path for when CI cannot run at
+  all — which happened on 2026-09-24 when the Actions minutes ran out.
+- `strict` ("require branches to be up to date") is **off on purpose**: `merge.js` has
+  no handling for a branch that is behind its base, so turning it on would make
+  self-dev's auto-merge fail with a 405 it does not understand. The `push: main`
+  trigger covers the stale-base case instead. Turn `strict` on only after merge.js
+  handles being behind.
+
 ## Agent harness (DSH)
 
 This repo is developed through **DSH** (DeepSeek Harness) via the Web GUI. DSH is
