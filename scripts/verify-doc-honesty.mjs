@@ -91,8 +91,24 @@ console.log('\n4. the pages that described the deleted system are gone');
 for (const gone of ['src/pages/AIDocs.jsx', 'src/pages/FlowDiagram.jsx', 'src/lib/aiFunctionsData.js']) {
   check(`${gone} is deleted`, existsSync(path.join(REPO, gone)), false);
 }
-const app = read('src/App.jsx');
-check('no route still points at them', /ai-docs|flow-diagram|AIDocs|FlowDiagram/.test(app), false);
+// Across the WHOLE tree, not just App.jsx. The first version of this check looked
+// only at the router — and a <Link to="/flow-diagram"> in Landing.jsx survived the
+// deletion, so the app shipped a link to a route that no longer existed. Component
+// names were grepped when the pages were removed; route STRINGS were not. A dead
+// link inside the app's own router is the exact bug class the dock work spent a day
+// on, so the check is a tree walk now.
+const DEAD = /ai-docs|flow-diagram|AIDocs|FlowDiagram|aiFunctionsData/i;
+const offenders = [];
+const walk = (dir) => {
+  for (const entry of readdirSync(path.join(REPO, dir), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) { walk(rel); continue; }
+    if (!/\.(jsx?|mjs)$/.test(entry.name)) continue;
+    if (DEAD.test(read(rel))) offenders.push(rel);
+  }
+};
+walk('src');
+check('no file anywhere under src/ still names them', offenders, []);
 
 // ── 5. The document that remains reads the system ──────────────────────────
 console.log('\n5. the rebuild doc is generated, not remembered');

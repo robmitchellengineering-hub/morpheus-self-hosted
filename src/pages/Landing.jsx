@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Store, FileText, Camera, Network, Cpu, ShieldCheck, Sparkles, DollarSign, Rocket, LayoutDashboard, Globe } from 'lucide-react';
+import { Download, Store, FileText, Camera, ShieldCheck, Sparkles, DollarSign, Rocket, LayoutDashboard, Globe } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import DonateWidget from '@/components/matrix/DonateWidget';
@@ -189,12 +189,6 @@ export default function Landing() {
             </Link>
             <Link to="/screenshots" className="inline-flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider border border-primary/20 hover:border-primary/50 px-4 py-2 transition-colors">
               <Camera size={12} /> SCREENSHOTS
-            </Link>
-            <Link to="/flow-diagram" className="inline-flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider border border-primary/20 hover:border-primary/50 px-4 py-2 transition-colors">
-              <Network size={12} /> FLOW DIAGRAM
-            </Link>
-            <Link to="/ai-docs" className="inline-flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider border border-primary/20 hover:border-primary/50 px-4 py-2 transition-colors">
-              <Cpu size={12} /> AI DOCS
             </Link>
             <Link to="/updates-plan" className="inline-flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider border border-primary/20 hover:border-primary/50 px-4 py-2 transition-colors">
               <Sparkles size={12} /> UPDATES PLAN
