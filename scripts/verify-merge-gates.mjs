@@ -29,7 +29,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SELF_DEV_REQUIRED_CHECKS, requiredGateVerdict, requiredGateMessage } from '../server/src/lib/engine/requiredChecks.js';
-import { protectionVerdict } from '../server/src/lib/branchProtectionRules.js';
+import { protectionVerdict, protectionMessage } from '../server/src/lib/branchProtectionRules.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -131,7 +131,7 @@ console.log('\n-- and GitHub is required to enforce them, not only merge.js --')
 // nothing installed. Every drift branch is asserted to FAIL, which is the only
 // thing that makes the live check worth running.
 const protection = (contexts, extra = {}) => ({
-  required_status_checks: { strict: false, contexts },
+  required_status_checks: { strict: true, contexts },
   enforce_admins: { enabled: false },
   allow_force_pushes: { enabled: false },
   allow_deletions: { enabled: false },
@@ -157,6 +157,17 @@ check('…and every gate is reported missing', gone.missing, SELF_DEV_REQUIRED_C
 
 const forced = protectionVerdict(protection(SELF_DEV_REQUIRED_CHECKS, { allow_force_pushes: { enabled: true } }), SELF_DEV_REQUIRED_CHECKS);
 check('allowing force-pushes on main is caught', forced.ok, false);
+
+// The quietest drift of the lot. With this off, a head verified against a stale
+// base still reads as green, so nothing looks wrong until two individually-good
+// changes break main together — and merge.js now depends on it being on.
+check('requiring up-to-date branches is enforced', protectionVerdict(protection(SELF_DEV_REQUIRED_CHECKS), SELF_DEV_REQUIRED_CHECKS).strict, true);
+const stale = protectionVerdict(
+  protection(SELF_DEV_REQUIRED_CHECKS, { required_status_checks: { strict: false, contexts: SELF_DEV_REQUIRED_CHECKS } }),
+  SELF_DEV_REQUIRED_CHECKS,
+);
+check('…and turning it off is drift', stale.ok, false);
+check('…reported in words, not just a flag', /NOT required to be up to date/.test(protectionMessage(stale)), true);
 
 // The deliberate settings must NOT read as drift, or the check is noise and gets
 // ignored — which is how a real drift slips through unnoticed.

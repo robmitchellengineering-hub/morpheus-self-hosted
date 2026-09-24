@@ -116,11 +116,15 @@ enforces this, not only `merge.js`**:
   "the base branch policy prohibits the merge" while a gate is red or still running,
   and that is the point. `--admin` is the emergency path for when CI cannot run at
   all — which happened on 2026-09-24 when the Actions minutes ran out.
-- `strict` ("require branches to be up to date") is **off on purpose**: `merge.js` has
-  no handling for a branch that is behind its base, so turning it on would make
-  self-dev's auto-merge fail with a 405 it does not understand. The `push: main`
-  trigger covers the stale-base case instead. Turn `strict` on only after merge.js
-  handles being behind.
+- `strict` ("require branches to be up to date") is **ON**. A PR is therefore
+  verified against the exact base its squash lands on. When a head falls behind,
+  `merge.js` updates the branch (`updatePullRequestBranch`) and reports `pending`
+  rather than merging — the update lands a merge commit that re-runs the checks, so
+  a head that was green before the update is not green after it.
+- There is no `push: main` CI trigger. It re-tested, at full price, the tree the pull
+  request had already verified — about 47% of all runs. The one case it did cover is
+  a merge made with `--admin`, which bypasses the checks; after one of those, run the
+  workflow by hand (`gh workflow run ci.yml --ref main`).
 
 ## Agent harness (DSH)
 

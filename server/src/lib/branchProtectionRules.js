@@ -27,16 +27,18 @@
  * `strict` and `adminsBypass` are reported but are NOT part of `ok`, because
  * both are set deliberately and neither is a correctness failure here:
  *
- *   * `strict: false` — "require branches to be up to date before merging" is
- *     OFF on purpose. `server/src/lib/engine/merge.js` has no handling for a
- *     branch that is behind its base, so turning it on would make self-dev's
- *     auto-merge fail with a 405 it does not understand. The `push: main` CI
- *     trigger is what catches the stale-base integration case instead. Flip this
- *     to `strict: true` only after merge.js handles being behind.
+ *   * `strict` — "require branches to be up to date before merging" is ON since
+ *     2026-09-24, once `server/src/lib/engine/merge.js` learned to answer a
+ *     behind head by updating the branch and reporting pending rather than
+ *     attempting a merge GitHub will refuse. Turning it on before that is what
+ *     would have broken self-dev's auto-merge, so if this ever reads `false`,
+ *     something turned a real requirement back off.
  *   * `adminsBypass: true` — an admin can still merge with `--admin`. That is
  *     the emergency path, and it is deliberate: on 2026-09-24 the Actions
  *     minutes ran out and no check could run at all, so with admin enforcement
- *     ON nothing could have merged until the quota reset.
+ *     ON nothing could have merged until the quota reset. It is also the one
+ *     case a pull request's checks do not cover, which is why the CI workflow
+ *     keeps a manual `workflow_dispatch` entry point.
  *
  * Both are printed every run so that a change to either is visible rather than
  * silent.
@@ -71,8 +73,16 @@ export function protectionVerdict(protection, required = []) {
 
   const forcePushes = protection?.allow_force_pushes?.enabled === true;
   const deletions = protection?.allow_deletions?.enabled === true;
+  const strict = protection?.required_status_checks?.strict === true;
 
-  const ok = !unprotected && missing.length === 0 && extra.length === 0 && !forcePushes && !deletions;
+  // `strict` is judged, because the repo now depends on it: a pull request is
+  // verified against the exact base its squash lands on, and merge.js answers a
+  // behind head by updating it. Turn "up to date" off and that guarantee goes
+  // quietly — a head verified against a stale base still reads as green.
+  //
+  // `adminsBypass` is NOT judged. It is the deliberate emergency path, and a
+  // check that calls a decision drift is noise that gets ignored.
+  const ok = !unprotected && missing.length === 0 && extra.length === 0 && !forcePushes && !deletions && strict;
 
   return {
     ok,
@@ -81,7 +91,7 @@ export function protectionVerdict(protection, required = []) {
     missing,
     extra,
     unprotected,
-    strict: protection?.required_status_checks?.strict === true,
+    strict,
     forcePushes,
     deletions,
     adminsBypass: protection?.enforce_admins?.enabled !== true,
@@ -100,10 +110,9 @@ export function protectionMessage(verdict) {
   if (verdict.ok) {
     const parts = [
       `main enforces ${verdict.required.length} required check${verdict.required.length === 1 ? '' : 's'} `
-      + `(${verdict.required.join(', ')}); force-pushes and branch deletion are blocked.`,
+      + `(${verdict.required.join(', ')}); branches must be up to date before merging, and force-pushes and branch deletion are blocked.`,
     ];
-    if (!verdict.strict) parts.push('Branches are NOT required to be up to date before merging (deliberate: merge.js cannot yet handle being behind).');
-    if (verdict.adminsBypass) parts.push('Admins can bypass (deliberate: the emergency path when CI cannot run at all).');
+    if (verdict.adminsBypass) parts.push('Admins can bypass (deliberate: the emergency path when CI cannot run at all — after one, run the CI workflow by hand).');
     return parts.join(' ');
   }
 
@@ -116,6 +125,11 @@ export function protectionMessage(verdict) {
   }
   if (verdict.extra.length) {
     parts.push(`GitHub requires checks this repo does not declare: ${verdict.extra.join(', ')}. Either add them to SELF_DEV_REQUIRED_CHECKS or remove them from the branch protection rule.`);
+  }
+  // The silent one: with this off, a head verified against a stale base still
+  // reads as green, so nothing looks wrong until two good changes break main.
+  if (!verdict.unprotected && !verdict.strict) {
+    parts.push('Branches are NOT required to be up to date before merging. Turn on "Require branches to be up to date before merging" — merge.js handles a behind head by updating it, so there is no reason for this to be off.');
   }
   if (verdict.forcePushes) parts.push('Force-pushes to main are allowed; they should be blocked.');
   if (verdict.deletions) parts.push('Deleting main is allowed; it should be blocked.');
