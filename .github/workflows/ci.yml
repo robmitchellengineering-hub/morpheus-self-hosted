@@ -298,6 +298,13 @@ jobs:
       - name: Billing clamp (no negative balances)
         run: node scripts/verify-billing-clamp.mjs
 
+      # A call that names no AI role silently takes default_model @ default_temperature —
+      # which was a reasoning model whose thinking is billed against max_tokens. This
+      # asserts the small hot-path calls stay role-scoped, and that the reasoning-role
+      # budgets can actually finish.
+      - name: AI roles and budgets
+        run: node scripts/verify-ai-roles.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy

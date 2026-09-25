@@ -403,7 +403,12 @@ Return a JSON object with a "paths" array containing up to ${limit} file paths f
       prompt,
       schema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } }, required: ['paths'] },
       fileUrls: undefined,
-      role: 'coder', // lightweight selection; role not critical
+      // A shortlist pick, not a judgement about code — the `classify` role (flash @ 0.4)
+      // is the right shape and the cheapest thing that can do it. It used to say "role not
+      // critical" and borrow `coder`, which meant it tracked whatever the coder was set to
+      // and, while the coder was a reasoning model, spent its budget thinking about a list
+      // of filenames before answering.
+      role: 'classify',
       maxTokens: 2000,
     });
     const selected = Array.isArray(res.result?.paths) ? res.result.paths.filter((p) => typeof p === 'string' && p) : [];
@@ -445,6 +450,13 @@ async function researchWeb(userId, message, { onProgress } = {}) {
     }
 
     // 2. Ask a cheap call whether — and what — to search for.
+    //    It said "cheap" while borrowing the `planner` role at maxTokens 500, and this is
+    //    a REASONING model whose thinking is billed against that same budget — so it
+    //    truncated on essentially every build turn ("[researchWeb] failed:
+    //    OUTPUT_TRUNCATED (role=planner, maxTokens=500)" — 16 times in 72h, the last at
+    //    2026-09-25T08:47Z). The stage still reported ✓ because the caller falls back, so
+    //    builds silently researched less. It is a classifier, so it now uses `classify`
+    //    (flash @ 0.4, no reasoning budget to exhaust) with headroom besides.
     const decide = await invokeAI({
       userId,
       prompt: `You decide whether a build request needs a WEB SEARCH for current external information the project's own files could not contain — e.g. a library or API's current version/usage, a current best practice, the meaning of a specific error string, or docs for a named service.
@@ -453,8 +465,8 @@ REQUEST: ${message}
 
 Return JSON: { "queries": ["...", "..."] } — 0 to 3 focused search queries. Return an empty array if the request is self-contained (a UI tweak, a rename, internal logic, anything answerable from the codebase alone). Do NOT search for general programming knowledge the coder already has.`,
       schema: { type: 'object', properties: { queries: { type: 'array', items: { type: 'string' } } } },
-      role: 'planner',
-      maxTokens: 500,
+      role: 'classify',
+      maxTokens: 1500,
     });
     const queries = (Array.isArray(decide.result?.queries) ? decide.result.queries : [])
       .map((q) => String(q || '').trim()).filter(Boolean).slice(0, 3);
@@ -527,8 +539,14 @@ Return JSON: { readNext: [up to 6 paths from the tree you need to read next — 
           required: ['notes'],
         },
         fileUrls: undefined,
+        // STAYS on the planner role. This is not a classifier — it writes a running
+        // "everything this change touches" note across up to 3 rounds, and that is exactly
+        // the judgement the expensive model is for. The BUDGET was the bug, not the role:
+        // at 4000 a reasoning model's thinking ate the answer and it truncated ("[researchRepo]
+        // failed, falling back to auto-select: OUTPUT_TRUNCATED (role=planner, maxTokens=4000)",
+        // 6 times in 72h) — leaving the build with a blind guess at the affected files.
         role: 'planner',
-        maxTokens: 4000,
+        maxTokens: 8000,
       });
       notes = res.result.notes || notes;
       const next = (Array.isArray(res.result.readNext) ? res.result.readNext : [])
