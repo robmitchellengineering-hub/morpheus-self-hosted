@@ -26,7 +26,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildReviewerContext } from '../server/src/lib/reviewContext.js';
+import { buildReviewerContext, referencedModels } from '../server/src/lib/reviewContext.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -192,6 +192,48 @@ check('the CI import guard uses the same export parser (one definition, two cons
   code('scripts/verify-server-imports.mjs').includes("from '../server/src/lib/moduleExports.js'"));
 check('reviewContext uses the shared parser too',
   code('server/src/lib/reviewContext.js').includes("from './moduleExports.js'"));
+
+// ── The Prisma models a change USES, not just the ones it edits ───────────────────────
+// This is the regression the mutation test found: the schema was included only when a change
+// touched server/prisma/, so a change that merely READ a model got no schema — and the
+// reviewer approved a read of `row.tokens` on a model that has input_tokens/output_tokens.
+// I had recorded that as a false positive in the arm being retired; it was a true positive.
+// No other gate can see it: esbuild, lint and the import guard do not know the schema.
+const realSchema = readFileSync(join(REPO, 'server/prisma/schema.prisma'), 'utf8');
+const schemaFiles = [
+  { path: 'KNOWN-HAZARDS.md', content: 'Sentinel hazards.\n' },
+  { path: 'AGENTS.md', content: 'Sentinel agents.\n' },
+  { path: 'server/prisma/schema.prisma', content: realSchema },
+];
+const opReadsModel = [{
+  path: 'server/src/lib/recordSpend.js',
+  action: 'create',
+  content: 'export function recordSpend(userId, cost) {\n  return prisma.usageEvent.create({ data: { created_by_id: userId, cost_usd: cost } });\n}\n',
+}];
+const modelBlock = buildReviewerContext({ files: schemaFiles, fileOps: opReadsModel });
+check('a change that READS a model gets that model\'s definition',
+  modelBlock.includes('PRISMA MODELS THIS CHANGE USES') && /model UsageEvent \{/.test(modelBlock),
+  modelBlock.slice(0, 200));
+check('…including the field the reviewer needs to refute a wrong column',
+  /input_tokens/.test(modelBlock) && /created_by_id/.test(modelBlock));
+check('…and NOT the other 53 models (the whole schema is ~16.5k tokens)',
+  !/model Project \{/.test(modelBlock) && !/model DeviceToken \{/.test(modelBlock));
+check('…kept small: the slice is a fraction of the schema, not the whole file',
+  modelBlock.length < realSchema.length / 4,
+  `${modelBlock.length} vs schema ${realSchema.length}`);
+check('the section tells the reviewer a missing column is CRITICAL',
+  /does not exist, and using it is a CRITICAL issue/.test(modelBlock));
+check('a change that touches nothing schema-shaped gets no model section',
+  !buildReviewerContext({ files: schemaFiles, fileOps: [{ path: 'src/thing.js', content: 'export const x = 1;\n' }] })
+    .includes('PRISMA MODELS'));
+check('the schema is still fully included when the change edits server/prisma/',
+  buildReviewerContext({ files: schemaFiles, fileOps: [{ path: 'server/prisma/schema.prisma', content: 'model X {}\n' }] })
+    .includes('because this change touches server/prisma/'));
+
+// The guard caught a `.size` on an array here (arrays have .length), which silently skipped
+// the whole section and made the check above fail for the right reason.
+check('referencedModels returns an array that a caller can count',
+  Array.isArray(referencedModels(realSchema, opReadsModel)));
 
 // Small projects still get the whole tree AND the import section.
 const smallImports = buildReviewerContext({

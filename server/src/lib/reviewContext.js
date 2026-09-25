@@ -130,6 +130,38 @@ function importTargets(fileOps, byPath) {
 }
 
 /**
+ * The `model X { … }` blocks a change actually references.
+ *
+ * A change reaches a model either through the Prisma client's camelCase property
+ * (`prisma.usageEvent`) or by naming it directly (`UsageEvent`, e.g. in a type annotation or
+ * a comment). Both are matched, and matching a name in a comment is deliberately accepted:
+ * over-including one model costs a few hundred tokens, missing one is the failure this
+ * whole section exists to prevent.
+ */
+export function referencedModels(schemaText, fileOps) {
+  const blocks = new Map();
+  for (const m of schemaText.matchAll(/^model\s+(\w+)\s*\{[\s\S]*?^\}/gm)) {
+    blocks.set(m[1], m[0]);
+  }
+  const contents = fileOps
+    .map((op) => (op && typeof op.content === 'string' ? op.content : ''))
+    .join('\n');
+  const found = [];
+  for (const [name, block] of blocks) {
+    const clientProp = name.charAt(0).toLowerCase() + name.slice(1);
+    // Built by concatenation, not a template literal: `verify-prisma-models.mjs` scans for
+    // `prisma.<name>` usages, and a literal `prisma.${clientProp}` in source reads to it as a
+    // model called `$`. That guard is right to be strict, so the fix belongs here rather than
+    // as a hole punched in the guard.
+    const clientAccess = 'prisma.' + clientProp;
+    if (new RegExp('\\b' + clientAccess + '\\b').test(contents) || new RegExp(`\\b${name}\\b`).test(contents)) {
+      found.push(`${block}\n// accessed as ${clientAccess}`);
+    }
+  }
+  return found;
+}
+
+/**
  * @param {{path: string, content: string}[]} files  every file in the project
  * @param {{path: string, content?: string, action?: string}[]} fileOps  the change under review
  * @param {{maxTreeBytes?: number, maxSiblingPaths?: number, maxImportDirPaths?: number}} [opts]
@@ -217,6 +249,35 @@ export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, max
     if (!touched) continue;
     const f = byPath.get(path);
     if (f) sections.push(`--- ${f.path} (included because this change touches ${whenTouchedPrefix}) ---\n${f.content}`);
+  }
+
+  // 5. The Prisma models the change actually uses — because a change that READS or WRITES a
+  //    model needs the schema just as much as one that edits it, and the check above only
+  //    fires when the change touches server/prisma/.
+  //
+  //    This is a regression I introduced and then found. Dropping the schema entirely for
+  //    non-schema changes meant the reviewer could no longer answer "does that column
+  //    exist", and the mutation test caught it: a fixture reading `row.tokens` — on a model
+  //    that has input_tokens/output_tokens — was BLOCKED by the old full context and
+  //    APPROVED by the narrowed one. I had recorded that block as a false positive twice.
+  //    No other gate can see it: esbuild, lint and the import guard have no idea what the
+  //    database looks like.
+  //
+  //    Only the referenced models, not the whole 16.5k-token file: the reviewer needs the
+  //    evidence for the questions it is asked, not every table in the product.
+  const schema = byPath.get('server/prisma/schema.prisma');
+  if (schema && typeof schema.content === 'string') {
+    const models = referencedModels(schema.content, ops);
+    if (models.length > 0) {
+      sections.push(
+        'PRISMA MODELS THIS CHANGE USES — only the models the change references, not the whole'
+        + ' schema. Check every field the change reads or writes against these definitions: a'
+        + ' column that is not listed here does not exist, and using it is a CRITICAL issue'
+        + ' (it fails at runtime, and no other check in this pipeline can see it). A relation'
+        + ' or model the change needs that is NOT shown here is also worth flagging:\n\n'
+        + models.join("\n\n")
+      );
+    }
   }
 
   return sections.join('\n\n');
