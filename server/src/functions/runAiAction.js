@@ -95,7 +95,11 @@ ${sampleLines || '(no sample rows given)'}`;
 // reaches schema_mapping, and it bills against the approving user like every
 // other call here.
 const PROBE_MAX_OPS = 3;      // matches REVIEW_CHUNK_SIZE — one real reviewer batch
-const PROBE_MAX_CONTEXT = 60000; // chars of caller-supplied context (the thing under test)
+// Sized ABOVE the pipeline's own context budget (SCOPED_MAX_CONTEXT_BYTES, 150000 chars)
+// so a probe can reproduce any context the reviewer is really sent. An over-long context is
+// REJECTED rather than sliced: truncating it would silently measure a different prompt than
+// the one asked about, and a check that cannot run is not a pass.
+const PROBE_MAX_CONTEXT = 250000;
 
 async function reviewProbe(userId, body) {
   const ops = (Array.isArray(body.ops) ? body.ops : [])
@@ -108,7 +112,11 @@ async function reviewProbe(userId, body) {
     }));
   if (ops.length === 0) throw Object.assign(new Error('ops required (1-3 file operations, each with a path)'), { status: 400 });
 
-  const context = typeof body.context === 'string' ? body.context.slice(0, PROBE_MAX_CONTEXT) : '';
+  const raw = typeof body.context === 'string' ? body.context : '';
+  if (raw.length > PROBE_MAX_CONTEXT) {
+    throw Object.assign(new Error(`context is ${raw.length} chars, over the ${PROBE_MAX_CONTEXT} limit — send a whole context, not a truncated one`), { status: 400 });
+  }
+  const context = raw;
   const plan = typeof body.plan === 'string' ? body.plan : '';
 
   const { result, model, provider, usage } = await invokeAI({

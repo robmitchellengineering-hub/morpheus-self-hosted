@@ -145,6 +145,13 @@ check('review_probe runs the real reviewer prompt, schema, role and budget',
   && /schema: REVIEW_SCHEMA/.test(runAi)
   && /role: 'reviewer'/.test(runAi)
   && /maxTokens: REVIEW_STEP_MAX_TOKENS/.test(runAi));
+// A probe exists to compare contexts. A context longer than the cap must fail loudly, not be
+// sliced — a truncated context measures a different prompt than the one being asked about.
+check('the probe refuses an over-long context instead of silently truncating it',
+  /throw Object\.assign\(new Error\(`context is \$\{raw\.length\} chars/.test(runAi)
+  && !/body\.context\.slice\(0, PROBE_MAX_CONTEXT\)/.test(runAi));
+check('the probe cap can reproduce any context the pipeline actually sends',
+  Number((runAi.match(/PROBE_MAX_CONTEXT = (\d+)/) || [])[1] || 0) > 150000);
 check('the review schema is exported so the probe reuses it',
   /export const REVIEW_SCHEMA/.test(reviewer));
 
