@@ -1235,6 +1235,11 @@ OPERATOR SAYS: ${message}`;
     // measurement rather than a gate, and why the obvious name-overlap gate was
     // measured and rejected. It rides in `rework` so it reaches the run record.
     let reuseMissCount = 0;
+    // What the pre-flight ITSELF did: ran and named N existing modules, ran and named
+    // none, or failed. Without this, "crashed" and "found nothing" are the same row —
+    // `reuse: 0` with no advice — which is exactly how a truncated pre-flight was read
+    // as "the coder ignored the advice". See the maxTokens note below.
+    let reusePreflight = { ran: false, failed: false, named: 0 };
     let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
     const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
     let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -1318,16 +1323,26 @@ OPERATOR SAYS: ${message}`;
             prompt: `${systemPrompt}\n\nA build plan is about to CREATE these files:\n${plannedNew.join('\n')}\n\nTHE PLAN:\n${plannerResult.plan}\n\nTHIS REPO ALREADY CONTAINS (paths only — you may not need all of them):\n${files.map((f) => f.path).join('\n')}\n\nFor each file above, does an EXISTING file already do that job? Name it. Omit a file entirely if nothing existing does the job. Be strict — naming a file that does not actually do the job is worse than naming nothing, because the coder will be told to use it.`,
             schema: reuseSchema,
             role: 'planner',
-            maxTokens: 4000,
+            // 8000, not 4000. The role resolves to a REASONING model, and its thinking
+            // is billed against this same budget, so 4000 truncated the JSON before it
+            // finished — observed in production 2026-09-24T23:30:35Z, 2ms before the
+            // coder started on getSelfDevDrift.js, the very run recorded as "the
+            // pre-flight fired and the coder ignored it". It never fired; the catch
+            // swallowed it and the block was empty. `diagnosis` hit the identical
+            // OUTPUT_TRUNCATED and was fixed the same way.
+            maxTokens: 8000,
           });
           const matches = (Array.isArray(reuseCheck.result?.reuse) ? reuseCheck.result.reuse : [])
             .filter((r) => r && typeof r.planned === 'string' && typeof r.existing === 'string' && r.existing.trim());
           reuseMatches = matches;
+          reusePreflight = { ran: true, failed: false, named: matches.length };
           if (matches.length > 0) {
             reuseBlock = `\n\nDO NOT REINVENT — this repo already implements these:\n${matches.map((r) => `  ${r.planned}  →  use ${r.existing}${r.why ? ` (${r.why})` : ''}`).join('\n')}\nRead the existing file and import it. Create the new file ONLY if the existing module genuinely cannot do the job — and if you do, say why in your reply.`;
           }
         } catch (err) {
           // Best-effort like the API check: a failed pre-flight must not block a build.
+          // It must not look like a clean "nothing to reuse" either — hence the flag.
+          reusePreflight = { ran: false, failed: true, named: 0 };
           console.error('[chatWithMorpheus] existing-implementation check failed:', err.message);
         }
       }
@@ -1919,8 +1934,8 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
-    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount }, reusePreflight }; } catch { /* no locals */ }
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount }, reusePreflight, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // Mirrors functions.routes.js's normal error shape (message/code/needed/

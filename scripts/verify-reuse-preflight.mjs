@@ -140,6 +140,20 @@ check('the turn keeps the pre-flight matches', /reuseMatches = matches;/.test(sr
 check('…counts the matches the coder ignored', /reuseMissCount = reuseMisses\(/.test(src));
 check('…and reports it in the run record', /reuse: reuseMissCount/.test(src));
 
+// ── and the pre-flight itself is not silently broken ────────────────────────
+// The role resolves to a reasoning model, so thinking is billed against maxTokens
+// too. At 4000 this truncated in production (2026-09-24T23:30:35Z, 2ms before the
+// coder started on getSelfDevDrift.js) — and because the catch is best-effort, the
+// build carried on with an empty block. That run was then recorded, by a human, as
+// "the pre-flight fired and the coder ignored it". It never fired.
+check('the pre-flight gives a reasoning model room to finish',
+  /role: 'planner',[\s\S]{0,1500}?maxTokens: 8000/.test(src));
+check('…and its own outcome is recorded, not just its effect on the coder',
+  /reusePreflight = \{ ran: true, failed: false, named: matches\.length \}/.test(src)
+  && /reusePreflight = \{ ran: false, failed: true, named: 0 \}/.test(src));
+check('…and that outcome survives summariseResult into the run record',
+  /'reusePreflight'/.test(readFileSync(join(REPO, 'server/src/lib/selfDevRunRules.js'), 'utf8')));
+
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {
   console.log('\nThe gates check whether new code works, never whether it should exist.');
