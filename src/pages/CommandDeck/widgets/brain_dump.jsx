@@ -5,7 +5,7 @@ import { C } from '../deckConstants';
 import { Card, MicField, IconButton, EmptyNote, inputStyle, rowBox, ghostBtn, pillBtn } from '../DeckUI';
 
 export default function BrainDumpWidget() {
-  const { dump, dumpInput, setDumpInput, quickFileMsg, detectOwner, addDump, removeDump, promoteDump, askToDelete } = useCommandDeck();
+  const { dump, dumpInput, setDumpInput, dumpPending, quickFileMsg, detectOwner, addDump, removeDump, promoteDump, askToDelete } = useCommandDeck();
   const [dumpSearch, setDumpSearch] = useState('');
   const matches = (text, term) => !term.trim() || (text || '').toLowerCase().includes(term.trim().toLowerCase());
   const visibleDump = dump.filter((d) => matches(d.text, dumpSearch));
@@ -17,9 +17,20 @@ export default function BrainDumpWidget() {
       search={dump.length > 0 ? { value: dumpSearch, onChange: setDumpSearch, placeholder: 'Search unsorted dump…' } : undefined}
     >
       <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <MicField value={dumpInput} onChange={setDumpInput} onSubmit={addDump} placeholder="Type it. Don't think." style={inputStyle} />
-        <IconButton onClick={addDump} color={C.oxblood}><Plus size={18} color={C.paper} /></IconButton>
+        <MicField value={dumpInput} onChange={setDumpInput} onSubmit={addDump} placeholder="Type it. Don't think." style={inputStyle} disabled={dumpPending} />
+        {/* Disabled while a classification is in flight. The real guard is in addDump (a
+            ref, not this state), because state is not visible to a second press in the same
+            tick — but a live-looking button that silently does nothing is its own bug. */}
+        <IconButton onClick={addDump} color={C.oxblood} disabled={dumpPending}><Plus size={18} color={C.paper} /></IconButton>
       </div>
+      {/* Filing takes a classifier round trip. Without this the panel just sat there and
+          you could not tell whether the press had registered — which is what invited the
+          second press that used to file the same text twice. */}
+      {dumpPending && (
+        <p style={{ fontSize: '0.7rem', fontWeight: 600, color: C.walnutSoft, marginTop: '0.4rem', marginBottom: 0 }}>
+          Filing it — splitting the thoughts up and putting each where it belongs…
+        </p>
+      )}
       {dumpInput.trim() && detectOwner(dumpInput) && (
         <p style={{ fontSize: '0.7rem', fontWeight: 600, color: detectOwner(dumpInput)?.color, marginTop: '0.4rem', marginBottom: 0 }}>
           → anything for {detectOwner(dumpInput)?.name} goes to their list

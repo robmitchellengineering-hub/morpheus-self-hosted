@@ -30,6 +30,11 @@ export function CommandDeckProvider({ children }) {
 
   const [dump, setDump] = useState([]);
   const [dumpInput, setDumpInput] = useState('');
+  // Filing a dump is a classifier round trip, so there is a real window where a second
+  // press lands. `dumpPending` drives the disabled button; `dumpInFlight` is the guard that
+  // actually stops it, because state is not visible to a second press in the same tick.
+  const [dumpPending, setDumpPending] = useState(false);
+  const dumpInFlight = useRef(false);
   const [quickFileMsg, setQuickFileMsg] = useState(null);
   const quickFileTimeout = useRef(null);
 
@@ -301,8 +306,19 @@ export function CommandDeckProvider({ children }) {
   };
 
   const addDump = async () => {
-    if (!dumpInput.trim()) return;
+    // Re-entrancy guard. Before this, pressing + while the first press was still out filed
+    // the SAME text again, once per press, because the input was only cleared after the
+    // whole classify-and-file loop had finished — seconds, on a classifier call. The ref
+    // (not the state) is what makes it airtight: a second press in the same tick still sees
+    // `dumpPending === false`, but never sees a stale ref.
+    if (dumpInFlight.current) return;
     const text = dumpInput.trim();
+    if (!text) return;
+    dumpInFlight.current = true;
+    setDumpPending(true);
+    // Clear immediately, so even a press that slips past the guard finds nothing to submit.
+    // Restored in the catch below, so a capture is never lost to a failure.
+    setDumpInput('');
     try {
       // ONE classification call for the whole dump. This used to short-circuit
       // to a single owner as soon as any person's name appeared anywhere in the
@@ -331,7 +347,6 @@ export function CommandDeckProvider({ children }) {
           setDump((prev) => [created, ...prev]);
           flagQuickFile('Saved to the unsorted pile');
         }
-        setDumpInput('');
         return;
       }
 
@@ -371,9 +386,15 @@ export function CommandDeckProvider({ children }) {
       } else if (labels.length > 1) {
         flagQuickFile(`Filed ${labels.length} items: ${[...new Set(labels)].join(', ')}`);
       }
-
-      setDumpInput('');
-    } catch { flagSaveErr(); }
+    } catch {
+      flagSaveErr();
+      // Put it back: the box was cleared optimistically on the way in, and losing what
+      // someone just typed is worse than making them press again.
+      setDumpInput(text);
+    } finally {
+      dumpInFlight.current = false;
+      setDumpPending(false);
+    }
   };
   const removeDump = async (id) => {
     setDump((prev) => prev.filter((d) => d.id !== id));
@@ -980,7 +1001,7 @@ export function CommandDeckProvider({ children }) {
 
   const value = {
     loaded, saveErr,
-    dump, dumpInput, setDumpInput, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
+    dump, dumpInput, setDumpInput, dumpPending, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
     people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,
