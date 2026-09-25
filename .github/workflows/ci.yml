@@ -312,6 +312,11 @@ jobs:
       - name: Reviewer context
         run: node scripts/verify-review-context.mjs
 
+      # "Did this change break a file that imports it?" is decidable by a script that already
+      # exists (lib/importGraph.js). H1 is the incident where leaving it to judgement failed.
+      - name: Caller-break gate
+        run: node scripts/verify-caller-check.mjs
+
       # morpheus.nz served a 1.5 KB React shell with no description, no structured data
       # and no robots.txt, so crawlers could not tell what the product was. This asserts
       # the machine-readable surface exists, is generated from the capabilities JSON, and
