@@ -26,7 +26,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildReviewerContext, referencedModels } from '../server/src/lib/reviewContext.js';
+import { buildReviewerContext, referencedModels, modelFieldIndex } from '../server/src/lib/reviewContext.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -212,20 +212,43 @@ const opReadsModel = [{
 }];
 const modelBlock = buildReviewerContext({ files: schemaFiles, fileOps: opReadsModel });
 check('a change that READS a model gets that model\'s definition',
-  modelBlock.includes('PRISMA MODELS THIS CHANGE USES') && /model UsageEvent \{/.test(modelBlock),
+  modelBlock.includes('PRISMA MODELS AND FIELDS') && /model UsageEvent \{/.test(modelBlock),
   modelBlock.slice(0, 200));
 check('…including the field the reviewer needs to refute a wrong column',
   /input_tokens/.test(modelBlock) && /created_by_id/.test(modelBlock));
-check('…and NOT the other 53 models (the whole schema is ~16.5k tokens)',
+check('…and NOT the other 53 models\' full definitions',
   !/model Project \{/.test(modelBlock) && !/model DeviceToken \{/.test(modelBlock));
-check('…kept small: the slice is a fraction of the schema, not the whole file',
-  modelBlock.length < realSchema.length / 4,
-  `${modelBlock.length} vs schema ${realSchema.length}`);
 check('the section tells the reviewer a missing column is CRITICAL',
   /does not exist, and using it is a CRITICAL issue/.test(modelBlock));
-check('a change that touches nothing schema-shaped gets no model section',
-  !buildReviewerContext({ files: schemaFiles, fileOps: [{ path: 'src/thing.js', content: 'export const x = 1;\n' }] })
-    .includes('PRISMA MODELS'));
+
+// ── The FIELD INDEX: for a change that never names its model ──────────────────────────
+// The second half of the same regression, and the one my first fix missed entirely. The
+// `bad-column` fixture is `tokensPerDollar(row)` — a generic helper that mentions neither
+// the Prisma client nor a model name, so there was nothing to key a slice on and the narrowed
+// context included NO schema. It approved a read of `row.tokens` while the full context (which
+// brute-forces all 54 models) caught it. A per-reference slice was necessary but not
+// sufficient, so the block now also carries a name-only index of every model's fields.
+const opGenericRow = [{
+  path: 'server/src/lib/usageMath.js',
+  action: 'create',
+  content: 'export function tokensPerDollar(row) {\n  return Math.round(row.tokens / row.cost_usd);\n}\n',
+}];
+const genericBlock = buildReviewerContext({ files: schemaFiles, fileOps: opGenericRow });
+check('a GENERIC row helper (naming no model) still gets schema evidence',
+  genericBlock.includes('PRISMA MODELS AND FIELDS') && genericBlock.includes('FIELD INDEX'),
+  genericBlock.slice(0, 200));
+check('…the index lists UsageEvent\'s real fields',
+  /UsageEvent: [^\n]*input_tokens, output_tokens/.test(genericBlock), genericBlock.slice(-400));
+check('…and does NOT list the field the fixture wrongly reads (so it is refutable)',
+  !/^UsageEvent: [^\n]*\btokens\b/m.test(genericBlock));
+check('…the index covers every model, so "not a column anywhere" is answerable',
+  modelFieldIndex(realSchema).length > 40);
+check('…but stays a fraction of the schema (names only, no types or defaults)',
+  modelFieldIndex(realSchema).join('\n').length < realSchema.length / 5,
+  `${modelFieldIndex(realSchema).join('\n').length} vs ${realSchema.length}`);
+check('…a change touching nothing schema-shaped gets no full model definition',
+  !/model \w+ \{/.test(buildReviewerContext({ files: schemaFiles, fileOps: [{ path: 'src/thing.js', content: 'export const x = 1;\n' }] })
+    .replace(/^model \w+: .*$/gm, '')));
 check('the schema is still fully included when the change edits server/prisma/',
   buildReviewerContext({ files: schemaFiles, fileOps: [{ path: 'server/prisma/schema.prisma', content: 'model X {}\n' }] })
     .includes('because this change touches server/prisma/'));
