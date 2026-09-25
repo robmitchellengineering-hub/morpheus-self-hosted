@@ -21,6 +21,7 @@ import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
 import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
+import { reuseMisses } from '../lib/reuseCheck.js';
 import { selfDevToolsPromptBlock, runSelfDevToolCalls, formatSelfDevToolResultsBlock, extractScreenshotUrls } from '../lib/selfDevTools.js';
 import { getConstructContext } from '../lib/constructContext.js';
 import { checkA11y } from '../lib/a11yCheck.js';
@@ -1229,6 +1230,11 @@ OPERATOR SAYS: ${message}`;
     // bundle when what it actually did was take the wrong ink rung.
     let conventionFixAttempts = 0;
     let reviewerFixAttempts = 0;
+    // How many of the pre-flight's "use this existing module" matches the coder
+    // ignored. Counted, not enforced — see lib/reuseCheck.js for why this is a
+    // measurement rather than a gate, and why the obvious name-overlap gate was
+    // measured and rejected. It rides in `rework` so it reaches the run record.
+    let reuseMissCount = 0;
     let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
     const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
     let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -1294,6 +1300,11 @@ OPERATOR SAYS: ${message}`;
         },
       };
       let reuseBlock = '';
+      // Kept so the turn can check its own advice afterwards: which existing
+      // modules the pre-flight named, and whether the coder actually imported
+      // them. See lib/reuseCheck.js — the block above is advice, and until this
+      // was recorded nothing said whether the advice was taken.
+      let reuseMatches = [];
       const plannedNew = (Array.isArray(plannerResult.plannedFiles) ? plannerResult.plannedFiles : [])
         .filter((p) => typeof p === 'string' && p.trim() && !files.some((f) => f.path === p));
       // Skipped outright on an empty project. This runs for every build, not just
@@ -1311,6 +1322,7 @@ OPERATOR SAYS: ${message}`;
           });
           const matches = (Array.isArray(reuseCheck.result?.reuse) ? reuseCheck.result.reuse : [])
             .filter((r) => r && typeof r.planned === 'string' && typeof r.existing === 'string' && r.existing.trim());
+          reuseMatches = matches;
           if (matches.length > 0) {
             reuseBlock = `\n\nDO NOT REINVENT — this repo already implements these:\n${matches.map((r) => `  ${r.planned}  →  use ${r.existing}${r.why ? ` (${r.why})` : ''}`).join('\n')}\nRead the existing file and import it. Create the new file ONLY if the existing module genuinely cannot do the job — and if you do, say why in your reply.`;
           }
@@ -1526,6 +1538,25 @@ OPERATOR SAYS: ${message}`;
         reviewerModel = reviewed.reviewerModel;
         reviewSummary = reviewed.reviewSummary;
         reviewIssues = reviewed.issues || [];
+      }
+
+      // ── Reuse check: did the coder act on the pre-flight? ─────────────────
+      // Zero-token and deterministic, over the FINAL fileOps (the reviewer above
+      // can still rewrite them). The pre-flight told the coder to import an
+      // existing module; this counts the cases where it created the planned file
+      // anyway without importing it. Recorded rather than fed back as a fix: the
+      // pre-flight's own instruction allows "the existing module genuinely cannot
+      // do the job", which is a judgement no deterministic gate can make, so
+      // forcing a rework round on it would burn attempts on a legitimate choice.
+      // See lib/reuseCheck.js.
+      reuseMissCount = reuseMisses(
+        fileOps
+          .filter((op) => op.action !== 'delete' && typeof op.content === 'string')
+          .map((op) => ({ path: op.path, content: op.content })),
+        reuseMatches,
+      ).length;
+      if (reuseMissCount > 0) {
+        console.log(`[chatWithMorpheus] reuse: the pre-flight named an existing module for ${reuseMissCount} created file(s) that did not import it — lib/reuseCheck.js`);
       }
 
       // ── Syntax gate: the change must at least parse ───────────────────────
@@ -1888,8 +1919,8 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
-    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount } }; } catch { /* no locals */ }
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // Mirrors functions.routes.js's normal error shape (message/code/needed/

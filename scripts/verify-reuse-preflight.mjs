@@ -28,6 +28,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { reuseMisses } from '../server/src/lib/reuseCheck.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -93,6 +94,51 @@ check('…and after the external-API pre-flight, which is the same idea aimed ou
 // that can fail for reasons that have nothing to do with the change.
 const catchAt = src.indexOf('existing-implementation check failed');
 check('a failed pre-flight is logged, not thrown', catchAt > -1);
+
+// ── the advice is checkable, not just given ─────────────────────────────────
+// The pre-flight appends "DO NOT REINVENT" and, until 2026-09-25, nothing recorded
+// whether it was obeyed: on one identical task the pro and flash coders both
+// reported `rework: 0/0/0/0` and both passed every gate, while only one of them
+// used the module it had been told to use. lib/reuseCheck.js answers the question
+// from the written files, with no model call. Exercised here against the case that
+// actually happened — including the detail that makes it hard: the duplicated
+// module was named in a COMMENT, so only an import counts as use.
+
+console.log('\nDid the coder import the module the pre-flight named?\n');
+
+const MATCH = [{
+  planned: 'server/src/functions/getSelfDevDrift.js',
+  existing: 'server/src/lib/selfDevSyncState.js',
+  why: 'reads provenance and marks the workspace synced',
+}];
+const created = (content) => [{ path: MATCH[0].planned, content }];
+const hits = (files) => reuseMisses(files, MATCH).length;
+
+check('flags a created file that reimplements the module and only names it in a comment',
+  hits(created([
+    '// the same job lib/selfDevSyncState.js does, done here instead',
+    "import crypto from 'node:crypto';",
+    "export const drift = (s) => crypto.createHash('sha1').update(s).digest('hex');",
+  ].join('\n'))) === 1);
+check('does not flag a created file that imports it',
+  hits(created("import { readProvenance } from '../lib/selfDevSyncState.js';\nexport const p = readProvenance;")) === 0);
+check('counts an aliased import as use',
+  hits(created("import { readProvenance } from '@/lib/selfDevSyncState';")) === 0);
+check('counts a require() as use',
+  hits(created("const { readProvenance } = require('../lib/selfDevSyncState.js');")) === 0);
+check('counts a side-effect import as use',
+  hits(created("import '../lib/selfDevSyncState.js';")) === 0);
+check('does not flag a plan whose new file was never created',
+  reuseMisses([{ path: 'server/src/lib/somethingElse.js', content: 'export const x = 1;' }], MATCH).length === 0);
+check('nothing to check when the pre-flight named nothing',
+  reuseMisses(created('export const x = 1;'), []).length === 0);
+
+// ── and the turn records the answer ─────────────────────────────────────────
+// A detector nobody reports is a detector nobody reads. `reuse` rides in the
+// `rework` object, which is already on the run record's allow-list.
+check('the turn keeps the pre-flight matches', /reuseMatches = matches;/.test(src));
+check('…counts the matches the coder ignored', /reuseMissCount = reuseMisses\(/.test(src));
+check('…and reports it in the run record', /reuse: reuseMissCount/.test(src));
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {

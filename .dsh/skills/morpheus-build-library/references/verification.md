@@ -168,3 +168,34 @@ Build the test out of the *inputs that matter*, too. The billing clamp's guard i
 41,205-case sweep rather than a handful of examples, because the bug it catches
 lived in the combinations nobody thought to try.
 
+## A gate that asks whether the code works, never whether it should exist
+
+Every check in this repo asks whether a change *works*: does it parse, does it
+bundle, are its exports intact, does it follow the ink rule. None of them asks the
+prior question — should this file exist at all. On one identical task the pro coder
+called the existing drift machinery while the flash coder re-implemented it, both
+passed all three CI gates, and both reported `rework: 0/0/0/0`. The wasted code is
+not the cost; the second copy of a rule that will drift from the first is.
+
+The judge here is the model, and the honest position is that only part of it can be
+made mechanical:
+
+- **Advice is not a check.** chatWithMorpheus's existing-implementation pre-flight
+  appends a `DO NOT REINVENT` block. That changes nothing on its own — the turn now
+  also counts whether the coder imported what the pre-flight named
+  (`lib/reuseCheck.js`, reported as `reuse` in the run record's `rework`).
+- **Do not gate on name overlap.** The obvious deterministic rule — flag a new module
+  whose distinctive name tokens sit inside an existing module's — was measured
+  against the real tree before being built and is unusable. Almost every overlap is
+  this repo's own convention: a guard is *deliberately* named after the module it
+  guards. Naming carries no information about duplication. Measure a rule against
+  the tree before you build it.
+- **Only an import is a use.** The coder that duplicated the module named it in a
+  comment. A detector that greps for the name calls that a pass — the same trap as a
+  guard matching its own explanatory prose. Mask comments first.
+- **Watch the masking helper.** `proseInk.js`'s `maskSource` blanks regex literals
+  as well as comments, and a path looks exactly like a regex: inside
+  `require('../lib/drift.js')` the `/lib/` disappeared, so the import test failed on
+  the one case it existed to catch. `reuseCheck.js` ships its own comment-only masker
+  for that reason; reuse it rather than reaching for `maskSource` on code.
+
