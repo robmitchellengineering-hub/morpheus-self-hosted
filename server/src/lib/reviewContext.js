@@ -30,8 +30,10 @@
 //      It is the largest orientation file and it is dead weight in a review of,
 //      say, a React component.
 //
-// Pure by design: imports nothing, touches no DB, does no I/O — so a guard can
-// assert its composition directly (`scripts/verify-review-context.mjs`).
+// Pure by design: one sibling pure module and nothing else — no DB, no I/O — so a guard
+// can assert its composition directly (`scripts/verify-review-context.mjs`) and the export
+// parser is shared with `scripts/verify-server-imports.mjs` rather than copied.
+import { exportedNames } from './moduleExports.js';
 
 /** The files the reviewer's own prompt instructs it to check a change against. */
 const RULE_FILES = ['KNOWN-HAZARDS.md', 'AGENTS.md'];
@@ -78,21 +80,50 @@ function resolveRelative(fromPath, spec) {
 // few dozen paths rather than nine hundred.
 const IMPORT_SPEC = /(?:from|require\(|import\()\s*['"](\.[^'"]+)['"]/g;
 
-function importTargetDirs(fileOps) {
-  // KEYED BY DIRECTORY, BUT THE SPECIFIERS ARE A LIST. Keying by directory with a single
-  // specifier silently dropped every import but the first into the same folder — including,
-  // in the very fixture this section exists for, the one naming a file that is not there.
-  // A guard assertion caught that; without it the fix would not have closed the regression.
+// Extensionless specifiers are normal in this repo's frontend and legal in ESM only with a
+// resolver, so try the usual candidates before declaring a file missing.
+const MODULE_SUFFIXES = ['', '.js', '.jsx', '.mjs', '.ts', '.tsx', '/index.js', '/index.jsx'];
+
+function resolveModulePath(base, byPath) {
+  for (const suffix of MODULE_SUFFIXES) {
+    if (byPath.has(base + suffix)) return base + suffix;
+  }
+  return null;
+}
+
+// Every relative import the change makes, resolved to a real file in the project, with
+// that file's actual exports.
+//
+// WHY EXPORTS AND NOT JUST PATHS: the mutation test found the reviewer approving a file
+// that imported a symbol its module does not export — the same class of bug that shipped a
+// 30-minute production outage on 2026-09-25 (`runAiAction.js` importing a name
+// `reviewer.js` never exported; ESM fails at LINK time, so the whole handler died). Listing
+// the directory a path resolves into answers "does this file exist"; it does not answer
+// "does this name exist", and the second one is what actually broke production.
+//
+// KEYED BY DIRECTORY, BUT THE SPECIFIERS ARE A LIST. Keying by directory with a single
+// specifier silently dropped every import but the first into the same folder — including,
+// in the very fixture this section exists for, the one naming a file that is not there.
+// A guard assertion caught that; without it the fix would not have closed the regression.
+function importTargets(fileOps, byPath) {
   const dirs = new Map();
   for (const op of fileOps) {
     if (!op || typeof op.path !== 'string' || typeof op.content !== 'string') continue;
     for (const m of op.content.matchAll(IMPORT_SPEC)) {
-      const dir = dirOf(resolveRelative(op.path, m[1]));
+      const base = resolveRelative(op.path, m[1]);
+      const dir = dirOf(base);
+      const target = resolveModulePath(base, byPath);
+      const parsed = target ? exportedNames(byPath.get(target).content || '') : null;
       if (!dirs.has(dir)) dirs.set(dir, []);
       const entries = dirs.get(dir);
-      if (!entries.some((e) => e.spec === m[1] && e.from === op.path)) {
-        entries.push({ from: op.path, spec: m[1] });
-      }
+      if (entries.some((e) => e.spec === m[1] && e.from === op.path)) continue;
+      entries.push({
+        from: op.path,
+        spec: m[1],
+        target,
+        names: parsed ? Array.from(parsed.names).sort() : [],
+        opaque: parsed ? parsed.opaque : false,
+      });
     }
   }
   return dirs;
@@ -147,24 +178,35 @@ export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, max
   //    it resolves into — the one question a directory index cannot answer. Listed
   //    regardless of tree size: it is small, and it is the check most likely to catch
   //    a real break in a proposed file.
-  const targets = importTargetDirs(ops);
+  const targets = importTargets(ops, byPath);
   if (targets.size > 0) {
     const blocks = [];
     for (const [dir, entries] of targets) {
       const inDir = allPaths.filter((p) => dirOf(p) === dir).map((p) => p.slice(dir.length + 1));
       const shown = inDir.slice(0, maxImportDirPaths);
-      const byImporter = entries.map((e) => `      ${e.from}: '${e.spec}'`).join('\n');
+      const lines = entries.map((e) => {
+        if (!e.target) {
+          return `      ${e.from}: '${e.spec}'  ->  NO SUCH FILE — this import cannot resolve`;
+        }
+        if (e.opaque) {
+          return `      ${e.from}: '${e.spec}'  ->  ${e.target}  (re-exports or CommonJS — its names cannot be checked)`;
+        }
+        return `      ${e.from}: '${e.spec}'  ->  ${e.target}\n`
+          + `          exports: ${e.names.length ? e.names.join(', ') : '(no named exports)'}`;
+      }).join('\n');
       blocks.push(
-        `  ->  ${dir}/\n`
-        + `      imported by:\n${byImporter}\n`
-        + `      files that exist there: ${shown.join(', ') || '(this directory is not in the project file list — the import cannot resolve)'}`
-        + (shown.length < inDir.length ? `\n      (…and ${inDir.length - shown.length} more in that directory)` : '')
+        `  ->  ${dir}/\n${lines}\n`
+        + `      files that exist in that directory: ${shown.join(', ') || '(none are in the project file list)'}`
+        + (shown.length < inDir.length ? `\n      (…and ${inDir.length - shown.length} more)` : '')
       );
     }
     sections.push(
-      'IMPORT TARGETS — every relative import this change makes, and the files that actually'
-      + ' exist in the directory it resolves into. Check each imported path against the files'
-      + ' listed for it; an import naming a file that is not in that list is a CRITICAL issue:\n'
+      'IMPORT TARGETS — every relative import this change makes, the module it resolves to,'
+      + ' and that module\'s ACTUAL exports. Check every named binding in the import against'
+      + ' that export list. `import { x } from \'./y.js\'` where y.js does not list x is a'
+      + ' CRITICAL issue: ESM fails at LINK time, so the whole app stops loading — not just'
+      + ' that one function. A binding listed as a re-export or CommonJS cannot be checked, so'
+      + ' do not guess about it. An import that resolves to NO SUCH FILE is CRITICAL too:\n'
       + blocks.join('\n')
     );
   }
