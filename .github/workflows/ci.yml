@@ -312,6 +312,13 @@ jobs:
       - name: Reviewer context
         run: node scripts/verify-review-context.mjs
 
+      # morpheus.nz served a 1.5 KB React shell with no description, no structured data
+      # and no robots.txt, so crawlers could not tell what the product was. This asserts
+      # the machine-readable surface exists, is generated from the capabilities JSON, and
+      # is NOT text hidden from users — hidden-from-users text is cloaking.
+      - name: SEO / machine-readable surface
+        run: node scripts/verify-seo-static.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy

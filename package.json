@@ -8,6 +8,7 @@
     "sync:capabilities": "node scripts/sync-capabilities.mjs",
     "prebuild": "node scripts/sync-capabilities.mjs && node scripts/pack-wp-plugin.mjs",
     "build": "vite build",
+    "postbuild": "node scripts/seo-static.mjs",
     "lint": "eslint . --quiet",
     "test": "node --test",
     "lint:fix": "eslint . --fix",

@@ -21,6 +21,7 @@ const HARD = [
   'verify-drift.mjs',
   'verify-ai-roles.mjs',
   'verify-review-context.mjs',
+  'verify-seo-static.mjs',
   'verify-cors.mjs',
   'verify-context.mjs',
   'verify-dump-classify.mjs',
