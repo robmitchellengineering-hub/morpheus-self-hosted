@@ -50,13 +50,61 @@ function directoriesOf(paths) {
   return Array.from(dirs).sort();
 }
 
+const dirOf = (p) => {
+  const i = p.lastIndexOf('/');
+  return i === -1 ? '.' : p.slice(0, i);
+};
+
+// Resolve a relative specifier against the file that imports it. No node:path, so
+// this module stays dependency-free and a guard can import it directly.
+function resolveRelative(fromPath, spec) {
+  const parts = fromPath.split('/').slice(0, -1);
+  for (const seg of spec.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+// Which directories this change imports OUT of, and what is in them.
+//
+// This is the targeted fix for a gap the mutation test found: with only a directory
+// INDEX, the reviewer could not tell that an import named a module that does not
+// exist at all — `server/src/lib` was listed as a directory, but nothing said whether
+// `server/src/lib/apiUsage.js` was in it. The full repo tree answered that; the first
+// version of this bounded block did not, and the reviewer approved the broken import.
+// So the directories the change actually imports from are listed in full, which is a
+// few dozen paths rather than nine hundred.
+const IMPORT_SPEC = /(?:from|require\(|import\()\s*['"](\.[^'"]+)['"]/g;
+
+function importTargetDirs(fileOps) {
+  // KEYED BY DIRECTORY, BUT THE SPECIFIERS ARE A LIST. Keying by directory with a single
+  // specifier silently dropped every import but the first into the same folder — including,
+  // in the very fixture this section exists for, the one naming a file that is not there.
+  // A guard assertion caught that; without it the fix would not have closed the regression.
+  const dirs = new Map();
+  for (const op of fileOps) {
+    if (!op || typeof op.path !== 'string' || typeof op.content !== 'string') continue;
+    for (const m of op.content.matchAll(IMPORT_SPEC)) {
+      const dir = dirOf(resolveRelative(op.path, m[1]));
+      if (!dirs.has(dir)) dirs.set(dir, []);
+      const entries = dirs.get(dir);
+      if (!entries.some((e) => e.spec === m[1] && e.from === op.path)) {
+        entries.push({ from: op.path, spec: m[1] });
+      }
+    }
+  }
+  return dirs;
+}
+
 /**
  * @param {{path: string, content: string}[]} files  every file in the project
  * @param {{path: string, content?: string, action?: string}[]} fileOps  the change under review
- * @param {{maxTreeBytes?: number, maxSiblingPaths?: number}} [opts]
+ * @param {{maxTreeBytes?: number, maxSiblingPaths?: number, maxImportDirPaths?: number}} [opts]
  * @returns {string} the context block that precedes the operations in the reviewer prompt
  */
-export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, maxSiblingPaths = 400 } = {}) {
+export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, maxSiblingPaths = 400, maxImportDirPaths = 120 } = {}) {
   const list = Array.isArray(files) ? files : [];
   const ops = Array.isArray(fileOps) ? fileOps : [];
   const byPath = new Map(list.map((f) => [f.path, f]));
@@ -82,15 +130,12 @@ export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, max
       // directories as the change — that is what makes "you import ./x.js but
       // nothing creates it" answerable — plus a directory index for the rest.
       const opDirs = new Set(directoriesOf(opPaths));
-      const siblingPaths = allPaths.filter((p) => {
-        const i = p.lastIndexOf('/');
-        return opDirs.has(i === -1 ? '.' : p.slice(0, i));
-      });
+      const siblingPaths = allPaths.filter((p) => opDirs.has(dirOf(p)));
       const shownSiblings = siblingPaths.slice(0, maxSiblingPaths);
       const dirs = directoriesOf(allPaths);
       sections.push(
         `REPO FILE TREE (${allPaths.length} files — too large to include in full, so this is a`
-        + ` directory index plus every path in the directories this change touches; a path NOT`
+        + ` directory index plus the paths that matter most to this change; a path NOT`
         + ` listed here may still exist):\n\nDIRECTORIES (${dirs.length}):\n${dirs.join('\n')}`
         + `\n\nPATHS IN THE TOUCHED DIRECTORIES (${shownSiblings.length} of ${siblingPaths.length}):\n`
         + `${shownSiblings.join('\n') || '(none)'}`
@@ -98,7 +143,33 @@ export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, max
     }
   }
 
-  // 3. The schema only when the change is about it.
+  // 3. Every relative import this change makes, and what is actually in the directory
+  //    it resolves into — the one question a directory index cannot answer. Listed
+  //    regardless of tree size: it is small, and it is the check most likely to catch
+  //    a real break in a proposed file.
+  const targets = importTargetDirs(ops);
+  if (targets.size > 0) {
+    const blocks = [];
+    for (const [dir, entries] of targets) {
+      const inDir = allPaths.filter((p) => dirOf(p) === dir).map((p) => p.slice(dir.length + 1));
+      const shown = inDir.slice(0, maxImportDirPaths);
+      const byImporter = entries.map((e) => `      ${e.from}: '${e.spec}'`).join('\n');
+      blocks.push(
+        `  ->  ${dir}/\n`
+        + `      imported by:\n${byImporter}\n`
+        + `      files that exist there: ${shown.join(', ') || '(this directory is not in the project file list — the import cannot resolve)'}`
+        + (shown.length < inDir.length ? `\n      (…and ${inDir.length - shown.length} more in that directory)` : '')
+      );
+    }
+    sections.push(
+      'IMPORT TARGETS — every relative import this change makes, and the files that actually'
+      + ' exist in the directory it resolves into. Check each imported path against the files'
+      + ' listed for it; an import naming a file that is not in that list is a CRITICAL issue:\n'
+      + blocks.join('\n')
+    );
+  }
+
+  // 4. The schema only when the change is about it.
   for (const { path, whenTouchedPrefix } of CONDITIONAL_FILES) {
     const touched = opPaths.some((p) => p.startsWith(whenTouchedPrefix));
     if (!touched) continue;
