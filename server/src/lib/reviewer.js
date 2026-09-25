@@ -97,7 +97,7 @@ export const REVIEW_SCHEMA = {
 // of assuming review output is cheap just because it's shorter than the
 // code it's reviewing.
 const REVIEW_CHUNK_SIZE = 3;
-const REVIEW_STEP_MAX_TOKENS = 16000; // generous for up to 3 files' worth of issues
+export const REVIEW_STEP_MAX_TOKENS = 16000; // generous for up to 3 files' worth of issues
 
 // `progress` (optional, 5th arg) — 2026-09-03 (Rob: stream step-by-step
 // progress + an ETA in the chat window): { onProgress, stageName }. When
