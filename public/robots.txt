@@ -1,0 +1,49 @@
+# morpheus.nz
+#
+# Most of this site is a signed-in application; the public pages are the ones
+# listed in /sitemap.xml. The app routes are disallowed so crawlers do not index
+# a login shell as if it were content.
+#
+# AI crawlers are named explicitly. They are already allowed by the wildcard —
+# naming them is a statement of intent, so a future tightening of the wildcard
+# does not silently lock out the answer engines people now ask about products.
+
+User-agent: *
+Allow: /
+Disallow: /workspace
+Disallow: /architect
+Disallow: /settings
+Disallow: /deck
+Disallow: /self-dev
+Disallow: /admin
+Disallow: /api/
+
+# Answer engines and AI crawlers, explicitly welcome.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+Sitemap: https://morpheus.nz/sitemap.xml

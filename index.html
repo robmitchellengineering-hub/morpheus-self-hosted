@@ -11,7 +11,38 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Morpheus" />
     <link rel="manifest" href="/manifest.json" />
-    <title>Morpheus</title>
+    <title>Morpheus — full-stack software, built by chat</title>
+
+    <!-- Machine-readable identity.
+         Until 2026-09-25 this file's entire content was `<title>Morpheus</title>`:
+         a crawler fetching morpheus.nz got a 1.5 KB React shell, a spinner, and
+         one word. Marketing tools and AI answer engines reported that they could
+         not tell what the product was or did — correctly, because nothing said.
+         This block is the honest mechanism for "readable by machines, not shown
+         to users": metadata and structured data, NOT text hidden from people.
+         Text that is in the DOM but hidden from users is cloaking, and would put
+         a penalty on the domain this is meant to promote.
+
+         The DESCRIPTION and the JSON-LD are generated at build time by
+         scripts/seo-static.mjs from src/lib/morpheusCapabilities.json — the same
+         single source of truth the app itself renders — so the two cannot drift.
+         verify-seo-static.mjs fails the build if they do. -->
+    <meta name="description" content="Describe an app and Morpheus writes it: production-ready frontend and backend code, built for ten real targets — Android, iOS, desktop, Linux, Raspberry Pi, Arduino. The code is yours. 200 free credits to start, no subscription." />
+    <link rel="canonical" href="https://morpheus.nz/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Morpheus" />
+    <meta property="og:url" content="https://morpheus.nz/" />
+    <meta property="og:title" content="Morpheus — full-stack software, built by chat" />
+    <meta property="og:description" content="Describe an app in a sentence; Morpheus writes production-ready frontend and backend code you can read, edit and own. Ten real build targets. No pseudo-code, no placeholders." />
+    <meta property="og:image" content="https://morpheus.nz/morpheus-icon.svg" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Morpheus — full-stack software, built by chat" />
+    <meta name="twitter:description" content="Describe an app in a sentence; Morpheus writes production-ready frontend and backend code you can read, edit and own." />
+    <meta name="twitter:image" content="https://morpheus.nz/morpheus-icon.svg" />
+
     <style>
       @keyframes morpheus-spin { to { transform: rotate(360deg); } }
       #morpheus-initial-loader {
@@ -28,6 +59,12 @@
   <body style="background-color: #000000;">
     <div id="root">
       <div id="morpheus-initial-loader"><div class="ring"></div></div>
+      <!-- seo-static:prerender — replaced at build time by scripts/seo-static.mjs with a
+           static copy of the landing content (principle, capabilities, targets, pricing)
+           read from src/lib/morpheusCapabilities.json. It is the same content
+           src/pages/Landing.jsx renders, so this is a prerender, not text hidden for
+           crawlers — a no-JS visitor reads the product description instead of a spinner
+           that never resolves. Do not delete this marker: the build fails without it. -->
     </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

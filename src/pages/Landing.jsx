@@ -8,7 +8,7 @@ import DonationThankYouModal from '@/components/matrix/DonationThankYouModal';
 import SuggestionBox from '@/components/matrix/SuggestionBox';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useAuth } from '@/lib/AuthContext';
-import { MORPHEUS_PRINCIPLE, MORPHEUS_CAPABILITIES } from '@/lib/morpheusCapabilities';
+import { MORPHEUS_PRINCIPLE, MORPHEUS_CAPABILITIES, MORPHEUS_BUILD_TARGETS } from '@/lib/morpheusCapabilities';
 
 const BOOT_TEXT = 'Wake up. The Construct has you. Follow the white rabbit.';
 
@@ -152,7 +152,12 @@ export default function Landing() {
             <p className="text-ink font-display tracking-wide neon-glow text-sm mt-1">{MORPHEUS_PRINCIPLE}</p>
           </div>
           <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// CAPABILITIES</p>
-          <ul className="space-y-1.5 max-h-44 overflow-y-auto scrollbar-matrix pr-1">
+          {/* Was `max-h-44 overflow-y-auto` — a 16-item list behind a scrollbar inside a
+              card, on a page whose whole point is telling a first-time visitor what this
+              is. Showing the list in full is also what the build-time prerender in
+              scripts/seo-static.mjs mirrors, so the static HTML and the rendered page say
+              the same thing. */}
+          <ul className="space-y-1.5">
             {MORPHEUS_CAPABILITIES.map((c) => (
               <li key={c.title} className="text-xs leading-snug">
                 <span className="text-ink-strong font-mono">{c.title}</span>
@@ -160,6 +165,28 @@ export default function Landing() {
               </li>
             ))}
           </ul>
+        </div>}
+
+        {/* Build targets + pricing. Both are read from the shared capabilities JSON, and
+            the target list is asserted against server/src/lib/compile-targets/ by
+            scripts/verify-seo-static.mjs — the explainer documents said "6 platforms"
+            while the code shipped ten, which is what drift looks like from the outside.
+            The pricing line matches what the code does (a live 200-credit signup grant). */}
+        {showButtons && <div className="mt-4 mx-auto max-w-lg border border-primary/40 bg-black/60 p-4 text-left shadow-[0_0_20px_rgba(0,255,65,0.15)]">
+          <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">
+            // BUILDS FOR {MORPHEUS_BUILD_TARGETS.length} TARGETS
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {MORPHEUS_BUILD_TARGETS.map((t) => (
+              <span key={t} className="text-[10px] text-ink-max font-mono border border-primary/25 px-2 py-0.5 rounded-sm">{t}</span>
+            ))}
+          </div>
+          <div className="border-t border-primary/30 mt-3 pt-2">
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// PRICING</p>
+            <p className="text-xs text-ink-strong leading-snug mt-1">
+              No subscription. Every account starts with 200 free credits — enough to plan, build and ship a real first app — then pay-as-you-go, or free forever on your own AI provider key.
+            </p>
+          </div>
         </div>}
 
         {/* PORTABLE MORPHEUS — mirrors base44's landing-page card. The
