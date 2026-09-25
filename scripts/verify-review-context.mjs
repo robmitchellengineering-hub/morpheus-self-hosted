@@ -155,6 +155,44 @@ check('a resolving import names its directory',
 check('the IMPORT TARGETS section tells the reviewer how to use it',
   importBlock.includes('is a CRITICAL issue'));
 
+// ── Do the imported modules' EXPORTS actually get listed? ─────────────────────────────
+// The mutation test's `bad-name` fixture was approved by BOTH the old full context and the
+// new narrow one: a file importing `ledgerTotals` from a module that exports only
+// `spendOver`. Resolving the path is not enough — this is the same bug class that shipped a
+// 30-minute production outage on 2026-09-25, and the reviewer is the only check that runs
+// BEFORE the code is committed.
+const exportsFixture = [
+  { path: 'KNOWN-HAZARDS.md', content: 'Sentinel hazards.\n' },
+  { path: 'AGENTS.md', content: 'Sentinel agents.\n' },
+  { path: 'server/src/lib/state.js', content: "export const DEEPSEEK = 'deepseek';\nexport async function spendOver() {}\nexport function recordBalanceReading() {}\n" },
+  { path: 'server/src/lib/legacyThing.cjs', content: 'module.exports = { a: 1 };\n' },
+];
+const exportsBlock = buildReviewerContext({
+  files: exportsFixture,
+  fileOps: [{
+    path: 'server/src/functions/report.js',
+    action: 'create',
+    content: "import { spendOver, ledgerTotals } from '../lib/state.js';\nimport { a } from '../lib/legacyThing.cjs';\n",
+  }],
+});
+check('the resolved module path is named',
+  exportsBlock.includes('->  server/src/lib/state.js'));
+check('the module\'s ACTUAL exports are listed',
+  /exports: DEEPSEEK, recordBalanceReading, spendOver/.test(exportsBlock), exportsBlock.slice(-500));
+check('a name the module does NOT export is absent from that list (so the reviewer can see it)',
+  !/exports: [^\n]*ledgerTotals/.test(exportsBlock));
+check('a re-exporting / CommonJS module is marked uncheckable rather than guessed at',
+  /CommonJS/.test(exportsBlock), exportsBlock.slice(-300));
+check('the section states the link-time consequence, not just "an issue"',
+  /LINK time/.test(exportsBlock));
+
+// One parser, two consumers: a pinned copy here would drift from the guard's copy, and the
+// two disagreeing about what a module exports is worse than either being wrong alone.
+check('the CI import guard uses the same export parser (one definition, two consumers)',
+  code('scripts/verify-server-imports.mjs').includes("from '../server/src/lib/moduleExports.js'"));
+check('reviewContext uses the shared parser too',
+  code('server/src/lib/reviewContext.js').includes("from './moduleExports.js'"));
+
 // Small projects still get the whole tree AND the import section.
 const smallImports = buildReviewerContext({
   files: small,

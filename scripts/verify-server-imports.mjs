@@ -28,6 +28,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { dirname, resolve, relative, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exportedNames } from '../server/src/lib/moduleExports.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCAN_DIRS = ['server/src', 'server/scripts'];
@@ -114,38 +115,17 @@ for (const file of files) {
 // and skipped: this check must never cry wolf, because a resolution checker that
 // does gets switched off.
 //
+// The parser itself lives in server/src/lib/moduleExports.js, because the reviewer's
+// context needs the SAME answer — the reviewer's mutation test showed it approving a
+// proposed import of a symbol its module does not export, which is this bug one step
+// earlier in the pipeline. One definition, two consumers.
+//
 // Known limit, deliberately accepted: a name exported only from inside a
 // one-line block comment is read as exported (whole-line `//` comments are
 // stripped, block comments are not — see verify-ai-roles.mjs for why stripping
 // block comments is itself unsafe). That direction is a miss, never a false
 // alarm.
 const NAMED_IMPORT = /^[ \t]*import\s*\{([^}]*)\}\s*from\s*['"](\.[^'"]+)['"]/gm;
-const codeOnly = (s) => s.replace(/^[ \t]*\/\/.*$/gm, ' ');
-
-function exportedNames(source) {
-  const src = codeOnly(source);
-  const names = new Set();
-  for (const m of src.matchAll(/^[ \t]*export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) {
-    names.add(m[1]);
-  }
-  for (const m of src.matchAll(/^[ \t]*export\s*\{([^}]*)\}/gm)) {
-    for (const part of m[1].split(',')) {
-      const t = part.trim();
-      if (!t) continue;
-      const as = t.split(/\s+as\s+/);
-      names.add((as[1] || as[0]).trim());
-    }
-  }
-  for (const m of src.matchAll(/^[ \t]*export\s+(?:const|let|var)\s*\{([^}]*)\}/gm)) {
-    for (const p of m[1].split(',')) {
-      const t = p.trim().split(':').pop().trim();
-      if (t) names.add(t);
-    }
-  }
-  const opaque = /^[ \t]*export\s+\*/m.test(src)
-    || /\bmodule\.exports\b|^[ \t]*exports\./m.test(src);
-  return { names, opaque };
-}
 
 // Self-test: a checker that cannot detect the bug it exists for is not a pass.
 {
