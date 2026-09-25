@@ -42,7 +42,22 @@ Return JSON with:
 - summary: one-sentence overall verdict
 - approved: true if no critical issues were found, false if any critical issues exist`;
 
-const REVIEW_SCHEMA = {
+// The reviewer prompt for one batch, in one place. Exported so the reviewer can
+// be exercised directly with a supplied context block (runAiAction.js's
+// `review_probe` task) instead of only ever as a side effect of a full build —
+// without a second copy of this string drifting from the real one.
+export function buildReviewPrompt({ contextBlock, chunk, allOps, plan, batchNote = '' }) {
+  const opsBlock = chunk.map((op, i) =>
+    `--- FILE ${i + 1}: ${op.path} (action: ${op.action || 'create'}) ---\n${op.content || '(empty)'}`
+  ).join('\n\n');
+  const planNote = plan ? `\n\nORIGINAL BUILD PLAN (for context):\n${plan}` : '';
+  const manifest = allOps.length > REVIEW_CHUNK_SIZE
+    ? `\n\nFULL FILE LIST IN THIS BUILD (for cross-file context only — most are reviewed in other batches): ${allOps.map((op) => op.path).join(', ')}`
+    : '';
+  return `${REVIEWER_PROMPT}\n${contextBlock}\n\nPROPOSED FILE OPERATIONS TO REVIEW:\n${opsBlock}${planNote}${manifest}${batchNote}\n\nReview these files now.`;
+}
+
+export const REVIEW_SCHEMA = {
   type: 'object',
   properties: {
     issues: {
@@ -93,10 +108,6 @@ const REVIEW_STEP_MAX_TOKENS = 16000; // generous for up to 3 files' worth of is
 // else needs to change.
 export async function reviewFileOperations(userId, fileOps, contextBlock, plan, progress) {
   const { onProgress, stageName = 'reviewer' } = progress || {};
-  const planNote = plan ? `\n\nORIGINAL BUILD PLAN (for context):\n${plan}` : '';
-  const manifest = fileOps.length > REVIEW_CHUNK_SIZE
-    ? `\n\nFULL FILE LIST IN THIS BUILD (for cross-file context only — most are reviewed in other batches): ${fileOps.map((op) => op.path).join(', ')}`
-    : '';
 
   const chunks = [];
   for (let i = 0; i < fileOps.length; i += REVIEW_CHUNK_SIZE) {
@@ -110,17 +121,15 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
   let approvedAll = true;
   let model, provider;
 
-  for (const chunk of chunks) {
-    const opsBlock = chunk.map((op, i) =>
-      `--- FILE ${i + 1}: ${op.path} (action: ${op.action || 'create'}) ---\n${op.content || '(empty)'}`
-    ).join('\n\n');
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
     const batchNote = chunks.length > 1
       ? `\n\nReviewing batch of ${chunk.length} file(s) out of ${fileOps.length} total in this build.`
       : '';
 
     const review = await invokeAI({
       userId,
-      prompt: `${REVIEWER_PROMPT}\n${contextBlock}\n\nPROPOSED FILE OPERATIONS TO REVIEW:\n${opsBlock}${planNote}${manifest}${batchNote}\n\nReview these files now.`,
+      prompt: buildReviewPrompt({ contextBlock, chunk, allOps: fileOps, plan, batchNote }),
       schema: REVIEW_SCHEMA,
       fileUrls: undefined,
       role: 'reviewer',

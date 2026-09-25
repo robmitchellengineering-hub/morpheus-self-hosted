@@ -10,6 +10,7 @@ import { createSnapshot, applyFileOperations, applyEdits, logUsage, syncProjectF
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
+import { buildReviewerContext } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
 import { estimateCallMs } from '../lib/timingStats.js';
@@ -1494,7 +1495,15 @@ OPERATOR SAYS: ${message}`;
         // pulls — so it can check the change doesn't break a caller it
         // can't see (the github.js incident class). ES-module analysis, so
         // it's a no-op for Python / Arduino / Go / etc. projects.
-        let reviewContext = contextBlock;
+        // The reviewer does NOT get the Coder's context block. Measured 30-day
+        // production usage puts the reviewer at 1,254 calls averaging 26,138
+        // input tokens — 30.6% of all AI spend — almost all of it the shared
+        // block (whole-repo tree plus every orientation file; schema.prisma
+        // alone is ~15.1k tokens) rather than the <=3 files actually under
+        // review. buildReviewerContext emits the rules the reviewer's prompt
+        // names, a bounded tree, and the schema only when the change touches
+        // it. See lib/reviewContext.js for the reasoning and the numbers.
+        let reviewContext = buildReviewerContext({ files, fileOps });
         {
           const rev = buildReverseImports(files);
           const impacted = fileOps

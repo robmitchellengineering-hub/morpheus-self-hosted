@@ -12,6 +12,7 @@
 // flag (see server/prisma/add-billing-exempt-flag.sql) are both honored
 // automatically because this is just another invokeAI({ userId, ... }) call.
 import { invokeAI } from '../ai.js';
+import { buildReviewPrompt, REVIEW_SCHEMA, REVIEW_STEP_MAX_TOKENS } from '../lib/reviewer.js';
 
 const MAX_COLUMNS = 50;
 const MAX_SAMPLE_ROWS = 5;
@@ -79,7 +80,61 @@ ${sampleLines || '(no sample rows given)'}`;
   return { mappings: mappings.filter((m) => m && typeof m.column === 'string' && typeof m.label === 'string') };
 }
 
-const TASKS = { schema_mapping: schemaMapping };
+// review_probe: run the REVIEWER's real prompt over supplied file operations.
+//
+// Why this exists: the reviewer is 30.6% of production AI spend (1,254 calls,
+// 26,138 avg input tokens), so its context is worth shrinking — but the only way
+// to get the reviewer to run used to be a full build, which takes minutes, costs
+// a planner + coder pass, and cannot inject a KNOWN defect to check the review
+// still catches it. This makes the reviewer directly runnable: same prompt
+// builder as the pipeline (lib/reviewer.js buildReviewPrompt), same schema, same
+// role and budget, so a probe measures the real thing rather than a copy of it.
+//
+// Deliberately narrow: it reviews file operations and nothing else. It is on the
+// `ai_action` scope (server/src/lib/deviceToken.js), the same one that already
+// reaches schema_mapping, and it bills against the approving user like every
+// other call here.
+const PROBE_MAX_OPS = 3;      // matches REVIEW_CHUNK_SIZE — one real reviewer batch
+const PROBE_MAX_CONTEXT = 60000; // chars of caller-supplied context (the thing under test)
+
+async function reviewProbe(userId, body) {
+  const ops = (Array.isArray(body.ops) ? body.ops : [])
+    .filter((op) => op && typeof op.path === 'string' && op.path)
+    .slice(0, PROBE_MAX_OPS)
+    .map((op) => ({
+      path: op.path,
+      content: typeof op.content === 'string' ? op.content : '',
+      action: ['create', 'update', 'delete'].includes(op.action) ? op.action : 'create',
+    }));
+  if (ops.length === 0) throw Object.assign(new Error('ops required (1-3 file operations, each with a path)'), { status: 400 });
+
+  const context = typeof body.context === 'string' ? body.context.slice(0, PROBE_MAX_CONTEXT) : '';
+  const plan = typeof body.plan === 'string' ? body.plan : '';
+
+  const { result, model, provider, usage } = await invokeAI({
+    userId,
+    prompt: buildReviewPrompt({ contextBlock: context, chunk: ops, allOps: ops, plan }),
+    schema: REVIEW_SCHEMA,
+    fileUrls: undefined,
+    role: 'reviewer',
+    maxTokens: REVIEW_STEP_MAX_TOKENS,
+  });
+
+  return {
+    issues: Array.isArray(result.issues) ? result.issues : [],
+    summary: result.summary || '',
+    approved: result.approved === true,
+    model,
+    provider,
+    // Echoed so a caller can tell a real review from one that ran on an empty
+    // context block — the whole point of the probe is to compare contexts.
+    contextChars: context.length,
+    promptChars: (context.length + ops.reduce((n, o) => n + o.content.length, 0)),
+    usage,
+  };
+}
+
+const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe };
 
 export default async function handler({ user, body }) {
   const { task } = body || {};
