@@ -18,6 +18,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
+import { findCallerBreaks, describeCallerBreaks } from '../lib/callerCheck.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
@@ -1585,6 +1586,44 @@ OPERATOR SAYS: ${message}`;
           syntaxErrors = await checkSyntax(changedCode());
         }
         syntaxCritical = syntaxErrors.map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
+      }
+
+      // ── Caller gate: does this change break a file that imports it? ────────
+      // Deterministic, and it runs on EVERY build turn — not just self-dev.
+      //
+      // The syntax gate above checks each changed file in isolation, so it cannot
+      // see a change that parses perfectly and still kills an importer. The
+      // reviewer was asked that question by judgement; H1 is the incident where
+      // that was not enough (a reshaped github.js broke every compile/deploy
+      // path), and the same shape recurred in production on 2026-09-25 when
+      // runAiAction.js imported a name reviewer.js never exported.
+      //
+      // `findBrokenImports` answers it exactly — pure string analysis, no
+      // bundling, no model — and this repo already trusted it, but only inside
+      // the `isSelfDev` deep-verify gate below, whose OTHER half (bundling from
+      // self-dev-specific entry points) is what justified that restriction. The
+      // caller half needs none of that, and `files` here is already the full
+      // project, so there is no reason to withhold it from a user's build.
+      //
+      // Only breakage this change INTRODUCED is reported: a pre-existing broken
+      // import is not this turn's fault, and failing a build for it would be
+      // unfixable by the coder. Reported rather than auto-fixed for the same
+      // reason the deep gate does that — when the importer is a file the turn
+      // never touched, there is nothing to hand the coder as "current content".
+      if (fileOps.length > 0) {
+        try {
+          const callerBreaks = findCallerBreaks(files, fileOps);
+          if (callerBreaks.length > 0) {
+            const lines = describeCallerBreaks(callerBreaks);
+            console.log(`[chatWithMorpheus] caller-gate: ${callerBreaks.length} import(s) broken by this change: ${lines.join(' | ')}`);
+            syntaxCritical = [...syntaxCritical, ...lines.map((l) => `broken caller — ${l}`)];
+          }
+        } catch (err) {
+          // A check that cannot run must not be the reason a build dies — but it
+          // must not pass silently either, or a broken checker looks like a clean
+          // build forever.
+          console.error('[chatWithMorpheus] caller-gate FAILED TO RUN:', err.message);
+        }
       }
 
       // ── Deep verify gate (self-dev only): bundle from real entry points +
