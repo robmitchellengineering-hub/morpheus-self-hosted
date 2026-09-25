@@ -21,8 +21,6 @@ import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
 import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
-import { reuseMisses } from '../lib/reuseCheck.js';
-import { reuseCandidates, buildReusePreflightPrompt, reuseSchema, parseReuseMatches } from '../lib/reusePreflight.js';
 import { selfDevToolsPromptBlock, runSelfDevToolCalls, formatSelfDevToolResultsBlock, extractScreenshotUrls } from '../lib/selfDevTools.js';
 import { getConstructContext } from '../lib/constructContext.js';
 import { checkA11y } from '../lib/a11yCheck.js';
@@ -1231,18 +1229,6 @@ OPERATOR SAYS: ${message}`;
     // bundle when what it actually did was take the wrong ink rung.
     let conventionFixAttempts = 0;
     let reviewerFixAttempts = 0;
-    // How many of the pre-flight's "use this existing module" matches the coder
-    // ignored. Counted, not enforced — see lib/reuseCheck.js for why this is a
-    // measurement rather than a gate, and why the obvious name-overlap gate was
-    // measured and rejected. It rides in `rework` so it reaches the run record.
-    let reuseMissCount = 0;
-    // What the pre-flight ITSELF did: ran and named N existing modules, ran and named
-    // none, or failed — plus how many candidates it was shown. Without this, "crashed"
-    // and "found nothing" are the same row — `reuse: 0` with no advice — which is exactly
-    // how a truncated pre-flight was read as "the coder ignored the advice".
-    // `candidates: 0` with `ran: false` means the shortlist was empty, so there was
-    // nothing to ask about and no model call was made.
-    let reusePreflight = { ran: false, failed: false, named: 0, candidates: 0 };
     let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
     const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
     let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -1276,73 +1262,38 @@ OPERATOR SAYS: ${message}`;
         stages.done('api_check');
       }
 
-      // ── Existing-implementation pre-flight (2026-09-24) ──────────────────
-      // The same idea as the API check above, aimed inward. A plan can name a file
-      // to CREATE for a job this repo already does, and nothing in the pipeline
-      // notices: every gate asks whether the new code works, never whether it
-      // should exist. Self-dev did exactly that — it wrote a proving-ground status
-      // endpoint that bridged to lib/containerMemory.js by GUESSING export names
-      // (`getContainerMemoryMiB || getContainerMemory || getMemory || default`) and
-      // reimplemented cgroup parsing when the guesses missed, instead of reading the
-      // module that already does it. Lint, build, all 35 guards and the render check
-      // passed. The cost is not the wasted code, it is a second copy of a rule that
-      // will drift from the first.
+      // ── Existing-implementation pre-flight — REMOVED 2026-09-25 ──────────
+      // It lived here: a model call that asked whether any existing file already did
+      // the job of a file the plan was about to create, and if so appended a
+      // `DO NOT REINVENT — use X` block to the coder prompt. It was aimed at a real
+      // failure (a status endpoint that guessed lib/containerMemory.js's export names
+      // and then reimplemented cgroup parsing).
       //
-      // Only runs when the plan actually creates something, and only names files
-      // that do not exist yet — a plan that adds to an existing module has already
-      // found it.
-      let reuseBlock = '';
-      // Kept so the turn can check its own advice afterwards: which existing
-      // modules the pre-flight named, and whether the coder actually imported
-      // them. See lib/reuseCheck.js — the block above is advice, and until this
-      // was recorded nothing said whether the advice was taken.
-      let reuseMatches = [];
-      const plannedNew = (Array.isArray(plannerResult.plannedFiles) ? plannerResult.plannedFiles : [])
-        .filter((p) => typeof p === 'string' && p.trim() && !files.some((f) => f.path === p));
-      // What the pre-flight is SHOWN. Handing it ~907 bare paths is what made it name
-      // nothing 4 runs out of 4 on the least subtle duplication in the repo (a new
-      // getContainerMemory.js against the existing lib/containerMemory.js) — measured
-      // 2026-09-25 with the budget fixed, at both pro @ 0.7 and flash @ 0.4. A shortlist
-      // carrying each candidate's EXPORTED SYMBOLS is the signal a path list cannot
-      // carry. Name overlap is a retriever here, not a verdict — see lib/reusePreflight.js.
-      const reuseShortlist = reuseCandidates(plannedNew, files, { limit: 60 });
-      // Skipped outright on an empty project. This runs for every build, not just
-      // self-dev, and a greenfield project has nothing to reuse by definition — with
-      // no files every planned path counts as "new", so the check would fire on the
-      // first build of every project, spend a model call, and answer "nothing".
-      // Also skipped when the shortlist is empty: with nothing to show the model, the
-      // only possible answer is "nothing", and a model call to hear it is waste.
-      if (plannedNew.length > 0 && reuseShortlist.length > 0) {
-        try {
-          const reuseCheck = await invokeAI({
-            userId: user.id,
-            prompt: buildReusePreflightPrompt({
-              systemPrompt, plannedNew, plan: plannerResult.plan, candidates: reuseShortlist,
-            }),
-            schema: reuseSchema,
-            role: 'planner',
-            // 8000, not 4000. The role resolves to a REASONING model, and its thinking
-            // is billed against this same budget, so 4000 truncated the JSON before it
-            // finished — observed in production 2026-09-24T23:30:35Z, 2ms before the
-            // coder started on getSelfDevDrift.js, the very run recorded as "the
-            // pre-flight fired and the coder ignored it". It never fired; the catch
-            // swallowed it and the block was empty. `diagnosis` hit the identical
-            // OUTPUT_TRUNCATED and was fixed the same way.
-            maxTokens: 8000,
-          });
-          const matches = parseReuseMatches(reuseCheck.result);
-          reuseMatches = matches;
-          reusePreflight = { ran: true, failed: false, named: matches.length, candidates: reuseShortlist.length };
-          if (matches.length > 0) {
-            reuseBlock = `\n\nDO NOT REINVENT — this repo already implements these:\n${matches.map((r) => `  ${r.planned}  →  use ${r.existing}${r.why ? ` (${r.why})` : ''}`).join('\n')}\nRead the existing file and import it. Create the new file ONLY if the existing module genuinely cannot do the job — and if you do, say why in your reply.`;
-          }
-        } catch (err) {
-          // Best-effort like the API check: a failed pre-flight must not block a build.
-          // It must not look like a clean "nothing to reuse" either — hence the flag.
-          reusePreflight = { ran: false, failed: true, named: 0, candidates: reuseShortlist.length };
-          console.error('[chatWithMorpheus] existing-implementation check failed:', err.message);
-        }
-      }
+      // It was removed on measurement, not on taste. Asked for a new
+      // `getContainerMemory.js` whose job `server/src/lib/containerMemory.js` already
+      // does — the least subtle duplication in the repo — it named NOTHING in 8 runs
+      // out of 8, at pro @ 0.7 and flash @ 0.4 alike, including 4 runs after it was
+      // handed a shortlist with that module's exported symbols listed on it. Across
+      // every chat record that has ever existed, `rework.reuse` was 0: no match it
+      // named was ever even ignored. Meanwhile the coder found and imported the right
+      // module unaided 8/8.
+      //
+      // The likely cause is the prompt's own escape hatch — "be strict, naming a file
+      // that does not actually do the job is worse than naming nothing" — which makes
+      // silence the always-safe answer for a model asked to *decide* whether to speak.
+      // Before re-adding this, note that its model and temperature were never the
+      // lever (two different models scored identically) and that the obvious
+      // name-overlap rule was already measured and rejected as a gate.
+      //
+      // If it is ever wanted back, the cheap version is not a model call at all:
+      // lib/reusePreflight.js shortlisted candidates by exported symbols for free, and
+      // the top hit above a score threshold is a hint the coder can take or ignore.
+      // That is name-overlap-as-a-hint, which the 158-pair ruling does NOT cover, so
+      // it would need its own measurement. The harness is at
+      // staging/model-test-harness/preflight-ab.mjs.
+      //
+      // `lib/reuseCheck.js` and `lib/reusePreflight.js` went with it. `rework` keeps
+      // its other counters; only `reuse` and `reusePreflight` were dropped.
 
 
       // coderPrompt (the full-plan version, no per-step file scoping) is kept
@@ -1350,7 +1301,7 @@ OPERATOR SAYS: ${message}`;
       // same base prompt plus the specific files that need fixing, so it needs
       // the complete, unscoped instructions rather than whichever chunk's
       // narrowed prompt happened to run last.
-      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}${reuseBlock}\n\nImplement this plan now. Write the actual code files.`;
+      const coderPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nImplement this plan now. Write the actual code files.`;
       const coderSchema = {
         type: 'object',
         properties: {
@@ -1408,7 +1359,7 @@ OPERATOR SAYS: ${message}`;
             .map((f) => `--- ${f.path} (current content) ---\n${f.content}`)
             .join('\n\n');
           const chunkCurrentBlock = chunkCurrent ? `\n\nCURRENT CONTENT OF THE FILE(S) FOR THIS STEP:\n${chunkCurrent}` : '';
-          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}${reuseBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
+          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
           const chunkCoder = await invokeAI({
             userId: user.id,
             prompt: chunkPrompt,
@@ -1550,25 +1501,6 @@ OPERATOR SAYS: ${message}`;
         reviewerModel = reviewed.reviewerModel;
         reviewSummary = reviewed.reviewSummary;
         reviewIssues = reviewed.issues || [];
-      }
-
-      // ── Reuse check: did the coder act on the pre-flight? ─────────────────
-      // Zero-token and deterministic, over the FINAL fileOps (the reviewer above
-      // can still rewrite them). The pre-flight told the coder to import an
-      // existing module; this counts the cases where it created the planned file
-      // anyway without importing it. Recorded rather than fed back as a fix: the
-      // pre-flight's own instruction allows "the existing module genuinely cannot
-      // do the job", which is a judgement no deterministic gate can make, so
-      // forcing a rework round on it would burn attempts on a legitimate choice.
-      // See lib/reuseCheck.js.
-      reuseMissCount = reuseMisses(
-        fileOps
-          .filter((op) => op.action !== 'delete' && typeof op.content === 'string')
-          .map((op) => ({ path: op.path, content: op.content })),
-        reuseMatches,
-      ).length;
-      if (reuseMissCount > 0) {
-        console.log(`[chatWithMorpheus] reuse: the pre-flight named an existing module for ${reuseMissCount} created file(s) that did not import it — lib/reuseCheck.js`);
       }
 
       // ── Syntax gate: the change must at least parse ───────────────────────
@@ -1931,8 +1863,8 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
-    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount }, reusePreflight }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reuse: reuseMissCount }, reusePreflight, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts } }; } catch { /* no locals */ }
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // Mirrors functions.routes.js's normal error shape (message/code/needed/

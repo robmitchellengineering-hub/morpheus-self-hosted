@@ -88,10 +88,6 @@ export function summariseResult(result) {
     'merged', 'alreadyMerged', 'state', 'blocked', 'blockReason', 'reason',
     'failing', 'migrations', 'revertedToSha', 'applied', 'needsManual',
     'rework',
-    // Whether the existing-implementation pre-flight ran, named anything, or failed.
-    // Kept beside `rework` because a failed pre-flight and a clean "nothing to
-    // reuse" both produce `reuse: 0` and no advice — they must not read the same.
-    'reusePreflight',
   ];
   const picked = {};
   for (const k of keep) {

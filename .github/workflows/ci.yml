@@ -462,12 +462,10 @@ jobs:
       - name: Every prisma delegate is a model that exists
         run: node scripts/verify-prisma-models.mjs
 
-      # Every gate asks whether new code works, never whether it should exist. The
-      # turn now checks the plan's new files against the repo before the coder
-      # writes — this asserts that pre-flight still runs, still reaches both coder
-      # prompts, and still only considers files that do not exist yet.
-      - name: The plan is checked against what already exists
-        run: node scripts/verify-reuse-preflight.mjs
+      # (The "plan is checked against what already exists" step was removed with the
+      # pre-flight itself on 2026-09-25 — it named nothing in 8/8 measured runs at two
+      # models while the coder reused the right module unaided 8/8. See the note left
+      # where the pre-flight used to be in chatWithMorpheus.js.)
 
       # verifyProject returned ok:true, errorCount:0, checkedFiles:0 for a 37-file
       # Python desktop app — it reads only JS/TS, so every pass inside it had

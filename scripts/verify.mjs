@@ -52,7 +52,6 @@ const HARD = [
   'verify-server-imports.mjs',
   'verify-prisma-models.mjs',
   'verify-verifier-coverage.mjs',
-  'verify-reuse-preflight.mjs',
   'boot-smoke.mjs',
 ];
 

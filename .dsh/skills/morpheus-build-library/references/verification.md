@@ -177,25 +177,46 @@ called the existing drift machinery while the flash coder re-implemented it, bot
 passed all three CI gates, and both reported `rework: 0/0/0/0`. The wasted code is
 not the cost; the second copy of a rule that will drift from the first is.
 
-The judge here is the model, and the honest position is that only part of it can be
-made mechanical:
+**This section is a post-mortem, not a rule to follow.** chatWithMorpheus's
+existing-implementation pre-flight was built for exactly that failure, instrumented,
+measured, and **removed on 2026-09-25**. Read this before rebuilding anything like it,
+because every instinct here is wrong in the same direction.
 
-- **Advice is not a check.** chatWithMorpheus's existing-implementation pre-flight
-  appends a `DO NOT REINVENT` block. That changes nothing on its own — the turn now
-  also counts whether the coder imported what the pre-flight named
-  (`lib/reuseCheck.js`, reported as `reuse` in the run record's `rework`).
+- **A model asked to *decide* whether to speak will stay silent.** The pre-flight
+  appended a `DO NOT REINVENT` block naming an existing module. Asked whether a new
+  `getContainerMemory.js` duplicated the existing `lib/containerMemory.js` — the least
+  subtle duplication in the repo — it named **nothing in 8 runs out of 8**, at two
+  different models, including 4 runs where it was handed a shortlist with that module's
+  exported symbols printed on it. Its own instruction is the cause: "be strict, naming
+  a file that does not actually do the job is worse than naming nothing" makes silence
+  the always-safe answer. If a check must speak, do not give it an escape hatch.
+- **Measure the model before you blame it — and before you tune it.** Pro @ 0.7 and
+  flash @ 0.4 scored identically (0 recall each). Model and temperature were never the
+  lever; the call was simply never answering.
+- **Instrument the check, not just its effect.** For most of this pre-flight's life
+  nothing recorded whether it *ran*. A crashed pre-flight and one that found nothing
+  produced the same row (`reuse: 0`, no advice), which is how a truncation was read for
+  hours as "the coder ignored the advice". Its `OUTPUT_TRUNCATED (maxTokens=4000)` was
+  only found in the container logs, 2ms before the coder started on the file it was
+  supposed to be advising about. **Reasoning models bill thinking against `max_tokens`
+  — a silent best-effort catch around one is a failure nobody sees.**
 - **Do not gate on name overlap.** The obvious deterministic rule — flag a new module
-  whose distinctive name tokens sit inside an existing module's — was measured
-  against the real tree before being built and is unusable. Almost every overlap is
-  this repo's own convention: a guard is *deliberately* named after the module it
-  guards. Naming carries no information about duplication. Measure a rule against
-  the tree before you build it.
+  whose distinctive name tokens sit inside an existing module's — was measured against
+  the real tree before being built and is unusable *as a verdict*. Almost every overlap
+  is this repo's own convention: a guard is *deliberately* named after the module it
+  guards. It is, however, a serviceable **retriever** — a shortlist that costs a wrong
+  answer nothing is a different thing from a gate that sends the coder to the wrong
+  module. Know which one you are building.
+- **The coder already does this unaided.** It found and imported the right module 8
+  times out of 8, with no advice at all. Before building a mechanism to make the
+  pipeline do something, check whether it already does it.
 - **Only an import is a use.** The coder that duplicated the module named it in a
   comment. A detector that greps for the name calls that a pass — the same trap as a
   guard matching its own explanatory prose. Mask comments first.
-- **Watch the masking helper.** `proseInk.js`'s `maskSource` blanks regex literals
-  as well as comments, and a path looks exactly like a regex: inside
-  `require('../lib/drift.js')` the `/lib/` disappeared, so the import test failed on
-  the one case it existed to catch. `reuseCheck.js` ships its own comment-only masker
-  for that reason; reuse it rather than reaching for `maskSource` on code.
+- **Watch the masking helper.** `proseInk.js`'s `maskSource` blanks regex literals as
+  well as comments, and a path looks exactly like a regex: inside
+  `require('../lib/drift.js')` the `/lib/` disappeared, so an import test failed on the
+  one case it existed to catch. The comment-only masker that replaced it went with the
+  feature — write one, do not reach for `maskSource` on code.
+
 
