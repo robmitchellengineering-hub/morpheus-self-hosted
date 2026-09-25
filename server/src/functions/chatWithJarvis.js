@@ -42,10 +42,12 @@ async function classifyWidgetBuildIntent(userId, message) {
 MESSAGE: "${message}"
 
 Say true only for an unambiguous build request ("build me a widget that...", "can you make a widget for...", "create a widget to..."). Say false for a question, a vague idea, feedback on an existing widget, or normal conversation.`;
-  // Generous despite the tiny output — same lesson classifyDeckDumpItem.js
-  // and this file's own reply budget both already learned: hidden reasoning
-  // eats the budget before the actual JSON on this deployment's model.
-  const { result } = await invokeAI({ userId, prompt, schema: WIDGET_BUILD_INTENT_SCHEMA, maxTokens: 600 });
+  // `classify` (flash @ 0.4), not the platform default. This is a yes/no question asked on
+  // EVERY deck message before the reply is even attempted, so the expensive model was
+  // answering a boolean on the hot path of every turn — and it named no role at all, so it
+  // resolved to default_model (v4-pro) @ 0.7 with a 600-token cap: the same hidden-reasoning
+  // trap the note that used to sit here was written to outrun.
+  const { result } = await invokeAI({ userId, prompt, schema: WIDGET_BUILD_INTENT_SCHEMA, role: 'classify', maxTokens: 1500 });
   return result?.isWidgetBuildRequest === true;
 }
 

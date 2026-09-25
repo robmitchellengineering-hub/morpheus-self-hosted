@@ -57,14 +57,11 @@ SUBJECT: ${message.subject}
 MESSAGE:
 ${(message.body || message.snippet || '').slice(0, 3000)}`;
 
-  // Deliberately generous even though the answer is one boolean — this
-  // deployment's model can burn a real chunk of the token budget on hidden
-  // reasoning before it ever emits the JSON (the same lesson chatWithJarvis
-  // learned the hard way at 900 tokens). A too-tight cap here would throw
-  // OUTPUT_TRUNCATED on the classification call itself, which the caller
-  // must NOT silently read as "not an inquiry" — see the caller's own
-  // handling of this throwing.
-  const { result } = await invokeAI({ userId, prompt, schema: CLASSIFY_SCHEMA, maxTokens: 800 });
+  // One boolean, on the `classify` role (flash @ 0.4), which has no hidden-reasoning tax
+  // to eat the budget — that tax was the cause of the OUTPUT_TRUNCATED this cap was raised
+  // to outrun, back when this call named no role and so resolved to the platform default.
+  // The caller must still not read a throw as "not an inquiry"; see its own handling.
+  const { result } = await invokeAI({ userId, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 800 });
   return !!result?.isInquiry;
 }
 
