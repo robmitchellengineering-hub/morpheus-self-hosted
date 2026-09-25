@@ -59,6 +59,13 @@ export const PROVING_GROUND_CARDS = [
     ref: 'run-record dogfood',
   },
   {
+    key: 'selfdev_drift',
+    title: 'Self-dev drift',
+    what: 'Reports whether the self-dev workspace has drifted from the last synced commit: how many files differ locally, and a one-line verdict.',
+    addedBy: 'self-dev',
+    ref: 'drift visibility run',
+  },
+  {
     key: 'viewport_report',
     title: 'Viewport report',
     what: 'Shows the live viewport size and route, so a layout that only breaks at phone width is visible here.',
