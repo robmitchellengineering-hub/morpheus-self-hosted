@@ -95,12 +95,105 @@ for (const file of files) {
   }
 }
 
+// ── Named exports ────────────────────────────────────────────────────────────
+//
+// The check above resolves the PATH and nothing else, and on 2026-09-25 that
+// gap shipped a production outage: runAiAction.js gained
+// `import { buildReviewPrompt, REVIEW_SCHEMA, REVIEW_STEP_MAX_TOKENS } from
+// '../lib/reviewer.js'` while only REVIEW_SCHEMA was exported. The path
+// resolved, node --check saw a syntactically perfect file, lint was clean, and
+// this guard was green — but ESM fails at LINK time, so importing runAiAction
+// threw and every task on it 500'd, including the deployed Wikidata uploader's
+// schema_mapping. Same shape as the 2026-09-19 outage (a broken edge nothing
+// exercised): a missing NAME instead of a missing path, and three gates blind
+// to it.
+//
+// A name is treated as exported when it is declared with `export`, listed in an
+// `export { … }` clause, or destructured out of an `export const { … }`. A
+// module that re-exports (`export * from`) or is CommonJS is treated as OPAQUE
+// and skipped: this check must never cry wolf, because a resolution checker that
+// does gets switched off.
+//
+// Known limit, deliberately accepted: a name exported only from inside a
+// one-line block comment is read as exported (whole-line `//` comments are
+// stripped, block comments are not — see verify-ai-roles.mjs for why stripping
+// block comments is itself unsafe). That direction is a miss, never a false
+// alarm.
+const NAMED_IMPORT = /^[ \t]*import\s*\{([^}]*)\}\s*from\s*['"](\.[^'"]+)['"]/gm;
+const codeOnly = (s) => s.replace(/^[ \t]*\/\/.*$/gm, ' ');
+
+function exportedNames(source) {
+  const src = codeOnly(source);
+  const names = new Set();
+  for (const m of src.matchAll(/^[ \t]*export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    names.add(m[1]);
+  }
+  for (const m of src.matchAll(/^[ \t]*export\s*\{([^}]*)\}/gm)) {
+    for (const part of m[1].split(',')) {
+      const t = part.trim();
+      if (!t) continue;
+      const as = t.split(/\s+as\s+/);
+      names.add((as[1] || as[0]).trim());
+    }
+  }
+  for (const m of src.matchAll(/^[ \t]*export\s+(?:const|let|var)\s*\{([^}]*)\}/gm)) {
+    for (const p of m[1].split(',')) {
+      const t = p.trim().split(':').pop().trim();
+      if (t) names.add(t);
+    }
+  }
+  const opaque = /^[ \t]*export\s+\*/m.test(src)
+    || /\bmodule\.exports\b|^[ \t]*exports\./m.test(src);
+  return { names, opaque };
+}
+
+// Self-test: a checker that cannot detect the bug it exists for is not a pass.
+{
+  const good = exportedNames('export const A = 1;\nexport function b() {}\n');
+  const withStar = exportedNames("export * from './x.js';\n");
+  const cjs = exportedNames('module.exports = { a: 1 };\n');
+  if (!good.names.has('A') || !good.names.has('b') || good.opaque
+      || !withStar.opaque || !cjs.opaque) {
+    console.log('  FAIL  the named-export checker does not work (self-test)');
+    process.exit(1);
+  }
+}
+
+let nameChecked = 0;
+let nameFailures = 0;
+for (const file of files) {
+  const source = readFileSync(file, 'utf8');
+  for (const match of source.matchAll(NAMED_IMPORT)) {
+    const specifier = match[2];
+    const target = resolve(dirname(file), specifier);
+    if (!existsWithExactCase(target) || !/\.m?js$/.test(target)) continue;
+    const { names, opaque } = exportedNames(readFileSync(target, 'utf8'));
+    if (opaque) continue;
+    for (const raw of match[1].split(',')) {
+      const t = raw.trim();
+      if (!t) continue;
+      const imported = t.split(/\s+as\s+/)[0].trim();
+      if (!imported) continue;
+      nameChecked++;
+      if (!names.has(imported)) {
+        nameFailures++;
+        failures++;
+        const line = source.slice(0, match.index).split('\n').length;
+        console.log(`  FAIL  ${relative(ROOT, file)}:${line}\n          '${imported}' is imported from ${specifier} but is not exported by ${relative(ROOT, target)}`);
+      }
+    }
+  }
+}
+console.log(`  ${nameChecked} named import(s) checked against their module's exports, ${nameFailures} missing\n`);
+
 // A specifier that reaches outside the server tree (e.g. a shared/ module) is
 // legitimate, but one pointing at a directory rather than a file is not: ESM
 // has no directory/index resolution, so it fails at load in production.
 console.log(`\n${checked} relative import(s) checked, ${failures} broken`);
 if (failures) {
-  console.log(`\n${failures} FAILED — this is what took production down on 2026-09-19.\n`);
+  console.log('\nFAILED — this is the class that took production down on 2026-09-19 (a');
+  console.log('missing path) and again on 2026-09-25 (a missing named export). ESM fails');
+  console.log('at LINK time: the file parses, lint passes, and the import still throws.\n');
   process.exit(1);
 }
 console.log('all good\n');
