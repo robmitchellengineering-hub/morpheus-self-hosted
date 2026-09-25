@@ -22,6 +22,7 @@ import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
 import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
 import { reuseMisses } from '../lib/reuseCheck.js';
+import { reuseCandidates, buildReusePreflightPrompt, reuseSchema, parseReuseMatches } from '../lib/reusePreflight.js';
 import { selfDevToolsPromptBlock, runSelfDevToolCalls, formatSelfDevToolResultsBlock, extractScreenshotUrls } from '../lib/selfDevTools.js';
 import { getConstructContext } from '../lib/constructContext.js';
 import { checkA11y } from '../lib/a11yCheck.js';
@@ -1236,10 +1237,12 @@ OPERATOR SAYS: ${message}`;
     // measured and rejected. It rides in `rework` so it reaches the run record.
     let reuseMissCount = 0;
     // What the pre-flight ITSELF did: ran and named N existing modules, ran and named
-    // none, or failed. Without this, "crashed" and "found nothing" are the same row —
-    // `reuse: 0` with no advice — which is exactly how a truncated pre-flight was read
-    // as "the coder ignored the advice". See the maxTokens note below.
-    let reusePreflight = { ran: false, failed: false, named: 0 };
+    // none, or failed — plus how many candidates it was shown. Without this, "crashed"
+    // and "found nothing" are the same row — `reuse: 0` with no advice — which is exactly
+    // how a truncated pre-flight was read as "the coder ignored the advice".
+    // `candidates: 0` with `ran: false` means the shortlist was empty, so there was
+    // nothing to ask about and no model call was made.
+    let reusePreflight = { ran: false, failed: false, named: 0, candidates: 0 };
     let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
     const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
     let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -1288,22 +1291,6 @@ OPERATOR SAYS: ${message}`;
       // Only runs when the plan actually creates something, and only names files
       // that do not exist yet — a plan that adds to an existing module has already
       // found it.
-      const reuseSchema = {
-        type: 'object',
-        properties: {
-          reuse: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                planned: { type: 'string', description: 'the new file path from the list above' },
-                existing: { type: 'string', description: 'an existing path that already does this job' },
-                why: { type: 'string', description: 'one short sentence: what it already provides' },
-              },
-            },
-          },
-        },
-      };
       let reuseBlock = '';
       // Kept so the turn can check its own advice afterwards: which existing
       // modules the pre-flight named, and whether the coder actually imported
@@ -1312,15 +1299,26 @@ OPERATOR SAYS: ${message}`;
       let reuseMatches = [];
       const plannedNew = (Array.isArray(plannerResult.plannedFiles) ? plannerResult.plannedFiles : [])
         .filter((p) => typeof p === 'string' && p.trim() && !files.some((f) => f.path === p));
+      // What the pre-flight is SHOWN. Handing it ~907 bare paths is what made it name
+      // nothing 4 runs out of 4 on the least subtle duplication in the repo (a new
+      // getContainerMemory.js against the existing lib/containerMemory.js) — measured
+      // 2026-09-25 with the budget fixed, at both pro @ 0.7 and flash @ 0.4. A shortlist
+      // carrying each candidate's EXPORTED SYMBOLS is the signal a path list cannot
+      // carry. Name overlap is a retriever here, not a verdict — see lib/reusePreflight.js.
+      const reuseShortlist = reuseCandidates(plannedNew, files, { limit: 60 });
       // Skipped outright on an empty project. This runs for every build, not just
       // self-dev, and a greenfield project has nothing to reuse by definition — with
       // no files every planned path counts as "new", so the check would fire on the
       // first build of every project, spend a model call, and answer "nothing".
-      if (plannedNew.length > 0 && files.length > 0) {
+      // Also skipped when the shortlist is empty: with nothing to show the model, the
+      // only possible answer is "nothing", and a model call to hear it is waste.
+      if (plannedNew.length > 0 && reuseShortlist.length > 0) {
         try {
           const reuseCheck = await invokeAI({
             userId: user.id,
-            prompt: `${systemPrompt}\n\nA build plan is about to CREATE these files:\n${plannedNew.join('\n')}\n\nTHE PLAN:\n${plannerResult.plan}\n\nTHIS REPO ALREADY CONTAINS (paths only — you may not need all of them):\n${files.map((f) => f.path).join('\n')}\n\nFor each file above, does an EXISTING file already do that job? Name it. Omit a file entirely if nothing existing does the job. Be strict — naming a file that does not actually do the job is worse than naming nothing, because the coder will be told to use it.`,
+            prompt: buildReusePreflightPrompt({
+              systemPrompt, plannedNew, plan: plannerResult.plan, candidates: reuseShortlist,
+            }),
             schema: reuseSchema,
             role: 'planner',
             // 8000, not 4000. The role resolves to a REASONING model, and its thinking
@@ -1332,17 +1330,16 @@ OPERATOR SAYS: ${message}`;
             // OUTPUT_TRUNCATED and was fixed the same way.
             maxTokens: 8000,
           });
-          const matches = (Array.isArray(reuseCheck.result?.reuse) ? reuseCheck.result.reuse : [])
-            .filter((r) => r && typeof r.planned === 'string' && typeof r.existing === 'string' && r.existing.trim());
+          const matches = parseReuseMatches(reuseCheck.result);
           reuseMatches = matches;
-          reusePreflight = { ran: true, failed: false, named: matches.length };
+          reusePreflight = { ran: true, failed: false, named: matches.length, candidates: reuseShortlist.length };
           if (matches.length > 0) {
             reuseBlock = `\n\nDO NOT REINVENT — this repo already implements these:\n${matches.map((r) => `  ${r.planned}  →  use ${r.existing}${r.why ? ` (${r.why})` : ''}`).join('\n')}\nRead the existing file and import it. Create the new file ONLY if the existing module genuinely cannot do the job — and if you do, say why in your reply.`;
           }
         } catch (err) {
           // Best-effort like the API check: a failed pre-flight must not block a build.
           // It must not look like a clean "nothing to reuse" either — hence the flag.
-          reusePreflight = { ran: false, failed: true, named: 0 };
+          reusePreflight = { ran: false, failed: true, named: 0, candidates: reuseShortlist.length };
           console.error('[chatWithMorpheus] existing-implementation check failed:', err.message);
         }
       }

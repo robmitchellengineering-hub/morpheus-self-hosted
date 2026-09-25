@@ -39,7 +39,13 @@ const CI = resolve(REPO, '.github/workflows/ci.yml');
 // @prisma/client, passed HERE, and only failed in CI's real no-install job. The
 // detector now reads to the statement's semicolon, and check() below asserts it.
 const IMPORT_STATEMENT = /^[ \t]*import\b([\s\S]*?);/gm;
-const DYNAMIC_IMPORT = /^[ \t]*(?!\/\/)[^'"\n]*\bimport\(\s*['"]([^'"]+)['"]/gm;
+// `(?![ \t]*\/\/)` at the line start, NOT after the whitespace. Written the other
+// way — `^[ \t]*(?!\/\/)` — the quantifier can give back a space so the lookahead
+// lands on ` /` instead of `//`, and a COMMENT is read as code: server/src/lib/
+// importGraph.js documents itself with `// dynamic: import('spec')`, which this
+// guard then reported as a real package named "spec". Latent until that file
+// entered a guards-job import chain (2026-09-25). Anchored here it cannot backtrack.
+const DYNAMIC_IMPORT = /^(?![ \t]*\/\/)[ \t]*[^'"\n]*\bimport\(\s*['"]([^'"]+)['"]/gm;
 const SPECIFIER_AT_END = /['"]([^'"]+)['"]\s*$/;
 
 /** Every module specifier in a source file: static (in any layout) and dynamic. */
@@ -110,6 +116,18 @@ check('the detector sees a MULTI-LINE import', specifiersIn(DETECTOR_FIXTURE).in
 check('the detector sees a single-line import', specifiersIn(DETECTOR_FIXTURE).includes('node:crypto'), true);
 check('the detector sees a side-effect import', specifiersIn(DETECTOR_FIXTURE).includes('./a-side-effect.js'), true);
 check('the detector ignores a template-literal dynamic import it cannot resolve', specifiersIn(DETECTOR_FIXTURE).some((s) => s.includes('${name}')), false);
+// A comment that documents the syntax must not read as the syntax. This is not
+// hypothetical: importGraph.js says `// dynamic: import('spec')`, and the
+// backtracking lookahead above reported it as a package import the moment that
+// file became reachable from the guards job.
+const COMMENT_FIXTURE = [
+  "  // dynamic: import('spec')   /   await import(\"spec\")",
+  "// import('also-not-real')",
+  'const real = await import("./is-real.js");',
+].join('\n');
+check('the detector ignores dynamic imports inside comments', specifiersIn(COMMENT_FIXTURE).includes('spec'), false);
+check('…including in a comment with varied leading whitespace', specifiersIn(COMMENT_FIXTURE).includes('also-not-real'), false);
+check('…and still sees the real one on the next line', specifiersIn(COMMENT_FIXTURE).includes('./is-real.js'), true);
 
 console.log(`\nNo-install guard — checking ${scripts.length} script(s) from the CI guards job\n`);
 

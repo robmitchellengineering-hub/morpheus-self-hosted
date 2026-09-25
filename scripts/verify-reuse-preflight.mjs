@@ -25,10 +25,11 @@
 //
 // Run:  node scripts/verify-reuse-preflight.mjs
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reuseMisses } from '../server/src/lib/reuseCheck.js';
+import { reuseCandidates } from '../server/src/lib/reusePreflight.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -56,7 +57,7 @@ console.log('\nThe plan is checked against what already exists, before the coder
 // Asserted on the CODE, not on the section comment: comments are masked above, and
 // a check that matches its own explanatory prose proves the prose exists.
 check('the turn runs an existing-implementation pre-flight',
-  /const reuseSchema = \{/.test(src) && /let reuseBlock = '';/.test(src));
+  /reuseCandidates\(plannedNew, files/.test(src) && /let reuseBlock = '';/.test(src));
 check('…and builds a block telling the coder not to reinvent it', /DO NOT REINVENT/.test(src));
 check('…and only for files that do NOT exist yet',
   /!files\.some\(\(f\) => f\.path === p\)/.test(src));
@@ -67,7 +68,12 @@ check('…and only when the plan actually creates something',
 // check would spend a model call on the first build of every project to answer
 // "nothing exists" — which is true by definition and was already known.
 check('…and not at all on an empty project, where there is nothing to reuse',
-  /plannedNew\.length > 0 && files\.length > 0/.test(src));
+  /plannedNew\.length > 0 && reuseShortlist\.length > 0/.test(src));
+// The shortlist is what fixed the recall failure. Asserted on the code so it cannot
+// quietly go back to handing the model the whole tree.
+check('…and shows the model a shortlist, not every path in the repo',
+  /reuseShortlist = reuseCandidates\(/.test(src) && /buildReusePreflightPrompt\(/.test(src)
+  && !/files\.map\(\(f\) => f\.path\)\.join/.test(src));
 
 // ── and it reaches the code that writes ─────────────────────────────────────
 // A pre-flight whose answer never reaches the coder is worse than none: it costs a
@@ -149,10 +155,51 @@ check('…and reports it in the run record', /reuse: reuseMissCount/.test(src));
 check('the pre-flight gives a reasoning model room to finish',
   /role: 'planner',[\s\S]{0,1500}?maxTokens: 8000/.test(src));
 check('…and its own outcome is recorded, not just its effect on the coder',
-  /reusePreflight = \{ ran: true, failed: false, named: matches\.length \}/.test(src)
-  && /reusePreflight = \{ ran: false, failed: true, named: 0 \}/.test(src));
+  /reusePreflight = \{ ran: true, failed: false, named: matches\.length, candidates: reuseShortlist\.length \}/.test(src)
+  && /reusePreflight = \{ ran: false, failed: true, named: 0, candidates: reuseShortlist\.length \}/.test(src));
 check('…and that outcome survives summariseResult into the run record',
   /'reusePreflight'/.test(readFileSync(join(REPO, 'server/src/lib/selfDevRunRules.js'), 'utf8')));
+
+// ── the shortlist actually contains the answer ──────────────────────────────
+// This is the check that would have caught the recall failure. The measured case
+// (2026-09-25, n=2 per arm, both models): a plan to create
+// `server/src/functions/getContainerMemory.js` when `server/src/lib/containerMemory.js`
+// already does that job — and the pre-flight, shown 907 bare paths, named nothing 4/4.
+// The retriever must put that file in front of the model, with the export that gives
+// it away.
+const walk = (dir, out = []) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist') continue;
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walk(p, out);
+    else if (/\.(jsx?|mjs|cjs)$/.test(e.name)) out.push(p);
+  }
+  return out;
+};
+const repoFiles = walk(join(REPO, 'server/src')).map((abs) => ({
+  path: abs.slice(REPO.length + 1),
+  content: readFileSync(abs, 'utf8'),
+}));
+const shortlist = reuseCandidates(['server/src/functions/getContainerMemory.js'], repoFiles, { limit: 60 });
+const paths = shortlist.map((c) => c.path);
+const hit = shortlist.find((c) => c.path === 'server/src/lib/containerMemory.js');
+
+check('the shortlist is a shortlist, not the whole tree',
+  shortlist.length > 0 && shortlist.length < repoFiles.length / 4,
+  `${shortlist.length} of ${repoFiles.length} file(s)`);
+check('…it contains the module that already does the job',
+  Boolean(hit), paths.slice(0, 6).join(', '));
+check('…and shows the export that gives it away',
+  Boolean(hit && hit.symbols.includes('containerMemory')));
+check('…and it is short enough to be worth the tokens',
+  JSON.stringify(shortlist).length < JSON.stringify(repoFiles.map((f) => f.path)).length,
+  `shortlist ${JSON.stringify(shortlist).length} vs paths-only ${JSON.stringify(repoFiles.map((f) => f.path)).length}`);
+// A planned file with nothing like it in the repo must not drag in half the tree —
+// precision of the retriever is what keeps the prompt honest. The tokens below are
+// deliberately absent from this repo (the first version of this check used "widget",
+// which is a real repo concept — widgetToken.js, blockWidget — and matched plenty).
+check('an unrelated planned file does not match everything',
+  reuseCandidates(['src/lib/quuxflux_capybara_thing.jsx'], repoFiles, { limit: 60 }).length <= 5);
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {
