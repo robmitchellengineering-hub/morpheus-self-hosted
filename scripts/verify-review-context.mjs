@@ -123,6 +123,46 @@ const schemaBlock = buildReviewerContext({ files: big, fileOps: opSchema });
 check('the schema IS included when the change touches server/prisma/',
   schemaBlock.includes('SENTINEL_SCHEMA') && schemaBlock.includes('because this change touches'));
 
+// ── IMPORT TARGETS: what a directory index cannot answer ─────────────────────────────
+// The mutation test caught this the hard way. With only a directory index the reviewer
+// could not tell that a proposed file imported a module that does not exist at all —
+// `server/src/lib` was listed as a directory, nothing said what was in it — and it
+// approved the broken import, where the full tree had caught it. So the directories a
+// change imports FROM are listed in full.
+const opImports = [{
+  path: 'server/src/functions/spendSummary.js',
+  action: 'create',
+  content: "import { spendOver } from '../lib/providerSpendState.js';\nimport { nope } from '../lib/doesNotExist.js';\nexport const x = [spendOver, nope];\n",
+}];
+const importBlock = buildReviewerContext({ files: big, fileOps: opImports });
+check('the directory a change imports FROM is listed, not just the one it writes into',
+  importBlock.includes('IMPORT TARGETS')
+  && importBlock.includes('->  server/src/lib/')
+  && importBlock.includes('neighbour.js'),
+  importBlock.slice(-400));
+// Every import into a directory must survive, not just the first: keying by directory with a
+// single specifier dropped the rest — including the missing one this section exists for.
+check('EVERY import into a directory is listed, not just the first',
+  importBlock.includes("'../lib/providerSpendState.js'")
+  && importBlock.includes("'../lib/doesNotExist.js'"), importBlock.slice(-400));
+check('an import that resolves to a directory with no such file says so',
+  importBlock.includes('doesNotExist.js')
+  && importBlock.includes('server/src/lib') , importBlock.slice(-400));
+check('a resolving import names its directory',
+  importBlock.includes("'../lib/providerSpendState.js'"));
+
+// The prompt tells the reviewer what to do with the section, so it is not just a path dump.
+check('the IMPORT TARGETS section tells the reviewer how to use it',
+  importBlock.includes('is a CRITICAL issue'));
+
+// Small projects still get the whole tree AND the import section.
+const smallImports = buildReviewerContext({
+  files: small,
+  fileOps: [{ path: 'src/new.js', content: "import { widget } from './widget.js';\n", action: 'create' }],
+});
+check('a small project gets the import targets too (not only the degraded path)',
+  smallImports.includes('IMPORT TARGETS') && smallImports.includes('widget.js'));
+
 // ── Wiring: the block must actually be the one the reviewer receives ─────────────────
 const chat = code('server/src/functions/chatWithMorpheus.js');
 check('chatWithMorpheus builds the reviewer context',
