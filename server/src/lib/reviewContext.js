@@ -162,6 +162,33 @@ export function referencedModels(schemaText, fileOps) {
 }
 
 /**
+ * `Model: fieldA, fieldB, …` for every model — a NAME index, not definitions.
+ *
+ * WHY THIS IS NEEDED ON TOP OF referencedModels: the mutation test's `bad-column` fixture is
+ * a generic helper, `tokensPerDollar(row)`. It never mentions a model or the Prisma client,
+ * so there was nothing to key a slice on and the narrowed context included no schema at all —
+ * it approved a read of `row.tokens` while the full context (which brute-forces all 54
+ * models) caught it. My per-reference slice was necessary but not sufficient: a change can
+ * handle a row without ever naming where it came from.
+ *
+ * Field names only, so it stays a fraction of the schema's size while still answering "is
+ * this a column anywhere in the database".
+ */
+export function modelFieldIndex(schemaText) {
+  const lines = [];
+  for (const m of schemaText.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
+    const fields = m[2]
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('//') && !l.startsWith('@@'))
+      .map((l) => l.split(/\s+/)[0])
+      .filter(Boolean);
+    lines.push(`${m[1]}: ${fields.join(', ')}`);
+  }
+  return lines;
+}
+
+/**
  * @param {{path: string, content: string}[]} files  every file in the project
  * @param {{path: string, content?: string, action?: string}[]} fileOps  the change under review
  * @param {{maxTreeBytes?: number, maxSiblingPaths?: number, maxImportDirPaths?: number}} [opts]
@@ -268,14 +295,31 @@ export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, max
   const schema = byPath.get('server/prisma/schema.prisma');
   if (schema && typeof schema.content === 'string') {
     const models = referencedModels(schema.content, ops);
+    const index = modelFieldIndex(schema.content);
+    const parts = [];
     if (models.length > 0) {
+      parts.push(
+        'Definitions for the models this change references:\n\n' + models.join('\n\n')
+      );
+    }
+    if (index.length > 0) {
+      parts.push(
+        'FIELD INDEX — every model and its field names. Use this when the change handles a row'
+        + ' WITHOUT naming the model it came from (a helper that takes `row`, a mapper, a'
+        + ' serializer): if a property the change reads is not a field of ANY model listed'
+        + ' here, it does not exist and using it is a CRITICAL issue. This is a name index'
+        + ' only — consult the definitions above for types, nullability and defaults where a'
+        + ' model is referenced:\n\n'
+        + index.join('\n')
+      );
+    }
+    if (parts.length > 0) {
       sections.push(
-        'PRISMA MODELS THIS CHANGE USES — only the models the change references, not the whole'
-        + ' schema. Check every field the change reads or writes against these definitions: a'
-        + ' column that is not listed here does not exist, and using it is a CRITICAL issue'
-        + ' (it fails at runtime, and no other check in this pipeline can see it). A relation'
-        + ' or model the change needs that is NOT shown here is also worth flagging:\n\n'
-        + models.join("\n\n")
+        'PRISMA MODELS AND FIELDS — check every field the change reads or writes against these.'
+        + ' A column that is not listed does not exist, and using it is a CRITICAL issue: it'
+        + ' fails at runtime, and no other check in this pipeline can see it (esbuild, lint and'
+        + ' the import guard have no idea what the database looks like).\n\n'
+        + parts.join('\n\n')
       );
     }
   }
