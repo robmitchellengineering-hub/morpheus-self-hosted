@@ -37,11 +37,14 @@ export default async function handler({ user, body }) {
 
   const prompt = buildClassifyPrompt({ text, businessContext, peopleNames });
 
-  // Deliberately generous even though the answer is a short list — this
-  // deployment's model can burn real budget on hidden reasoning before the
-  // actual JSON (the same lesson chatWithJarvis.js and syncDeckGmailInbox.js's
-  // classifier both already learned the hard way).
-  const { result } = await invokeAI({ userId: user.id, prompt, schema: CLASSIFY_SCHEMA, maxTokens: 1200 });
+  // The answer is a short list, and the model producing it is the `classify` role
+  // (flash @ 0.4) — which has no hidden-reasoning tax to eat the budget in the first
+  // place. These caps were raised one by one to outrun that tax ("the same lesson
+  // chatWithJarvis.js and syncDeckGmailInbox.js both already learned the hard way"),
+  // which treated the symptom: the cause was a reasoning model reached through a call
+  // that named no role, so it resolved to the platform default. Headroom stays; the
+  // role is the fix.
+  const { result } = await invokeAI({ userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 1200 });
 
   const items = normalizeClassifyResult(result, text, peopleNames);
 
