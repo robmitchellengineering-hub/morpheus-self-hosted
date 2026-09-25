@@ -305,6 +305,13 @@ jobs:
       - name: AI roles and budgets
         run: node scripts/verify-ai-roles.mjs
 
+      # The reviewer is 30.6% of AI spend (1,254 calls, 26,138 avg input tokens) because
+      # it was handed the Coder's whole scoped context to review at most 3 files. This
+      # asserts the reviewer-specific block (rules, bounded tree, schema only when
+      # relevant) and that the reviewer stays directly runnable via review_probe.
+      - name: Reviewer context
+        run: node scripts/verify-review-context.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy
