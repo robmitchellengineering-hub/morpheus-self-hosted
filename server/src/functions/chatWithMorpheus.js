@@ -19,6 +19,7 @@ import { getActiveFeature, featureContextBlock, createFeature } from '../lib/sel
 import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { findCallerBreaks, describeCallerBreaks } from '../lib/callerCheck.js';
+import { unknownPrismaFields } from '../lib/prismaFields.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
@@ -1623,6 +1624,40 @@ OPERATOR SAYS: ${message}`;
           // must not pass silently either, or a broken checker looks like a clean
           // build forever.
           console.error('[chatWithMorpheus] caller-gate FAILED TO RUN:', err.message);
+        }
+      }
+
+      // ── Schema gate: does this change use a column that does not exist? ────
+      // Same reasoning as the caller gate above, for a different class: the
+      // mutation test showed a model approving a read of `row.tokens` on a model
+      // whose fields are input_tokens/output_tokens. esbuild cannot see this,
+      // lint cannot, and the import guards check imports — it is a runtime
+      // failure that reaches a user, and the reviewer was the only thing asked
+      // about it.
+      //
+      // Only the EXPLICIT case (a Prisma call naming its model and fields). An
+      // untyped row gives a script nothing to resolve against, which is why the
+      // review context carries a field index for that. Anything unparseable is
+      // skipped: a missed check costs nothing, a false "that column does not
+      // exist" blocks good code.
+      if (fileOps.length > 0) {
+        const schemaFile = files.find((f) => f.path === 'server/prisma/schema.prisma');
+        if (schemaFile && typeof schemaFile.content === 'string') {
+          try {
+            const badFields = [];
+            for (const op of fileOps) {
+              if (typeof op.content !== 'string' || op.action === 'delete') continue;
+              for (const f of unknownPrismaFields(schemaFile.content, op.content)) {
+                badFields.push(`${op.path}: ${f.model} has no field \`${f.field}\` (used in \`${f.arg}\`)`);
+              }
+            }
+            if (badFields.length > 0) {
+              console.log(`[chatWithMorpheus] schema-gate: ${badFields.length} unknown column(s): ${badFields.slice(0, 5).join(' | ')}`);
+              syntaxCritical = [...syntaxCritical, ...badFields.map((b) => `unknown column — ${b}`)];
+            }
+          } catch (err) {
+            console.error('[chatWithMorpheus] schema-gate FAILED TO RUN:', err.message);
+          }
         }
       }
 

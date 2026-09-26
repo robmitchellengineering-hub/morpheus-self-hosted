@@ -26,7 +26,8 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildReviewerContext, referencedModels, modelFieldIndex } from '../server/src/lib/reviewContext.js';
+import { buildReviewerContext, referencedModels } from '../server/src/lib/reviewContext.js';
+import { modelFieldIndex } from '../server/src/lib/prismaFields.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;

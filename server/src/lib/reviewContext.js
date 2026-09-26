@@ -34,6 +34,7 @@
 // can assert its composition directly (`scripts/verify-review-context.mjs`) and the export
 // parser is shared with `scripts/verify-server-imports.mjs` rather than copied.
 import { exportedNames } from './moduleExports.js';
+import { modelFieldIndex } from './prismaFields.js';
 
 /** The files the reviewer's own prompt instructs it to check a change against. */
 const RULE_FILES = ['KNOWN-HAZARDS.md', 'AGENTS.md'];
@@ -161,32 +162,6 @@ export function referencedModels(schemaText, fileOps) {
   return found;
 }
 
-/**
- * `Model: fieldA, fieldB, …` for every model — a NAME index, not definitions.
- *
- * WHY THIS IS NEEDED ON TOP OF referencedModels: the mutation test's `bad-column` fixture is
- * a generic helper, `tokensPerDollar(row)`. It never mentions a model or the Prisma client,
- * so there was nothing to key a slice on and the narrowed context included no schema at all —
- * it approved a read of `row.tokens` while the full context (which brute-forces all 54
- * models) caught it. My per-reference slice was necessary but not sufficient: a change can
- * handle a row without ever naming where it came from.
- *
- * Field names only, so it stays a fraction of the schema's size while still answering "is
- * this a column anywhere in the database".
- */
-export function modelFieldIndex(schemaText) {
-  const lines = [];
-  for (const m of schemaText.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
-    const fields = m[2]
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('//') && !l.startsWith('@@'))
-      .map((l) => l.split(/\s+/)[0])
-      .filter(Boolean);
-    lines.push(`${m[1]}: ${fields.join(', ')}`);
-  }
-  return lines;
-}
 
 /**
  * @param {{path: string, content: string}[]} files  every file in the project

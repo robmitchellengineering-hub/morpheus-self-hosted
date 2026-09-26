@@ -1,0 +1,108 @@
+// "Does that column exist?" is decidable for the explicit case, and must not rest on a model.
+//
+// THE CASE THAT MOTIVATED IT (mutation test, 2026-09-26): a helper reading `row.tokens` on a
+// model whose fields are `input_tokens` / `output_tokens` was approved by a narrowed reviewer
+// that had no schema at all. The reviewer now carries a field index and catches it — but the
+// reviewer is a model, and this class is a runtime failure that reaches a user. `esbuild`
+// cannot see it, lint cannot, and the import guards check imports.
+//
+// SCOPE — deliberately the EXPLICIT case only:
+//
+//     prisma.usageEvent.create({ data: { tokens: 1 } })       // caught
+//     prisma.project.findMany({ where: { ownder_id: id } })   // caught
+//     export function f(row) { return row.tokens; }           // NOT caught, by design
+//
+// An untyped row gives a script nothing to resolve against; that genuinely needs the reviewer,
+// which is why the review context carries a field index. Chasing it here would mean guessing.
+//
+// CONSERVATIVE BY CONSTRUCTION: anything unparseable is skipped. A missed check costs nothing;
+// a false "that column does not exist" blocks good code, and a gate that cries wolf gets
+// switched off. While writing this, two apparent false positives turned out to be my own
+// fixtures — `Project` really has no `title`, and its relation is `owner`, not `user`.
+//
+// Dependency-free. Run:  node scripts/verify-prisma-fields.mjs
+
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { unknownPrismaFields, describeUnknownPrismaFields, modelFields } from '../server/src/lib/prismaFields.js';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+let pass = 0; let fail = 0;
+const check = (name, ok, detail) => {
+  if (ok) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`); }
+};
+const code = (p) => readFileSync(join(REPO, p), 'utf8').replace(/^[ \t]*\/\/.*$/gm, ' ');
+
+const schema = readFileSync(join(REPO, 'server/prisma/schema.prisma'), 'utf8');
+const fields = (src) => unknownPrismaFields(schema, src);
+const names = (src) => fields(src).map((f) => f.field);
+
+check('the schema parses into models with fields',
+  modelFields(schema).byModel.size > 40 && modelFields(schema).byModel.get('UsageEvent')?.has('input_tokens'));
+
+// ── It must catch a column that does not exist ───────────────────────────────────────
+check('a column the model does not have, in `data`, is caught',
+  names('await prisma.usageEvent.create({ data: { tokens: 1 } })').includes('tokens'));
+check('…and the message names the model, the field and the argument',
+  /UsageEvent has no field `tokens` \(used in `data`\)/.test(describeUnknownPrismaFields(fields('await prisma.usageEvent.create({ data: { tokens: 1 } })'))[0] || ''));
+check('a typo in `where` is caught',
+  names('await prisma.project.findMany({ where: { ownder_id: id } })').includes('ownder_id'));
+check('a typo alongside good fields is still caught',
+  names('await prisma.usageEvent.create({ data: { created_by_id: u, input_tokens: 1, modle_id: m } })').includes('modle_id'));
+check('the camelCase client property is mapped to the model',
+  fields('await prisma.usageEvent.create({ data: { tokens: 1 } })')[0]?.model === 'UsageEvent');
+
+// ── It must NOT flag a legitimate claim ──────────────────────────────────────────────
+// These field names are taken from the real schema — an earlier version of this file used
+// invented ones (`title`, `user`) and the two "false positives" were the fixtures' fault.
+check('every real field passes', fields('await prisma.usageEvent.create({ data: { created_by_id: 1, input_tokens: 1, cost_usd: 2, project_id: null } })').length === 0);
+check('a relation write passes', fields('await prisma.project.create({ data: { owner: { connect: { id } }, name: "x" } })').length === 0);
+check('filter operators pass',
+  fields('await prisma.project.findMany({ where: { name: { contains: "a", mode: "insensitive" } } })').length === 0);
+check('logical combinators pass',
+  fields('await prisma.project.findMany({ where: { OR: [{ name: "a" }], NOT: { status: "x" } } })').length === 0);
+check('a nested relation write passes',
+  fields('await prisma.project.update({ where: { id }, data: { owner: { update: { email: "x" } } } })').length === 0);
+check('an update payload passes',
+  fields('await prisma.project.update({ where: { id }, data: { polish_ui: true } })').length === 0);
+
+// ── It must stay silent when it cannot be sure ───────────────────────────────────────
+check('a generic row helper is not guessed at', fields('export function f(row) { return row.tokens; }').length === 0);
+check('a spread is not treated as a column claim',
+  fields('await prisma.project.create({ data: { ...row, name: "x" } })').length === 0);
+check('a non-model client property is skipped',
+  fields('await prisma.notAModel.findMany({ where: { nope: 1 } })').length === 0);
+check('unbalanced parentheses are skipped rather than guessed',
+  fields('await prisma.usageEvent.create({ data: { tokens: 1 }').length === 0);
+check('a file with no prisma call is free', fields('const x = 1;\n').length === 0);
+check('an empty schema yields nothing rather than throwing',
+  unknownPrismaFields('', 'await prisma.usageEvent.create({ data: { tokens: 1 } })').length === 0);
+
+// ── One parser, two consumers ───────────────────────────────────────────────────────
+check('the reviewer context uses this same field parser',
+  code('server/src/lib/reviewContext.js').includes("from './prismaFields.js'"));
+check('…and no longer keeps its own copy',
+  !/export function modelFieldIndex/.test(code('server/src/lib/reviewContext.js')));
+
+// ── Wiring: an exact check nobody calls is not a gate ───────────────────────────────
+const chat = code('server/src/functions/chatWithMorpheus.js');
+check('chatWithMorpheus runs the schema check', /unknownPrismaFields\(/.test(chat));
+check('…and imports it', /from '\.\.\/lib\/prismaFields\.js'/.test(chat));
+check('…from the real schema in the project, not a bundled copy',
+  /schema\.prisma/.test(chat) && !/model UsageEvent/.test(chat));
+// The whole point: this must not sit inside the self-dev-only deep-verify gate.
+const deepGateAt = chat.indexOf('if (isSelfDev && fileOps.length > 0)');
+const checkAt = chat.indexOf('unknownPrismaFields(');
+check('the check runs for every build, not only self-dev',
+  deepGateAt > -1 && checkAt > -1 && Math.abs(checkAt - deepGateAt) > 40,
+  `deepGate@${deepGateAt} check@${checkAt}`);
+
+console.log(`\n${pass}/${pass + fail} checks passed`);
+if (fail) {
+  console.log('\nA column that does not exist fails at runtime and no other gate can see it.');
+  console.log('Keep this exact and conservative: it must never flag a field the schema has,');
+  console.log('because a gate that cries wolf gets switched off.\n');
+  process.exit(1);
+}
+console.log('a proposed change naming a column that does not exist is caught by a script.\n');

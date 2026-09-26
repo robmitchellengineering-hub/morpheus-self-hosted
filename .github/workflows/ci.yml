@@ -317,6 +317,11 @@ jobs:
       - name: Caller-break gate
         run: node scripts/verify-caller-check.mjs
 
+      # A Prisma call naming a column that does not exist fails at runtime, and esbuild, lint
+      # and the import guards are all blind to it.
+      - name: Prisma field gate
+        run: node scripts/verify-prisma-fields.mjs
+
       # morpheus.nz served a 1.5 KB React shell with no description, no structured data
       # and no robots.txt, so crawlers could not tell what the product was. This asserts
       # the machine-readable surface exists, is generated from the capabilities JSON, and
