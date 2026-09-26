@@ -19,7 +19,7 @@ import { getActiveFeature, featureContextBlock, createFeature } from '../lib/sel
 import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
 import { findCallerBreaks, describeCallerBreaks } from '../lib/callerCheck.js';
-import { unknownPrismaFields } from '../lib/prismaFields.js';
+import { unknownPrismaFields, isCodePath } from '../lib/prismaFields.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
@@ -1233,6 +1233,11 @@ OPERATOR SAYS: ${message}`;
     let appliedOps = [];
     let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
     let syntaxCritical = []; // files that still didn't parse after a fix attempt
+    // The caller and schema gates report rather than retry, so their findings are kept apart
+    // from `syntaxCritical`: one list told the user a broken caller was "a syntax error after
+    // 2 fix attempts", which was wrong about the kind of error AND about the attempts.
+    let callerCritical = []; // imports this change breaks (no fix loop — it reports)
+    let schemaCritical = []; // Prisma columns that do not exist (no fix loop — it reports)
 
     // Rework attribution (2026-09-24): a third of code-producing turns need
     // more than one coder pass, and the call data could not say WHICH of the
@@ -1617,7 +1622,7 @@ OPERATOR SAYS: ${message}`;
           if (callerBreaks.length > 0) {
             const lines = describeCallerBreaks(callerBreaks);
             console.log(`[chatWithMorpheus] caller-gate: ${callerBreaks.length} import(s) broken by this change: ${lines.join(' | ')}`);
-            syntaxCritical = [...syntaxCritical, ...lines.map((l) => `broken caller — ${l}`)];
+            callerCritical = [...callerCritical, ...lines];
           }
         } catch (err) {
           // A check that cannot run must not be the reason a build dies — but it
@@ -1645,15 +1650,19 @@ OPERATOR SAYS: ${message}`;
         if (schemaFile && typeof schemaFile.content === 'string') {
           try {
             const badFields = [];
+            // A Prisma call only means something in a file that could be executed. In a
+            // `.md`/`.sql`/`.json` file it is an example, and reporting it as an unknown column
+            // is a false accusation with the user's name on it.
             for (const op of fileOps) {
               if (typeof op.content !== 'string' || op.action === 'delete') continue;
+              if (!isCodePath(op.path)) continue;
               for (const f of unknownPrismaFields(schemaFile.content, op.content)) {
                 badFields.push(`${op.path}: ${f.model} has no field \`${f.field}\` (used in \`${f.arg}\`)`);
               }
             }
             if (badFields.length > 0) {
               console.log(`[chatWithMorpheus] schema-gate: ${badFields.length} unknown column(s): ${badFields.slice(0, 5).join(' | ')}`);
-              syntaxCritical = [...syntaxCritical, ...badFields.map((b) => `unknown column — ${b}`)];
+              schemaCritical = [...schemaCritical, ...badFields];
             }
           } catch (err) {
             console.error('[chatWithMorpheus] schema-gate FAILED TO RUN:', err.message);
@@ -1880,8 +1889,24 @@ OPERATOR SAYS: ${message}`;
     if (unresolved.length > 0) {
       fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
     }
+    // Each gate reports in its own sentence, because they are not the same thing and only one
+    // of them retries. `syntaxCritical` really did go through MAX_GATE_ATTEMPTS - 1 re-checks;
+    // the caller and schema gates run ONCE and report. Folding them together told the user a
+    // broken caller was "a syntax error after 2 fix attempts" — wrong about the error and about
+    // the attempts — which sends them looking for something that is not there.
+    const criticalNotes = [];
     if (syntaxCritical.length > 0) {
-      fullReply += `\n\n// CRITICAL: the code still has a syntax error after ${MAX_GATE_ATTEMPTS - 1} fix attempts — ${syntaxCritical.join('; ')}. The change was applied anyway; ask me to fix ${syntaxCritical.length === 1 ? 'it' : 'them'} or revert.`;
+      criticalNotes.push(`the code still has a syntax error after ${MAX_GATE_ATTEMPTS - 1} fix attempts — ${syntaxCritical.join('; ')}`);
+    }
+    if (callerCritical.length > 0) {
+      criticalNotes.push(`a check found an import this change breaks, with no fix attempted — ${callerCritical.join('; ')}`);
+    }
+    if (schemaCritical.length > 0) {
+      criticalNotes.push(`a check found a column that does not exist, with no fix attempted — ${schemaCritical.join('; ')}`);
+    }
+    if (criticalNotes.length > 0) {
+      const nCritical = syntaxCritical.length + callerCritical.length + schemaCritical.length;
+      fullReply += `\n\n// CRITICAL: ${criticalNotes.join('. ')}. The change was applied anyway; ask me to fix ${nCritical === 1 ? 'it' : 'them'} or revert.`;
     }
     if (deepVerifyCritical.length > 0) {
       fullReply += `\n\n// CRITICAL: this still breaks the wider repo after a fix attempt (a real bundle + cross-file export check) — ${deepVerifyCritical.join('; ')}. The change was applied to this workspace anyway; PUSH TO PRODUCTION will re-check and block it, but fix or revert it here first.`;
@@ -1896,7 +1921,7 @@ OPERATOR SAYS: ${message}`;
     // build changed files — the planner's context said to build that step, so
     // it's done; the operator can reopen it from the FEATURE panel to refine.
     // Self-dev advances its steps manually (on push, from the panel).
-    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0;
+    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && callerCritical.length === 0 && schemaCritical.length === 0 && deepVerifyCritical.length === 0;
     if (escalatedFeature && escalatedFeature.activeStep) {
       fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
       // Step 1 having been drafted this turn doesn't mean it actually

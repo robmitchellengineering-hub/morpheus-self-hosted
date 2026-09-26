@@ -88,6 +88,13 @@ const callerAt = chat.indexOf('findCallerBreaks(');
 check('the caller check is OUTSIDE the self-dev-only deep-verify gate',
   deepGateAt > -1 && callerAt > -1 && Math.abs(callerAt - deepGateAt) > 40,
   `deepGate@${deepGateAt} caller@${callerAt}`);
+// The caller gate runs ONCE and reports — it has no fix loop. Folding its finding into
+// `syntaxCritical` (fixed 2026-09-26) told the user a broken caller was "a syntax error after
+// 2 fix attempts": the wrong kind of error, and an attempt count that never happened.
+check('the caller gate reports to its own list, not the syntax list',
+  /callerCritical = \[\.\.\.callerCritical/.test(chat));
+check('…and the syntax-error sentence lists only syntax findings',
+  /syntax error after \$\{MAX_GATE_ATTEMPTS - 1\} fix attempts — \$\{syntaxCritical\.join/.test(chat));
 check('…and reuses the existing cross-file checker rather than a second implementation',
   code('server/src/lib/callerCheck.js').includes("from './importGraph.js'"));
 
