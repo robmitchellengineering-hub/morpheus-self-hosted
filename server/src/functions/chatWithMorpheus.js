@@ -1993,11 +1993,33 @@ OPERATOR SAYS: ${message}`;
     emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
-    // Mirrors functions.routes.js's normal error shape (message/code/needed/
-    // available) so the frontend's stream reader can react the same way it
-    // would to a non-streamed error response — see base44Client.js's
-    // invokeStream, in particular the INSUFFICIENT_CREDITS handling.
-    emit({ type: 'error', message: err.message || 'Internal error', code: err.code, needed: err.needed, available: err.available });
+    // If the build already LANDED, an error event is the worst response available: the files are
+    // written, but the client sees a closed stream with no result, classifies it as a bare network
+    // failure and re-runs the whole turn — a second full build on top of the first, for spend. A
+    // throw AFTER apply (the polish pass, the chat row, the project status, usage) must not cost the
+    // user their reply. So deliver what we have, and name what failed.
+    if (appliedOps.length > 0) {
+      // Shaped exactly like the success emit below, so the stream reader cannot tell them apart.
+      try {
+        emit({
+          type: 'result',
+          data: {
+            reply: `${fullReply || reply}\n\n// NOTE: the build itself landed and everything above is applied, but something after it failed — ${err.message || 'unknown error'}. Ask me to retry the part that did not finish.`,
+            fileOperations: appliedOps,
+            rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts },
+            featureChanged: false,
+          },
+        });
+      } catch (emitErr) {
+        console.error('[chatWithMorpheus] could not deliver the landed build:', emitErr.message);
+      }
+    } else {
+      // Mirrors functions.routes.js's normal error shape (message/code/needed/
+      // available) so the frontend's stream reader can react the same way it
+      // would to a non-streamed error response — see base44Client.js's
+      // invokeStream, in particular the INSUFFICIENT_CREDITS handling.
+      emit({ type: 'error', message: err.message || 'Internal error', code: err.code, needed: err.needed, available: err.available });
+    }
   } finally {
     res.end();
   }
