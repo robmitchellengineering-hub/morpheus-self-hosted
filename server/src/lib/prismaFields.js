@@ -120,6 +120,35 @@ function keysOfArgument(args, argName) {
 }
 
 /**
+ * Replace comments and string literals with spaces **of the same length**, so the text left
+ * behind is only code and every index still lines up with the original `content` — `callArgs`
+ * walks indices, so removing characters would silently shift every match.
+ *
+ * A missed call costs nothing; a false "that column does not exist" blocks good code, so
+ * blanking too much is the safe direction. That is the same trade this module's header makes.
+ */
+function blankProse(src) {
+  return String(src)
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length))
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, (m) => ' '.repeat(m.length))
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, (m) => ' '.repeat(m.length))
+    .replace(/`(?:[^`\\]|\\.)*`/g, (m) => ' '.repeat(m.length));
+}
+
+/**
+ * Whether a proposed file could contain an executable Prisma call at all.
+ *
+ * This gate exists to catch a runtime failure in code. In a `.md`, `.sql` or `.json` file a
+ * `prisma.x.y({ … })` is an example, and reporting it as an unknown column accuses the user of
+ * a defect that cannot exist. Conservative in the same direction as everything else here: an
+ * unrecognised extension is skipped, which can cost a missed check but never a false one.
+ */
+export function isCodePath(path) {
+  return /\.(js|jsx|mjs|cjs|ts|tsx)$/i.test(String(path || ''));
+}
+
+/**
  * Fields a proposed file uses that the model does not have.
  *
  * @param {string} schemaText        schema.prisma
@@ -131,12 +160,16 @@ export function unknownPrismaFields(schemaText, content) {
   const { byModel, byClientProp } = modelFields(schemaText);
   if (byModel.size === 0) return [];
 
+  // Prose is not a claim: a commented-out call, or one quoted inside a string, is read as code
+  // by the raw regex. Blanking preserves every index, so `callArgs` still lines up.
+  const codeText = blankProse(content);
+
   const out = [];
-  for (const m of content.matchAll(OPENERS)) {
+  for (const m of codeText.matchAll(OPENERS)) {
     const model = byClientProp.get(m[1]);
     if (!model) continue;                 // prisma.$transaction, a client extension, etc.
     const fields = byModel.get(model);
-    const args = callArgs(content, m.index + m[0].length - 1);
+    const args = callArgs(codeText, m.index + m[0].length - 1);
     if (args === null) continue;          // unbalanced — do not guess
     for (const argName of ['data', 'where']) {
       for (const key of keysOfArgument(args, argName)) {
