@@ -15,6 +15,7 @@
 // still has the Postgres copy.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
+import { usableMemoryText } from './deckMemoryText.js';
 import { getDeckGoogleConnection, DECK_BACKUP_FOLDER_NAME } from './deckGoogle.js';
 import { createDriveFolder, listDriveFolderFiles, createDriveFile, updateDriveFileContent } from './googleDrive.js';
 import { getDeckBusinessContext } from './deckBusinessProfile.js';
@@ -114,19 +115,30 @@ export async function getJarvisMemory(userId) {
       // and syncDeckGmailInbox.js's classifier both learned the hard way).
       maxTokens: 4000,
     });
-    const newContent = (result?.memory || existingContent).trim();
+    const returned = usableMemoryText(result);
+    if (!returned) {
+      // The schema does not mark `memory` as required, so a valid JSON object with no
+      // usable text is reachable. This used to keep the old content AND advance
+      // `folded_message_count` by the batch size, which marked those turns as folded
+      // when they had never been folded — and the caller skips `alreadyFolded`, so they
+      // were never offered again. A silent, permanent hole in the memory the whole Deck
+      // reasons over. Advance nothing instead, so the batch comes back, and say so —
+      // the same honesty the catch below already has.
+      console.warn(`[deckMemory] the model returned no memory text; leaving folded_message_count at ${alreadyFolded} so this batch is folded again`);
+      return existingContent;
+    }
 
     await prisma.deckJarvisMemory.upsert({
       where: { created_by_id: userId },
-      create: { created_by_id: userId, content: newContent, folded_message_count: alreadyFolded + batch.length },
-      update: { content: newContent, folded_message_count: alreadyFolded + batch.length },
+      create: { created_by_id: userId, content: returned, folded_message_count: alreadyFolded + batch.length },
+      update: { content: returned, folded_message_count: alreadyFolded + batch.length },
     });
 
-    mirrorToDrive(userId, newContent).catch((err) => {
+    mirrorToDrive(userId, returned).catch((err) => {
       console.error('[deckMemory] Drive mirror failed, continuing with the Postgres copy only:', err.message);
     });
 
-    return newContent;
+    return returned;
   } catch (e) {
     // A context-quality enhancement, never a chat blocker — fall back to
     // whatever memory already exists (possibly none) and let the recent

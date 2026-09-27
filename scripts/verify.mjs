@@ -28,6 +28,7 @@ const HARD = [
   'verify-cors.mjs',
   'verify-context.mjs',
   'verify-dump-classify.mjs',
+  'verify-deck-memory.mjs',
   'verify-insight-optout.mjs',
   'verify-seo.mjs',
   'verify-pairing.mjs',
