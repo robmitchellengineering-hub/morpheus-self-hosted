@@ -38,6 +38,8 @@ const HARD = [
   'verify-salvage-json.mjs',
   'verify-google-reconnect.mjs',
   'verify-deck-ui.mjs',
+  'verify-stale-chunk.mjs',
+  'verify-lint-coverage.mjs',
   'verify-deck-prompt-bounds.mjs',
   'verify-usage-observability.mjs',
   'verify-deck-memory.mjs',
