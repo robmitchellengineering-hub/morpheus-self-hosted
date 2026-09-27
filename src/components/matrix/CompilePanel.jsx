@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Hammer, X, Loader2, CheckCircle, XCircle, AlertTriangle, Download, ExternalLink, Bot, Eye, Server, Wifi, Sliders, Timer, Square, RefreshCw } from 'lucide-react';
+import { Hammer, X, Loader2, CheckCircle, XCircle, AlertTriangle, Download, ExternalLink, Bot, Eye, Server, Wifi, Sliders, Timer, Square, RefreshCw, Rocket, Copy, Check } from 'lucide-react';
 import GithubGate from '@/components/matrix/GithubGate';
 import { useRunTimer } from '@/hooks/useRunTimer';
 import { getCompileEstimate } from '@/lib/compileEstimates';
@@ -77,6 +77,16 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   // Compiled artifacts that were part of the release but did NOT save (a
   // partial save). Empty on every complete build.
   const [saveFailures, setSaveFailures] = useState([]);
+  // "Take it live" (2026-09-28) — takes the compiled web app live on the user's
+  // OWN Netlify account. Its own state, reset with the rest of the panel so a
+  // closed and reopened COMPILE panel does not show a URL from the last build.
+  const [live, setLive] = useState({ phase: 'idle', url: null, error: null, code: null });
+  const [linkCopied, setLinkCopied] = useState(false);
+  // The ref is what actually stops a second press in the same tick — React
+  // state is not visible to it yet. Same failure the deck's add guard was
+  // written for (Rob, 2026-09-28: "i was able to hot the button twice ... it
+  // needs to be obvious something is happening and you need to wait").
+  const liveInFlight = useRef(false);
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [showNetFlash, setShowNetFlash] = useState(false);
@@ -111,6 +121,10 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
 
   const target = project?.compile_target || 'source';
   const isSupported = SUPPORTED.includes(target);
+  // One source of truth for "the publish is running": it disables the control
+  // AND drives the sentence that says why, so a greyed-out button never reads
+  // as a dead one.
+  const liveBusy = live.phase === 'deploying';
 
   // Fires one completion email per compile session (success or final failure)
   // so the operator can step away during long auto-fix loops and be pulled back.
@@ -156,6 +170,9 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     setStatus(null);
     setError(null);
     setSaveFailures([]);
+    setLive({ phase: 'idle', url: null, error: null, code: null });
+    setLinkCopied(false);
+    liveInFlight.current = false;
     setPreview(null);
     setPreviewing(false);
     errorCountRef.current = 0;
@@ -398,6 +415,47 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     }
   };
 
+  // Publish the compiled build to the user's OWN Netlify account. There is no
+  // Morpheus hosting account behind this — if the user has not connected
+  // Netlify, the server says exactly that and this shows the sentence verbatim
+  // (apiFetch rejects with the server's own message and machine code in
+  // err.data, forwarded by functions.routes.js), never a generic failure.
+  const handleTakeLive = async () => {
+    if (liveInFlight.current) return;
+    liveInFlight.current = true;
+    setLinkCopied(false);
+    setLive({ phase: 'deploying', url: null, error: null, code: null });
+    try {
+      const res = await base44.functions.invoke('deployFrontend', { projectId: project.id });
+      const data = res?.data || {};
+      setLive({
+        phase: 'live',
+        url: data.url || null,
+        error: data.url ? null : 'Netlify accepted the upload but returned no URL — open app.netlify.com to find the site.',
+        code: null,
+      });
+    } catch (e) {
+      setLive({
+        phase: 'error',
+        url: null,
+        error: e?.data?.error || e?.message || String(e),
+        code: e?.data?.code || null,
+      });
+    } finally {
+      liveInFlight.current = false;
+    }
+  };
+
+  const copyLiveUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(live.url);
+      setLinkCopied(true);
+    } catch {
+      // Clipboard access can be refused (permissions, non-secure context). The
+      // link above is still tappable, so this needs no error of its own.
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -575,6 +633,59 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                     // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
                   </p>
                 </>
+              )}
+              {/* 2026-09-28 — the gap this closes: Morpheus could build a web app
+                  and could not host it. This publishes the compiled build to the
+                  user's OWN Netlify account (their token, their site) and shows
+                  the URL. web-app only: no other target produces a static build
+                  to host, and the server refuses the rest by name. */}
+              {target === 'web-app' && (
+                <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-ink text-sm">
+                    <Rocket size={14} className="text-primary" />
+                    {live.phase === 'live' ? 'YOUR SITE IS LIVE' : 'TAKE IT LIVE'}
+                  </div>
+
+                  {live.phase === 'live' && live.url ? (
+                    <>
+                      <p className="text-xs text-ink-strong">
+                        // Published to your own Netlify account — no Morpheus hosting involved. Share this URL:
+                      </p>
+                      <a href={live.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm text-ink break-all">
+                        <ExternalLink size={14} className="text-primary shrink-0" /> <span className="font-mono">{live.url}</span>
+                      </a>
+                      <div className="flex items-center gap-2">
+                        <button onClick={copyLiveUrl} className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-xs">
+                          {linkCopied ? <Check size={12} /> : <Copy size={12} />} {linkCopied ? 'COPIED' : 'COPY LINK'}
+                        </button>
+                        <button onClick={handleTakeLive} disabled={liveBusy} className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-xs disabled:opacity-40">
+                          {liveBusy ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />} RE-DEPLOY
+                        </button>
+                      </div>
+                      {liveBusy && <p className="text-[11px] text-ink-max">Publishing the new build to your Netlify — wait for it to finish, don&apos;t close this panel.</p>}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-ink-strong">
+                        // Publish this build to your own Netlify account and get a working URL (something.netlify.app). Your token, your site.
+                      </p>
+                      <button onClick={handleTakeLive} disabled={liveBusy} className="flex items-center gap-2 w-full justify-center py-2.5 border border-primary text-primary hover:bg-primary hover:text-black transition-colors text-sm font-bold disabled:opacity-40">
+                        {liveBusy ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} {liveBusy ? 'PUBLISHING TO YOUR NETLIFY…' : 'TAKE IT LIVE'}
+                      </button>
+                      {liveBusy && <p className="text-[11px] text-ink-max">Publishing — wait for it to finish, don&apos;t close this panel.</p>}
+                      {live.phase === 'error' && live.error && (
+                        <div className="text-xs text-red-500 border border-red-500/30 p-2 space-y-2">
+                          <p>{live.error}</p>
+                          {live.code === 'BACKEND_NOT_DEPLOYED' && onBuildBackend && (
+                            <button onClick={onBuildBackend} className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/50 text-primary/85 hover:border-primary hover:text-primary text-xs">
+                              <Server size={12} /> BUILD &amp; DEPLOY BACKEND
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
               {status?.assets?.length === 0 && (
                 <p className="text-xs text-yellow-500/80">
