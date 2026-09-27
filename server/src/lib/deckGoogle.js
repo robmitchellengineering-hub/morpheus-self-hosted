@@ -22,6 +22,7 @@ export const DECK_BACKUP_FOLDER_NAME = 'Command Deck Backup';
 export const MURBAH_CALENDAR_EXTENDED_PROPERTIES = { private: { morpheusDeckMurbah: '1' } };
 export const MURBAH_CALENDAR_QUERY = 'morpheusDeckMurbah=1';
 const DOCS_API = 'https://docs.googleapis.com/v1/documents';
+const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 
 // ── Per-user connection ──────────────────────────────────────────────────
 
@@ -226,6 +227,27 @@ export async function createGoogleDoc(token, title) {
   const data = await apiJson(res);
   if (!res.ok) throw new Error(`Doc create failed: ${data.error?.message || data._error || res.status}`);
   return data;
+}
+
+/**
+ * Delete a Drive file by id.
+ *
+ * Here for one job: `createDeckDocument` creates a document and then fills it, so a
+ * failed fill used to leave an empty titled document sitting in the operator's own
+ * Drive — junk produced by an operation that reported failure. Deleting it is the
+ * cleanup, and it is best-effort at the call site: a failure to tidy up must not
+ * replace the real error.
+ */
+export async function deleteDriveFile(token, fileId) {
+  const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await apiJson(res).catch(() => ({}));
+    throw new Error(`Drive delete failed: ${data.error?.message || data._error || res.status}`);
+  }
+  return true;
 }
 
 export async function batchUpdateGoogleDoc(token, documentId, requests) {
