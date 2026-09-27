@@ -1398,6 +1398,11 @@ OPERATOR SAYS: ${message}`;
           //
           // Only truncation is recoverable; any other error still throws. Nothing already produced is
           // discarded, and a partial build is never reported as complete — see the reply below.
+          // Count the ops this chunk produced from the array's growth, so the log below can report it
+          // without reaching for anything declared inside the `try`. `const chunkOps` is scoped to that
+          // block, and reading it after the block threw a ReferenceError on EVERY chunked build —
+          // discarding the whole turn. Introduced by dbd73f7; this is the fix for it.
+          const opsBeforeChunk = fileOps.length;
           try {
             const chunkCoder = await invokeAI({
               userId: user.id,
@@ -1432,7 +1437,7 @@ OPERATOR SAYS: ${message}`;
               }
             }
           }
-          console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} done (${Math.round((Date.now() - chunkStartedAt) / 1000)}s, ${chunkOps.length} file op(s))`);
+          console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} done (${Math.round((Date.now() - chunkStartedAt) / 1000)}s, ${fileOps.length - opsBeforeChunk} file op(s))`);
         }
       } else {
         // Fallback: the Planner didn't enumerate plannedFiles (shouldn't
