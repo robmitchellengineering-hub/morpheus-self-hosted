@@ -11,12 +11,19 @@ export default async function handler({ user, body }) {
 
   const projectName = String(body?.projectName || 'your project').slice(0, 100);
   const target = String(body?.target || 'source').slice(0, 50);
-  const result = body?.result === 'success' ? 'success' : 'failed';
+  // 'partial' is the honest middle: the build succeeded and some compiled
+  // files saved, but at least one release asset did not (see
+  // saveCompiledArtifacts.js). Reading that as ✓ "build complete" is the defect
+  // this is here to stop; reading it as ✗ "finished without success" hides
+  // every file that did land.
+  const result = ['success', 'partial'].includes(body?.result) ? body.result : 'failed';
   const summary = String(body?.summary || '').slice(0, 400);
 
   const subject = result === 'success'
     ? `✓ Morpheus — ${projectName} build complete`
-    : `✗ Morpheus — ${projectName} build needs attention`;
+    : result === 'partial'
+      ? `⚠ Morpheus — ${projectName} build finished with missing files`
+      : `✗ Morpheus — ${projectName} build needs attention`;
 
   const text = result === 'success'
     ? [
@@ -26,15 +33,25 @@ export default async function handler({ user, body }) {
         '',
         '— Morpheus',
       ].join('\n')
-    : [
-        `Your ${target} build for "${projectName}" finished without success.`,
-        '',
-        summary,
-        '',
-        'Open Morpheus and check the COMPILE panel, or ask Morpheus in chat to resolve it.',
-        '',
-        '— Morpheus',
-      ].join('\n');
+    : result === 'partial'
+      ? [
+          `Your ${target} build for "${projectName}" succeeded, but not every compiled file was saved.`,
+          '',
+          summary,
+          '',
+          'The files that did save are in your project file tree under _compiled/. Open Morpheus and tap RECOMPILE to retry the rest.',
+          '',
+          '— Morpheus',
+        ].join('\n')
+      : [
+          `Your ${target} build for "${projectName}" finished without success.`,
+          '',
+          summary,
+          '',
+          'Open Morpheus and check the COMPILE panel, or ask Morpheus in chat to resolve it.',
+          '',
+          '— Morpheus',
+        ].join('\n');
 
   await sendMail({ to: user.email, subject, text });
 
