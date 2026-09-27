@@ -194,11 +194,16 @@ export function todayKey() {
 export function todayISO() {
   return new Date(`${todayKey()}T00:00:00.000Z`).toISOString();
 }
-// Tiered consignment commission: 30% on the whole price up to $2000, 20% above.
-export function commissionFor(price) {
-  const p = Number(price) || 0;
-  return p <= 2000 ? p * 0.3 : p * 0.2;
-}
+// 2026-09-28: the consignment fee is no longer a constant in this file. Rob: "Consignment is a
+// set fee structure but i can change it in settings." It is now per-account settings
+// (DeckBusinessProfile.fee_*), so the derivation moved to ./feeTiers — a pure module with no
+// imports, which lets scripts/verify-deck-fee-tiers.mjs exercise the REAL derivation in CI's
+// no-install guards job (importing this file would drag in lucide-react). Re-exported rather
+// than aliased so every existing `commissionFor` importer from here keeps working.
+export {
+  DEFAULT_FEE_TIERS, normalizeFeeTiers, feeTiersFromProfile, commissionFor,
+  consignorProceeds, formatFeeRate, feeRateLabel, parseFeeTierInput,
+} from './feeTiers';
 export function money(n) {
   const v = Number(n);
   if (Number.isNaN(v)) return '$0';

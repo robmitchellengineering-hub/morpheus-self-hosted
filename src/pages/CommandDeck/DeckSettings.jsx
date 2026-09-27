@@ -7,7 +7,7 @@ import { base44 } from '@/api/base44Client';
 import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
 import { startTokenCheckout } from '@/lib/purchaseCredits';
 import { DECK_WIDGETS } from './deckWidgets';
-import { C } from './deckConstants';
+import { C, money, DEFAULT_FEE_TIERS, formatFeeRate, parseFeeTierInput, feeTiersFromProfile, commissionFor, consignorProceeds, feeRateLabel } from './deckConstants';
 import { Card, pillBtn, miniInput, MicField, MicTextarea } from './DeckUI';
 
 // Install card, the Connections section (Google today, built to grow),
@@ -312,11 +312,26 @@ function WidgetManager() {
 // carries the new business_context field: what every Valiant-Music-specific
 // prompt (Jarvis, the Gmail filter, brain-dump classification, doc
 // drafting, suggested replies) used to hardcode inline now reads from here.
+//
+// 2026-09-28 — also carries the consignment fee structure. Rob: "Consignment is a set fee
+// structure but i can change it in settings." Blank means the DEFAULT (30% up to $2000, 20%
+// above) — the columns are nullable precisely so an account that never opens this keeps exactly
+// today's behaviour. The preview underneath is the point of the field: it shows the rate that
+// applies, the shop's cut and what the consignor receives, at a price the operator can type, so a
+// wrong unit (rates are percentages: 30 means 30%, not 0.3) is visible before anything is saved.
+const feeBlockStyle = { borderTop: `1px solid ${C.line}`, paddingTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' };
+const feeFieldStyle = { display: 'flex', flexDirection: 'column', gap: '0.15rem', flex: '1 1 90px' };
+const feeFieldLabelStyle = { fontSize: '0.68rem', color: C.walnutSoft };
+
 function BusinessProfileForm() {
   const { businessProfile, businessProfileBusy, saveBusinessProfile } = useCommandDeck();
-  const [form, setForm] = useState({ shop_name: '', tagline: '', contact_email: '', business_context: '' });
+  const [form, setForm] = useState({
+    shop_name: '', tagline: '', contact_email: '', business_context: '',
+    fee_threshold: '', fee_rate_under: '', fee_rate_over: '',
+  });
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [samplePrice, setSamplePrice] = useState('2500');
 
   useEffect(() => {
     if (businessProfile && !dirty) {
@@ -325,6 +340,11 @@ function BusinessProfileForm() {
         tagline: businessProfile.tagline || '',
         contact_email: businessProfile.contact_email || '',
         business_context: businessProfile.business_context || '',
+        // `?? ''` and not `|| ''`: 0 is a real, storable rate ("no fee"), so it must not collapse
+        // back to blank and read as "use the default".
+        fee_threshold: businessProfile.fee_threshold ?? '',
+        fee_rate_under: businessProfile.fee_rate_under ?? '',
+        fee_rate_over: businessProfile.fee_rate_over ?? '',
       });
     }
   }, [businessProfile, dirty]);
@@ -332,8 +352,17 @@ function BusinessProfileForm() {
   const update = (field) => (e) => { setForm((f) => ({ ...f, [field]: e.target.value })); setDirty(true); };
   const updateValue = (field) => (value) => { setForm((f) => ({ ...f, [field]: value })); setDirty(true); };
 
+  // ONE rule for what the fee fields mean: it decides whether Save is allowed AND builds the
+  // payload, so the button and the request cannot disagree about a value being acceptable.
+  const parsed = parseFeeTierInput(form);
+  const previewTiers = feeTiersFromProfile(parsed.fields);
+  const sample = Number(samplePrice) || 0;
+
   const save = async () => {
-    await saveBusinessProfile(form);
+    if (!parsed.ok) return;
+    // The text fields go as typed; the fee columns are replaced by the parsed numbers (or null
+    // for blank) so the API never receives "30" as a string where a Float column is expected.
+    await saveBusinessProfile({ ...form, ...parsed.fields });
     setDirty(false);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2000);
@@ -352,7 +381,34 @@ function BusinessProfileForm() {
           rows={4}
           style={miniInput}
         />
-        <button onClick={save} disabled={businessProfileBusy || !dirty} style={{ ...pillBtn(C.brass), opacity: businessProfileBusy || !dirty ? 0.6 : 1 }}>
+        <div style={feeBlockStyle}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: C.brass }}>Consignment fee</div>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <label style={feeFieldStyle}>
+              <span style={feeFieldLabelStyle}>Up to $</span>
+              <input inputMode="decimal" placeholder={String(DEFAULT_FEE_TIERS.threshold)} value={form.fee_threshold} onChange={update('fee_threshold')} style={miniInput} />
+            </label>
+            <label style={feeFieldStyle}>
+              <span style={feeFieldLabelStyle}>Our cut up to it (%)</span>
+              <input inputMode="decimal" placeholder={formatFeeRate(DEFAULT_FEE_TIERS.rateUnder)} value={form.fee_rate_under} onChange={update('fee_rate_under')} style={miniInput} />
+            </label>
+            <label style={feeFieldStyle}>
+              <span style={feeFieldLabelStyle}>Our cut above it (%)</span>
+              <input inputMode="decimal" placeholder={formatFeeRate(DEFAULT_FEE_TIERS.rateOver)} value={form.fee_rate_over} onChange={update('fee_rate_over')} style={miniInput} />
+            </label>
+          </div>
+          {Object.values(parsed.errors).map((msg) => (
+            <span key={msg} style={{ fontSize: '0.72rem', color: C.alert }}>{msg}</span>
+          ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', fontSize: '0.72rem', color: C.walnutSoft }}>
+            <span>At</span>
+            <input inputMode="decimal" value={samplePrice} onChange={(e) => setSamplePrice(e.target.value)} style={{ ...miniInput, width: 72 }} aria-label="Sample price" />
+            <span>
+              {feeRateLabel(sample, previewTiers)} rate → our cut {money(commissionFor(sample, previewTiers))}, consignor gets {money(consignorProceeds(sample, previewTiers))}
+            </span>
+          </div>
+        </div>
+        <button onClick={save} disabled={businessProfileBusy || !dirty || !parsed.ok} style={{ ...pillBtn(C.brass), opacity: businessProfileBusy || !dirty || !parsed.ok ? 0.6 : 1 }}>
           {businessProfileBusy ? 'Saving…' : 'Save'}
         </button>
         {saved && <span style={{ fontSize: '0.75rem', color: C.sage, fontWeight: 600 }}>✓ Saved</span>}

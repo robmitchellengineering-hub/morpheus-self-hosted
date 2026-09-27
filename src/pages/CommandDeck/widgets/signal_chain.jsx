@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink, Check, X, Paperclip, FileText, Loader2, RefreshCw, Calendar, Pencil } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
-import { C, STREAM_META, STREAM_ORDER, STATUS_STYLE, WP_ADMIN_URL, murbahStageLabel, repairStageLabel, money, commissionFor } from '../deckConstants';
+import { C, STREAM_META, STREAM_ORDER, STATUS_STYLE, WP_ADMIN_URL, murbahStageLabel, repairStageLabel, money, commissionFor, consignorProceeds, feeRateLabel } from '../deckConstants';
 import { Card, EmptyNote, PendingNote, miniInput, rowBox, ghostBtn, pillBtn, checkBtn, MicField, MicTextarea } from '../DeckUI';
 
 // What a sold item says about the money. The commission is the STORED fee (see the schema note),
@@ -17,7 +17,7 @@ function soldLabel(i) {
   return `sold ${money(i.sold_price)} · our cut ${money(i.fee)} · ${money(toConsignor)} to ${(i.consignor || 'the consignor').trim()}`;
 }
 
-function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onRemove, uploadFile, adding }) {
+function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onRemove, uploadFile, adding, feeTiers }) {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   // The sale fields that change after intake: what it actually sold for, and whether the consignor
@@ -82,7 +82,7 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onR
         <span style={{ fontSize: '0.68rem', color: C.walnutSoft }}>
           {formSoldPrice === null
             ? 'leave blank if it is still on the floor'
-            : `logs it as sold · our cut ${money(commissionFor(formSoldPrice))}, ${money(formSoldPrice - commissionFor(formSoldPrice))} to the consignor`}
+            : `logs it as sold · our cut ${money(commissionFor(formSoldPrice, feeTiers))}, ${money(consignorProceeds(formSoldPrice, feeTiers))} to the consignor`}
         </span>
       </div>
       </div>
@@ -100,7 +100,7 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onR
       <PendingNote show={adding} text="Adding it — the shop list updates in a moment…" />
       {form.price && (
         <p style={{ fontSize: '0.72rem', color: C.walnutSoft, margin: '0 0 0.5rem' }}>
-          At {money(form.price)}: {Number(form.price) > 2000 ? '20%' : '30%'} rate → your cut {money(commissionFor(form.price))}
+          At {money(form.price)}: {feeRateLabel(form.price, feeTiers)} rate → your cut {money(commissionFor(form.price, feeTiers))}
         </p>
       )}
       {items.length > 0 && (
@@ -121,7 +121,7 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onR
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '0.85rem', fontWeight: 600, textDecoration: i.sold ? 'line-through' : 'none' }}>{i.item}</div>
               <div style={{ fontSize: '0.72rem', color: C.walnutSoft }}>
-                {i.consignor}{i.phone ? ` · ${i.phone}` : ''} · {money(i.price)} · you get {money(commissionFor(i.price))}
+                {i.consignor}{i.phone ? ` · ${i.phone}` : ''} · {money(i.price)} · you get {money(commissionFor(i.price, feeTiers))}
               </div>
               {i.sold && (editing?.id === i.id ? (
                 <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.35rem' }}>
@@ -454,7 +454,7 @@ export default function SignalChainWidget() {
     rForm, setRForm, addRepair, updateRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
     cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
     murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
-    setLightboxImg, askToDelete, uploadFile, addPending,
+    setLightboxImg, askToDelete, uploadFile, addPending, feeTiers,
   } = useCommandDeck();
 
   return (
@@ -491,7 +491,7 @@ export default function SignalChainWidget() {
               {open && (
                 <div style={{ border: `1px solid ${C.line}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '0.8rem 0.75rem', background: C.tweedDark }}>
                   {id === 'consignment' && (
-                    <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onUpdate={updateConsignment} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} adding={!!addPending.consignment} />
+                    <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onUpdate={updateConsignment} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} adding={!!addPending.consignment} feeTiers={feeTiers} />
                   )}
                   {id === 'repairs' && (
                     <RepairsPanel

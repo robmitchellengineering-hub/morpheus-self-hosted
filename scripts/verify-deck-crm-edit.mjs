@@ -42,14 +42,14 @@ check('no date field is written as a raw Date object',
 check('the renderer reads it as a string', /\(r\.promised_date \|\| ''\)\.slice\(0, 10\)/.test(ui), true);
 
 console.log('\n2. the sale price and the commission cannot disagree');
-check('the commission is derived from the STORED tiered rule, not invented',
+check('the commission is derived from the account\'s own fee tiers, not invented',
   /import \{[\s\S]*commissionFor[\s\S]*\} from '@\/pages\/CommandDeck\/deckConstants';/.test(ctx), true);
 check('creating an already-sold item writes price, date, fee and payout together',
-  /sold_price: soldPrice,\s*sold_date: soldPrice !== null \? new Date\(\)\.toISOString\(\) : null,\s*fee: soldPrice !== null \? commissionFor\(soldPrice\) : null,\s*paid_out: soldPrice !== null \? !!cForm\.paid_out : false,/.test(ctx), true);
+  /sold_price: soldPrice,\s*sold_date: soldPrice !== null \? new Date\(\)\.toISOString\(\) : null,\s*fee: soldPrice !== null \? commissionFor\(soldPrice, feeTiers\) : null,\s*paid_out: soldPrice !== null \? !!cForm\.paid_out : false,/.test(ctx), true);
 check('editing the price recomputes the fee in the same patch',
-  /if \('sold_price' in next\) \{\s*const p = [^\n]*\n\s*next\.sold_price = p;\s*next\.fee = p === null \? null : commissionFor\(p\);/.test(ctx), true);
+  /if \('sold_price' in next\) \{\s*const p = [^\n]*\n\s*next\.sold_price = p;\s*next\.fee = p === null \? null : commissionFor\(p, feeTiers\);/.test(ctx), true);
 check('…and there is exactly one such derivation for an edit',
-  (ctx.match(/next\.fee = p === null \? null : commissionFor\(p\);/g) || []).length, 1);
+  (ctx.match(/next\.fee = p === null \? null : commissionFor\(p, feeTiers\);/g) || []).length, 1);
 check('un-selling clears the payout state rather than leaving a paid-but-unsold row',
   /\{ sold: false, sold_date: null, paid_out: false \}/.test(ctx), true);
 check('marking it sold stamps a sale date', /sold: true, sold_date: c\.sold_date \|\| new Date\(\)\.toISOString\(\)/.test(ctx), true);

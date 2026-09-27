@@ -14,6 +14,7 @@
 // always scopes to the caller, matching how Base44 functions used
 // `asServiceRole` to intentionally bypass RLS for public listings.
 import { prisma } from './db.js';
+import { deckProfileSelect, isMissingDeckProfileColumn, withoutDeckProfileFeeFields } from './lib/deckProfileColumns.js';
 
 // Map REST entity name (PascalCase, matches base44 entity name / Prisma model name)
 // to the Prisma delegate key (camelCase).
@@ -89,24 +90,55 @@ function parseSort(sort) {
   return { [field]: desc ? 'desc' : 'asc' };
 }
 
+// DeckBusinessProfile-only, and the H11 rule this change is subject to (see
+// lib/deckProfileColumns.js): the fee columns ship in schema.prisma while the hand-run SQL lands
+// later, so every read/write of this model names its columns and steps back to the
+// pre-migration shape the moment Prisma says a column is missing. The alternative — reading with
+// no `select`, which is what this file used to do — is P2022 on every Deck load until the SQL
+// runs, i.e. the whole Deck down over one unapplied setting.
+function readDeckProfile(run) {
+  return run(deckProfileSelect()).catch((err) => {
+    if (!isMissingDeckProfileColumn(err)) throw err;
+    return run(deckProfileSelect({ withFee: false }));
+  });
+}
+
+function writeDeckProfile(run, data) {
+  return run(data).catch((err) => {
+    if (!isMissingDeckProfileColumn(err)) throw err;
+    return run(withoutDeckProfileFeeFields(data));
+  });
+}
+
 export async function listEntities(name, user, { sort, limit } = {}) {
-  return delegate(name).findMany({
+  const query = {
     where: scope(user, name),
     orderBy: parseSort(sort),
     take: limit ? Number(limit) : undefined,
-  });
+  };
+  if (name === 'DeckBusinessProfile') {
+    return readDeckProfile((select) => delegate(name).findMany({ ...query, select }));
+  }
+  return delegate(name).findMany(query);
 }
 
 export async function filterEntities(name, user, { query = {}, sort, limit } = {}) {
-  return delegate(name).findMany({
+  const args = {
     where: scope(user, name, query),
     orderBy: parseSort(sort),
     take: limit ? Number(limit) : undefined,
-  });
+  };
+  if (name === 'DeckBusinessProfile') {
+    return readDeckProfile((select) => delegate(name).findMany({ ...args, select }));
+  }
+  return delegate(name).findMany(args);
 }
 
 export async function getEntity(name, user, id) {
-  const row = await delegate(name).findFirst({ where: scope(user, name, { id }) });
+  const run = (extra) => delegate(name).findFirst({ where: scope(user, name, { id }), ...extra });
+  const row = name === 'DeckBusinessProfile'
+    ? await readDeckProfile((select) => run({ select }))
+    : await run({});
   if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
   return row;
 }
@@ -136,7 +168,9 @@ function assertNotReserved(name, data) {
 export async function createEntity(name, user, data) {
   const { id, created_by_id, created_date, updated_date, ...rest } = data || {};
   assertNotReserved(name, rest);
-  return delegate(name).create({ data: { ...rest, created_by_id: user.id } });
+  const write = (fields) => delegate(name).create({ data: { ...fields, created_by_id: user.id } });
+  if (name === 'DeckBusinessProfile') return writeDeckProfile(write, rest);
+  return write(rest);
 }
 
 export async function updateEntity(name, user, id, data) {
@@ -152,7 +186,9 @@ export async function updateEntity(name, user, id, data) {
       { status: 403, code: 'RESERVED_PROJECT_TYPE' },
     );
   }
-  return delegate(name).update({ where: { id }, data: rest });
+  const write = (fields) => delegate(name).update({ where: { id }, data: fields });
+  if (name === 'DeckBusinessProfile') return writeDeckProfile(write, rest);
+  return write(rest);
 }
 
 export async function deleteEntity(name, user, id) {

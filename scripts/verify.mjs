@@ -34,6 +34,7 @@ const HARD = [
   'verify-deck-document.mjs',
   'verify-deck-snapshot.mjs',
   'verify-deck-crm-edit.mjs',
+  'verify-deck-fee-tiers.mjs',
   'verify-deck-add-guard.mjs',
   'verify-salvage-json.mjs',
   'verify-google-reconnect.mjs',

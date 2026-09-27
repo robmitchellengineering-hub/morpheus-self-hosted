@@ -8,10 +8,31 @@
 // Settings → Business profile yet gets a generic fallback rather than a
 // blocked feature.
 import { prisma } from '../db.js';
+import { deckProfileSelect, isMissingDeckProfileColumn } from './deckProfileColumns.js';
 
 const DEFAULT_BUSINESS_CONTEXT = 'a small business (no further detail set in Settings yet)';
 
+// Named columns, plus the H11 step-down in lib/deckProfileColumns.js. This read runs on every
+// Jarvis message (and every Gmail sync, dump classification and draft), so a fee_* column the
+// database has not been migrated for yet must not 500 the whole feature: the second attempt asks
+// only for the columns that existed before 2026-09-28, where the fee tiers are simply absent and
+// resolve to the defaults.
+async function findProfile(userId) {
+  try {
+    return await prisma.deckBusinessProfile.findUnique({
+      where: { created_by_id: userId },
+      select: deckProfileSelect(),
+    });
+  } catch (err) {
+    if (!isMissingDeckProfileColumn(err)) throw err;
+    return prisma.deckBusinessProfile.findUnique({
+      where: { created_by_id: userId },
+      select: deckProfileSelect({ withFee: false }),
+    });
+  }
+}
+
 export async function getDeckBusinessContext(userId) {
-  const profile = await prisma.deckBusinessProfile.findUnique({ where: { created_by_id: userId } });
+  const profile = await findProfile(userId);
   return profile?.business_context?.trim() || DEFAULT_BUSINESS_CONTEXT;
 }
