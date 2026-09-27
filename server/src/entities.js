@@ -14,6 +14,7 @@
 // always scopes to the caller, matching how Base44 functions used
 // `asServiceRole` to intentionally bypass RLS for public listings.
 import { prisma } from './db.js';
+import { decodeConnections, encodeConnections } from './lib/connectionSecrets.js';
 import { deckProfileSelect, isMissingDeckProfileColumn, withoutDeckProfileFeeFields, deckProfileWriteResult } from './lib/deckProfileColumns.js';
 
 // Map REST entity name (PascalCase, matches base44 entity name / Prisma model name)
@@ -96,6 +97,24 @@ function parseSort(sort) {
 // pre-migration shape the moment Prisma says a column is missing. The alternative — reading with
 // no `select`, which is what this file used to do — is P2022 on every Deck load until the SQL
 // runs, i.e. the whole Deck down over one unapplied setting.
+// UserSettings.connections is ENCRYPTED AT REST (2026-09-28) — the column, the schema comment and
+// the Connections UI all say so, and until this change only the last two were true.
+//
+// The wire format deliberately does NOT change: the client still receives this field as a JSON
+// STRING and still parses it (src/pages/Settings.jsx does `JSON.parse(rows[0].connections)`), so
+// encrypting at rest without decrypting on the way out would silently blank every connection the
+// user had saved — they would look "not connected" for a token that was stored perfectly. All of it
+// therefore happens here, in the one layer both the client and every server caller go through.
+function withDecryptedConnections(row) {
+  if (!row || typeof row !== 'object' || row.connections == null) return row;
+  return { ...row, connections: JSON.stringify(decodeConnections(row.connections)) };
+}
+
+function writeUserSettingsSecrets(data) {
+  if (!data || typeof data !== 'object' || !('connections' in data) || data.connections == null) return data;
+  return { ...data, connections: encodeConnections(data.connections) };
+}
+
 function readDeckProfile(run) {
   return run(deckProfileSelect()).catch((err) => {
     if (!isMissingDeckProfileColumn(err)) throw err;
@@ -123,7 +142,8 @@ export async function listEntities(name, user, { sort, limit } = {}) {
   if (name === 'DeckBusinessProfile') {
     return readDeckProfile((select) => delegate(name).findMany({ ...query, select }));
   }
-  return delegate(name).findMany(query);
+  const rows = await delegate(name).findMany(query);
+  return name === 'UserSettings' && Array.isArray(rows) ? rows.map(withDecryptedConnections) : rows;
 }
 
 export async function filterEntities(name, user, { query = {}, sort, limit } = {}) {
@@ -135,7 +155,8 @@ export async function filterEntities(name, user, { query = {}, sort, limit } = {
   if (name === 'DeckBusinessProfile') {
     return readDeckProfile((select) => delegate(name).findMany({ ...args, select }));
   }
-  return delegate(name).findMany(args);
+  const rows = await delegate(name).findMany(args);
+  return name === 'UserSettings' && Array.isArray(rows) ? rows.map(withDecryptedConnections) : rows;
 }
 
 export async function getEntity(name, user, id) {
@@ -144,7 +165,7 @@ export async function getEntity(name, user, id) {
     ? await readDeckProfile((select) => run({ select }))
     : await run({});
   if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
-  return row;
+  return name === 'UserSettings' ? withDecryptedConnections(row) : row;
 }
 
 // `project_type` is documented as frontend|backend, and those two are set by the
@@ -174,6 +195,7 @@ export async function createEntity(name, user, data) {
   assertNotReserved(name, rest);
   const write = (fields) => delegate(name).create({ data: { ...fields, created_by_id: user.id } });
   if (name === 'DeckBusinessProfile') return writeDeckProfile(write, rest);
+  if (name === 'UserSettings') return writeUserSettingsSecrets(write(rest));
   return write(rest);
 }
 
@@ -192,6 +214,11 @@ export async function updateEntity(name, user, id, data) {
   }
   const write = (fields) => delegate(name).update({ where: { id }, data: fields });
   if (name === 'DeckBusinessProfile') return writeDeckProfile(write, rest);
+  if (name === 'UserSettings') {
+    // The row that comes back is echoed to the client, so it must be decrypted like a read —
+    // otherwise the save itself would appear to have wiped the connections.
+    return withDecryptedConnections(await writeUserSettingsSecrets(write(rest)));
+  }
   return write(rest);
 }
 

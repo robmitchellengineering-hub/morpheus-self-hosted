@@ -282,6 +282,11 @@ jobs:
       - name: Deploy health is owner-scoped
         run: node scripts/verify-deploy-health-scope.mjs
 
+      # Provider credentials were stored as plain JSON while the schema and the UI both promised
+      # "encrypted at rest". Behavioural checks on the helper, plus a tree walk for a raw reader.
+      - name: Connections are encrypted at rest
+        run: node scripts/verify-connection-secrets.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds
