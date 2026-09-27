@@ -11,7 +11,7 @@
 // own comment above createGoogleDoc/batchUpdateGoogleDoc).
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
-import { getDeckGoogleToken, createGoogleDoc, batchUpdateGoogleDoc } from '../lib/deckGoogle.js';
+import { getDeckGoogleToken, createGoogleDoc, batchUpdateGoogleDoc, deleteDriveFile } from '../lib/deckGoogle.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 
 const MAX_HISTORY_MESSAGES = 20;
@@ -118,8 +118,22 @@ Structure it with real headings/subheadings only where they genuinely help, plai
   if (blocks.length === 0) throw new Error('Jarvis could not draft this document — try rephrasing the instruction.');
 
   const { token } = await getDeckGoogleToken(user.id);
+  // Built BEFORE the document exists, so a bad block cannot leave one behind.
+  const requests = buildDocRequests(blocks);
+
   const doc = await createGoogleDoc(token, title);
-  await batchUpdateGoogleDoc(token, doc.documentId, buildDocRequests(blocks));
+  try {
+    await batchUpdateGoogleDoc(token, doc.documentId, requests);
+  } catch (err) {
+    // Create-then-fill means a failed fill leaves an EMPTY document titled `title` in the
+    // operator's own Drive — junk, in their account, from an operation that reported
+    // failure, and nothing ever cleaned it up. Remove it; if the cleanup itself fails, log
+    // that rather than replacing the error the operator needs to see.
+    await deleteDriveFile(token, doc.documentId).catch((cleanupErr) => {
+      console.error(`[createDeckDocument] left an empty document behind — could not remove ${doc.documentId}:`, cleanupErr?.message || cleanupErr);
+    });
+    throw err;
+  }
 
   return { url: `https://docs.google.com/document/d/${doc.documentId}/edit`, documentId: doc.documentId, title };
 }

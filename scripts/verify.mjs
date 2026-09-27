@@ -31,6 +31,7 @@ const HARD = [
   'verify-dump-filing.mjs',
   'verify-gmail-sync.mjs',
   'verify-deck-draft.mjs',
+  'verify-deck-document.mjs',
   'verify-deck-memory.mjs',
   'verify-insight-optout.mjs',
   'verify-seo.mjs',

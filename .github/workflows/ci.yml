@@ -221,6 +221,11 @@ jobs:
       - name: Reply draft failure
         run: node scripts/verify-deck-draft.mjs
 
+      # A failed Google-Doc fill must not leave an empty document in the operator's own
+      # Drive, which nothing ever cleaned up.
+      - name: Deck document cleanup
+        run: node scripts/verify-deck-document.mjs
+
       # The proactive-insight opt-out gate, plus the cross-boundary contract
       # that the widget it keys off still exists in the frontend registry with
       # the copy that makes the control discoverable.
