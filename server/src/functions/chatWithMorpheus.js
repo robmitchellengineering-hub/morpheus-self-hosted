@@ -1946,7 +1946,7 @@ OPERATOR SAYS: ${message}`;
     // knows it's unchanged rather than assuming it was edited.
     const unresolved = [...new Set([
       ...editFailPaths,
-      ...appliedOps.filter((op) => op.action === 'edit_failed').map((op) => op.path),
+      ...appliedOps.filter((op) => op.action === 'edit_failed' || op.action === 'apply_failed').map((op) => op.path),
     ])];
     if (unresolved.length > 0) {
       fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
