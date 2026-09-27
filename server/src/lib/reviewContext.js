@@ -58,6 +58,18 @@ const dirOf = (p) => {
   return i === -1 ? '.' : p.slice(0, i);
 };
 
+// The file's own name within its directory. Derived from the last '/' rather than from
+// `p.slice(dirOf(p).length + 1)`, which is wrong for a root-level path: `dirOf('app.js')`
+// is `'.'`, so `'.'.length + 1` is 2 and `app.js` came out as `p.js` (and `index.html` as
+// `dex.html`). A web-app project keeps its entry file, `index.html` and `styles.css` at the
+// root, so that is the common case — and the section below is the evidence that answers
+// "does this import resolve", so a reviewer shown `p.js` can conclude the `app.js` it is
+// asking about does not exist and raise a false NO SUCH FILE.
+const baseOf = (p) => {
+  const i = p.lastIndexOf('/');
+  return i === -1 ? p : p.slice(i + 1);
+};
+
 // Resolve a relative specifier against the file that imports it. No node:path, so
 // this module stays dependency-free and a guard can import it directly.
 function resolveRelative(fromPath, spec) {
@@ -216,7 +228,7 @@ export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, max
   if (targets.size > 0) {
     const blocks = [];
     for (const [dir, entries] of targets) {
-      const inDir = allPaths.filter((p) => dirOf(p) === dir).map((p) => p.slice(dir.length + 1));
+      const inDir = allPaths.filter((p) => dirOf(p) === dir).map(baseOf);
       const shown = inDir.slice(0, maxImportDirPaths);
       const lines = entries.map((e) => {
         if (!e.target) {
