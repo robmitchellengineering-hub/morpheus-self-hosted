@@ -42,6 +42,7 @@ const HARD = [
   'verify-stale-chunk.mjs',
   'verify-lint-coverage.mjs',
   'verify-deploy-health-scope.mjs',
+  'verify-connection-secrets.mjs',
   'verify-deck-prompt-bounds.mjs',
   'verify-usage-observability.mjs',
   'verify-deck-memory.mjs',

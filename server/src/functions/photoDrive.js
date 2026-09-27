@@ -24,6 +24,7 @@ import {
   CONNECTIONS_KEY, DEFAULT_FOLDER_NAME, chooseGoogleSource, classifyDriveError, driveFileLink,
   driveFolderLink, folderIdFromInput, photoFilename, validatePhoto,
 } from '../lib/photoDrive.js';
+import { decodeConnections, encodeConnections } from '../lib/connectionSecrets.js';
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const ACTIONS = ['status', 'set_folder', 'create_folder', 'upload'];
@@ -36,7 +37,7 @@ async function readFolderId(userId) {
   });
   if (!row?.connections) return null;
   try {
-    return JSON.parse(row.connections)?.[CONNECTIONS_KEY] ?? null;
+    return decodeConnections(row.connections)[CONNECTIONS_KEY] ?? null;
   } catch {
     return null;
   }
@@ -50,10 +51,12 @@ async function writeFolderId(userId, folderId) {
   });
   let all = {};
   try {
-    all = row?.connections ? JSON.parse(row.connections) : {};
+    all = decodeConnections(row?.connections);
   } catch { all = {}; }
   all[CONNECTIONS_KEY] = folderId;
-  const connections = JSON.stringify(all);
+  // The ONE direct write of this column outside the entity layer — it encrypts for the same
+  // reason every read decrypts (see lib/connectionSecrets.js).
+  const connections = encodeConnections(all);
   await prisma.userSettings.upsert({
     where: { created_by_id: userId },
     create: { created_by_id: userId, connections },
