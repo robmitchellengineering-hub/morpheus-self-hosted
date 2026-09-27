@@ -133,7 +133,7 @@ async function resolvePlatformTemperature(role) {
 // accounts (admins) skip the reconcile/charge entirely but still get a
 // UsageEvent logged with credits_charged: 0 -- exempt means "don't charge,"
 // not "don't meter" (TOKEN-SYSTEM-BUILD-PLAN.md Step 3).
-async function recordUsageEvent({ userId, role, provider, model, usage, isExempt, reservedCredits, task, durationMs }) {
+async function recordUsageEvent({ userId, role, provider, model, usage, isExempt, reservedCredits, task, durationMs, status = 'ok' }) {
   if (!userId || !usage) return; // no usage object = provider didn't report token counts
   try {
     const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
@@ -170,12 +170,13 @@ async function recordUsageEvent({ userId, role, provider, model, usage, isExempt
         output_tokens: outputTokens,
         cost_usd: costUsd,
         credits_charged: creditsCharged,
-        // Observability (2026-09-27). `status: 'ok'` here because this function is only reached
-        // when the provider answered with a usage object — a call that THREW writes no row at all,
-        // which is exactly why a failure rate could not be measured. Recording the failure path is
-        // the next change; these two fields are the ones the platform has never had.
+        // Observability (2026-09-27). `task` is the call site, `status`/`duration_ms` are what the
+        // platform never had: without them a call could not be attributed, timed, or told from a
+        // success when it failed. Both paths write — this one for a provider that answered, and
+        // `invokeAI`'s provider catch for one that threw — so a failure now leaves a record
+        // instead of no trace at all.
         task: task || null,
-        status: 'ok',
+        status: status === 'error' ? 'error' : 'ok',
         duration_ms: Number.isFinite(durationMs) ? durationMs : null,
       },
     });
@@ -582,6 +583,15 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     if (!isExempt && reservedCredits > 0) {
       await reconcileCredits(userId, reservedCredits, 0).catch(() => {}); // full refund — call never happened
     }
+    // A call that threw used to leave NO trace in usage_events — which is exactly why a failure rate
+    // could not be measured, and why every audit had to infer truncations from `output_tokens ==
+    // maxTokens`. Record the attempt: no tokens (the provider never reported any), the real duration,
+    // and status 'error'. Fire-and-forget, because recording a failure must never replace the error
+    // the caller needs to see.
+    recordUsageEvent({
+      userId, role, provider, model: resolvedModel, isExempt, reservedCredits: 0,
+      usage: { input_tokens: 0, output_tokens: 0 }, task, status: 'error', durationMs: Date.now() - callStartedAt,
+    }).catch(() => {});
     throw err;
   }
 
