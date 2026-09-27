@@ -317,6 +317,13 @@ jobs:
       - name: Caller-break gate
         run: node scripts/verify-caller-check.mjs
 
+      # A partial artifact save returned { saved, files, artifacts } with the per-asset
+      # failures dropped, so a distro release whose image failed read as "Build complete"
+      # and handed the user a README with no image. This asserts the pure outcome AND that
+      # both the handler and the CompilePanel keep the failures (no database needed).
+      - name: Compile-artifact save is honest about partials
+        run: node scripts/verify-compile-artifacts.mjs
+
       # A Prisma call naming a column that does not exist fails at runtime, and esbuild, lint
       # and the import guards are all blind to it.
       - name: Prisma field gate

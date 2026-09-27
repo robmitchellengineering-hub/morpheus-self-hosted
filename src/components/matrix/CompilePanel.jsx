@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Hammer, X, Loader2, CheckCircle, XCircle, Download, ExternalLink, Bot, Eye, Server, Wifi, Sliders, Timer, Square, RefreshCw } from 'lucide-react';
+import { Hammer, X, Loader2, CheckCircle, XCircle, AlertTriangle, Download, ExternalLink, Bot, Eye, Server, Wifi, Sliders, Timer, Square, RefreshCw } from 'lucide-react';
 import GithubGate from '@/components/matrix/GithubGate';
 import { useRunTimer } from '@/hooks/useRunTimer';
 import { getCompileEstimate } from '@/lib/compileEstimates';
@@ -74,6 +74,9 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const [repoUrl, setRepoUrl] = useState(null);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
+  // Compiled artifacts that were part of the release but did NOT save (a
+  // partial save). Empty on every complete build.
+  const [saveFailures, setSaveFailures] = useState([]);
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [showNetFlash, setShowNetFlash] = useState(false);
@@ -152,6 +155,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     setRepoUrl(null);
     setStatus(null);
     setError(null);
+    setSaveFailures([]);
     setPreview(null);
     setPreviewing(false);
     errorCountRef.current = 0;
@@ -221,6 +225,10 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           // it takes a few seconds. We await it so the user sees a saving
           // state and any error, instead of a silent failure that leaves them
           // wondering where their app is.
+          // A partial save is not a failed build — the assets that landed are
+          // kept on screen — but it is not "complete" either, so the success
+          // notification is skipped for it below.
+          let saveWasPartial = false;
           try {
             const saveResult = await onCompileSuccess?.(repo);
             if (saveResult?.error) {
@@ -235,6 +243,15 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
             if (saveResult?.artifacts?.length > 0) {
               setStatus((prev) => ({ ...(prev || {}), savedArtifacts: saveResult.artifacts }));
             }
+            // Some release assets did not land (e.g. the image failed while a
+            // README saved). Name them on screen and in the completion email —
+            // before 2026-09-27 this response carried no failures at all, so a
+            // glob target read as "Build complete" with the image missing.
+            if (saveResult?.partial && saveResult.failed?.length > 0) {
+              saveWasPartial = true;
+              setSaveFailures(saveResult.failed);
+              notifyComplete('partial', `Build finished with ${saveResult.failed.length} compiled file(s) not saved: ${saveResult.failed.join(', ')}`);
+            }
           } catch (saveErr) {
             setPhase('error');
             setError(`Build succeeded but saving the artifact failed: ${saveErr?.message || saveErr}. Tap RECOMPILE to retry.`);
@@ -242,7 +259,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
             return;
           }
           setPhase('done');
-          notifyComplete('success', 'Build complete');
+          if (!saveWasPartial) notifyComplete('success', 'Build complete');
         } else {
           setPhase('error');
           setError('Build failed. Fetching logs and diagnosing...');
@@ -534,12 +551,31 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           )}
           {phase === 'done' && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-ink text-sm">
-                <CheckCircle size={16} /> Build complete!
-              </div>
-              <p className="text-xs text-ink-strong">
-                // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
-              </p>
+              {saveFailures.length > 0 ? (
+                <>
+                  <div className="flex items-center gap-2 text-yellow-500 text-sm">
+                    <AlertTriangle size={16} /> BUILD FINISHED — {saveFailures.length} COMPILED FILE{saveFailures.length === 1 ? '' : 'S'} DID NOT SAVE
+                  </div>
+                  <p className="text-xs text-ink-strong">
+                    // The build succeeded, but these compiled files did not land and are not in your file tree:
+                  </p>
+                  <ul className="space-y-0.5 pl-4 list-disc text-xs text-ink-strong font-mono">
+                    {saveFailures.map((name) => <li key={name}>{name}</li>)}
+                  </ul>
+                  <p className="text-xs text-ink-strong">
+                    // Everything that did save is available below. Tap RECOMPILE to retry the missing files.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-ink text-sm">
+                    <CheckCircle size={16} /> Build complete!
+                  </div>
+                  <p className="text-xs text-ink-strong">
+                    // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
+                  </p>
+                </>
+              )}
               {status?.assets?.length === 0 && (
                 <p className="text-xs text-yellow-500/80">
                   // Build succeeded but published no downloadable artifact. Check the release on GitHub.

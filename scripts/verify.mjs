@@ -22,6 +22,7 @@ const HARD = [
   'verify-ai-roles.mjs',
   'verify-review-context.mjs',
   'verify-caller-check.mjs',
+  'verify-compile-artifacts.mjs',
   'verify-prisma-fields.mjs',
   'verify-seo-static.mjs',
   'verify-cors.mjs',
