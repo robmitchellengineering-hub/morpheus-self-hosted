@@ -42,6 +42,14 @@ import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 // that's a real wait, not a bug; the frontend already shows a loading
 // state for it. Fixing the wait time is a separate problem (a bigger
 // compute plan, or trimming the snapshot/prompt itself), not this cap.
+// The scheduled insight is a batch job, not an interactive reply, so it can afford the
+// tokens a longer answer needs. It shared this 6000 with the conversational reply and
+// hit the ceiling: `[deck-insight] … failed: OUTPUT_TRUNCATED (role=unknown,
+// maxTokens=6000)` appears four times in the week to 2026-09-26 for a single account,
+// and five role-less calls reached 6000 output tokens. `role=unknown` is deliberate —
+// this is the persona path, on the platform default — so the budget is the lever, not
+// the model.
+const MAX_SCHEDULED_TOKENS = 12000;
 const MAX_REPLY_TOKENS = 6000;
 
 const SHARED_PERSONA = (firstName, businessContext) =>
@@ -117,7 +125,7 @@ Jarvis:`;
     const { result } = await invokeAI({
       userId: user.id,
       prompt,
-      maxTokens: MAX_REPLY_TOKENS,
+      maxTokens: MAX_SCHEDULED_TOKENS,
       schema: SCHEDULED_SCHEMA,
     });
 
