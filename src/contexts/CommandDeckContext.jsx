@@ -6,7 +6,7 @@ import {
   isYou, todayKey, todayISO, randomDeleteConfirmPhrase,
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
-import { summarizeFiling } from './dumpFiling';
+import { summarizeFiling } from '@/pages/CommandDeck/dumpFiling';
 
 // All of Command Deck's shared state, data loading, and CRUD handlers —
 // lifted out of the old single-file CommandDeck.jsx unchanged, so every tab
