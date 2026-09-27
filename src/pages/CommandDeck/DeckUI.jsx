@@ -212,12 +212,17 @@ export function StreamList({ items, onAdd, onRemove, placeholder, accent, icon: 
   );
 }
 
+// minWidth/boxSizing are load-bearing, not tidiness (Rob, 2026-09-28: "the calender buttons are
+// haning off the tile on mobile"). A flex item refuses to shrink below its content's intrinsic
+// width unless minWidth is 0, and a default <input> is ~170px wide plus padding — so any row of
+// input + button overflowed a phone-width card. Every deck field uses one of these two, so the
+// floor belongs here rather than in each of the rows.
 export const inputStyle = {
-  flex: 1, padding: '0.6rem 0.75rem', borderRadius: 10, border: `1px solid ${C.line}`,
+  flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '0.6rem 0.75rem', borderRadius: 10, border: `1px solid ${C.line}`,
   background: C.paper, fontSize: '0.88rem', color: C.ink, outline: 'none',
 };
 export const miniInput = {
-  padding: '0.45rem 0.6rem', borderRadius: 8, border: `1px solid ${C.line}`,
+  minWidth: 0, boxSizing: 'border-box', padding: '0.45rem 0.6rem', borderRadius: 8, border: `1px solid ${C.line}`,
   background: C.paper, fontSize: '0.8rem', color: C.ink, outline: 'none',
 };
 export const rowBox = {

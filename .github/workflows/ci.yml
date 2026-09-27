@@ -262,6 +262,21 @@ jobs:
       - name: Google reconnect
         run: node scripts/verify-google-reconnect.mjs
 
+      # A capability nobody can find is not a capability, and a control row that runs off a phone
+      # tile is not a layout bug worth rediscovering: both are pinned by name.
+      - name: Deck UI reach and fit
+        run: node scripts/verify-deck-ui.mjs
+
+      # A page left open across a deploy holds chunk names the CDN has replaced; that reads as a
+      # crash. It must recover itself once, and never loop on a genuine failure.
+      - name: Stale-deploy chunk recovery
+        run: node scripts/verify-stale-chunk.mjs
+
+      # A file that matches no ESLint config block is not clean, it is UNCHECKED. This repo has now
+      # had that gap four times, including src/main.jsx and src/App.jsx.
+      - name: Lint coverage
+        run: node scripts/verify-lint-coverage.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds
