@@ -932,6 +932,51 @@ OPERATOR SAYS: ${message}`;
   const emit = (event) => { try { res.write(JSON.stringify(event) + '\n'); } catch { /* client disconnected mid-stream */ } };
   const stages = makeStageEmitter(emit);
 
+  // ── Build state, declared OUTSIDE the try below ───────────────────────────
+  // The catch, and the reply-building after the build, both read these — and a
+  // let/const declared inside a try block is scoped to that block, so a sibling
+  // catch cannot see it. The recovery path therefore threw
+  // "ReferenceError: appliedOps is not defined" instead of delivering the reply:
+  // the exact failure it was written to prevent. dbd73f7, 67d779e and 3b72ef1 each
+  // moved more of these inside the try, and #361 caught only the coder's chunkOps.
+  // Values and ordering are unchanged — only the scope is.
+  let reply;
+  // Files the coder could not produce because its output was cut off by the token
+  // limit, even after a one-file retry. Named in the reply — a partial build must
+  // never read as complete.
+  let truncatedFiles = [];
+  let fullReply;
+  let appliedOps = [];
+  let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
+  let syntaxCritical = []; // files that still didn't parse after a fix attempt
+  // The caller and schema gates report rather than retry, so their findings are kept apart
+  // from `syntaxCritical`: one list told the user a broken caller was "a syntax error after
+  // 2 fix attempts", which was wrong about the kind of error AND about the attempts.
+  let callerCritical = []; // imports this change breaks (no fix loop — it reports)
+  let schemaCritical = []; // Prisma columns that do not exist (no fix loop — it reports)
+
+  // Rework attribution (2026-09-24): a third of code-producing turns need
+  // more than one coder pass, and the call data could not say WHICH of the
+  // three retry loops demanded it — the syntax gate, the bundle/deep-verify
+  // gate, or the reviewer. Identical numbers, opposite fixes: one is a bad
+  // coder prompt, another is a fragile import graph, the third is a strict
+  // reviewer. Counted per gate and carried in the turn's RESULT, not just a
+  // log line, so it lands in the durable run record where a run can be read
+  // back days later instead of reconstructed.
+  let syntaxFixAttempts = 0;
+  let bundleFixAttempts = 0;
+  // Counted separately from `bundle` on purpose. The deep-verify fix loop now
+  // also carries Morpheus's house rules (lib/conventionChecks.js), and folding
+  // those into the bundle count would make the run record say the code failed to
+  // bundle when what it actually did was take the wrong ink rung.
+  let conventionFixAttempts = 0;
+  let reviewerFixAttempts = 0;
+  let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
+  const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
+  let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
+  const a11yReverted = []; // an a11y fix that broke parsing, put back rather than applied
+  let polishCount = 0;
+
   try {
     // ── Phase 0a: Web research — search + read pasted URLs before planning ──
     // Runs for both CONTEXT and BUILD mode (it's just as useful when
@@ -1195,7 +1240,7 @@ OPERATOR SAYS: ${message}`;
     stages.done('planner');
 
     const plannerResult = planner.result;
-    const reply = plannerResult.reply || '...';
+    reply = plannerResult.reply || '...';
     const needsCode = !!plannerResult.needsCode;
     const needsClarification = !!plannerResult.needsClarification;
 
@@ -1230,36 +1275,7 @@ OPERATOR SAYS: ${message}`;
     }
 
     // ── Phase 2: Coder implements the plan (only if code is needed) ────────────
-    let appliedOps = [];
-    let editFailPaths = []; // files whose diff edits never matched (surfaced in the reply)
-    let syntaxCritical = []; // files that still didn't parse after a fix attempt
-    // The caller and schema gates report rather than retry, so their findings are kept apart
-    // from `syntaxCritical`: one list told the user a broken caller was "a syntax error after
-    // 2 fix attempts", which was wrong about the kind of error AND about the attempts.
-    let callerCritical = []; // imports this change breaks (no fix loop — it reports)
-    let schemaCritical = []; // Prisma columns that do not exist (no fix loop — it reports)
-
-    // Rework attribution (2026-09-24): a third of code-producing turns need
-    // more than one coder pass, and the call data could not say WHICH of the
-    // three retry loops demanded it — the syntax gate, the bundle/deep-verify
-    // gate, or the reviewer. Identical numbers, opposite fixes: one is a bad
-    // coder prompt, another is a fragile import graph, the third is a strict
-    // reviewer. Counted per gate and carried in the turn's RESULT, not just a
-    // log line, so it lands in the durable run record where a run can be read
-    // back days later instead of reconstructed.
-    let syntaxFixAttempts = 0;
-    let bundleFixAttempts = 0;
-    // Counted separately from `bundle` on purpose. The deep-verify fix loop now
-    // also carries Morpheus's house rules (lib/conventionChecks.js), and folding
-    // those into the bundle count would make the run record say the code failed to
-    // bundle when what it actually did was take the wrong ink rung.
-    let conventionFixAttempts = 0;
-    let reviewerFixAttempts = 0;
-    let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
-    const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
-    let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
-    const a11yReverted = []; // an a11y fix that broke parsing, put back rather than applied
-    let polishCount = 0;
+    // The declarations this phase used to make are above the try — see the note there.
     let coderModel;
     let reviewerModel;
     let reviewSummary;
@@ -1358,9 +1374,6 @@ OPERATOR SAYS: ${message}`;
         : [];
 
       let fileOps = [];
-      // Files the coder could not produce because its output was cut off by the token limit, even
-      // after a one-file retry. Named in the reply — a partial build must never read as complete.
-      const truncatedFiles = [];
       let coderModelLast;
       stages.start('coder');
 
@@ -1941,7 +1954,7 @@ OPERATOR SAYS: ${message}`;
     const reviewBlock = (reviewSummary || reviewIssues.some((i) => i.severity === 'critical')) && appliedOps.length > 0
       ? formatReviewChatBlock({ summary: reviewSummary, approved: !reviewIssues.some((i) => i.severity === 'critical'), issues: reviewIssues })
       : '';
-    let fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
+    fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
     fullReply += sourcesLine;
     if (polishCount > 0) {
       fullReply += `\n\n// POLISH: refined styling on ${polishCount} file(s).`;
