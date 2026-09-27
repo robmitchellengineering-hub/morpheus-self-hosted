@@ -485,6 +485,16 @@ model UsageEvent {
   // lib/billing.js). Decimal to match User.credit_balance's precision.
   credits_charged Decimal  @default(0) @db.Decimal(14, 4)
 
+  // ── observability (2026-09-27) ─────────────────────────────────────────────
+  // What this row could never answer before: WHICH call site it was, whether the call
+  // SUCCEEDED, and how long it took. A call that throws before the provider answers writes no
+  // row at all, so a failure rate was not measurable — every audit this project ran had to
+  // infer truncation from `output_tokens == maxTokens` and attribute calls by timestamp joins.
+  // Nullable on purpose: null means "not recorded", which is honest for every existing row.
+  task            String?  // the call site's own label, e.g. 'deck-insight', 'schema_mapping'
+  status          String?  // 'ok' | 'error' (null for rows written before this existed)
+  duration_ms     Int?
+
   project_id      String?  // best-effort correlation only, not a hard FK -- not every
                             // invokeAI() call site has a project in scope (e.g. Architect)
 
