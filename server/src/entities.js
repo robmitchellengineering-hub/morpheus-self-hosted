@@ -14,7 +14,7 @@
 // always scopes to the caller, matching how Base44 functions used
 // `asServiceRole` to intentionally bypass RLS for public listings.
 import { prisma } from './db.js';
-import { deckProfileSelect, isMissingDeckProfileColumn, withoutDeckProfileFeeFields } from './lib/deckProfileColumns.js';
+import { deckProfileSelect, isMissingDeckProfileColumn, withoutDeckProfileFeeFields, deckProfileWriteResult } from './lib/deckProfileColumns.js';
 
 // Map REST entity name (PascalCase, matches base44 entity name / Prisma model name)
 // to the Prisma delegate key (camelCase).
@@ -106,7 +106,11 @@ function readDeckProfile(run) {
 function writeDeckProfile(run, data) {
   return run(data).catch((err) => {
     if (!isMissingDeckProfileColumn(err)) throw err;
-    return run(withoutDeckProfileFeeFields(data));
+    // The retry stores everything BUT the fee structure, so it must not come back looking like a
+    // plain success: deckProfileWriteResult adds fee_fields_dropped:true when (and only when) this
+    // fallback was used for a write that carried fee fields. Settings says so in words.
+    return run(withoutDeckProfileFeeFields(data))
+      .then((row) => deckProfileWriteResult(row, data, { droppedFeeFields: true }));
   });
 }
 

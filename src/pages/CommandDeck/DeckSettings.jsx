@@ -331,6 +331,10 @@ function BusinessProfileForm() {
   });
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  // The server had to drop the fee fields to make the save work (the fee_* migration has not been
+  // applied in this environment yet). Kept past the 2s tick, because "Saved" over a setting that
+  // was not stored is worse than a failed save — the operator has to see it and know what to do.
+  const [feeDropped, setFeeDropped] = useState(false);
   const [samplePrice, setSamplePrice] = useState('2500');
 
   useEffect(() => {
@@ -362,9 +366,10 @@ function BusinessProfileForm() {
     if (!parsed.ok) return;
     // The text fields go as typed; the fee columns are replaced by the parsed numbers (or null
     // for blank) so the API never receives "30" as a string where a Float column is expected.
-    await saveBusinessProfile({ ...form, ...parsed.fields });
+    const { feeFieldsDropped } = await saveBusinessProfile({ ...form, ...parsed.fields });
     setDirty(false);
     setSaved(true);
+    setFeeDropped(feeFieldsDropped);
     window.setTimeout(() => setSaved(false), 2000);
   };
 
@@ -411,7 +416,12 @@ function BusinessProfileForm() {
         <button onClick={save} disabled={businessProfileBusy || !dirty || !parsed.ok} style={{ ...pillBtn(C.brass), opacity: businessProfileBusy || !dirty || !parsed.ok ? 0.6 : 1 }}>
           {businessProfileBusy ? 'Saving…' : 'Save'}
         </button>
-        {saved && <span style={{ fontSize: '0.75rem', color: C.sage, fontWeight: 600 }}>✓ Saved</span>}
+        {saved && !feeDropped && <span style={{ fontSize: '0.75rem', color: C.sage, fontWeight: 600 }}>✓ Saved</span>}
+        {feeDropped && (
+          <span style={{ fontSize: '0.72rem', color: C.alert }}>
+            Saved, except the fee structure — that needs a database update before it can be stored.
+          </span>
+        )}
       </div>
     </Card>
   );

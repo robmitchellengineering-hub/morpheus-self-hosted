@@ -28,6 +28,9 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reviewSql } from '../server/src/lib/prodSqlGuard.js';
 import {
+  deckProfileWriteResult, hasDeckProfileFeeFields, DECK_PROFILE_FEE_DROPPED,
+} from '../server/src/lib/deckProfileColumns.js';
+import {
   DEFAULT_FEE_TIERS, commissionFor, feeTiersFromProfile, feeRateLabel, consignorProceeds,
   parseFeeTierInput, normalizeFeeTiers,
 } from '../src/pages/CommandDeck/feeTiers.js';
@@ -153,6 +156,34 @@ check('the fallback is the OLD column set, not an empty one',
 check('the three fee columns are named in exactly one list',
   (profileColumns.match(/'fee_threshold'/g) || []).length, 1);
 
+console.log('\n7b. a dropped fee write is VISIBLE, not a silent success');
+// The read fallback (above) is the safe degradation. The write fallback is the dangerous one: the
+// server strips the fee fields to let the rest of the save succeed, so without a marker the
+// operator gets a plain "Saved" over a fee structure that was never stored. These pin the marker
+// and the sentence that makes it visible.
+const settings = read('src/pages/CommandDeck/DeckSettings.jsx');
+check('the marker key is what the API sends', DECK_PROFILE_FEE_DROPPED, 'fee_fields_dropped');
+check('a write that dropped the fee fields is flagged',
+  deckProfileWriteResult({ id: 'x', shop_name: 'a' }, { shop_name: 'a', fee_rate_under: 25 }, { droppedFeeFields: true }),
+  { id: 'x', shop_name: 'a', fee_fields_dropped: true });
+check('a write that carried NO fee fields is not flagged',
+  deckProfileWriteResult({ id: 'x' }, { shop_name: 'a' }, { droppedFeeFields: true }), { id: 'x' });
+check('a write that kept its fee fields is not flagged',
+  deckProfileWriteResult({ id: 'x' }, { fee_rate_under: 25 }, {}), { id: 'x' });
+check('a fee field sent as null still counts as "the form asked to store it"',
+  hasDeckProfileFeeFields({ fee_threshold: null }), true);
+check('an ordinary profile save carries no fee field',
+  hasDeckProfileFeeFields({ shop_name: 'a', business_context: 'b' }), false);
+check('the marker is set by the fallback write path only',
+  /deckProfileWriteResult\(row, data, \{ droppedFeeFields: true \}\)/.test(entities), true);
+check('the context reads the marker and keeps it OUT of the profile state',
+  /feeFieldsDropped = saved\?\.fee_fields_dropped === true;/.test(ctx)
+  && /delete row\.fee_fields_dropped;/.test(ctx), true);
+check('Settings says what actually happened, in plain words, naming the action',
+  /Saved, except the fee structure — that needs a database update before it can be stored\./.test(settings), true);
+check('…and does not print a bare "✓ Saved" over it',
+  /\{saved && !feeDropped &&/.test(settings), true);
+
 console.log('\n8. nonsense is rejected rather than stored');
 check('a rate over 100% is refused', parseFeeTierInput({ fee_rate_under: '150' }).ok, false);
 check('a negative rate is refused', parseFeeTierInput({ fee_rate_over: '-1' }).ok, false);
@@ -168,7 +199,6 @@ check('a rate of 0 is accepted and stored as 0 — not treated as blank',
   parseFeeTierInput({ fee_rate_under: '0' }).fields.fee_rate_under, 0);
 check('rates are percentages: 0.3 means 0.3%, not a third',
   parseFeeTierInput({ fee_rate_under: '0.3' }).fields.fee_rate_under, 0.3);
-const settings = read('src/pages/CommandDeck/DeckSettings.jsx');
 check('the Settings field shows the unit in its label',
   /Our cut up to it \(%\)/.test(settings) && /Our cut above it \(%\)/.test(settings), true);
 check('the Settings live preview uses the same derivation',
