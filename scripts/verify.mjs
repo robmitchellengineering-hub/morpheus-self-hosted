@@ -34,6 +34,7 @@ const HARD = [
   'verify-deck-document.mjs',
   'verify-deck-snapshot.mjs',
   'verify-deck-prompt-bounds.mjs',
+  'verify-usage-observability.mjs',
   'verify-deck-memory.mjs',
   'verify-insight-optout.mjs',
   'verify-seo.mjs',

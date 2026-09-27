@@ -133,7 +133,7 @@ async function resolvePlatformTemperature(role) {
 // accounts (admins) skip the reconcile/charge entirely but still get a
 // UsageEvent logged with credits_charged: 0 -- exempt means "don't charge,"
 // not "don't meter" (TOKEN-SYSTEM-BUILD-PLAN.md Step 3).
-async function recordUsageEvent({ userId, role, provider, model, usage, isExempt, reservedCredits }) {
+async function recordUsageEvent({ userId, role, provider, model, usage, isExempt, reservedCredits, task, durationMs }) {
   if (!userId || !usage) return; // no usage object = provider didn't report token counts
   try {
     const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
@@ -170,6 +170,13 @@ async function recordUsageEvent({ userId, role, provider, model, usage, isExempt
         output_tokens: outputTokens,
         cost_usd: costUsd,
         credits_charged: creditsCharged,
+        // Observability (2026-09-27). `status: 'ok'` here because this function is only reached
+        // when the provider answered with a usage object — a call that THREW writes no row at all,
+        // which is exactly why a failure rate could not be measured. Recording the failure path is
+        // the next change; these two fields are the ones the platform has never had.
+        task: task || null,
+        status: 'ok',
+        duration_ms: Number.isFinite(durationMs) ? durationMs : null,
       },
     });
   } catch {
@@ -408,7 +415,10 @@ async function resolveEndpoint(settings, role) {
  *   which callers can surface as a retryable error.
  * @returns {Promise<{result: any, provider: string, model: string, usage?: object}>}
  */
-export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxTokens }) {
+export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxTokens, task }) {
+  // Timed from the first line of the call, so `duration_ms` is what the caller waited — the number
+  // the latency questions in every audit so far could only guess at.
+  const startedAt = Date.now();
   const settings = await getUserSettings(userId);
   const { provider, baseUrl, apiKey, model } = await resolveEndpoint(settings, role);
 
@@ -592,7 +602,7 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
 
   // Fire-and-forget: metering happens regardless of what follows (truncation
   // error, JSON-parse failure) since the provider already billed this call.
-  recordUsageEvent({ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits }).catch(() => {});
+  recordUsageEvent({ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits, task, durationMs: Date.now() - startedAt }).catch(() => {});
 
   // A schema call MUST throw here — half a JSON object is unusable and every
   // caller downstream expects a real parsed value. A plain-text call (no
