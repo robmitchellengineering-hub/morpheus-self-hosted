@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { Plus, ChevronDown, ChevronRight, Check, X, MessageSquare, Mail } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { C, ENERGY, isYou, smsHref, emailHref } from '../deckConstants';
-import { Card, MicField, inputStyle, miniInput, ghostBtn, pillBtn, checkBtn } from '../DeckUI';
+import { Card, MicField, PendingNote, inputStyle, miniInput, ghostBtn, pillBtn, checkBtn } from '../DeckUI';
 
 export default function TasksWidget() {
   const {
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
     people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,
-    askToDelete,
+    askToDelete, addPending,
   } = useCommandDeck();
   const [taskSearch, setTaskSearch] = useState('');
   const matches = (text, term) => !term.trim() || (text || '').toLowerCase().includes(term.trim().toLowerCase());
@@ -29,7 +29,7 @@ export default function TasksWidget() {
           style={{ ...inputStyle, flex: 1 }}
         />
       </div>
-      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem', flexWrap: 'wrap', opacity: addPending.task ? 0.6 : 1, pointerEvents: addPending.task ? 'none' : 'auto' }}>
         {people.map((p) => (
           <button
             key={p.id}
@@ -71,8 +71,11 @@ export default function TasksWidget() {
             {e.label}
           </button>
         ))}
-        <button onClick={addTask} style={{ ...pillBtn(C.brass), marginLeft: 'auto' }}>Add</button>
+        <button onClick={addTask} disabled={!!addPending.task} style={{ ...pillBtn(C.brass), marginLeft: 'auto', opacity: addPending.task ? 0.7 : 1 }}>
+          {addPending.task ? 'Adding…' : 'Add'}
+        </button>
       </div>
+      <PendingNote show={!!addPending.task} text="Adding the task — it will appear on the board in a moment…" />
 
       <button
         onClick={() => setManagePeople((v) => !v)}
@@ -100,12 +103,15 @@ export default function TasksWidget() {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', opacity: addPending.person ? 0.6 : 1, pointerEvents: addPending.person ? 'none' : 'auto' }}>
             <input placeholder="New person's name" value={personForm.name} onChange={(e) => setPersonForm({ ...personForm, name: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addPerson()} style={{ ...miniInput, flex: '1 1 100px' }} />
             <input placeholder="Phone" value={personForm.phone} onChange={(e) => setPersonForm({ ...personForm, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addPerson()} style={{ ...miniInput, flex: '1 1 100px' }} />
             <input placeholder="Email" value={personForm.email} onChange={(e) => setPersonForm({ ...personForm, email: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addPerson()} style={{ ...miniInput, flex: '1 1 100px' }} />
-            <button onClick={addPerson} style={pillBtn(C.brass)}>Add</button>
+            <button onClick={addPerson} disabled={!!addPending.person} style={{ ...pillBtn(C.brass), opacity: addPending.person ? 0.7 : 1 }}>
+              {addPending.person ? 'Adding…' : 'Add'}
+            </button>
           </div>
+          <PendingNote show={!!addPending.person} text="Adding them to your people…" />
         </div>
       )}
 

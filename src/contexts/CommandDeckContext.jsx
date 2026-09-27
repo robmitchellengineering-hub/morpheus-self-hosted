@@ -36,13 +36,46 @@ export function CommandDeckProvider({ children }) {
     window.setTimeout(() => setSaveErr(false), 4000);
   };
 
+  // ── ONE re-entrancy guard for every add action (2026-09-28) ───────────────
+  // Rob: "i was able to hot the button twice in repairs and it entered the entry twice ... it
+  // just greys out". Both halves are the same missing thing. Until now only the brain dump had
+  // a guard; every other add was `if (!input.trim()) return` followed by a network call, which
+  // two presses in the same tick BOTH pass — React state is not visible to a second press in
+  // the same tick, so a ref is what makes it airtight, and the state is what makes the wait
+  // visible. One definition, so a new add cannot be written without it (asserted by
+  // scripts/verify-deck-add-guard.mjs).
+  //
+  // `key` is per-form, not global: filing a dump while typing a repair must still work.
+  // Rejections are caught here and reported once — a handler that throws must not become an
+  // unhandled rejection, and it must not look like a success either.
+  const addInFlight = useRef(new Set());
+  const [addPending, setAddPending] = useState({});
+  const guardAdd = useCallback((key, fn) => {
+    if (addInFlight.current.has(key)) return Promise.resolve(false);
+    addInFlight.current.add(key);
+    setAddPending((p) => ({ ...p, [key]: true }));
+    return Promise.resolve()
+      .then(fn)
+      .then(
+        () => true,
+        (err) => {
+          console.error(`[deck] add "${key}" failed:`, err?.message || err);
+          flagSaveErr();
+          return false;
+        },
+      )
+      .finally(() => {
+        addInFlight.current.delete(key);
+        setAddPending((p) => {
+          const next = { ...p };
+          delete next[key];
+          return next;
+        });
+      });
+  }, []);
+
   const [dump, setDump] = useState([]);
   const [dumpInput, setDumpInput] = useState('');
-  // Filing a dump is a classifier round trip, so there is a real window where a second
-  // press lands. `dumpPending` drives the disabled button; `dumpInFlight` is the guard that
-  // actually stops it, because state is not visible to a second press in the same tick.
-  const [dumpPending, setDumpPending] = useState(false);
-  const dumpInFlight = useRef(false);
   const [quickFileMsg, setQuickFileMsg] = useState(null);
   const quickFileTimeout = useRef(null);
 
@@ -317,17 +350,9 @@ export function CommandDeckProvider({ children }) {
     quickFileTimeout.current = window.setTimeout(() => setQuickFileMsg(null), 2600);
   };
 
-  const addDump = async () => {
-    // Re-entrancy guard. Before this, pressing + while the first press was still out filed
-    // the SAME text again, once per press, because the input was only cleared after the
-    // whole classify-and-file loop had finished — seconds, on a classifier call. The ref
-    // (not the state) is what makes it airtight: a second press in the same tick still sees
-    // `dumpPending === false`, but never sees a stale ref.
-    if (dumpInFlight.current) return;
+  const addDump = () => guardAdd('dump', async () => {
     const text = dumpInput.trim();
     if (!text) return;
-    dumpInFlight.current = true;
-    setDumpPending(true);
     // Clear immediately, so even a press that slips past the guard finds nothing to submit.
     // Restored in the catch below, so a capture is never lost to a failure.
     setDumpInput('');
@@ -425,11 +450,8 @@ export function CommandDeckProvider({ children }) {
       // landed. Restoring the whole dump after some items filed would duplicate every one
       // of them on the retry, which is what this used to do.
       if (!labels.length) setDumpInput(text);
-    } finally {
-      dumpInFlight.current = false;
-      setDumpPending(false);
     }
-  };
+  });
   const removeDump = async (id) => {
     setDump((prev) => prev.filter((d) => d.id !== id));
     try { await base44.entities.DeckDumpItem.delete(id); } catch { flagSaveErr(); }
@@ -453,14 +475,14 @@ export function CommandDeckProvider({ children }) {
   };
 
   // ---- tasks ---------------------------------------------------------
-  const addTask = async () => {
+  const addTask = () => guardAdd('task', async () => {
     if (!taskInput.trim()) return;
     try {
       const created = await base44.entities.DeckTask.create({ text: taskInput.trim(), owner_person_id: taskOwner, energy: taskEnergy, done: false });
       setTasks((prev) => [created, ...prev]);
       setTaskInput('');
     } catch { flagSaveErr(); }
-  };
+  });
   const toggleTask = async (id) => {
     const t = tasks.find((x) => x.id === id);
     if (!t) return;
@@ -473,7 +495,7 @@ export function CommandDeckProvider({ children }) {
   };
 
   // ---- people ----------------------------------------------------------
-  const addPerson = async () => {
+  const addPerson = () => guardAdd('person', async () => {
     if (!personForm.name.trim()) return;
     try {
       const color = OWNER_COLOR_CYCLE[people.length % OWNER_COLOR_CYCLE.length];
@@ -483,7 +505,7 @@ export function CommandDeckProvider({ children }) {
       setPeople((prev) => [...prev, created]);
       setPersonForm({ name: '', phone: '', email: '' });
     } catch { flagSaveErr(); }
-  };
+  });
   const updatePersonPhone = (id, phone) => {
     setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, phone } : p)));
     debouncedSave(`person-${id}`, async () => {
@@ -541,7 +563,7 @@ export function CommandDeckProvider({ children }) {
   // A row is created either "on the floor" or as an already-completed sale: the shop takes
   // consignments that sell the same day, so the sold fields belong in the add form as well as on
   // the row (2026-09-27, the deck's CRM edit work).
-  const addConsignment = async () => {
+  const addConsignment = () => guardAdd('consignment', async () => {
     if (!cForm.item.trim()) return;
     const soldPrice = cForm.sold_price === '' ? null : Number(cForm.sold_price) || 0;
     try {
@@ -561,7 +583,7 @@ export function CommandDeckProvider({ children }) {
       setConsignment((prev) => [created, ...prev]);
       setCForm({ item: '', consignor: '', phone: '', price: '', sold_price: '', paid_out: false, photo_url: null });
     } catch { flagSaveErr(); }
-  };
+  });
   const toggleSold = async (id) => {
     const c = consignment.find((x) => x.id === id);
     if (!c) return;
@@ -593,7 +615,7 @@ export function CommandDeckProvider({ children }) {
   };
 
   // ---- repairs -------------------------------------------------------
-  const addRepair = async () => {
+  const addRepair = () => guardAdd('repair', async () => {
     if (!rForm.item.trim()) return;
     try {
       const created = await base44.entities.DeckRepairJob.create({
@@ -617,7 +639,7 @@ export function CommandDeckProvider({ children }) {
       setRepairs((prev) => [{ ...created, files }, ...prev]);
       setRForm({ customer: '', phone: '', item: '', notes: '', quote: '', promised_date: '', pendingFiles: [] });
     } catch { flagSaveErr(); }
-  };
+  });
   // Inline edit for the two things that change after a job is booked: what was quoted, and when it
   // was promised for.
   const updateRepair = async (id, patch) => {
@@ -638,14 +660,14 @@ export function CommandDeckProvider({ children }) {
     setRepairs((prev) => prev.filter((r) => r.id !== id));
     try { await base44.entities.DeckRepairJob.delete(id); } catch { flagSaveErr(); }
   };
-  const addFilesToJob = async (jobId, uploadedFiles) => {
+  const addFilesToJob = (jobId, uploadedFiles) => guardAdd(`jobFiles:${jobId}`, async () => {
     try {
       const created = await Promise.all(uploadedFiles.map((f) => base44.entities.DeckRepairFile.create({
         repair_job_id: jobId, name: f.name, file_url: f.file_url, is_image: f.is_image,
       })));
       setRepairs((prev) => prev.map((r) => (r.id === jobId ? { ...r, files: [...(r.files || []), ...created] } : r)));
     } catch { flagSaveErr(); }
-  };
+  });
   const removeFileFromJob = async (jobId, fileId) => {
     setRepairs((prev) => prev.map((r) => (r.id === jobId ? { ...r, files: (r.files || []).filter((f) => f.id !== fileId) } : r)));
     try { await base44.entities.DeckRepairFile.delete(fileId); } catch { flagSaveErr(); }
@@ -697,24 +719,24 @@ export function CommandDeckProvider({ children }) {
   };
 
   // ---- strategy / knowledge --------------------------------------------
-  const addStrategy = async (text) => {
+  const addStrategy = (text) => guardAdd('strategy', async () => {
     if (!text.trim()) return;
     try {
       const created = await base44.entities.DeckStrategyNote.create({ text: text.trim() });
       setStrategy((prev) => [created, ...prev]);
     } catch { flagSaveErr(); }
-  };
+  });
   const removeStrategy = async (id) => {
     setStrategy((prev) => prev.filter((s) => s.id !== id));
     try { await base44.entities.DeckStrategyNote.delete(id); } catch { flagSaveErr(); }
   };
-  const addKnowledge = async (text) => {
+  const addKnowledge = (text) => guardAdd('knowledge', async () => {
     if (!text.trim()) return;
     try {
       const created = await base44.entities.DeckKnowledgeNote.create({ text: text.trim() });
       setKnowledge((prev) => [created, ...prev]);
     } catch { flagSaveErr(); }
-  };
+  });
   const removeKnowledge = async (id) => {
     setKnowledge((prev) => prev.filter((k) => k.id !== id));
     try { await base44.entities.DeckKnowledgeNote.delete(id); } catch { flagSaveErr(); }
@@ -750,7 +772,7 @@ export function CommandDeckProvider({ children }) {
   };
 
   // ---- inbox -------------------------------------------------------------
-  const addInbox = async () => {
+  const addInbox = () => guardAdd('inbox', async () => {
     if (!iForm.message.trim()) return;
     try {
       const created = await base44.entities.DeckInboxItem.create({
@@ -759,7 +781,7 @@ export function CommandDeckProvider({ children }) {
       setInbox((prev) => [created, ...prev]);
       setIForm({ channel: iForm.channel, from: '', message: '' });
     } catch { flagSaveErr(); }
-  };
+  });
   const cycleInboxStage = async (id) => {
     const i = inbox.find((x) => x.id === id);
     if (!i) return;
@@ -1019,7 +1041,7 @@ export function CommandDeckProvider({ children }) {
     }
     setCalendarLoading(false);
   };
-  const addCalendarEvent = async () => {
+  const addCalendarEvent = () => guardAdd('calendar', async () => {
     if (!calendarForm.summary.trim() || !calendarForm.date) return;
     setCalendarBusy(true);
     try {
@@ -1028,7 +1050,7 @@ export function CommandDeckProvider({ children }) {
       await loadCalendarEvents();
     } catch { flagSaveErr(); }
     setCalendarBusy(false);
-  };
+  });
 
   // ---- jarvis ------------------------------------------------------------
   // fileUrls: photos/PDFs/Word/Excel attached via DeckJarvis.jsx's paperclip
@@ -1089,9 +1111,12 @@ export function CommandDeckProvider({ children }) {
     setDocBusy(false);
   };
 
+  // The dump widget asks for its own flag by name; every other form reads `addPending[key]`.
+  // Both come from the one guard above, so there is no second source of truth for "is an add
+  // still in flight".
   const value = {
-    loaded, saveErr,
-    dump, dumpInput, setDumpInput, dumpPending, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
+    loaded, saveErr, addPending,
+    dump, dumpInput, setDumpInput, dumpPending: !!addPending.dump, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
     people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,

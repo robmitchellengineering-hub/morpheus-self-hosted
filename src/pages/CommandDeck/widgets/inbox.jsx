@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Plus, X, RefreshCw, Reply, Send, Loader2 } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { C, CHANNELS, inboxStageLabel } from '../deckConstants';
-import { Card, IconButton, EmptyNote, inputStyle, miniInput, rowBox, ghostBtn, pillBtn, chipBtn } from '../DeckUI';
+import { Card, IconButton, EmptyNote, PendingNote, inputStyle, miniInput, rowBox, ghostBtn, pillBtn, chipBtn } from '../DeckUI';
 
 export default function InboxWidget() {
   const {
-    inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox, askToDelete,
+    inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox, askToDelete, addPending,
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
     replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, replyDraftErr, startReplyDraft, cancelReplyDraft, sendReplyDraft,
   } = useCommandDeck();
@@ -22,6 +22,7 @@ export default function InboxWidget() {
   const openCount = visibleInbox.filter((i) => i.stage !== 'done').length;
 
   const onAdd = addInbox;
+  const adding = !!addPending.inbox;
   const onCycle = cycleInboxStage;
   const onRemove = (id) => askToDelete(() => removeInbox(id));
   const form = iForm;
@@ -38,13 +39,13 @@ export default function InboxWidget() {
       search={inbox.length > 0 ? { value: inboxSearch, onChange: setInboxSearch, placeholder: 'Search inbox…' } : undefined}
     >
       <div>
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem', opacity: adding ? 0.6 : 1, pointerEvents: adding ? 'none' : 'auto' }}>
           <select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })} style={{ ...miniInput, flex: '0 1 110px' }}>
             {CHANNELS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
           <input placeholder="From (name)" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} style={{ ...miniInput, flex: '1 1 100px' }} />
         </div>
-        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.7rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.7rem', opacity: adding ? 0.6 : 1, pointerEvents: adding ? 'none' : 'auto' }}>
           <input
             placeholder="What did they ask / say?"
             value={form.message}
@@ -52,8 +53,9 @@ export default function InboxWidget() {
             onKeyDown={(e) => e.key === 'Enter' && onAdd()}
             style={{ ...inputStyle, flex: 1 }}
           />
-          <IconButton onClick={onAdd} color={C.alert}><Plus size={18} color={C.paper} /></IconButton>
+          <IconButton onClick={onAdd} color={C.alert} disabled={adding}><Plus size={18} color={C.paper} /></IconButton>
         </div>
+        <PendingNote show={adding} text="Logging it — it will show up in the list in a moment…" />
 
         {onSyncGmail && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem' }}>
