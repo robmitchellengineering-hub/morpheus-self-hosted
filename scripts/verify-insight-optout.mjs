@@ -12,6 +12,7 @@
 //      discoverable. server/src/lib/deckInsightGate.js cannot import from src/,
 //      so this file is the only thing holding the two ends together.
 import { INSIGHT_WIDGET_KEY, INSIGHT_WIDGET_DEFAULT_ENABLED, isInsightOptedOut, optedOutUserIds } from '../server/src/lib/deckInsightGate.js';
+import { interpretScheduledResult } from '../server/src/lib/deckInsightPayload.js';
 import { DECK_WIDGETS } from '../src/pages/CommandDeck/deckWidgets.js';
 
 let failures = 0;
@@ -103,6 +104,45 @@ check('the copy names what switching it off actually does', /proactive insight/i
 const { readFileSync } = await import('node:fs');
 const settingsSrc = readFileSync(new URL('../src/pages/CommandDeck/DeckSettings.jsx', import.meta.url), 'utf8');
 check('DeckSettings.jsx renders the note it is given', /meta\.note\s*&&/.test(settingsSrc), true);
+
+// ── the scheduled payload, which was silently unusable for its whole life ────
+// `invokeAI` hands back an already-parsed object when a schema is passed, so the
+// old `JSON.parse(result)` threw on every successful call and every scheduled run
+// reported itself as an ordinary skip. These four cases are the ones that were
+// indistinguishable before, plus the source shape that caused it.
+console.log('\nThe scheduled insight payload: usable, empty, and unusable are three things');
+check('an object payload — what invokeAI actually returns — is used, not re-parsed',
+  interpretScheduledResult({ worthRaising: true, insight: 'Your spend doubled this week.' }),
+  { ok: true, raise: true, insight: 'Your spend doubled this week.' });
+check('a JSON string payload still parses (a caller with no schema gets prose)',
+  interpretScheduledResult('{"worthRaising":true,"insight":"Tidy the trailer."}'),
+  { ok: true, raise: true, insight: 'Tidy the trailer.' });
+check('worthRaising false is a legitimate quiet skip, not a defect',
+  interpretScheduledResult({ worthRaising: false, insight: 'anything' }),
+  { ok: true, raise: false });
+check('an empty insight is the same quiet skip',
+  interpretScheduledResult({ worthRaising: true, insight: '   ' }),
+  { ok: true, raise: false });
+check('garbage is reported as unusable, so the caller can be loud about it',
+  interpretScheduledResult('not json at all'),
+  { ok: false, reason: 'unparseable' });
+check('null and an array are unusable rather than silently empty',
+  [interpretScheduledResult(null).ok, interpretScheduledResult([1, 2]).ok],
+  [false, false]);
+
+// Comments are masked first. The first draft of this check failed against the fix
+// itself, because the explanatory comment beside the corrected line quotes the old
+// expression verbatim — a regex that matches its own explanation proves only that
+// the explanation exists.
+const maskComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
+const synthesisCode = maskComments(
+  readFileSync(new URL('../server/src/functions/runJarvisSynthesis.js', import.meta.url), 'utf8'));
+check('the scheduled branch no longer parses an object it was already given',
+  /JSON\.parse\(\s*result\s*\)/.test(synthesisCode), false);
+check('…and it uses the interpreter instead',
+  /interpretScheduledResult\(result\)/.test(synthesisCode), true);
+check('…and an unusable payload is logged, not counted as a quiet skip',
+  /\[deck-insight\] scheduled payload unusable/.test(synthesisCode), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

@@ -31,6 +31,7 @@ import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock } from '../lib/deckMemory.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
+import { interpretScheduledResult } from '../lib/deckInsightPayload.js';
 
 // 2026-09-17: tried capping this at 2000 to bound worst-case generation
 // time (see PR #165) — broke correctness instead: this model burns a real
@@ -129,19 +130,24 @@ Jarvis:`;
       schema: SCHEDULED_SCHEMA,
     });
 
-    let parsed = null;
-    try {
-      parsed = JSON.parse(result);
-    } catch {
-      // A scheduled run must never persist a malformed object into Jarvis's
-      // conversation history — better to have produced nothing.
-      return { skipped: true, reason: 'unparseable', trigger };
+    // `result` is already an object — invokeAI parses it when a schema is passed.
+    // This used to be `JSON.parse(result)`, which threw on every single successful
+    // call and made the whole feature a no-op that reported itself as healthy; see
+    // lib/deckInsightPayload.js.
+    const outcome = interpretScheduledResult(result);
+    if (!outcome.ok) {
+      // LOUD on purpose: an unusable payload is a DEFECT, not a quiet day, and
+      // folding it into the skip count is how this stayed invisible.
+      console.warn(`[deck-insight] scheduled payload unusable (${outcome.reason}) for ${user.id} — nothing raised`);
+      return { skipped: true, reason: outcome.reason, trigger };
     }
-
-    const insight = String(parsed?.insight || '').trim();
-    if (!parsed?.worthRaising || !insight) {
+    if (!outcome.raise) {
+      // The ordinary quiet outcome: Jarvis looked and found nothing worth
+      // interrupting for. Deliberately kept distinct from the branch above.
       return { skipped: true, reason: 'nothing-to-raise', trigger };
     }
+
+    const insight = outcome.insight;
 
     const saved = await prisma.deckJarvisMessage.create({
       data: { created_by_id: user.id, role: 'jarvis_synthesis', content: insight },
