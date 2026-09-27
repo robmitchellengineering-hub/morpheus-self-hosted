@@ -187,6 +187,46 @@ check('the stream-key enum matches the module constant',
   CLASSIFY_SCHEMA.properties.items.items.properties.life_stream_key.enum, LIFE_STREAM_KEYS);
 check('the schema caps items at MAX_ITEMS', CLASSIFY_SCHEMA.properties.items.maxItems, MAX_ITEMS);
 
+console.log('\n6. a SHORT dropped thought is caught, not just a large loss');
+// Character coverage cannot see this: dropping the last three words of a 51-character
+// dump leaves 0.76, while a faithful three-item split of the same dump only reaches
+// ~0.86 (the connectives go with the split). The old 0.6 floor sat below both, so the
+// guard written to stop a thought being lost passed the case it existed for. Reproduced
+// by execution before the rule changed; the clause test catches it now.
+const SHORT_DROP_DUMP = 'Book the kids into swimming, pay the rego, get milk';
+const shortDrop = normalizeClassifyResult({
+  items: [
+    { text: 'Book the kids into swimming', destination: 'task' },
+    { text: 'pay the rego', destination: 'task' },
+  ],
+}, SHORT_DROP_DUMP);
+check('a dropped short thought files the whole dump instead', shortDrop.length, 1);
+check('…verbatim, so nothing is lost', shortDrop[0].text, SHORT_DROP_DUMP);
+
+console.log('\n7. …without tripping on a faithful split or a light rewrite');
+check('a faithful three-item split of the same dump still splits',
+  normalizeClassifyResult({
+    items: [
+      { text: 'Book the kids into swimming', destination: 'task' },
+      { text: 'pay the rego', destination: 'task' },
+      { text: 'get milk', destination: 'task' },
+    ],
+  }, SHORT_DROP_DUMP).length, 3);
+check('a split that drops only the connective still splits',
+  normalizeClassifyResult({
+    items: [
+      { text: 'get milk', destination: 'task' },
+      { text: 'chase the Henderson quote', destination: 'task' },
+    ],
+  }, 'get milk and chase the Henderson quote').length, 2);
+check('a lightly rewritten item is not treated as a loss',
+  normalizeClassifyResult({
+    items: [
+      { text: 'book kids swimming', destination: 'task' },
+      { text: 'pay rego', destination: 'task' },
+    ],
+  }, 'Book the kids into swimming, pay the rego').length, 2);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
