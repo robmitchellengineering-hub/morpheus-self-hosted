@@ -323,3 +323,31 @@ it is the reason the run never appeared. Never let a *host's* green preview stan
 in for verification of the change.
 
 
+
+## H18 — a `try` block hides its own declarations from its sibling `catch`
+
+**Incident (2026-09-27, PRs #356, #358, #360, #361, #362):** `chatWithMorpheus`
+declares the turn's build state — `appliedOps`, `reply`, `fullReply`,
+`truncatedFiles`, the rework counters — and reads it after the build, both in the
+reply building and in the `catch` whose entire job is to hand back a result when
+something throws *after* the build already landed. Three refactors in a row
+(`dbd73f7`, `67d779e`, `3b72ef1`) moved those declarations *inside* the turn's
+big `try` block. `let`/`const` in a `try` block is scoped to that block, so a
+sibling `catch` cannot see it, and neither can the code after it.
+
+`#356` put the coder's `chunkOps` there and read it after the block: **every code
+build through the chat path died** — the throw landed before the gates and before
+apply, so nothing was written and the user got an error, which is the exact
+outcome that commit was written to prevent. `#361` hotfixed that one read, and
+`#362` then found **16 more in the same file**, including the whole of `#358`'s
+recovery path — so the recovery had never once run, and the error it was written
+to swallow was thrown again from the `catch` itself.
+
+**Rule:** a declaration that must outlive its block belongs outside it. Before
+reading a name in a `catch`, in a `finally`, or anywhere after a `try`, check
+that it is not declared inside that block. `no-undef` decides this exactly, which
+is why `server/src/**` now has a lint block in `eslint.config.js` — the frontend
+had one all along. Note what could not see it: `node --check` passes (valid
+syntax), the import resolver passes (the names are local), and the boot smoke
+passes because loading a module never calls the function that contains the bug.
+Only running the code, or `no-undef`, finds it.
