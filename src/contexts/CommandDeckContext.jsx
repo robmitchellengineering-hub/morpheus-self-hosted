@@ -72,6 +72,10 @@ export function CommandDeckProvider({ children }) {
   const [replyDraftFor, setReplyDraftFor] = useState(null);
   const [replyDraftText, setReplyDraftText] = useState('');
   const [replyBusy, setReplyBusy] = useState(false);
+  // Why the last draft attempt produced nothing — a message of its own, because the old
+  // path called flagSaveErr() and sent the operator looking for a storage problem that
+  // did not exist.
+  const [replyDraftErr, setReplyDraftErr] = useState(null);
 
   const [lifeStreams, setLifeStreams] = useState({});
   const [lightboxImg, setLightboxImg] = useState(null);
@@ -745,13 +749,23 @@ export function CommandDeckProvider({ children }) {
   const startReplyDraft = async (inboxItemId) => {
     setReplyDraftFor(inboxItemId);
     setReplyDraftText('');
+    setReplyDraftErr(null);
     setReplyBusy(true);
     try {
       const { data } = await base44.functions.invoke('suggestDeckReply', { inboxItemId });
-      setReplyDraftText(data?.reply || '');
+      const draft = (data?.reply || '').trim();
+      if (!draft) {
+        // Belt and braces: the server refuses an empty draft now, but the frontend and the
+        // server deploy independently, so a stale server can still answer with one.
+        setReplyDraftErr('Jarvis came back with an empty draft — ask again.');
+        return;
+      }
+      setReplyDraftText(draft);
     } catch (err) {
-      setReplyDraftText('');
-      flagSaveErr();
+      // Deliberately NOT flagSaveErr(): nothing was being saved, and "couldn't save last
+      // change — try again" sent the operator hunting for a storage fault. The message is
+      // the failure's own, and it stays on screen beside the empty box.
+      setReplyDraftErr(err?.message || 'Could not draft a reply just now — ask again.');
       console.error(err);
     } finally {
       setReplyBusy(false);
@@ -760,6 +774,7 @@ export function CommandDeckProvider({ children }) {
   const cancelReplyDraft = () => {
     setReplyDraftFor(null);
     setReplyDraftText('');
+    setReplyDraftErr(null);
   };
   const sendReplyDraft = async () => {
     if (!replyDraftFor || !replyDraftText.trim()) return;
@@ -1042,7 +1057,7 @@ export function CommandDeckProvider({ children }) {
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
-    replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, startReplyDraft, cancelReplyDraft, sendReplyDraft,
+    replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, replyDraftErr, startReplyDraft, cancelReplyDraft, sendReplyDraft,
     lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
     lightboxImg, setLightboxImg,
     confirmDeleteState, askToDelete, resolveConfirmDelete,

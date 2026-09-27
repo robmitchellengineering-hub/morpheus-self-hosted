@@ -8,7 +8,7 @@ export default function InboxWidget() {
   const {
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox, askToDelete,
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
-    replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, startReplyDraft, cancelReplyDraft, sendReplyDraft,
+    replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, replyDraftErr, startReplyDraft, cancelReplyDraft, sendReplyDraft,
   } = useCommandDeck();
   const [inboxSearch, setInboxSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -124,6 +124,9 @@ export default function InboxWidget() {
                         rows={4}
                         style={{ ...inputStyle, width: '100%', resize: 'vertical', fontFamily: 'inherit' }}
                       />
+                    )}
+                    {replyDraftErr && (
+                      <p style={{ fontSize: '0.72rem', color: C.walnutSoft, margin: '0.35rem 0 0' }}>{replyDraftErr}</p>
                     )}
                     <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
                       <button
