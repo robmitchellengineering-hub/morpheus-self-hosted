@@ -1140,6 +1140,20 @@ model DeckConsignmentItem {
   sold          Boolean  @default(false)
   photo_url     String?
 
+  // ── CRM fields (2026-09-27) ────────────────────────────────────────────────
+  // Rob's intent: repair and consignment as proper CRM-like records, searchable and editable, that
+  // Jarvis knows and reasons over. A plain nullable id, not a Prisma relation, because that is how
+  // this schema already links a record to a person (`DeckTask.owner_person_id`, resolved in code by
+  // lib/deckSnapshot.js's personName). `consignor`/`phone` stay: a name is often all there is at
+  // intake, and free text must keep working when the person is not yet a DeckPerson.
+  person_id     String?
+  // Stored rather than recomputed from the tiered rule in deckConstants.js (30% to $2000, 20% above):
+  // the rule can change, but what was agreed with a consignor must not change retroactively.
+  fee           Float?
+  sold_price    Float?
+  sold_date     DateTime?
+  paid_out      Boolean  @default(false)
+
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 
@@ -1157,6 +1171,17 @@ model DeckRepairJob {
   notes         String?  @db.Text
   stage         String   @default("waiting") // waiting | in_progress | done
   photo_url     String?  // primary/identifying thumbnail
+
+  // ── CRM fields (2026-09-27) ────────────────────────────────────────────────
+  // What makes a job runnable: what was quoted, what was promised, when it finished, whether it was
+  // paid. "What is owing" and "what did I promise for Friday" were unanswerable.
+  // The stage vocabulary is deliberately NOT expanded: a new list of stages is Rob's business's words,
+  // not an assumption to invent, and the existing three are already in the UI's cycle.
+  person_id     String?
+  quote         Float?
+  promised_date DateTime?
+  completed_date DateTime?
+  paid          Boolean  @default(false)
 
   files         DeckRepairFile[]
 
