@@ -109,6 +109,18 @@ check('the scheduled deck insight has a budget above the 6000 it failed at four 
 check('…and the conversational reply keeps its own, so the two cannot silently share a ceiling again',
   /MAX_REPLY_TOKENS\s*=\s*6000/.test(synth) && /maxTokens:\s*MAX_REPLY_TOKENS/.test(synth));
 
+// ── the reply prompt must stay attributable ─────────────────────────────────
+// The cost audit found two replies at ~15.6k input tokens — 45% of all audited reply input —
+// that no code path or table explains, and they are unattributable after the fact. The line
+// below is what will explain the next one; its contract is that it logs LENGTHS, never the
+// operator's own words.
+const chatSized = code('server/src/functions/chatWithJarvis.js');
+const compositionLog = (chatSized.match(/`\[chatWithJarvis\] reply prompt chars[\s\S]*?`/) || [''])[0];
+check('the reply prompt logs its composition', compositionLog.length > 0);
+const logged = [...compositionLog.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1]);
+check('…and every value it logs is a length, never prompt content',
+  logged.length >= 5 && logged.every((e) => /\.length\b/.test(e)));
+
 // ── the two prose calls that inherited the default by accident ───────────────
 // Both generate text rather than classify it, and both named no role — so they took
 // default_model (v4-pro) @ 0.7 and nothing recorded the choice. The `draft` role makes
