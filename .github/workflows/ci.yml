@@ -282,6 +282,14 @@ jobs:
       - name: Deploy health is owner-scoped
         run: node scripts/verify-deploy-health-scope.mjs
 
+      # "Take it live" publishes a built web app into the customer's OWN Netlify account with
+      # the customer's OWN token. This pins the ethos (no platform fallback token, no Morpheus
+      # account), the owner-scoped 404, that only the compiled ZIP is deployed and never
+      # backend/ source, the deploy record that makes "live at <url>" and re-deploy work, and
+      # the pending state that disables the control while it runs.
+      - name: Frontend deploy stays on the customer's connection
+        run: node scripts/verify-frontend-deploy.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds
