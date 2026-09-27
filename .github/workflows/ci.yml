@@ -199,6 +199,11 @@ jobs:
       - name: Brain-dump classifier
         run: node scripts/verify-dump-classify.mjs
 
+      # What the dump says afterwards, and what it puts back: a partial failure must
+      # not claim the lot nor duplicate what already landed.
+      - name: Brain-dump filing outcome
+        run: node scripts/verify-dump-filing.mjs
+
       # The Deck's long-term memory fold: a valid answer with no memory text must
       # not mark a batch of turns as folded, which would drop them from memory
       # permanently and without a word.

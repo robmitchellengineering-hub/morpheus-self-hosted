@@ -6,6 +6,7 @@ import {
   isYou, todayKey, todayISO, randomDeleteConfirmPhrase,
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
+import { summarizeFiling } from './dumpFiling';
 
 // All of Command Deck's shared state, data loading, and CRUD handlers —
 // lifted out of the old single-file CommandDeck.jsx unchanged, so every tab
@@ -319,6 +320,11 @@ export function CommandDeckProvider({ children }) {
     // Clear immediately, so even a press that slips past the guard finds nothing to submit.
     // Restored in the catch below, so a capture is never lost to a failure.
     setDumpInput('');
+    // Declared out here so the catch below can tell "nothing landed" from "some landed":
+    // restoring the whole dump after a partial success would duplicate the items that
+    // already filed. See ./dumpFiling.js.
+    const labels = [];
+    const failedTexts = [];
     try {
       // ONE classification call for the whole dump. This used to short-circuit
       // to a single owner as soon as any person's name appeared anywhere in the
@@ -351,7 +357,6 @@ export function CommandDeckProvider({ children }) {
       }
 
       const selfId = people.find(isYou)?.id;
-      const labels = [];
       for (const item of items) {
         const itemText = String(item?.text || text).trim();
         if (!itemText) continue;
@@ -359,38 +364,51 @@ export function CommandDeckProvider({ children }) {
           ? people.find((p) => p.name.trim().toLowerCase() === String(item.owner_name).trim().toLowerCase())
           : null;
 
-        if (item?.destination === 'task') {
-          const created = await base44.entities.DeckTask.create({ text: itemText, owner_person_id: named?.id || selfId, energy: 'any', done: false });
-          setTasks((prev) => [created, ...prev]);
-          labels.push(named && !isYou(named) ? `${named.name}'s tasks` : 'your tasks');
-        } else if (item?.destination === 'strategy') {
-          const created = await base44.entities.DeckStrategyNote.create({ text: itemText });
-          setStrategy((prev) => [created, ...prev]);
-          labels.push('Strategy');
-        } else if (item?.destination === 'life_stream' && lifeStreams[item.life_stream_key]) {
-          await addLifeNote(item.life_stream_key, itemText);
-          labels.push(LIFE_STREAMS_META.find((s) => s.id === item.life_stream_key)?.label || item.life_stream_key);
-        } else {
-          const created = await base44.entities.DeckKnowledgeNote.create({ text: itemText });
-          setKnowledge((prev) => [created, ...prev]);
-          labels.push('Knowledge');
+        // Each item is filed on its own. One create throwing used to abandon the rest
+        // AND put the whole dump back with "try again" while the rows already written
+        // stayed — so the retry filed every item that had succeeded a second time.
+        try {
+          if (item?.destination === 'task') {
+            const created = await base44.entities.DeckTask.create({ text: itemText, owner_person_id: named?.id || selfId, energy: 'any', done: false });
+            setTasks((prev) => [created, ...prev]);
+            labels.push(named && !isYou(named) ? `${named.name}'s tasks` : 'your tasks');
+          } else if (item?.destination === 'strategy') {
+            const created = await base44.entities.DeckStrategyNote.create({ text: itemText });
+            setStrategy((prev) => [created, ...prev]);
+            labels.push('Strategy');
+          } else if (item?.destination === 'life_stream' && lifeStreams[item.life_stream_key]) {
+            if (!(await addLifeNote(item.life_stream_key, itemText))) {
+              failedTexts.push(itemText);
+              continue;
+            }
+            labels.push(LIFE_STREAMS_META.find((s) => s.id === item.life_stream_key)?.label || item.life_stream_key);
+          } else {
+            const created = await base44.entities.DeckKnowledgeNote.create({ text: itemText });
+            setKnowledge((prev) => [created, ...prev]);
+            labels.push('Knowledge');
+          }
+        } catch {
+          failedTexts.push(itemText);
         }
       }
 
-      // Say where things went — the whole point of auto-filing is that the
-      // capture stays thoughtless, which only holds if it is visible. The count
-      // is per item; the destinations are de-duplicated so three tasks don't
-      // read "your tasks, your tasks, your tasks".
-      if (labels.length === 1) {
-        flagQuickFile(`Filed to ${labels[0]}`);
-      } else if (labels.length > 1) {
-        flagQuickFile(`Filed ${labels.length} items: ${[...new Set(labels)].join(', ')}`);
+      // Say where things went — the whole point of auto-filing is that the capture stays
+      // thoughtless, which only holds if it is visible. What it says is what LANDED, and
+      // what did not goes back in the box so one press retries exactly that. Both halves
+      // are decided in ./dumpFiling.js, where a guard can reach them.
+      const outcome = summarizeFiling({ labels, failedTexts, originalText: text });
+      if (failedTexts.length) {
+        setDumpInput(outcome.restore);
+        flagSaveErr();
       }
+      if (outcome.message) flagQuickFile(outcome.message);
     } catch {
       flagSaveErr();
       // Put it back: the box was cleared optimistically on the way in, and losing what
-      // someone just typed is worse than making them press again.
-      setDumpInput(text);
+      // someone just typed is worse than making them press again — but only when NOTHING
+      // landed. Restoring the whole dump after some items filed would duplicate every one
+      // of them on the retry, which is what this used to do.
+      if (!labels.length) setDumpInput(text);
     } finally {
       dumpInFlight.current = false;
       setDumpPending(false);
@@ -659,14 +677,19 @@ export function CommandDeckProvider({ children }) {
     setLifeStreams((prev) => ({ ...prev, [streamKey]: { ...stream, status: next } }));
     try { await base44.entities.DeckLifeStream.update(stream.id, { status: next }); } catch { flagSaveErr(); }
   };
+  // Returns whether the note was saved. It used to swallow the failure, so the dump's
+  // filing loop counted a life stream in the green "Filed N items" line for a note that
+  // was never written — a success message over lost words, which is the one thing the
+  // capture path must never do.
   const addLifeNote = async (streamKey, text) => {
-    if (!text.trim()) return;
+    if (!text.trim()) return true;      // nothing to file is not a failure
     const stream = lifeStreams[streamKey];
-    if (!stream) return;
+    if (!stream) return false;          // a stream that isn't loaded means nothing landed
     try {
       const created = await base44.entities.DeckLifeStreamNote.create({ life_stream_id: stream.id, text: text.trim() });
       setLifeStreams((prev) => ({ ...prev, [streamKey]: { ...stream, notes: [created, ...stream.notes] } }));
-    } catch { flagSaveErr(); }
+      return true;
+    } catch { flagSaveErr(); return false; }
   };
   const removeLifeNote = async (streamKey, noteId) => {
     const stream = lifeStreams[streamKey];
