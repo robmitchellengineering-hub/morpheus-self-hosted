@@ -64,3 +64,31 @@ export function withoutDeckProfileFeeFields(fields) {
   for (const column of DECK_PROFILE_FEE_COLUMNS) delete out[column];
   return out;
 }
+
+// The key the API adds to a write that had to drop the fee fields. Named once so the server that
+// sets it, the Settings form that renders it and the guard that asserts both cannot disagree.
+export const DECK_PROFILE_FEE_DROPPED = 'fee_fields_dropped';
+
+/** Did this write actually carry a fee field? False for every ordinary profile save. */
+export function hasDeckProfileFeeFields(fields) {
+  return DECK_PROFILE_FEE_COLUMNS.some((column) => Object.prototype.hasOwnProperty.call(fields || {}, column));
+}
+
+/**
+ * What a DeckBusinessProfile write returns.
+ *
+ * The retry above stores everything EXCEPT the fee structure, so it must not come back looking
+ * like a plain success: a dropped write that reads as success is worse than a failed one (the
+ * same shape as the partial compile save that reported "Build complete"). When — and only when —
+ * the fallback was used for a write that carried fee fields, the row is returned with
+ * `fee_fields_dropped: true` so Settings can say so in plain words. A write with no fee fields,
+ * or one that kept them, carries no marker at all. Pure, so the guard can exercise every case.
+ *
+ * @param {object} row the stored row (whatever the retry returned)
+ * @param {object} fields the data the caller originally asked to write
+ * @param {{droppedFeeFields?: boolean}} [outcome] whether the missing-column fallback was used
+ */
+export function deckProfileWriteResult(row, fields, { droppedFeeFields = false } = {}) {
+  if (!droppedFeeFields || !hasDeckProfileFeeFields(fields) || !row || typeof row !== 'object') return row;
+  return { ...row, [DECK_PROFILE_FEE_DROPPED]: true };
+}

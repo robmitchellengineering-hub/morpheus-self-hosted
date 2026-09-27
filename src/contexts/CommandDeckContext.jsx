@@ -1021,18 +1021,28 @@ export function CommandDeckProvider({ children }) {
     }
   };
 
+  // Returns whether the server had to DROP the fee fields to make the save succeed — the H11
+  // fallback, before the fee_* migration has been applied (server/src/lib/deckProfileColumns.js).
+  // The marker is stripped out of the profile state (it is not a column) and handed back instead of
+  // being swallowed, because a save whose fee structure vanished must not read as a plain success.
   const saveBusinessProfile = async (fields) => {
     setBusinessProfileBusy(true);
+    let feeFieldsDropped = false;
     try {
-      if (businessProfile?.id) {
-        const updated = await base44.entities.DeckBusinessProfile.update(businessProfile.id, fields);
-        setBusinessProfile(updated);
+      const saved = businessProfile?.id
+        ? await base44.entities.DeckBusinessProfile.update(businessProfile.id, fields)
+        : await base44.entities.DeckBusinessProfile.create(fields);
+      feeFieldsDropped = saved?.fee_fields_dropped === true;
+      if (saved && typeof saved === 'object') {
+        const row = { ...saved };
+        delete row.fee_fields_dropped;
+        setBusinessProfile(row);
       } else {
-        const created = await base44.entities.DeckBusinessProfile.create(fields);
-        setBusinessProfile(created);
+        setBusinessProfile(saved);
       }
     } catch { flagSaveErr(); }
     setBusinessProfileBusy(false);
+    return { feeFieldsDropped };
   };
 
   // ---- calendar widget ------------------------------------------------------
