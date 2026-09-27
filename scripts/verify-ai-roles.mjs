@@ -109,6 +109,26 @@ check('the scheduled deck insight has a budget above the 6000 it failed at four 
 check('…and the conversational reply keeps its own, so the two cannot silently share a ceiling again',
   /MAX_REPLY_TOKENS\s*=\s*6000/.test(synth) && /maxTokens:\s*MAX_REPLY_TOKENS/.test(synth));
 
+// ── the two prose calls that inherited the default by accident ───────────────
+// Both generate text rather than classify it, and both named no role — so they took
+// default_model (v4-pro) @ 0.7 and nothing recorded the choice. The `draft` role makes
+// that a decision: flash @ 0.4, set in platform_settings and asserted in the workspace's
+// expected-settings.json.
+const replyDraft = code('server/src/functions/suggestDeckReply.js');
+check('the inbox reply draft names the draft role', /role:\s*'draft'/.test(replyDraft));
+check('…and keeps a budget a short reply can finish in',
+  Number((replyDraft.match(/MAX_REPLY_TOKENS = (\d+)/) || [])[1] || 0) >= 2000);
+const docDraft = code('server/src/functions/createDeckDocument.js');
+check('the document draft names the draft role', /role:\s*'draft'/.test(docDraft));
+
+// The counterpart, pinned so nobody "finishes the job" by moving them: Jarvis's own voice
+// and his scheduled synthesis stay on the platform default on purpose — persona and
+// judgement, Rob's call. They are the only calls left in the Deck that name no role.
+check('Jarvis\u2019s reply is deliberately NOT drafted by the draft role',
+  !/role:\s*'draft'/.test(code('server/src/functions/chatWithJarvis.js')));
+check('…and neither is the scheduled synthesis',
+  !/role:\s*'draft'/.test(code('server/src/functions/runJarvisSynthesis.js')));
+
 // ── a small AI call must not be able to take its caller down ─────────────────
 // The widget-build intent classifier runs on EVERY Jarvis message, before the reply,
 // and it is an optimisation — it recognises "build me a widget" and answers with a

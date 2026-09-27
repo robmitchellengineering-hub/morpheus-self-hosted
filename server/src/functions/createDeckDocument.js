@@ -111,7 +111,9 @@ Structure it with real headings/subheadings only where they genuinely help, plai
   // Generous — a real document plus this model's own reasoning overhead
   // (the same lesson chatWithJarvis.js and every other Deck classifier
   // already learned the hard way) can easily exceed a tighter cap.
-  const { result } = await invokeAI({ userId: user.id, prompt, schema: DOC_SCHEMA, maxTokens: 8000 });
+  // `role: 'draft'` — mechanical prose, like suggestDeckReply. This named no role and so
+  // resolved to default_model (v4-pro @ 0.7) by accident; nothing recorded the choice.
+  const { result } = await invokeAI({ userId: user.id, prompt, schema: DOC_SCHEMA, maxTokens: 8000, role: 'draft' });
 
   const title = (result?.title || 'Untitled Document').trim();
   const blocks = Array.isArray(result?.blocks) ? result.blocks.filter((b) => b?.text?.trim()) : [];
