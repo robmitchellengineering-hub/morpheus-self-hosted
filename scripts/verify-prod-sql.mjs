@@ -7,7 +7,7 @@
 // matter more than usual: a guard that lets a DROP through is worse than no
 // script, because it makes the operator stop checking by hand.
 import { describeDatabaseUrl, isLocalDatabaseUrl, parseDatabaseUrl, reviewSql } from '../server/src/lib/prodSqlGuard.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 let failures = 0;
 let checks = 0;
@@ -143,6 +143,61 @@ check('an unbounded write is called out as such, not lumped in',
 check('additive DDL still works with the flag on', reviewSql('ALTER TABLE projects ADD COLUMN IF NOT EXISTS x TEXT;', { allowDataRepair: true }).ok, true);
 check('and additive DDL reports its own mode',
   reviewSql('ALTER TABLE projects ADD COLUMN IF NOT EXISTS x TEXT;', { allowDataRepair: true }).mode, 'additive');
+
+// The allowlist used to test only the START of a statement, and to split the file
+// only on a `;` followed by a newline. Both are wrong about Postgres: one statement
+// can carry several clauses, and a `;` is a separator wherever it appears. So
+// `ALTER TABLE t ADD COLUMN a int, DROP COLUMN b;` — a single, valid, destructive
+// statement — read as additive, and the runner would have executed it against
+// production with no human in the loop.
+console.log('\n13. one statement can carry several clauses — the bypass this guard had');
+for (const [label, sql] of [
+  ['a DROP COLUMN clause after an ADD COLUMN', 'ALTER TABLE projects ADD COLUMN b int, DROP COLUMN owner_id;'],
+  ['an ALTER COLUMN TYPE clause after an ADD COLUMN', 'ALTER TABLE projects ADD COLUMN b int, ALTER COLUMN name TYPE integer;'],
+  ['a RENAME clause after an ADD COLUMN', 'ALTER TABLE projects ADD COLUMN b int, RENAME COLUMN name TO title;'],
+  ['a DROP CONSTRAINT clause after an ADD COLUMN', 'ALTER TABLE projects ADD COLUMN b int, DROP CONSTRAINT projects_pkey;'],
+]) {
+  const r = reviewSql(sql);
+  check(`${label} -> refused`, r.ok, false);
+  check(`${label} -> named as the offender`, r.riskyStatements.length >= 1, true);
+}
+check('two statements on ONE line are two statements',
+  reviewSql('ALTER TABLE a ADD COLUMN b int; DROP TABLE users;').ok, false);
+check('…and a data write on the same line is seen too',
+  reviewSql('ALTER TABLE a ADD COLUMN b int; DELETE FROM projects;').ok, false);
+check('a quoted identifier on the same line does not hide the split',
+  reviewSql('ALTER TABLE "a" ADD COLUMN b int; DROP TABLE users;').ok, false);
+
+// The other half of the same coin, and the reason the rule above is clause-shaped
+// rather than keyword-shaped: a scan for a bare DELETE/UPDATE refused 22 of the 47
+// migrations in server/prisma, because `ON DELETE CASCADE` is ordinary foreign-key
+// syntax. A guard that cries wolf gets switched off, so these are asserted, not
+// assumed.
+console.log('\n14. …without refusing the additive DDL that only looks risky');
+for (const [label, sql] of [
+  ['two ADD COLUMNs in one statement', 'ALTER TABLE a ADD COLUMN b int, ADD COLUMN c text;'],
+  ['a quoted table name (the name slot is not a wildcard)', 'ALTER TABLE "user_settings" ADD COLUMN b int;'],
+  ['a quoted table name with a constraint', 'ALTER TABLE "user_settings" ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES p(id) ON DELETE CASCADE;'],
+  ['ON DELETE CASCADE in a CREATE TABLE', 'CREATE TABLE IF NOT EXISTS c (id text primary key, p text REFERENCES p(id) ON DELETE CASCADE);'],
+  ['ON UPDATE CASCADE too', 'CREATE TABLE IF NOT EXISTS c (id text primary key, p text REFERENCES p(id) ON UPDATE CASCADE);'],
+  ['the word "drop" inside a string literal', "ALTER TABLE a ADD COLUMN note text DEFAULT 'drop me';"],
+  ['the word DROP inside a comment', '-- do not drop anything\nALTER TABLE a ADD COLUMN b int;'],
+  ['a column literally named "drop column"', 'ALTER TABLE a ADD COLUMN "drop column" text;'],
+]) {
+  check(`${label} -> still allowed`, reviewSql(sql).ok, true);
+}
+
+// The net under the whole thing: these files are applied automatically after a
+// push or a merge, so if a change to the classifier starts refusing one of them,
+// the migration silently stops being applied — a different way to break production
+// than the one this guard exists for. Asserted by running every one of them.
+console.log('\n15. every auto-applied self-dev migration still classifies as additive');
+const prismaDir = new URL('../server/prisma/', import.meta.url);
+const selfDevSql = readdirSync(prismaDir).filter((n) => /^selfdev-[a-z0-9][a-z0-9-]*\.sql$/i.test(n)).sort();
+check('the self-dev migrations were found', selfDevSql.length >= 4, true);
+for (const f of selfDevSql) {
+  check(`${f} is additive (it is auto-applied)`, reviewSql(readFileSync(new URL(f, prismaDir), 'utf8')).ok, true);
+}
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

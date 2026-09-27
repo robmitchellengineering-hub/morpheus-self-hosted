@@ -15,6 +15,7 @@
 import { prisma } from '../db.js';
 import { ghHeaders, ghJson, getGithubToken } from '../lib/github.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
+import { summarizeArtifactSave } from '../lib/artifactSaveOutcome.js';
 import { uploadFileStream } from '../storage.js';
 import https from 'node:https';
 
@@ -233,6 +234,12 @@ export default async function handler({ user, body, res }) {
   const saved = [];
   const artifacts = [];
   const errors = [];
+  // Names of the assets that did not land, kept separately from the detail
+  // strings above so the caller can name them without parsing. A glob target
+  // (rpi-distro/linux-distro) releases several assets, and one failure there
+  // used to leave the response identical to a complete save — see
+  // lib/artifactSaveOutcome.js.
+  const failed = [];
   for (let i = 0; i < assetsToSave.length; i++) {
     const asset = assetsToSave[i];
     try {
@@ -249,7 +256,9 @@ export default async function handler({ user, body, res }) {
       saved.push(result.path);
       artifacts.push(result);
     } catch (assetErr) {
-      errors.push(`${asset.name || 'asset'}: ${assetErr?.message || String(assetErr)}`);
+      const name = asset.name || 'asset';
+      failed.push(name);
+      errors.push(`${name}: ${assetErr?.message || String(assetErr)}`);
     }
   }
 
@@ -263,5 +272,8 @@ export default async function handler({ user, body, res }) {
   // frontend's "done" panel uses these instead of GitHub's raw
   // browser_download_url, which 404s for anyone not authenticated into the
   // private build repo (see the alreadySaved branch above for why).
-  return { saved: saved.length, files: saved, artifacts };
+  // summarizeArtifactSave keeps the all-saved shape unchanged and adds
+  // `partial`/`failed`/`errors` when some assets did not land, so a partial save
+  // cannot be read as "Build complete".
+  return summarizeArtifactSave({ savedPaths: saved, artifacts, failed, errors });
 }

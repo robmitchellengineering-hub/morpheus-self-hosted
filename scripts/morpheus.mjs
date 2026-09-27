@@ -39,11 +39,12 @@
 // shell history and in any transcript that quotes the command), and never
 // logged on failure. Only its fingerprint is ever shown, so a run can be
 // correlated without the value existing anywhere but that one file.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { operatorTokenFingerprint, OPERATOR_TOKEN_PREFIX } from '../server/src/lib/operatorToken.js';
+import { pushRecord, carriedFlags } from './lib/operatorPushState.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..');
@@ -105,6 +106,35 @@ function startNewRun() {
   const fresh = crypto.randomUUID();
   try { writeFileSync(RUN_FILE, fresh, { mode: 0o600 }); } catch { /* best effort */ }
   return fresh;
+}
+
+// The last PR-mode push, so a LATER `merge <prNumber>` invocation can forward
+// what that push already returned but the operator never types: whether the
+// change carries a server/prisma/selfdev-*.sql migration, and whether it touched
+// the manual's source. push → merge are two processes, and without this the
+// merge sends only prNumber — mergeSelfDevPr.js's hasMigration default stays
+// false, the migration reaches the repo, and the DDL never runs. The browser
+// path forwards the same two fields in memory (SelfDev.jsx, buildDeckWidget.js);
+// this is that fact, persisted. Keyed by PR number and never borrowed across
+// PRs — see lib/operatorPushState.mjs.
+const PUSH_FILE = process.env.MORPHEUS_PUSH_FILE || path.join(REPO, 'server', '.morpheus-push');
+
+function readLastPush() {
+  try {
+    const parsed = JSON.parse(readFileSync(PUSH_FILE, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch { return null; /* no push recorded yet — the normal first case */ }
+}
+
+function writeLastPush(record) {
+  if (!record) return;
+  try { writeFileSync(PUSH_FILE, JSON.stringify(record), { mode: 0o600 }); } catch { /* best effort */ }
+}
+
+function clearLastPush() {
+  // unlinkSync, not rmSync: the CLI's guard forbids the literal `force` anywhere
+  // in this file, and rmSync's options object needs one. Absent is fine.
+  try { unlinkSync(PUSH_FILE); } catch { /* never pushed, or already cleared */ }
 }
 
 /** Every request goes through here — one place that attaches the credential. */
@@ -255,7 +285,12 @@ switch (command) {
     if (report('pushSelfDevToGithub', r)) {
       const b = r.body || {};
       if (b.blocked) console.error(`\nPush was blocked: ${b.blockReason || 'see the response above'}`);
-      else if (b.prNumber) console.log(`\nPR #${b.prNumber}${b.prUrl ? ` → ${b.prUrl}` : ''}\nnext: node scripts/morpheus.mjs merge ${b.prNumber}`);
+      else if (b.prNumber) {
+        // Remember what this PR carries, for the `merge` invocation below.
+        writeLastPush(pushRecord(b));
+        console.log(`\nPR #${b.prNumber}${b.prUrl ? ` → ${b.prUrl}` : ''}\nnext: node scripts/morpheus.mjs merge ${b.prNumber}`);
+        if (b.hasMigration) console.log('this PR carries a migration — merge will apply it to the database');
+      }
       else if (b.mode === 'direct') fail('The server pushed directly to the main branch — the operator token must not be able to do that. Investigate before trusting this path.');
       if (b.blocked) process.exitCode = 1;
     }
@@ -265,11 +300,22 @@ switch (command) {
   case 'merge': {
     const prNumber = Number(args[0]);
     if (!Number.isInteger(prNumber) || prNumber <= 0) fail('usage: node scripts/morpheus.mjs merge <prNumber>', 2);
-    // No force: this merges only when the required checks have run and passed.
-    const r = await call('mergeSelfDevPr', { prNumber }, { timeoutMs: 10 * 60 * 1000 });
+    // Forward the migration/manual facts `push` recorded for THIS PR. A record
+    // for a different PR is ignored rather than borrowed — that would run DDL
+    // this merge never shipped. No force: this merges only when the required
+    // checks have run and passed.
+    const carried = carriedFlags(readLastPush(), prNumber);
+    // Non-empty only when the record was for this PR — which is also the only
+    // case where clearing it on success is correct. Merging some other PR must
+    // not discard the pending one's migration fact.
+    const usedRecord = Object.keys(carried).length > 0;
+    const r = await call('mergeSelfDevPr', { prNumber, ...carried }, { timeoutMs: 10 * 60 * 1000 });
     if (report(`mergeSelfDevPr #${prNumber}`, r)) {
       const b = r.body || {};
       if (b.merged === false && b.state) console.error(`\nNot merged: ${b.state}${b.message ? ` — ${b.message}` : ''}`);
+      // The push is spent once it has merged; a re-run returns alreadyMerged and
+      // applies nothing. Cleared, not kept, so it cannot go stale.
+      else if (b.merged === true && usedRecord) clearLastPush();
     }
     break;
   }
