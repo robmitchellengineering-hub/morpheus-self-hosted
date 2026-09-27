@@ -24,6 +24,7 @@ import {
   verifyOperatorToken, operatorMayCall, stripOperatorEscapeHatches, operatorWithinDailyCap,
   operatorTokenFingerprint,
 } from '../server/src/lib/operatorToken.js';
+import { pushRecord, carriedFlags } from './lib/operatorPushState.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..');
@@ -184,6 +185,59 @@ function walk(dir) {
 }
 for (const dir of ['scripts', 'server/src', 'src']) walk(path.join(REPO, dir));
 check('no operator token literal anywhere in the source', scanned, []);
+
+// ── 10. The CLI carries push's migration fact into merge ────────────────────
+// The defect this pins: `push` and `merge` are separate processes, so unless the
+// push record survives on disk, `merge <prNumber>` sends only the number,
+// mergeSelfDevPr's hasMigration default stays false, and the documented loop
+// ships a selfdev-*.sql migration that is never run. The browser path passes it
+// in memory; the CLI must pass it through the file.
+console.log('\n10. the CLI carries push\'s migration fact into merge');
+
+check('a PR-mode push records its number and both flags',
+  pushRecord({ prNumber: 191, hasMigration: true, touchedManualSource: true }),
+  { prNumber: 191, hasMigration: true, touchedManualSource: true });
+check('a non-PR push records nothing',
+  pushRecord({ mode: 'direct', commitSha: 'abc' }), null);
+check('a blocked push records nothing', pushRecord({ blocked: true, reason: 'schema-no-migration' }), null);
+check('missing flags are recorded as false, not dropped',
+  pushRecord({ prNumber: 7 }), { prNumber: 7, hasMigration: false, touchedManualSource: false });
+
+const pushRec = { prNumber: 191, hasMigration: true, touchedManualSource: true };
+check('the matching PR gets the recorded flags', carriedFlags(pushRec, 191),
+  { hasMigration: true, touchedManualSource: true });
+check('a different PR gets nothing — a stale record never lends its migration',
+  carriedFlags(pushRec, 200), {});
+check('no record gets nothing', carriedFlags(null, 191), {});
+check('a string PR number still matches (CLI argv is a string)', carriedFlags(pushRec, '191'),
+  { hasMigration: true, touchedManualSource: true });
+check('a junk PR number gets nothing', carriedFlags(pushRec, 'nope'), {});
+
+check('the CLI persists the push record', cli.includes('writeLastPush(pushRecord(b))'), true);
+check('the CLI forwards the carried flags to mergeSelfDevPr',
+  cliCode.includes('{ prNumber, ...carried }'), true);
+check('the CLI derives them only from the matching push record',
+  cliCode.includes('carriedFlags(readLastPush(), prNumber)'), true);
+// The two fields must not have quietly become escape hatches.
+check('the carried fields are not forbidden operator fields',
+  ['hasMigration', 'touchedManualSource'].some((f) => OPERATOR_FORBIDDEN_FIELDS.includes(f)), false);
+check('applySelfDevMigrations stays out of the allow-list (merge applies, a script does not)',
+  operatorMayCall('applySelfDevMigrations'), false);
+check('the push record file is gitignored', gitignore.includes('.morpheus-push'), true);
+
+// Pin the contract end to end, so a rename on either side re-breaks loudly
+// rather than silently reverting this loop to "ships it, never runs it".
+const pushFn = read('server/src/functions/pushSelfDevToGithub.js');
+const mergeFn = read('server/src/functions/mergeSelfDevPr.js');
+check('push still returns hasMigration', pushFn.includes('hasMigration: schemaOrMigration'), true);
+check('the merge handler still reads hasMigration from the body',
+  mergeFn.includes('hasMigration: body?.hasMigration === true'), true);
+check('the merge applies migrations when hasMigration is true',
+  /if \(hasMigration\) \{[\s\S]*?runApplySelfDevMigrations/.test(mergeFn), true);
+check('the browser path forwards the fact (SelfDev.jsx)',
+  read('src/pages/SelfDev.jsx').includes('hasMigration: prWatch.hasMigration'), true);
+check('the browser path forwards the fact (buildDeckWidget.js)',
+  read('server/src/functions/buildDeckWidget.js').includes('hasMigration: pushResult.hasMigration'), true);
 
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${checks - failures}/${checks} checks passed\n`);
 process.exit(failures === 0 ? 0 : 1);
