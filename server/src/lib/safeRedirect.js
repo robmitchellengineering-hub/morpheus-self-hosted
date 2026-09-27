@@ -27,6 +27,7 @@ export function safeReturnTo(value, fallback = DEFAULT_RETURN_TO) {
   if (v.includes('\\')) return fallback;
   // A control character or newline in a Location header is a response-splitting
   // attempt, not a path.
+  // eslint-disable-next-line no-control-regex -- the control characters are exactly what is being rejected
   if (/[\u0000-\u001f\u007f]/.test(v)) return fallback;
   return v;
 }

@@ -120,10 +120,6 @@ export default async function handler({ user, body }) {
       return {
         connected: true,
         email: conn.email,
-    source: conn.source,
-    sourceLabel: conn.label,
-        source: conn.source,
-        sourceLabel: conn.label,
         source: conn.source,
         sourceLabel: conn.label,
         folder: null,

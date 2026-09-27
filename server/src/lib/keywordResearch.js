@@ -397,7 +397,7 @@ export function repeatedPhrases(text, limit = 12) {
  * traffic or its rankings, which we cannot see.
  */
 export function extractPageSignals(html, url = '') {
-  const title = visibleText((String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [, ''])[1]);
+  const title = visibleText(String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '');
   const description = metaContent(html, 'description');
   const h1 = tagText(html, 'h1').slice(0, 3);
   const h2 = tagText(html, 'h2').slice(0, 8);
