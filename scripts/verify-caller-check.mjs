@@ -93,8 +93,12 @@ check('the caller check is OUTSIDE the self-dev-only deep-verify gate',
 // 2 fix attempts": the wrong kind of error, and an attempt count that never happened.
 check('the caller gate reports to its own list, not the syntax list',
   /callerCritical = \[\.\.\.callerCritical/.test(chat));
-check('…and the syntax-error sentence lists only syntax findings',
-  /syntax error after \$\{MAX_GATE_ATTEMPTS - 1\} fix attempts — \$\{syntaxCritical\.join/.test(chat));
+// Asserts the PROPERTY, not the literal — see the same check in verify-prisma-fields.mjs. The old
+// pattern pinned `${MAX_GATE_ATTEMPTS - 1}`, which is the hardcode that reported "2 fix attempts"
+// after a single thrown fix call, so the check enforced the lie it was written to prevent.
+check('…and the syntax-error sentence lists only syntax findings, and does not claim the cap as the count',
+  /syntax error after \$\{[^}]+\} fix attempt[^`]*\$\{syntaxCritical\.join/.test(chat)
+  && !/MAX_GATE_ATTEMPTS - 1\} fix attempts/.test(chat));
 check('…and reuses the existing cross-file checker rather than a second implementation',
   code('server/src/lib/callerCheck.js').includes("from './importGraph.js'"));
 

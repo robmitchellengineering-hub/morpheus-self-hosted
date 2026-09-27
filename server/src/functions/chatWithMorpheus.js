@@ -1958,7 +1958,9 @@ OPERATOR SAYS: ${message}`;
     // the attempts — which sends them looking for something that is not there.
     const criticalNotes = [];
     if (syntaxCritical.length > 0) {
-      criticalNotes.push(`the code still has a syntax error after ${MAX_GATE_ATTEMPTS - 1} fix attempts — ${syntaxCritical.join('; ')}`);
+      // The real count, not the cap. If attempt 1's fix call itself threw, the loop breaks with
+      // syntaxFixAttempts === 1 while this sentence claimed MAX_GATE_ATTEMPTS - 1 (2) had happened.
+      criticalNotes.push(`the code still has a syntax error after ${syntaxFixAttempts} fix attempt${syntaxFixAttempts === 1 ? '' : 's'} — ${syntaxCritical.join('; ')}`);
     }
     if (callerCritical.length > 0) {
       criticalNotes.push(`a check found an import this change breaks, with no fix attempted — ${callerCritical.join('; ')}`);
@@ -1975,7 +1977,12 @@ OPERATOR SAYS: ${message}`;
       fullReply += `\n\n// INCOMPLETE: the coder's output was cut off by the token limit and could not be retried smaller, so ${n === 1 ? 'this was not written' : 'these were not written'}: ${truncatedFiles.join(', ')}. Everything else in this turn is intact — ask me to continue and I'll do ${n === 1 ? 'it' : 'them'} one at a time.`;
     }
     if (deepVerifyCritical.length > 0) {
-      fullReply += `\n\n// CRITICAL: this still breaks the wider repo after a fix attempt (a real bundle + cross-file export check) — ${deepVerifyCritical.join('; ')}. The change was applied to this workspace anyway; PUSH TO PRODUCTION will re-check and block it, but fix or revert it here first.`;
+      // Two things this used to get wrong. (a) When no file in the change is implicated the loop
+      // breaks BEFORE calling the coder, so "after a fix attempt" was said about an attempt that
+      // never ran — while bundleFixAttempts had already been incremented, so the record agreed with
+      // the lie. (b) The failures are not only bundle ones: a convention failure (the wrong ink rung)
+      // arrives through the same list and was reported as "a real bundle check".
+      fullReply += `\n\n// CRITICAL: a self-dev check still fails — a real bundle + cross-file export check, or the ink convention — ${deepVerifyCritical.join('; ')}. The change was applied to this workspace anyway; PUSH TO PRODUCTION will re-check and block it, but fix or revert it here first.`;
     }
     if (a11yReverted.length > 0) a11yNotes = [...a11yNotes, ...a11yReverted];
     if (a11yNotes.length > 0) {
@@ -2056,8 +2063,8 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
-    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length } }; } catch { /* no locals */ }
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // If the build already LANDED, an error event is the worst response available: the files are
@@ -2073,7 +2080,7 @@ OPERATOR SAYS: ${message}`;
           data: {
             reply: `${fullReply || reply}\n\n// NOTE: the build itself landed and everything above is applied, but something after it failed — ${err.message || 'unknown error'}. Ask me to retry the part that did not finish.`,
             fileOperations: appliedOps,
-            rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts },
+            rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length },
             featureChanged: false,
           },
         });
