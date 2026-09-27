@@ -1854,7 +1854,10 @@ OPERATOR SAYS: ${message}`;
             await createSnapshot(user.id, projectId, 'UI polish pass (pre-polish)');
             const appliedPolish = await applyFileOperations(user.id, projectId, polishOps, freshFiles);
             appliedOps = [...appliedOps, ...appliedPolish];
-            polishCount = appliedPolish.length;
+            // Count only operations that actually WROTE something. `appliedOps` also carries refusals
+            // (`policy_denied`), skips (`skipped_fake_binary`, `skipped_no_content`) and failures
+            // (`edit_failed`), and counting those as "refined" made the POLISH line overstate the pass.
+            polishCount = appliedPolish.filter((op) => /^(create|update|delete)$/.test(String(op.action))).length;
           }
         }
       }
