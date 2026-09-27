@@ -25,7 +25,7 @@
  *   originalText — the whole dump, returned only when nothing landed
  * @returns {{message: string|null, restore: string, landed: number, total: number}}
  */
-export function summarizeFiling({ labels = [], failedTexts = [], originalText = '' } = {}) {
+export function summarizeFiling({ labels = [], failedTexts = [], originalText = '', fallbackReasons = [] } = {}) {
   const landed = labels.length;
   const total = landed + failedTexts.length;
   const set = [...new Set(labels)].join(', ');
@@ -41,6 +41,16 @@ export function summarizeFiling({ labels = [], failedTexts = [], originalText = 
   // have condensed the items it returned, and "file the original rather than a summary"
   // is the same rule the server applies when classification is uncertain.
   const restore = landed > 0 ? failedTexts.join('. ') : originalText;
+
+  // A dump that came back as one unclassified item used to read exactly like a dump the
+  // classifier handled: "Filed to Knowledge". Say which it was, using the reason the
+  // classifier attached. (`nothing-classified` means the model produced nothing usable;
+  // `incomplete` means it dropped part and the whole text was kept instead.)
+  if (message && fallbackReasons.length) {
+    message += fallbackReasons.includes('nothing-classified')
+      ? ' — I could not classify it, so your words are in there whole'
+      : ' — part of it would not classify, so the whole note was kept';
+  }
 
   return { message, restore, landed, total };
 }

@@ -329,6 +329,7 @@ export function CommandDeckProvider({ children }) {
     // already filed. See ./dumpFiling.js.
     const labels = [];
     const failedTexts = [];
+    const fallbackReasons = [];
     try {
       // ONE classification call for the whole dump. This used to short-circuit
       // to a single owner as soon as any person's name appeared anywhere in the
@@ -371,6 +372,10 @@ export function CommandDeckProvider({ children }) {
         // Each item is filed on its own. One create throwing used to abandon the rest
         // AND put the whole dump back with "try again" while the rows already written
         // stayed — so the retry filed every item that had succeeded a second time.
+        // The classifier marks a fallback item so the line below can say "I could not
+        // classify it" instead of reporting it as sorted.
+        if (item?.fallback_reason) fallbackReasons.push(item.fallback_reason);
+
         try {
           if (item?.destination === 'task') {
             const created = await base44.entities.DeckTask.create({ text: itemText, owner_person_id: named?.id || selfId, energy: 'any', done: false });
@@ -400,7 +405,7 @@ export function CommandDeckProvider({ children }) {
       // thoughtless, which only holds if it is visible. What it says is what LANDED, and
       // what did not goes back in the box so one press retries exactly that. Both halves
       // are decided in ./dumpFiling.js, where a guard can reach them.
-      const outcome = summarizeFiling({ labels, failedTexts, originalText: text });
+      const outcome = summarizeFiling({ labels, failedTexts, originalText: text, fallbackReasons });
       if (failedTexts.length) {
         setDumpInput(outcome.restore);
         flagSaveErr();

@@ -74,6 +74,21 @@ check('a life-stream note reports whether it saved',
 check('…and addLifeNote returns a boolean rather than swallowing the failure',
   /catch \{ flagSaveErr\(\); return false; \}/.test(code) && /return true;/.test(code), true);
 
+console.log('\n5. an unclassified dump says so instead of reading as sorted');
+check('nothing-classified explains itself',
+  summarizeFiling({ labels: ['Knowledge'], fallbackReasons: ['nothing-classified'], originalText: 'x' }).message,
+  'Filed to Knowledge — I could not classify it, so your words are in there whole');
+check('incomplete explains a different thing',
+  summarizeFiling({ labels: ['your tasks'], fallbackReasons: ['incomplete'], originalText: 'x' }).message,
+  'Filed to your tasks — part of it would not classify, so the whole note was kept');
+check('a clean split gets no clause',
+  summarizeFiling({ labels: ['your tasks'], fallbackReasons: [], originalText: 'x' }).message,
+  'Filed to your tasks');
+check('the loop passes the reasons through',
+  /summarizeFiling\(\{ labels, failedTexts, originalText: text, fallbackReasons \}\)/.test(readFileSync(new URL('../src/contexts/CommandDeckContext.jsx', import.meta.url), 'utf8')), true);
+check('…and collects them from the marked items',
+  /if \(item\?\.fallback_reason\) fallbackReasons\.push\(item\.fallback_reason\)/.test(readFileSync(new URL('../src/contexts/CommandDeckContext.jsx', import.meta.url), 'utf8')), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);

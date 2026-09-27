@@ -10,6 +10,7 @@
 // destination and the rest of the sentence was silently entombed in it.
 import {
   CLASSIFY_SCHEMA, DESTINATIONS, LIFE_STREAM_KEYS, MAX_ITEMS,
+  FALLBACK_INCOMPLETE, FALLBACK_NOTHING_CLASSIFIED,
   buildClassifyPrompt, normalizeClassifyResult,
 } from '../server/src/lib/deckDumpClassify.js';
 
@@ -226,6 +227,20 @@ check('a lightly rewritten item is not treated as a loss',
       { text: 'pay rego', destination: 'task' },
     ],
   }, 'Book the kids into swimming, pay the rego').length, 2);
+
+console.log('\n8. a fallback says which kind it is, so the card cannot read as sorted');
+check('nothing usable at all is marked nothing-classified',
+  normalizeClassifyResult(null, 'get milk and chase the quote')[0].fallback_reason, FALLBACK_NOTHING_CLASSIFIED);
+check('a dropped thought is marked incomplete',
+  normalizeClassifyResult({ items: [{ text: 'get milk', destination: 'task' }] }, 'Book the kids into swimming, pay the rego, get milk')[0].fallback_reason,
+  FALLBACK_INCOMPLETE);
+check('a faithful split carries no marker at all',
+  normalizeClassifyResult({
+    items: [
+      { text: 'get milk', destination: 'task' },
+      { text: 'chase the Henderson quote', destination: 'task' },
+    ],
+  }, 'get milk and chase the Henderson quote').every((i) => i.fallback_reason === undefined), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
