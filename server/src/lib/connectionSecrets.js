@@ -51,3 +51,32 @@ export function decodeConnections(stored) {
     return {};
   }
 }
+
+/**
+ * The URL of the operator's deployed Netlify site, or ''.
+ *
+ * 2026-09-28: added for the provider-setup guide. Mode B of that guide tells the
+ * operator to register the app's origin in the Google console, and a guide whose
+ * origin line reads "(open the app and copy the address bar)" when we already know
+ * the URL is a worse guide than it has to be. One function because two callers need
+ * it — the compile panel and the build's README write — and a second `?.netlify?.url`
+ * spelled out at each is how the two drift.
+ *
+ * Takes the DECODED connections object, not the stored column: decrypting is
+ * `decodeConnections`'s job, and a helper that silently did it too would make it
+ * impossible to tell whether a caller had already decoded.
+ */
+export function netlifyOrigin(connections) {
+  const value = connections?.netlify?.url;
+  if (typeof value !== 'string') return '';
+  const url = value.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(url)) return '';
+  // The origin ONLY — Google's console wants scheme + host, and a path or query
+  // there is one of the ways "Authorised JavaScript origins" silently does not match.
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+

@@ -361,6 +361,16 @@ jobs:
       - name: Photo widget rules
         run: node scripts/verify-photo-drive.mjs
 
+      # Per-app capability grants: a user's one-time approval that ONE generated
+      # app may use ONE capability against the user's OWN Google Drive connection.
+      # The checks that matter are behavioural and driven with plain objects: a
+      # token for app A cannot act for app B, a revoked grant is inert, and the
+      # endpoint takes a grant and never a Morpheus session. Plus the honesty half —
+      # a static app is told to bring its own OAuth client, with the steps, because
+      # a token that can write to a Drive must never ship in a public page.
+      - name: App capability grants
+        run: node scripts/verify-app-capability-creds.mjs
+
       # Traffic (IndexNow): the pure payload/batching/ledger decisions, the rule
       # that a 2xx means "submitted" and never "indexed", and the contracts across
       # the boundary — the action list against the plugin's switch, the widget

@@ -47,6 +47,7 @@
 // the same reason lib/requiredChecks.js and lib/selfDevDrift.js's evaluator are
 // pure — and it is what scripts/verify-operator-drive.mjs exercises.
 import crypto from 'node:crypto';
+import { hashToken } from './tokenHash.js';
 
 /** Token prefix. A value starting with this is treated as an operator token. */
 export const OPERATOR_TOKEN_PREFIX = 'opr_';
@@ -116,7 +117,10 @@ export function isOperatorToken(value) {
 
 /** SHA-256 of a token value, hex. The hash is what is stored; never the token. */
 export function hashOperatorToken(value) {
-  return crypto.createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex');
+  // 2026-09-28: the hashing itself lives in lib/tokenHash.js, shared with the
+  // widget/device tokens and the per-app capability grants. This wrapper stays
+  // because it is this module's published name.
+  return hashToken(value);
 }
 
 /**
@@ -131,7 +135,10 @@ export function verifyOperatorToken(value, env = process.env) {
   if (!operatorTokenConfigured(env)) return false;
   if (typeof value !== 'string' || value.length === 0) return false;
   const expected = Buffer.from(env[OPERATOR_TOKEN_ENV].trim().toLowerCase(), 'hex');
-  const actual = crypto.createHash('sha256').update(value, 'utf8').digest();
+  // Through the same hash routine as every other token kind (lib/tokenHash.js), so
+  // there is one definition of "the stored form of a token" rather than a third
+  // copy of the same crypto call. Same bytes, same result.
+  const actual = Buffer.from(hashToken(value), 'hex');
   return crypto.timingSafeEqual(expected, actual);
 }
 

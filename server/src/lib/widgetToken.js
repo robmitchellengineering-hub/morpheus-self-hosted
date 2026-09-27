@@ -4,6 +4,7 @@
 // full token is shown once. See the "Self-Dev as a Plugin" scope doc.
 import crypto from 'node:crypto';
 import { prisma } from '../db.js';
+import { hashToken } from './tokenHash.js';
 
 export const WIDGET_TOKEN_PREFIX = 'wgt_';
 export const DEFAULT_SCOPES = ['chat', 'deploy', 'store'];
@@ -75,7 +76,10 @@ export function isMissingWidgetTable(err) {
     || /Cannot read properties of undefined \(reading '(find|findFirst|create|update|delete|updateMany)/i.test(m);
 }
 
-const hash = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
+// 2026-09-28: the hash moved to lib/tokenHash.js, shared with the per-app
+// capability grants (lib/appCapability.js) — one hashing routine, not a third
+// copy of the same line. Same value, same column.
+const hash = hashToken;
 
 // Create a token for a project the caller owns. Returns { token } (the full
 // secret, shown once) plus the stored row's public fields.

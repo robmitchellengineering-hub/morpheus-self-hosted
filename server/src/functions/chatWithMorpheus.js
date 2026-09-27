@@ -28,6 +28,8 @@ import { selfDevToolsPromptBlock, runSelfDevToolCalls, formatSelfDevToolResultsB
 import { getConstructContext } from '../lib/constructContext.js';
 import { checkA11y } from '../lib/a11yCheck.js';
 import { getProjectAssets, mediaAssetsBlock } from '../lib/projectAssets.js';
+import { buildProviderReport, providerReadmeSection, upsertProviderReadmeSection } from '../lib/appCapability.js';
+import { decodeConnections, netlifyOrigin } from '../lib/connectionSecrets.js';
 import { getBrand, brandPromptBlock } from '../lib/projectBrand.js';
 import { publishPromptBlock } from '../lib/publishChecklist.js';
 import { getForms, formsPromptBlock } from '../lib/projectForms.js';
@@ -292,6 +294,7 @@ MULTI-STEP ESCALATION — if the request genuinely cannot be built well in one p
 Do NOT escalate a single component, a bug fix, a styling change, or a handful of closely-related files — those are one turn. Only escalate when nothing is already being tracked (no active feature is shown in your context).
 
 EXTERNAL APIS — if the plan has the coder call a real external HTTP API (a third-party service, a public data source) and you are not CERTAIN of its exact URL and response shape from something already shown to you in this conversation, list it in externalApis (url + a short why) rather than trusting what you recall. It will actually be called before the coder writes anything, and the coder is handed the real result as ground truth. A URL invented from memory that turns out wrong is a page that silently never loads for the operator — verifying it first costs one HTTP request; not verifying it costs a debugging session days later. Leave this empty for plans that touch no external API.
+PROVIDER ACCOUNTS — if the app saves or reads a file in the operator's own Google Drive, list "drive_upload" in providerCapabilities. That is the supported default and it needs no OAuth client in the app: Morpheus holds the operator's own connected Google account and the app calls Morpheus. Say so in the plan, and do NOT write OAuth setup instructions into the README yourself — Morpheus writes the correct setup section into the README at the end of the build, and a second hand-written copy will contradict it. The same capability requires the app to have a backend (a server the token can live in); do not plan a client-only page that holds a token. If the app instead brings its own OAuth client id, leave this empty.
 
 Return JSON with:
 - reply: Your response to the operator (in character, concise for builds, fuller for conversation, or ONLY clarifying questions when needsClarification is true)
@@ -589,6 +592,65 @@ SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
 - CODER: for any file whose current content you were not shown, make the smallest change that satisfies the plan and preserve everything else; never reconstruct a file you cannot see.
 - REVIEWER: the context is scoped. Do NOT flag an issue that depends on a file not shown here (e.g. "imports X which may not exist") — you cannot verify it either way, so treat unseen files as correct.
 - Prefer small, targeted, reviewable changes over sweeping rewrites.${selfDev ? " The operator reviews every change before pushing to production themselves." : ''}${selfDev ? "\n- KNOWN-HAZARDS.md is in the context above — a list of self-inflicted production breakages that have already happened here. PLANNER: do not plan anything that repeats one. REVIEWER: check every proposed change against every hazard in it and flag a violation as a CRITICAL issue." : ''}${selfDev ? "\n- HOUSE RULES: AGENTS.md is in the context above and is this repo's own contract. Its \"UI conventions\" section states the ink ladder — which text size may use text-ink, text-ink-strong or text-ink-max, and that an ink token never takes an opacity modifier. Follow it exactly; scripts/verify-prose-ink.mjs enforces that ladder on every build, so a wrong rung is a red CI gate even though the code is valid. That guard is where three consecutive self-dev changes failed." : ''}${selfDev ? "\n- DB SCHEMA: if you change server/prisma/schema.prisma, you MUST also add a matching migration file server/prisma/selfdev-<slug>.sql in the SAME change — idempotent, ADDITIVE-ONLY DDL (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, CREATE TYPE, ALTER TYPE ... ADD VALUE), one statement per line, in the same plain style as the existing server/prisma/*.sql files. Never DROP or retype an existing column in self-dev. The push is blocked if a schema change ships without its migration." : ''}`;
+}
+
+/**
+ * Put the provider-setup truth into the app's own README, at build time.
+ *
+ * WHY THIS IS DONE HERE AND NOT ASKED OF THE CODER
+ *
+ * Owner's decision, 2026-09-28, verbatim: "I think we need to make morpheus as a
+ * whole handle oauth and credentials like this so it will just work for free tier
+ * app creation or if it needs to be the other way he needs to say so and let
+ * people know the steps."
+ *
+ * The last clause is the load-bearing one: an app that cannot use the operator's
+ * connection must SAY SO, in the app it built, rather than leaving a raw provider
+ * error at run time. A model asked to remember that will sometimes not, and a
+ * README sentence that is sometimes absent is the failure mode being fixed — so the
+ * section is generated deterministically from the app's own files and written over
+ * whatever the coder produced. The marker comment makes the section managed: the
+ * next build replaces it in place instead of appending a second copy every turn.
+ *
+ * Pure decision, impure write: `buildProviderReport` (lib/appCapability.js) owns
+ * the wording and the mode, and the guard drives every branch of it without a
+ * database. This function only supplies the facts and the row.
+ *
+ * Returns the report (or null when the app involves no provider at all), and pushes
+ * an update op into `appliedOps` so the change is snapshotted, auto-synced to
+ * GitHub and visible to the rest of this turn like any other write.
+ */
+async function writeProviderHonestyToReadme({ userId, project, files, appliedOps, declared = [] }) {
+  // The app's real deployed origin, when it has one — mode B's steps are useless
+  // without it, and "open the app and copy the address bar" is the honest fallback
+  // rather than a guessed URL.
+  let origin = '';
+  try {
+    const settings = await prisma.userSettings.findUnique({ where: { created_by_id: userId }, select: { connections: true } });
+    origin = netlifyOrigin(decodeConnections(settings?.connections));
+  } catch { origin = ''; }
+
+  const report = buildProviderReport({
+    files,
+    declared,
+    compileTarget: project.compile_target,
+    projectName: project.name,
+    origin,
+    originKnown: Boolean(origin),
+  });
+  if (!report.mode || report.mode === 'none') return null;
+
+  const section = providerReadmeSection(report);
+  const current = (await prisma.projectFile.findFirst({
+    where: { project_id: project.id, path: 'README.md' },
+    select: { content: true },
+  }))?.content ?? '';
+  const next = upsertProviderReadmeSection(current, section);
+  if (next === current) return report; // already says the right thing
+
+  appliedOps.push({ action: current ? 'update' : 'create', path: 'README.md' });
+  await applyFileOperations(userId, project.id, [{ path: 'README.md', content: next, action: current ? 'update' : 'create' }], [{ path: 'README.md', content: current }]);
+  return report;
 }
 
 export default async function handler({ user, body, res }) {
@@ -976,6 +1038,14 @@ OPERATOR SAYS: ${message}`;
   let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
   const a11yReverted = []; // an a11y fix that broke parsing, put back rather than applied
   let polishCount = 0;
+  // The provider-setup verdict for this build (lib/appCapability.js), so the reply
+  // and the app's README say the same thing about the same app.
+  let providerReport = null;
+  // What the planner said this app needs from the operator's own provider
+  // accounts. Lifted to this scope because the planner result is declared inside
+  // the planner branch and the README write happens further down, after the coder
+  // and polish passes. Empty for a project where the planner never ran.
+  let declaredProviderCapabilities = [];
 
   try {
     // ── Phase 0a: Web research — search + read pasted URLs before planning ──
@@ -1170,6 +1240,11 @@ OPERATOR SAYS: ${message}`;
             stepComplete: { type: 'boolean', description: 'When an ACTIVE FEATURE is shown in your context: true if THIS turn fully completes the active step (advance to the next); false if it is a tweak/fix still within the active step.' },
             decisionSummary: { type: 'string', description: 'CODE BUILDS ONLY. One line: what this change does. Recorded in the decisions log and shown to future planning turns.' },
             decisionRationale: { type: 'string', description: 'CODE BUILDS ONLY. One line: why — the reasoning or constraint behind the approach, so a later change does not undo it by accident.' },
+            providerCapabilities: {
+              type: 'array',
+              description: 'CODE BUILDS ONLY. The provider capabilities this app needs from the OPERATOR\'S OWN connected account — currently one: "drive_upload" (save a file to the operator\'s Google Drive through Morpheus, so the app needs no OAuth client of its own). List it whenever the app saves or reads a file in Google Drive. An app that uses a provider this way MUST have a backend to hold the token; Morpheus writes the resulting setup steps into the app README itself, so do not write those steps by hand. Leave empty when the app touches no provider account — or when it brings its own OAuth client id, which is a different route.',
+              items: { type: 'string', enum: ['drive_upload'] },
+            },
             externalApis: {
               type: 'array',
               description: 'If this plan has the coder call a real external HTTP API (a third-party service, a public data source) whose exact URL/response shape you are not certain of from a source already shown to you in this conversation, list each real endpoint URL here — up to 5 — so it gets actually called and verified before any code is written against it. Leave empty for plans that touch no external API, or that only use one whose shape is already confirmed in your context above.',
@@ -1241,6 +1316,7 @@ OPERATOR SAYS: ${message}`;
 
     const plannerResult = planner.result;
     reply = plannerResult.reply || '...';
+    declaredProviderCapabilities = Array.isArray(plannerResult.providerCapabilities) ? plannerResult.providerCapabilities : [];
     const needsCode = !!plannerResult.needsCode;
     const needsClarification = !!plannerResult.needsClarification;
 
@@ -1939,6 +2015,33 @@ OPERATOR SAYS: ${message}`;
         }
       }
 
+      // ── Provider-setup honesty, written into the app's own README ──────
+      // Deliberately BEFORE the GitHub auto-sync below so the section ships in
+      // the same commit as the code it describes. See the helper's own comment
+      // for why this is generated rather than asked of the coder, and why it is
+      // not part of the syntax/bundle gates: it is prose we wrote, not code the
+      // model produced, and running it through the gates would only be able to
+      // fail on our own text. A failure here must never cost the operator the
+      // build that already succeeded, so it is caught and reported.
+      if (!isSelfDev && appliedOps.some((op) => /^(create|update)$/.test(String(op.action)))) {
+        try {
+          // The files as they are NOW, read fresh: the in-memory `files` array
+          // predates this turn's writes, and mode is decided from the app's real
+          // content — deciding it from a stale list is how an app that just gained
+          // a Drive call would be told there is nothing to set up.
+          const built = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+          providerReport = await writeProviderHonestyToReadme({
+            userId: user.id,
+            project,
+            files: built,
+            appliedOps,
+            declared: declaredProviderCapabilities,
+          });
+        } catch (err) {
+          console.error('[chatWithMorpheus] provider honesty write failed:', err.message);
+        }
+      }
+
       // GitHub auto-sync (main + polish passes both land here, so this
       // covers the whole turn in one push) — fire-and-forget, see
       // syncProjectFilesToGithub's own comment for why this is never
@@ -1958,6 +2061,19 @@ OPERATOR SAYS: ${message}`;
     fullReply += sourcesLine;
     if (polishCount > 0) {
       fullReply += `\n\n// POLISH: refined styling on ${polishCount} file(s).`;
+    }
+    // The same sentence the app's README now carries, in the turn where it was
+    // decided — so an operator who never opens the README still learns which mode
+    // their app is in. See lib/appCapability.js for the two modes and why a static
+    // app takes the own-client route.
+    if (providerReport && providerReport.mode === 'connected') {
+      fullReply += `\n\n// PROVIDER: ${providerReport.headline} It goes through your Morpheus Google Drive connection, so the app needs no OAuth client of its own. Keep Google Drive connected in Settings. The app's README has this too.`;
+    } else if (providerReport && providerReport.mode === 'own_client_required') {
+      fullReply += `\n\n// PROVIDER: ${providerReport.headline} I wrote the steps into the app's README — ${
+        providerReport.reason === 'static-app-cannot-hold-token'
+          ? 'this app has no server, so there is nowhere safe to keep a token that writes to your Drive'
+          : 'this app brings its own OAuth client'
+      }.`;
     }
     // Surface any file whose diff edit never landed (matched nothing, and
     // the full-content retry didn't produce it either) so the operator

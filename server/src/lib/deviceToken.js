@@ -19,6 +19,7 @@
 // below is real DB rows, not a signed JWT.
 import crypto from 'node:crypto';
 import { prisma } from '../db.js';
+import { hashToken } from './tokenHash.js';
 
 export const DEVICE_TOKEN_PREFIX = 'dvc_';
 const PENDING_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -39,7 +40,9 @@ export function isMissingDeviceTable(err) {
     || /Cannot read properties of undefined \(reading '(find|findFirst|create|update|delete|updateMany)/i.test(m);
 }
 
-const hash = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
+// 2026-09-28: shared with lib/widgetToken.js and the per-app capability grants —
+// see lib/tokenHash.js for why there is one of these and not three.
+const hash = hashToken;
 
 // Short, human-typeable code for the approval page (e.g. "WXYZ-1234") —
 // distinct from device_code, which the app itself never shows anyone.

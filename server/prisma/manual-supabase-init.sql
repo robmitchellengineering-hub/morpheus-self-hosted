@@ -535,6 +535,28 @@ CREATE TABLE "widget_tokens" (
 );
 
 -- CreateTable
+-- Per-app capability grants (lib/appCapabilityGrants.js): one user's approval
+-- that one generated app may use one named capability against that user's own
+-- Google Drive connection. token_hash is sha256(full token) — the token itself is
+-- never stored. Migration for existing databases:
+-- server/prisma/selfdev-app-capability-grants.sql.
+CREATE TABLE "app_capability_grants" (
+    "id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "project_id" TEXT NOT NULL,
+    "app_id" TEXT NOT NULL,
+    "token_prefix" TEXT NOT NULL,
+    "token_hash" TEXT NOT NULL,
+    "label" TEXT,
+    "capabilities" TEXT NOT NULL,
+    "revoked" BOOLEAN NOT NULL DEFAULT false,
+    "last_used_at" TIMESTAMP(3),
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "app_capability_grants_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "device_auth_requests" (
     "id" TEXT NOT NULL,
     "device_code" TEXT NOT NULL,
@@ -886,6 +908,15 @@ CREATE UNIQUE INDEX "widget_tokens_token_hash_key" ON "widget_tokens"("token_has
 CREATE INDEX "widget_tokens_project_id_idx" ON "widget_tokens"("project_id");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "app_capability_grants_token_hash_key" ON "app_capability_grants"("token_hash");
+
+-- CreateIndex
+CREATE INDEX "app_capability_grants_project_id_idx" ON "app_capability_grants"("project_id");
+
+-- CreateIndex
+CREATE INDEX "app_capability_grants_created_by_id_idx" ON "app_capability_grants"("created_by_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "device_auth_requests_device_code_key" ON "device_auth_requests"("device_code");
 
 -- CreateIndex
@@ -1040,6 +1071,12 @@ ALTER TABLE "widget_tokens" ADD CONSTRAINT "widget_tokens_created_by_id_fkey" FO
 
 -- AddForeignKey
 ALTER TABLE "widget_tokens" ADD CONSTRAINT "widget_tokens_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "app_capability_grants" ADD CONSTRAINT "app_capability_grants_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "app_capability_grants" ADD CONSTRAINT "app_capability_grants_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "device_tokens" ADD CONSTRAINT "device_tokens_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

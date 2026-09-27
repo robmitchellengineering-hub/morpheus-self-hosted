@@ -13,6 +13,7 @@ import functionsRoutes from './routes/functions.routes.js';
 import uploadsRoutes from './routes/uploads.routes.js';
 import mediaAssetsRoutes from './routes/mediaAssets.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import appCapabilityRoutes from './routes/appCapability.routes.js';
 import { LOCAL_ROOT } from './storage.js';
 import { startFreshnessSchedule } from './freshnessSchedule.js';
 import { startDeepSeekBalanceSchedule } from './deepseekBalanceSchedule.js';
@@ -57,6 +58,13 @@ app.use('/api/functions', functionsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/media-assets', mediaAssetsRoutes);
 app.use('/api/admin', adminRoutes);
+
+// App capability grants — what a GENERATED APP's backend calls, with a bearer
+// `apc_` grant and nothing else. Deliberately NOT under /api/functions: that
+// dispatcher resolves a scoped token into a real Morpheus user, and an app
+// capability must never be able to borrow a session surface. See the route's own
+// header for why a static app cannot hold one of these at all.
+app.use('/api/app-capability', appCapabilityRoutes);
 
 // Local-disk storage driver serves files from here. Swap to S3/R2 + a CDN
 // in front for anything beyond a single instance — see SCALING.md.
