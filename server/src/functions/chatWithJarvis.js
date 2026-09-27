@@ -160,8 +160,12 @@ export default async function handler({ user, body }) {
     ? history.map((m) => `${m.role === 'user' ? firstName : 'Jarvis'}: ${m.content}`).join('\n')
     : '(no prior conversation)';
 
-  const prompt = `${buildJarvisSystemPrompt({ firstName, businessContext })}
-${formatMemoryBlock(memory)}
+  // Named so the log line below can size each block. The assembled prompt is byte-identical
+  // to what this was before — the same strings, in the same order.
+  const personaBlock = buildJarvisSystemPrompt({ firstName, businessContext });
+  const memoryBlock = formatMemoryBlock(memory);
+  const prompt = `${personaBlock}
+${memoryBlock}
 DATA SNAPSHOT:
 ${snapshot}
 
@@ -170,6 +174,13 @@ ${conversationBlock}
 
 ${firstName}: ${message || '(see attached file)'}
 Jarvis:`;
+
+  // Where the input tokens went — LENGTHS ONLY, never content. An audit of this call found two
+  // replies at ~15.6k input tokens (45% of all audited reply input) that nothing in this code or
+  // in the account's own data explains, and they cannot be attributed after the fact:
+  // `usage_events` records how many tokens were sent, never what was in them. This is the line
+  // that answers it the next time it happens. It is the only change here.
+  console.log(`[chatWithJarvis] reply prompt chars: persona=${personaBlock.length} memory=${memoryBlock.length} snapshot=${snapshot.length} conversation=${conversationBlock.length} message=${message.length} total=${prompt.length} fileUrls=${fileUrls?.length || 0}`);
 
   const { result: reply } = await invokeAI({ userId: user.id, prompt, fileUrls, maxTokens: MAX_REPLY_TOKENS });
 
