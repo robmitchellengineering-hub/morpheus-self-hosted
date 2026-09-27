@@ -210,6 +210,12 @@ jobs:
       - name: Deck memory fold
         run: node scripts/verify-deck-memory.mjs
 
+      # The Gmail inquiry sync's two hard edges: it must stop inside the browser's own
+      # request timeout, and it must not file the same email twice when its seen-marker
+      # write fails.
+      - name: Gmail sync limits
+        run: node scripts/verify-gmail-sync.mjs
+
       # The proactive-insight opt-out gate, plus the cross-boundary contract
       # that the widget it keys off still exists in the frontend registry with
       # the copy that makes the control discoverable.

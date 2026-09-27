@@ -21,6 +21,15 @@ const PAGE_SIZE = 20;
 // bounded so one sync can't run away classifying an entire mailbox's history
 // the first time it's ever run against a huge backlog.
 const MAX_MESSAGES_PER_SYNC = 150;
+
+// How long one sync may spend before it stops and hands the rest to the next one.
+// The browser abandons the request at 210s (src/api/base44Client.js API_FETCH_TIMEOUT_MS),
+// and each message costs a Gmail fetch plus a classification — so a 150-message backlog
+// took minutes and the operator reliably saw a timeout while the server worked on. A
+// timeout reads as failure even when the work continued. Stopping well inside it, and
+// saying so, is the honest version: messages left unclassified carry no seen-marker, so
+// the next sync walks straight back to them.
+const SYNC_BUDGET_MS = Number(process.env.DECK_GMAIL_SYNC_BUDGET_MS || 150000);
 // 2026-09-17 CORRECTION (Rob: "still not picking up" even after the paging
 // fix above): checked this mailbox's actual Gmail data directly — `category:
 // primary` returns ZERO messages for this account, ever, with no date bound.
@@ -57,9 +66,12 @@ SUBJECT: ${message.subject}
 MESSAGE:
 ${(message.body || message.snippet || '').slice(0, 3000)}`;
 
-  // One boolean, on the `classify` role (flash @ 0.4), which has no hidden-reasoning tax
-  // to eat the budget — that tax was the cause of the OUTPUT_TRUNCATED this cap was raised
-  // to outrun, back when this call named no role and so resolved to the platform default.
+  // One boolean, on the `classify` role (flash @ 0.4). The cap is generous for a
+  // boolean; the one truncation this call ever measured (800 tokens, 2026-09-16) was
+  // while it named no role and so resolved to the platform default — which DOES tax the
+  // budget with hidden reasoning. Naming the role did not remove that tax from the
+  // platform, only from this call: the same claim written into classifyDeckDumpItem was
+  // disproven there at 1200, so it is not repeated here as a reason the cap is safe.
   // The caller must still not read a throw as "not an inquiry"; see its own handling.
   const { result } = await invokeAI({ userId, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 800 });
   return !!result?.isInquiry;
@@ -67,10 +79,12 @@ ${(message.body || message.snippet || '').slice(0, 3000)}`;
 
 export default async function handler({ user }) {
   const { token } = await getDeckGoogleToken(user.id);
+  const deadline = Date.now() + SYNC_BUDGET_MS;
 
   let checked = 0;
   let created = 0;
   let failed = 0;
+  let stoppedEarly = false;
   let pageToken;
 
   // Walk pages newest-first until either: a page comes back with nothing
@@ -90,6 +104,7 @@ export default async function handler({ user }) {
     if (unseen.length === 0) break;
 
     for (const { id } of unseen) {
+      if (Date.now() >= deadline) { stoppedEarly = true; break; }
       const full = await getGmailMessage(token, id);
       checked++;
 
@@ -108,28 +123,50 @@ export default async function handler({ user }) {
       }
 
       if (isInquiry) {
-        await prisma.deckInboxItem.create({
-          data: {
-            created_by_id: user.id,
-            channel: 'gmail',
-            from_name: full.from,
-            from_email: full.fromEmail,
-            message: full.body?.slice(0, 5000) || full.snippet || '',
-            stage: 'new',
-            external_id: full.id,
-          },
+        // Idempotent on the message id. The seen-marker below is the fast path, but when
+        // its write fails the message is unseen again next sync — and re-classifying it
+        // used to create a SECOND DeckInboxItem, putting one customer email in the list
+        // twice. `DeckInboxItem.external_id` is documented as the dedup key but carries no
+        // unique index, so this read is the guarantee. (A unique index is the real fix for
+        // two syncs racing; that is a schema change and its own migration.)
+        const already = await prisma.deckInboxItem.findFirst({
+          where: { created_by_id: user.id, external_id: full.id },
+          select: { id: true },
         });
-        created++;
+        if (!already) {
+          await prisma.deckInboxItem.create({
+            data: {
+              created_by_id: user.id,
+              channel: 'gmail',
+              from_name: full.from,
+              from_email: full.fromEmail,
+              message: full.body?.slice(0, 5000) || full.snippet || '',
+              stage: 'new',
+              external_id: full.id,
+            },
+          });
+          created++;
+        }
       }
 
-      await prisma.deckGmailSeenMessage.create({
-        data: { created_by_id: user.id, external_id: full.id },
-      }).catch(() => {}); // already-seen race between concurrent syncs — harmless
+      try {
+        await prisma.deckGmailSeenMessage.create({ data: { created_by_id: user.id, external_id: full.id } });
+      } catch (err) {
+        // This used to be `.catch(() => {})`, which hid two different things behind one
+        // comment. The already-seen race is genuinely harmless — the other sync wrote the
+        // marker, and the item creation above is idempotent now. Anything else means the
+        // message will be re-checked on the next sync, which is worth a log line rather
+        // than silence.
+        if (err?.code !== 'P2002') {
+          console.error(`[syncDeckGmailInbox] could not mark message ${id} seen — it will be re-checked next sync:`, err?.message || err);
+        }
+      }
     }
 
+    if (stoppedEarly) break;
     if (!nextPageToken) break;
     pageToken = nextPageToken;
   }
 
-  return { checked, created, skipped: checked - created - failed, failed };
+  return { checked, created, skipped: checked - created - failed, failed, stoppedEarly };
 }

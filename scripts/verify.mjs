@@ -29,6 +29,7 @@ const HARD = [
   'verify-context.mjs',
   'verify-dump-classify.mjs',
   'verify-dump-filing.mjs',
+  'verify-gmail-sync.mjs',
   'verify-deck-memory.mjs',
   'verify-insight-optout.mjs',
   'verify-seo.mjs',
