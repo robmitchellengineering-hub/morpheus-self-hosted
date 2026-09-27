@@ -23,7 +23,13 @@ FROM: ${item.from_name}${item.from_email ? ` <${item.from_email}>` : ''}
 MESSAGE:
 ${item.message}`;
 
-  const { result: reply } = await invokeAI({ userId: user.id, prompt, maxTokens: MAX_REPLY_TOKENS });
+  // `role: 'draft'` — mechanical prose, not persona. This named NO role, so it silently
+  // resolved to default_model (v4-pro @ 0.7): a reasoning model spending its budget
+  // thinking before it writes a short reply, at the same 0.7 the persona paths use for
+  // judgement. Rob's call, 2026-09-27, after the same swap measured 8x cheaper and ~2s
+  // faster per message on the deck's widget-build classifier. Naming the role is also what
+  // makes it tunable and A/B-able at all — a role-less call has no per-user override.
+  const { result: reply } = await invokeAI({ userId: user.id, prompt, maxTokens: MAX_REPLY_TOKENS, role: 'draft' });
 
   const draft = String(reply || '').trim();
   if (!draft) {
