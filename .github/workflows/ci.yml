@@ -236,6 +236,11 @@ jobs:
       - name: Deck prompt bounds
         run: node scripts/verify-deck-prompt-bounds.mjs
 
+      # Usage events must record which call, whether it succeeded, and how long it took — the
+      # platform could answer none of those before 2026-09-27.
+      - name: Usage observability
+        run: node scripts/verify-usage-observability.mjs
+
       # The proactive-insight opt-out gate, plus the cross-boundary contract
       # that the widget it keys off still exists in the frontend registry with
       # the copy that makes the control discoverable.
