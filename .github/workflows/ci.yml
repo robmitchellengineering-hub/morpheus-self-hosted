@@ -231,6 +231,11 @@ jobs:
       - name: Deck snapshot bounds
         run: node scripts/verify-deck-snapshot.mjs
 
+      # Bounding the two prompt blocks that could grow without limit, without losing the
+      # signal: the last exchange stays verbatim and any omission is named.
+      - name: Deck prompt bounds
+        run: node scripts/verify-deck-prompt-bounds.mjs
+
       # The proactive-insight opt-out gate, plus the cross-boundary contract
       # that the widget it keys off still exists in the frontend registry with
       # the copy that makes the control discoverable.

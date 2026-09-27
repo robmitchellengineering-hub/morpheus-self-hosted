@@ -9,6 +9,7 @@
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock, HISTORY_WINDOW } from '../lib/deckMemory.js';
+import { buildConversationBlock } from '../lib/promptBounds.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 import { runBuildDeckWidget } from './buildDeckWidget.js';
@@ -156,9 +157,11 @@ export default async function handler({ user, body }) {
     return { reply };
   }
 
-  const conversationBlock = history.length
-    ? history.map((m) => `${m.role === 'user' ? firstName : 'Jarvis'}: ${m.content}`).join('\n')
-    : '(no prior conversation)';
+  // Bounded by characters, not only by message count: the count bound was right, the size bound
+  // was missing (~60k tokens worst case, and it has already grown to 6,927 characters in
+  // production through Jarvis's own verbosity). The last exchange stays verbatim and any omission
+  // is named — see lib/promptBounds.js.
+  const conversationBlock = buildConversationBlock(history, { firstName });
 
   // Named so the log line below can size each block. The assembled prompt is byte-identical
   // to what this was before — the same strings, in the same order.

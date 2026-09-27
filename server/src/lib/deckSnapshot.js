@@ -5,6 +5,7 @@
 // in. Pulled out of chatWithJarvis.js so the two never drift into building
 // their own, slightly different pictures of the same data.
 import { prisma } from '../db.js';
+import { excerpt, INBOX_IN_PROMPT } from './promptBounds.js';
 
 const REPAIR_STAGE_LABEL = { waiting: 'Waiting', in_progress: 'In progress', done: 'Done' };
 const MURBAH_STAGE_LABEL = { idea: 'Idea', enquired: 'Enquired', booked: 'Booked', active: 'Active' };
@@ -17,7 +18,7 @@ function todayKey() {
 export async function buildDeckSnapshot(userId) {
   const where = { created_by_id: userId };
   const [
-    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, murbah, inbox,
+    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, murbah, inbox, inboxOpenTotal,
     strategy, knowledge, lifeStreams, lifeStreamNotes, energyLog, focusEntries,
   ] = await Promise.all([
     prisma.deckDumpItem.findMany({ where, orderBy: { created_date: 'desc' }, take: 20 }),
@@ -31,7 +32,12 @@ export async function buildDeckSnapshot(userId) {
     prisma.deckConsignmentItem.aggregate({ where: { ...where, sold: false }, _sum: { price: true } }),
     prisma.deckRepairJob.findMany({ where }),
     prisma.deckMurbahOpportunity.findMany({ where }),
-    prisma.deckInboxItem.findMany({ where }),
+    // Newest open items only, with the true count fetched separately below: the inbox bodies are
+    // the largest free text in the prompt, and a capped list must never read as the whole picture.
+    // Rob's rule for this surface is "the opportunity he has not seen" — so the items stay, the
+    // count stays, and only the length of each body is bounded. See lib/promptBounds.js.
+    prisma.deckInboxItem.findMany({ where: { ...where, stage: { not: 'done' } }, orderBy: { created_date: 'desc' }, take: INBOX_IN_PROMPT }),
+    prisma.deckInboxItem.count({ where: { ...where, stage: { not: 'done' } } }),
     prisma.deckStrategyNote.findMany({ where, take: 20 }),
     prisma.deckKnowledgeNote.findMany({ where, take: 20 }),
     prisma.deckLifeStream.findMany({ where }),
@@ -49,7 +55,7 @@ export async function buildDeckSnapshot(userId) {
   const unsoldConsign = unsoldConsignCount;
   const consignValue = consignAgg._sum.price || 0;
   const openRepairs = repairs.filter((r) => r.stage !== 'done');
-  const openInbox = inbox.filter((i) => i.stage !== 'done');
+  const openInbox = inbox; // already filtered to open by the bounded query above
   const today = todayKey();
   const todayEnergy = energyLog.find((e) => (e.date?.toISOString?.() || '').slice(0, 10) === today);
   const focusToday = focusEntries.find((f) => (f.date?.toISOString?.() || '').slice(0, 10) === today);
@@ -76,7 +82,7 @@ KNOWLEDGE / IDEAS (${knowledge.length}): ${knowledge.map((k) => k.text).join('; 
 CONSIGNMENT: ${unsoldConsign} unsold items worth $${consignValue} on the floor
 REPAIRS QUEUE: ${openRepairs.length} open jobs (${openRepairs.map((r) => `${r.item} [${REPAIR_STAGE_LABEL[r.stage] || r.stage}]`).join(', ') || 'none'})
 MURBAH OPPORTUNITIES: ${murbah.map((m) => `${m.title} — ${MURBAH_STAGE_LABEL[m.stage] || m.stage}`).join('; ') || 'none'}
-INBOX (${openInbox.length} not yet done): ${openInbox.map((i) => `[${i.channel}] ${i.from_name}: ${i.message} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}
+INBOX (${inboxOpenTotal} not yet done${openInbox.length < inboxOpenTotal ? `, newest ${openInbox.length} shown` : ''}): ${openInbox.map((i) => `[${i.channel}] ${i.from_name}: ${excerpt(i.message)} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}
 UNSORTED BRAIN DUMP (${dump.length}): ${dump.map((d) => d.text).join('; ') || 'none'}
 
 LIFE STREAMS (outside the shop): ${lifeStreamsText}
