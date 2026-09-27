@@ -5,7 +5,15 @@
 import { getGoogleDriveConnection, driveJson } from '../lib/googleDrive.js';
 
 export default async function handler({ user }) {
-  const connection = await getGoogleDriveConnection(user.id);
+  let connection;
+  try {
+    connection = await getGoogleDriveConnection(user.id);
+  } catch (err) {
+    if (err?.code === 'GOOGLE_RECONNECT_REQUIRED') {
+      return { connected: false, email: null, needsReconnect: true, reason: err.reason, message: err.message };
+    }
+    throw err;
+  }
   if (!connection?.token) return { connected: false, email: null };
 
   try {

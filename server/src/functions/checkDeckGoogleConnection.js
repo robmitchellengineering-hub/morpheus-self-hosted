@@ -4,7 +4,17 @@ import { prisma } from '../db.js';
 import { getDeckGoogleConnection } from '../lib/deckGoogle.js';
 
 export default async function handler({ user }) {
-  const connection = await getDeckGoogleConnection(user.id);
+  let connection;
+  try {
+    connection = await getDeckGoogleConnection(user.id);
+  } catch (err) {
+    // A dead credential must be reported as needing a reconnect, not as an error the operator has
+    // to interpret — and never as "connected". The `reason` is what the Settings line says.
+    if (err?.code === 'GOOGLE_RECONNECT_REQUIRED') {
+      return { connected: false, email: null, lastBackupAt: null, needsReconnect: true, reason: err.reason, message: err.message };
+    }
+    throw err;
+  }
   if (!connection?.token) return { connected: false, email: null, lastBackupAt: null };
 
   const row = await prisma.deckGoogleConnection.findUnique({ where: { created_by_id: user.id }, select: { last_backup_at: true } });

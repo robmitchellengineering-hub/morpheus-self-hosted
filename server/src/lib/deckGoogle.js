@@ -4,6 +4,7 @@
 // Backlog #12). Mirrors its shape exactly: per-user row with encrypted
 // tokens, silent refresh near expiry, raw-fetch API helpers, no SDK.
 import { prisma } from '../db.js';
+import { classifyRefreshFailure, reconnectMessage } from './googleReconnect.js';
 import { decrypt, encrypt } from '../crypto.js';
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me';
@@ -32,15 +33,31 @@ export async function getDeckGoogleConnection(userId) {
 
   if (row.expires_at && row.expires_at.getTime() < Date.now() + 5 * 60 * 1000) {
     const refreshed = await tryRefreshDeckGoogleToken(row);
-    if (refreshed) return refreshed;
+    if (refreshed.ok) return { email: row.google_email, token: refreshed.token };
+    // POST-MORTEM (2026-09-28). This used to fall through and hand the caller the token it had
+    // just failed to renew. Rob's report was the result: "Doc create failed: Request had invalid
+    // authentication credentials", a raw Google 401 from a shop tool, while
+    // checkDeckGoogleConnection — which live-probes — said "not connected". Two stories about one
+    // dead credential, and neither named the action. A token that is KNOWN to be expired is not a
+    // credential to try with; it is a failure to report, with the reason and the way out.
+    throw Object.assign(new Error(reconnectMessage(refreshed.reason, 'Command Deck Settings')), {
+      status: 400,
+      code: 'GOOGLE_RECONNECT_REQUIRED',
+      reason: refreshed.reason,
+    });
   }
 
   const token = decrypt(row.access_token);
   return { email: row.google_email, token };
 }
 
+// Refreshes, or says WHY it could not. The old version returned `null` for every failure — a
+// revoked refresh token, a server missing its client credentials, and a dropped connection were
+// indistinguishable, so the operator's error could not name the cause even in principle.
 async function tryRefreshDeckGoogleToken(row) {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return null;
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return { ok: false, reason: 'not_configured' };
+  }
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -54,8 +71,9 @@ async function tryRefreshDeckGoogleToken(row) {
     });
     const data = await res.json();
     if (!data.access_token) {
-      console.log(`Deck Google token refresh failed for connection ${row.id}: ${data.error_description || data.error || 'no access_token in response'}`);
-      return null;
+      const reason = classifyRefreshFailure(data);
+      console.warn(`[deckGoogle] refresh refused for connection ${row.id}: ${reason} — ${data.error_description || data.error || 'no access_token in response'}`);
+      return { ok: false, reason };
     }
     await prisma.deckGoogleConnection.update({
       where: { id: row.id },
@@ -65,10 +83,10 @@ async function tryRefreshDeckGoogleToken(row) {
         refresh_token: data.refresh_token ? encrypt(data.refresh_token) : row.refresh_token,
       },
     });
-    return { email: row.google_email, token: data.access_token };
+    return { ok: true, token: data.access_token };
   } catch (err) {
-    console.log(`Deck Google token refresh error for connection ${row.id}: ${err.message}`);
-    return null;
+    console.warn(`[deckGoogle] refresh request failed for connection ${row.id}: ${err.message}`);
+    return { ok: false, reason: 'network' };
   }
 }
 

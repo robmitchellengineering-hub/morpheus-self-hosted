@@ -248,6 +248,12 @@ jobs:
       - name: Truncated-JSON salvage
         run: node scripts/verify-salvage-json.mjs
 
+      # An expired Google credential must never be handed out as if it worked: three modules used
+      # to fall through with a token they had just failed to renew, and the operator got Google's
+      # OAuth text instead of the one action that fixes it.
+      - name: Google reconnect
+        run: node scripts/verify-google-reconnect.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds
