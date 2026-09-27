@@ -142,6 +142,18 @@ found it was driving the real flow in a real browser. Where a guard can assert
 that a file imports every helper it calls, do that; where it cannot, the browser
 is the check.
 
+The sibling case is the same failure with the definition sitting right there,
+and it is the one that cost production. `chatWithMorpheus` reads its build state
+(`appliedOps`, `reply`, `fullReply`, `truncatedFiles`, the rework counters) after
+the turn — and a `let`/`const` declared inside the turn's `try` block is scoped to
+that block, so the reads in the reply building, and in the `catch` whose job is to
+hand back a result when something throws after the build landed, threw
+`ReferenceError`. Three refactors moved those declarations inside the `try`:
+`#356` killed every code build, `#361` hotfixed one of the 17 reads, `#362` found
+the other 16. Syntax check, import resolver and boot smoke were green throughout —
+the smoke *loads* the module and never *calls* the handler. `no-undef` finds it,
+and is now on for `server/src/**` (H18).
+
 ## Removing behaviour passes every gate
 
 H1 covers a shared module losing an **export**. The quieter and worse case is a
