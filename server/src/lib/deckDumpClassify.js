@@ -73,6 +73,13 @@ function unrepresentedClause(text, items) {
 
 const DEFAULT_DESTINATION = 'knowledge';
 
+// Why an item is the whole dump rather than a split of it. Both cases file the speaker's
+// own words (that rule is absolute), but they mean different things to the operator, and
+// without a marker the card said "Filed to Knowledge" for a dump the model could not
+// classify at all — which reads exactly like a dump it classified successfully.
+export const FALLBACK_NOTHING_CLASSIFIED = 'nothing-classified';
+export const FALLBACK_INCOMPLETE = 'incomplete';
+
 const collapse = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 
 // A list, not a single destination — see the header. Object-rooted with an
@@ -183,7 +190,7 @@ export function normalizeClassifyResult(result, originalText, peopleNames = []) 
   }
 
   if (!items.length) {
-    return [{ text, destination: DEFAULT_DESTINATION, life_stream_key: null, owner_name: null }];
+    return [{ text, destination: DEFAULT_DESTINATION, life_stream_key: null, owner_name: null, fallback_reason: FALLBACK_NOTHING_CLASSIFIED }];
   }
 
   // Two ways to lose something, so two tests. The clause test is the one that fires
@@ -195,7 +202,7 @@ export function normalizeClassifyResult(result, originalText, peopleNames = []) 
   const droppedClause = unrepresentedClause(text, items);
   if (covered < text.length * MIN_COVERAGE || droppedClause) {
     const first = items[0];
-    return [{ text, destination: first.destination, life_stream_key: first.life_stream_key, owner_name: first.owner_name }];
+    return [{ text, destination: first.destination, life_stream_key: first.life_stream_key, owner_name: first.owner_name, fallback_reason: FALLBACK_INCOMPLETE }];
   }
 
   return items;
