@@ -30,6 +30,7 @@
 // required an existing site id, and this creates the site on first deploy.
 import { prisma } from '../db.js';
 import { downloadFile } from '../storage.js';
+import { decodeConnections } from '../lib/connectionSecrets.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import {
@@ -81,8 +82,13 @@ export default async function handler({ user, body }) {
   // reads as "not connected" rather than a 500, because that is the honest
   // action for the user: connect Netlify.
   const settingsRow = await prisma.userSettings.findUnique({ where: { created_by_id: user.id } });
-  let userConnections = {};
-  try { userConnections = settingsRow?.connections ? JSON.parse(settingsRow.connections) : {}; } catch { userConnections = {}; }
+  // Through the SHARED helper, never JSON.parse (2026-09-28). This column became encrypted at rest
+  // in #397 while this feature was being built, so parsing the stored value directly throws on a
+  // ciphertext row — and a local `catch` turns that into "Netlify is not connected" for a token the
+  // user has just saved successfully. `decodeConnections` handles the encrypted form, the pre-#397
+  // plaintext form, and the malformed case (returning {}), which is what keeps the comment above
+  // true: an unreadable blob reads as "not connected" rather than as a 500.
+  const userConnections = decodeConnections(settingsRow?.connections);
   const token = userConnections.netlify?.token;
   if (!token) {
     throw Object.assign(

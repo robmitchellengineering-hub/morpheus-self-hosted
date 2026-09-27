@@ -223,6 +223,22 @@ check('it is in verify.mjs\'s HARD list',
 check('CI runs it in the guards job (no install)',
   /node scripts\/verify-frontend-deploy\.mjs/.test(read('.github/workflows/ci.yml')), true);
 
+console.log('\n7. the token is read through the helper, not parsed raw');
+// Added 2026-09-28 in review, and it is the check that would have caught a real defect: this file
+// originally did `JSON.parse(settingsRow.connections)`. #397 then made that column encrypted at
+// rest, so the parse threw on every freshly-saved token and a local `catch` reported "Netlify is
+// not connected" for a token the user had just saved — with no gate able to see it, because it is a
+// runtime read and the catch was silent. Cross-branch drift is exactly what a stale branch hides.
+const fnCode = read('server/src/functions/deployFrontend.js')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/^[ \t]*\/\/.*$/gm, ' ');
+check('it imports the encryption-aware decoder',
+  /import \{ decodeConnections \} from '\.\.\/lib\/connectionSecrets\.js';/.test(fnCode), true);
+check('it calls it for the token lookup',
+  /const userConnections = decodeConnections\(settingsRow\?\.connections\);/.test(fnCode), true);
+check('it does NOT parse the connections column itself',
+  /JSON\.parse\([^)]*connections/.test(fnCode), false);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');
