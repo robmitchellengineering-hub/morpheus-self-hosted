@@ -237,6 +237,14 @@ jobs:
       - name: Deck CRM edit path
         run: node scripts/verify-deck-crm-edit.mjs
 
+      # The consignment fee stopped being a hardcoded 30/2000/20 rule and became per-account
+      # settings. This pins the one derivation, the preserved default, the setting actually
+      # reaching it, the display label no longer being hardcoded, stored fees never being
+      # recomputed, the additive migration, and the H11 fallback that keeps an unapplied column
+      # from taking the whole Deck down.
+      - name: Deck fee tiers
+        run: node scripts/verify-deck-fee-tiers.mjs
+
       # Rob could press Add twice in repairs and get two jobs: state is not visible to a second
       # press in the same tick, so only a ref stops it, and only a sentence stops a greyed-out
       # control reading as a dead one.

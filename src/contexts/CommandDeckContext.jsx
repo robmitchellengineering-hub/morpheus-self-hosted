@@ -1,9 +1,9 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import {
   DEFAULT_PEOPLE, OWNER_COLOR_CYCLE, LIFE_STREAMS_META,
   nextMurbahStage, nextRepairStage, nextInboxStage,
-  isYou, todayKey, todayISO, randomDeleteConfirmPhrase, commissionFor,
+  isYou, todayKey, todayISO, randomDeleteConfirmPhrase, commissionFor, feeTiersFromProfile,
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
 import { summarizeFiling } from '@/pages/CommandDeck/dumpFiling';
@@ -163,8 +163,16 @@ export function CommandDeckProvider({ children }) {
   // drives which DECK_WIDGETS entries actually render on this account's
   // Deck, and in what order — see deckWidgets.js for the registry itself.
   const [widgetInstances, setWidgetInstances] = useState([]); // [{id, widget_key, enabled, sort_order}]
-  const [businessProfile, setBusinessProfile] = useState(null); // {id, shop_name, tagline, contact_email, business_context} | null
+  const [businessProfile, setBusinessProfile] = useState(null); // {id, shop_name, tagline, contact_email, business_context, fee_threshold, fee_rate_under, fee_rate_over} | null
   const [businessProfileBusy, setBusinessProfileBusy] = useState(false);
+
+  // The consignment fee structure the account set in Settings, defaulting to 30% to $2000 / 20%
+  // above for a profile nobody has edited (the fee_* columns stay NULL for exactly that reason).
+  // Derived ONCE here and handed to every fee call site, so a fee shown in preview and a fee
+  // written to a row cannot come from different rules. It is deliberately read only when a sale is
+  // being recorded: an already-stored fee is never re-derived, so changing this setting cannot
+  // rewrite what was agreed with a consignor (see deckConstants/feeTiers.js and deckSnapshot.js).
+  const feeTiers = useMemo(() => feeTiersFromProfile(businessProfile), [businessProfile]);
 
   // Jarvis-triggered widget build in progress (server/src/functions/
   // buildDeckWidget.js) — Rob, 2026-09-17: "it should be a progress bar
@@ -576,7 +584,7 @@ export function CommandDeckProvider({ children }) {
         sold: soldPrice !== null,
         sold_price: soldPrice,
         sold_date: soldPrice !== null ? new Date().toISOString() : null,
-        fee: soldPrice !== null ? commissionFor(soldPrice) : null,
+        fee: soldPrice !== null ? commissionFor(soldPrice, feeTiers) : null,
         paid_out: soldPrice !== null ? !!cForm.paid_out : false,
         photo_url: cForm.photo_url || null,
       });
@@ -596,15 +604,16 @@ export function CommandDeckProvider({ children }) {
     setConsignment((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
     try { await base44.entities.DeckConsignmentItem.update(id, patch); } catch { flagSaveErr(); }
   };
-  // Inline edits. `fee` is derived here and nowhere else, so the recorded commission can never
-  // disagree with the sale price it was agreed on — while staying STORED, so a later change to the
-  // tiered rule cannot rewrite what was agreed with a consignor.
+  // Inline edits. `fee` is derived at the moment of the edit from the account's OWN tiers
+  // (context `feeTiers`), so the recorded commission cannot disagree with the sale price it was
+  // agreed on — while staying STORED, so a later change to the rule cannot rewrite what was
+  // agreed with a consignor. Only a price the operator actually re-enters re-derives it.
   const updateConsignment = async (id, patch) => {
     const next = { ...patch };
     if ('sold_price' in next) {
       const p = next.sold_price === '' || next.sold_price === null ? null : Number(next.sold_price) || 0;
       next.sold_price = p;
-      next.fee = p === null ? null : commissionFor(p);
+      next.fee = p === null ? null : commissionFor(p, feeTiers);
     }
     setConsignment((prev) => prev.map((x) => (x.id === id ? { ...x, ...next } : x)));
     try { await base44.entities.DeckConsignmentItem.update(id, next); } catch { flagSaveErr(); }
@@ -1142,7 +1151,7 @@ export function CommandDeckProvider({ children }) {
     uploadFile,
     widgetInstances, toggleWidget, moveWidget, deleteWidget,
     widgetBuild, dismissWidgetBuild,
-    businessProfile, businessProfileBusy, saveBusinessProfile,
+    businessProfile, businessProfileBusy, saveBusinessProfile, feeTiers,
     calendarEvents, calendarLoading, calendarForm, setCalendarForm, calendarBusy, loadCalendarEvents, addCalendarEvent,
   };
 

@@ -38,8 +38,10 @@ export async function buildDeckSnapshot(userId) {
     // schema.prisma), so this is a sum rather than a re-derivation of the tiered rule.
     prisma.deckConsignmentItem.count({ where: { ...where, sold: true, paid_out: false } }),
     // What is actually owed to a consignor is the sale price MINUS our commission, not the
-    // commission itself: `fee` is the shop's cut, and the schema ties it to the tiered rule in
-    // deckConstants.commissionFor (30% to $2000, 20% above). Summing `fee` here would have
+    // commission itself: `fee` is the shop's cut, derived once when the sale was recorded from the
+    // account's own fee structure (src/pages/CommandDeck/feeTiers.js — settings-driven since
+    // 2026-09-28, 30% to $2000/20% above by default). It is READ BACK here, never re-derived: the
+    // rule can change, the money agreed with a consignor cannot. Summing `fee` here would have
     // reported our own earnings as money owed to someone else — wrong by the full sale value, and
     // Jarvis quotes this line to Rob as fact.
     //
