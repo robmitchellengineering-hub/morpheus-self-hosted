@@ -21,14 +21,19 @@ export default function CalendarWidget() {
   return (
     <Card title="Calendar" sub="Your real Google Calendar, right here.">
       <div>
-        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.7rem' }}>
+        {/* Rob, 2026-09-28: "The calender buttons are haning off the tile on mobile." The row could
+            not wrap and a date input has a large intrinsic width, so MicField + date + button
+            overflowed the card. Now the row wraps and every part of it may shrink (minWidth: 0 —
+            a flex item will not shrink below its content's minimum without it). */}
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.7rem' }}>
           <MicField
             placeholder="Event title…"
             value={form.summary}
             onChange={(summary) => setForm({ ...form, summary })}
             onSubmit={() => form.summary.trim() && form.date && onAdd()}
+            wrapperStyle={{ minWidth: 0, flex: '1 1 160px' }}
           />
-          <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ ...miniInput, flex: '0 1 150px' }} />
+          <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ ...miniInput, flex: '1 1 130px', minWidth: 0 }} />
           <IconButton onClick={onAdd} color={C.brass} disabled={busy || !form.summary.trim() || !form.date}>
             {busy ? <Loader2 size={16} className="animate-spin" color={C.paper} /> : <Plus size={18} color={C.paper} />}
           </IconButton>

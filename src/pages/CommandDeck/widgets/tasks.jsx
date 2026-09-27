@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, ChevronDown, ChevronRight, Check, X, MessageSquare, Mail } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Check, X, MessageSquare, Mail, Pencil } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { C, ENERGY, isYou, smsHref, emailHref } from '../deckConstants';
 import { Card, MicField, PendingNote, inputStyle, miniInput, ghostBtn, pillBtn, checkBtn } from '../DeckUI';
@@ -77,16 +77,25 @@ export default function TasksWidget() {
       </div>
       <PendingNote show={!!addPending.task} text="Adding the task — it will appear on the board in a moment…" />
 
+      {/* Rob, 2026-09-28: "I need to be able to edit peoples email name and phone number in tasks".
+          The editor was already here and always has been — it was behind a toggle labelled "Manage
+          people", which says nothing about contacts and does not read as the place to edit someone's
+          phone number, so it may as well not have existed. It now names the three fields it edits,
+          and the same pencil on an owner's row below opens it. */}
       <button
         onClick={() => setManagePeople((v) => !v)}
-        style={{ background: 'transparent', border: 'none', padding: '0.2rem 0', marginBottom: '0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', fontWeight: 600, color: C.walnutSoft }}
+        style={{ background: 'transparent', border: 'none', padding: '0.2rem 0', marginBottom: '0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', fontWeight: 600, color: managePeople ? C.brass : C.walnutSoft }}
       >
         {managePeople ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        Manage people
+        <Pencil size={12} />
+        People — edit name, phone, email
       </button>
 
       {managePeople && (
         <div style={{ background: C.tweedDark, borderRadius: 10, padding: '0.65rem 0.7rem', marginBottom: '0.8rem' }}>
+          <p style={{ fontSize: '0.66rem', color: C.walnutSoft, margin: '0 0 0.45rem' }}>
+            Changes save as you type — no button to press.
+          </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.6rem' }}>
             {people.map((p) => (
               <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -97,8 +106,10 @@ export default function TasksWidget() {
                   style={{ ...miniInput, flex: '0 1 90px', fontWeight: 600, color: p.color }}
                 />
                 {isYou(p) && <span style={{ fontSize: '0.62rem', color: C.walnutSoft, flexShrink: 0 }}>(me)</span>}
-                <input placeholder="Phone number" value={p.phone || ''} onChange={(e) => updatePersonPhone(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
-                <input placeholder="Email" value={p.email || ''} onChange={(e) => updatePersonEmail(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px' }} />
+                {/* type=tel/email so a phone gives the number pad and the right keyboard — this is
+                    filled in on a phone, standing at the counter. */}
+                <input type="tel" inputMode="tel" placeholder="Phone number" value={p.phone || ''} onChange={(e) => updatePersonPhone(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px', minWidth: 0 }} />
+                <input type="email" inputMode="email" placeholder="Email" value={p.email || ''} onChange={(e) => updatePersonEmail(p.id, e.target.value)} style={{ ...miniInput, flex: '1 1 120px', minWidth: 0 }} />
                 {!isYou(p) && <button onClick={() => askToDelete(() => removePerson(p.id))} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>}
               </div>
             ))}
@@ -130,6 +141,18 @@ export default function TasksWidget() {
                 {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                 {p.name}
                 <span style={{ fontSize: '0.7rem', color: C.walnutSoft, fontWeight: 400 }}>({ownerTasks.filter((t) => !t.done).length} open)</span>
+              </span>
+              {/* The person's own way in: tap the name to see their tasks, tap the pencil to edit
+                  their details. Without this the only route was a toggle near the top of the card. */}
+              <span
+                role="button"
+                tabIndex={0}
+                title={`Edit ${p.name}'s name, phone and email`}
+                onClick={(e) => { e.stopPropagation(); setManagePeople(true); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setManagePeople(true); } }}
+                style={{ display: 'inline-flex', alignItems: 'center', padding: '0.15rem', color: C.brass }}
+              >
+                <Pencil size={12} />
               </span>
             </button>
             {open && (
