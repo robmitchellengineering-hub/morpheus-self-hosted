@@ -1130,12 +1130,12 @@ OPERATOR SAYS: ${message}`;
 
     // ── Phase 1: Planner reasons about intent and design ────────────────────
     if (isSelfDev) {
-      const constructMatch = message.match(/(?:about|for|of|regarding)\s+[\"']?([^\"',.!?]+)[\"']?/i);
+      const constructMatch = message.match(/(?:about|for|of|regarding)\s+["']?([^"',.!?]+)["']?/i);
       const constructCandidate = constructMatch?.[1]?.trim() || message.trim();
       if (constructCandidate) {
         const constructCtx = await getConstructContext(user.id, constructCandidate);
         if (constructCtx) {
-          contextBlock += `\n\n## Construct Context (auto-fetched)\nThe operator's message references construct/project \"${constructCandidate}\". Here is its recent history and compile attempts:\n${constructCtx}`;
+          contextBlock += `\n\n## Construct Context (auto-fetched)\nThe operator's message references construct/project "${constructCandidate}". Here is its recent history and compile attempts:\n${constructCtx}`;
         }
       }
       // Self-diagnosis tools (2026-09-15): before this, self-dev's AI turn

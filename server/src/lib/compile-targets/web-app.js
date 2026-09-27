@@ -3,7 +3,7 @@
 
 import {
   hasFile, parsePackageJson, detectWebFramework, detectBuildOutputDir,
-  usesSPARouting, detectNodeVersion, cloneFiles, getFile
+  usesSPARouting, detectNodeVersion, cloneFiles
 } from './utils.js';
 
 export const webApp = {

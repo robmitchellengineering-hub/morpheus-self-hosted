@@ -478,7 +478,7 @@ export function normalizeBlogDraft(raw) {
 // An anchor has to be cast-iron plain: it is matched against the item's real
 // text and then inserted into live HTML, so quotes, brackets, ampersands or
 // entities would either miss or mangle the sentence. Plain words only.
-const ANCHOR_OK = /^[\p{L}\p{N}][\p{L}\p{N} '\-]{1,60}$/u;
+const ANCHOR_OK = /^[\p{L}\p{N}][\p{L}\p{N} '-]{1,60}$/u;
 export const MAX_LINKS = 5;
 
 export function buildLinkPrompt({ business, title, url, content, candidates = [] } = {}) {

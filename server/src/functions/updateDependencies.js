@@ -281,7 +281,7 @@ const REGISTRY = [
       lines.forEach((l, i) => {
         const t = l.trim();
         if (t.startsWith('go ') || t.startsWith('toolchain') || t.startsWith('//')) return;
-        const m = t.match(/^([a-zA-Z0-9_.\-\/!]+)\/v?\d*\s+(v[\d.]+)/);
+        const m = t.match(/^([a-zA-Z0-9_.\-/!]+)\/v?\d*\s+(v[\d.]+)/);
         if (m) tasks.push({ i, mod: m[1] });
       });
       if (!tasks.length) return null;
@@ -291,7 +291,7 @@ const REGISTRY = [
       for (const t of res) {
         if (!t.v) continue;
         const cur = lines[t.i];
-        const m = cur.match(/^(\s*)([a-zA-Z0-9_.\-\/!]+\/v?\d*)\s+(v[\d.]+)/);
+        const m = cur.match(/^(\s*)([a-zA-Z0-9_.\-/!]+\/v?\d*)\s+(v[\d.]+)/);
         if (!m) continue;
         if (bare(m[3]) === bare(t.v)) continue;
         out[t.i] = `${m[1]}${m[2]} ${t.v}`;

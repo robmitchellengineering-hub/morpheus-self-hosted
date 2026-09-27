@@ -69,7 +69,7 @@ export async function aggregateBuildLogs(userId, projectId) {
 
   for (const s of snapshots) {
     let fileCount = 0;
-    try { fileCount = s.files ? JSON.parse(s.files).length : 0; } catch {}
+    try { fileCount = s.files ? JSON.parse(s.files).length : 0; } catch { /* unparseable snapshot — count it as no files */ }
     logs.push({
       timestamp: s.created_date,
       type: 'snapshot',

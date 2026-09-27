@@ -75,4 +75,37 @@ export default [
       "react-hooks/exhaustive-deps": "warn",
     },
   },
+  {
+    // server/** was matched by NO config block, so nothing under it was ever
+    // linted. CI's only server-wide checks were `node --check` (syntax, which
+    // never resolves a name) and an import-path/export resolver — so a variable
+    // read outside the block that declares it was invisible to every gate.
+    // That is how #356 shipped `ReferenceError: chunkOps is not defined` (every
+    // code build died; hotfixed in #361) and how three more of the same mistake
+    // in the same file survived that hotfix (#362).
+    files: ["server/src/**/*.js"],
+    ...pluginJs.configs.recommended,
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: "module",
+      },
+    },
+    plugins: {
+      "unused-imports": pluginUnusedImports,
+    },
+    rules: {
+      ...pluginJs.configs.recommended.rules,
+      // Same split as the frontend block: unused imports are an error, unused
+      // locals are a warning (hidden by `--quiet`). 34 unused locals exist
+      // today; they are noise, not correctness, and clearing them is its own change.
+      "no-unused-vars": "off",
+      "unused-imports/no-unused-imports": "error",
+      "unused-imports/no-unused-vars": [
+        "warn",
+        { vars: "all", varsIgnorePattern: "^_", args: "after-used", argsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ];

@@ -2,12 +2,12 @@
 // Auto-generates pyproject.toml from requirements.txt if missing,
 // detects entry points (console_scripts), and includes data files via MANIFEST.in.
 
-import { hasAny, hasFile, cloneFiles, getFile, detectPythonVersion, parseRequirementsTxt } from './utils.js';
+import { hasAny, cloneFiles, getFile, detectPythonVersion, parseRequirementsTxt } from './utils.js';
 
 function detectPackageName(files) {
   // Look for a top-level Python package (dir with __init__.py)
   for (const f of files) {
-    const match = f.path.match(/^([^\/]+)\/__init__\.py$/);
+    const match = f.path.match(/^([^/]+)\/__init__\.py$/);
     if (match && !['tests', 'test', 'src', 'venv', 'env'].includes(match[1])) {
       return match[1];
     }

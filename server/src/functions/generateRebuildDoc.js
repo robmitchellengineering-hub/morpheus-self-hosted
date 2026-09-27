@@ -54,6 +54,12 @@ export default async function handler({ user }) {
   const now = fmtDate();
   const version = now;
 
+  // Sections 3 and 4 below are generated from the live system rather than remembered —
+  // but `readSystemShape()` was written and never called, so this page threw
+  // `ReferenceError: models is not defined` every time it ran. Found by turning
+  // `no-undef` on for server/**.
+  const { models, functions } = await readSystemShape();
+
   const md = [];
   md.push('# MORPHEUS — SELF-HOSTED ARCHITECTURE BLUEPRINT');
   md.push('');
