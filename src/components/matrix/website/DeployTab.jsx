@@ -151,9 +151,14 @@ export default function DeployTab({ projectId }) {
             </button>
           </div>
 
-          {verify && (verify.ok
-            ? <div className="text-[11px] text-ink-max flex items-center gap-1.5"><Check size={12} /> {verify.checkedFiles} script file{verify.checkedFiles === 1 ? '' : 's'} clean</div>
-            : <div className="space-y-1">{verify.errors.map((e, i) => <div key={i} className="text-[10px] text-red-400 font-mono">{e.file}:{e.line} — {e.text}</div>)}</div>
+          {/* Three states, not two. A change with no JS/TS (a PHP-only theme edit,
+              the normal case here) is NOT verified by this check and must not
+              render as "0 script files clean" — see engine/verificationCoverage.js. */}
+          {verify && (verify.status === 'failed'
+            ? <div className="space-y-1">{verify.errors.map((e, i) => <div key={i} className="text-[10px] text-red-400 font-mono">{e.file}:{e.line} — {e.text}</div>)}</div>
+            : verify.status === 'not_verified'
+              ? <div className="text-[11px] text-ink-max flex items-start gap-1.5"><AlertTriangle size={12} className="text-yellow-500/90 mt-0.5 shrink-0" /><span>{verify.coverage?.text} PHP lint runs in the target repo’s CI.</span></div>
+              : <div className="text-[11px] text-ink-max flex items-center gap-1.5"><Check size={12} /> {verify.checkedFiles} script file{verify.checkedFiles === 1 ? '' : 's'} clean</div>
           )}
 
           {diff && !diff.changed && <div className="text-[11px] text-ink-max">Nothing to deploy — the site’s repo already matches this project.</div>}

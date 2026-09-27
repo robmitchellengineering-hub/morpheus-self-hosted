@@ -10,7 +10,11 @@
 //   id            string                     — stable key
 //   label         string
 //   describe()    → {...} metadata            — repo, branch, preview/ship/rollback kind
-//   verify({ files })                → { ok, errorCount, errors, checkedFiles }
+//   verify({ files })                → { ok, verified, status, code, errorCount,
+//                                        errors, checkedFiles } — `status` is
+//                                        'passed' | 'failed' | 'not_verified', and
+//                                        a pass requires that something was READ
+//                                        (see engine/verificationCoverage.js)
 //   ship({ user, files, directToMain, precheck }) → engine ship result (see engine/ship.js)
 //   merge({ user, prNumber, force })  → engine merge result (see engine/merge.js)
 //   rollback({ user, commitSha })     → { commitSha, revertedToSha, branch, commitUrl }
