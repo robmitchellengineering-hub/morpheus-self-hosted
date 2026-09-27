@@ -38,7 +38,10 @@ check('…and the rendered line still shows both numbers',
 console.log('\n2. the unbounded collections are exactly the known set');
 // `findMany({ where })` — no take, no orderBy — is the unbounded shape. A collection that
 // needs more than the newest N must say so here, deliberately, with a reason above.
-const KNOWN = ['deckInboxItem', 'deckLifeStream', 'deckMurbahOpportunity', 'deckPerson', 'deckRepairJob', 'deckTask'];
+// `deckInboxItem` left this list on 2026-09-27: it is now `take: INBOX_IN_PROMPT` with the true
+// open count fetched separately and each body excerpted (verify-deck-prompt-bounds.mjs asserts
+// that shape). Removing an entry here is the deliberate act this check exists to force.
+const KNOWN = ['deckLifeStream', 'deckMurbahOpportunity', 'deckPerson', 'deckRepairJob', 'deckTask'];
 const unbounded = [...code.matchAll(/prisma\.(\w+)\.findMany\(\{\s*where\s*\}\)/g)]
   .map((m) => m[1]).sort();
 check('no unexpected unbounded fetch was added', unbounded.join(', '), KNOWN.join(', '));
