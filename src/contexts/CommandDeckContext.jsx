@@ -729,7 +729,12 @@ export function CommandDeckProvider({ children }) {
       const rows = await base44.entities.DeckInboxItem.list();
       setInbox(rows);
       const base = data?.created ? `${data.created} new message${data.created === 1 ? '' : 's'}.` : 'Up to date.';
-      setGmailSyncMsg(data?.failed ? `${base} ${data.failed} couldn't be checked — will retry next sync.` : base);
+      const parts = [base];
+      if (data?.failed) parts.push(`${data.failed} couldn't be checked — will retry next sync.`);
+      // The server stops itself well inside this request's own timeout, so a big backlog
+      // reads as "more to do" rather than as a failure. Say which it is.
+      if (data?.stoppedEarly) parts.push('More to check — tap sync again.');
+      setGmailSyncMsg(parts.join(' '));
     } catch (err) {
       setGmailSyncMsg(err.message || "Couldn't sync Gmail.");
     } finally {
