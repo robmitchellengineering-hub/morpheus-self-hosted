@@ -185,6 +185,16 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
       continue;
     }
 
+    // A create or update with no `content` STRING must never be written as ''. The coder schema and
+    // the reviewer's retry merge both allow an operation carrying a path and no content, and
+    // `content: op.content || ''` then BLANKS an existing file — while every gate skips it, because
+    // each of them requires a string before it will look. A file that is missing is recoverable; a
+    // file that was silently emptied is not, and the user is told nothing either way.
+    if (op.action !== 'delete' && typeof op.content !== 'string') {
+      appliedOps.push({ path: op.path, action: 'skipped_no_content' });
+      continue;
+    }
+
     if (op.action === 'delete') {
       // No .catch() here — matches how creates/updates below are handled
       // (uncaught, propagates) and matches the original base44 version,

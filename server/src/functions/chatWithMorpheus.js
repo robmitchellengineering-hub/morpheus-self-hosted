@@ -1258,6 +1258,7 @@ OPERATOR SAYS: ${message}`;
     let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
     const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
     let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
+    const a11yReverted = []; // an a11y fix that broke parsing, put back rather than applied
     let polishCount = 0;
     let coderModel;
     let reviewerModel;
@@ -1834,13 +1835,28 @@ OPERATOR SAYS: ${message}`;
             });
             const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
               .filter((op) => op.path && badPaths.includes(op.path) && typeof op.content === 'string');
+            const priorContent = new Map();
             for (const fx of fixOps) {
               const orig = fileOps.find((op) => op.path === fx.path);
-              if (orig) orig.content = fx.content;
+              if (orig) { priorContent.set(fx.path, orig.content); orig.content = fx.content; }
             }
             // re-run BOTH gates: an a11y "fix" must still parse
             const reSyntax = await checkSyntax(fixOps.map((op) => ({ path: op.path, content: op.content })));
-            if (reSyntax.length === 0) a11yFindings = checkA11y(changedMarkup());
+            if (reSyntax.length > 0) {
+              // The accessibility fix broke parsing. Put those files BACK — applying a file that cannot
+              // run is worse than leaving the accessibility issue — and say so. Until 2026-09-26 this
+              // result was computed and DISCARDED: it only gated the a11y re-check, so the broken file
+              // was applied with no critical in the reply, and the reply said the issues were "left
+              // after a fix pass". Every other gate in this pipeline reports; this one threw its
+              // finding away.
+              for (const e of reSyntax) {
+                const orig = fileOps.find((op) => op.path === e.file);
+                if (orig && priorContent.has(orig.path)) orig.content = priorContent.get(orig.path);
+              }
+              a11yReverted.push(...reSyntax.map((e) => `${e.file}${e.line ? ':' + e.line : ''} — the accessibility fix did not parse and was reverted: ${e.text}`));
+            } else {
+              a11yFindings = checkA11y(changedMarkup());
+            }
           } catch (err) {
             console.error('[chatWithMorpheus] a11y-fix retry failed:', err.message);
           }
@@ -1961,6 +1977,7 @@ OPERATOR SAYS: ${message}`;
     if (deepVerifyCritical.length > 0) {
       fullReply += `\n\n// CRITICAL: this still breaks the wider repo after a fix attempt (a real bundle + cross-file export check) — ${deepVerifyCritical.join('; ')}. The change was applied to this workspace anyway; PUSH TO PRODUCTION will re-check and block it, but fix or revert it here first.`;
     }
+    if (a11yReverted.length > 0) a11yNotes = [...a11yNotes, ...a11yReverted];
     if (a11yNotes.length > 0) {
       fullReply += `\n\n// A11Y: ${a11yNotes.length} accessibility issue${a11yNotes.length === 1 ? '' : 's'} left after a fix pass — ${a11yNotes.join('; ')}. The site still works; ask me to fix ${a11yNotes.length === 1 ? 'it' : 'them'}.`;
     }
