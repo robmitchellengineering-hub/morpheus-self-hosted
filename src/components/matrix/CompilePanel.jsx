@@ -100,6 +100,14 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const autoLoopRef = useRef(0);
   const dispatchRetryRef = useRef(0);
   const [dispatchRetryAttempt, setDispatchRetryAttempt] = useState(0);
+  // Which provider mode this app is in, and the words for it. Read from the same
+  // server module that writes the app's README section, so the panel and the README
+  // cannot disagree. Shown in the panel because the README is not where anyone looks
+  // while they are pressing COMPILE — and the point of the honesty half is that
+  // Morpheus says which mode an app is in BEFORE anyone runs it.
+  const [provider, setProvider] = useState(null);
+  const [grant, setGrant] = useState(null); // { phase, token, appId, error }
+  const [tokenCopied, setTokenCopied] = useState(false);
   const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — GitHub Actions builds can take a while
   const MAX_ERRORS = 5; // stop polling after 5 consecutive status-check failures
   const MAX_AUTO_LOOPS = 10; // cap unattended fix-loop iterations so it can't run forever
@@ -202,6 +210,40 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
+
+  // Ask the server which mode this app is in, every time the panel opens. A failed
+  // read shows nothing rather than a guess: an error here must never be rendered as
+  // "nothing to set up", which is the one claim that has to be true.
+  useEffect(() => {
+    let cancelled = false;
+    if (!open || !project?.id) { setProvider(null); return undefined; }
+    base44.functions.invoke('getAppProviderSetup', { projectId: project.id })
+      .then((r) => { if (!cancelled) setProvider(r?.data || null); })
+      .catch(() => { if (!cancelled) setProvider(null); });
+    setGrant(null);
+    setTokenCopied(false);
+    return () => { cancelled = true; };
+  }, [open, project?.id]);
+
+  // Mint the capability token for this app. The response carries the token ONCE —
+  // the server keeps only its hash — so the panel shows it and says, there and
+  // then, that it belongs in a backend and not in a page.
+  const createGrant = async () => {
+    setGrant({ phase: 'creating' });
+    try {
+      const r = await base44.functions.invoke('appCapabilityGrant', { projectId: project.id, action: 'create' });
+      setGrant({ phase: 'done', token: r?.data?.token, appId: r?.data?.appId, warning: r?.data?.warning });
+    } catch (e) {
+      setGrant({ phase: 'error', error: e?.message || 'Could not create the grant.' });
+    }
+  };
+
+  const copyToken = async () => {
+    try {
+      await navigator.clipboard.writeText(grant?.token || '');
+      setTokenCopied(true);
+    } catch { setTokenCopied(false); }
+  };
 
   useEffect(() => () => stopPolling(), [stopPolling]);
 
@@ -476,6 +518,77 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
             <p className="text-xs text-ink-strong">
               // Source target doesn't need compilation. Use the ZIP button to download raw source.
             </p>
+          )}
+          {/* PROVIDER SETUP — the build-time honesty, in the UI.
+              The two headings here are the same two sentences the app's README
+              carries, both produced server-side by lib/appCapability.js and pinned by
+              scripts/verify-app-capability-creds.mjs. The green line is the promise;
+              the amber one is the steps. Neither is a fallback for the other. */}
+          {provider && provider.mode && provider.mode !== 'none' && (
+            <div
+              className={`border p-3 space-y-2 ${
+                provider.mode === 'connected' ? 'border-primary/40 bg-primary/5' : 'border-yellow-500/40 bg-yellow-500/5'
+              }`}
+            >
+              <div className={`text-xs font-bold ${provider.mode === 'connected' ? 'text-primary' : 'text-yellow-500'}`}>
+                {provider.headline}
+              </div>
+              {provider.mode === 'connected' ? (
+                <>
+                  <p className="text-xs text-ink-strong">
+                    This app goes through your Morpheus Google Drive connection, so there is no OAuth client to
+                    create and no origin to register. Keep Google Drive connected in Settings.
+                  </p>
+                  <p className="text-[11px] text-ink-max">
+                    A capability token lets this app write to your Drive, so it must live in the app&apos;s own
+                    backend — never in a web page, where anyone opening the app could read it. A static app has
+                    nowhere to keep one and takes the own-OAuth-client route instead.
+                  </p>
+                  {grant?.phase === 'done' ? (
+                    <div className="space-y-2 border border-primary/30 p-2">
+                      <div className="text-[11px] uppercase tracking-wider text-ink-max">TOKEN FOR THIS APP&apos;S BACKEND — shown once:</div>
+                      <div className="font-mono text-[11px] text-ink-max break-all">{grant.token}</div>
+                      <button
+                        onClick={copyToken}
+                        className="w-full flex items-center justify-center gap-2 py-1 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary text-[11px]"
+                      >
+                        {tokenCopied ? <Check size={12} /> : <Copy size={12} />}
+                        {tokenCopied ? 'COPIED' : 'COPY TOKEN'}
+                      </button>
+                      <p className="text-[11px] text-yellow-500">{grant.warning}</p>
+                      {grant.appId && (
+                        <p className="text-[11px] text-ink-max">
+                          Send it as <span className="font-mono">Authorization: Bearer apc_…</span> to{' '}
+                          <span className="font-mono">/api/app-capability</span> with{' '}
+                          <span className="font-mono">appId: {grant.appId}</span>.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={createGrant}
+                      disabled={grant?.phase === 'creating'}
+                      className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs disabled:opacity-40"
+                    >
+                      {grant?.phase === 'creating' ? <Loader2 size={14} className="animate-spin" /> : <Server size={14} />}
+                      APPROVE MY DRIVE FOR THIS APP
+                    </button>
+                  )}
+                  {grant?.phase === 'error' && (
+                    <div className="text-[11px] text-red-500 border border-red-500/30 p-2">{grant.error}</div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* The steps, verbatim from the server — the same text the README
+                      carries, so a person reading either is told the same thing. */}
+                  <pre className="text-[11px] text-ink-max whitespace-pre-wrap font-sans">{provider.message}</pre>
+                  <p className="text-[11px] text-ink-max">
+                    These steps are in this app&apos;s README too.
+                  </p>
+                </>
+              )}
+            </div>
           )}
           {!isSupported && target !== 'source' && (
             <p className="text-xs text-yellow-500/80">

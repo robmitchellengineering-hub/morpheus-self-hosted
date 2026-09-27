@@ -72,6 +72,7 @@ model User {
   project_assets   ProjectAsset[]
   plugin_connections PluginConnection[]
   widget_tokens    WidgetToken[]
+  capability_grants AppCapabilityGrant[]
   device_tokens    DeviceToken[]
   github_connection GithubConnection?
   google_drive_connection GoogleDriveConnection?
@@ -365,6 +366,7 @@ model Project {
   assets         ProjectAsset[]
   plugin_connections PluginConnection[]
   widget_tokens  WidgetToken[]
+  capability_grants AppCapabilityGrant[]
 
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
@@ -961,6 +963,55 @@ model PluginConnection {
 
   @@unique([project_id, kind])
   @@map("plugin_connections")
+}
+
+// ── PER-APP CAPABILITY GRANTS ──────────────────────────────────────
+// One row says: this user approved that THIS APP may use ONE named capability
+// (today only `drive_upload`) against the user's OWN Google Drive connection
+// (lib/googleDrive.js — the platform `drive.file` connection made in Settings,
+// deliberately NOT the Command Deck's wider one).
+//
+// Mirrors WidgetToken's hash-at-rest/revocable shape on purpose, and is a
+// separate table for a security-bearing reason: this grant is resolved by one
+// purpose-built endpoint (routes/appCapability.routes.js) that checks the
+// `app_id` the caller NAMES against the one folded into the grant, so "a token
+// for app A cannot act on app B" is a checked fact rather than a consequence of
+// the functions dispatcher pinning a body field. See lib/appCapabilityGrants.js.
+//
+// THE TOKEN IS FOR AN APP'S BACKEND, NEVER FOR A PAGE. A token that can write to
+// a user's Drive, held in a public web page, is readable and usable by anyone who
+// opens it. The capability endpoint is therefore server-to-server; a static app
+// takes the own-OAuth-client route instead and the build writes those steps into
+// its README. That rule is stated in the created-token response and in the UI.
+//
+// SHIPS WITH server/prisma/selfdev-app-capability-grants.sql (hazard H8), which is
+// additive and is NOT applied by the change that adds this model. Every read in
+// lib/appCapabilityGrants.js degrades to a clear 503 when the table is absent, so
+// an unmigrated database cannot break any other page — the smallest possible
+// blast radius for the H11 shape, because only this endpoint touches the table.
+model AppCapabilityGrant {
+  id            String    @id @default(uuid())
+  created_by_id String
+  owner         User      @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project   @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  // Derived from the project id (lib/appCapability.js's appIdForProject) and
+  // quoted by the app in every request. Not a secret — the token is.
+  app_id        String
+
+  token_prefix  String    // "apc_" + first 8 chars — for the operator's list only
+  token_hash    String    @unique // sha256(full token). The token itself is never stored.
+  label         String?
+  capabilities  String    // comma-separated names from APP_CAPABILITIES
+  revoked       Boolean   @default(false)
+  last_used_at  DateTime?
+
+  created_date  DateTime  @default(now())
+
+  @@index([project_id])
+  @@index([created_by_id])
+  @@map("app_capability_grants")
 }
 
 // An embeddable-widget access token — lets a slim Morpheus surface embedded

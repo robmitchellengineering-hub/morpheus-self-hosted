@@ -56,6 +56,7 @@ const HARD = [
   'verify-prose-ink.mjs',
   'verify-traffic.mjs',
   'verify-photo-drive.mjs',
+  'verify-app-capability-creds.mjs',
   'verify-dock.mjs',
   'verify-plugin-pack.mjs',
   'verify-prod-sql.mjs',
