@@ -26,12 +26,50 @@ export const LIFE_STREAM_KEYS = ['health', 'money', 'home', 'people', 'growth'];
 // note instead of filing it.
 export const MAX_ITEMS = 8;
 
-// Fraction of the original characters the returned items must account for.
-// Splitting legitimately drops connectives ("and", "oh also"), so this is not
-// 1.0 — but a dropped ITEM lands around 0.5 or lower, which this catches. The
-// asymmetry is deliberate: firing when it needn't costs a slightly coarser
-// filing, not firing when it should loses what the user said.
+// Fraction of the original characters the returned items must account for — a
+// backstop for a wholesale loss, not the main rule. Character coverage cannot tell a
+// faithful split from a dropped SHORT thought: dropping "get milk" from
+// "Book the kids into swimming, pay the rego, get milk" leaves 0.76, while a faithful
+// three-item split of that same dump only reaches ~0.86, because the connectives go
+// with the split. Those are ten points apart and the old 0.6 floor sat below both, so
+// the check that exists to stop a thought being lost passed the case it was written
+// for. `unrepresentedClause` below is the rule that actually holds.
 const MIN_COVERAGE = 0.6;
+
+// A clause shorter than this is a fragment ("oh also"), not a thought worth chasing.
+const MIN_CLAUSE_CHARS = 8;
+
+/** Words worth comparing: lowercase, punctuation dropped, two-letter noise ignored. */
+const compareWords = (s) => String(s || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .split(/\s+/)
+  .filter((w) => w.length >= 3);
+
+/**
+ * The first substantive clause of the dump that no item accounts for, or null.
+ *
+ * The schema asks the model to copy the speaker's OWN WORDS, so a faithful split
+ * represents every clause it was given — and a clause that survives no item is a
+ * thought that was dropped. Compared by majority word overlap rather than exact
+ * substring, because the model lightly rewrites ("book the kids into swimming" →
+ * "book kids swimming") and an exact match would fire on every paraphrase.
+ */
+function unrepresentedClause(text, items) {
+  const clauses = String(text)
+    .split(/(?:[.;!?]+|,|\s+(?:and|also|plus|then)\s+)/i)
+    .map((c) => c.trim())
+    .filter((c) => c.length >= MIN_CLAUSE_CHARS);
+  if (!clauses.length) return null;
+  const itemWords = new Set(compareWords(items.map((i) => i.text).join(' ')));
+  for (const clause of clauses) {
+    const words = compareWords(clause);
+    if (!words.length) continue;
+    const missing = words.filter((w) => !itemWords.has(w));
+    if (missing.length / words.length >= 0.5) return clause;
+  }
+  return null;
+}
 
 const DEFAULT_DESTINATION = 'knowledge';
 
@@ -148,13 +186,14 @@ export function normalizeClassifyResult(result, originalText, peopleNames = []) 
     return [{ text, destination: DEFAULT_DESTINATION, life_stream_key: null, owner_name: null }];
   }
 
+  // Two ways to lose something, so two tests. The clause test is the one that fires
+  // in practice: it catches a dropped thought of any length, where character coverage
+  // only notices a large loss. The asymmetry stays deliberate — firing when it needn't
+  // costs a slightly coarser filing (the user sees their own words, unfiltered), while
+  // not firing when it should loses a thought the synthesis can then never reason over.
   const covered = items.reduce((sum, i) => sum + i.text.length, 0);
-  if (covered < text.length * MIN_COVERAGE) {
-    // The model summarised or dropped part of the dump. Keep the destination it
-    // was most confident about, but file the WHOLE original text under it so
-    // nothing the user said is lost. Deliberately applies to a single item too:
-    // a 48-character dump coming back as "milk" is the same loss, and the cost
-    // of over-firing is only that the user sees their own words unfiltered.
+  const droppedClause = unrepresentedClause(text, items);
+  if (covered < text.length * MIN_COVERAGE || droppedClause) {
     const first = items[0];
     return [{ text, destination: first.destination, life_stream_key: first.life_stream_key, owner_name: first.owner_name }];
   }
