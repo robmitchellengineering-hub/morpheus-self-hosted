@@ -216,6 +216,11 @@ jobs:
       - name: Gmail sync limits
         run: node scripts/verify-gmail-sync.mjs
 
+      # The inbox reply draft's failure path: an empty draft must not read as success, and
+      # a failure must not be reported as a save error.
+      - name: Reply draft failure
+        run: node scripts/verify-deck-draft.mjs
+
       # The proactive-insight opt-out gate, plus the cross-boundary contract
       # that the widget it keys off still exists in the frontend registry with
       # the copy that makes the control discoverable.

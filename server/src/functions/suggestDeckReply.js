@@ -24,5 +24,15 @@ MESSAGE:
 ${item.message}`;
 
   const { result: reply } = await invokeAI({ userId: user.id, prompt, maxTokens: MAX_REPLY_TOKENS });
-  return { reply: reply.trim() };
+
+  const draft = String(reply || '').trim();
+  if (!draft) {
+    // A 200 with an empty body used to come back as a successful `{ reply: '' }`, so the
+    // reply box was simply blank — indistinguishable from "Jarvis had nothing to say" —
+    // and `reply.trim()` threw outright on a null result, which the client reported as a
+    // SAVE failure. Throw the honest thing instead; the caller shows the reason.
+    throw new Error('Jarvis returned an empty draft — nothing to insert. Ask again.');
+  }
+
+  return { reply: draft };
 }
