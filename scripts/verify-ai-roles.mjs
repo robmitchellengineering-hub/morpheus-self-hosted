@@ -109,6 +109,27 @@ check('the scheduled deck insight has a budget above the 6000 it failed at four 
 check('…and the conversational reply keeps its own, so the two cannot silently share a ceiling again',
   /MAX_REPLY_TOKENS\s*=\s*6000/.test(synth) && /maxTokens:\s*MAX_REPLY_TOKENS/.test(synth));
 
+// ── a small AI call must not be able to take its caller down ─────────────────
+// The widget-build intent classifier runs on EVERY Jarvis message, before the reply,
+// and it is an optimisation — it recognises "build me a widget" and answers with a
+// canned acknowledgement. `invokeAI` throws on a timeout, a truncation or a bad
+// response; unguarded, that throw left the handler as a 500 and took a perfectly good
+// chat turn with it, on top of the user row already persisted.
+const chatSrc = code('server/src/functions/chatWithJarvis.js');
+check('the widget-build intent call is guarded, so a classifier failure cannot kill the reply',
+  /try\s*\{[^}]*wantsWidgetBuild = await classifyWidgetBuildIntent/s.test(chatSrc));
+check('…and the fallback is ordinary chat, not a build',
+  /let wantsWidgetBuild = false;/.test(chatSrc) && /if \(wantsWidgetBuild\)/.test(chatSrc));
+
+// An empty 200 used to be stored verbatim: a blank Jarvis bubble with no error, and a
+// blank "Suggestions" card — both indistinguishable from "Jarvis had nothing to say".
+// This file's own history records the same silent-empty reply once before.
+const synthFail = code('server/src/functions/runJarvisSynthesis.js');
+check('the chat reply refuses to store an empty reply',
+  /if \(!String\(reply \|\| ''\)\.trim\(\)\)/.test(chatSrc));
+check('…and so does the manual synthesis',
+  /if \(!String\(reply \|\| ''\)\.trim\(\)\)/.test(synthFail));
+
 // NOTE: the `classify` role's settings row (`default_classify_model` / `_temperature`) is
 // deliberately NOT asserted here. It lives in the workspace harness, not this repo, and a
 // repo guard that reaches outside the checkout would either be skipped in CI — a check that
