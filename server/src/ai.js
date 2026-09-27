@@ -14,6 +14,7 @@ import { aiGatewayDefault } from './config/hostedDefaults.js';
 import { discoverLatestModel } from './freshness.js';
 import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
 import { getPlatformSetting } from './lib/platformSettings.js';
+import { salvageJson } from './lib/salvageJson.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
 import { shouldUseFallback } from './lib/deepseekBalance.js';
 import { recordCallDuration } from './lib/timingStats.js';
@@ -416,7 +417,7 @@ async function resolveEndpoint(settings, role) {
  *   which callers can surface as a retryable error.
  * @returns {Promise<{result: any, provider: string, model: string, usage?: object}>}
  */
-export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxTokens, task }) {
+export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxTokens, task, salvagePartial }) {
   // Timed from the first line of the call, so `duration_ms` is what the caller waited — the number
   // the latency questions in every audit so far could only guess at.
   const startedAt = Date.now();
@@ -636,6 +637,15 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     // right for a coder call and nonsense for a bounded one-shot action — it was
     // what runAiAction reported while its mapping endpoint was failing, which
     // sends the reader looking for files that do not exist.
+    // 2026-09-28: a caller that asked for salvage gets the largest COMPLETE prefix of the answer
+    // instead of a throw, flagged `truncated` so nothing downstream can mistake it for the whole
+    // thing. Only a list-shaped caller can use this honestly (see server/src/lib/salvageJson.js);
+    // every other schema call, the coder's included, still hard-fails here, because half a file
+    // list is not a partial answer, it is a wrong one.
+    if (salvagePartial) {
+      const salvaged = salvageJson(content);
+      if (salvaged) return { result: salvaged.value, provider, model: resolvedModel, usage, truncated: true };
+    }
     const hint = role === 'coder'
       ? ' Reduce the number of files per step (2-3 max) and retry.'
       : ' The output budget was consumed before the answer was complete — the role runs on a reasoning model, whose thinking is billed against this same limit.';
@@ -648,6 +658,12 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     } catch (parseErr) {
       const trimmed = content.trimEnd();
       if (!trimmed.endsWith('}') && !trimmed.endsWith(']')) {
+        // Same opt-in as the finishReason branch above: a caller reading a LIST can use the items
+        // that did parse. A failed salvage keeps the original error — never a guessed value.
+        if (salvagePartial) {
+          const salvaged = salvageJson(content);
+          if (salvaged) return { result: salvaged.value, provider, model: resolvedModel, usage, truncated: true };
+        }
         throw new Error('OUTPUT_TRUNCATED: The AI response was cut off mid-JSON before it could finish. Reduce the number of files per step (2-3 max) and retry.');
       }
       // 2026-09-03 (Rob: "SYSTEM FAILURE: AI endpoint did not return valid

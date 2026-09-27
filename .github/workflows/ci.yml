@@ -243,6 +243,11 @@ jobs:
       - name: Deck add guard
         run: node scripts/verify-deck-add-guard.mjs
 
+      # A truncated LIST is not a truncated answer: the items already written are complete, and the
+      # classifier that splits a brain dump must not be destroyed by the reasoning tax.
+      - name: Truncated-JSON salvage
+        run: node scripts/verify-salvage-json.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds

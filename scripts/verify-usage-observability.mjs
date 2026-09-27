@@ -38,7 +38,11 @@ check('the row records the duration, guarded against a non-number',
 console.log('\n2. the timing is real, and reaches the recorder');
 check('the call is timed from its first line',
   /export async function invokeAI\(\{[^}]*\}\) \{\s*(?:\/\/[^\n]*\n\s*)*const startedAt = Date\.now\(\);/.test(code), true);
-check('invokeAI accepts an optional task label', /export async function invokeAI\(\{ userId, prompt, schema, fileUrls, role, maxTokens, task \}\)/.test(code), true);
+// The signature gained `salvagePartial` on 2026-09-28 (a truncated LIST is not a truncated answer);
+// what this check is for is the `task` label, so it asserts the tail of the list rather than
+// freezing it — a new optional argument is not the failure it exists to catch.
+check('invokeAI accepts an optional task label',
+  /export async function invokeAI\(\{ userId, prompt, schema, fileUrls, role, maxTokens, task(?:, \w+)* \}\)/.test(code), true);
 check('the success path passes both, measured not estimated',
   /recordUsageEvent\(\{ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits, task, durationMs: Date\.now\(\) - startedAt \}\)/.test(code), true);
 check('the recorder is still fire-and-forget, so metering cannot break a call',

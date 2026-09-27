@@ -55,9 +55,28 @@ export default async function handler({ user, body }) {
   // silently reverted, with a name in the text dragging every thought onto that person.
   // The answer itself is a short list (<= MAX_ITEMS entries), so ~4000 leaves the
   // reasoning several thousand tokens of room while keeping the dictation path quick.
-  const { result } = await invokeAI({ userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000 });
+  //
+  // MEASURED 2026-09-28, AND 4000 WAS NOT ENOUGH: the one `classify` call since the cap was
+  // raised (2026-09-27 20:48) ended at `out=4000` from a 962-token prompt after 18.98s — the whole
+  // budget, on a 27-character dump. Rob's report ("brain dump is not filing") is that call: it
+  // truncated, threw, and the dump landed in the unsorted pile. Two things follow, and the second
+  // is the fix. (1) Raising the cap again is the move this was already tried with, and a bigger
+  // budget buys the model more *thinking*, not more classification. (2) A truncated LIST is not a
+  // truncated answer: the items already written are complete, so `salvagePartial` recovers them
+  // and `normalizeClassifyResult`'s coverage guard files whatever the answer did not reach. The
+  // call can no longer be destroyed by the reasoning tax — only shortened, and honestly.
+  const { result, truncated } = await invokeAI({
+    userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000, salvagePartial: true,
+  });
 
   const items = normalizeClassifyResult(result, text, peopleNames);
+
+  // The truncation has to say so somewhere: the previous three rounds of this were diagnosed from
+  // the container log hours later, by inferring it from `output_tokens == maxTokens`. Now it names
+  // itself, with how much survived.
+  if (truncated) {
+    console.warn(`[classifyDeckDumpItem] the classification hit the maxTokens cap — recovered the complete prefix (${items.length} item(s) before the coverage guard); the rest of the dump is filed whole rather than dropped.`);
+  }
 
   // Both shapes are returned on purpose. The frontend (Netlify) and this server
   // (Northflank) deploy independently, so a frontend still running the previous
