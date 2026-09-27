@@ -37,14 +37,25 @@ export default async function handler({ user, body }) {
 
   const prompt = buildClassifyPrompt({ text, businessContext, peopleNames });
 
-  // The answer is a short list, and the model producing it is the `classify` role
-  // (flash @ 0.4) — which has no hidden-reasoning tax to eat the budget in the first
-  // place. These caps were raised one by one to outrun that tax ("the same lesson
-  // chatWithJarvis.js and syncDeckGmailInbox.js both already learned the hard way"),
-  // which treated the symptom: the cause was a reasoning model reached through a call
-  // that named no role, so it resolved to the platform default. Headroom stays; the
-  // role is the fix.
-  const { result } = await invokeAI({ userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 1200 });
+  // A budget, not a target: nothing is billed for headroom that goes unused, and the
+  // failure this prevents is expensive. `role: 'classify'` was the fix for the first
+  // round of truncations (the call used to name no role and resolved to the platform
+  // default), and an earlier comment here claimed the classify role had "no
+  // hidden-reasoning tax to eat the budget in the first place" — which is not true of
+  // this platform, and the cap of 1200 stayed low because of it. Measured on
+  // 2026-09-27: of the four `classify` calls in the preceding 14 days, THREE ended at
+  // exactly 1200 output tokens with `OUTPUT_TRUNCATED (role=classify, maxTokens=1200)`
+  // in the container log — i.e. after the role was named, on most calls, the model was
+  // still cut off mid-answer. The platform's own message says why: "the role runs on a
+  // reasoning model, whose thinking is billed against this same limit".
+  //
+  // Why it matters more here than the wasted call: `invokeAI` THROWS on a truncated
+  // completion, so the handler fails and the client's catch files the WHOLE dump to one
+  // owner via the name regex — the per-thought split this classifier exists to provide,
+  // silently reverted, with a name in the text dragging every thought onto that person.
+  // The answer itself is a short list (<= MAX_ITEMS entries), so ~4000 leaves the
+  // reasoning several thousand tokens of room while keeping the dictation path quick.
+  const { result } = await invokeAI({ userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000 });
 
   const items = normalizeClassifyResult(result, text, peopleNames);
 

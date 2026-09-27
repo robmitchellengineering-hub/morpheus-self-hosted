@@ -90,6 +90,25 @@ for (const [file, schema, what] of OUTSIDE) {
     /role:\s*'classify'/.test(call));
 }
 
+// ── naming the role is necessary, and it was not sufficient ─────────────────
+// The three calls above all name `classify` and still truncated. Measured 2026-09-27:
+// of the four `classify` calls in the preceding 14 days, THREE ended at exactly 1200
+// output tokens, with `OUTPUT_TRUNCATED (role=classify, maxTokens=1200)` in the
+// container log — after the role was named. The role decides WHICH model reasons; it
+// does not decide how much room that model gets. So the deck's two truncating calls
+// carry a floor here, and the reason is recorded with the number.
+const dump = code('server/src/functions/classifyDeckDumpItem.js');
+const dumpBudget = Number((dump.match(/maxTokens:\s*(\d+)/) || [])[1] || 0);
+check('the brain-dump classifier has a budget above the 1200 it truncated at on 3 of its 4 calls',
+  dumpBudget >= 4000, `found maxTokens: ${dumpBudget || '(none)'}`);
+
+const synth = code('server/src/functions/runJarvisSynthesis.js');
+const schedBudget = Number((synth.match(/MAX_SCHEDULED_TOKENS\s*=\s*(\d+)/) || [])[1] || 0);
+check('the scheduled deck insight has a budget above the 6000 it failed at four times in a week',
+  schedBudget >= 12000 && /maxTokens:\s*MAX_SCHEDULED_TOKENS/.test(synth), `found ${schedBudget || '(none)'}`);
+check('…and the conversational reply keeps its own, so the two cannot silently share a ceiling again',
+  /MAX_REPLY_TOKENS\s*=\s*6000/.test(synth) && /maxTokens:\s*MAX_REPLY_TOKENS/.test(synth));
+
 // NOTE: the `classify` role's settings row (`default_classify_model` / `_temperature`) is
 // deliberately NOT asserted here. It lives in the workspace harness, not this repo, and a
 // repo guard that reaches outside the checkout would either be skipped in CI — a check that
@@ -100,7 +119,10 @@ console.log(`\n${pass}/${pass + fail} checks passed`);
 if (fail) {
   console.log('\nA call that names no role is not neutral: it takes default_model @');
   console.log('default_temperature, which is a reasoning model, whose thinking is billed');
-  console.log('against max_tokens. Name the role — do not raise the cap.\n');
+  console.log('against max_tokens. Name the role — and then give it a budget measured');
+  console.log('against what it actually consumes. Naming the role decides which model');
+  console.log('reasons, never how much room that model gets: the deck s classify call was');
+  console.log('cut off at its cap on 3 of 4 calls AFTER it had been given the role.\n');
   process.exit(1);
 }
 console.log('small AI calls are role-scoped, and no reasoning-role budget is too small to finish.\n');

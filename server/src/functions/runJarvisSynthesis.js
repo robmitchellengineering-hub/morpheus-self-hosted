@@ -31,6 +31,7 @@ import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock } from '../lib/deckMemory.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
+import { interpretScheduledResult } from '../lib/deckInsightPayload.js';
 
 // 2026-09-17: tried capping this at 2000 to bound worst-case generation
 // time (see PR #165) — broke correctness instead: this model burns a real
@@ -42,6 +43,14 @@ import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 // that's a real wait, not a bug; the frontend already shows a loading
 // state for it. Fixing the wait time is a separate problem (a bigger
 // compute plan, or trimming the snapshot/prompt itself), not this cap.
+// The scheduled insight is a batch job, not an interactive reply, so it can afford the
+// tokens a longer answer needs. It shared this 6000 with the conversational reply and
+// hit the ceiling: `[deck-insight] … failed: OUTPUT_TRUNCATED (role=unknown,
+// maxTokens=6000)` appears four times in the week to 2026-09-26 for a single account,
+// and five role-less calls reached 6000 output tokens. `role=unknown` is deliberate —
+// this is the persona path, on the platform default — so the budget is the lever, not
+// the model.
+const MAX_SCHEDULED_TOKENS = 12000;
 const MAX_REPLY_TOKENS = 6000;
 
 const SHARED_PERSONA = (firstName, businessContext) =>
@@ -117,23 +126,28 @@ Jarvis:`;
     const { result } = await invokeAI({
       userId: user.id,
       prompt,
-      maxTokens: MAX_REPLY_TOKENS,
+      maxTokens: MAX_SCHEDULED_TOKENS,
       schema: SCHEDULED_SCHEMA,
     });
 
-    let parsed = null;
-    try {
-      parsed = JSON.parse(result);
-    } catch {
-      // A scheduled run must never persist a malformed object into Jarvis's
-      // conversation history — better to have produced nothing.
-      return { skipped: true, reason: 'unparseable', trigger };
+    // `result` is already an object — invokeAI parses it when a schema is passed.
+    // This used to be `JSON.parse(result)`, which threw on every single successful
+    // call and made the whole feature a no-op that reported itself as healthy; see
+    // lib/deckInsightPayload.js.
+    const outcome = interpretScheduledResult(result);
+    if (!outcome.ok) {
+      // LOUD on purpose: an unusable payload is a DEFECT, not a quiet day, and
+      // folding it into the skip count is how this stayed invisible.
+      console.warn(`[deck-insight] scheduled payload unusable (${outcome.reason}) for ${user.id} — nothing raised`);
+      return { skipped: true, reason: outcome.reason, trigger };
     }
-
-    const insight = String(parsed?.insight || '').trim();
-    if (!parsed?.worthRaising || !insight) {
+    if (!outcome.raise) {
+      // The ordinary quiet outcome: Jarvis looked and found nothing worth
+      // interrupting for. Deliberately kept distinct from the branch above.
       return { skipped: true, reason: 'nothing-to-raise', trigger };
     }
+
+    const insight = outcome.insight;
 
     const saved = await prisma.deckJarvisMessage.create({
       data: { created_by_id: user.id, role: 'jarvis_synthesis', content: insight },
