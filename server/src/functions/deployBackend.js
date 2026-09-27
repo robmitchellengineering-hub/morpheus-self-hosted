@@ -37,6 +37,7 @@ import { getGithubToken } from '../lib/github.js';
 import { createRepo, pushFiles, ghHeaders, ghJson, encryptAndSetGithubSecret } from '../lib/github.js';
 import { withRetry } from '../lib/healthCheck.js';
 import crypto from 'node:crypto';
+import { decodeConnections } from '../lib/connectionSecrets.js';
 
 function sha256Hex(text) {
   return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
@@ -60,7 +61,7 @@ export default async function handler({ user, body }) {
   // Read per-user hosting credentials (moved above the dryRun check — see
   // note above about the original's ReferenceError bug).
   const settingsRow = await prisma.userSettings.findUnique({ where: { created_by_id: user.id } });
-  const userConnections = settingsRow?.connections ? JSON.parse(settingsRow.connections) : {};
+  const userConnections = decodeConnections(settingsRow?.connections);
   const supabaseRef = userConnections.supabase?.project_ref;
 
   // Dry-run mode: validate credentials and file structure without deploying.

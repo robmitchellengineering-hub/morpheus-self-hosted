@@ -6,6 +6,7 @@
 // — a house-wide fallback credential, same role it played in the original.
 import { prisma } from '../db.js';
 import { getDashboardUrl } from '../lib/infrastructureComponents.js';
+import { decodeConnections } from '../lib/connectionSecrets.js';
 
 export default async function handler({ user, body }) {
   const { projectId, platform } = body;
@@ -17,7 +18,7 @@ export default async function handler({ user, body }) {
 
   const deployInfo = JSON.parse(deployFile.content);
   const settings = await prisma.userSettings.findUnique({ where: { created_by_id: user.id } });
-  const userConnections = settings?.connections ? JSON.parse(settings.connections) : {};
+  const userConnections = decodeConnections(settings?.connections);
 
   const targetPlatform = platform || deployInfo.components?.api_host;
 

@@ -43,6 +43,7 @@ const HARD = [
   'verify-lint-coverage.mjs',
   'verify-deploy-health-scope.mjs',
   'verify-frontend-deploy.mjs',
+  'verify-connection-secrets.mjs',
   'verify-deck-prompt-bounds.mjs',
   'verify-usage-observability.mjs',
   'verify-deck-memory.mjs',
