@@ -267,6 +267,42 @@ const smallImports = buildReviewerContext({
 check('a small project gets the import targets too (not only the degraded path)',
   smallImports.includes('IMPORT TARGETS') && smallImports.includes('widget.js'));
 
+// ── ROOT-LEVEL FILES KEEP THEIR REAL NAMES IN THE DIRECTORY LISTING ──────────────────
+// A web-app project keeps its entry module, `index.html` and `styles.css` at the root, so
+// `dirOf(p)` is `'.'` for every file this section lists — the common case, not an edge case.
+// The listing was built with `p.slice(dir.length + 1)`, and for `'.'` that slices the first
+// TWO characters: the real function printed `p.js`, `lper.js`, `dex.html`, `yles.css`. This
+// section is the evidence for "does this import resolve", so a reviewer shown `p.js` can
+// conclude the `app.js` it is asking about does not exist and raise a false NO SUCH FILE —
+// a false positive that costs a real coder retry, in the one pipeline whose licence to stay
+// in it is that the reviewer produces zero confirmed false positives.
+const rootProject = [
+  { path: 'KNOWN-HAZARDS.md', content: 'Sentinel hazards.\n' },
+  { path: 'AGENTS.md', content: 'Sentinel agents.\n' },
+  { path: 'app.js', content: "import { helper } from './helper.js';\n" },
+  { path: 'helper.js', content: 'export function helper() {}\n' },
+  { path: 'index.html', content: '<html></html>\n' },
+  { path: 'styles.css', content: 'body {}\n' },
+];
+const rootBlock = buildReviewerContext({
+  files: rootProject,
+  fileOps: [{ path: 'app.js', action: 'update', content: "import { helper } from './helper.js';\nconsole.log(helper());\n" }],
+});
+// Parse the listing into items rather than substring-testing it: `lper.js` IS a substring of
+// the correct `helper.js`, so a substring assertion would pass on the buggy output too.
+// Assert on content sentinels, never on whether a name merely appears somewhere in the block
+// (the block also names the importer and the resolved target in its own lines).
+const rootListing = ((rootBlock.match(/files that exist in that directory: ([^\n]*)/) || [])[1] || '')
+  .split(',').map((s) => s.trim());
+check('the root directory is the import target (a web-app project\'s common case)',
+  /  ->  \.\/\n/.test(rootBlock), rootBlock.slice(-400));
+check('a root-level file keeps its REAL name in the directory listing',
+  ['app.js', 'helper.js', 'index.html', 'styles.css'].every((n) => rootListing.includes(n)),
+  rootListing.join(', '));
+check('no root-level name is truncated by the dot-directory length (the old bug)',
+  !rootListing.some((n) => ['p.js', 'lper.js', 'dex.html', 'yles.css', 'ENTS.md', 'OWN-HAZARDS.md'].includes(n)),
+  rootListing.join(', '));
+
 // ── Wiring: the block must actually be the one the reviewer receives ─────────────────
 const chat = code('server/src/functions/chatWithMorpheus.js');
 check('chatWithMorpheus builds the reviewer context',
