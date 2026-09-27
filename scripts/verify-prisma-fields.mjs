@@ -130,8 +130,13 @@ check('…and applies it to every file the gate inspects', /isCodePath\(op\.path
 // the wrong error, and an attempt count that never happened.
 check('the schema finding is reported as its own kind, not folded into syntax errors',
   /schemaCritical = \[\.\.\.schemaCritical/.test(chat));
-check('…and the syntax-error sentence is built from syntaxCritical alone',
-  /syntax error after \$\{MAX_GATE_ATTEMPTS - 1\} fix attempts — \$\{syntaxCritical\.join/.test(chat));
+// Asserts the PROPERTY, not the literal: the sentence must be about a syntax error, must be built
+// from syntaxCritical alone, and must NOT claim the cap as the count — which is what it used to do
+// (`${MAX_GATE_ATTEMPTS - 1}` said "2 fix attempts" even when one fix call had thrown). Pinning the
+// exact interpolation is how this check froze a known-wrong number in the first place.
+check('…and the syntax-error sentence is built from syntaxCritical alone, with the real attempt count',
+  /syntax error after \$\{[^}]+\} fix attempt[^`]*\$\{syntaxCritical\.join/.test(chat)
+  && !/MAX_GATE_ATTEMPTS - 1\} fix attempts/.test(chat));
 check('…from the real schema in the project, not a bundled copy',
   /schema\.prisma/.test(chat) && !/model UsageEvent/.test(chat));
 // The whole point: this must not sit inside the self-dev-only deep-verify gate.

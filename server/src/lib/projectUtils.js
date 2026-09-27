@@ -163,6 +163,13 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
     if (!op?.path) continue;
     if (seenPaths.has(op.path)) continue; // de-dup a repeated path from the LLM
     seenPaths.add(op.path);
+    // One op's UNEXPECTED failure used to abort the entire apply. Every later op was silently dropped,
+    // and because the function threw, the caller never received `appliedOps` at all — so files that
+    // HAD been written were reported as nothing: no chat row, no status, no decisions row, and (before
+    // the outer-catch fix) an error event that made the client re-run the whole turn. Record it, keep
+    // going, and let the caller see exactly what landed. The EXPECTED failures — policy denial, fake
+    // binary, missing content, a non-matching edit — are already handled without throwing.
+    try {
 
     if (policy) {
       try {
@@ -278,6 +285,10 @@ export async function applyFileOperations(userId, projectId, fileOps, existingFi
       createdIds.set(op.path, created.id);
     }
     appliedOps.push({ path: op.path, action: op.action || 'create' });
+    } catch (err) {
+      console.error('[applyFileOperations] op failed:', op.path, err.message);
+      appliedOps.push({ path: op.path, action: 'apply_failed', reason: err.message || 'unknown error' });
+    }
   }
   return appliedOps;
 }
