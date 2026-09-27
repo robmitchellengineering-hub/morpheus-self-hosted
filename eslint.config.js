@@ -21,8 +21,16 @@ export default [
       "src/api/**/*.{js,mjs,cjs,jsx}",
       "src/utils/**/*.{js,mjs,cjs,jsx}",
       "src/Layout.jsx",
+      // The two remaining gaps, found on 2026-09-28 while adding src/lib/staleChunk.js: the app
+      // ENTRY POINT matched no block (so nothing in it had ever been linted, including the code
+      // that recovers from a stale deploy), and src/lib/** was ignored outright — which is where
+      // real logic lives (staleChunk.js, deckInsightPayload.js), not just data.
+      "src/main.jsx",
+      // The root component — routes and every lazy() import — was the last file matching no block.
+      "src/App.jsx",
+      "src/lib/**/*.{js,mjs,cjs,jsx}",
     ],
-    ignores: ["src/lib/**/*", "src/components/ui/**/*"],
+    ignores: ["src/components/ui/**/*"],
     ...pluginJs.configs.recommended,
     ...pluginReact.configs.flat.recommended,
     languageOptions: {
