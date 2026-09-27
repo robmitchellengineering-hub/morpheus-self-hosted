@@ -18,7 +18,7 @@ function todayKey() {
 export async function buildDeckSnapshot(userId) {
   const where = { created_by_id: userId };
   const [
-    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, repairsOpenTotal, owedCount, owedAgg, murbah, inbox, inboxOpenTotal,
+    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, repairsOpenTotal, owedCount, owedAgg, owedIncomplete, murbah, inbox, inboxOpenTotal,
     strategy, knowledge, lifeStreams, lifeStreamNotes, energyLog, focusEntries,
   ] = await Promise.all([
     prisma.deckDumpItem.findMany({ where, orderBy: { created_date: 'desc' }, take: 20 }),
@@ -37,7 +37,26 @@ export async function buildDeckSnapshot(userId) {
     // What is owed to consignors: sold, not yet paid out. The fee is stored per item (see
     // schema.prisma), so this is a sum rather than a re-derivation of the tiered rule.
     prisma.deckConsignmentItem.count({ where: { ...where, sold: true, paid_out: false } }),
-    prisma.deckConsignmentItem.aggregate({ where: { ...where, sold: true, paid_out: false }, _sum: { fee: true } }),
+    // What is actually owed to a consignor is the sale price MINUS our commission, not the
+    // commission itself: `fee` is the shop's cut, and the schema ties it to the tiered rule in
+    // deckConstants.commissionFor (30% to $2000, 20% above). Summing `fee` here would have
+    // reported our own earnings as money owed to someone else — wrong by the full sale value, and
+    // Jarvis quotes this line to Rob as fact.
+    //
+    // Rows missing either half cannot contribute an amount, so they are excluded from the sum and
+    // counted separately: "$0 owed" and "nothing recorded yet" must never look the same (H13).
+    prisma.deckConsignmentItem.aggregate({
+      where: { ...where, sold: true, paid_out: false, sold_price: { not: null }, fee: { not: null } },
+      _sum: { sold_price: true, fee: true },
+    }),
+    prisma.deckConsignmentItem.count({
+      where: {
+        ...where,
+        sold: true,
+        paid_out: false,
+        OR: [{ sold_price: null }, { fee: null }],
+      },
+    }),
     prisma.deckMurbahOpportunity.findMany({ where }),
     // Newest open items only, with the true count fetched separately below: the inbox bodies are
     // the largest free text in the prompt, and a capped list must never read as the whole picture.
@@ -62,7 +81,7 @@ export async function buildDeckSnapshot(userId) {
   const unsoldConsign = unsoldConsignCount;
   const consignValue = consignAgg._sum.price || 0;
   const openRepairs = repairs; // already filtered to open by the bounded query above
-  const owedToConsignors = owedAgg._sum.fee || 0;
+  const owedToConsignors = (owedAgg._sum.sold_price || 0) - (owedAgg._sum.fee || 0);
   const shortDate = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const openInbox = inbox; // already filtered to open by the bounded query above
   const today = todayKey();
@@ -88,7 +107,7 @@ STRATEGY NOTES (${strategy.length}): ${strategy.map((s) => s.text).join('; ') ||
 
 KNOWLEDGE / IDEAS (${knowledge.length}): ${knowledge.map((k) => k.text).join('; ') || 'none'}
 
-CONSIGNMENT: ${unsoldConsign} unsold items worth $${consignValue} on the floor${owedCount ? `; $${owedToConsignors} owed to consignors on ${owedCount} sold item${owedCount === 1 ? '' : 's'}` : ''}
+CONSIGNMENT: ${unsoldConsign} unsold items worth $${consignValue} on the floor${owedCount ? `; $${owedToConsignors} owed to consignors on ${owedCount} sold item${owedCount === 1 ? '' : 's'}${owedIncomplete ? ` (${owedIncomplete} with no sale price or fee recorded, so that amount is short)` : ''}` : ''}
 REPAIRS QUEUE: ${repairsOpenTotal} open${openRepairs.length < repairsOpenTotal ? ` (newest ${openRepairs.length} shown)` : ''}: ${openRepairs.map((r) => `${r.item} [${REPAIR_STAGE_LABEL[r.stage] || r.stage}]${r.quote ? ` quote $${r.quote}` : ''}${r.promised_date ? ` promised ${shortDate(r.promised_date)}` : ''}`).join('; ') || 'none'}
 MURBAH OPPORTUNITIES: ${murbah.map((m) => `${m.title} — ${MURBAH_STAGE_LABEL[m.stage] || m.stage}`).join('; ') || 'none'}
 INBOX (${inboxOpenTotal} not yet done${openInbox.length < inboxOpenTotal ? `, newest ${openInbox.length} shown` : ''}): ${openInbox.map((i) => `[${i.channel}] ${i.from_name}: ${excerpt(i.message)} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}
