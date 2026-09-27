@@ -254,6 +254,11 @@ jobs:
       - name: Google reconnect
         run: node scripts/verify-google-reconnect.mjs
 
+      # A capability nobody can find is not a capability, and a control row that runs off a phone
+      # tile is not a layout bug worth rediscovering: both are pinned by name.
+      - name: Deck UI reach and fit
+        run: node scripts/verify-deck-ui.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds
