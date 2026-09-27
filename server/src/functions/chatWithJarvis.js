@@ -131,7 +131,23 @@ export default async function handler({ user, body }) {
   // javis can just tell you where to watch the build that's better cause
   // then you can still chat and use him while it's working in the
   // background"), not streamed into this reply.
-  if (message && (await classifyWidgetBuildIntent(user.id, message))) {
+  // This classifier runs on EVERY message, before the reply, and it is an
+  // optimisation: it recognises "build me a widget" and answers with a canned
+  // acknowledgement instead of a chat reply. `invokeAI` throws on a timeout, a
+  // truncation or a bad response, and a throw here used to propagate out of the
+  // handler as a 500 — so an AI hiccup on a non-essential boolean cost the operator
+  // the whole turn ("Couldn't reach Jarvis that time"), on top of an orphaned user
+  // row, because the message is persisted above. A failure means "treat this as
+  // ordinary chat", loudly logged; the build can simply be asked for again.
+  let wantsWidgetBuild = false;
+  if (message) {
+    try {
+      wantsWidgetBuild = await classifyWidgetBuildIntent(user.id, message);
+    } catch (err) {
+      console.warn('[chatWithJarvis] widget-build intent check failed — treating this as an ordinary chat turn:', err?.message || err);
+    }
+  }
+  if (wantsWidgetBuild) {
     const reply = `Already building it — plan, code, review, ship, the whole thing, properly. That's a good fifteen minutes, not a parlour trick. Watch it happen in Settings → Widgets if you're itching to look, or just carry on talking to me while it cooks.`;
     await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'jarvis', content: reply } });
     runBuildDeckWidget(user, widgetBuildGoal(message, { firstName, businessContext })).catch((err) => {
@@ -156,6 +172,14 @@ ${firstName}: ${message || '(see attached file)'}
 Jarvis:`;
 
   const { result: reply } = await invokeAI({ userId: user.id, prompt, fileUrls, maxTokens: MAX_REPLY_TOKENS });
+
+  if (!String(reply || '').trim()) {
+    // A 200 with an empty body was stored as an empty bubble: the operator saw a blank
+    // message and no error. The comment at the top of this file records the same thing
+    // happening before. Nothing is persisted this time, and the caller is told the turn
+    // produced nothing, rather than being handed a blank Jarvis reply to interpret.
+    throw new Error('Jarvis returned an empty reply — nothing was stored. Ask again.');
+  }
 
   await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'jarvis', content: reply } });
 

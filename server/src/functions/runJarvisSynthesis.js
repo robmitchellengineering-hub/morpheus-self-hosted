@@ -159,6 +159,13 @@ Jarvis:`;
   const prompt = `${buildManualPrompt({ firstName, businessContext })}\n${body}`;
   const { result: reply } = await invokeAI({ userId: user.id, prompt, maxTokens: MAX_REPLY_TOKENS });
 
+  if (!String(reply || '').trim()) {
+    // An empty manual synthesis used to be stored as a blank "Suggestions" card with
+    // no error on screen — indistinguishable from Jarvis having nothing to say. Refuse
+    // it instead, and let the caller show that the synthesis failed.
+    throw new Error('Jarvis returned an empty synthesis — nothing was stored. Ask again.');
+  }
+
   const saved = await prisma.deckJarvisMessage.create({
     data: { created_by_id: user.id, role: 'jarvis_synthesis', content: reply },
   });
