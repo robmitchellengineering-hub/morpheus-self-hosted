@@ -63,3 +63,6 @@ public/plugin-manifest.json
 
 # The operator CLI's current run id — local state, never shared.
 .morpheus-run
+
+# The operator CLI's last PR-mode push — what a later `merge` forwards.
+.morpheus-push
