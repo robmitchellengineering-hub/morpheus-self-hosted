@@ -5,7 +5,7 @@
 // in. Pulled out of chatWithJarvis.js so the two never drift into building
 // their own, slightly different pictures of the same data.
 import { prisma } from '../db.js';
-import { excerpt, INBOX_IN_PROMPT } from './promptBounds.js';
+import { excerpt, INBOX_IN_PROMPT, REPAIRS_IN_PROMPT } from './promptBounds.js';
 
 const REPAIR_STAGE_LABEL = { waiting: 'Waiting', in_progress: 'In progress', done: 'Done' };
 const MURBAH_STAGE_LABEL = { idea: 'Idea', enquired: 'Enquired', booked: 'Booked', active: 'Active' };
@@ -18,7 +18,7 @@ function todayKey() {
 export async function buildDeckSnapshot(userId) {
   const where = { created_by_id: userId };
   const [
-    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, murbah, inbox, inboxOpenTotal,
+    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, repairsOpenTotal, owedCount, owedAgg, murbah, inbox, inboxOpenTotal,
     strategy, knowledge, lifeStreams, lifeStreamNotes, energyLog, focusEntries,
   ] = await Promise.all([
     prisma.deckDumpItem.findMany({ where, orderBy: { created_date: 'desc' }, take: 20 }),
@@ -30,7 +30,14 @@ export async function buildDeckSnapshot(userId) {
     // with the floor stock for nothing, and the floor stock is what the CRM work will grow.
     prisma.deckConsignmentItem.count({ where: { ...where, sold: false } }),
     prisma.deckConsignmentItem.aggregate({ where: { ...where, sold: false }, _sum: { price: true } }),
-    prisma.deckRepairJob.findMany({ where }),
+    // Bounded like the inbox: the newest open jobs, with the true open count fetched separately.
+    // The queue is the work, so it stays in the prompt; only its length is bounded.
+    prisma.deckRepairJob.findMany({ where: { ...where, stage: { not: 'done' } }, orderBy: { created_date: 'desc' }, take: REPAIRS_IN_PROMPT }),
+    prisma.deckRepairJob.count({ where: { ...where, stage: { not: 'done' } } }),
+    // What is owed to consignors: sold, not yet paid out. The fee is stored per item (see
+    // schema.prisma), so this is a sum rather than a re-derivation of the tiered rule.
+    prisma.deckConsignmentItem.count({ where: { ...where, sold: true, paid_out: false } }),
+    prisma.deckConsignmentItem.aggregate({ where: { ...where, sold: true, paid_out: false }, _sum: { fee: true } }),
     prisma.deckMurbahOpportunity.findMany({ where }),
     // Newest open items only, with the true count fetched separately below: the inbox bodies are
     // the largest free text in the prompt, and a capped list must never read as the whole picture.
@@ -54,7 +61,9 @@ export async function buildDeckSnapshot(userId) {
   const openTasks = tasks.filter((t) => !t.done);
   const unsoldConsign = unsoldConsignCount;
   const consignValue = consignAgg._sum.price || 0;
-  const openRepairs = repairs.filter((r) => r.stage !== 'done');
+  const openRepairs = repairs; // already filtered to open by the bounded query above
+  const owedToConsignors = owedAgg._sum.fee || 0;
+  const shortDate = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const openInbox = inbox; // already filtered to open by the bounded query above
   const today = todayKey();
   const todayEnergy = energyLog.find((e) => (e.date?.toISOString?.() || '').slice(0, 10) === today);
@@ -79,8 +88,8 @@ STRATEGY NOTES (${strategy.length}): ${strategy.map((s) => s.text).join('; ') ||
 
 KNOWLEDGE / IDEAS (${knowledge.length}): ${knowledge.map((k) => k.text).join('; ') || 'none'}
 
-CONSIGNMENT: ${unsoldConsign} unsold items worth $${consignValue} on the floor
-REPAIRS QUEUE: ${openRepairs.length} open jobs (${openRepairs.map((r) => `${r.item} [${REPAIR_STAGE_LABEL[r.stage] || r.stage}]`).join(', ') || 'none'})
+CONSIGNMENT: ${unsoldConsign} unsold items worth $${consignValue} on the floor${owedCount ? `; $${owedToConsignors} owed to consignors on ${owedCount} sold item${owedCount === 1 ? '' : 's'}` : ''}
+REPAIRS QUEUE: ${repairsOpenTotal} open${openRepairs.length < repairsOpenTotal ? ` (newest ${openRepairs.length} shown)` : ''}: ${openRepairs.map((r) => `${r.item} [${REPAIR_STAGE_LABEL[r.stage] || r.stage}]${r.quote ? ` quote $${r.quote}` : ''}${r.promised_date ? ` promised ${shortDate(r.promised_date)}` : ''}`).join('; ') || 'none'}
 MURBAH OPPORTUNITIES: ${murbah.map((m) => `${m.title} — ${MURBAH_STAGE_LABEL[m.stage] || m.stage}`).join('; ') || 'none'}
 INBOX (${inboxOpenTotal} not yet done${openInbox.length < inboxOpenTotal ? `, newest ${openInbox.length} shown` : ''}): ${openInbox.map((i) => `[${i.channel}] ${i.from_name}: ${excerpt(i.message)} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}
 UNSORTED BRAIN DUMP (${dump.length}): ${dump.map((d) => d.text).join('; ') || 'none'}

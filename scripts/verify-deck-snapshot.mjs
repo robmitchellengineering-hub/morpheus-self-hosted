@@ -41,12 +41,29 @@ console.log('\n2. the unbounded collections are exactly the known set');
 // `deckInboxItem` left this list on 2026-09-27: it is now `take: INBOX_IN_PROMPT` with the true
 // open count fetched separately and each body excerpted (verify-deck-prompt-bounds.mjs asserts
 // that shape). Removing an entry here is the deliberate act this check exists to force.
-const KNOWN = ['deckLifeStream', 'deckMurbahOpportunity', 'deckPerson', 'deckRepairJob', 'deckTask'];
+// `deckRepairJob` also left this list on 2026-09-27: the queue is now `take: REPAIRS_IN_PROMPT`
+// with the true open count fetched separately (asserted below). Removing an entry is the
+// deliberate act this check exists to force.
+const KNOWN = ['deckLifeStream', 'deckMurbahOpportunity', 'deckPerson', 'deckTask'];
 const unbounded = [...code.matchAll(/prisma\.(\w+)\.findMany\(\{\s*where\s*\}\)/g)]
   .map((m) => m[1]).sort();
 check('no unexpected unbounded fetch was added', unbounded.join(', '), KNOWN.join(', '));
 check('…and the bounded ones stayed bounded',
   (code.match(/findMany\(\{[^)]*take:/g) || []).length >= 5, true);
+
+console.log('\n3. the CRM view: bounded, and it answers the money question');
+check('the repairs queue is bounded',
+  /deckRepairJob\.findMany\(\{ where: \{ \.\.\.where, stage: \{ not: 'done' \} \}, orderBy: \{ created_date: 'desc' \}, take: REPAIRS_IN_PROMPT \}\)/.test(code), true);
+check('…and its true open count is fetched separately',
+  /deckRepairJob\.count\(\{ where: \{ \.\.\.where, stage: \{ not: 'done' \} \} \}\)/.test(code), true);
+check('…and the line states the count, and the cap when it applies',
+  /REPAIRS QUEUE: \$\{repairsOpenTotal\} open/.test(code) && /newest \$\{openRepairs\.length\} shown/.test(code), true);
+check('a job with a quote and a promised date says so',
+  /r\.quote \? ` quote \$\$\{r\.quote\}`/.test(code) && /promised \$\{shortDate\(r\.promised_date\)\}/.test(code), true);
+check('what is owed to consignors is summed from the STORED fee, not recomputed',
+  /deckConsignmentItem\.aggregate\(\{ where: \{ \.\.\.where, sold: true, paid_out: false \}, _sum: \{ fee: true \} \}\)/.test(code), true);
+check('…and stated with the count of items it covers',
+  /\$\{owedToConsignors\} owed to consignors on \$\{owedCount\}/.test(code), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }

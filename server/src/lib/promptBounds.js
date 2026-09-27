@@ -27,6 +27,7 @@
 export const CONVERSATION_MAX_CHARS = 12000;
 export const CONVERSATION_PER_MESSAGE_CHARS = 1500;
 export const INBOX_IN_PROMPT = 25;
+export const REPAIRS_IN_PROMPT = 25;
 export const INBOX_EXCERPT_CHARS = 200;
 
 /** "text…" when cut, with the cut marked; the trimming is visible, never silent. */
