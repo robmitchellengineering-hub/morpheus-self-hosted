@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import {
   DEFAULT_PEOPLE, OWNER_COLOR_CYCLE, LIFE_STREAMS_META,
   nextMurbahStage, nextRepairStage, nextInboxStage,
-  isYou, todayKey, todayISO, randomDeleteConfirmPhrase,
+  isYou, todayKey, todayISO, randomDeleteConfirmPhrase, commissionFor,
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
 import { summarizeFiling } from '@/pages/CommandDeck/dumpFiling';
@@ -14,6 +14,13 @@ import { summarizeFiling } from '@/pages/CommandDeck/dumpFiling';
 // same data without each tab reloading it independently.
 
 const CommandDeckContext = createContext(null);
+
+// Date-only fields (murbah's booking_date, a repair's promised_date) are stored as an ISO string and
+// never as a Date object: every row read back from the API comes JSON-serialized, so the renderers'
+// `(value || '').slice(0, 10)` — a string method — would throw on a real Date and blank the screen
+// (Rob, 2026-09-17: "entering and changing calendar dates in murbah causes a blank screen needing a
+// refresh"). One definition, used by every date-only write, so the next field cannot get it wrong.
+const toIsoDate = (dateStr) => (dateStr ? new Date(`${dateStr}T00:00:00.000Z`).toISOString() : null);
 
 export function useCommandDeck() {
   const ctx = useContext(CommandDeckContext);
@@ -114,8 +121,8 @@ export function CommandDeckProvider({ children }) {
   const [vaultStatus, setVaultStatus] = useState(null);
   const [vaultBusy, setVaultBusy] = useState(false);
 
-  const [cForm, setCForm] = useState({ item: '', consignor: '', phone: '', price: '', photo_url: null });
-  const [rForm, setRForm] = useState({ customer: '', phone: '', item: '', notes: '', pendingFiles: [] });
+  const [cForm, setCForm] = useState({ item: '', consignor: '', phone: '', price: '', sold_price: '', paid_out: false, photo_url: null });
+  const [rForm, setRForm] = useState({ customer: '', phone: '', item: '', notes: '', quote: '', promised_date: '', pendingFiles: [] });
 
   // ---- widgets & business profile ----------------------------------------
   // Rob, 2026-09-17: "I should be able to add custom widgets there too, I
@@ -531,8 +538,12 @@ export function CommandDeckProvider({ children }) {
   };
 
   // ---- consignment -------------------------------------------------------
+  // A row is created either "on the floor" or as an already-completed sale: the shop takes
+  // consignments that sell the same day, so the sold fields belong in the add form as well as on
+  // the row (2026-09-27, the deck's CRM edit work).
   const addConsignment = async () => {
     if (!cForm.item.trim()) return;
+    const soldPrice = cForm.sold_price === '' ? null : Number(cForm.sold_price) || 0;
     try {
       const created = await base44.entities.DeckConsignmentItem.create({
         item: cForm.item.trim(),
@@ -540,18 +551,41 @@ export function CommandDeckProvider({ children }) {
         phone: cForm.phone.trim(),
         price: Number(cForm.price) || 0,
         date_in: new Date().toISOString(),
-        sold: false,
+        sold: soldPrice !== null,
+        sold_price: soldPrice,
+        sold_date: soldPrice !== null ? new Date().toISOString() : null,
+        fee: soldPrice !== null ? commissionFor(soldPrice) : null,
+        paid_out: soldPrice !== null ? !!cForm.paid_out : false,
         photo_url: cForm.photo_url || null,
       });
       setConsignment((prev) => [created, ...prev]);
-      setCForm({ item: '', consignor: '', phone: '', price: '', photo_url: null });
+      setCForm({ item: '', consignor: '', phone: '', price: '', sold_price: '', paid_out: false, photo_url: null });
     } catch { flagSaveErr(); }
   };
   const toggleSold = async (id) => {
     const c = consignment.find((x) => x.id === id);
     if (!c) return;
-    setConsignment((prev) => prev.map((x) => (x.id === id ? { ...x, sold: !x.sold } : x)));
-    try { await base44.entities.DeckConsignmentItem.update(id, { sold: !c.sold }); } catch { flagSaveErr(); }
+    const sold = !c.sold;
+    // Un-selling clears the payout state: "paid out" on an item that is not sold is not a fact
+    // worth keeping, and it would leave the owed total quietly wrong.
+    const patch = sold
+      ? { sold: true, sold_date: c.sold_date || new Date().toISOString() }
+      : { sold: false, sold_date: null, paid_out: false };
+    setConsignment((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    try { await base44.entities.DeckConsignmentItem.update(id, patch); } catch { flagSaveErr(); }
+  };
+  // Inline edits. `fee` is derived here and nowhere else, so the recorded commission can never
+  // disagree with the sale price it was agreed on — while staying STORED, so a later change to the
+  // tiered rule cannot rewrite what was agreed with a consignor.
+  const updateConsignment = async (id, patch) => {
+    const next = { ...patch };
+    if ('sold_price' in next) {
+      const p = next.sold_price === '' || next.sold_price === null ? null : Number(next.sold_price) || 0;
+      next.sold_price = p;
+      next.fee = p === null ? null : commissionFor(p);
+    }
+    setConsignment((prev) => prev.map((x) => (x.id === id ? { ...x, ...next } : x)));
+    try { await base44.entities.DeckConsignmentItem.update(id, next); } catch { flagSaveErr(); }
   };
   const removeConsignment = async (id) => {
     setConsignment((prev) => prev.filter((c) => c.id !== id));
@@ -568,6 +602,11 @@ export function CommandDeckProvider({ children }) {
         item: rForm.item.trim(),
         notes: rForm.notes.trim(),
         stage: 'waiting',
+        // A quote of 0 is a real answer ("no charge"), so blank and zero are kept apart — the
+        // distinction the snapshot's `r.quote ?` test is allowed to lose only because a $0 quote
+        // prints nothing either way.
+        quote: rForm.quote === '' ? null : Number(rForm.quote) || 0,
+        promised_date: toIsoDate(rForm.promised_date),
       });
       let files = [];
       if (rForm.pendingFiles?.length) {
@@ -576,8 +615,17 @@ export function CommandDeckProvider({ children }) {
         })));
       }
       setRepairs((prev) => [{ ...created, files }, ...prev]);
-      setRForm({ customer: '', phone: '', item: '', notes: '', pendingFiles: [] });
+      setRForm({ customer: '', phone: '', item: '', notes: '', quote: '', promised_date: '', pendingFiles: [] });
     } catch { flagSaveErr(); }
+  };
+  // Inline edit for the two things that change after a job is booked: what was quoted, and when it
+  // was promised for.
+  const updateRepair = async (id, patch) => {
+    const next = { ...patch };
+    if ('quote' in next) next.quote = next.quote === '' || next.quote === null ? null : Number(next.quote) || 0;
+    if ('promised_date' in next) next.promised_date = toIsoDate(next.promised_date);
+    setRepairs((prev) => prev.map((x) => (x.id === id ? { ...x, ...next } : x)));
+    try { await base44.entities.DeckRepairJob.update(id, next); } catch { flagSaveErr(); }
   };
   const cycleRepairStage = async (id) => {
     const r = repairs.find((x) => x.id === id);
@@ -618,14 +666,8 @@ export function CommandDeckProvider({ children }) {
     });
   };
   const updateMurbahDate = (id, dateStr) => {
-    // booking_date is always a string everywhere else (an ISO string, as
-    // every entity read from the API comes back JSON-serialized) —
-    // MurbahPanel's dateValue does `(m.booking_date || '').slice(0, 10)`, a
-    // string method. Setting this to a raw Date object here (Rob,
-    // 2026-09-17: "entering and changing calendar dates in murbah causes a
-    // blank screen needing a refresh") made that .slice() throw on the very
-    // next render — a real crash, not a UI nit.
-    const date = dateStr ? new Date(`${dateStr}T00:00:00.000Z`).toISOString() : null;
+    // See toIsoDate above: booking_date is always a string, and a raw Date here crashed the render.
+    const date = toIsoDate(dateStr);
     setMurbahOpps((prev) => prev.map((m) => (m.id === id ? { ...m, booking_date: date } : m)));
     debouncedSave(`murbah-date-${id}`, async () => {
       try { await base44.entities.DeckMurbahOpportunity.update(id, { booking_date: date }); } catch { flagSaveErr(); }
@@ -1055,8 +1097,8 @@ export function CommandDeckProvider({ children }) {
     people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,
     energy, energyHistory, focusTask, setEnergyLevel, saveFocus,
     openStream, setOpenStream, consignment, repairs, murbahOpps,
-    cForm, setCForm, addConsignment, toggleSold, removeConsignment,
-    rForm, setRForm, addRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
+    cForm, setCForm, addConsignment, toggleSold, updateConsignment, removeConsignment,
+    rForm, setRForm, addRepair, updateRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
     cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
     murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,

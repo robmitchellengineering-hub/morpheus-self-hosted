@@ -33,6 +33,7 @@ const HARD = [
   'verify-deck-draft.mjs',
   'verify-deck-document.mjs',
   'verify-deck-snapshot.mjs',
+  'verify-deck-crm-edit.mjs',
   'verify-deck-prompt-bounds.mjs',
   'verify-usage-observability.mjs',
   'verify-deck-memory.mjs',

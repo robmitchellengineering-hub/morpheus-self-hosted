@@ -231,6 +231,12 @@ jobs:
       - name: Deck snapshot bounds
         run: node scripts/verify-deck-snapshot.mjs
 
+      # The CRM columns were readable before they were writable, so the rows could not be filled in.
+      # This pins the write path, the one-place derivation of the commission, and the two honesty
+      # rules around it (a date is not a Date object; a missing price does not print as $0).
+      - name: Deck CRM edit path
+        run: node scripts/verify-deck-crm-edit.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds

@@ -1,12 +1,28 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, ExternalLink, Check, X, Paperclip, FileText, Loader2, RefreshCw, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink, Check, X, Paperclip, FileText, Loader2, RefreshCw, Calendar, Pencil } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { C, STREAM_META, STREAM_ORDER, STATUS_STYLE, WP_ADMIN_URL, murbahStageLabel, repairStageLabel, money, commissionFor } from '../deckConstants';
 import { Card, EmptyNote, miniInput, rowBox, ghostBtn, pillBtn, checkBtn, MicField, MicTextarea } from '../DeckUI';
 
-function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, uploadFile }) {
+// What a sold item says about the money. The commission is the STORED fee (see the schema note),
+// not a re-derivation of the tiered rule: the rule can change, what was agreed with the consignor
+// cannot. A row with no price, or no fee, says so rather than showing a number we do not have —
+// "not recorded" and "$0" are different answers, and this line is what Rob quotes back to someone.
+function soldLabel(i) {
+  const hasPrice = i.sold_price !== null && i.sold_price !== undefined;
+  const hasFee = i.fee !== null && i.fee !== undefined;
+  if (!hasPrice) return 'sold — no sale price recorded';
+  if (!hasFee) return `sold ${money(i.sold_price)} — commission not recorded`;
+  const toConsignor = i.sold_price - i.fee;
+  return `sold ${money(i.sold_price)} · our cut ${money(i.fee)} · ${money(toConsignor)} to ${(i.consignor || 'the consignor').trim()}`;
+}
+
+function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onRemove, uploadFile }) {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  // The sale fields that change after intake: what it actually sold for, and whether the consignor
+  // has been paid. Opened by the pencil on a sold row.
+  const [editing, setEditing] = useState(null);
   const unsold = items.filter((i) => !i.sold);
   const totalValue = unsold.reduce((sum, i) => sum + i.price, 0);
   const q = search.trim().toLowerCase();
@@ -25,6 +41,14 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, upl
     setBusy(false);
   };
 
+  const saveSold = async () => {
+    if (!editing) return;
+    const { id, sold_price, paid_out } = editing;
+    setEditing(null);
+    await onUpdate(id, { sold_price: sold_price === '' ? null : sold_price, paid_out });
+  };
+  const formSoldPrice = form.sold_price === '' ? null : Number(form.sold_price) || 0;
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
@@ -36,6 +60,29 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, upl
         <input placeholder="Consignor" value={form.consignor} onChange={(e) => setForm({ ...form, consignor: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
         <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
         <input placeholder="Price $" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '0 1 70px' }} />
+      </div>
+      {/* Items that sell the day they arrive are common enough that the sale belongs here too,
+          rather than being added unsold and immediately toggled. Blank means "still on the floor". */}
+      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+        <input
+          placeholder="Sold price $"
+          inputMode="decimal"
+          value={form.sold_price}
+          onChange={(e) => setForm({ ...form, sold_price: e.target.value })}
+          onKeyDown={(e) => e.key === 'Enter' && onAdd()}
+          style={{ ...miniInput, flex: '0 1 100px' }}
+        />
+        {formSoldPrice !== null && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: C.walnutSoft }}>
+            <input type="checkbox" checked={!!form.paid_out} onChange={(e) => setForm({ ...form, paid_out: e.target.checked })} />
+            Paid out
+          </label>
+        )}
+        <span style={{ fontSize: '0.68rem', color: C.walnutSoft }}>
+          {formSoldPrice === null
+            ? 'leave blank if it is still on the floor'
+            : `logs it as sold · our cut ${money(commissionFor(formSoldPrice))}, ${money(formSoldPrice - commissionFor(formSoldPrice))} to the consignor`}
+        </span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
         <label style={{ ...pillBtn(C.walnutSoft), cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
@@ -71,6 +118,36 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, upl
               <div style={{ fontSize: '0.72rem', color: C.walnutSoft }}>
                 {i.consignor}{i.phone ? ` · ${i.phone}` : ''} · {money(i.price)} · you get {money(commissionFor(i.price))}
               </div>
+              {i.sold && (editing?.id === i.id ? (
+                <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                  <input
+                    placeholder="Sold for $"
+                    inputMode="decimal"
+                    value={editing.sold_price}
+                    onChange={(e) => setEditing({ ...editing, sold_price: e.target.value })}
+                    style={{ ...miniInput, flex: '0 1 90px' }}
+                  />
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: C.walnutSoft }}>
+                    <input type="checkbox" checked={editing.paid_out} onChange={(e) => setEditing({ ...editing, paid_out: e.target.checked })} />
+                    Paid out
+                  </label>
+                  <button onClick={saveSold} style={{ ...pillBtn(C.sage), fontSize: '0.68rem' }}>Save</button>
+                  <button onClick={() => setEditing(null)} style={{ ...ghostBtn, fontSize: '0.68rem' }}>Cancel</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.15rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: C.walnutSoft }}>
+                    {soldLabel(i)} · {i.paid_out ? 'paid out' : 'payout owed'}
+                  </span>
+                  <button
+                    onClick={() => setEditing({ id: i.id, sold_price: i.sold_price ?? '', paid_out: !!i.paid_out })}
+                    style={{ ...ghostBtn, padding: 0 }}
+                    title="Edit the sale price and payout"
+                  >
+                    <Pencil size={11} color={C.brass} />
+                  </button>
+                </div>
+              ))}
             </div>
             <button onClick={() => onRemove(i.id)} style={ghostBtn}><X size={13} color={C.walnutSoft} /></button>
           </div>
@@ -82,10 +159,13 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onRemove, upl
   );
 }
 
-function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFilesToJob, onRemoveFileFromJob, onOpenImage, uploadFile }) {
+function RepairsPanel({ items, form, setForm, onAdd, onUpdate, onCycle, onRemove, onAddFilesToJob, onRemoveFileFromJob, onOpenImage, uploadFile }) {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [busyJobId, setBusyJobId] = useState(null);
+  // The quote and the promised date are agreed on the phone or at the counter, and both change
+  // afterwards — this is the one place they are edited.
+  const [editing, setEditing] = useState(null);
   const stageColor = { waiting: C.alert, in_progress: C.gold, done: C.sage };
 
   const q = search.trim().toLowerCase();
@@ -117,6 +197,13 @@ function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFil
   };
   const removeFormFile = (id) => setForm((f) => ({ ...f, pendingFiles: (f.pendingFiles || []).filter((x) => x.id !== id) }));
 
+  const saveJobDates = async () => {
+    if (!editing) return;
+    const { id, quote, promised_date } = editing;
+    setEditing(null);
+    await onUpdate(id, { quote, promised_date });
+  };
+
   const handleJobFiles = async (jobId, e) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
@@ -133,6 +220,12 @@ function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFil
         <input placeholder="Customer" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
         <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
         <input placeholder="Item / job" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 100px' }} />
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+        <input placeholder="Quote $" inputMode="decimal" value={form.quote} onChange={(e) => setForm({ ...form, quote: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '0 1 90px' }} />
+        <input type="date" value={form.promised_date} onChange={(e) => setForm({ ...form, promised_date: e.target.value })} style={{ ...miniInput, flex: '0 1 140px' }} title="Promised for" />
+        <span style={{ fontSize: '0.68rem', color: C.walnutSoft }}>quote and promised date — both optional, both editable later</span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
@@ -174,6 +267,45 @@ function RepairsPanel({ items, form, setForm, onAdd, onCycle, onRemove, onAddFil
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{r.item}</div>
                 <div style={{ fontSize: '0.72rem', color: C.walnutSoft }}>{r.customer}{r.phone ? ` · ${r.phone}` : ''}</div>
+                {editing?.id === r.id ? (
+                  <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                    <input
+                      placeholder="Quote $"
+                      inputMode="decimal"
+                      value={editing.quote}
+                      onChange={(e) => setEditing({ ...editing, quote: e.target.value })}
+                      style={{ ...miniInput, flex: '0 1 90px' }}
+                    />
+                    <input
+                      type="date"
+                      value={editing.promised_date}
+                      onChange={(e) => setEditing({ ...editing, promised_date: e.target.value })}
+                      style={{ ...miniInput, flex: '0 1 140px' }}
+                      title="Promised for"
+                    />
+                    <button onClick={saveJobDates} style={{ ...pillBtn(C.sage), fontSize: '0.68rem' }}>Save</button>
+                    <button onClick={() => setEditing(null)} style={{ ...ghostBtn, fontSize: '0.68rem' }}>Cancel</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.15rem' }}>
+                    <span style={{ fontSize: '0.72rem', color: C.walnutSoft }}>
+                      {r.quote === null || r.quote === undefined ? 'no quote' : `quote ${money(r.quote)}`}
+                      {' · '}
+                      {r.promised_date ? `promised ${(r.promised_date || '').slice(0, 10)}` : 'no promised date'}
+                    </span>
+                    <button
+                      onClick={() => setEditing({
+                        id: r.id,
+                        quote: r.quote === null || r.quote === undefined ? '' : String(r.quote),
+                        promised_date: (r.promised_date || '').slice(0, 10),
+                      })}
+                      style={{ ...ghostBtn, padding: 0 }}
+                      title="Edit the quote and promised date"
+                    >
+                      <Pencil size={11} color={C.brass} />
+                    </button>
+                  </div>
+                )}
                 {r.files && r.files.length > 0 && (
                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
                     {r.files.map((f) => (
@@ -308,8 +440,8 @@ function MurbahPanel({
 export default function SignalChainWidget() {
   const {
     openStream, setOpenStream, consignment, repairs, murbahOpps,
-    cForm, setCForm, addConsignment, toggleSold, removeConsignment,
-    rForm, setRForm, addRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
+    cForm, setCForm, addConsignment, toggleSold, updateConsignment, removeConsignment,
+    rForm, setRForm, addRepair, updateRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
     cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
     murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
     setLightboxImg, askToDelete, uploadFile,
@@ -349,11 +481,11 @@ export default function SignalChainWidget() {
               {open && (
                 <div style={{ border: `1px solid ${C.line}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '0.8rem 0.75rem', background: C.tweedDark }}>
                   {id === 'consignment' && (
-                    <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} />
+                    <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onUpdate={updateConsignment} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} />
                   )}
                   {id === 'repairs' && (
                     <RepairsPanel
-                      items={repairs} form={rForm} setForm={setRForm} onAdd={addRepair} onCycle={cycleRepairStage}
+                      items={repairs} form={rForm} setForm={setRForm} onAdd={addRepair} onUpdate={updateRepair} onCycle={cycleRepairStage}
                       onRemove={(id) => askToDelete(() => removeRepair(id))} onAddFilesToJob={addFilesToJob}
                       onRemoveFileFromJob={(jobId, fileId) => askToDelete(() => removeFileFromJob(jobId, fileId))}
                       onOpenImage={setLightboxImg} uploadFile={uploadFile}
