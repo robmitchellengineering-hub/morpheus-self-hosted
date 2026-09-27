@@ -277,6 +277,11 @@ jobs:
       - name: Lint coverage
         run: node scripts/verify-lint-coverage.mjs
 
+      # An endpoint that fetched a caller-supplied URL and reported its status was an open SSRF
+      # probe oracle, and it resolved another user's deployed URL from a bare projectId.
+      - name: Deploy health is owner-scoped
+        run: node scripts/verify-deploy-health-scope.mjs
+
       # Bounding the two prompt blocks that could grow without limit, without losing the
       # signal: the last exchange stays verbatim and any omission is named.
       - name: Deck prompt bounds
