@@ -33,7 +33,11 @@ const router = Router();
 // Public functions that must work for unauthenticated visitors (marketplace
 // browsing, Stripe webhooks). Everything else requires a logged-in user —
 // each handler still re-checks ownership on the specific rows it touches.
-const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'checkDeployHealth', 'createDonationCheckout', 'submitFeedback']);
+// 2026-09-28: `checkDeployHealth` left this list. It is not a public read — it is a signed-in user
+// checking a backend on their OWN project, and while it was here it fetched a caller-supplied URL
+// and returned that URL's status (an unauthenticated SSRF probe oracle) and resolved another
+// user's deployed URL from a bare projectId. See the header of functions/checkDeployHealth.js.
+const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'submitFeedback']);
 
 // Functions that require the caller's User.role to be 'admin', enforced
 // server-side. generateRebuildDoc used to rely solely on the frontend's
