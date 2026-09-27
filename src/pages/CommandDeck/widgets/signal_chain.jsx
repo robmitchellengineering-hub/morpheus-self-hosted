@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink, Check, X, Paperclip, FileText, Loader2, RefreshCw, Calendar, Pencil } from 'lucide-react';
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { C, STREAM_META, STREAM_ORDER, STATUS_STYLE, WP_ADMIN_URL, murbahStageLabel, repairStageLabel, money, commissionFor } from '../deckConstants';
-import { Card, EmptyNote, miniInput, rowBox, ghostBtn, pillBtn, checkBtn, MicField, MicTextarea } from '../DeckUI';
+import { Card, EmptyNote, PendingNote, miniInput, rowBox, ghostBtn, pillBtn, checkBtn, MicField, MicTextarea } from '../DeckUI';
 
 // What a sold item says about the money. The commission is the STORED fee (see the schema note),
 // not a re-derivation of the tiered rule: the rule can change, what was agreed with the consignor
@@ -17,7 +17,7 @@ function soldLabel(i) {
   return `sold ${money(i.sold_price)} · our cut ${money(i.fee)} · ${money(toConsignor)} to ${(i.consignor || 'the consignor').trim()}`;
 }
 
-function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onRemove, uploadFile }) {
+function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onRemove, uploadFile, adding }) {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   // The sale fields that change after intake: what it actually sold for, and whether the consignor
@@ -51,6 +51,7 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onR
 
   return (
     <div>
+      <div style={{ opacity: adding ? 0.6 : 1, pointerEvents: adding ? 'none' : 'auto' }}>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
         {/* A mic button per field would cram 4 already-tight cells; Enter-to-add
             on all of them (2026-09-17: "brain dump... needs to send" — same
@@ -84,6 +85,7 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onR
             : `logs it as sold · our cut ${money(commissionFor(formSoldPrice))}, ${money(formSoldPrice - commissionFor(formSoldPrice))} to the consignor`}
         </span>
       </div>
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
         <label style={{ ...pillBtn(C.walnutSoft), cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
           {form.photo_url ? 'Retake photo' : 'Add photo'}
@@ -91,8 +93,11 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onR
         </label>
         {busy && <span style={{ fontSize: '0.72rem', color: C.walnutSoft }}>uploading…</span>}
         {form.photo_url && !busy && <img src={form.photo_url} alt="preview" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', border: `1px solid ${C.line}` }} />}
-        <button onClick={onAdd} style={{ ...pillBtn(C.oxblood), marginLeft: 'auto' }}>Add</button>
+        <button onClick={onAdd} disabled={adding} style={{ ...pillBtn(C.oxblood), marginLeft: 'auto', opacity: adding ? 0.7 : 1 }}>
+          {adding ? 'Adding…' : 'Add'}
+        </button>
       </div>
+      <PendingNote show={adding} text="Adding it — the shop list updates in a moment…" />
       {form.price && (
         <p style={{ fontSize: '0.72rem', color: C.walnutSoft, margin: '0 0 0.5rem' }}>
           At {money(form.price)}: {Number(form.price) > 2000 ? '20%' : '30%'} rate → your cut {money(commissionFor(form.price))}
@@ -159,7 +164,7 @@ function ConsignmentPanel({ items, form, setForm, onAdd, onToggle, onUpdate, onR
   );
 }
 
-function RepairsPanel({ items, form, setForm, onAdd, onUpdate, onCycle, onRemove, onAddFilesToJob, onRemoveFileFromJob, onOpenImage, uploadFile }) {
+function RepairsPanel({ items, form, setForm, onAdd, onUpdate, onCycle, onRemove, onAddFilesToJob, onRemoveFileFromJob, onOpenImage, uploadFile, adding }) {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [busyJobId, setBusyJobId] = useState(null);
@@ -216,6 +221,7 @@ function RepairsPanel({ items, form, setForm, onAdd, onUpdate, onCycle, onRemove
 
   return (
     <div>
+      <div style={{ opacity: adding ? 0.6 : 1, pointerEvents: adding ? 'none' : 'auto' }}>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
         <input placeholder="Customer" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
         <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && onAdd()} style={{ ...miniInput, flex: '1 1 90px' }} />
@@ -234,8 +240,12 @@ function RepairsPanel({ items, form, setForm, onAdd, onUpdate, onCycle, onRemove
           <input type="file" accept="image/*" capture="environment" multiple onChange={handleFiles} style={{ display: 'none' }} disabled={busy} />
         </label>
         {busy && <span style={{ fontSize: '0.72rem', color: C.walnutSoft }}>uploading…</span>}
-        <button onClick={onAdd} style={{ ...pillBtn(C.oxblood), marginLeft: 'auto' }}>Add</button>
+        <button onClick={onAdd} disabled={adding} style={{ ...pillBtn(C.oxblood), marginLeft: 'auto', opacity: adding ? 0.7 : 1 }}>
+          {adding ? 'Adding…' : 'Add'}
+        </button>
       </div>
+      </div>
+      <PendingNote show={adding} text="Adding the job — it lands in the queue as Waiting…" />
 
       {form.pendingFiles?.length > 0 && (
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
@@ -444,7 +454,7 @@ export default function SignalChainWidget() {
     rForm, setRForm, addRepair, updateRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
     cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
     murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
-    setLightboxImg, askToDelete, uploadFile,
+    setLightboxImg, askToDelete, uploadFile, addPending,
   } = useCommandDeck();
 
   return (
@@ -481,14 +491,14 @@ export default function SignalChainWidget() {
               {open && (
                 <div style={{ border: `1px solid ${C.line}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '0.8rem 0.75rem', background: C.tweedDark }}>
                   {id === 'consignment' && (
-                    <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onUpdate={updateConsignment} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} />
+                    <ConsignmentPanel items={consignment} form={cForm} setForm={setCForm} onAdd={addConsignment} onToggle={toggleSold} onUpdate={updateConsignment} onRemove={(id) => askToDelete(() => removeConsignment(id))} uploadFile={uploadFile} adding={!!addPending.consignment} />
                   )}
                   {id === 'repairs' && (
                     <RepairsPanel
                       items={repairs} form={rForm} setForm={setRForm} onAdd={addRepair} onUpdate={updateRepair} onCycle={cycleRepairStage}
                       onRemove={(id) => askToDelete(() => removeRepair(id))} onAddFilesToJob={addFilesToJob}
                       onRemoveFileFromJob={(jobId, fileId) => askToDelete(() => removeFileFromJob(jobId, fileId))}
-                      onOpenImage={setLightboxImg} uploadFile={uploadFile}
+                      onOpenImage={setLightboxImg} uploadFile={uploadFile} adding={!!addPending.repair}
                     />
                   )}
                   {id === 'retail' && (

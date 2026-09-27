@@ -170,12 +170,21 @@ export function EmptyNote({ text }) {
   return <span style={{ fontSize: '0.78rem', color: C.walnutSoft, opacity: 0.6 }}>{text}</span>;
 }
 
+// 2026-09-28, Rob: "it just greys out ... it needs to be obvious something is happening and you
+// need to wait". Greying is the honest signal that a control is busy; this is the sentence that
+// says WHY, so a disabled button never reads as a dead one. Pair it with `addPending[key]` from
+// the deck context (one guard for every add — see CommandDeckContext's `guardAdd`).
+export function PendingNote({ show, text = 'Saving…', color = C.walnutSoft }) {
+  if (!show) return null;
+  return <p style={{ fontSize: '0.7rem', fontWeight: 600, color, margin: '0.35rem 0 0' }}>{text}</p>;
+}
+
 // 2026-09-17: the one widget-internal helper two different widgets (Strategy,
 // Knowledge & ideas) both used — moved here rather than duplicated or made
 // one widget depend on another's file, since every widget under ./widgets/
 // is meant to be fully independent (a prerequisite for Jarvis being able to
 // build/ship one without touching any other widget's file).
-export function StreamList({ items, onAdd, onRemove, placeholder, accent, icon: Icon, empty }) {
+export function StreamList({ items, onAdd, onRemove, placeholder, accent, icon: Icon, empty, adding, pendingText = 'Saving…' }) {
   const [val, setVal] = useState('');
   const submit = () => {
     if (!val.trim()) return;
@@ -184,10 +193,11 @@ export function StreamList({ items, onAdd, onRemove, placeholder, accent, icon: 
   };
   return (
     <div>
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.7rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.7rem', opacity: adding ? 0.6 : 1, pointerEvents: adding ? 'none' : 'auto' }}>
         <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder={placeholder} style={{ ...inputStyle, flex: 1 }} />
-        <IconButton onClick={submit} color={accent}><Plus size={18} color={C.paper} /></IconButton>
+        <IconButton onClick={submit} color={accent} disabled={adding}><Plus size={18} color={C.paper} /></IconButton>
       </div>
+      <PendingNote show={adding} text={pendingText} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
         {items.map((i) => (
           <div key={i.id} style={{ ...rowBox, borderLeft: `3px solid ${accent}` }}>
