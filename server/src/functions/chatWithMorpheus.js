@@ -1357,6 +1357,9 @@ OPERATOR SAYS: ${message}`;
         : [];
 
       let fileOps = [];
+      // Files the coder could not produce because its output was cut off by the token limit, even
+      // after a one-file retry. Named in the reply — a partial build must never read as complete.
+      const truncatedFiles = [];
       let coderModelLast;
       stages.start('coder');
 
@@ -1386,17 +1389,48 @@ OPERATOR SAYS: ${message}`;
             .join('\n\n');
           const chunkCurrentBlock = chunkCurrent ? `\n\nCURRENT CONTENT OF THE FILE(S) FOR THIS STEP:\n${chunkCurrent}` : '';
           const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
-          const chunkCoder = await invokeAI({
-            userId: user.id,
-            prompt: chunkPrompt,
-            schema: coderSchema,
-            fileUrls,
-            role: 'coder',
-            maxTokens: CODER_STEP_MAX_TOKENS,
-          });
-          coderModelLast = chunkCoder.model;
-          const chunkOps = Array.isArray(chunkCoder.result.fileOperations) ? chunkCoder.result.fileOperations : [];
-          fileOps.push(...chunkOps);
+          // A truncated completion THROWS (server/src/ai.js). Unwrapped, that one throw discarded the
+          // ENTIRE turn — every chunk already generated, the plan, the review and the reply — even
+          // though autonomousBuildStep.js has caught exactly this since it was written. The chunked
+          // path exists BECAUSE a completion can overflow, so answering an anticipated failure by
+          // throwing away the work already produced was the worst available response to it.
+          //
+          // Only truncation is recoverable; any other error still throws. Nothing already produced is
+          // discarded, and a partial build is never reported as complete — see the reply below.
+          try {
+            const chunkCoder = await invokeAI({
+              userId: user.id,
+              prompt: chunkPrompt,
+              schema: coderSchema,
+              fileUrls,
+              role: 'coder',
+              maxTokens: CODER_STEP_MAX_TOKENS,
+            });
+            coderModelLast = chunkCoder.model;
+            const chunkOps = Array.isArray(chunkCoder.result.fileOperations) ? chunkCoder.result.fileOperations : [];
+            fileOps.push(...chunkOps);
+          } catch (chunkErr) {
+            if (!String(chunkErr?.message || '').includes('OUTPUT_TRUNCATED')) throw chunkErr;
+            console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} truncated — retrying one file at a time`);
+            for (const onePath of chunk) {
+              try {
+                const one = await invokeAI({
+                  userId: user.id,
+                  prompt: `${chunkPrompt}\n\nFOR THIS STEP, implement ONLY this file: ${onePath}. Return fileOperations for ONLY this file.`,
+                  schema: coderSchema,
+                  fileUrls,
+                  role: 'coder',
+                  maxTokens: CODER_STEP_MAX_TOKENS,
+                });
+                coderModelLast = one.model;
+                fileOps.push(...(Array.isArray(one.result.fileOperations) ? one.result.fileOperations : []));
+              } catch (oneErr) {
+                if (!String(oneErr?.message || '').includes('OUTPUT_TRUNCATED')) throw oneErr;
+                truncatedFiles.push(onePath);
+                console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}: ${onePath} truncated on retry too — not written`);
+              }
+            }
+          }
           console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} done (${Math.round((Date.now() - chunkStartedAt) / 1000)}s, ${chunkOps.length} file op(s))`);
         }
       } else {
@@ -1417,16 +1451,25 @@ OPERATOR SAYS: ${message}`;
             fallbackCurrentBlock = `\n\nCURRENT CONTENT OF EXISTING FILES THE PLAN TOUCHES:\n${mentioned.map((f) => `--- ${f.path} (current content) ---\n${f.content}`).join('\n\n')}`;
           }
         }
-        const coder = await invokeAI({
-          userId: user.id,
-          prompt: coderPrompt + fallbackCurrentBlock,
-          schema: coderSchema,
-          fileUrls,
-          role: 'coder',
-          maxTokens: 64000,
-        });
-        coderModelLast = coder.model;
-        fileOps = Array.isArray(coder.result.fileOperations) ? coder.result.fileOperations : [];
+        try {
+          const coder = await invokeAI({
+            userId: user.id,
+            prompt: coderPrompt + fallbackCurrentBlock,
+            schema: coderSchema,
+            fileUrls,
+            role: 'coder',
+            maxTokens: 64000,
+          });
+          coderModelLast = coder.model;
+          fileOps = Array.isArray(coder.result.fileOperations) ? coder.result.fileOperations : [];
+        } catch (singleErr) {
+          // Same reasoning as the chunked path. This branch runs when the plan named no files, so
+          // there is nothing to split the retry by — the turn survives, nothing is written, and the
+          // reply says exactly that.
+          if (!String(singleErr?.message || '').includes('OUTPUT_TRUNCATED')) throw singleErr;
+          fileOps = [];
+          truncatedFiles.push('this whole step');
+        }
       }
 
       stages.done('coder');
@@ -1908,6 +1951,10 @@ OPERATOR SAYS: ${message}`;
       const nCritical = syntaxCritical.length + callerCritical.length + schemaCritical.length;
       fullReply += `\n\n// CRITICAL: ${criticalNotes.join('. ')}. The change was applied anyway; ask me to fix ${nCritical === 1 ? 'it' : 'them'} or revert.`;
     }
+    if (truncatedFiles.length > 0) {
+      const n = truncatedFiles.length;
+      fullReply += `\n\n// INCOMPLETE: the coder's output was cut off by the token limit and could not be retried smaller, so ${n === 1 ? 'this was not written' : 'these were not written'}: ${truncatedFiles.join(', ')}. Everything else in this turn is intact — ask me to continue and I'll do ${n === 1 ? 'it' : 'them'} one at a time.`;
+    }
     if (deepVerifyCritical.length > 0) {
       fullReply += `\n\n// CRITICAL: this still breaks the wider repo after a fix attempt (a real bundle + cross-file export check) — ${deepVerifyCritical.join('; ')}. The change was applied to this workspace anyway; PUSH TO PRODUCTION will re-check and block it, but fix or revert it here first.`;
     }
@@ -1921,7 +1968,7 @@ OPERATOR SAYS: ${message}`;
     // build changed files — the planner's context said to build that step, so
     // it's done; the operator can reopen it from the FEATURE panel to refine.
     // Self-dev advances its steps manually (on push, from the panel).
-    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && callerCritical.length === 0 && schemaCritical.length === 0 && deepVerifyCritical.length === 0;
+    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0 && truncatedFiles.length === 0;
     if (escalatedFeature && escalatedFeature.activeStep) {
       fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
       // Step 1 having been drafted this turn doesn't mean it actually
