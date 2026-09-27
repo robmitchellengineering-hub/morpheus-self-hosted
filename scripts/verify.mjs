@@ -32,6 +32,7 @@ const HARD = [
   'verify-gmail-sync.mjs',
   'verify-deck-draft.mjs',
   'verify-deck-document.mjs',
+  'verify-deck-snapshot.mjs',
   'verify-deck-memory.mjs',
   'verify-insight-optout.mjs',
   'verify-seo.mjs',

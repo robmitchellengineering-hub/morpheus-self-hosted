@@ -17,13 +17,18 @@ function todayKey() {
 export async function buildDeckSnapshot(userId) {
   const where = { created_by_id: userId };
   const [
-    dump, people, tasks, consignment, repairs, murbah, inbox,
+    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, murbah, inbox,
     strategy, knowledge, lifeStreams, lifeStreamNotes, energyLog, focusEntries,
   ] = await Promise.all([
     prisma.deckDumpItem.findMany({ where, orderBy: { created_date: 'desc' }, take: 20 }),
     prisma.deckPerson.findMany({ where }),
     prisma.deckTask.findMany({ where }),
-    prisma.deckConsignmentItem.findMany({ where }),
+    // Two numbers are all the snapshot renders from this table — "N unsold items worth $X".
+    // It used to findMany the whole (unbounded) table on every Jarvis message to compute a
+    // count and a sum, and throw the rows away. Same two numbers, no rows: this fetch grew
+    // with the floor stock for nothing, and the floor stock is what the CRM work will grow.
+    prisma.deckConsignmentItem.count({ where: { ...where, sold: false } }),
+    prisma.deckConsignmentItem.aggregate({ where: { ...where, sold: false }, _sum: { price: true } }),
     prisma.deckRepairJob.findMany({ where }),
     prisma.deckMurbahOpportunity.findMany({ where }),
     prisma.deckInboxItem.findMany({ where }),
@@ -41,8 +46,8 @@ export async function buildDeckSnapshot(userId) {
 
   const personName = (id) => people.find((p) => p.id === id)?.name || 'unassigned';
   const openTasks = tasks.filter((t) => !t.done);
-  const unsoldConsign = consignment.filter((c) => !c.sold);
-  const consignValue = unsoldConsign.reduce((s, c) => s + c.price, 0);
+  const unsoldConsign = unsoldConsignCount;
+  const consignValue = consignAgg._sum.price || 0;
   const openRepairs = repairs.filter((r) => r.stage !== 'done');
   const openInbox = inbox.filter((i) => i.stage !== 'done');
   const today = todayKey();
@@ -68,7 +73,7 @@ STRATEGY NOTES (${strategy.length}): ${strategy.map((s) => s.text).join('; ') ||
 
 KNOWLEDGE / IDEAS (${knowledge.length}): ${knowledge.map((k) => k.text).join('; ') || 'none'}
 
-CONSIGNMENT: ${unsoldConsign.length} unsold items worth $${consignValue} on the floor
+CONSIGNMENT: ${unsoldConsign} unsold items worth $${consignValue} on the floor
 REPAIRS QUEUE: ${openRepairs.length} open jobs (${openRepairs.map((r) => `${r.item} [${REPAIR_STAGE_LABEL[r.stage] || r.stage}]`).join(', ') || 'none'})
 MURBAH OPPORTUNITIES: ${murbah.map((m) => `${m.title} — ${MURBAH_STAGE_LABEL[m.stage] || m.stage}`).join('; ') || 'none'}
 INBOX (${openInbox.length} not yet done): ${openInbox.map((i) => `[${i.channel}] ${i.from_name}: ${i.message} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}

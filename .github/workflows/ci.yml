@@ -226,6 +226,11 @@ jobs:
       - name: Deck document cleanup
         run: node scripts/verify-deck-document.mjs
 
+      # What the Jarvis snapshot fetches versus what it renders: an unbounded fetch in the
+      # prompt path costs tokens proportional to the operator's whole history.
+      - name: Deck snapshot bounds
+        run: node scripts/verify-deck-snapshot.mjs
+
       # The proactive-insight opt-out gate, plus the cross-boundary contract
       # that the widget it keys off still exists in the frontend registry with
       # the copy that makes the control discoverable.
