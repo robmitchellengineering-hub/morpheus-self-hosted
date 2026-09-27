@@ -17,6 +17,7 @@
 // answerable from here, and the UI links out to Search Console's own Links
 // report rather than implying a number we cannot fetch.
 import { prisma } from '../db.js';
+import { classifyRefreshFailure, reconnectMessage } from './googleReconnect.js';
 import { decrypt, encrypt } from '../crypto.js';
 import { describeGoogleError } from './searchConsoleInsights.js';
 
@@ -33,9 +34,12 @@ export const GSC_SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
  * The caller's Search Console connection, or null if they have not connected one.
  *
  * Silently refreshes an access token within 5 minutes of expiry, exactly as
- * getGoogleDriveConnection does. A failed refresh falls through with the
- * possibly-stale token: the caller's own API call then surfaces Google's real
- * error, which is a better message than a generic local one.
+ * getGoogleDriveConnection does.
+ *
+ * CORRECTED 2026-09-28: a failed refresh used to fall through with the possibly-stale token, on the
+ * theory that Google's own error beats "a generic local one". It does not — the operator gets
+ * "Request had invalid authentication credentials" with no cause and no action. It now throws the
+ * reason and the way out (see lib/googleReconnect.js).
  */
 export async function getSearchConsoleConnection(userId) {
   const row = await prisma.searchConsoleConnection.findUnique({ where: { created_by_id: userId } });
@@ -43,7 +47,12 @@ export async function getSearchConsoleConnection(userId) {
 
   if (row.expires_at && row.expires_at.getTime() < Date.now() + 5 * 60 * 1000) {
     const refreshed = await tryRefreshSearchConsoleToken(row);
-    if (refreshed) return refreshed;
+    if (refreshed.ok) return { email: row.gsc_email, accessToken: refreshed.token, property: row.property || null };
+    throw Object.assign(new Error(reconnectMessage(refreshed.reason, 'Morpheus Settings → Search Console')), {
+      status: 400,
+      code: 'GOOGLE_RECONNECT_REQUIRED',
+      reason: refreshed.reason,
+    });
   }
 
   return {
@@ -54,7 +63,9 @@ export async function getSearchConsoleConnection(userId) {
 }
 
 async function tryRefreshSearchConsoleToken(row) {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return null;
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return { ok: false, reason: 'not_configured' };
+  }
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -68,8 +79,9 @@ async function tryRefreshSearchConsoleToken(row) {
     });
     const data = await res.json();
     if (!data.access_token) {
-      console.log(`Search Console token refresh failed for connection ${row.id}: ${data.error_description || data.error || 'no access_token in response'}`);
-      return null;
+      const reason = classifyRefreshFailure(data);
+      console.warn(`[searchConsole] refresh refused for connection ${row.id}: ${reason} — ${data.error_description || data.error || 'no access_token in response'}`);
+      return { ok: false, reason };
     }
     await prisma.searchConsoleConnection.update({
       where: { id: row.id },
@@ -81,14 +93,10 @@ async function tryRefreshSearchConsoleToken(row) {
         ...(data.refresh_token ? { refresh_token: encrypt(data.refresh_token) } : {}),
       },
     });
-    return {
-      email: row.gsc_email,
-      accessToken: data.access_token,
-      property: row.property || null,
-    };
+    return { ok: true, token: data.access_token };
   } catch (err) {
-    console.log(`Search Console token refresh threw for connection ${row.id}: ${err.message}`);
-    return null;
+    console.warn(`[searchConsole] refresh request failed for connection ${row.id}: ${err.message}`);
+    return { ok: false, reason: 'network' };
   }
 }
 

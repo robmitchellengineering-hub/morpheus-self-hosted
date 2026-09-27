@@ -6,6 +6,7 @@
 // routes/connections.routes.js for why this connection is its own OAuth
 // flow rather than piggybacked on Google sign-in.
 import { prisma } from '../db.js';
+import { classifyRefreshFailure, reconnectMessage } from './googleReconnect.js';
 import { decrypt, encrypt } from '../crypto.js';
 import { logUsage } from './projectUtils.js';
 
@@ -24,18 +25,31 @@ export async function getGoogleDriveConnection(userId) {
 
   if (row.expires_at && row.expires_at.getTime() < Date.now() + 5 * 60 * 1000) {
     const refreshed = await tryRefreshGoogleDriveToken(row);
-    if (refreshed) return refreshed;
-    // Refresh failed (refresh_token revoked, or no client secret available
-    // locally). Fall through with the possibly-stale token; the caller's
-    // own Drive API call will surface a clear error if it's actually dead.
+    if (refreshed.ok) {
+      return { email: row.drive_email, token: refreshed.token, accessToken: refreshed.token };
+    }
+    // 2026-09-28. This used to fall through with the token it had just failed to renew, on the
+    // theory that "the caller's own Drive API call will surface a clear error" — it surfaced
+    // Google's OAuth text ("Request had invalid authentication credentials...") in a shop tool,
+    // which names no cause and no action. A token known to be expired is a failure to report,
+    // with the reason and the way out, not a credential to try with.
+    throw Object.assign(new Error(reconnectMessage(refreshed.reason, 'Morpheus Settings → Google Drive')), {
+      status: 400,
+      code: 'GOOGLE_RECONNECT_REQUIRED',
+      reason: refreshed.reason,
+    });
   }
 
   const token = decrypt(row.access_token);
   return { email: row.drive_email, token, accessToken: token };
 }
 
+// Refreshes, or says WHY it could not: a revoked refresh token, a server missing its client
+// credentials, and a dropped connection used to be the same `null`.
 async function tryRefreshGoogleDriveToken(row) {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return null;
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return { ok: false, reason: 'not_configured' };
+  }
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -49,8 +63,9 @@ async function tryRefreshGoogleDriveToken(row) {
     });
     const data = await res.json();
     if (!data.access_token) {
-      console.log(`Google Drive token refresh failed for connection ${row.id}: ${data.error_description || data.error || 'no access_token in response'}`);
-      return null;
+      const reason = classifyRefreshFailure(data);
+      console.warn(`[googleDrive] refresh refused for connection ${row.id}: ${reason} — ${data.error_description || data.error || 'no access_token in response'}`);
+      return { ok: false, reason };
     }
     await prisma.googleDriveConnection.update({
       where: { id: row.id },
@@ -63,10 +78,10 @@ async function tryRefreshGoogleDriveToken(row) {
         refresh_token: data.refresh_token ? encrypt(data.refresh_token) : row.refresh_token,
       },
     });
-    return { email: row.drive_email, token: data.access_token, accessToken: data.access_token };
+    return { ok: true, token: data.access_token };
   } catch (err) {
-    console.log(`Google Drive token refresh error for connection ${row.id}: ${err.message}`);
-    return null;
+    console.warn(`[googleDrive] refresh request failed for connection ${row.id}: ${err.message}`);
+    return { ok: false, reason: 'network' };
   }
 }
 
