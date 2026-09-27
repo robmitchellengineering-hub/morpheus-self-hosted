@@ -98,7 +98,12 @@ export default async function handler({ user, body }) {
   await assertWithinVelocity(user.id, policyId, 'wp_deploy_ship');
 
   const verify = await wp.verify({ files });
-  if (!verify.ok && !forceAllowed(policyId, force)) {
+  // Only a real failure blocks the ship. `not_verified` — a PHP-only theme
+  // change, which this backend has no `php` to lint — is neither a pass nor a
+  // failure: blocking it would stop the normal case for this target, and a gate
+  // that cries wolf gets switched off. It is returned with the result so the
+  // operator is told "not verified" rather than shown a clean bill of health.
+  if (verify.status === 'failed' && !forceAllowed(policyId, force)) {
     return { shipped: false, blocked: true, reason: 'verify', verify };
   }
 

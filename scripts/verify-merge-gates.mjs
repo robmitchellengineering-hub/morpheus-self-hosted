@@ -120,10 +120,23 @@ console.log('\n-- and self-dev is the caller that declares them --');
 const selfDev = read('server/src/lib/delivery/selfDev.js');
 check('self-dev imports the declared gates', /import \{ SELF_DEV_REQUIRED_CHECKS \} from '\.\.\/engine\/requiredChecks\.js';/.test(selfDev), true);
 check('self-dev passes them to its own repo\u2019s merge', /requiredChecks: SELF_DEV_REQUIRED_CHECKS/.test(selfDev), true);
-// The WordPress adapter merges into a tenant repo whose CI we do not know, so it
-// must NOT claim a gate list: that would block every PR on a repo with no CI.
-const wp = read('server/src/lib/delivery/wordpress.js');
-check('the WordPress adapter declares no gates it cannot know', /requiredChecks/.test(wp), false);
+// The WordPress adapter merges into a TENANT repo, whose CI Morpheus cannot know
+// from the inside: the live tenant repo has no workflow and no protected branch,
+// so requiring this repo's own gate names there would refuse every merge — a check
+// that cries wolf gets switched off. It must therefore require exactly the gates
+// the connection declares, and never this repo's list. (Comment-masked before the
+// match, because a regex that matches its own explanatory prose proves only that
+// the prose exists — a mistake already made once in this repo.)
+const mask = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
+const wp = mask(read('server/src/lib/delivery/wordpress.js'));
+check('the WordPress adapter never claims morpheus-self-hosted\u2019s gates', /SELF_DEV_REQUIRED_CHECKS/.test(wp), false);
+check('…it requires the gate list the tenant declared on the connection',
+  /requiredChecks: Array\.isArray\(config\?\.requiredChecks\) \? config\.requiredChecks : \[\]/.test(wp), true);
+// A declaration nobody can make is not a gate, so the list has to be read off the
+// connection the merge is handed — the same place `branch` and `healthPaths` live.
+const pluginProject = read('server/src/lib/pluginProject.js');
+check('…and that declaration is actually read off PluginConnection.meta',
+  /requiredChecks: Array\.isArray\(meta\.requiredChecks\)/.test(pluginProject), true);
 
 console.log('\n-- and GitHub is required to enforce them, not only merge.js --');
 // The pure comparison behind scripts/check-branch-protection.mjs, exercised here

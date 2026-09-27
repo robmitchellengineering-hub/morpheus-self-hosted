@@ -58,6 +58,14 @@ export async function resolveWordpressDelivery(projectId, userId) {
     deployWebhookUrl: conn.siteUrl + DEPLOY_ENDPOINT,
     deploySecret: conn.secret,
     healthPaths: Array.isArray(meta.healthPaths) && meta.healthPaths.length ? meta.healthPaths : null,
+    // The named CI gates this tenant's repo runs. Absent for a repo with no CI
+    // (the live tenant has none), which is why the WordPress merge requires
+    // nothing by default rather than inventing this repo's gate names — see
+    // delivery/wordpress.js's merge(). Like `healthPaths`, this is an advanced
+    // field of PluginConnection.meta.
+    requiredChecks: Array.isArray(meta.requiredChecks)
+      ? meta.requiredChecks.filter((n) => typeof n === 'string' && n.trim()).map((n) => n.trim())
+      : [],
   };
 
   return { conn, project, config, token };

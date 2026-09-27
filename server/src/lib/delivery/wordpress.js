@@ -22,6 +22,7 @@ import { PLUGIN_DENY_PATHS } from '../enginePolicy.js';
 import { checkSyntax } from '../syntaxCheck.js';
 import { revertCommit } from '../github.js';
 import { mergePrWhenGreen } from '../engine/merge.js';
+import { coverageVerdict } from '../engine/verificationCoverage.js';
 import { shipChange } from '../engine/ship.js';
 import { probe } from './http.js';
 
@@ -81,19 +82,30 @@ export const wordpressDelivery = {
     };
   },
 
-  // Morpheus's backend has no PHP, so PHP lint runs in CI. Here: JS syntax
-  // over any changed script files (admin-panel JS, block editor code), and
-  // that's it — no esbuild bundle pass (no JS entry point on a WP site).
+  // Morpheus's backend has no PHP (there is no `php` binary on this host), so a
+  // theme change's PHP is linted by the target repo's CI, not here. What runs
+  // here is esbuild's parser over the changed JS/TS.
+  //
+  // That makes the PHP-only theme change — the normal case for this target — a
+  // file set this verifier reads none of, and "no errors were found" over zero
+  // files is the silent pass hazard H17 describes. So the verdict comes from
+  // engine/verificationCoverage.js's `coverageVerdict`: a clean pass requires
+  // that something was READ. A set with nothing readable reports `not_verified`
+  // (code 2) — never `ok: true`, and deliberately not `failed` either, because
+  // there is genuinely nothing here that could have failed. Which state blocks
+  // is the caller's decision; see the ship gate in functions/wordPressDeploy.js.
   async verify({ files }) {
-    const scripts = (files || []).filter((f) => /\.(jsx?|tsx?|mjs|cjs)$/.test(f.path) && !isDenied(f.path));
+    const present = (files || []).filter((f) => !isDenied(f.path));
+    const scripts = present.filter((f) => /\.(jsx?|tsx?|mjs|cjs)$/.test(f.path));
     const errors = (await checkSyntax(scripts.map((f) => ({ path: f.path, content: f.content ?? '' }))))
       .map((e) => ({ phase: 'syntax', file: e.file, line: e.line, column: e.column, text: e.text }));
+    const verdict = coverageVerdict({ errors, codeFiles: scripts.length, files: present.length });
     return {
-      ok: errors.length === 0,
+      ...verdict,
       errorCount: errors.length,
       errors: errors.slice(0, 50),
       checkedFiles: scripts.length,
-      note: 'PHP lint and the theme build run in CI; the plugin health-checks the live site after it writes the files.',
+      note: 'PHP lint and the theme build run in the target repo’s CI; the plugin health-checks the live site after it writes the files.',
     };
   },
 
@@ -122,9 +134,19 @@ export const wordpressDelivery = {
   },
 
   // Auto-merge on green, then tell the site to pull the new tree.
+  //
+  // `requiredChecks` are the named gates the TENANT's repo runs. This adapter
+  // cannot know them the way self-dev knows its own repo's (see
+  // engine/requiredChecks.js): the target is a customer's repo, not Morpheus's.
+  // Requiring this repo's own gate names here would refuse every merge on the
+  // live tenant repo — which has no CI workflow and no protected branch — and a
+  // check that cries wolf gets switched off. So the list is whatever the
+  // connection declares (`config.requiredChecks`, from PluginConnection.meta);
+  // declaring none keeps the previous behaviour, exactly as before.
   async merge({ token, config, prNumber, force = false }) {
     const result = await mergePrWhenGreen(token, config.repo, prNumber, {
       force,
+      requiredChecks: Array.isArray(config?.requiredChecks) ? config.requiredChecks : [],
       commitTitle: `Morpheus PR #${prNumber}`,
     });
     if (result.merged && !result.alreadyMerged) {

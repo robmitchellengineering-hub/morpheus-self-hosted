@@ -329,3 +329,26 @@ as without, and before WordPress runs at all. A harness that asserts on the live
 whether a file in the site root is moved. A real host falls through to the front
 controller.
 
+## A theme change is not verified here, and must not read as clean
+
+Morpheus's backend has no PHP, so the Deploy tab's check reads only the changed
+JS/TS — while the change itself is usually PHP, CSS and template parts. That
+leaves "no errors were found" over **zero** files, which is a pass from a check
+that examined nothing (hazard H17). So the verdict has three states, not two:
+`passed`, `failed`, and `not_verified` (report code 2, which is never a pass).
+
+Only `failed` blocks the ship. `not_verified` ships and says so, because a
+PHP-only theme edit is the normal case for this target and blocking it would
+stop real work — and a gate that cries wolf gets switched off. The rule is
+`coverageVerdict` in `server/src/lib/engine/verificationCoverage.js`, asserted by
+`scripts/verify-verifier-coverage.mjs`; the UI must render the third state rather
+than "0 script files clean".
+
+The same reasoning says the *merge* cannot require a gate list invented here.
+This target is a tenant repo, and the live one has no CI workflow and no
+protected branch — requiring Morpheus's own gate names would refuse every merge.
+`server/src/lib/delivery/wordpress.js` therefore requires exactly what the
+connection declares in `PluginConnection.meta.requiredChecks` (the same place
+`branch` and `healthPaths` live), and nothing otherwise.
+
+
