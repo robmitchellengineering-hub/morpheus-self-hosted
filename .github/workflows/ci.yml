@@ -293,6 +293,11 @@ jobs:
       - name: A dead GitHub credential is reported, not tried
         run: node scripts/verify-github-reconnect.mjs
 
+      # The construct list must be findable, and its empty state must say WHAT it searched —
+      # name-only matching is how Rob concluded his construct was gone (2026-09-28).
+      - name: The construct list is findable
+        run: node scripts/verify-workspace-search.mjs
+
       # An endpoint that fetched a caller-supplied URL and reported its status was an open SSRF
       # probe oracle, and it resolved another user's deployed URL from a bare projectId.
       - name: Deploy health is owner-scoped

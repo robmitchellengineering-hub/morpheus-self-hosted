@@ -80,6 +80,7 @@ const HARD = [
   'verify-verifier-coverage.mjs',
   'verify-ai-cost-claims.mjs',
   'verify-github-reconnect.mjs',
+  'verify-workspace-search.mjs',
   'verify-onramp.mjs',
   'boot-smoke.mjs',
 ];
