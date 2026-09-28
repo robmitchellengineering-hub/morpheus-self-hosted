@@ -20,6 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { COMPILE_TARGETS, targetOptions } from '../src/lib/compileTargets.js';
 import { checklistRows, isOptionalRow, remainingCount } from '../src/lib/onrampChecklist.js';
+import { APP_KINDS, APP_KIND_SCHEMA, needsFor, normalizeAppKind } from '../server/src/lib/appKind.js';
 
 let failures = 0;
 let checks = 0;
@@ -97,13 +98,15 @@ const begin = read('src/pages/Begin.jsx');
 check('the build path reuses the idempotent construct', begin.includes("invoke('ensureWebsiteConstruct'"), true);
 check('the build path reuses the connections editor', begin.includes('ConnectionsDialog'), true);
 check('the build path reads the real GitHub state', begin.includes('useGithubConnection'), true);
-check('the build path reads the real Netlify state', /connections\?\.netlify\?\.token/.test(begin), true);
+// The connection rows are built from the app's needs, so the state read is per-id rather than a
+// hardcoded netlify field — which is what lets a database row appear when the app needs one.
+check('the build path reads the real connection state', /connections\?\.\[id\]/.test(begin), true);
 // The one thing nobody can automate is minting the token, so the page must send them to the
 // provider's own page for that single action rather than implying it can be done for them.
 check('the build path deep-links the one manual action',
   begin.includes('https://app.netlify.com/user/applications#personal-access-tokens'), true);
 // The ethos, stated where the user decides: their account, their token, no custody.
-check('the build path says the hosting is the user\'s own', /your own Netlify account/i.test(begin), true);
+check('the build path says the connection is the user\'s own', /your own \$\{p\.label\} account/.test(begin), true);
 check('the build path says the credential is encrypted at rest', /encrypted at rest/i.test(begin), true);
 
 console.log('\n7. the construct checklist follows the path the construct is actually on');
@@ -134,6 +137,36 @@ check('the checklist uses the shared decision rather than its own',
 check('the checklist reads the real hosting state', /netlify\?\.token/.test(checklist), true);
 check('the checklist keeps the WordPress path findable from the build path',
   checklist.includes('wordpress:') && /other path/.test(checklist), true);
+
+console.log('\n8. what the operator asked for decides what they are asked to connect');
+// The kind is the model's answer; the CONNECTION LIST is not. A wrong kind is one visible sentence the
+// operator can overrule, while a wrong service list is an invisible hole — so this half is derived, and
+// derived here is the half worth testing.
+check('a static site needs build + host, and no database',
+  needsFor('static').join(','), 'github,netlify');
+check('a full-stack app needs a database as well',
+  needsFor('fullstack').join(','), 'github,netlify,supabase');
+check('an unusable answer degrades to the SMALLER list, not to nothing',
+  normalizeAppKind({ kind: 'wat' }).needs.join(','), 'github,netlify');
+check('an unusable answer is marked as a fallback rather than presented as a decision',
+  normalizeAppKind({ kind: 'wat' }).fellBack, true);
+check('a usable answer is not marked as a fallback',
+  normalizeAppKind({ kind: 'fullstack', reason: 'it stores bookings' }).fellBack, false);
+check('the reason is bounded, because it is rendered on a phone',
+  normalizeAppKind({ kind: 'static', reason: 'x'.repeat(500) }).reason.length, 240);
+check('only the two kinds are answers',
+  APP_KIND_SCHEMA.properties.kind.enum.join(','), APP_KINDS.join(','));
+
+const appKindFn = read('server/src/functions/classifyAppKind.js');
+check('the decision names the classify role', /role:\s*'classify'/.test(appKindFn), true);
+check('the description is bounded before it reaches a model', /MAX_DESCRIPTION = 2000/.test(appKindFn), true);
+check('the verdict is normalized, never trusted as-is', appKindFn.includes('normalizeAppKind(result)'), true);
+
+check('the on-ramp asks what the app should do', /classifyAppKind/.test(begin), true);
+check('the on-ramp lets the operator overrule the guess',
+  /It's just a website/.test(begin) && /It needs a backend/.test(begin), true);
+check('the extra connection deep-links come from the shared registry',
+  begin.includes("from '@/components/matrix/ConnectionsSection'"), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
