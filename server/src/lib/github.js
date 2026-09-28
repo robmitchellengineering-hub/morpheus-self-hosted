@@ -12,6 +12,7 @@
 // Node 22's built-in fetch instead of Deno's.
 import { prisma } from '../db.js';
 import { decrypt, encrypt } from '../crypto.js';
+import { reconnectMessage, classifyRefreshFailure } from './githubReconnect.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -61,12 +62,19 @@ export async function getGithubConnection(userId) {
 
   if (row.expires_at && row.expires_at.getTime() < Date.now() + 5 * 60 * 1000) {
     const refreshed = await tryRefreshGithubToken(row);
-    if (refreshed) return refreshed;
-    // Refresh failed (refresh_token itself expired/revoked — GitHub's
-    // refresh tokens are valid ~6 months — or no client secret available
-    // locally, e.g. a broker-issued connection). Fall through and hand back
-    // the possibly-stale token; the caller's own GitHub API call will
-    // surface a clear error if it's actually dead, same as before this fix.
+    if (refreshed.ok) return refreshed.connection;
+    // The stored access token IS expired, so handing it back guarantees a 401 somewhere deeper —
+    // inside a compile or a push — wearing GitHub's own words. That is the defect fixed for Google
+    // on 2026-09-28 ("a credential known to be dead must never be tried anyway"), and the same
+    // comment used to defend it here. 'network' is the exception: a blip must not lock anyone out,
+    // so that one falls through and lets the caller try, exactly as before.
+    if (refreshed.reason !== 'network') {
+      throw Object.assign(new Error(reconnectMessage(refreshed.reason)), {
+        status: 400,
+        code: 'GITHUB_RECONNECT_REQUIRED',
+        reason: refreshed.reason,
+      });
+    }
   }
 
   const token = decrypt(row.access_token);
@@ -74,7 +82,11 @@ export async function getGithubConnection(userId) {
 }
 
 async function tryRefreshGithubToken(row) {
-  if (!row.refresh_token || !process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) return null;
+  // No refresh token, or no client credentials on this server: no refresh is possible at all, and
+  // that is a deployment problem rather than anything the operator can fix. Say which.
+  if (!row.refresh_token || !process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
+    return { ok: false, reason: 'not_configured' };
+  }
   try {
     const res = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -88,8 +100,9 @@ async function tryRefreshGithubToken(row) {
     });
     const data = await res.json();
     if (!data.access_token) {
-      console.log(`GitHub token refresh failed for connection ${row.id}: ${data.error_description || data.error || 'no access_token in response'}`);
-      return null;
+      const reason = classifyRefreshFailure(data);
+      console.log(`GitHub token refresh failed for connection ${row.id} (${reason}): ${data.error_description || data.error || 'no access_token in response'}`);
+      return { ok: false, reason };
     }
     const updated = await prisma.githubConnection.update({
       where: { id: row.id },
@@ -103,10 +116,10 @@ async function tryRefreshGithubToken(row) {
           : row.refresh_token_expires_at,
       },
     });
-    return { login: updated.login, token: data.access_token, accessToken: data.access_token };
+    return { ok: true, connection: { login: updated.login, token: data.access_token, accessToken: data.access_token } };
   } catch (err) {
     console.log(`GitHub token refresh error for connection ${row.id}: ${err.message}`);
-    return null;
+    return { ok: false, reason: 'network' };
   }
 }
 
