@@ -9,6 +9,7 @@
 //
 // Read-only, and owner-scoped like every other project read.
 import { readProviderSetup } from '../lib/appCapabilitySetup.js';
+import { grantableCapabilities } from '../lib/appCapability.js';
 
 export default async function handler({ user, body }) {
   const { projectId } = body || {};
@@ -20,5 +21,7 @@ export default async function handler({ user, body }) {
   // The app_id is only worth showing when there is something the operator can
   // actually grant — it is what they pass to appCapabilityGrant to mint the token
   // an app's backend uses, and it is deliberately not a project id.
-  return report;
+  // The capabilities this operator may approve, WITH their labels — the consent list the panel
+  // renders. Labels come from the server so the cost sentence cannot drift between two copies.
+  return { ...report, grantable: grantableCapabilities() };
 }

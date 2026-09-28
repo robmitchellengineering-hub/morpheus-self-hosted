@@ -44,11 +44,12 @@ import {
 import { findCapabilityGrantsByToken, grantOwner, isMissingGrantTable, GRANTS_TABLE_MISSING_MESSAGE } from '../lib/appCapabilityGrants.js';
 import { getGoogleDriveConnection, createDriveFile, createDriveFolder, getDriveFileMeta } from '../lib/googleDrive.js';
 import { encodeConnections, decodeConnections } from '../lib/connectionSecrets.js';
+import { invokeAI } from '../ai.js';
 import { CONNECTIONS_KEY, DEFAULT_FOLDER_NAME, driveFileLink, driveFolderLink, classifyDriveError, photoFilename, validatePhoto } from '../lib/photoDrive.js';
 
 const router = Router();
 
-const ACTIONS = ['status', 'upload'];
+const ACTIONS = ['status', 'upload', 'generate'];
 
 /** The bearer value, or ''. No parsing beyond the one header. */
 function bearerToken(req) {
@@ -187,6 +188,13 @@ router.post('/', async (req, res, next) => {
     if (!auth) return undefined;
 
     const { owner } = auth;
+
+    // The AI capability has no provider connection to fetch, so it is handled before the Drive
+    // lookup rather than after it — the one place where "one registry, two shapes" has to be said.
+    if (req.body.capability === 'ai_generate') {
+      return await handleAiGenerate(req, res, owner);
+    }
+
     const connection = await driveTokenFor(res, owner);
     if (!connection) return undefined;
 
@@ -265,5 +273,66 @@ router.post('/', async (req, res, next) => {
     return next(err);
   }
 });
+
+
+// ── The AI capability, which is NOT a provider capability ────────────────────
+//
+// It branches BEFORE the Drive token lookup because there is nothing to look up: no provider
+// connection, no OAuth scope. What it spends is the GRANT OWNER's Morpheus credits, through the same
+// `invokeAI` every other call uses — so it is metered, refunded on failure and recorded in
+// usage_events exactly like the rest of the platform, with no second ledger to keep honest.
+//
+// Bounded on both ends deliberately. The prompt is capped before it reaches a model, the answer is
+// capped by maxTokens, and the role is `draft` (flash @ 0.4) because this is an app's mechanical
+// generation, not Morpheus's persona — an app's AI call must not inherit pro @ 0.7 by saying nothing.
+//
+// The no-credits case gets its own code (402 / INSUFFICIENT_CREDITS) rather than a provider error,
+// because an app's user has to be told "this app needs Morpheus credits" and not handed whatever
+// the gateway said. Rob's words, 2026-09-28: there is no free path, so this must be sayable plainly.
+const AI_PROMPT_MAX_CHARS = 4000;
+const AI_MAX_TOKENS = 2000;
+
+async function handleAiGenerate(req, res, owner) {
+  const action = String(req.body?.action ?? '');
+  if (action !== 'generate') {
+    return res.status(400).json({ error: "ai_generate supports the action 'generate'.", code: 'UNSUPPORTED_ACTION' });
+  }
+
+  const prompt = String(req.body?.prompt ?? '').trim();
+  if (!prompt) return res.status(400).json({ error: 'prompt is required.', code: 'PROMPT_REQUIRED' });
+  if (prompt.length > AI_PROMPT_MAX_CHARS) {
+    return res.status(400).json({ error: `prompt is too long (${AI_PROMPT_MAX_CHARS} characters max).`, code: 'PROMPT_TOO_LONG' });
+  }
+
+  try {
+    const { result, provider, model, usage } = await invokeAI({
+      userId: owner.id,
+      prompt,
+      role: 'draft',
+      maxTokens: AI_MAX_TOKENS,
+      task: 'app_ai_generate',
+    });
+    return res.json({
+      ok: true,
+      capability: 'ai_generate',
+      appId: req.body?.appId,
+      text: String(result ?? ''),
+      provider,
+      model,
+      // Which account paid, said out loud. The app's operator is spending their own credits and
+      // should be able to see that from the response rather than infer it.
+      spentBy: 'morpheus-credits',
+      usage: { input_tokens: usage?.prompt_tokens ?? null, output_tokens: usage?.completion_tokens ?? null },
+    });
+  } catch (err) {
+    if (err?.status === 402 || err?.name === 'InsufficientCreditsError') {
+      return res.status(402).json({
+        error: 'This app needs Morpheus credits to use AI, and the account has run out. Top up in Morpheus → Settings → Usage.',
+        code: 'INSUFFICIENT_CREDITS',
+      });
+    }
+    return res.status(502).json({ error: err?.message || 'The AI call failed.', code: 'AI_CALL_FAILED' });
+  }
+}
 
 export default router;

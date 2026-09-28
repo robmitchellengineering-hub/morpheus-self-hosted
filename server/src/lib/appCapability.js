@@ -74,7 +74,69 @@ export const APP_CAPABILITIES = {
     scopes: ['https://www.googleapis.com/auth/drive.file'],
     scopeNames: ['drive.file'],
   },
+
+  // Let the app's backend make an AI call on the operator's Morpheus account.
+  //
+  // DELIBERATELY SHAPED DIFFERENTLY FROM drive_upload, and the difference is the point: there is no
+  // provider connection, no `connectionSource` and no `scopes`, because nothing needs connecting and
+  // nothing needs registering. What it spends is the grant OWNER's Morpheus credits — metered by the
+  // same `invokeAI` path every other call uses, so there is no second ledger.
+  //
+  // The label is where the cost is disclosed, and it is read at the moment of CONSENT — which is the
+  // only moment it can be acted on. Rob, 2026-09-28: there is no free AI path ("costs still need to be
+  // covered"), and an own-key call is billed cheaply rather than freely, so the label must not promise
+  // anything free. See lib/creditPolicy.js and scripts/verify-ai-cost-claims.mjs, which fails the build
+  // if any file a customer reads claims otherwise.
+  ai_generate: {
+    label: 'Use Morpheus AI on your account — this spends your Morpheus credits',
+    providerLabel: 'Morpheus AI',
+    provider: 'morpheus',
+    connectionLabel: 'your Morpheus account and its credits',
+    // No scopes: this grants an action, not access to a third-party account.
+    scopes: [],
+    scopeNames: [],
+  },
 };
+
+/**
+ * Every capability an operator may approve for an app, with the label they read when they decide.
+ *
+ * The LABELS travel from here rather than being written into the client, because the label is where the
+ * cost is disclosed — "this spends your Morpheus credits" is a claim about money, and a claim that lives
+ * in two places is a claim that will disagree with itself. Same reason the provider sentences live in
+ * this module. scripts/verify-app-capability-creds.mjs asserts the client renders these.
+ */
+export function grantableCapabilities() {
+  return Object.entries(APP_CAPABILITIES).map(([name, cap]) => ({
+    name,
+    label: cap.label,
+    // What the operator is handing over, in one word, so the UI can group them honestly.
+    kind: cap.provider === 'morpheus' ? 'account' : 'provider',
+  }));
+}
+
+/**
+ * The sentence an operator reads when a capability token is minted — built from what was ACTUALLY
+ * granted, never from a fixed string.
+ *
+ * The first version said "anyone who opens the app could read it and write to your Google Drive" for
+ * every grant. Handed to an AI-only grant that is a false statement about both access and money, and it
+ * was written before a second capability existed to expose it. A warning that describes the wrong
+ * capability is worse than no warning: it teaches the operator to skim the one that is accurate.
+ */
+export function grantWarning(capabilities = []) {
+  const granted = Array.isArray(capabilities) ? capabilities : [];
+  const canDo = [];
+  if (granted.includes('drive_upload')) canDo.push('write to your Google Drive');
+  if (granted.includes('ai_generate')) canDo.push('make AI calls that spend your Morpheus credits');
+  const consequence = canDo.length
+    ? `Anyone who reads it could ${canDo.join(', and could ')}.`
+    : 'It carries only the capabilities listed on it.';
+  return 'Copy this token into the app BACKEND now — it is shown once and cannot be recovered. '
+    + 'Never put it in a web page, a URL or client-side code. '
+    + consequence
+    + ' An app with no backend cannot use a capability token safely.';
+}
 
 /** Is this a capability we can actually grant? */
 export function isKnownCapability(name) {

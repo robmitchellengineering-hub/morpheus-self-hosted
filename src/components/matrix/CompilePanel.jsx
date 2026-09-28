@@ -112,6 +112,10 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   // Morpheus says which mode an app is in BEFORE anyone runs it.
   const [provider, setProvider] = useState(null);
   const [grant, setGrant] = useState(null); // { phase, token, appId, error }
+  // What the operator is approving. Drive is pre-ticked because that is what this button always
+  // granted; the list itself (and every label) comes from the server, so the cost sentence lives in
+  // one place — see grantableCapabilities().
+  const [grantCaps, setGrantCaps] = useState(['drive_upload']);
   const [tokenCopied, setTokenCopied] = useState(false);
   const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — GitHub Actions builds can take a while
   const MAX_ERRORS = 5; // stop polling after 5 consecutive status-check failures
@@ -248,6 +252,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       .then((r) => { if (!cancelled) setProvider(r?.data || null); })
       .catch(() => { if (!cancelled) setProvider(null); });
     setGrant(null);
+    setGrantCaps(['drive_upload']);
     setTokenCopied(false);
     return () => { cancelled = true; };
   }, [open, project?.id]);
@@ -258,7 +263,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const createGrant = async () => {
     setGrant({ phase: 'creating' });
     try {
-      const r = await base44.functions.invoke('appCapabilityGrant', { projectId: project.id, action: 'create' });
+      const r = await base44.functions.invoke('appCapabilityGrant', { projectId: project.id, action: 'create', capabilities: grantCaps });
       setGrant({ phase: 'done', token: r?.data?.token, appId: r?.data?.appId, warning: r?.data?.warning });
     } catch (e) {
       setGrant({ phase: 'error', error: e?.message || 'Could not create the grant.' });
@@ -606,14 +611,34 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                       )}
                     </div>
                   ) : (
+                    <>
+                    {provider?.grantable?.length > 0 && (
+                      <div className="space-y-1.5 border border-primary/20 px-3 py-2">
+                        <p className="text-[10px] text-ink-max">What this app may do with your account:</p>
+                        {provider.grantable.map((c) => (
+                          <label key={c.name} className="flex items-start gap-2 text-[11px] text-ink-max">
+                            <input
+                              type="checkbox"
+                              checked={grantCaps.includes(c.name)}
+                              onChange={(e) => setGrantCaps((prev) => (e.target.checked
+                                ? [...prev, c.name]
+                                : prev.filter((n) => n !== c.name)))}
+                              className="mt-[3px]"
+                            />
+                            <span>{c.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                     <button
                       onClick={createGrant}
-                      disabled={grant?.phase === 'creating'}
+                      disabled={grant?.phase === 'creating' || grantCaps.length === 0}
                       className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs disabled:opacity-40"
                     >
                       {grant?.phase === 'creating' ? <Loader2 size={14} className="animate-spin" /> : <Server size={14} />}
-                      APPROVE MY DRIVE FOR THIS APP
+                      APPROVE FOR THIS APP
                     </button>
+                    </>
                   )}
                   {grant?.phase === 'error' && (
                     <div className="text-[11px] text-red-500 border border-red-500/30 p-2">{grant.error}</div>

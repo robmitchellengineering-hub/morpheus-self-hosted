@@ -105,6 +105,17 @@ check('the brain-dump classifier has a budget above the 1200 it truncated at on 
 
 // Same reason, same floor. This one runs on the website on-ramp, where a truncated schema call THROWS
 // — so a tight budget would not shorten the answer, it would fail the page on a sentence.
+// The app-facing AI capability: a generated app spending its OPERATOR's credits. It is the only AI
+// call site a third party can trigger, so the role and the budget matter more here than anywhere else.
+const aiRoute = code('server/src/routes/appCapability.routes.js');
+check('the app AI capability names a role rather than taking the default',
+  /role: 'draft'/.test(aiRoute));
+const aiCapBudget = Number((aiRoute.match(/AI_MAX_TOKENS = (\d+)/) || [])[1] || 0);
+check('…with a budget above the 1200 the classify role truncated at',
+  aiCapBudget >= 1200, `found AI_MAX_TOKENS = ${aiCapBudget || '(none)'}`);
+check('…and the prompt is bounded before it reaches a model',
+  /AI_PROMPT_MAX_CHARS = \d+/.test(aiRoute));
+
 const appKindBudget = Number((code('server/src/functions/classifyAppKind.js').match(/maxTokens:\s*(\d+)/) || [])[1] || 0);
 check('the on-ramp decision has a budget above the 1200 the classify role truncated at',
   appKindBudget >= 2000, `found maxTokens: ${appKindBudget || '(none)'}`);
