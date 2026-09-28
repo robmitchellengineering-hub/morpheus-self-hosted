@@ -11,6 +11,7 @@ import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import ProjectBar from '@/components/matrix/ProjectBar';
 import FirstRunChecklist from '@/components/matrix/FirstRunChecklist';
 import ChatPanel from '@/components/matrix/ChatPanel';
+import { visibleConstructs, noMatchesMessage } from '@/lib/constructSearch';
 import FileTree from '@/components/matrix/FileTree';
 import FileViewer from '@/components/matrix/FileViewer';
 import NewProjectDialog from '@/components/matrix/NewProjectDialog';
@@ -179,13 +180,7 @@ export default function Workspace() {
     }
   }, [projectId, ws.projects]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visibleProjects = ws.projects
-    .filter(p => !p.project_type || p.project_type === 'frontend')
-    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => sortBy === 'name'
-      ? a.name.localeCompare(b.name)
-      : new Date(b.updated_date || b.created_date) - new Date(a.updated_date || a.created_date)
-    );
+  const visibleProjects = visibleConstructs(ws.projects, { query: search, sortBy });
 
   if (!ws.currentProject) {
     return (
@@ -283,7 +278,13 @@ export default function Workspace() {
             )}
             {!ws.loadError && visibleProjects.length === 0 && (
               <div className="border border-dashed border-primary/20 px-4 py-8 text-center space-y-3">
-                <p className="text-ink italic text-sm">{search ? 'No constructs match your search.' : 'No constructs found. The Matrix is empty.'}</p>
+                <p className="text-ink italic text-sm">{search ? noMatchesMessage(search) : 'No constructs found. The Matrix is empty.'}</p>
+                {search && (
+                  <button onClick={() => setSearch('')}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors text-[12px] tracking-wider">
+                    <X size={14} /> SHOW ALL CONSTRUCTS
+                  </button>
+                )}
                 {!search && (
                   <button onClick={() => navigate('/start')}
                     className="inline-flex items-center gap-2 px-4 py-2.5 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors text-[12px] tracking-wider">
