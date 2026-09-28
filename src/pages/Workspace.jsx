@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import PullToRefreshIndicator from '@/components/matrix/PullToRefreshIndicator';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import ProjectBar from '@/components/matrix/ProjectBar';
 import FirstRunChecklist from '@/components/matrix/FirstRunChecklist';
 import ChatPanel from '@/components/matrix/ChatPanel';
@@ -48,6 +48,10 @@ export default function Workspace() {
   const ws = useWorkspace();
   const { projectId } = useParams();
   const navigate = useNavigate();
+  // A prompt handed over from the on-ramp (/begin → START BUILDING). It is advice for the
+  // composer, not state this page owns: the operator's own words are placed in the empty
+  // box so they do not have to type the same sentence twice, and nothing is sent for them.
+  const seedPrompt = useLocation().state?.seedPrompt || '';
   const [showNew, setShowNew] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -379,7 +383,7 @@ export default function Workspace() {
       {isMobile ? (
         <div className="flex-1 flex overflow-hidden overscroll-none min-h-0">
           <div className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} flex-1 min-w-0 min-h-0`}>
-            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading}  onAutonomous={() => setShowAutonomous(true)} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} />
+            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading}  onAutonomous={() => setShowAutonomous(true)} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} seed={seedPrompt} />
           </div>
           <div className={`${mobileTab === 'files' ? 'flex' : 'hidden'} flex-1 flex-col min-w-0 min-h-0`}>
             <FileTree files={ws.files} selectedFile={ws.selectedFile} onSelect={ws.setSelectedFile} />
@@ -392,7 +396,7 @@ export default function Workspace() {
       ) : (
         <PanelGroup direction="horizontal" className="flex-1 overflow-hidden min-h-0">
           <Panel defaultSize={33} minSize={15} className="min-w-0 overflow-hidden">
-            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading}  onAutonomous={() => setShowAutonomous(true)} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} />
+            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading}  onAutonomous={() => setShowAutonomous(true)} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} seed={seedPrompt} />
           </Panel>
           <PanelResizeHandle className="relative w-2 bg-primary/10 hover:bg-primary/30 transition-colors cursor-col-resize shrink-0 group">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-primary/30 group-hover:bg-primary rounded-full transition-colors" />

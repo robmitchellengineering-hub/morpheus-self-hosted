@@ -14,7 +14,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // so it can't push the send row off-screen on a small viewport.
 const MAX_TEXTAREA_HEIGHT = 240;
 
-export default function ChatPanel({ messages, loading, pipelineStages, onSend, onRevert, canRevert, onAutonomous, chatMode, onSetChatMode, webAccess, onSetWebAccess }) {
+export default function ChatPanel({ messages, loading, pipelineStages, onSend, onRevert, canRevert, onAutonomous, chatMode, onSetChatMode, webAccess, onSetWebAccess, seed }) {
   // CONTEXT ⇄ BUILD toggle is only rendered when the host wired it up
   // (Workspace / Self-Dev). Undefined chatMode => treat as 'build', hide the
   // strip entirely — keeps every other ChatPanel caller unchanged.
@@ -53,6 +53,23 @@ export default function ChatPanel({ messages, loading, pipelineStages, onSend, o
   const { listening, start, stop: stopListening, supported: micSupported } = useSpeechRecognition({
     onResult: (text) => { if (inputRef.current) { inputRef.current.value = text; resizeTextarea(); } }
   });
+
+  // A prompt handed over from the on-ramp (/begin). The composer is uncontrolled, so this
+  // writes ONCE into the same box the dictation path above writes into, and resizes it —
+  // the operator's own sentence is waiting for them instead of having to be typed a
+  // second time, and they can still edit it or ignore it before sending. Only fills an
+  // EMPTY box and only once per distinct seed, so it can never overwrite typing or a
+  // later turn.
+  const seededRef = useRef('');
+  useEffect(() => {
+    const prompt = typeof seed === 'string' ? seed.trim() : '';
+    if (!prompt || seededRef.current === prompt) return;
+    const box = inputRef.current;
+    if (!box || box.value) return;
+    seededRef.current = prompt;
+    box.value = prompt;
+    resizeTextarea();
+  }, [seed]);
 
   // 2026-09-03 (Rob: "I have to scroll down to see the action happening"):
   // this was already scrolling to bottom on send, but `pipelineStages`
