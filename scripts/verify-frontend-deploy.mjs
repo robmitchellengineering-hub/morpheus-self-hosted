@@ -265,6 +265,28 @@ check('…and when the compiled package is gone', /live\.noArtifact &&/.test(ui)
 check('the live card is reachable without a compile in this session',
   /\(phase === 'done' \|\| live\.phase === 'live'\)/.test(ui), true);
 
+// ═══ 17. an accepted upload is not a live site ══════════════════════════════
+console.log('\n17. an accepted upload is not reported as a live site');
+// `POST /sites/{id}/deploys` returns as soon as the archive is ACCEPTED, and its response
+// already carries the URL — so reporting "live" on it claims something that has not happened,
+// and when processing then FAILS the claim is permanent and false. This is the "a failure reads
+// as success" class, and it was sitting in the chain nobody has ever run.
+const fnSettle = read('server/src/functions/deployFrontend.js');
+check('the handler waits for the deploy to settle', /await settleDeploy\(/.test(fnSettle), true);
+check('the wait is bounded', /DEPLOY_SETTLE_TIMEOUT_MS = 30_000/.test(fnSettle), true);
+check('a failed publish is refused, not reported as live',
+  /code: 'NETLIFY_DEPLOY_FAILED'/.test(fnSettle), true);
+check('an unrecognised API shape is NOT treated as a failure',
+  /state: state \|\| 'unknown'/.test(fnSettle), true);
+check('a network hiccup while watching does not fail the deploy',
+  /must not fail a deploy that was accepted/.test(fnSettle), true);
+check('the record is written only after the wait, so a failed publish leaves the last good URL',
+  fnSettle.indexOf('await settleDeploy(') < fnSettle.indexOf('const deployInfo = {'), true);
+check('the state Netlify reported is recorded', /deploy_state: settled\.state/.test(fnSettle), true);
+check('the UI carries the pending state', /pending: !!data\.pending/.test(ui), true);
+check('…and does not say live while it is still finishing',
+  /live\.pending \? 'PUBLISHED — NETLIFY IS FINISHING'/.test(ui), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');
