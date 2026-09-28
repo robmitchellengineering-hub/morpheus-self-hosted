@@ -78,8 +78,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   // partial save). Empty on every complete build.
   const [saveFailures, setSaveFailures] = useState([]);
   // "Take it live" (2026-09-28) — takes the compiled web app live on the user's
-  // OWN Netlify account. Its own state, reset with the rest of the panel so a
-  // closed and reopened COMPILE panel does not show a URL from the last build.
+  // OWN Netlify account. Cleared with the rest of the panel when it closes, then
+  // HYDRATED from the deploy record on open (see the getFrontendLive effect below):
+  // a deploy result is not this component's to remember, because the site outlives
+  // the panel. `stale`/`noArtifact` come back with it so a live-but-behind site says
+  // so instead of offering a RE-DEPLOY that would publish the old build.
   const [live, setLive] = useState({ phase: 'idle', url: null, error: null, code: null });
   const [linkCopied, setLinkCopied] = useState(false);
   // The ref is what actually stops a second press in the same tick — React
@@ -210,6 +213,27 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
+
+  // The URL has to survive the page. This panel's state is cleared when it closes, so
+  // "is this construct live?" is READ BACK from the deploy record rather than remembered
+  // — otherwise a user who closes the panel loses the only thing the deploy produced,
+  // while the site stays live and the button offers TAKE IT LIVE again. A read failure
+  // leaves the panel exactly as it was: a failed lookup must never be rendered as "not
+  // deployed", which would invite a pointless second deploy.
+  useEffect(() => {
+    if (!open || !project?.id) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await base44.functions.invoke('getFrontendLive', { projectId: project.id });
+        if (cancelled || liveInFlight.current) return; // never overwrite a deploy in flight
+        if (data?.live && data.url) {
+          setLive({ phase: 'live', url: data.url, stale: !!data.stale, noArtifact: !!data.noArtifact, error: null, code: null });
+        }
+      } catch { /* leave the panel as it was — see above */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, project?.id]);
 
   // Ask the server which mode this app is in, every time the panel opens. A failed
   // read shows nothing rather than a guess: an error here must never be rendered as
@@ -720,9 +744,14 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               </p>
             </div>
           )}
-          {phase === 'done' && (
+          {/* The live card has to be reachable WITHOUT a compile in this session, so this
+              wrapper opens for a hydrated live state too and the build-report half below
+              stays gated on `phase === 'done'`. Before this, a user who reloaded the page
+              (or reopened the panel) saw nothing about a site that is live — the record
+              existed and the UI simply could not reach it. */}
+          {(phase === 'done' || live.phase === 'live') && (
             <div className="space-y-3">
-              {saveFailures.length > 0 ? (
+              {phase === 'done' && (saveFailures.length > 0 ? (
                 <>
                   <div className="flex items-center gap-2 text-yellow-500 text-sm">
                     <AlertTriangle size={16} /> BUILD FINISHED — {saveFailures.length} COMPILED FILE{saveFailures.length === 1 ? '' : 'S'} DID NOT SAVE
@@ -746,7 +775,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                     // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
                   </p>
                 </>
-              )}
+              ))}
               {/* 2026-09-28 — the gap this closes: Morpheus could build a web app
                   and could not host it. This publishes the compiled build to the
                   user's OWN Netlify account (their token, their site) and shows
@@ -776,6 +805,20 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                         </button>
                       </div>
                       {liveBusy && <p className="text-[11px] text-ink-max">Publishing the new build to your Netlify — wait for it to finish, don&apos;t close this panel.</p>}
+                      {/* Read back from the deploy record, not remembered by this panel. Both lines
+                          exist so a live site is never described as either newer or more complete than
+                          it is: "live and behind your latest changes" and "live but the build is gone"
+                          are different facts, and the button says RE-DEPLOY for both. */}
+                      {!liveBusy && live.stale && (
+                        <p className="text-[11px] text-ink-max">
+                          This is the build you published. You have changed the construct since — RE-DEPLOY puts the newer build live.
+                        </p>
+                      )}
+                      {!liveBusy && live.noArtifact && (
+                        <p className="text-[11px] text-ink-max">
+                          The compiled package is no longer in this construct, so a re-deploy needs a fresh COMPILE first.
+                        </p>
+                      )}
                     </>
                   ) : (
                     <>

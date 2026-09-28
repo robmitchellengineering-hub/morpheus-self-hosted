@@ -239,6 +239,32 @@ check('it calls it for the token lookup',
 check('it does NOT parse the connections column itself',
   /JSON\.parse\([^)]*connections/.test(fnCode), false);
 
+// ═══ 16. the URL survives the panel ═════════════════════════════════════════
+console.log('\n16. the live URL survives the page');
+// The panel's live state is in-memory and is cleared when it closes, so a deploy's URL
+// used to exist only until the user dismissed COMPILE — while the site stayed live, the
+// construct said nothing about it, and the button offered TAKE IT LIVE again (with a new
+// deploy on the next press). It is read back from the record instead of remembered.
+const liveFn = read('server/src/functions/getFrontendLive.js');
+check('a read exists for the deploy record', /FRONTEND_DEPLOY_PATH/.test(liveFn), true);
+check('it is owner-scoped with a 404, not a 403',
+  /created_by_id: user\.id/.test(liveFn) && /status: 404/.test(liveFn), true);
+check('it picks the artifact the same way the deploy does',
+  /pickArtifact\(files, artifactName\)/.test(liveFn), true);
+check('…and judges staleness with the same rule',
+  /isArtifactStale\(artifact, files\)/.test(liveFn), true);
+check('a never-deployed construct is a normal answer, not an error',
+  /return \{ live: false/.test(liveFn), true);
+check('the panel reads it back', /invoke\('getFrontendLive'/.test(ui), true);
+check('…and never overwrites a deploy in flight',
+  /liveInFlight\.current\) return; \/\/ never overwrite/.test(ui), true);
+check('a live site says when it is behind the construct', /live\.stale &&/.test(ui), true);
+check('…and when the compiled package is gone', /live\.noArtifact &&/.test(ui), true);
+// The card was nested inside `phase === 'done'`, so a hydrated URL could never render on a
+// fresh page load — the record existed and the UI could not reach it. This pins the wrapper.
+check('the live card is reachable without a compile in this session',
+  /\(phase === 'done' \|\| live\.phase === 'live'\)/.test(ui), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');
