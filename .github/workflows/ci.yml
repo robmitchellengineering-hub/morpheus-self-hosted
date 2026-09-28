@@ -283,6 +283,11 @@ jobs:
       - name: The website on-ramp is honest and undrifted
         run: node scripts/verify-onramp.mjs
 
+      # The price and the meter must agree: the exemption rule is tested behaviourally, and no
+      # customer-facing file may promise a free own-key path the billing code does not honour.
+      - name: AI cost claims match the meter
+        run: node scripts/verify-ai-cost-claims.mjs
+
       # An endpoint that fetched a caller-supplied URL and reported its status was an open SSRF
       # probe oracle, and it resolved another user's deployed URL from a bare projectId.
       - name: Deploy health is owner-scoped

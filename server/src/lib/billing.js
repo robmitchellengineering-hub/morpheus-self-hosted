@@ -181,6 +181,10 @@ export async function estimatePreCallCredits(prompt, role, model, maxTokens) {
 // updateMany + a `gte` filter in the WHERE clause), so two concurrent calls
 // from the same account can't both pass a balance check that only one of
 // them should. Throws InsufficientCreditsError (status 402) if it can't.
+//
+// Whether a call should reserve AT ALL is a separate rule and lives in
+// lib/creditPolicy.js — import-free, so a guard can test it without dragging
+// Prisma into the no-install job.
 export async function reserveCredits(userId, estimatedCredits) {
   const result = await prisma.user.updateMany({
     where: { id: userId, credit_balance: { gte: estimatedCredits } },
