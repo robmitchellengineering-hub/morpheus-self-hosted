@@ -167,6 +167,42 @@ try {
   rmSync(dir, { recursive: true, force: true });
 }
 
+// ═══ the no-build fallback publishes the site, never the secrets ════════════
+// A static project with no build script takes the fallback branch, which zips the PROJECT ROOT
+// because the root IS the site. That root is also where .env lives (dotenv is a normal dependency),
+// and this archive is served to the open internet — so an unfiltered fallback publishes the
+// operator's secrets at /.env. Run for real: an archive is the only proof.
+const fb = mkdtempSync(join(tmpdir(), 'morpheus-fallback-'));
+try {
+  writeFileSync(join(fb, 'index.html'), '<html>site</html>');
+  writeFileSync(join(fb, 'styles.css'), 'body{}');
+  writeFileSync(join(fb, 'robots.txt'), 'User-agent: *\n');
+  writeFileSync(join(fb, 'package.json'), '{"scripts":{"start":"node server.js"}}');
+  writeFileSync(join(fb, '.env'), 'STRIPE_SECRET_KEY=sk_live_not_a_real_key\n');
+  writeFileSync(join(fb, '.env.local'), 'OTHER=1\n');
+  writeFileSync(join(fb, 'server-key.pem'), 'not a real key\n');
+  mkdirSync(join(fb, 'backend'), { recursive: true });
+  writeFileSync(join(fb, 'backend', '.plan.json'), '{}');
+  mkdirSync(join(fb, '.morpheus'), { recursive: true });
+  writeFileSync(join(fb, '.morpheus', 'forms.json'), '{}');
+  const fbScript = join(fb, 'package.sh');
+  // The fallback branch only: use a project with no dist/build directory.
+  writeFileSync(fbScript, commands + '\n');
+  const ranFb = spawnSync('bash', [fbScript], { cwd: fb, encoding: 'utf8' });
+  check('the fallback branch runs for a project with no build output', ranFb.status, 0);
+  const fbList = spawnSync('unzip', ['-Z1', 'release.zip'], { cwd: fb, encoding: 'utf8' });
+  const fbNames = String(fbList.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  check('the site itself is published', fbNames.includes('index.html') && fbNames.includes('styles.css'), true);
+  check('…robot rules with it', fbNames.includes('robots.txt'), true);
+  check('the operator\'s .env is NOT published', fbNames.includes('.env'), false);
+  check('…nor .env.local', fbNames.includes('.env.local'), false);
+  check('…nor a private key', fbNames.includes('server-key.pem'), false);
+  check('…nor the backend plan', fbNames.includes('backend/.plan.json'), false);
+  check('…nor platform bookkeeping', fbNames.includes('.morpheus/forms.json'), false);
+} finally {
+  rmSync(fb, { recursive: true, force: true });
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);

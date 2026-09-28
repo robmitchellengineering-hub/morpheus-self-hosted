@@ -155,7 +155,12 @@ export const webApp = {
           `  if [ -f "$ROOT/_redirects" ] && [ ! -f "$OUT/_redirects" ]; then cp "$ROOT/_redirects" "$OUT/_redirects"; fi`,
           `  (cd "$OUT" && zip -r "$ROOT/release.zip" .)`,
           `else`,
-          `  zip -r release.zip . -x "node_modules/*" -x ".git/*" -x "release.zip"`,
+          `  # No build output: the project root IS the site, so it is zipped as-is — but not`,
+          `  # everything in it. This archive is published to the open internet, and the project`,
+          `  # root is where a project's .env lives (dotenv is a normal dependency): publishing`,
+          `  # it would serve the operator's secrets at /.env. Backend source, compiled artifacts,`,
+          `  # platform bookkeeping and CI config are not site content either.`,
+          `  zip -r release.zip . -x "node_modules/*" -x ".git/*" -x "release.zip" -x "_compiled/*" -x "backend/*" -x ".morpheus/*" -x ".github/*" -x ".env*" -x "*.pem" -x "*.key"`,
           `fi`,
           `test -f release.zip || { echo "No web build output found"; exit 1; }`
         ].join('\n')
