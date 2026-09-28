@@ -20,10 +20,13 @@
 //     role exemption was in force. The check therefore REPORTS it rather than failing on it: the role
 //     a user held when a call was made is not recorded, so it cannot be verified retroactively.
 //
-// This module is the maths only — import-free, so `scripts/verify-billing-ledger-math.mjs` can test
-// every branch in CI's no-install job. The database half lives in `scripts/verify-billing-ledger.mjs`,
-// which uses the REAL pricing functions (`resolveBillingRate`, `resolveBillingMarkup`, `usdToCredits`)
-// so the checker cannot drift from the meter it is checking.
+// This module is the maths only, so `scripts/verify-billing-ledger-math.mjs` can test every branch in
+// CI's no-install job. Its ONE import is `creditPolicy.js`, which is import-free for the same reason:
+// the flat credit is a money constant and must have a single home rather than a literal here that can
+// drift from the meter. The database half lives in `scripts/verify-billing-ledger.mjs`, which uses the
+// REAL pricing functions (`resolveBillingRate`, `resolveBillingMarkup`, `usdToCredits`) so the checker
+// cannot drift from the meter it is checking.
+import { FLAT_CALL_CREDITS } from './creditPolicy.js';
 
 /** The signup grant, as a column default rather than a transaction — see the schema. */
 export const SIGNUP_CREDITS = 200;
@@ -36,17 +39,22 @@ export function round4(value) {
 /**
  * What a call SHOULD have been charged, from the same policy the meter implements.
  * `expected` is null when the row is exempt (nothing should have been charged).
+ *
+ * `flat` is the flat-rate call — an own-key call OR a model on creditPolicy.js's FLAT_RATE_MODELS;
+ * callers should decide that with `isFlatRateCall()` so the rule has one home. `ownKey` is kept as
+ * the older name for the own-key half of it, so a caller that has not been updated still means what
+ * it always meant rather than silently token-pricing a flat call.
  */
-export function expectedCharge({ inputTokens, outputTokens, inputPerM, outputPerM, markup, ownKey }) {
-  if (ownKey) return round4(1); // the flat own-key rule — see lib/creditPolicy.js
+export function expectedCharge({ inputTokens, outputTokens, inputPerM, outputPerM, markup, ownKey, flat }) {
+  if (flat || ownKey) return round4(FLAT_CALL_CREDITS); // the flat rule — see lib/creditPolicy.js
   const usd = (Number(inputTokens || 0) * inputPerM + Number(outputTokens || 0) * outputPerM) / 1_000_000;
   const credits = (usd * markup) / 0.005;
   return round4(credits);
 }
 
 /** One charged row, judged. A gap of half a hundredth of a credit is float noise, not a discrepancy. */
-export function checkChargeRow({ creditsCharged, inputTokens, outputTokens, inputPerM, outputPerM, markup, ownKey }) {
-  const expected = expectedCharge({ inputTokens, outputTokens, inputPerM, outputPerM, markup, ownKey });
+export function checkChargeRow({ creditsCharged, inputTokens, outputTokens, inputPerM, outputPerM, markup, ownKey, flat }) {
+  const expected = expectedCharge({ inputTokens, outputTokens, inputPerM, outputPerM, markup, ownKey, flat });
   const gap = round4(Number(creditsCharged || 0) - expected);
   return { ok: Math.abs(gap) < 0.005, expected, gap };
 }

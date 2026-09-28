@@ -16,6 +16,21 @@ export const MODEL_PRICING = {
   gpt_5_6_luna: { input: 5.00, output: 15.00 },
   gemini_3_flash: { input: 0.075, output: 0.30 },
   gemini_3_1_pro: { input: 1.25, output: 5.00 },
+  // ADDED 2026-09-28 (Rob: "Make the gemini rate 1 credit per turn just like the other byo").
+  // This id was in production use — 99 calls, 2026-08-31 → 09-01, ALL on the platform key — and was
+  // absent from this table, so both its recorded cost and its charge came from DEFAULT_PRICING
+  // {in 1, out 5}. That is the "price nobody chose" case `reality.mjs` and
+  // `scripts/verify-billing-ledger.mjs` exist to flag: it charged ~609 credits, 603.77 of them to
+  // one non-exempt user.
+  //
+  // The CHARGE no longer reads this rate at all — the model is on creditPolicy.js's
+  // FLAT_RATE_MODELS and bills a flat 1 credit a turn, so this entry exists to keep
+  // `UsageEvent.cost_usd` a chosen number instead of the generic default, and to keep the ledger's
+  // "every charged model has a price someone chose" check passing. Value is the Flash-Lite tier
+  // list price, in this table's stated spirit ("approximate public list prices"); the sibling
+  // gemini_3_flash entry above carries 0.075/0.30 for the same tier. If the real rate differs,
+  // correct it here — nothing about the charge depends on it.
+  'gemini-3.5-flash-lite': { input: 0.10, output: 0.40 },
   claude_sonnet_4_6: { input: 3.00, output: 15.00 },
   claude_opus_4_6: { input: 15.00, output: 75.00 },
   claude_opus_4_7: { input: 15.00, output: 75.00 },

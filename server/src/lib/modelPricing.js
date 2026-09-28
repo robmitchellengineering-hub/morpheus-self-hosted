@@ -15,12 +15,14 @@
 // were "not yet built" long after both shipped — the same doc-drift this
 // codebase keeps producing.
 //
-// KNOWN GAP (2026-09-19): the static table is keyed by model id, and a model
-// that isn't in it silently falls back to DEFAULT_PRICING. gemini-3.5-flash-lite
-// is in active production use and is NOT in the table, so both its recorded cost
-// and its retail charge come from that generic default rather than a rate anyone
-// chose for it. scripts/reality.mjs now flags any production model with no
-// explicit price, so a new model can't quietly inherit the default again.
+// KNOWN GAP, and its one instance is now FIXED (2026-09-19 → 2026-09-28): the static table is keyed
+// by model id, and a model that isn't in it silently falls back to DEFAULT_PRICING. gemini-3.5-flash-lite
+// was in active production use (99 calls) and was NOT in the table, so both its recorded cost and its
+// retail charge came from that generic default — ~609 credits charged from a price nobody chose, 603.77
+// of them to one non-exempt user. It now HAS an explicit entry (costEstimate.js) and is on
+// creditPolicy.js's FLAT_RATE_MODELS, so it bills a flat 1 credit a turn. scripts/reality.mjs flags any
+// production model with no explicit price, so a new model can't quietly inherit the default again —
+// that flag is what found this one.
 import { prisma } from '../db.js';
 import { MODEL_PRICING, DEFAULT_PRICING, LOCAL_MODEL_PATTERNS } from './costEstimate.js';
 
