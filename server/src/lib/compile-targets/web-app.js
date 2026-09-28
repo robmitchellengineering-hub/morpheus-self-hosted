@@ -139,11 +139,24 @@ export const webApp = {
       {
         name: 'Package web app',
         run: [
-          `# Try common build output directories, fall back to zipping the project`,
-          `if [ -d ${outputDir} ]; then zip -r release.zip ${outputDir};`,
-          `elif [ -d dist ]; then zip -r release.zip dist;`,
-          `elif [ -d build ]; then zip -r release.zip build;`,
-          `else zip -r release.zip . -x "node_modules/*" -x ".git/*" -x "release.zip"; fi`,
+          `# The PUBLISHED ROOT is the build output, not the project root, and two things were`,
+          `# being got wrong by treating them as the same place (found 2026-09-28 by reading the`,
+          `# chain before its first real run — a deploy would have reported success and produced a`,
+          `# broken site):`,
+          `#   1. \`zip -r release.zip dist\` stores \`dist/index.html\`, so the archive's root is a`,
+          `#      directory and the host, which serves the archive AS the site root, serves nothing.`,
+          `#   2. The SPA fallback is scaffolded at the PROJECT root, so it was never in the archive`,
+          `#      at all — client-side routes would 404 on a direct visit while the homepage looked`,
+          `#      fine. It has to be carried into the published root.`,
+          `ROOT="$(pwd)"`,
+          `OUT=""`,
+          `if [ -d "${outputDir}" ]; then OUT="${outputDir}"; elif [ -d dist ]; then OUT="dist"; elif [ -d build ]; then OUT="build"; fi`,
+          `if [ -n "$OUT" ]; then`,
+          `  if [ -f "$ROOT/_redirects" ] && [ ! -f "$OUT/_redirects" ]; then cp "$ROOT/_redirects" "$OUT/_redirects"; fi`,
+          `  (cd "$OUT" && zip -r "$ROOT/release.zip" .)`,
+          `else`,
+          `  zip -r release.zip . -x "node_modules/*" -x ".git/*" -x "release.zip"`,
+          `fi`,
           `test -f release.zip || { echo "No web build output found"; exit 1; }`
         ].join('\n')
       }

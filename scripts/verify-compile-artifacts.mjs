@@ -13,8 +13,12 @@
 // with no image. The claim was in the code for a while before anything tested
 // it, and a returned object can be correct while the UI still ignores it — so
 // this asserts the pure decision AND the wiring on both sides of the boundary.
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { summarizeArtifactSave } from '../server/src/lib/artifactSaveOutcome.js';
+import { webApp } from '../server/src/lib/compile-targets/web-app.js';
 
 let failures = 0;
 let checks = 0;
@@ -111,6 +115,57 @@ check("it accepts a 'partial' result", /'partial'/.test(mail), true);
 check('a partial email is not the success subject', /⚠ Morpheus/.test(mail), true);
 check('a partial email still tells the user the build succeeded',
   /succeeded, but not every compiled file was saved/.test(mail), true);
+
+console.log('\nthe web-app archive holds the SITE, not the folder containing it');
+// Found 2026-09-28 by reading the chain before its first real run. The packaging step was
+// `zip -r release.zip dist`, which stores `dist/index.html` — so the archive's root is a
+// directory, and the hosting provider serves the archive AS the site root. A deploy would
+// have reported success and produced a site whose / served nothing. The fix zips the
+// CONTENTS; this calls the adapter for real rather than grepping it, because the shell is
+// generated and a guard on the source text would pass on a regenerated wrong command.
+const pkgStep = webApp.buildSteps([
+  { path: 'package.json', content: JSON.stringify({ scripts: { build: 'vite build' }, dependencies: { react: '18' } }) },
+]).find((s) => s.name === 'Package web app');
+check('the packaging step exists', Boolean(pkgStep), true);
+const shell = pkgStep?.run || '';
+// Judge the COMMANDS only — the step carries a comment explaining the old bug, and a guard
+// that reads its own explanation as the bug is one that fails on the fix.
+const commands = shell.split('\n').filter((l) => l.trim() && !l.trim().startsWith('#')).join('\n');
+check('it zips the CONTENTS of the build output', commands.includes('zip -r "$ROOT/release.zip" .'), true);
+check('…from inside that directory', /\(cd "?[^" )]+"? && zip -r "\$ROOT\/release\.zip" \./.test(commands), true);
+check('…and never archives the directory itself', /zip -r release\.zip (dist|build)\b/.test(commands), false);
+check('the no-build-output fallback still zips the project', commands.includes('zip -r release.zip . -x'), true);
+check('a missing archive still fails the run', commands.includes('No web build output found'), true);
+// The SPA fallback is scaffolded at the PROJECT root but published from the BUILD output, so
+// without this it never reached the archive — the homepage worked and every direct deep link
+// 404'd. Same root cause as the nesting bug: project root confused with publish root.
+check('the SPA fallback is carried into the published root',
+  commands.includes('cp "$ROOT/_redirects" "$OUT/_redirects"'), true);
+check('…without overwriting one the build produced itself',
+  commands.includes('[ ! -f "$OUT/_redirects" ]'), true);
+
+// And RUN it. The shell is generated, so the only proof the ARCHIVE is right is the archive:
+// a guard that reads the command text passes on a command that reads correctly and packs wrong.
+const dir = mkdtempSync(join(tmpdir(), 'morpheus-pkg-'));
+try {
+  mkdirSync(join(dir, 'dist', 'assets'), { recursive: true });
+  writeFileSync(join(dir, 'dist', 'index.html'), '<html></html>');
+  writeFileSync(join(dir, 'dist', 'assets', 'app.css'), 'body{}');
+  writeFileSync(join(dir, '_redirects'), '/*    /index.html   200\n');
+  writeFileSync(join(dir, 'package.json'), '{}');
+  const script = join(dir, 'package.sh');
+  writeFileSync(script, shell + '\n');
+  const ran = spawnSync('bash', [script], { cwd: dir, encoding: 'utf8' });
+  check('the generated packaging shell runs', ran.status, 0);
+  const listed = spawnSync('unzip', ['-Z1', 'release.zip'], { cwd: dir, encoding: 'utf8' });
+  const names = String(listed.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  check('the archive holds index.html at its ROOT', names.includes('index.html'), true);
+  check('…not nested under the output directory', names.includes('dist/index.html'), false);
+  check('…and carries the SPA fallback, which the host needs for deep links',
+    names.includes('_redirects'), true);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
