@@ -228,7 +228,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
         const { data } = await base44.functions.invoke('getFrontendLive', { projectId: project.id });
         if (cancelled || liveInFlight.current) return; // never overwrite a deploy in flight
         if (data?.live && data.url) {
-          setLive({ phase: 'live', url: data.url, stale: !!data.stale, noArtifact: !!data.noArtifact, error: null, code: null });
+          setLive({ phase: 'live', url: data.url, stale: !!data.stale, noArtifact: !!data.noArtifact, access: data.access || 'unknown', error: null, code: null });
         }
       } catch { /* leave the panel as it was — see above */ }
     })();
@@ -500,6 +500,9 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
         // Netlify accepted the upload; `pending` says it had not finished processing when
         // the server stopped watching, so the wording below must not claim "live" yet.
         pending: !!data.pending,
+        // What the public URL answered when the server probed it after deploying.
+        access: data.access || 'unknown',
+        accessStatus: data.accessStatus || 0,
         error: data.url ? null : 'Netlify accepted the upload but returned no URL — open app.netlify.com to find the site.',
         code: null,
       });
@@ -788,9 +791,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                 <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
                   <div className="flex items-center gap-2 text-ink text-sm">
                     <Rocket size={14} className="text-primary" />
-                    {live.phase === 'live'
-                      ? (live.pending ? 'PUBLISHED — NETLIFY IS FINISHING' : 'YOUR SITE IS LIVE')
-                      : 'TAKE IT LIVE'}
+                    {live.phase !== 'live' ? 'TAKE IT LIVE'
+                      : live.access === 'login-required' ? 'DEPLOYED — NOT PUBLIC YET'
+                        : live.access === 'blocked' ? 'DEPLOYED — THE URL IS NOT PUBLIC'
+                          : live.pending ? 'PUBLISHED — NETLIFY IS FINISHING'
+                            : 'YOUR SITE IS LIVE'}
                   </div>
 
                   {live.phase === 'live' && live.url ? (
@@ -814,6 +819,20 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                           exist so a live site is never described as either newer or more complete than
                           it is: "live and behind your latest changes" and "live but the build is gone"
                           are different facts, and the button says RE-DEPLOY for both. */}
+                      {!liveBusy && live.access === 'login-required' && (
+                        <p className="text-[11px] text-ink-max">
+                          Netlify is asking visitors to log in before they can see this site, so the address above is not
+                          public yet. On the site&apos;s Netlify page tap &ldquo;Make it public&rdquo; (Site configuration →
+                          Access &amp; security → Visitor access). Until then only you can open it —
+                          Morpheus has deployed it correctly, and this is an account setting, not a build problem.
+                        </p>
+                      )}
+                      {!liveBusy && live.access === 'blocked' && (
+                        <p className="text-[11px] text-ink-max">
+                          The address answered HTTP {live.accessStatus || 401} when Morpheus checked it, so it is not publicly
+                          readable. Open it yourself to see what the server says.
+                        </p>
+                      )}
                       {!liveBusy && live.pending && (
                         <p className="text-[11px] text-ink-max">
                           Netlify has your build and is still finishing. The address may take a few seconds to serve it.

@@ -34,6 +34,7 @@ import {
   hasBackendSource,
   backendIsLive,
 } from '../server/src/lib/frontendDeploy.js';
+import { classifySiteAccess, isNotPublic } from '../server/src/lib/siteAccess.js';
 
 let failures = 0;
 let checks = 0;
@@ -286,6 +287,49 @@ check('the state Netlify reported is recorded', /deploy_state: settled\.state/.t
 check('the UI carries the pending state', /pending: !!data\.pending/.test(ui), true);
 check('…and does not say live while it is still finishing',
   /live\.pending \? 'PUBLISHED — NETLIFY IS FINISHING'/.test(ui), true);
+
+
+// ═══ 18. a deploy the public cannot read is not "live" ══════════════════════
+console.log('\n18. a deploy the public cannot read is not reported as live');
+// The first real end-to-end run deployed, Netlify said `ready`, and the URL answered 401 (Netlify's
+// visitor-access wall) while Morpheus said YOUR SITE IS LIVE. The deploy HAD succeeded, so nothing in
+// the pipeline could tell — only asking the URL can. Same "a failure reads as success" class as the
+// six defects found by reading this chain, and the run is what exposed it.
+check('a 200 is public', classifySiteAccess({ status: 200, body: '<html>site</html>' }).access, 'public');
+check('a 301 is public (a redirect at the root is normal)',
+  classifySiteAccess({ status: 301, body: '' }).access, 'public');
+check("Netlify's login wall is recognised by its own signature",
+  classifySiteAccess({ status: 401, body: '<title>Login Redirect</title> ... app.netlify.com/edge-access' }).access, 'login-required');
+check('…case-insensitively, and on the marker alone',
+  classifySiteAccess({ status: 403, body: 'https://app.netlify.com/edge-access?domain=x' }).access, 'login-required');
+// A bare 401 is still not public, but we do not know why — so do not send them to a Netlify setting.
+check('a 401 with no Netlify signature is `blocked`, not blamed on a setting',
+  classifySiteAccess({ status: 401, body: 'Unauthorized' }).access, 'blocked');
+check('an unanswered probe is UNKNOWN, never a failure',
+  classifySiteAccess({ status: 0 }).access, 'unknown');
+check('a 500 is unknown — our check must not invent a verdict',
+  classifySiteAccess({ status: 500, body: 'oops' }).access, 'unknown');
+check('no argument at all does not crash', classifySiteAccess().access, 'unknown');
+check('isNotPublic covers exactly the two unreadable states',
+  ['public', 'login-required', 'blocked', 'unknown'].filter(isNotPublic).join(','), 'login-required,blocked');
+
+const deploySrc = read('server/src/functions/deployFrontend.js');
+check('the handler asks the URL after the deploy settles',
+  deploySrc.indexOf('await probeSiteAccess(url)') > deploySrc.indexOf('await settleDeploy('), true);
+check('…before it records the deploy',
+  deploySrc.indexOf('await probeSiteAccess(url)') < deploySrc.indexOf('const deployInfo = {'), true);
+check('the probe is bounded', /SITE_PROBE_TIMEOUT_MS = 8_000/.test(deploySrc), true);
+check('…and can never fail a deploy that worked',
+  /Never throws and never fails a deploy/.test(deploySrc), true);
+check('the verdict is recorded for the next visit', /access: access\.access/.test(deploySrc), true);
+check('the read reports it back',
+  /access: record\.access \|\| 'unknown'/.test(read('server/src/functions/getFrontendLive.js')), true);
+check('the panel carries it from a fresh deploy', /access: data\.access \|\| 'unknown'/.test(ui), true);
+check('the header does not say LIVE for a walled site',
+  /DEPLOYED — NOT PUBLIC YET/.test(ui) && !/live\.pending \? 'PUBLISHED — NETLIFY IS FINISHING' : 'YOUR SITE IS LIVE'/.test(ui), true);
+check('…and names the way out', /Make it public/.test(ui) && /Visitor access/.test(ui), true);
+check('a bare 401 gets its own honest sentence, not the Netlify one',
+  /THE URL IS NOT PUBLIC/.test(ui) && /answered HTTP \{live\.accessStatus/.test(ui), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }

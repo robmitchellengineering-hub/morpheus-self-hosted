@@ -37,7 +37,7 @@ export default async function handler({ user, body }) {
   // No URL recorded means there is nothing to show, and that is not a failure: a
   // construct that has never been deployed is the normal first state.
   if (!record?.url) {
-    return { live: false, url: null, siteId: null, siteName: null, stale: false, noArtifact: false };
+    return { live: false, url: null, siteId: null, siteName: null, stale: false, noArtifact: false, access: 'unknown' };
   }
 
   const artifactName = getCompileTarget(project.compile_target)?.artifact?.artifactName;
@@ -48,6 +48,9 @@ export default async function handler({ user, body }) {
     url: String(record.url),
     siteId: record.site_id || null,
     siteName: record.site_name || null,
+    // Whether the public could read the URL when it was deployed. A record written before this
+    // existed has no field, and 'unknown' is the honest answer for it.
+    access: record.access || 'unknown',
     // Live, but built from older source than what is in the construct now. Reported,
     // never hidden: "your site is live and does not yet have your latest changes" is
     // the honest sentence, and a RE-DEPLOY that silently means "publish the old build"
