@@ -26,7 +26,7 @@
 // Run:  node scripts/verify-ai-cost-claims.mjs
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
-import { shouldReserveCredits, isOwnKeyProvider, OWN_KEY_CALL_CREDITS } from '../server/src/lib/creditPolicy.js';
+import { shouldReserveCredits, isOwnKeyProvider, isFlatRateCall, FLAT_CALL_CREDITS, OWN_KEY_CALL_CREDITS, FLAT_RATE_MODELS, FLAT_RATE_SINCE } from '../server/src/lib/creditPolicy.js';
 
 let failures = 0;
 let checks = 0;
@@ -74,20 +74,32 @@ check('no user-facing file promises a free own-key path',
   files.filter((f) => FREE_CLAIM.test(read(f))).join(','), '');
 
 
-console.log('\n3b. the own-key rate: 1 credit, flat, and the intent says so');
-check('the rate is a decision with a number in it', OWN_KEY_CALL_CREDITS, 1);
+console.log('\n3b. the flat rate: 1 credit, applied by key OR by model, and the intent says so');
+check('the rate is a decision with a number in it', FLAT_CALL_CREDITS, 1);
+check('the own-key name for it is the same number, not a second decision', OWN_KEY_CALL_CREDITS, FLAT_CALL_CREDITS);
 check('only tier 1 counts as an own key', isOwnKeyProvider('custom'), true);
 check('a platform call is not an own-key call',
   ['platform', 'platform-fallback', '', undefined, null].some(isOwnKeyProvider), false);
 check('…and the check is not fooled by case or padding',
   [isOwnKeyProvider(' Custom'), isOwnKeyProvider('custom '), isOwnKeyProvider('CUSTOM')].join(','), 'false,false,false');
 const aiSrc = read('server/src/ai.js');
-check('an own-key call reserves the flat charge',
-  /if \(isOwnKeyProvider\(provider\)\)[\s\S]{0,700}reservedCredits = OWN_KEY_CALL_CREDITS;/.test(aiSrc), true);
+check('a flat call reserves the flat charge',
+  /if \(isFlatRateCall\(\{ provider, model \}\)\)[\s\S]{0,700}reservedCredits = FLAT_CALL_CREDITS;/.test(aiSrc), true);
 check('…and is NOT re-priced against token counts afterwards',
-  /!isExempt && isOwnKeyProvider\(provider\)[\s\S]{0,500}creditsCharged = reservedCredits \|\| OWN_KEY_CALL_CREDITS;/.test(aiSrc), true);
-check('a platform call still estimates and trues up as before',
+  /!isExempt && isFlatRateCall\(\{ provider, model \}\)[\s\S]{0,600}creditsCharged = reservedCredits \|\| FLAT_CALL_CREDITS;/.test(aiSrc), true);
+check('a token-priced platform call still estimates and trues up as before',
   /estimatePreCallCredits\(prompt, role, model, maxTokens\)/.test(aiSrc) && /reconcileAgainstActualUsage\(userId, model, reservedCredits/.test(aiSrc), true);
+// The flat MODEL half: the rule that came out of the gemini default-rate bug. Asserted here as well as
+// in the ledger maths guard because this guard is the one about what a CALL costs, and it runs in the
+// same no-install CI job.
+check('the flat model list is explicit and non-empty', FLAT_RATE_MODELS.size > 0, true);
+check('gemini-3.5-flash-lite is flat on the platform key',
+  isFlatRateCall({ provider: 'platform', model: 'gemini-3.5-flash-lite' }), true);
+check('…and a token-priced model is still priced by its tokens',
+  isFlatRateCall({ provider: 'platform', model: 'deepseek-v4-pro' }), false);
+check('the effective date exists, so history is reported and not rewritten', /^\d{4}-\d{2}-\d{2}$/.test(FLAT_RATE_SINCE), true);
+check('the ledger check uses the same rule, not a copy of it',
+  /isFlatRateCall\(\{ provider: row\.provider, model: row\.model_id \}\)/.test(read('scripts/verify-billing-ledger.mjs')), true);
 // The product's curated intent is customer-facing: it must not still promise free AI.
 const reality = read('scripts/reality.mjs');
 check('the intent line no longer promises a free path', /genuinely free/i.test(reality), false);

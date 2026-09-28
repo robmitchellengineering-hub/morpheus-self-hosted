@@ -16,7 +16,7 @@ import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
 import { getPlatformSetting } from './lib/platformSettings.js';
 import { salvageJson } from './lib/salvageJson.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
-import { shouldReserveCredits, isOwnKeyProvider, OWN_KEY_CALL_CREDITS } from './lib/creditPolicy.js';
+import { shouldReserveCredits, isFlatRateCall, FLAT_CALL_CREDITS } from './lib/creditPolicy.js';
 import { shouldUseFallback } from './lib/deepseekBalance.js';
 import { recordCallDuration } from './lib/timingStats.js';
 import { jsonrepair } from 'jsonrepair';
@@ -144,11 +144,12 @@ async function recordUsageEvent({ userId, role, provider, model, usage, isExempt
     const costUsd = computeCostUsd(inputTokens, outputTokens, rate);
 
     let creditsCharged = 0;
-    if (!isExempt && isOwnKeyProvider(provider)) {
-      // A flat own-key charge: the reservation already took exactly this, so there is nothing to
-      // reconcile. Skipping the token-based true-up is the whole point — it would re-price a call
-      // whose inference we did not pay for.
-      creditsCharged = reservedCredits || OWN_KEY_CALL_CREDITS;
+    if (!isExempt && isFlatRateCall({ provider, model })) {
+      // A flat charge: the reservation already took exactly this, so there is nothing to reconcile.
+      // Skipping the token-based true-up is the whole point — it would re-price a call whose
+      // inference we did not pay for (own key) or deliberately do not price per token (a model on
+      // FLAT_RATE_MODELS). See creditPolicy.js for both cases.
+      creditsCharged = reservedCredits || FLAT_CALL_CREDITS;
     } else if (!isExempt) {
       try {
         // costUsd (above) is the REAL underlying cost from the model that
@@ -455,16 +456,18 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   let reservedCredits = 0;
   if (userId) {
     const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, billing_exempt: true } }).catch(() => null);
-    // The rule — and the open question about whether a call on the user's OWN key
-    // should spend credits — lives in lib/billing.js's shouldReserveCredits. Note
-    // what it is NOT shown: the provider resolved above. See that function.
+    // The rule lives in lib/creditPolicy.js's shouldReserveCredits, and the RATE in
+    // isFlatRateCall()/FLAT_CALL_CREDITS beside it. Note what the reservation rule is NOT shown:
+    // the provider resolved above — that is deliberate, and it is why the flat rate is applied
+    // here, after the exemption is decided, rather than inside that rule.
     isExempt = !shouldReserveCredits(billingUser);
     if (!isExempt) {
-      if (isOwnKeyProvider(provider)) {
-        // The operator's own key paid for the inference, so there are no tokens for us to price.
-        // The charge is FLAT (see creditPolicy.js for the decision and the arithmetic): the
-        // reservation IS the charge, and recordUsageEvent does not true it up afterwards.
-        reservedCredits = OWN_KEY_CALL_CREDITS;
+      if (isFlatRateCall({ provider, model })) {
+        // The inference is not ours to price — either the operator's own key paid for it, or the
+        // model is on FLAT_RATE_MODELS. The charge is FLAT (see creditPolicy.js for the decision and
+        // the arithmetic): the reservation IS the charge, and recordUsageEvent does not true it up
+        // afterwards.
+        reservedCredits = FLAT_CALL_CREDITS;
         await reserveCredits(userId, reservedCredits);
       } else {
         reservedCredits = await estimatePreCallCredits(prompt, role, model, maxTokens);

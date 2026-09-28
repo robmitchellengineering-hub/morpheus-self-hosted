@@ -19,7 +19,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkChargeRow, classifyBalance, impliedBalance, round4, SIGNUP_CREDITS } from '../server/src/lib/billingLedger.js';
-import { isOwnKeyProvider } from '../server/src/lib/creditPolicy.js';
+import { isFlatRateCall, isOwnKeyProvider, FLAT_RATE_SINCE } from '../server/src/lib/creditPolicy.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = join(REPO, 'server', '.env.prodsql');
@@ -77,12 +77,21 @@ try {
     return rateCache.get(model);
   };
 
-  let chargedRows = 0, mismatched = 0, ownKeyRows = 0;
+  let chargedRows = 0, mismatched = 0, flatRows = 0, historicalFlatRows = 0;
   for (const row of usage) {
     if (!(row.credits_charged > 0)) continue;
     chargedRows++;
-    const ownKey = isOwnKeyProvider(row.provider);
-    if (ownKey) ownKeyRows++;
+    const flat = isFlatRateCall({ provider: row.provider, model: row.model_id });
+    if (flat) flatRows++;
+    // A flat-rated MODEL charged before the rule existed was charged under the old token-priced
+    // rule. That is history, not a defect: money already taken from a user is not rewritten by a
+    // later price change. REPORTED, never failed — the same call the 2026-09-01 admin-role row gets
+    // below, and for the same reason (a rule that did not exist yet cannot have been violated).
+    const isHistorical = flat && !isOwnKeyProvider(row.provider) && new Date(row.created_date) < new Date(FLAT_RATE_SINCE);
+    if (isHistorical) {
+      historicalFlatRows++;
+      continue;
+    }
     const rate = await rateFor(row.model_id);
     const verdict = checkChargeRow({
       creditsCharged: row.credits_charged,
@@ -91,7 +100,7 @@ try {
       inputPerM: rate.inputPerM,
       outputPerM: rate.outputPerM,
       markup: rate.markup,
-      ownKey,
+      flat,
     });
     if (!verdict.ok) {
       mismatched++;
@@ -101,7 +110,10 @@ try {
     }
   }
   console.log(`\n1. charges match the pricing policy`);
-  console.log(`   charged rows ${chargedRows} (own-key ${ownKeyRows}) · mismatched ${mismatched}`);
+  console.log(`   charged rows ${chargedRows} (flat ${flatRows}) · mismatched ${mismatched}`);
+  if (historicalFlatRows) {
+    console.log(`   ${historicalFlatRows} row(s) billed before the flat-model rule took effect (${FLAT_RATE_SINCE}) — reported, not failed`);
+  }
   if (mismatched) failures++;
 
   // ── 2. Every model we charged from has an explicit price ───────────────────
