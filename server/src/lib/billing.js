@@ -47,7 +47,7 @@ function isDeepSeekModel(modelId) {
 // row, so there's still exactly one place to correct it) for any DeepSeek
 // model, or the served model's own real rate for everything else
 // (unchanged prior behavior -- this only touches DeepSeek billing).
-async function resolveBillingRate(model) {
+export async function resolveBillingRate(model) {
   if (isDeepSeekModel(model)) return getModelRate('deepseek-v4-pro');
   return getModelRate(model);
 }
@@ -55,7 +55,7 @@ async function resolveBillingRate(model) {
 // Markup RETAIL billing should use -- DeepSeek Pro's own markup setting for
 // any DeepSeek model (so Flash- and Pro-served calls always share one
 // billing policy), or the served model's own markup for everything else.
-async function resolveBillingMarkup(model) {
+export async function resolveBillingMarkup(model) {
   return getModelMarkup(isDeepSeekModel(model) ? 'deepseek-v4-pro' : model);
 }
 
@@ -145,7 +145,7 @@ export class InsufficientCreditsError extends Error {
 // Underlying-cost -> retail-credits conversion, applying the model's markup
 // (admin-editable via ModelCatalogEntry, defaults to 2.0x) then the flat
 // credit rate.
-function usdToCredits(costUsd, markup) {
+export function usdToCredits(costUsd, markup) {
   return (costUsd * (markup ?? 2.0)) / CREDIT_RATE_USD;
 }
 

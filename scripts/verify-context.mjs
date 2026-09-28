@@ -405,7 +405,7 @@ const hardListed = hardBlock ? [...hardBlock[1].matchAll(/'([\w.-]+\.mjs)'/g)].m
 const guardFiles = readdirSync(join(REPO, 'scripts')).filter((f) => /^verify-.*\.mjs$/.test(f)).sort()
 // verify.mjs runs this one on its own, not in the HARD loop, because it needs a
 // production credential and reports "not verified" (exit 2) rather than failing.
-const RUN_SEPARATELY = ['verify-schema-prod.mjs']
+const RUN_SEPARATELY = ['verify-schema-prod.mjs', 'verify-billing-ledger.mjs']
 check('the guard list parsed (parser sanity)', hardListed.length >= 8, true)
 check('every guard is run by the one gate',
   guardFiles.filter((f) => !hardListed.includes(f) && !RUN_SEPARATELY.includes(f)), [])
@@ -415,7 +415,7 @@ check('every entry in the gate is a real script',
 const ciRuns = new Set([...ci.matchAll(/node (scripts\/[\w.-]+\.mjs)/g)].map((m) => m[1].replace('scripts/', '')))
 // boot-smoke boots the real server, so it needs the server's own dependencies —
 // and server/package-lock.json is untracked (H4), so CI cannot install them.
-const CI_CANNOT = ['boot-smoke.mjs', 'verify-schema-prod.mjs']
+const CI_CANNOT = ['boot-smoke.mjs', 'verify-schema-prod.mjs', 'verify-billing-ledger.mjs']
 check('CI runs every hard gate', hardListed.filter((f) => !ciRuns.has(f) && !CI_CANNOT.includes(f)), [])
 
 // ═══ 9. The archive indexes list every file ════════════════════════════════

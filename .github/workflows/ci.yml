@@ -288,6 +288,12 @@ jobs:
       - name: AI cost claims match the meter
         run: node scripts/verify-ai-cost-claims.mjs
 
+      # The billing ledger's ARITHMETIC, on every pull request (its database half needs production
+      # credentials, so it runs in verify.mjs and never in CI). Real measured production figures are
+      # the fixtures, so this proves the formula agrees with the meter that actually ran.
+      - name: The billing ledger reconciles (arithmetic)
+        run: node scripts/verify-billing-ledger-math.mjs
+
       # A GitHub token that has expired and cannot be refreshed must be REPORTED, not handed to a
       # compile that will fail wearing GitHub's own 401 — the defect fixed for Google the same day.
       - name: A dead GitHub credential is reported, not tried
