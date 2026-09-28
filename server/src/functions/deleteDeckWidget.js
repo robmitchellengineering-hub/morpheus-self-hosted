@@ -187,27 +187,33 @@ async function deleteWidgetInBackground({ selfDevActor, project, requestingUser,
     await updateJob(job.id, { status: 'deploying', message: 'Merged — Northflank and Netlify are redeploying production now.' });
   }
 
-  // No reusable server-side Northflank deploy-status poller exists yet —
-  // same fixed-delay placeholder buildDeckWidget.js uses.
-  await sleep(75000);
-
-  await updateJob(job.id, { status: 'verifying', message: 'Deploy should be live — running the post-deploy check.' });
-  let smoke;
-  try {
-    smoke = await runSmokeCheckSelfDev(selfDevActor);
-  } catch (err) {
-    smoke = { ok: false, error: err.message };
-  }
-  if (!smoke.ok) {
-    return finish({
-      ok: false,
-      message: `Removed, but the post-deploy check found a problem: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}.`,
-    });
-  }
-
+  // ── DURABLE COMPLETION — above the wait, for the same reason buildDeckWidget.js does it ────────
+  // The merge above triggers the deploy, and that deploy replaces the process running this deletion.
+  // Anything below the wait usually never runs, with no exception to catch. The user's Deck already
+  // stopped showing the widget (its instance row is deleted before the build starts), so all that is
+  // left to do durably is log it and reach a terminal status.
   await logUsage(selfDevActor.id, 'deck_widget_delete', projectId, project.name, { widgetKey: key, requestingUserId: requestingUser.id });
+  const finished = await finish({
+    ok: true,
+    message: `Removed — "${key}" is off your Deck now, and its code finishes leaving production when the deploy lands (about two minutes).`,
+  });
 
-  return finish({ ok: true, message: `Deleted — "${key}" is gone from production now.` });
+  // ── BEST EFFORT from here down ─────────────────────────────────────────────
+  // Enriches the message when this process happens to survive the deploy. Never changes the status:
+  // a failed check here would read as "the removal failed" when the widget is already gone.
+  try {
+    await sleep(75000);
+    const smoke = await runSmokeCheckSelfDev(selfDevActor).catch((err) => ({ ok: false, error: err.message }));
+    await updateJob(job.id, {
+      message: smoke.ok
+        ? `Removed, and the post-deploy check passed — "${key}" is gone from production.`
+        : `Removed from your Deck. The post-deploy check found a problem with the deploy itself: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}.`,
+    });
+  } catch {
+    // Expected on most deletions: this process was replaced by the deploy it triggered.
+  }
+
+  return finished;
 }
 
 export async function runDeleteDeckWidget(requestingUser, widgetKey) {

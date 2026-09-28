@@ -16,6 +16,7 @@
 import { prisma } from './db.js';
 import { decodeConnections, encodeConnections } from './lib/connectionSecrets.js';
 import { deckProfileSelect, isMissingDeckProfileColumn, withoutDeckProfileFeeFields, deckProfileWriteResult } from './lib/deckProfileColumns.js';
+import { reconcileStaleWidgetBuilds } from './lib/deckWidgetBuildReconcile.js';
 
 // Map REST entity name (PascalCase, matches base44 entity name / Prisma model name)
 // to the Prisma delegate key (camelCase).
@@ -142,6 +143,13 @@ export async function listEntities(name, user, { sort, limit } = {}) {
   if (name === 'DeckBusinessProfile') {
     return readDeckProfile((select) => delegate(name).findMany({ ...query, select }));
   }
+  // Widget-build progress is the one entity whose row is written by a ~15-minute process that the
+  // DEPLOY IT TRIGGERS replaces, so it can be left non-terminal with nothing alive to finish it.
+  // Settings polls this list while a build's status is not done/failed, which means a dead row shows
+  // as a progress bar frozen forever — two 2026-09-17 builds did exactly that for eleven days. The
+  // read the poll already makes is the one place guaranteed to run after such a death, so a row that
+  // has stopped reporting is resolved here. Cheap: one indexed query, and only non-terminal rows.
+  if (name === 'DeckWidgetBuild') await reconcileStaleWidgetBuilds(user.id);
   const rows = await delegate(name).findMany(query);
   return name === 'UserSettings' && Array.isArray(rows) ? rows.map(withDecryptedConnections) : rows;
 }
