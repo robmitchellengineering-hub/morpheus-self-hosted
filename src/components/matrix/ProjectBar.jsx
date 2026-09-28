@@ -6,6 +6,7 @@ import BuildStamp from './BuildStamp';
 import HelpToggle from './HelpToggle';
 import HelpHint from './HelpHint';
 import SheetSelect from './SheetSelect';
+import { targetOptions } from '@/lib/compileTargets';
 
 const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
 
@@ -59,19 +60,7 @@ export default function ProjectBar({ project, onRename, onExport, onNew, onBack,
             onChange={(v) => onUpdateTarget && onUpdateTarget(v)}
             label="COMPILE TARGET"
             triggerClassName="text-xs px-2 py-1 min-h-[44px] md:min-h-0"
-            options={[
-              { value: 'source', label: 'source' },
-              { value: 'windows-exe', label: 'win .exe' },
-              { value: 'mac-app', label: 'mac .app' },
-              { value: 'linux-binary', label: 'linux bin' },
-              { value: 'android-apk', label: 'android apk' },
-              { value: 'ios-app', label: 'ios app' },
-              { value: 'python-package', label: 'py pkg' },
-              { value: 'web-app', label: 'web app' },
-              { value: 'rpi-distro', label: 'rpi distro' },
-              { value: 'linux-distro', label: 'linux distro' },
-              { value: 'arduino-firmware', label: 'arduino' },
-            ]}
+            options={targetOptions('bar')}
           />
           {project.compile_target && project.compile_target !== 'source' && (
             <HelpHint id="github-compile-prominent" title="Compile Binary" body={`Build a real downloadable ${project.compile_target} binary via GitHub Actions. Morpheus pushes your code to a repo, triggers the build, and publishes the artifact as a GitHub Release.`}>

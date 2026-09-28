@@ -277,6 +277,12 @@ jobs:
       - name: Lint coverage
         run: node scripts/verify-lint-coverage.mjs
 
+      # The "make a website" on-ramp: web-app leads every compile-target list and is worded as a
+      # website, the three dialogs render from ONE list instead of drifting, and the website button
+      # says WordPress and the plugin. Rob asked for both on 2026-09-28.
+      - name: The website on-ramp is honest and undrifted
+        run: node scripts/verify-onramp.mjs
+
       # An endpoint that fetched a caller-supplied URL and reported its status was an open SSRF
       # probe oracle, and it resolved another user's deployed URL from a bare projectId.
       - name: Deploy health is owner-scoped
