@@ -224,12 +224,20 @@ out.billing = [
   { step: '5b Guided Free Setup (own Gemini key)', verdict: /guided/.test(srcFile('src/pages/Settings.jsx')) ? 'BUILT' : 'NOT BUILT', evidence: 'Settings.jsx renders a numbered AI Studio walkthrough + key field, not just a link' },
   { step: '6  token-block purchase + transparency', verdict: has('server/src/functions/createTokenCheckout.js') && has('src/components/matrix/CreditBalance.jsx') ? 'BUILT' : 'NOT BUILT', evidence: 'createTokenCheckout, CreditBalance, InsufficientCreditsModal, TOKEN_BLOCKS with grossed-up prices' },
   { step: '6b provider balance safeguard', verdict: has('server/src/lib/deepseekBalance.js') ? 'BUILT (adapted)' : 'NOT BUILT', evidence: 'monitor + alert + failover built; auto top-up deliberately NOT built — DeepSeek has no top-up API and moving money stays human' },
-  { step: '7  billing verification pass', verdict: 'NOT BUILT', evidence: 'no end-to-end check that charges match recorded usage; scripts/verify-billing-clamp.mjs covers only the clamp invariant' },
+  // Derived, not written. This verdict was the literal string 'NOT BUILT' until 2026-09-28, with
+  // evidence claiming "no end-to-end check that charges match recorded usage" — and #419 had built
+  // exactly that. A hardcoded ABSENCE is the one claim that rots silently the moment the work lands,
+  // because nothing recomputes it: the file went on telling every session to build a shipped pass.
+  // scripts/verify-context.mjs now fails the build if any verdict in this file is a literal absence.
+  { step: '7  billing verification pass', verdict: has('scripts/verify-billing-ledger.mjs') && has('scripts/verify-billing-ledger-math.mjs') ? 'BUILT' : 'NOT BUILT', evidence: 'verify-billing-ledger.mjs reconciles credits_charged against the pricing policy and balances against purchases, on production data (exit 1 names the drift, exit 2 is never a pass); its import-free maths half — lib/billingLedger.js — runs in the CI no-install job' },
 ];
 
 // Pricing coverage — the revenue-integrity check. A production model missing
 // from the static table silently bills at DEFAULT_PRICING, which nobody chose
-// for it. gemini-3.5-flash-lite is in that state right now.
+// for it. This claim is what FOUND that: gemini-3.5-flash-lite was in exactly
+// that state (99 calls billed from the default, ~609 credits charged against a
+// $1.94 cost basis) and was given an explicit price plus a flat 1-credit rate on
+// 2026-09-28. It holds at 4/4 today; keep the claim, it is the tripwire.
 if (live?.modelsUsed) {
   const { MODEL_PRICING, DEFAULT_PRICING } = await import(join(SERVER, 'src/lib/costEstimate.js'));
   const unpriced = live.modelsUsed
