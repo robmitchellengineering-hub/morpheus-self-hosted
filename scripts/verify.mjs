@@ -79,6 +79,7 @@ const HARD = [
   'verify-prisma-models.mjs',
   'verify-verifier-coverage.mjs',
   'verify-ai-cost-claims.mjs',
+  'verify-github-reconnect.mjs',
   'verify-onramp.mjs',
   'boot-smoke.mjs',
 ];
