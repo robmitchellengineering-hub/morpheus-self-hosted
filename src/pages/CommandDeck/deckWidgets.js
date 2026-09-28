@@ -38,6 +38,7 @@ export const DECK_WIDGETS = [
   { key: 'backup', label: 'Backup & export', defaultEnabled: true },
   { key: 'a_simple_counter_widget_a_button_that_in', label: 'Counter', defaultEnabled: false },
   { key: 'build_me_a_widget_that_shows_a_random_in', label: 'Random quote', defaultEnabled: false },
+  { key: 'can_you_build_me_a_widget_that_displays_', label: 'Energy sparkline', defaultEnabled: false, createdBy: '4c06993a-8979-4612-bf55-3d3c767f8b48' },
 ];
 
 export const DECK_WIDGET_KEYS = DECK_WIDGETS.map((w) => w.key);
