@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import SheetSelect from '@/components/matrix/SheetSelect';
+import { targetOptions } from '@/lib/compileTargets';
 
 export default function NewProjectDialog({ open, onClose, onCreate }) {
   const [name, setName] = useState('');
@@ -39,19 +40,14 @@ export default function NewProjectDialog({ open, onClose, onCreate }) {
               onChange={setTarget}
               label="COMPILE TARGET"
               triggerClassName="w-full mt-1"
-              options={[
-                { value: 'source', label: 'Source code only' },
-                { value: 'windows-exe', label: 'Windows .exe (build locally)' },
-                { value: 'mac-app', label: 'macOS .app (build locally)' },
-                { value: 'linux-binary', label: 'Linux binary (build locally)' },
-                { value: 'android-apk', label: 'Android APK (build locally)' },
-                { value: 'ios-app', label: 'iOS app (build locally)' },
-                { value: 'python-package', label: 'Python package (build locally)' },
-                { value: 'web-app', label: 'Web app (build locally)' },
-                { value: 'rpi-distro', label: 'Raspberry Pi distro (build locally)' },
-                { value: 'arduino-firmware', label: 'Arduino firmware (build locally)' },
-              ]}
+              options={targetOptions('create')}
             />
+            {target === 'web-app' && (
+              <p className="mt-2 text-[11px] text-ink-max leading-relaxed">
+                A web app is also how you make a plain website. Morpheus builds it, then you can take it live
+                for free on hosting you own — no app store involved.
+              </p>
+            )}
           </div>
           <button onClick={handleCreate} disabled={!name.trim()} className="w-full py-2 border border-primary text-primary hover:bg-primary hover:text-black disabled:opacity-30 transition-colors font-bold text-sm tracking-wider">
             JACK IN

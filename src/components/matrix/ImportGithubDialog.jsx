@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Github, Loader2 } from 'lucide-react';
 import GithubGate from '@/components/matrix/GithubGate';
 import SheetSelect from '@/components/matrix/SheetSelect';
+import { targetOptions } from '@/lib/compileTargets';
 
 export default function ImportGithubDialog({ open, onClose, onImport }) {
   const [repoInput, setRepoInput] = useState('');
@@ -55,18 +56,7 @@ export default function ImportGithubDialog({ open, onClose, onImport }) {
                 onChange={setTarget}
                 label="COMPILE TARGET"
                 triggerClassName="w-full mt-1"
-                options={[
-                  { value: 'source', label: 'Source code only' },
-                  { value: 'windows-exe', label: 'Windows .exe' },
-                  { value: 'mac-app', label: 'macOS .app' },
-                  { value: 'linux-binary', label: 'Linux binary' },
-                  { value: 'android-apk', label: 'Android APK' },
-                  { value: 'ios-app', label: 'iOS app' },
-                  { value: 'python-package', label: 'Python package' },
-                  { value: 'web-app', label: 'Web app' },
-                  { value: 'rpi-distro', label: 'Raspberry Pi distro' },
-                  { value: 'arduino-firmware', label: 'Arduino firmware' },
-                ]}
+                options={targetOptions('import')}
               />
             </div>
             {error && <p className="text-xs text-red-400">// {error}</p>}

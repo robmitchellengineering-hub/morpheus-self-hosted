@@ -288,8 +288,8 @@ export default function Workspace() {
                 )}
                 {!search && (
                   <p className="text-[10px] text-ink-max leading-relaxed max-w-xs mx-auto">
-                    For a site you already have: connect it, and Morpheus runs the deploys, the shop, the content and the SEO
-                    from here. It opens a construct for it.
+                    For a WordPress site you already have. Install the free Morpheus plugin on it, connect it, and
+                    Morpheus runs the deploys, the shop, the content and the SEO from here. It opens a construct for it.
                   </p>
                 )}
               </div>

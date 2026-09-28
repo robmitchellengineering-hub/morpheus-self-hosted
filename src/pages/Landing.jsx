@@ -115,12 +115,27 @@ export default function Landing() {
               ▣ BUILD... ANYTHING.
             </button>
             <button onClick={startWebsite} className="px-8 py-3 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors font-display tracking-wider inline-flex items-center justify-center gap-2">
-              <Globe size={16} /> SET UP MY WEBSITE
+              <Globe size={16} /> SET UP MY WORDPRESS SITE
             </button>
             <button onClick={takeBluePill} className="px-8 py-3 border border-primary/30 text-primary/50 hover:text-primary/70 transition-colors font-display tracking-wider">
               GO BACK TO SLEEP
             </button>
           </div>
+        )}
+        {/* The website button reads as the generic "I want a website" path, and
+            it is not: it is the WordPress integration, for a site the operator
+            already runs. Rob, 2026-09-28: it "needs to stress its for wordpress
+            integration and to get the plugin". Said under the button rather than
+            only inside the flow, because the person who needs to know is the one
+            deciding whether to press it. The plugin itself is downloaded in the
+            first step of /start (SetupTab), so this does not restate those steps
+            — it sets the expectation before the click. */}
+        {showButtons && (
+          <p className="mt-3 text-[11px] text-ink-max font-mono max-w-md mx-auto leading-relaxed">
+            The website button is the WordPress path: for a site you already run. You install the free Morpheus
+            plugin on it first, then Morpheus takes over the deploys, the shop, the content and the SEO from here —
+            from your phone if you like.
+          </p>
         )}
         {/* Command Deck's own entry point — open to every signed-in account
             now; unauthenticated visitors are sent to /login on click, same
