@@ -223,6 +223,19 @@ export default async function handler({ user, body }) {
     );
   }
 
+  // It has been accepted; has it been PROCESSED? Reporting "live" on the upload response
+  // alone would claim something that has not happened — see settleDeploy. A failure here
+  // refuses the deploy and names it, and the record is left holding the previous successful
+  // deploy, so the URL the operator is shown stays one that actually works.
+  const settled = await settleDeploy({ token, siteId, deployId: deploy.id || null, initial: deploy });
+  if (settled.state === 'error') {
+    throw Object.assign(
+      new Error(`Netlify could not publish this build (deploy state: error).${settled.error ? ` ${String(settled.error).slice(0, 300)}` : ''} The site is unchanged — try again, or open app.netlify.com for the deploy log.`),
+      { status: 502, code: 'NETLIFY_DEPLOY_FAILED' },
+    );
+  }
+  const pending = settled.state !== 'ready';
+
   // ── Record it ──────────────────────────────────────────────────────────────
   // Mirrors deployBackend.js's `backend/.deploy.json`: a project file, not a new
   // column or table. This is what makes "live at <url>" and re-deploy-to-the-
@@ -238,6 +251,9 @@ export default async function handler({ user, body }) {
     artifact: artifact.path,
     artifact_saved_at: new Date(artifact.updated_date ?? artifact.created_date).toISOString(),
     status: 'deployed',
+    // What Netlify said when we stopped watching. 'ready' means it is serving; anything
+    // else is recorded rather than rounded up to success.
+    deploy_state: settled.state,
   };
 
   if (priorFile) {
@@ -263,6 +279,11 @@ export default async function handler({ user, body }) {
     siteId,
     siteName: deployInfo.site_name,
     deployId: deploy.id || null,
+    // True when Netlify had not finished when we stopped watching. The URL is real and the
+    // upload was accepted; the panel says "still finishing" rather than "live", because the
+    // difference matters to someone about to tap the link.
+    pending,
+    deployState: settled.state,
     artifact: artifact.path,
     firstDeploy,
     deployPath: FRONTEND_DEPLOY_PATH,
@@ -313,4 +334,53 @@ async function createSite(token, projectName) {
     new Error(`Netlify could not create the site (HTTP ${last.status}).${hint} ${String(last.detail).slice(0, 300)}`.trim()),
     { status: 502, code: 'NETLIFY_SITE_FAILED' },
   );
+}
+
+// How long to let Netlify finish processing an upload before saying so honestly
+// rather than claiming success. Bounded, and a timeout is not a failure.
+const DEPLOY_SETTLE_TIMEOUT_MS = 30_000;
+const DEPLOY_SETTLE_POLL_MS = 2_000;
+
+/**
+ * Wait, briefly, for an accepted upload to actually settle.
+ *
+ * WHY. `POST /sites/{id}/deploys` returns as soon as the archive is ACCEPTED, and its
+ * response carries the site URL — so reporting "live" on that response alone claims
+ * something that has not happened yet, and when processing then FAILS the claim is
+ * permanent and false. That is the "a failure reads as success" class this repo has
+ * fixed repeatedly, and it was sitting in the one chain nobody has ever run.
+ *
+ * Returns one of:
+ *   'ready'   — Netlify is serving it.
+ *   'error'   — processing failed; the caller refuses and says so.
+ *   'pending' — accepted, still processing when we stopped waiting. Honest, not
+ *               failed: the deploy may well be fine a second later.
+ *   'unknown' — the response carried no state we recognise. Deliberately NOT a
+ *               failure: an API shape change must not break a deploy that is fine.
+ */
+async function settleDeploy({ token, siteId, deployId, initial }) {
+  let state = typeof initial?.state === 'string' ? initial.state : '';
+  if (!deployId) return { state: state || 'unknown', error: null };
+  if (state === 'ready') return { state, error: null };
+
+  const deadline = Date.now() + DEPLOY_SETTLE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, DEPLOY_SETTLE_POLL_MS));
+    let res;
+    try {
+      res = await fetch(`${NETLIFY_API}/sites/${siteId}/deploys/${deployId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // A network hiccup while watching must not fail a deploy that was accepted.
+      return { state: state || 'pending', error: null };
+    }
+    if (!res.ok) return { state: state || 'pending', error: null };
+    const body = await res.json().catch(() => null);
+    if (!body?.state) return { state: state || 'unknown', error: null };
+    state = body.state;
+    if (state === 'ready') return { state, error: null };
+    if (state === 'error') return { state, error: body.error_message || null };
+  }
+  return { state: state || 'pending', error: null };
 }

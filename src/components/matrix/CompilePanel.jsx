@@ -497,6 +497,9 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       setLive({
         phase: 'live',
         url: data.url || null,
+        // Netlify accepted the upload; `pending` says it had not finished processing when
+        // the server stopped watching, so the wording below must not claim "live" yet.
+        pending: !!data.pending,
         error: data.url ? null : 'Netlify accepted the upload but returned no URL — open app.netlify.com to find the site.',
         code: null,
       });
@@ -785,7 +788,9 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                 <div className="border border-primary/30 bg-primary/5 p-3 space-y-2">
                   <div className="flex items-center gap-2 text-ink text-sm">
                     <Rocket size={14} className="text-primary" />
-                    {live.phase === 'live' ? 'YOUR SITE IS LIVE' : 'TAKE IT LIVE'}
+                    {live.phase === 'live'
+                      ? (live.pending ? 'PUBLISHED — NETLIFY IS FINISHING' : 'YOUR SITE IS LIVE')
+                      : 'TAKE IT LIVE'}
                   </div>
 
                   {live.phase === 'live' && live.url ? (
@@ -809,6 +814,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                           exist so a live site is never described as either newer or more complete than
                           it is: "live and behind your latest changes" and "live but the build is gone"
                           are different facts, and the button says RE-DEPLOY for both. */}
+                      {!liveBusy && live.pending && (
+                        <p className="text-[11px] text-ink-max">
+                          Netlify has your build and is still finishing. The address may take a few seconds to serve it.
+                        </p>
+                      )}
                       {!liveBusy && live.stale && (
                         <p className="text-[11px] text-ink-max">
                           This is the build you published. You have changed the construct since — RE-DEPLOY puts the newer build live.
