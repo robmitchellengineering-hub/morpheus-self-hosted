@@ -233,6 +233,35 @@ check('the panel keeps them', /setCompileWarnings\(Array\.isArray\(res\.warnings
 check('…clears them with the rest of the panel', /setCompileWarnings\(\[\]\)/.test(compilePanelSrc), true);
 check('…and renders them', /compileWarnings\.map\(\(w, i\)/.test(compilePanelSrc), true);
 
+
+// ═══ the fallback's shape warnings say what WILL be published ═══════════════
+// Observed on the first live run: the deployed construct held index.html AND public/index.html, so the
+// operator had two copies of the site and nothing to say which one the live URL served. Because only the
+// FALLBACK publishes the root, these warnings are gated on that path — a project with a build script
+// publishes its output directory and none of this applies.
+const noBuildPkg = { path: 'package.json', content: JSON.stringify({ scripts: { start: 'node server.js' } }) };
+const bothCopies = webApp.validate([noBuildPkg, { path: 'index.html', content: '' }, { path: 'public/index.html', content: '' }]);
+const twoCopies = bothCopies.warnings.find((w) => /two copies of the site/.test(w)) || '';
+check('two copies of the site is called out', Boolean(twoCopies), true);
+check('…naming the directory the operator might edit', /public\/index\.html/.test(twoCopies), true);
+check('…and that the ROOT is what gets published', /The ROOT is what gets published/.test(twoCopies), true);
+check('…and that edits there will not appear', /will NOT appear on the live site/.test(twoCopies), true);
+
+const nestedOnly = webApp.validate([noBuildPkg, { path: 'public/index.html', content: '' }]);
+const noHome = nestedOnly.warnings.find((w) => /NO homepage/.test(w)) || '';
+check('a site with no root index.html is warned about having no homepage', Boolean(noHome), true);
+check('…naming where the pages actually are', /pages are in public\//.test(noHome), true);
+
+const rootOnly = webApp.validate([noBuildPkg, { path: 'index.html', content: '' }]);
+check('a plain root site gets neither shape warning',
+  rootOnly.warnings.some((w) => /two copies|NO homepage/.test(w)), false);
+const withBuild = webApp.validate([
+  { path: 'package.json', content: JSON.stringify({ scripts: { build: 'vite build' }, dependencies: { react: '18' } }) },
+  { path: 'index.html', content: '' }, { path: 'public/index.html', content: '' },
+]);
+check('…and neither does a project WITH a build script (the gate is the fallback path)',
+  withBuild.warnings.some((w) => /two copies|NO homepage/.test(w)), false);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
