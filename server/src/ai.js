@@ -16,6 +16,7 @@ import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
 import { getPlatformSetting } from './lib/platformSettings.js';
 import { salvageJson } from './lib/salvageJson.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
+import { shouldReserveCredits } from './lib/creditPolicy.js';
 import { shouldUseFallback } from './lib/deepseekBalance.js';
 import { recordCallDuration } from './lib/timingStats.js';
 import { jsonrepair } from 'jsonrepair';
@@ -449,7 +450,10 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   let reservedCredits = 0;
   if (userId) {
     const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, billing_exempt: true } }).catch(() => null);
-    isExempt = !billingUser || String(billingUser.role || '').trim().toLowerCase() === 'admin' || billingUser.billing_exempt === true;
+    // The rule — and the open question about whether a call on the user's OWN key
+    // should spend credits — lives in lib/billing.js's shouldReserveCredits. Note
+    // what it is NOT shown: the provider resolved above. See that function.
+    isExempt = !shouldReserveCredits(billingUser);
     if (!isExempt) {
       reservedCredits = await estimatePreCallCredits(prompt, role, model, maxTokens);
       await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace

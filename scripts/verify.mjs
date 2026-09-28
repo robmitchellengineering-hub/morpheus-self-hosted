@@ -78,6 +78,7 @@ const HARD = [
   'verify-server-imports.mjs',
   'verify-prisma-models.mjs',
   'verify-verifier-coverage.mjs',
+  'verify-ai-cost-claims.mjs',
   'verify-onramp.mjs',
   'boot-smoke.mjs',
 ];
