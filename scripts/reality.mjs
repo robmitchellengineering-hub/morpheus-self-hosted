@@ -48,7 +48,11 @@ out.ethos = {
     'Model-agnostic — never locked to one AI provider.',
     'Native output — real Android/iOS/desktop/Linux builds, not a browser wrapper wearing an app icon.',
     'An honest meter — cost shown before the action runs, not discovered after.',
-    'A genuinely free path — the user\'s own provider key costs the platform nothing, and is never a trial.',
+    // Changed 2026-09-28 (Rob): own-key calls are charged 1 credit, so this is no longer FREE —
+    // a complete free path cannot be covered at current prices. It stays genuinely cheap and
+    // genuinely uncapped: the operator's own key, ~16x cheaper than a platform-key call, and never
+    // a trial. The line must move with the meter — see lib/creditPolicy.js and verify-ai-cost-claims.
+    'A genuinely cheap path — the user\'s own provider key, billed at 1 credit a call instead of ~16, never a trial.',
     'Command Deck exists so life-context is synthesised across domains, not siloed in single-purpose apps.',
   ],
 };

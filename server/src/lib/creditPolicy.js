@@ -38,3 +38,27 @@ export function shouldReserveCredits(billingUser) {
   if (billingUser.billing_exempt === true) return false;
   return true;
 }
+
+/**
+ * What an own-key call costs the operator, in credits. DECIDED — ROB, 2026-09-28.
+ *
+ * The inference is theirs (their key, their provider bill); what remains is our plumbing — a few
+ * seconds of container CPU, ~440KB of egress and one database row, measured at roughly
+ * $0.0002–0.001 a call. One credit ($0.005) covers that 5–25× over while still being ~16× cheaper
+ * than a platform-key call (~16.3 credits), and at the volume measured in production it covers the
+ * whole hosting floor: 4,637 calls/month recovers ~$23 against a ~$10 monthly floor.
+ *
+ * It is deliberately FLAT and not token-priced: a per-token own-key rate would be more proportional
+ * and less explicable, for a difference of fractions of a cent per call.
+ *
+ * This is the "extremely cheep" Rob asked for, and it is NOT free — a complete free path cannot be
+ * covered at current prices, which is why the product's own intent line was changed from "a genuinely
+ * free path" to "a genuinely cheap path" in the same change. See scripts/verify-ai-cost-claims.mjs,
+ * which fails the build if any customer-facing copy claims otherwise.
+ */
+export const OWN_KEY_CALL_CREDITS = 1;
+
+/** Is this AI call running on the operator's own provider key (ai.js tier 1) rather than ours? */
+export function isOwnKeyProvider(provider) {
+  return String(provider || '') === 'custom';
+}
