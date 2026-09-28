@@ -19,6 +19,7 @@
 // next row cannot reintroduce it").
 import { readFileSync } from 'node:fs';
 import { COMPILE_TARGETS, targetOptions } from '../src/lib/compileTargets.js';
+import { checklistRows, isOptionalRow, remainingCount } from '../src/lib/onrampChecklist.js';
 
 let failures = 0;
 let checks = 0;
@@ -104,6 +105,35 @@ check('the build path deep-links the one manual action',
 // The ethos, stated where the user decides: their account, their token, no custody.
 check('the build path says the hosting is the user\'s own', /your own Netlify account/i.test(begin), true);
 check('the build path says the credential is encrypted at rest', /encrypted at rest/i.test(begin), true);
+
+console.log('\n7. the construct checklist follows the path the construct is actually on');
+// Behavioural, not a regex: the rule itself is pure (lib/onrampChecklist.js) and this is the
+// function the component calls. Before 2026-09-28 both paths got the WordPress rows, so someone who
+// had just pressed "build a website" was told to install a WordPress plugin.
+check('a WordPress construct gets the WordPress rows',
+  checklistRows({ loadingSite: false, siteConnected: true }).join(','), 'github,site,copy,change');
+check('a build construct gets the build rows, not the WordPress ones',
+  checklistRows({ loadingSite: false, siteConnected: false }).join(','), 'github,hosting,wordpress,change');
+// While the site check is in flight we do not know the path, and guessing shows a WordPress operator
+// the build rows for a moment — the same confusion, just faster.
+check('no path is assumed while the site check is in flight',
+  checklistRows({ loadingSite: true, siteConnected: false }).join(','), 'github,change');
+check('the WordPress row is the optional one', isOptionalRow('wordpress'), true);
+check('nothing else is optional',
+  ['github', 'hosting', 'site', 'copy', 'change'].filter(isOptionalRow).join(','), '');
+// The count is what retires the checklist, so an optional row must not hold it open...
+check('an optional row does not count towards "to go"',
+  remainingCount(['github', 'hosting', 'wordpress', 'change'], { github: true, hosting: true }), 1);
+// ...and a required one must.
+check('a required row does count',
+  remainingCount(['github', 'hosting', 'wordpress', 'change'], { github: true }), 2);
+
+const checklist = read('src/components/matrix/FirstRunChecklist.jsx');
+check('the checklist uses the shared decision rather than its own',
+  checklist.includes('checklistRows('), true);
+check('the checklist reads the real hosting state', /netlify\?\.token/.test(checklist), true);
+check('the checklist keeps the WordPress path findable from the build path',
+  checklist.includes('wordpress:') && /other path/.test(checklist), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
