@@ -20,6 +20,7 @@ import AuthCallback from '@/pages/AuthCallback';
 // Code-split the heavier top-level routes so the mobile WebView boots fast.
 const Landing = lazy(() => import('@/pages/Landing'));
 const Start = lazy(() => import('@/pages/Start'));
+const Begin = lazy(() => import('@/pages/Begin'));
 const Workspace = lazy(() => import('@/pages/Workspace'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Market = lazy(() => import('@/pages/Market'));
@@ -158,6 +159,11 @@ function AnimatedRoutes() {
               on THIS page after signing in, not on the workspace list. Start
               checks auth itself and sends them to /login?returnTo=/start. */}
           <Route path="/start" element={<Start />} />
+          {/* The second on-ramp, for a website or web app Morpheus BUILDS,
+              rather than a WordPress site it operates. Same reason as /start to
+              sit outside the protected group: the button that leads here must
+              come back to THIS page after signing in (returnTo=/begin). */}
+          <Route path="/begin" element={<Begin />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             <Route path="/workspace" element={<Workspace />} />
             <Route path="/workspace/:projectId" element={<Workspace />} />

@@ -78,6 +78,33 @@ const workspace = read('src/pages/Workspace.jsx');
 check('the empty-workspace button says WordPress', /SET UP MY WORDPRESS SITE/.test(workspace), true);
 check('the empty-workspace copy says the plugin has to be installed', /plugin/i.test(workspace), true);
 
+console.log('\n6. the second on-ramp exists, beside WordPress, for a site that does not exist yet');
+// Rob, 2026-09-28: "we need another path there for people that just want to build a website or hosted
+// full stack web app". The two paths must stay distinguishable: one operates a site you already run,
+// the other builds one. A single button that does both is what he asked to stop.
+check('the main page offers a build path', /BUILD A WEBSITE OR APP/.test(landing), true);
+check('the build button returns to /begin after signing in', /returnTo=%2Fbegin/.test(landing), true);
+check('the WordPress path still returns to /start', /returnTo=%2Fstart/.test(landing), true);
+
+const app = read('src/App.jsx');
+check('/begin is routed', /<Route path="\/begin" element=\{<Begin \/>\}/.test(app), true);
+check('/begin is code-split like /start', /const Begin = lazy\(\(\) => import\('@\/pages\/Begin'\)\)/.test(app), true);
+
+const begin = read('src/pages/Begin.jsx');
+// It must reuse the construct the WordPress path opens rather than inventing a second kind of
+// project — two would race, and ensureWebsiteConstruct exists precisely to decide that once.
+check('the build path reuses the idempotent construct', begin.includes("invoke('ensureWebsiteConstruct'"), true);
+check('the build path reuses the connections editor', begin.includes('ConnectionsDialog'), true);
+check('the build path reads the real GitHub state', begin.includes('useGithubConnection'), true);
+check('the build path reads the real Netlify state', /connections\?\.netlify\?\.token/.test(begin), true);
+// The one thing nobody can automate is minting the token, so the page must send them to the
+// provider's own page for that single action rather than implying it can be done for them.
+check('the build path deep-links the one manual action',
+  begin.includes('https://app.netlify.com/user/applications#personal-access-tokens'), true);
+// The ethos, stated where the user decides: their account, their token, no custody.
+check('the build path says the hosting is the user\'s own', /your own Netlify account/i.test(begin), true);
+check('the build path says the credential is encrypted at rest', /encrypted at rest/i.test(begin), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');

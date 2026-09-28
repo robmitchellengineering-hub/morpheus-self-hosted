@@ -96,6 +96,17 @@ export default function Landing() {
     navigate(authed ? '/start' : '/login?returnTo=%2Fstart');
   };
 
+  // The second on-ramp, and the contrast is the whole point: the WordPress
+  // button above is for a site someone already runs, and this one is for a
+  // website or web app that does not exist yet. Rob asked for it directly
+  // (2026-09-28): "we need another path there for people that just want to
+  // build a website or hosted full stack web app". Same auth-on-click pattern
+  // and the same returnTo, so the sign-in round trip comes back to /begin.
+  const startBuildWebsite = async () => {
+    const authed = await base44.auth.isAuthenticated();
+    navigate(authed ? '/begin' : '/login?returnTo=%2Fbegin');
+  };
+
   const enterDeck = async () => {
     const authed = await base44.auth.isAuthenticated();
     navigate(authed ? '/deck' : '/login');
@@ -113,6 +124,9 @@ export default function Landing() {
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
             <button onClick={enter} className="px-8 py-3 border border-primary text-primary hover:bg-primary hover:text-black transition-colors font-display tracking-wider neon-glow enter-pulse">
               ▣ BUILD... ANYTHING.
+            </button>
+            <button onClick={startBuildWebsite} className="px-8 py-3 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors font-display tracking-wider inline-flex items-center justify-center gap-2">
+              <Rocket size={16} /> BUILD A WEBSITE OR APP
             </button>
             <button onClick={startWebsite} className="px-8 py-3 border border-primary/60 text-primary/85 hover:bg-primary hover:text-black transition-colors font-display tracking-wider inline-flex items-center justify-center gap-2">
               <Globe size={16} /> SET UP MY WORDPRESS SITE
@@ -134,7 +148,8 @@ export default function Landing() {
           <p className="mt-3 text-[11px] text-ink-max font-mono max-w-md mx-auto leading-relaxed">
             The website button is the WordPress path: for a site you already run. You install the free Morpheus
             plugin on it first, then Morpheus takes over the deploys, the shop, the content and the SEO from here —
-            from your phone if you like.
+            from your phone if you like. If the site does not exist yet, start with BUILD A WEBSITE OR APP: Morpheus
+            builds it and takes it live on your own free hosting.
           </p>
         )}
         {/* Command Deck's own entry point — open to every signed-in account
