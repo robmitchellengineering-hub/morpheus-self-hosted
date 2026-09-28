@@ -16,7 +16,7 @@ import { getModelRate, computeCostUsd } from './lib/modelPricing.js';
 import { getPlatformSetting } from './lib/platformSettings.js';
 import { salvageJson } from './lib/salvageJson.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
-import { shouldReserveCredits } from './lib/creditPolicy.js';
+import { shouldReserveCredits, isOwnKeyProvider, OWN_KEY_CALL_CREDITS } from './lib/creditPolicy.js';
 import { shouldUseFallback } from './lib/deepseekBalance.js';
 import { recordCallDuration } from './lib/timingStats.js';
 import { jsonrepair } from 'jsonrepair';
@@ -144,7 +144,12 @@ async function recordUsageEvent({ userId, role, provider, model, usage, isExempt
     const costUsd = computeCostUsd(inputTokens, outputTokens, rate);
 
     let creditsCharged = 0;
-    if (!isExempt) {
+    if (!isExempt && isOwnKeyProvider(provider)) {
+      // A flat own-key charge: the reservation already took exactly this, so there is nothing to
+      // reconcile. Skipping the token-based true-up is the whole point — it would re-price a call
+      // whose inference we did not pay for.
+      creditsCharged = reservedCredits || OWN_KEY_CALL_CREDITS;
+    } else if (!isExempt) {
       try {
         // costUsd (above) is the REAL underlying cost from the model that
         // actually served this call -- kept as-is on the UsageEvent row
@@ -455,8 +460,16 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     // what it is NOT shown: the provider resolved above. See that function.
     isExempt = !shouldReserveCredits(billingUser);
     if (!isExempt) {
-      reservedCredits = await estimatePreCallCredits(prompt, role, model, maxTokens);
-      await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace
+      if (isOwnKeyProvider(provider)) {
+        // The operator's own key paid for the inference, so there are no tokens for us to price.
+        // The charge is FLAT (see creditPolicy.js for the decision and the arithmetic): the
+        // reservation IS the charge, and recordUsageEvent does not true it up afterwards.
+        reservedCredits = OWN_KEY_CALL_CREDITS;
+        await reserveCredits(userId, reservedCredits);
+      } else {
+        reservedCredits = await estimatePreCallCredits(prompt, role, model, maxTokens);
+        await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace
+      }
     }
   }
 
