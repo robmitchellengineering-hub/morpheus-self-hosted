@@ -88,6 +88,25 @@ export const webApp = {
           + '*.key) becomes publicly readable at the live URL. Add a "build" script that outputs to dist/ '
           + 'if that is not what you want.',
         );
+
+        // …and because the ROOT is what gets published, this project's own SHAPE decides whether that is
+        // fine. Both cases below were observed on the first real live run (2026-09-28): the deployed
+        // construct held index.html AND public/index.html, so the operator had two copies of the site and
+        // nothing to say which one the live URL served. Checked only on the fallback path — a project with
+        // a build script publishes its output directory and none of this applies.
+        const nested = ['public', 'site', 'www', 'htdocs'].find((d) => hasFile(files, `${d}/index.html`));
+        if (!hasFile(files, 'index.html') && nested) {
+          warnings.push(
+            `There is no index.html at the project root, so the live site would have NO homepage at /. The `
+            + `pages are in ${nested}/ — give the project a "build" script that outputs to dist/, or move the `
+            + 'site\'s files to the project root.',
+          );
+        } else if (nested) {
+          warnings.push(
+            `This project has two copies of the site: index.html at the root and ${nested}/index.html. The ROOT `
+            + `is what gets published, so changes made in ${nested}/ will NOT appear on the live site.`,
+          );
+        }
       }
     } else {
       warnings.push('package.json is not valid JSON — build may fail.');
