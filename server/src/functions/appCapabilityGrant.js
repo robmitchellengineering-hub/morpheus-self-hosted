@@ -16,7 +16,7 @@
 // `capabilities` is filtered against lib/appCapability.js's registry, so a caller
 // cannot mint a grant carrying a capability the endpoint would refuse.
 import { prisma } from '../db.js';
-import { APP_CAPABILITIES } from '../lib/appCapability.js';
+import { APP_CAPABILITIES, grantWarning } from '../lib/appCapability.js';
 import {
   createCapabilityGrant, listCapabilityGrants, revokeCapabilityGrant, isMissingGrantTable, GRANTS_TABLE_MISSING_MESSAGE,
 } from '../lib/appCapabilityGrants.js';
@@ -43,19 +43,17 @@ export default async function handler({ user, body }) {
       throw Object.assign(new Error('action must be one of create, list, revoke.'), { status: 400 });
     }
 
+    const granted = Array.isArray(capabilities) && capabilities.length ? capabilities : ['drive_upload'];
     const created = await createCapabilityGrant(projectId, user.id, {
       label: label || `${project.name} — app capability`,
-      capabilities: Array.isArray(capabilities) && capabilities.length ? capabilities : ['drive_upload'],
+      capabilities: granted,
     });
     return {
       ...created,
       // Shown once, on screen, at the moment it exists. The wording is the same
       // fact the README and the UI carry, so an operator reading either learns the
       // same thing about where this value may live.
-      warning:
-        'Copy this token into the app BACKEND now — it is shown once and cannot be recovered. '
-        + 'Never put it in a web page, a URL or client-side code: anyone who opens the app could read it '
-        + 'and write to your Google Drive. An app with no backend cannot use this capability safely.',
+      warning: grantWarning(granted),
       endpoint: '/api/app-capability',
       appId: created.appId,
     };

@@ -32,6 +32,7 @@ import {
   decideAppProviderMode, resolveCapabilityGrant, appIdMatches, isKnownCapability,
   scopesForCapabilities, buildProviderReport, providerReadmeSection,
   upsertProviderReadmeSection, headlineForMode, connectedModeMessage, ownClientSetupSteps,
+  grantableCapabilities, grantWarning,
 } from '../server/src/lib/appCapability.js';
 import { hashToken, sameToken } from '../server/src/lib/tokenHash.js';
 
@@ -103,10 +104,12 @@ console.log('1. the token is stored as a hash, and only ever shown once');
   for (const [label, file] of [['widgetToken', 'server/src/lib/widgetToken.js'], ['deviceToken', 'server/src/lib/deviceToken.js'], ['operatorToken', 'server/src/lib/operatorToken.js']]) {
     check(`${label} uses the shared hasher rather than its own`, has(code(read(file)), "createHash('sha256')"), false);
   }
-  // Asserted against the raw source, not the comment-stripped text: the sentence is
-  // a string literal, so it is the source that carries it verbatim.
-  check('the one-time warning names the backend, not the page',
-    has(fnSrc, 'into the app BACKEND now') && has(fnSrc, 'Never put it in a web page'), true);
+  // The sentence moved into lib/appCapability.js's grantWarning() (2026-09-28) so it can be BUILT from
+  // what was actually granted — the fixed version told an AI-only grant it could write to Drive. Its
+  // CONTENT is asserted behaviourally where that builder is tested; what matters here is that the
+  // handler cannot drift back to a sentence written in place.
+  check('the one-time warning is built from the grant, not written in place',
+    has(fnSrc, 'grantWarning(granted)'), true);
   check('the created token is never logged', /console\.(log|warn|error)\([^)]*token/i.test(store), false);
 }
 
@@ -334,6 +337,78 @@ console.log('\n6. the build and the compile UI both state the mode');
 }
 
 // ── summary ─────────────────────────────────────────────────────────────────
+
+// ── The AI capability: a capability with NO provider connection ───────────────
+// It is shaped differently from drive_upload on purpose (nothing to connect, nothing to register) and
+// it SPENDS the operator's Morpheus credits, so the things worth pinning are the shape, the metering and
+// the disclosure — not the plumbing.
+console.log('\nThe AI capability is a capability, not a provider connection');
+const ai = APP_CAPABILITIES.ai_generate || {};
+check('it exists and is grantable', isKnownCapability('ai_generate'), true);
+check('it declares NO provider connection to fetch',
+  ai.connectionSource === undefined && ai.provider === 'morpheus', true);
+check('it asks for no OAuth scopes', scopesForCapabilities(['ai_generate']).length, 0);
+// The label is read at CONSENT, which is the only moment the cost can be acted on. If it stops naming
+// credits, the operator is approving a spend without being told — and there is no free path to fall back on.
+check('its label names the cost at the moment of consent',
+  /spends your Morpheus credits/i.test(ai.label || ''), true);
+check('…and never claims the call is free', /free|no cost|nothing/i.test(ai.label || ''), false);
+
+const grantable = grantableCapabilities();
+check('the consent list carries both capabilities', grantable.map((c) => c.name).sort().join(','), 'ai_generate,drive_upload');
+check('…with labels that come from the registry, not the client',
+  grantable.every((c) => typeof c.label === 'string' && c.label.length > 10), true);
+check('…and the AI one is marked as the account kind, not a provider',
+  grantable.find((c) => c.name === 'ai_generate')?.kind, 'account');
+
+const route = read('server/src/routes/appCapability.routes.js');
+// Ordering is the whole point: the Drive lookup would throw before an AI request ever reached its handler.
+check('the AI branch runs BEFORE the Drive token lookup',
+  route.indexOf("if (req.body.capability === 'ai_generate')") < route.indexOf('await driveTokenFor(res, owner)'), true);
+check('the AI action is in ACTIONS, so it is not rejected as unknown',
+  /const ACTIONS = \['status', 'upload', 'generate'\]/.test(route), true);
+// Money: it must spend the GRANT OWNER's credits through the one metered path, never a platform key.
+check('it spends the grant OWNER\'s credits through the shared meter',
+  /invokeAI\(\{[\s\S]{0,120}userId: owner\.id/.test(route), true);
+check('…naming a role rather than inheriting the default', /role: 'draft'/.test(route), true);
+check('…with a bounded answer', /AI_MAX_TOKENS = \d+/.test(route), true);
+check('the prompt is bounded before it reaches a model', /AI_PROMPT_MAX_CHARS = \d+/.test(route), true);
+// Rob's third honesty case: no credits must be SAYABLE, not a provider error.
+check('running out of credits has its own code and sentence',
+  /INSUFFICIENT_CREDITS/.test(route) && /needs Morpheus credits/i.test(route), true);
+
+const panel = read('src/components/matrix/CompilePanel.jsx');
+check('the panel renders the SERVER\'s capability labels',
+  /provider\.grantable\.map/.test(panel), true);
+check('…rather than its own copy of them',
+  /Upload files to your Google Drive/.test(panel), false);
+check('the operator\'s choice is what gets granted',
+  /capabilities: grantCaps/.test(panel), true);
+check('nothing is granted when nothing is ticked', /grantCaps\.length === 0/.test(panel), true);
+
+
+// ── the mint warning describes what was ACTUALLY granted ─────────────────────
+// It said "anyone who opens the app could read it and write to your Google Drive" for every grant. Handed
+// to an AI-only grant that is a false statement about access AND about money, and it went unnoticed only
+// because a second capability did not exist when it was written.
+console.log('\nThe capability warning matches the capability');
+const driveOnly = grantWarning(['drive_upload']);
+const aiOnly = grantWarning(['ai_generate']);
+const both = grantWarning(['drive_upload', 'ai_generate']);
+check('a Drive grant names Drive', /write to your Google Drive/.test(driveOnly), true);
+check('…and does not mention credits', /credits/i.test(driveOnly), false);
+check('an AI grant names the credits it spends', /spend your Morpheus credits/.test(aiOnly), true);
+check('…and does NOT claim Drive access it was never given', /Google Drive/.test(aiOnly), false);
+check('a grant carrying both says both', /Google Drive/.test(both) && /spend your Morpheus credits/.test(both), true);
+check('every warning forbids a public page', [driveOnly, aiOnly, both].every((w) => /Never put it in a web page/.test(w)), true);
+check('every warning says it is shown once', [driveOnly, aiOnly, both].every((w) => /shown once/.test(w)), true);
+check('…and still sends the operator to the BACKEND, never the page',
+  [driveOnly, aiOnly, both].every((w) => /into the app BACKEND now/.test(w) && /Never put it in a web page/.test(w)), true);
+check('an empty grant still warns rather than saying nothing',
+  /only the capabilities listed/.test(grantWarning([])), true);
+check('the handler uses the builder, not a fixed sentence',
+  /warning: grantWarning\(granted\)/.test(read('server/src/functions/appCapabilityGrant.js')), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\nA capability token is not scoped, not hashed, or not revocable — or an app');
