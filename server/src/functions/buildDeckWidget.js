@@ -303,42 +303,73 @@ export async function runBuildDeckWidget(requestingUser, description) {
     await updateBuild(build.id, { status: 'deploying', message: 'Merged — Northflank and Netlify are redeploying production now.' });
   }
 
-  // No reusable server-side Northflank deploy-status poller exists yet — a
-  // fixed delay matching tonight's own observed deploy timing is the
-  // simplest first cut (see the plan's "open questions" for a real poller).
-  await sleep(75000);
+  // ── DURABLE COMPLETION — everything above the wait, on purpose ──────────────
+  // Read this before moving anything below the `sleep`: the merge above triggers the deploy, and
+  // that deploy REPLACES THE PROCESS RUNNING THIS BUILD. Code below the wait usually never runs —
+  // not "might fail", runs never, with no exception to catch. Before 2026-09-28 the widget install
+  // and the terminal status both sat AFTER the wait, so two real builds (2026-09-17) left their
+  // widget merged and registered but with no DeckWidgetInstance row, and their rows sat at
+  // 'deploying'/'verifying' for eleven days while Settings showed a frozen progress bar.
+  const instance = await installWidgetInstance(requestingUser.id, widgetKey);
+  await logUsage(selfDevActor.id, 'deck_widget_build', projectId, project.name, { widgetKey, requestingUserId: requestingUser.id });
+  const finished = await finish({
+    ok: true,
+    widgetKey,
+    instanceId: instance.id,
+    message: `Merged and installed — "${widgetKey}" appears on your Deck once the deploy finishes (about two minutes). Refresh after that.`,
+    workspaceLink,
+  });
 
-  await updateBuild(build.id, { status: 'verifying', message: 'Deploy should be live — running the post-deploy check.' });
-  let smoke;
+  // ── BEST EFFORT from here down ─────────────────────────────────────────────
+  // Post-deploy verification the build cannot depend on: if the deploy replaced this process, the
+  // row is ALREADY terminal and the widget is ALREADY installed, so nothing is lost. It only
+  // enriches the message when the process happens to survive. Never let this change the status — a
+  // failed check here would read as "your widget failed" when the widget shipped.
   try {
-    smoke = await runSmokeCheckSelfDev(selfDevActor);
-  } catch (err) {
-    smoke = { ok: false, error: err.message };
-  }
-  if (!smoke.ok) {
-    return finish({
-      ok: false, stage: 'smoke',
-      message: `Shipped, but the post-deploy check found a problem: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}.`,
-      workspaceLink,
+    await sleep(75000);
+    const smoke = await runSmokeCheckSelfDev(selfDevActor).catch((err) => ({ ok: false, error: err.message }));
+    await updateBuild(build.id, {
+      message: smoke.ok
+        ? `Merged, installed, and the post-deploy check passed — "${widgetKey}" is live.`
+        : `Merged and installed. The post-deploy check found a problem with the deploy itself: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}. The widget is installed; the deploy is the thing to look at.`,
     });
+  } catch {
+    // Expected on most builds: this process was replaced by the deploy it triggered.
   }
+
+  return finished;
+}
+
+/**
+ * Put the widget on the account's Deck, once. Idempotent because a build can be re-driven (the
+ * stale-build reconciler, a retry) and a widget must not be installed twice — `widget_key` is unique
+ * per account, so the second attempt is a no-op rather than a duplicate row.
+ */
+async function installWidgetInstance(userId, widgetKey) {
+  const where = { created_by_id_widget_key: { created_by_id: userId, widget_key: widgetKey } };
+  const existing = await prisma.deckWidgetInstance.findUnique({ where }).catch(() => null);
+  if (existing) return existing;
 
   const maxSort = await prisma.deckWidgetInstance.aggregate({
-    where: { created_by_id: requestingUser.id },
+    where: { created_by_id: userId },
     _max: { sort_order: true },
   });
-  const instance = await prisma.deckWidgetInstance.create({
-    data: {
-      created_by_id: requestingUser.id,
-      widget_key: widgetKey,
-      enabled: true,
-      sort_order: (maxSort._max.sort_order ?? -1) + 1,
-    },
-  });
-
-  await logUsage(selfDevActor.id, 'deck_widget_build', projectId, project.name, { widgetKey, requestingUserId: requestingUser.id });
-
-  return finish({ ok: true, widgetKey, instanceId: instance.id, message: `Built and shipped — "${widgetKey}" is live on your Deck now. Refresh to see it.` });
+  try {
+    return await prisma.deckWidgetInstance.create({
+      data: {
+        created_by_id: userId,
+        widget_key: widgetKey,
+        enabled: true,
+        sort_order: (maxSort._max.sort_order ?? -1) + 1,
+      },
+    });
+  } catch (err) {
+    // Lost a race with a concurrent reconcile between the read and the write — the row it created is
+    // the one we wanted. Any other failure is real and belongs to the caller.
+    const raced = await prisma.deckWidgetInstance.findUnique({ where }).catch(() => null);
+    if (raced) return raced;
+    throw err;
+  }
 }
 
 // Not yet wired to any frontend call site or to chatWithJarvis.js (that's

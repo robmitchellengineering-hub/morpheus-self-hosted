@@ -83,6 +83,7 @@ const HARD = [
   'verify-github-reconnect.mjs',
   'verify-workspace-search.mjs',
   'verify-onramp.mjs',
+  'verify-deck-widget-build.mjs',
   'boot-smoke.mjs',
 ];
 

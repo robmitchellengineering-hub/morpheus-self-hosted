@@ -216,6 +216,13 @@ jobs:
       - name: Gmail sync limits
         run: node scripts/verify-gmail-sync.mjs
 
+      # A widget build runs ~15 minutes in the server process and then merges a PR that
+      # redeploys production — replacing the process running it. This asserts the durable
+      # work (install the widget, reach a terminal status) happens BEFORE the post-deploy
+      # wait, and that a row which stops reporting is resolved instead of freezing the bar.
+      - name: Deck widget build survives its own deploy
+        run: node scripts/verify-deck-widget-build.mjs
+
       # The inbox reply draft's failure path: an empty draft must not read as success, and
       # a failure must not be reported as a save error.
       - name: Reply draft failure
