@@ -206,8 +206,8 @@ async function deleteWidgetInBackground({ selfDevActor, project, requestingUser,
     const smoke = await runSmokeCheckSelfDev(selfDevActor).catch((err) => ({ ok: false, error: err.message }));
     await updateJob(job.id, {
       message: smoke.ok
-        ? `Removed, and the post-deploy check passed — "${key}" is gone from production.`
-        : `Removed from your Deck. The post-deploy check found a problem with the deploy itself: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}.`,
+        ? `Removed, and the check after the deploy passed — "${key}" is gone from production.`
+        : `Removed from your Deck. The check after the deploy found a problem with the site: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}.`,
     });
   } catch {
     // Expected on most deletions: this process was replaced by the deploy it triggered.

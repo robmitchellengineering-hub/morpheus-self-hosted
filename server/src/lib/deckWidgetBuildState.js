@@ -55,24 +55,25 @@ export function isStaleBuild(build, nowMs) {
   return nowMs - at > STALE_BUILD_MS;
 }
 
-/** Minutes since the row last moved, for the message. Null when the age is unknown. */
-export function quietMinutes(build, nowMs) {
-  const stamp = build?.updated_date ?? build?.created_date;
-  const at = stamp ? new Date(stamp).getTime() : NaN;
-  if (!Number.isFinite(at) || at <= 0 || !Number.isFinite(nowMs)) return null;
-  return Math.max(0, Math.round((nowMs - at) / 60000));
-}
-
 /**
- * What to tell the user about a row that stopped reporting. Names the stage it died in, because the
- * stage is the only evidence of how far it got — and says plainly that nothing is still running, so
- * they know a retry is the next move rather than waiting longer.
+ * What to tell the user about a row that stopped reporting.
+ *
+ * THIS STRING IS RENDERED ON THE SETTINGS CARD (DeckSettings.jsx's WidgetBuildProgress prints the
+ * row's message under the bar), so it is product copy, not an incident note. The first version of
+ * this function explained that "a widget build runs inside the server process, and the deploy it
+ * triggers replaces that process" — true, and exactly the wrong thing to put in front of a user.
+ * Rob, reading it on his own card: "Both cards there but in settings this…" and then the whole
+ * paragraph back. Internals belong in the code comment above, not in the sentence a user reads.
+ *
+ * What the user needs from it: how far it got, that waiting longer will not help, and what to do.
+ * `scripts/verify-deck-widget-build.mjs` fails the build if this string leaks operator language.
  */
 export function staleBuildMessage(build, nowMs) {
-  const stage = String(build?.status || 'unknown');
-  const quiet = quietMinutes(build, nowMs);
-  const suffix = quiet === null ? 'it stopped reporting' : `it has not reported for ${quiet} minute${quiet === 1 ? '' : 's'}`;
-  return `Stalled at "${stage}" — ${suffix}. Nothing is still running: a widget build runs inside the `
-    + 'server process, and the deploy it triggers replaces that process, so the last steps can be cut '
-    + 'off. Anything already merged is live; start the build again to finish it.';
+  const stage = String(build?.status || '').trim();
+  // Statuses are gerunds (`planning`, `building`, `merging`…), so they read naturally as
+  // "stopped while merging". Anything else keeps its own name in quotes rather than being bent
+  // into a sentence that would be wrong.
+  const where = /ing$/.test(stage) ? `while ${stage}` : stage ? `at "${stage}"` : 'part-way';
+  return `Stopped ${where} — this build is not running any more, so it will not finish on its own. `
+    + 'Anything it already finished is live; ask for it again to pick it up.';
 }
