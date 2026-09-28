@@ -330,8 +330,8 @@ export async function runBuildDeckWidget(requestingUser, description) {
     const smoke = await runSmokeCheckSelfDev(selfDevActor).catch((err) => ({ ok: false, error: err.message }));
     await updateBuild(build.id, {
       message: smoke.ok
-        ? `Merged, installed, and the post-deploy check passed — "${widgetKey}" is live.`
-        : `Merged and installed. The post-deploy check found a problem with the deploy itself: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}. The widget is installed; the deploy is the thing to look at.`,
+        ? `Merged, installed, and the check after the deploy passed — "${widgetKey}" is live.`
+        : `Merged and installed. The check after the deploy found a problem with the site: ${(smoke.failing || []).join(', ') || smoke.error || 'unknown'}. The widget is installed, so the site is the thing to look at.`,
     });
   } catch {
     // Expected on most builds: this process was replaced by the deploy it triggered.

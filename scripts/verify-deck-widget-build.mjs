@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  TERMINAL_BUILD_STATUSES, isTerminalBuildStatus, isStaleBuild, quietMinutes, staleBuildMessage, STALE_BUILD_MS,
+  TERMINAL_BUILD_STATUSES, isTerminalBuildStatus, isStaleBuild, staleBuildMessage, STALE_BUILD_MS,
 } from '../server/src/lib/deckWidgetBuildState.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -68,7 +68,7 @@ check('a build reporting a minute ago is alive', isStaleBuild(fresh, NOW), false
 // The false positive that would get this switched off: a build created long ago but still reporting.
 const slowButAlive = { status: 'building', updated_date: new Date(NOW - 20 * 60_000), created_date: new Date(NOW - 90 * 60_000) };
 check('a long build that is still reporting is ALIVE', isStaleBuild(slowButAlive, NOW), false);
-check('…even though it was created 90 minutes ago', quietMinutes(slowButAlive, NOW), 20);
+check('…so a 90-minute-old build is judged on its last report, not its age', isStaleBuild(slowButAlive, NOW), false);
 const dead = { status: 'deploying', updated_date: new Date(NOW - STALE_BUILD_MS - 60_000), created_date: new Date(NOW - 3_600_000) };
 check('a row quiet for longer than the window is stale', isStaleBuild(dead, NOW), true);
 check('right at the boundary it is not yet stale',
@@ -80,14 +80,22 @@ check('an unreadable timestamp does not invent staleness',
 check('no row at all is not stale', isStaleBuild(null, NOW), false);
 check('the window is 30 minutes — 2x a ~15-minute build', STALE_BUILD_MS, 30 * 60 * 1000);
 
-console.log('\n3. what the user is told names the stage and says nothing is running');
+console.log('\n3. the message on the Settings card is product copy, not an incident note');
 const msg = staleBuildMessage(dead, NOW);
-check('it names the stage it died in', /"deploying"/.test(msg), true);
-check('…says how long it has been quiet', /31 minutes/.test(msg), true);
-check('…and says nothing is still running', /Nothing is still running/.test(msg), true);
-check('…and points at starting it again', /start the build again/i.test(msg), true);
-check('an unknown age still produces a sentence, not "NaN minutes"',
-  /it stopped reporting/.test(staleBuildMessage({ status: 'building' }, NOW)), true);
+check('it says how far the build got', /Stopped while deploying/.test(msg), true);
+check('…that waiting longer will not help', /not running any more/.test(msg), true);
+check('…that whatever it already finished is live', /already finished is live/.test(msg), true);
+check('…and what to do about it', /ask for it again/i.test(msg), true);
+// The first version of this string explained that "a widget build runs inside the server process,
+// and the deploy it triggers replaces that process". All true, and exactly what a user must not be
+// shown — Rob read it back off his own Settings card. `WidgetBuildProgress` prints this message
+// under the bar, so the card is the register that matters here, not the code comment.
+check('…and never leaks operator language onto the card',
+  /process|replaces|post-deploy|registry|by hand|#\d+/i.test(msg), false);
+check('a status that is not a gerund is quoted, not bent into a wrong sentence',
+  /Stopped at "weird_stage"/.test(staleBuildMessage({ status: 'weird_stage' }, NOW)), true);
+check('no status at all still reads as a sentence',
+  /Stopped part-way/.test(staleBuildMessage({}, NOW)), true);
 
 console.log('\n4. the durable work happens BEFORE the wait that the deploy can cut off');
 const build = read('server/src/functions/buildDeckWidget.js');
