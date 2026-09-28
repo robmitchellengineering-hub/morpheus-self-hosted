@@ -198,7 +198,13 @@ export default function Begin() {
       done: false,
       icon: Rocket,
       title: 'Describe what you want',
-      body: 'Say what the site or app should do. Morpheus plans it, writes it, and shows you the result before anything ships.',
+      // The last mile, said out loud. Everything before this hands off into the
+      // construct, and the two controls that actually publish the site — COMPILE,
+      // then TAKE IT LIVE — are named here because a first-time user has no way to
+      // guess them. The words are the real button labels (ProjectBar's COMPILE and
+      // CompilePanel's TAKE IT LIVE); a guide that names a control that does not
+      // exist is the same dishonesty as one that withholds a step.
+      body: 'Say what the site or app should do. Morpheus plans it, writes it, and shows you the result before anything ships. When it looks right, press COMPILE, then TAKE IT LIVE — that publishes it to your own hosting and gives you the URL.',
       action: project?.id ? { label: 'START', onClick: startBuilding } : null,
     },
   ];

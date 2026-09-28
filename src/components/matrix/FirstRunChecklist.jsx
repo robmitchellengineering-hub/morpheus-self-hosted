@@ -171,7 +171,10 @@ export default function FirstRunChecklist({ project, onOpenWebsite, onOpenConnec
       done: false,
       icon: MessageSquare,
       title: 'Ask for a change',
-      body: 'Describe what you want different and Morpheus plans it, writes it, and shows you the result before anything ships.',
+      // The last mile, said out loud — see the same sentence in /begin. COMPILE and
+      // TAKE IT LIVE are the real control labels, and a first-time user cannot guess
+      // that those two presses are what turns a construct into a live URL.
+      body: 'Describe what you want different and Morpheus plans it, writes it, and shows you the result before anything ships. When it looks right, press COMPILE, then TAKE IT LIVE — that publishes it to your own hosting and gives you the URL.',
       action: { label: 'START', onClick: onStartChat },
     },
   };

@@ -168,6 +168,21 @@ check('the on-ramp lets the operator overrule the guess',
 check('the extra connection deep-links come from the shared registry',
   begin.includes("from '@/components/matrix/ConnectionsSection'"), true);
 
+console.log('\n9. the last mile is named, in the words the controls actually carry');
+// The whole path ends in two presses — COMPILE, then TAKE IT LIVE — and nothing else on
+// either surface ever said so. A first-time user cannot guess it. Both the on-ramp and the
+// construct checklist must say it, and must use the REAL labels: a guide that names a
+// control that does not exist is worse than no guide, so the labels are read back off the
+// components that render them.
+check('the on-ramp names both publish controls',
+  /COMPILE/.test(begin) && /TAKE IT LIVE/.test(begin), true);
+check('the construct checklist names both too',
+  /COMPILE/.test(checklist) && /TAKE IT LIVE/.test(checklist), true);
+check('…and TAKE IT LIVE is the real label on the compile panel',
+  /'TAKE IT LIVE'/.test(read('src/components/matrix/CompilePanel.jsx')), true);
+check('…and COMPILE is the real label on the project bar',
+  /COMPILE/.test(read('src/components/matrix/ProjectBar.jsx')), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');
