@@ -183,6 +183,20 @@ check('…and TAKE IT LIVE is the real label on the compile panel',
 check('…and COMPILE is the real label on the project bar',
   /COMPILE/.test(read('src/components/matrix/ProjectBar.jsx')), true);
 
+console.log('\n10. the sentence typed on the on-ramp is not thrown away');
+// It was: /begin asked "what should it do?", used the answer to choose which connections were
+// needed, and then dropped it — so the operator landed in an empty chat and had to type the
+// same sentence a second time. It is now handed to the composer as ADVICE, never auto-sent.
+check('the on-ramp hands the description over',
+  /state: \{ seedPrompt: description\.trim\(\) \}/.test(begin), true);
+const workspaceSrc = read('src/pages/Workspace.jsx');
+check('the construct reads it from the route', /useLocation\(\)\.state\?\.seedPrompt/.test(workspaceSrc), true);
+check('…and passes it to the composer', /seed=\{seedPrompt\}/.test(workspaceSrc), true);
+const chatPanel = read('src/components/matrix/ChatPanel.jsx');
+check('the composer accepts a seed', /onSetWebAccess, seed \}\)/.test(chatPanel), true);
+check('…fills only an empty box, so it cannot overwrite typing', /if \(!box \|\| box\.value\) return;/.test(chatPanel), true);
+check('…and sends nothing on the operator\'s behalf', /onSend\(seed/.test(chatPanel), false);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');

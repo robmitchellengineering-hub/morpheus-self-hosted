@@ -143,7 +143,11 @@ export default function Begin() {
 
   const startBuilding = () => {
     if (!project?.id) return;
-    navigate(`/workspace/${project.id}`);
+    // Hand the sentence they already typed to the construct's composer. Without this the
+    // on-ramp asked "what should it do?", used the answer to decide what to connect, and
+    // then dropped it — leaving them in an empty chat having to type it a second time.
+    // Carried as route state (advice for the box, not a message): nothing is sent for them.
+    navigate(`/workspace/${project.id}`, { state: { seedPrompt: description.trim() } });
   };
 
   // Until the operator tells us what they are building, ask only for what any site
