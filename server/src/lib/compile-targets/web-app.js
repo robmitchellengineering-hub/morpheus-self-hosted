@@ -82,7 +82,12 @@ export const webApp = {
     const pkg = parsePackageJson(files);
     if (pkg) {
       if (!pkg.scripts || (!pkg.scripts.build && !pkg.scripts.dist)) {
-        warnings.push('package.json has no "build" script — workflow will zip the project as-is.');
+        warnings.push(
+          'package.json has no "build" script, so the build publishes the PROJECT ROOT as-is. Everything '
+          + 'in it that is not excluded (source, docs, server code — anything that is not .env*, *.pem or '
+          + '*.key) becomes publicly readable at the live URL. Add a "build" script that outputs to dist/ '
+          + 'if that is not what you want.',
+        );
       }
     } else {
       warnings.push('package.json is not valid JSON — build may fail.');

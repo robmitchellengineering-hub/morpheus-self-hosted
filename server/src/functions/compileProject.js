@@ -199,5 +199,9 @@ export default async function handler({ user, body, res }) {
     repoUrl: repo.html_url,
     target,
     status: 'dispatched',
+    // The warnings the dry-run preview has always shown, carried onto the REAL compile. They were
+    // computed either way and then dropped here, so the only way to see them was to run a preview
+    // first — which is not what someone does when they are trying to get a site live.
+    warnings: validation.warnings || [],
   };
 }

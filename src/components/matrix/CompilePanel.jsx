@@ -84,6 +84,8 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   // the panel. `stale`/`noArtifact` come back with it so a live-but-behind site says
   // so instead of offering a RE-DEPLOY that would publish the old build.
   const [live, setLive] = useState({ phase: 'idle', url: null, error: null, code: null });
+  // Warnings the SERVER already computed (validate()) and used to drop on the real compile path.
+  const [compileWarnings, setCompileWarnings] = useState([]);
   const [linkCopied, setLinkCopied] = useState(false);
   // The ref is what actually stops a second press in the same tick — React
   // state is not visible to it yet. Same failure the deck's add guard was
@@ -181,6 +183,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     setStatus(null);
     setError(null);
     setSaveFailures([]);
+    setCompileWarnings([]);
     setLive({ phase: 'idle', url: null, error: null, code: null });
     setLinkCopied(false);
     liveInFlight.current = false;
@@ -444,6 +447,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       }
       dispatchRetryRef.current = 0;
       setDispatchRetryAttempt(0);
+      setCompileWarnings(Array.isArray(res.warnings) ? res.warnings : []);
       setRepoFullName(res.repoFullName);
       setRepoUrl(res.repoUrl);
       setPhase('polling');
@@ -544,6 +548,13 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
           <div className="text-sm text-ink">
             Target: <span className="text-primary uppercase">{target}</span>
           </div>
+          {compileWarnings.length > 0 && (
+            <div className="border border-yellow-500/40 bg-yellow-500/5 px-3 py-2 space-y-1">
+              {compileWarnings.map((w, i) => (
+                <div key={i} className="text-[11px] text-yellow-500/90 leading-relaxed">! {w}</div>
+              ))}
+            </div>
+          )}
           {target === 'source' && (
             <p className="text-xs text-ink-strong">
               // Source target doesn't need compilation. Use the ZIP button to download raw source.
