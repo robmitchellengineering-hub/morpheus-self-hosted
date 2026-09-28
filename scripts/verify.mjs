@@ -79,6 +79,7 @@ const HARD = [
   'verify-prisma-models.mjs',
   'verify-verifier-coverage.mjs',
   'verify-ai-cost-claims.mjs',
+  'verify-billing-ledger-math.mjs',
   'verify-github-reconnect.mjs',
   'verify-workspace-search.mjs',
   'verify-onramp.mjs',
@@ -98,6 +99,14 @@ for (const script of HARD) {
 const drift = spawnSync(process.execPath, [resolve(HERE, 'verify-schema-prod.mjs')], { stdio: 'inherit' });
 results.push({ name: 'verify-schema-prod.mjs', status: drift.status });
 
+// The billing ledger's database half (token plan Step 7). Same contract as the drift check for exit 2:
+// "could not reach production" is never a pass. Exit 1 is different from a code failure, though — it is
+// a real accounting discrepancy in production DATA, so it is reported loudly and does NOT block the
+// merge: the fix is a price decision or a data correction, not a line in the pull request. Its maths
+// half runs in HARD above, on every pull request, with no credential.
+const ledger = spawnSync(process.execPath, [resolve(HERE, 'verify-billing-ledger.mjs')], { stdio: 'inherit' });
+results.push({ name: 'verify-billing-ledger.mjs', status: ledger.status });
+
 console.log('\n──────────────────────────────');
 console.log('Summary');
 for (const { name, status } of results) {
@@ -111,5 +120,10 @@ const driftBlocking = drift.status === 1;
 if (hardFailures.length || driftBlocking) {
   console.log('\n  ✗ verify failed — fix before merging.\n');
   process.exit(1);
+}
+if (ledger.status === 1) {
+  console.log('\n  ! the production billing ledger does not reconcile — that is real money, in data.');
+  console.log('    It does not block this merge (the cause is a price or a correction, not the diff),');
+  console.log('    but it should not be left standing. See the checks named above.\n');
 }
 console.log('\n  ✓ all hard gates passed.\n');
