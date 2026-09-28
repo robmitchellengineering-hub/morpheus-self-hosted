@@ -292,6 +292,42 @@ check('no doc calls an existing file unbuilt', falseClaims, [])
 check('KNOWN-HAZARDS.md makes no "not yet built" status claim',
   /not yet built|unbuilt|never built/i.test(read('KNOWN-HAZARDS.md')), false)
 
+// ── The authority's OWN verdicts ────────────────────────────────────────────
+// sections 4 and 4b police what the DOCS claim; this one polices what
+// `scripts/reality.mjs` claims, which is worse to get wrong because reality.mjs
+// is the file the docs are measured against.
+//
+// The failure it exists for, 2026-09-28: `out.billing` carried
+//   { step: '7  billing verification pass', verdict: 'NOT BUILT', evidence:
+//     'no end-to-end check that charges match recorded usage' }
+// as a LITERAL, and #419 had built exactly that (verify-billing-ledger.mjs plus
+// its import-free maths half). Nothing recomputed it, so the authority went on
+// telling every session to build a shipped pass — and because the file is .js,
+// section 4's scan of the docs walked straight past it.
+//
+// THE RULE, and it is asymmetric on purpose: a verdict of ABSENCE must be
+// COMPUTED. A literal 'BUILT' can only go stale if something is deleted, which
+// is loud and rare; a literal 'NOT BUILT' goes stale the moment work lands,
+// silently, and reads as an instruction. So a literal 'NOT BUILT' is what fails
+// here — not literal verdicts in general, which would cry wolf on the schema row
+// that is legitimately asserted from production state.
+const realitySrc = read('scripts/reality.mjs')
+const literalAbsence = [...realitySrc.matchAll(/verdict:\s*(["'])(NOT BUILT[^"']*)\1/g)].map((m) => m[2])
+check('the authority never writes an absence verdict as a literal', literalAbsence, [])
+// A threshold, not the exact count: an exact number breaks every time a step is
+// added, and a guard that cries wolf on correct work gets switched off. 11 are
+// computed today; the point is that the regex is matching real code at all.
+check('…its verdicts are really computed (regex sanity)',
+  (realitySrc.match(/\? 'BUILT[^']*' : 'NOT BUILT'/g) || []).length >= 8, true)
+// …and the computed one has to be about the REAL artifact, not any expression
+// that happens to end in the right strings. Step 7 must test the checker it
+// claims, and that checker must exist.
+check('step 7\'s verdict tests the billing-ledger checker, not a placeholder',
+  /step: '7[^']*', verdict: [^\n]*verify-billing-ledger/.test(realitySrc), true)
+check('…and the files it tests exist',
+  ['scripts/verify-billing-ledger.mjs', 'scripts/verify-billing-ledger-math.mjs']
+    .filter((p) => !existsSync(join(REPO, p))), [])
+
 // ═══ 5. Verification scripts referenced by CI exist ═════════════════════════
 console.log('\n5. every verification script CI runs exists')
 const ci = read('.github/workflows/ci.yml')
