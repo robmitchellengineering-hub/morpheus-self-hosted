@@ -32,6 +32,7 @@ import { prisma } from '../db.js';
 import { downloadFile } from '../storage.js';
 import { decodeConnections } from '../lib/connectionSecrets.js';
 import { logUsage } from '../lib/projectUtils.js';
+import { classifySiteAccess } from '../lib/siteAccess.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import {
   FRONTEND_DEPLOY_PATH,
@@ -236,6 +237,10 @@ export default async function handler({ user, body }) {
   }
   const pending = settled.state !== 'ready';
 
+  // Netlify says the deploy is ready; ask the URL whether the PUBLIC can read it. A site behind
+  // visitor access is deployed and unusable by anyone, which "YOUR SITE IS LIVE" must not hide.
+  const access = await probeSiteAccess(url);
+
   // ── Record it ──────────────────────────────────────────────────────────────
   // Mirrors deployBackend.js's `backend/.deploy.json`: a project file, not a new
   // column or table. This is what makes "live at <url>" and re-deploy-to-the-
@@ -254,6 +259,9 @@ export default async function handler({ user, body }) {
     // What Netlify said when we stopped watching. 'ready' means it is serving; anything
     // else is recorded rather than rounded up to success.
     deploy_state: settled.state,
+    // What the public URL answered at deploy time: 'public' | 'login-required' | 'blocked' | 'unknown'.
+    access: access.access,
+    access_status: access.status,
   };
 
   if (priorFile) {
@@ -284,6 +292,8 @@ export default async function handler({ user, body }) {
     // difference matters to someone about to tap the link.
     pending,
     deployState: settled.state,
+    access: access.access,
+    accessStatus: access.status,
     artifact: artifact.path,
     firstDeploy,
     deployPath: FRONTEND_DEPLOY_PATH,
@@ -358,8 +368,41 @@ const DEPLOY_SETTLE_POLL_MS = 2_000;
  *   'unknown' — the response carried no state we recognise. Deliberately NOT a
  *               failure: an API shape change must not break a deploy that is fine.
  */
-async function settleDeploy({ token, siteId, deployId, initial }) {
-  let state = typeof initial?.state === 'string' ? initial.state : '';
+// How long a deployed URL gets to answer before we stop asking. Bounded, and an unanswered probe is
+// NOT a failure — see probeSiteAccess.
+const SITE_PROBE_TIMEOUT_MS = 8_000;
+
+/**
+ * Ask the deployed URL whether the public can read it.
+ *
+ * WHY: the first real end-to-end run deployed, Netlify said `ready`, and the URL answered 401
+ * (Netlify's visitor-access login wall) — while Morpheus told the operator their site was live. The
+ * deploy HAD succeeded, so nothing in the pipeline could tell; only asking the URL can.
+ *
+ * Never throws and never fails a deploy: an unreachable probe classifies as 'unknown', because our
+ * inability to check must not be reported as their site being broken.
+ */
+async function probeSiteAccess(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SITE_PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: { 'user-agent': 'morpheus-deploy-check' },
+    });
+    // Only enough of the body to see Netlify's edge-access signature; the wall's HTML is tiny.
+    let body = '';
+    try { body = (await res.text()).slice(0, 8192); } catch { body = ''; }
+    return classifySiteAccess({ status: res.status, body });
+  } catch {
+    return classifySiteAccess({ status: 0 });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function settleDeploy({ token, siteId, deployId, initial }) {  let state = typeof initial?.state === 'string' ? initial.state : '';
   if (!deployId) return { state: state || 'unknown', error: null };
   if (state === 'ready') return { state, error: null };
 
