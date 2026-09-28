@@ -82,6 +82,7 @@ const OUTSIDE = [
   ['server/src/functions/chatWithJarvis.js', 'WIDGET_BUILD_INTENT_SCHEMA', "the deck's widget-build intent (asked on EVERY message)"],
   ['server/src/functions/classifyDeckDumpItem.js', 'CLASSIFY_SCHEMA', 'the brain-dump classifier'],
   ['server/src/functions/syncDeckGmailInbox.js', 'CLASSIFY_SCHEMA', 'the Gmail inquiry check'],
+  ['server/src/functions/classifyAppKind.js', 'APP_KIND_SCHEMA', 'the website/web-app on-ramp decision'],
 ];
 for (const [file, schema, what] of OUTSIDE) {
   const src = code(file);
@@ -101,6 +102,12 @@ const dump = code('server/src/functions/classifyDeckDumpItem.js');
 const dumpBudget = Number((dump.match(/maxTokens:\s*(\d+)/) || [])[1] || 0);
 check('the brain-dump classifier has a budget above the 1200 it truncated at on 3 of its 4 calls',
   dumpBudget >= 4000, `found maxTokens: ${dumpBudget || '(none)'}`);
+
+// Same reason, same floor. This one runs on the website on-ramp, where a truncated schema call THROWS
+// — so a tight budget would not shorten the answer, it would fail the page on a sentence.
+const appKindBudget = Number((code('server/src/functions/classifyAppKind.js').match(/maxTokens:\s*(\d+)/) || [])[1] || 0);
+check('the on-ramp decision has a budget above the 1200 the classify role truncated at',
+  appKindBudget >= 2000, `found maxTokens: ${appKindBudget || '(none)'}`);
 
 const synth = code('server/src/functions/runJarvisSynthesis.js');
 const schedBudget = Number((synth.match(/MAX_SCHEDULED_TOKENS\s*=\s*(\d+)/) || [])[1] || 0);
