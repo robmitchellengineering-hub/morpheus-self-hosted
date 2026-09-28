@@ -203,6 +203,36 @@ try {
   rmSync(fb, { recursive: true, force: true });
 }
 
+
+// ═══ the warnings the server computes must reach the person compiling ═══════
+// Found on the first live run (2026-09-28): the fallback publishes the PROJECT ROOT, which is why the
+// deployed site served /server.js publicly. The server already computed a warning about exactly that,
+// and dropped it on the real compile path — it existed only in the dry-run preview, which is not what
+// anyone runs when they are trying to get a site live.
+const noBuild = webApp.validate([
+  { path: 'package.json', content: JSON.stringify({ scripts: { start: 'node server.js' } }) },
+]);
+check('a project with no build script warns', noBuild.warnings.length >= 1, true);
+const warn = noBuild.warnings[0] || '';
+check('…naming the ROOT as what gets published', /PROJECT ROOT/.test(warn), true);
+check('…and that it becomes PUBLICLY READABLE', /publicly readable/.test(warn), true);
+check('…naming the exclusions it relies on', /\.env/.test(warn) && /\*\.pem/.test(warn), true);
+check('…and the way out (a build script that outputs to dist/)', /outputs to dist\//.test(warn), true);
+check('a project WITH a build script is not warned about the root',
+  webApp.validate([{ path: 'package.json', content: JSON.stringify({ scripts: { build: 'vite build' }, dependencies: { react: '18' } }) }]).warnings.some((w) => /PROJECT ROOT/.test(w)), false);
+
+const compileFn = read('../server/src/functions/compileProject.js');
+check('the real compile path returns the warnings it computes',
+  /warnings: validation\.warnings \|\| \[\]/.test(compileFn), true);
+const dispatchedReturn = compileFn.slice(compileFn.indexOf("status: 'dispatched',"));
+check('…on the dispatched response, not only in the dry run',
+  /warnings: validation\.warnings/.test(dispatchedReturn), true);
+
+const compilePanelSrc = read('../src/components/matrix/CompilePanel.jsx');
+check('the panel keeps them', /setCompileWarnings\(Array\.isArray\(res\.warnings\)/.test(compilePanelSrc), true);
+check('…clears them with the rest of the panel', /setCompileWarnings\(\[\]\)/.test(compilePanelSrc), true);
+check('…and renders them', /compileWarnings\.map\(\(w, i\)/.test(compilePanelSrc), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
