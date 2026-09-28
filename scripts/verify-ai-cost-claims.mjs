@@ -5,17 +5,19 @@
 // 2026-09-28, that is not true: `ai.js` does prefer a per-user key, but the credit
 // block reserves against the account for any non-exempt user and is NEVER shown which
 // key ran the call, and `billing_exempt` is only ever set by an admin
-// (`routes/admin.routes.js`). A claim and a behaviour that disagree is a failure this
-// repo has already shipped twice — "no free tier" was false, and "your data is not
-// stored on Morpheus's servers" was false — so it is guarded rather than commented.
+// (`routes/admin.routes.js`).
+//
+// DECIDED — ROB, 2026-09-28, and this is the settlement rather than a puzzle. Charging
+// own-key calls is INTENDED: a genuinely complete free path cannot be covered at the
+// moment, so costs still have to be met — but an own-key call should be billed at a
+// rate that is "extremely cheep", near what it costs us. The RATE is not decided, so
+// nothing is implemented; what is settled is that there is no FREE path, and the
+// migration to a cheaper rate is a billing change that lands with this file updated in
+// the same commit (the contract `expected-settings.json` has).
 //
 // It pins BOTH halves as they are today, and fails if either moves alone:
 //   * the exemption rule, tested behaviourally through the import-free policy module;
 //   * the absence of a free-path promise in anything a customer reads.
-//
-// WHEN THE RULE CHANGES — and `server/src/lib/creditPolicy.js` names the two options —
-// update this file in the same commit, the way `expected-settings.json` must move with
-// a settings change. A guard that has to be remembered is the hole it was built for.
 //
 // Run:  node scripts/verify-ai-cost-claims.mjs
 import { readFileSync, readdirSync } from 'node:fs';

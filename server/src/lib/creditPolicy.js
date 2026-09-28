@@ -11,20 +11,27 @@
 // bill), an admin, or an explicit `billing_exempt` grant are exempt; everyone else
 // pays.
 //
-// THE OPEN QUESTION, VERIFIED 2026-09-28 AND DELIBERATELY UNRESOLVED — DO NOT
-// "FIX" IT BY ACCIDENT. This function is never told which AI key the call will use,
-// so a user who has set their own provider key in Settings → AI Provider (ai.js
-// tier 1, `provider: 'custom'`) is STILL charged credits. The product has described
-// that path as costing nothing per call. Both cannot be true. Rob's decision, one of:
+// DECIDED — ROB, 2026-09-28. THE OWN-KEY "FREE PATH" IS CLOSED, AND NO FREE AI PATH
+// IS COMING. Verified the same day: this function is never told which AI key the call
+// will use, so a user who has set their own provider key in Settings → AI Provider
+// (ai.js tier 1, `provider: 'custom'`) is STILL charged credits — and that is now the
+// intended behaviour, not an oversight. Rob's words: "The own ai models need to be
+// charged at a rate that covers internal costs i dont think we can do a true complete
+// free path at the moment as costs still need to be covered but we can make that
+// extremely cheep."
 //
-//   (1) exempt an own-key call — the call costs Morpheus nothing, so metering it
-//       charges for a service we did not provide; the change is a `provider`
-//       parameter here plus the copy, landed together; or
-//   (2) keep charging, and delete the free-path promise wherever it is implied.
+// So there are two separate things, and only the first is settled:
+//   * SETTLED — own-key calls are metered. Charging continues for every non-exempt
+//     call, whatever key it used. Nothing in this file changes.
+//   * OPEN — the RATE for an own-key call should be extremely cheap (near what it
+//     costs us) rather than the standard markup. The rate is NOT decided, so nothing
+//     is implemented: a cheaper rate for `provider: 'custom'` is a billing change
+//     that lands with its own guard update, in this file and
+//     `scripts/verify-ai-cost-claims.mjs` together.
 //
-// Whichever is chosen, `scripts/verify-ai-cost-claims.mjs` is updated in the same
-// change: a billing rule that moves without its guard is exactly how a published
-// price and the meter drift apart.
+// WHAT MUST NOT HAPPEN IN THE MEANTIME: any copy — settings, capabilities JSON,
+// onboarding, an app's README — that promises a free AI path. There is no free path,
+// and `scripts/verify-ai-cost-claims.mjs` fails the build if one is written.
 export function shouldReserveCredits(billingUser) {
   if (!billingUser) return false; // no account to bill — an absence, not a free pass
   if (String(billingUser.role || '').trim().toLowerCase() === 'admin') return false;
