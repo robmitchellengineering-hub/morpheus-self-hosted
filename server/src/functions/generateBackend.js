@@ -147,7 +147,14 @@ Keep code concise but complete — no placeholders, no TODOs, no "// implement t
       created_by_id: user.id,
       project_id: projectId,
       path: normalizedPath,
-      content: f.content,
+      // `content` is a NON-NULLABLE column, and the model does not always fill it in — observed
+      // 2026-09-29, when a generated `backend/.env.example` arrived with no content at all. Prisma
+      // rejects the whole `createMany` for one missing argument, so a single empty file discarded
+      // EVERY file the build had produced: the run reported a validation error and the project kept
+      // nothing but its plan. Coercing to a string keeps the file (an untracked-but-empty
+      // `.env.example` is a legitimate thing to ship, since its secrets are generated at run time)
+      // and means one malformed entry can no longer destroy the rest.
+      content: typeof f.content === 'string' ? f.content : '',
       language: detectLanguage(f.path),
     });
   }
