@@ -87,7 +87,7 @@ export const INSTALL_STEPS = [
 export const NOT_INSTALLED_YET = [
   'Remote access is a script, but Tailscale itself is yours to install and sign in to: npm run portable:remote (we do not install a VPN for you).',
   'The paid AI default still cannot work out of the box: the Morpheus Cloud broker that would make it work is not deployed (npm run portable:ai -- --use local or --use key works today).',
-  'A native app or installer — this is a command, not a double-clickable package.',
+  'A signed native app: the launcher is a shell wrapper, so macOS quarantines a downloaded .command and Windows SmartScreen warns once. There is no code signing and no auto-update.',
 ];
 
 /** The URL the install ends up serving. */

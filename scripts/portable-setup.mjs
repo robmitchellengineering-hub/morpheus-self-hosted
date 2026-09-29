@@ -22,6 +22,7 @@ import {
   INSTALL_STEPS, NOT_INSTALLED_YET, GENERATED_ENV, preflight, generateSecrets, envFileContents,
   localUrl, REQUIRED_NODE_MAJOR,
 } from '../server/src/lib/portableSetup.js';
+import { PORTABLE_GATEKEEPER_NOTE, launcherFor } from '../server/src/lib/portableLaunch.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = join(ROOT, 'server');
@@ -119,8 +120,14 @@ if (SKIP_BUILD) {
 }
 
 say('\n  DONE.\n');
+say('  After this, you do not need a terminal vocabulary:');
+say('    - double-click the launcher for this platform (see below), or');
+say('    - npm run portable:start   (and npm run portable:stop to stop)');
+say(`    ${PORTABLE_GATEKEEPER_NOTE}`);
+say('');
 say(`  Start it:      cd server && npm start`);
 say(`  Then open:     ${localUrl()}`);
+say(`  Launcher:      ${launcherFor(process.platform)?.file || '(none for this platform — use the npm command)'}`);
 say('');
 say('  NOT INCLUDED YET:');
 for (const n of NOT_INSTALLED_YET) say(`    · ${n}`);

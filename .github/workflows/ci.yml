@@ -245,6 +245,11 @@ jobs:
       - name: Portable AI source holds up its end
         run: node scripts/verify-portable-ai.mjs
 
+      # A launcher's two lies: opening the browser before the server answers, and reporting "stopped"
+      # while it is still running. Both are asserted, along with the exec bit that makes it clickable.
+      - name: Portable launcher holds up its end
+        run: node scripts/verify-portable-launcher.mjs
+
       # The inbox reply draft's failure path: an empty draft must not read as success, and
       # a failure must not be reported as a save error.
       - name: Reply draft failure
