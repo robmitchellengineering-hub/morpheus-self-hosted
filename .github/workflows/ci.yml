@@ -257,6 +257,14 @@ jobs:
       - name: An operator can run what they built
         run: node scripts/verify-delivery-posture.mjs
 
+      # There are TWO copies of the infrastructure registry and nothing kept them in step. That already
+      # cost the posture feature its entire UI once, because BackendPanel.jsx imports the copy the work
+      # had not touched — and every guard passed. This compares them as DATA, by asking both the same
+      # questions, because comparing their text would be defeated by the annotations that legitimately
+      # differ between a .ts and a .js file.
+      - name: The two registry copies are one registry
+        run: node scripts/verify-registry-parity.mjs
+
       # A failed ADVISORY check must not throw away a build the user already paid for. Both directions
       # are asserted: the coder's work survives a reviewer that throws, and the failure can never read
       # as a pass.
