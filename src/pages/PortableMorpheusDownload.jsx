@@ -1,77 +1,61 @@
 import { useState, useEffect } from 'react';
-import JSZip from 'jszip';
 
-const FILES = [
-  'package.json',
-  'README.md',
-  'server/index.js',
-  'server/store.js',
-  'server/llm.js',
-  'server/reviewer.js',
-  'server/morpheus.js',
-  'client/api.js',
-  'client/Morpheus.jsx',
-  'client/MorpheusPanel.jsx',
-];
-
+// Portable Morpheus is ONE artifact, generated at build time from the tree that was just built —
+// `scripts/build-portable-bundle.mjs`, run by `postbuild` — and served as `portable-morpheus.zip`.
+//
+// This page used to assemble the zip in the browser: it fetched a hand-written list of ~10 adapter
+// files plus every path in `public/portable-morpheus/_source/manifest.json`, one HTTP request each,
+// and zipped them with JSZip on the client. Two things were wrong with that. The mirror it read was
+// generated from `base44/` — a tree untouched since 2026-08-26 — while the product had moved to
+// `server/src/`, so the download faithfully shipped a superseded codebase (Rob, 2026-09-29: "we have
+// lost the downloadable portable morpheus along the way somewhere"). And the whole product is ~780
+// source files, which is not a thing to fetch one request at a time in a browser.
+//
+// The artifact is now a build product, so there is nothing to assemble here and nothing that can go
+// stale: the page links the same file the build just wrote, and shows the commit it came from.
 export default function PortableMorpheusDownload() {
-  const [status, setStatus] = useState('zipping…');
-  const [err, setErr] = useState(null);
+  const [meta, setMeta] = useState(null);
 
-  const download = async () => {
-    try {
-      setErr(null);
-      setStatus('fetching files…');
-      const zip = new JSZip();
-      const root = zip.folder('portable-morpheus');
-      for (const p of FILES) {
-        const res = await fetch(`${import.meta.env.BASE_URL}portable-morpheus/${p}`);
-        if (!res.ok) throw new Error(`fetch ${p}: ${res.status}`);
-        root.file(p, await res.text());
-      }
-      // Append the synced real-source mirror (kept current by
-      // scripts/sync-portable-morpheus.mjs) so the bundle ships the latest
-      // development code alongside the standalone portable adapters.
-      let synced = [];
-      try {
-        const mres = await fetch(`${import.meta.env.BASE_URL}portable-morpheus/_source/manifest.json`);
-        if (mres.ok) synced = (await mres.json()).files || [];
-      } catch { /* no manifest yet — bundle the hand-written files only */ }
-      for (const p of synced) {
-        const res = await fetch(`${import.meta.env.BASE_URL}portable-morpheus/_source/${p}`);
-        if (!res.ok) continue;
-        root.file(`_source/${p}`, await res.text());
-      }
-      setStatus('zipping…');
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'portable-morpheus.zip';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setStatus('done');
-    } catch (e) {
-      setErr(e.message);
-      setStatus('error');
-    }
-  };
+  useEffect(() => {
+    let alive = true;
+    fetch(`${import.meta.env.BASE_URL}portable-morpheus.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => { if (alive && m) setMeta(m); })
+      .catch(() => { /* the link still works without the size line */ });
+    return () => { alive = false; };
+  }, []);
 
-  useEffect(() => { download(); }, []);
+  const size = meta ? `${(meta.bytes / 1048576).toFixed(1)} MB` : null;
 
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background text-ink font-mono p-6">
-      <div className="text-center">
+      <div className="text-center max-w-md">
         <div className="text-lg tracking-wider neon-glow mb-2">◇ PORTABLE MORPHEUS</div>
-        <div className="text-xs text-ink-strong">{FILES.length} files · {status}</div>
+        <p className="text-xs text-ink-strong leading-relaxed">
+          The whole product — the builder <em>and</em> the Command Deck — to run on your own machine.
+          Generated from the current source at build time, so what you download is the code that is
+          running here right now.
+        </p>
+        {meta && (
+          <div className="text-[11px] text-ink-max mt-2">
+            {meta.fileCount} files · {size} · built from {meta.commit}
+          </div>
+        )}
       </div>
-      {err && <div className="text-red-500 text-xs max-w-xs text-center">Error: {err}</div>}
-      {status === 'done' && <div className="text-xs text-ink-strong">✓ Download started. Check your downloads.</div>}
-      <button onClick={download} className="mt-2 px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black text-xs font-bold tracking-wider">
-        DOWNLOAD AGAIN
-      </button>
+      <a
+        href={`${import.meta.env.BASE_URL}portable-morpheus.zip`}
+        download
+        className="px-4 py-2 border border-primary text-primary hover:bg-primary hover:text-black text-xs font-bold tracking-wider"
+      >
+        DOWNLOAD PORTABLE MORPHEUS
+      </a>
+      {/* Said here rather than discovered after unpacking: this is the source today, not an installer.
+          The bundle's own PORTABLE-README.md repeats it with the setup steps. */}
+      <p className="text-[11px] text-ink-max max-w-md text-center leading-relaxed">
+        This is the source, not a one-click installer — no wizard, no remote access, and no AI
+        provider configured until you choose one. The bundle&rsquo;s PORTABLE-README.md lists exactly
+        what is and is not in it.
+      </p>
     </div>
   );
 }

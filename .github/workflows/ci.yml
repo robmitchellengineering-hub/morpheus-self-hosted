@@ -223,6 +223,12 @@ jobs:
       - name: Deck widget build survives its own deploy
         run: node scripts/verify-deck-widget-build.mjs
 
+      # The portable download used to be a hand-run mirror that shipped a tree a month out of
+      # date. This asserts it is generated during the build, selects the real product, and says
+      # what it does NOT contain.
+      - name: Portable bundle is generated from the code it ships
+        run: node scripts/verify-portable-bundle.mjs
+
       # The inbox reply draft's failure path: an empty draft must not read as success, and
       # a failure must not be reported as a save error.
       - name: Reply draft failure
