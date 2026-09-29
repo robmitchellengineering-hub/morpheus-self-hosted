@@ -122,8 +122,10 @@ your own Mac, PC or Linux machine.
   server to your own tailnet — end-to-end encrypted, no ports opened — but it does not install Tailscale
   or create the account for you, and nothing is exposed until you run it. A Morpheus-hosted relay, for
   anyone who would rather install nothing, is decided as the paid-tier successor and is not built.
-- **No AI configured by default in this bundle.** Point it at a locally hosted model, or your own
-  provider key, or a Morpheus account. Until you choose one, AI calls have nowhere to go.
+- **No AI configured until you choose one.** \`npm run portable:ai\` sets it: a model on this machine
+  (private, free), or your own provider key. The Morpheus Cloud paid default is decided and its broker
+  exists in \`hosted-broker/\`, but that service is **not deployed**, so it cannot work today — and the
+  wizard refuses to write the inert placeholder URL that would look like it did.
 
 ## Why the source and not a re-implementation
 

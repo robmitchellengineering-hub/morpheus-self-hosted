@@ -78,7 +78,8 @@ check('Google/GitHub sign-in is stated as off, with the reason (no stable hostna
 
 console.log('\n4. the honest list of what is not there yet');
 check('it names remote access', NOT_INSTALLED_YET.some((n) => /Remote access/i.test(n)), true);
-check('…and the AI wizard', NOT_INSTALLED_YET.some((n) => /wizard for choosing where AI/i.test(n)), true);
+check('…and that the paid AI default cannot work out of the box yet, naming the broker',
+  NOT_INSTALLED_YET.some((n) => /broker/i.test(n) && /not deployed/i.test(n)), true);
 check('…and that this is not a double-clickable installer', NOT_INSTALLED_YET.some((n) => /native app or installer/i.test(n)), true);
 check('the steps are a real sequence, not a sentence', INSTALL_STEPS.length >= 6 && INSTALL_STEPS.every((s) => s.id && s.title), true);
 check('the URL the install ends at is named', localUrl(), `http://localhost:${LOCAL_ENV.PORT}`);

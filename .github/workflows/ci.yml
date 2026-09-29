@@ -239,6 +239,12 @@ jobs:
       - name: Portable remote access holds up its end
         run: node scripts/verify-portable-remote.mjs
 
+      # Where a local install's AI comes from decides whether the operator's code stays on their
+      # machine, so the three sources, their costs and their privacy consequences are asserted —
+      # including the paid default that is decided but cannot work until the broker is deployed.
+      - name: Portable AI source holds up its end
+        run: node scripts/verify-portable-ai.mjs
+
       # The inbox reply draft's failure path: an empty draft must not read as success, and
       # a failure must not be reported as a save error.
       - name: Reply draft failure

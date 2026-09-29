@@ -87,6 +87,7 @@ const HARD = [
   'verify-portable-bundle.mjs',
   'verify-portable-setup.mjs',
   'verify-portable-remote.mjs',
+  'verify-portable-ai.mjs',
   'boot-smoke.mjs',
 ];
 
