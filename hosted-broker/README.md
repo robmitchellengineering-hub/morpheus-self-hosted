@@ -30,11 +30,24 @@ Three independent things, none of which share state beyond an in-memory,
    appears in a browser URL.
 2. **Google OAuth broker** — same pattern, for "Sign in with Google."
 3. **AI gateway passthrough** — a thin proxy in front of your own real
-   OpenAI-compatible key, gated by simple bearer deployment tokens and a
-   per-token rate limit, so instances get a working default AI provider
-   without needing their own key. This is intentionally minimal (see
-   `BROKER_AI_ALLOWED_TOKENS` in `.env.example`) — swap in real per-tenant
-   metering/billing before relying on it at any real scale.
+   OpenAI-compatible key, so instances get a working default AI provider
+   without needing their own key. Two gates, and which one applies depends on
+   whether you have pointed it at an instance to bill through:
+
+   * **Per-account metering** (`BROKER_METERING_INSTANCE_URL` +
+     `BROKER_METERING_SECRET`). Before every call the broker asks that
+     instance's backend to reserve the calling account's credits, and after it
+     reports the real token counts so the instance charges the account and
+     writes a usage row. This is what makes the default a *paid* default: what
+     limits spending is the account's balance, not a shared secret.
+   * **Shared deployment tokens** (`BROKER_AI_ALLOWED_TOKENS`) — the original
+     behaviour, kept so an existing deployment keeps working. Everyone holding
+     one spends your upstream key with no account and no cap, so it is a
+     stopgap rather than a product.
+
+   With **neither** configured the gateway is closed — unset never means "allow
+   all". Streaming is refused while metering is on: token counts arrive after
+   the caller already holds the connection, so a stream cannot be metered.
 
 ## Deploying it
 
@@ -48,9 +61,15 @@ Three independent things, none of which share state beyond an in-memory,
    `BROKER_AI_UPSTREAM_KEY` if you want to offer the AI default too.
 3. `npm install && npm start`, or `docker build -t morpheus-broker . && docker run --env-file .env -p 4600:4600 morpheus-broker`. Put it behind TLS (a reverse proxy or your platform's HTTPS termination) — `BROKER_PUBLIC_URL` must be the `https://` address callers actually reach.
 4. On each Morpheus instance you want to use these defaults, set
-   `MORPHEUS_BROKER_URL=https://<your-broker-domain>` in `server/.env` (and
-   `MORPHEUS_AI_GATEWAY_TOKEN` if using the AI gateway — hand out a value
-   from `BROKER_AI_ALLOWED_TOKENS` to each instance you trust).
+   `MORPHEUS_BROKER_URL=https://<your-broker-domain>` in `server/.env`.
+   For the AI gateway, choose one:
+   * metered — set, **on the instance**, `BROKER_GATEWAY_SIGNING_SECRET` (random; it signs gateway
+     tokens and reservations) and `BROKER_INTERNAL_SECRET` (random; the broker authenticates itself
+     with it), and set both `BROKER_METERING_INSTANCE_URL` (the instance's own `https://` address,
+     reachable from this broker) and `BROKER_METERING_SECRET` (the same value as
+     `BROKER_INTERNAL_SECRET`) here; or
+   * unmetered stopgap — hand out a value from `BROKER_AI_ALLOWED_TOKENS` to each instance you
+     trust, and set `MORPHEUS_AI_GATEWAY_TOKEN` on the instance.
 
 ## Protocol reference (for anyone auditing this instead of trusting the code)
 

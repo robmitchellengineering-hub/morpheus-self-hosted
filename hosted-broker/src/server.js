@@ -18,6 +18,7 @@ import jwt from 'jsonwebtoken';
 import * as exchangeStore from './exchangeStore.js';
 import * as deviceStore from './deviceStore.js';
 import { allow } from './rateLimit.js';
+import { meteringEnabled, streamingRefusal as streamingRefusalFor, verifyCall, reportUsage, refundCall } from './metering.js';
 
 // Kept in sync with server/src/routes/connections.routes.js's GH_SCOPE.
 const GH_SCOPE = 'repo delete_repo read:user workflow';
@@ -57,6 +58,8 @@ app.get('/', (req, res) => {
     github: Boolean(process.env.BROKER_GITHUB_CLIENT_ID),
     google: Boolean(process.env.BROKER_GOOGLE_CLIENT_ID),
     aiGateway: Boolean(process.env.BROKER_AI_UPSTREAM_KEY),
+    // Which gate the AI passthrough is using: per-account metering, or the older shared token list.
+    aiMetering: meteringEnabled(),
   });
 });
 
@@ -238,33 +241,102 @@ app.post('/google/exchange', (req, res) => {
 });
 
 // ── AI gateway passthrough ───────────────────────────────────────────
-// Deployment tokens are opaque bearer strings the broker operator hands out
-// (BROKER_AI_ALLOWED_TOKENS, comma-separated — swap for a real per-deployment
-// token table + usage metering before relying on this for paid quotas; this
-// is deliberately the simplest thing that works for a first deployment).
+// Two gates, and which one applies depends on whether this deployment has been
+// pointed at an instance to bill through:
+//
+//   BROKER_METERING_SECRET + BROKER_METERING_INSTANCE_URL set  →  per-account metering. The
+//     instance's backend reserves the account's credits before the call and charges it after,
+//     so the balance — not a shared token list — is what limits spending.
+//   unset  →  the original shared deployment-token list (BROKER_AI_ALLOWED_TOKENS), kept so an
+//     existing deployment keeps working. Unset never means "allow all": with neither configured
+//     the gateway is closed.
 app.post('/v1/chat/completions', async (req, res) => {
   if (!process.env.BROKER_AI_UPSTREAM_KEY) return res.status(501).json({ error: 'Broker has no upstream AI key configured' });
 
   const authHeader = req.headers.authorization || '';
   const token = authHeader.replace(/^Bearer\s+/i, '');
-  const allowedTokens = (process.env.BROKER_AI_ALLOWED_TOKENS || '').split(',').map((t) => t.trim()).filter(Boolean);
-  if (allowedTokens.length > 0 && !allowedTokens.includes(token)) {
-    return res.status(403).json({ error: 'unrecognized deployment token' });
+  const metered = meteringEnabled();
+
+  // A streamed reply cannot be metered: the token counts arrive in the last chunk, long after the
+  // caller has been handed a live SSE connection that cannot be taken back. Serving it would be the
+  // one unmetered path through a paid gateway, so it is refused rather than quietly subsidised.
+  const streamingRefusal = metered ? streamingRefusalFor(req.body) : null;
+  if (streamingRefusal) return res.status(400).json({ error: streamingRefusal });
+
+  if (!metered) {
+    const allowedTokens = (process.env.BROKER_AI_ALLOWED_TOKENS || '').split(',').map((t) => t.trim()).filter(Boolean);
+    // NO TOKENS CONFIGURED MEANS NOBODY, not everybody. This line read
+    // `allowedTokens.length > 0 && !allowedTokens.includes(token)`, so an EMPTY list accepted ANY
+    // bearer token: a gateway holding the operator's real upstream key, open to anyone who guessed
+    // its URL. `.env.example` documented exactly that ("leave empty to accept any bearer token"),
+    // which is the more useful part of the lesson — a comment had made an open door look like a
+    // setting. A deployment that means to serve everyone configures metering or an explicit token.
+    if (allowedTokens.length === 0) {
+      return res.status(503).json({ error: 'this gateway has no metering and no deployment tokens configured, so it serves nobody — set BROKER_METERING_SECRET or BROKER_AI_ALLOWED_TOKENS' });
+    }
+    if (!allowedTokens.includes(token)) {
+      return res.status(403).json({ error: 'unrecognized deployment token' });
+    }
   }
   if (!allow(token || req.ip, { max: Number(process.env.BROKER_AI_RATE_LIMIT_PER_MIN) || 30 })) {
     return res.status(429).json({ error: 'rate limit exceeded — this is a shared default gateway; configure your own LLM_API_KEY for dedicated capacity' });
   }
 
+  const startedAt = Date.now();
+  // Reserve BEFORE the upstream call. This is what stops a call from being served against a balance
+  // that cannot pay for it, and it is why the instance, not this broker, decides.
+  let reservation = null;
+  if (metered) {
+    reservation = await verifyCall({ token, body: req.body });
+    if (!reservation.ok) {
+      return res.status(reservation.status || 502).json({ error: reservation.error, remainingCredits: reservation.remainingCredits });
+    }
+  }
+
   try {
     const upstreamBase = (process.env.BROKER_AI_UPSTREAM_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    // The instance caps output so its reservation actually bounds this call's cost; a caller-supplied
+    // max_tokens above that cap would spend past what was reserved.
+    const upstreamBody = { ...req.body };
+    if (metered && Number.isFinite(Number(reservation.maxOutputTokens))) {
+      const cap = Number(reservation.maxOutputTokens);
+      upstreamBody.max_tokens = Number.isFinite(Number(upstreamBody.max_tokens)) ? Math.min(Number(upstreamBody.max_tokens), cap) : cap;
+    }
     const upstreamRes = await fetch(`${upstreamBase}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.BROKER_AI_UPSTREAM_KEY}` },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(upstreamBody),
     });
     const data = await upstreamRes.text();
+
+    if (metered) {
+      // Report even a non-2xx upstream answer: with an OpenAI-compatible upstream a rate-limit or
+      // 5xx can still have consumed input tokens, so "it failed" is not the same as "it was free".
+      // The instance's true-up refunds whatever the real counts do not justify.
+      let parsed = null;
+      try { parsed = JSON.parse(data); } catch { parsed = null; }
+      const durationMs = Date.now() - startedAt;
+      if (upstreamRes.ok && parsed?.usage) {
+        // Awaited: the response body is already read, so this adds no latency to the reply, and a
+        // charge that never lands is worse than a few milliseconds. Its transport failure must not
+        // change what the user gets, so it is logged rather than thrown.
+        const reported = await reportUsage({ ticket: reservation.ticket, model: reservation.model, usage: parsed.usage, durationMs });
+        if (!reported.ok) console.error(`[broker] usage report failed for a served call: ${reported.payload?.reason || reported.transportError || reported.status}`);
+      } else {
+        // Nothing billable came back, so the reservation goes back to the account rather than
+        // sitting as an unexplained debit.
+        const refunded = await refundCall({ ticket: reservation.ticket, reason: `upstream answered ${upstreamRes.status} without token counts` });
+        if (!refunded.ok) console.error(`[broker] refund failed for an unbilled call: ${refunded.payload?.reason || refunded.transportError || refunded.status}`);
+      }
+    }
+
     res.status(upstreamRes.status).type('application/json').send(data);
   } catch (err) {
+    // The upstream was never reached, so nothing was billed upstream and the reservation must go back.
+    if (metered && reservation?.ticket) {
+      const refunded = await refundCall({ ticket: reservation.ticket, reason: `upstream request failed: ${err.message}` });
+      if (!refunded.ok) console.error(`[broker] refund failed after a transport error: ${refunded.payload?.reason || refunded.transportError || refunded.status}`);
+    }
     res.status(502).json({ error: `upstream AI request failed: ${err.message}` });
   }
 });

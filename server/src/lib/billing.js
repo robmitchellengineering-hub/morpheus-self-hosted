@@ -65,8 +65,13 @@ export const CREDIT_RATE_USD = 0.005; // $5 / 1,000 credits, decided 2026-09-01
 // usually refund a small amount back to the user, never surprise them with
 // a large true-up charge after the fact (TOKEN-SYSTEM-BUILD-PLAN.md Step 3's
 // "cap the overshoot risk with a conservative estimate multiplier").
-const ESTIMATE_SAFETY_MULTIPLIER = 1.4;
-const CHARS_PER_TOKEN = 4; // rough, standard heuristic for a pre-call estimate only
+// Exported 2026-09-29 so the Cloud gateway reserves on the SAME basis as every other call. The
+// gateway cannot call estimatePreCallCredits() directly — it is not one of the product's roles, and
+// it knows the prompt's length rather than its text — so it passes these two numbers into
+// cloudMetering.js's estimateCallCredits(). Exported rather than copied, because a reservation policy
+// written down twice is a reservation policy that will disagree with itself.
+export const ESTIMATE_SAFETY_MULTIPLIER = 1.4;
+export const CHARS_PER_TOKEN = 4; // rough, standard heuristic for a pre-call estimate only
 
 // Per-role *output* token expectations, and the rule that decides which number
 // a reservation uses. Both live in billingEstimate.js — a module with no imports
