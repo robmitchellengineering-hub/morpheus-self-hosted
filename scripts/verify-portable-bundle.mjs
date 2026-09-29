@@ -101,13 +101,38 @@ const page = read('src/pages/PortableMorpheusDownload.jsx');
 check('the page no longer assembles a zip in the browser', /from 'jszip'/.test(page), false);
 check('…it links the artifact the build wrote', /portable-morpheus\.zip/.test(page), true);
 check('…and it does not fetch files one request at a time', /fetch\(`\$\{import\.meta\.env\.BASE_URL\}portable-morpheus\//.test(page), false);
+// The page used to promise "no wizard, no remote access" — true when written, false once
+// portable:setup and portable:remote shipped. A public page that UNDER-sells a shipped feature is the
+// same claim-vs-system failure as one that over-sells, and it is the one nobody notices because it
+// looks modest. So the surface that sells the download is pinned to what the download now is.
+// Against the RENDERED TEXT, not the file: the first version of this check failed on the comment
+// explaining the change, because the comment quotes the phrase it removed. Fifth time in this suite
+// that an assertion matched its own prose — comments out, then assert.
+const pageText = page.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+check('the download page no longer claims there is no setup command',
+  /no wizard/i.test(pageText), false);
+check('…nor that remote access does not exist', /no remote access/i.test(pageText), false);
+check('…and it names the honest limitation instead: not a signed app', /notarised|quarantine/i.test(pageText), true);
+check('…and still says no AI is configured until you choose one', /No AI provider is configured/i.test(pageText), true);
 
 console.log('\n7. the bundle says what it does NOT contain');
 // A download that implies an installer it does not have is the claim-vs-system class this repo keeps
 // catching. The README is generated, so it cannot describe a different build than it ships with.
 const readme = portableBundleReadme({ commit: 'abc1234', builtAt: '2026-09-29T00:00:00Z', fileCount: 42 });
 check('it names the commit it was built from', /abc1234/.test(readme), true);
-check('it admits there is no installer or wizard', /No installer and no first-run wizard/.test(readme), true);
+// This check used to assert the README said "No installer and no first-run wizard". That was true
+// when it was written and false by the time anyone read it again: `npm run portable:setup` had
+// shipped. An assertion that pins an ABSENCE is the one kind that rots silently in the safe direction
+// — it kept passing while the download told every stranger to install Postgres by hand. So it now
+// asserts what IS there, and separately what is still honestly missing.
+check('its section heading matches what it now contains', /## What is in here, and what is still missing/.test(readme), true);
+check('it tells the downloader the one command that sets this up', /npm run portable:setup/.test(readme), true);
+check('…and the command to start it, and that a launcher ships', /npm run portable:start/.test(readme) && /launcher/.test(readme), true);
+check('…and that a signed native app is what is still missing, not an installer',
+  /no signed native app/.test(readme) && /quarantines/.test(readme), true);
+check('it no longer claims there is no installer at all', /No installer and no first-run wizard/.test(readme), false);
+check('it says the setup generates the gateway signing key, so a stranger need not invent it',
+  /signs AI gateway tokens with/.test(readme) && /cannot invent/.test(readme), true);
 check('it says remote access needs Tailscale installed by the operator, not by us',
   /Remote access needs Tailscale, which you install/.test(readme) && /does not install Tailscale/.test(readme), true);
 check('it says the AI is yours to choose, and that the paid default needs a broker that is not deployed',

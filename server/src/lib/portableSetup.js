@@ -26,6 +26,7 @@ export const GENERATED_ENV = [
   { key: 'JWT_SECRET', how: '48 random bytes, base64url — signs this install\'s own sessions' },
   { key: 'ENCRYPTION_KEY', how: '32 random bytes, base64 — encrypts stored connection credentials at rest. lib/crypto.js throws without it; the bytes are exact, not decorative' },
   { key: 'DATABASE_URL', how: 'the local cluster this install starts; no hosted database involved' },
+  { key: 'BROKER_GATEWAY_SIGNING_SECRET', how: '48 random bytes, base64url — signs this install\'s own Morpheus Cloud gateway tokens, so AI calls it brokers belong to an account here rather than to a shared secret' },
 ];
 
 /** Values that are fixed for a single-machine install rather than secret. */
@@ -53,6 +54,18 @@ export function envFileContents({ secrets }) {
     `DATABASE_URL=${secrets.DATABASE_URL}`,
     `JWT_SECRET=${secrets.JWT_SECRET}`,
     `ENCRYPTION_KEY=${secrets.ENCRYPTION_KEY}`,
+    `BROKER_GATEWAY_SIGNING_SECRET=${secrets.BROKER_GATEWAY_SIGNING_SECRET}`,
+    '',
+    '# The line above is how this install issues its own Morpheus Cloud gateway tokens: it SIGNS',
+    '# with that value and the broker you point at VERIFIES with it, so set the same value as',
+    '# BROKER_GATEWAY_SIGNING_SECRET on the broker, once. Treat it as a credential — anyone holding',
+    '# it can mint a token for any account here.',
+    '',
+    '# A broker also has to REACH this install to reserve the credits for a call and report what it',
+    '# used, so it needs two more things from you: BROKER_INTERNAL_SECRET (any random value, shared',
+    '# with the broker, which is how it proves itself when it calls this server) and an https address',
+    '# for this machine that the broker can open. A machine at home has neither by default —',
+    '# npm run portable:remote gives it a stable address on your own tailnet.',
     '',
     '# No AI provider is configured yet. Pick ONE (see PORTABLE-README.md):',
     '#   locally hosted model   LLM_BASE_URL=http://localhost:11434/v1   LLM_MODEL=<model>',
@@ -86,7 +99,7 @@ export const INSTALL_STEPS = [
  */
 export const NOT_INSTALLED_YET = [
   'Remote access is a script, but Tailscale itself is yours to install and sign in to: npm run portable:remote (we do not install a VPN for you).',
-  'The paid AI default still cannot work out of the box: the Morpheus Cloud broker that would make it work is not deployed (npm run portable:ai -- --use local or --use key works today).',
+  'The paid AI default still cannot complete a call out of the box: the Morpheus Cloud broker that would make it work is not deployed by anyone yet. This install already holds its half of that pair (BROKER_GATEWAY_SIGNING_SECRET is generated above), so pointing it at a broker is a copy of one value rather than a new setup. Today npm run portable:ai -- --use local or --use key works.',
   'A signed native app: the launcher is a shell wrapper, so macOS quarantines a downloaded .command and Windows SmartScreen warns once. There is no code signing and no auto-update.',
 ];
 
@@ -121,6 +134,13 @@ export function generateSecrets(randomBytes) {
     JWT_SECRET: Buffer.from(randomBytes(48)).toString('base64url'),
     ENCRYPTION_KEY: Buffer.from(randomBytes(32)).toString('base64'),
     DATABASE_URL: `postgresql://${LOCAL_DB.user}:${password}@${LOCAL_DB.host}:${LOCAL_DB.port}/${LOCAL_DB.database}`,
+    // Generated HERE rather than borrowed from a broker, because it is this install's half of the
+    // gateway pair: the broker VERIFIES with this value, the install SIGNS with it. A fresh install
+    // therefore arrives able to issue gateway tokens for its own accounts with nothing pasted in —
+    // the operator copies this value to the broker once, and nothing else is needed on this side
+    // unless the broker calls back (then it also needs the broker's secret and its own reachable URL,
+    // which are named in the .env comment).
+    BROKER_GATEWAY_SIGNING_SECRET: Buffer.from(randomBytes(48)).toString('base64url'),
   };
 }
 

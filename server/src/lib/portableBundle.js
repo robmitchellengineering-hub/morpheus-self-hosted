@@ -112,20 +112,21 @@ your own Mac, PC or Linux machine.
   check the thing you are running.
 - \`README.md\` and \`AGENTS.md\` — what the project is, and how it is built.
 
-## What is NOT in here yet, plainly
+## What is in here, and what is still missing
 
-- **No installer and no first-run wizard.** You are getting the source, not a one-click app. Running
-  it today means the same steps a developer uses: install Node and PostgreSQL, \`npm install\` in the
-  repository root and in \`server/\`, set the environment variables \`server/.env.example\` names, apply
-  the Prisma schema to your local database, then build the frontend and start the server.
+- **One command sets it up.** \`npm run portable:setup\` checks your machine, generates the secrets an
+  install cannot invent (including the key it signs AI gateway tokens with), starts a local Postgres
+  for you, applies the schema and builds the frontend — then \`npm run portable:start\` (or the
+  double-click launcher that ships here) opens it. What is still NOT one-click: no signed native app,
+  so macOS quarantines a downloaded \`.command\` and Windows SmartScreen warns once.
 - **Remote access needs Tailscale, which you install.** \`npm run portable:remote\` exposes this
   server to your own tailnet — end-to-end encrypted, no ports opened — but it does not install Tailscale
   or create the account for you, and nothing is exposed until you run it. A Morpheus-hosted relay, for
   anyone who would rather install nothing, is decided as the paid-tier successor and is not built.
 - **No AI configured until you choose one.** \`npm run portable:ai\` sets it: a model on this machine
   (private, free), or your own provider key. The Morpheus Cloud paid default is decided and its broker
-  exists in \`hosted-broker/\`, but that service is **not deployed**, so it cannot work today — and the
-  wizard refuses to write the inert placeholder URL that would look like it did.
+  exists in \`hosted-broker/\`, but that service is **not deployed**, so it cannot complete a call today
+  — and the wizard refuses to write the inert placeholder URL that would look like it did.
 
 ## Why the source and not a re-implementation
 
