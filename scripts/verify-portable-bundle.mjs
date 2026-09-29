@@ -108,7 +108,8 @@ console.log('\n7. the bundle says what it does NOT contain');
 const readme = portableBundleReadme({ commit: 'abc1234', builtAt: '2026-09-29T00:00:00Z', fileCount: 42 });
 check('it names the commit it was built from', /abc1234/.test(readme), true);
 check('it admits there is no installer or wizard', /No installer and no first-run wizard/.test(readme), true);
-check('it admits there is no remote access', /No remote access/.test(readme), true);
+check('it says remote access needs Tailscale installed by the operator, not by us',
+  /Remote access needs Tailscale, which you install/.test(readme) && /does not install Tailscale/.test(readme), true);
 check('it admits no AI provider is configured', /No AI configured by default/.test(readme), true);
 check('it names the Command Deck, because that is the scope', /Command Deck/.test(readme), true);
 

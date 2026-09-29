@@ -253,6 +253,11 @@ out.portable = [
     verdict: has('scripts/portable-setup.mjs') && has('server/src/lib/portableSetup.js') && has('server/scripts/dev-db.mjs') ? 'BUILT' : 'NOT BUILT',
     evidence: 'generates the three secrets a downloader cannot invent (JWT_SECRET, ENCRYPTION_KEY, DATABASE_URL), then DELEGATES the database to server/scripts/dev-db.mjs — which drives real embedded-postgres binaries, because the library class stops Postgres when the process exits. The server now serves the built frontend from dist/ when it is present, so a local install is ONE process on one origin (no second static server, no CORS allowlist); on the hosted deployment there is no dist/ in the backend image, so that is a no-op. Guarded by scripts/verify-portable-setup.mjs, which also asserts the honest list of what is still missing.',
   },
+  {
+    step: 'remote access via the operator\'s own tailnet (portable-remote.mjs)',
+    verdict: has('scripts/portable-remote.mjs') && has('server/src/lib/portableRemote.js') ? 'BUILT' : 'NOT BUILT',
+    evidence: 'tailscale serve — NOT funnel, so the app is exposed to the operator\'s own tailnet rather than the internet — gated on the CLI reporting a running backend and a DNS name, and it sets BACKEND_PUBLIC_URL to that stable name. It deliberately does NOT install Tailscale or guess the CLI\'s syntax: that has changed across versions, so the installed CLI is asked to do the work and its own error is shown verbatim. Guarded by scripts/verify-portable-remote.mjs. Still owed: the AI-source wizard, and a native package.',
+  },
 ];
 
 // Pricing coverage — the revenue-integrity check. A production model missing

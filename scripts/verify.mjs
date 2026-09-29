@@ -86,6 +86,7 @@ const HARD = [
   'verify-deck-widget-build.mjs',
   'verify-portable-bundle.mjs',
   'verify-portable-setup.mjs',
+  'verify-portable-remote.mjs',
   'boot-smoke.mjs',
 ];
 

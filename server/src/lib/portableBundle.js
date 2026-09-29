@@ -118,9 +118,10 @@ your own Mac, PC or Linux machine.
   it today means the same steps a developer uses: install Node and PostgreSQL, \`npm install\` in the
   repository root and in \`server/\`, set the environment variables \`server/.env.example\` names, apply
   the Prisma schema to your local database, then build the frontend and start the server.
-- **No remote access.** Reaching your instance from outside your own network is not configured. The
-  decided approach is a Tailscale-style mesh (its own end-to-end encrypted network), with a
-  Morpheus-hosted relay for anyone who would rather not install anything — neither is built.
+- **Remote access needs Tailscale, which you install.** \`npm run portable:remote\` exposes this
+  server to your own tailnet — end-to-end encrypted, no ports opened — but it does not install Tailscale
+  or create the account for you, and nothing is exposed until you run it. A Morpheus-hosted relay, for
+  anyone who would rather install nothing, is decided as the paid-tier successor and is not built.
 - **No AI configured by default in this bundle.** Point it at a locally hosted model, or your own
   provider key, or a Morpheus account. Until you choose one, AI calls have nowhere to go.
 
