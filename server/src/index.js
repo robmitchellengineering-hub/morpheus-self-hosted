@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import authRoutes from './routes/auth.routes.js';
@@ -69,6 +70,25 @@ app.use('/api/app-capability', appCapabilityRoutes);
 // Local-disk storage driver serves files from here. Swap to S3/R2 + a CDN
 // in front for anything beyond a single instance — see SCALING.md.
 app.use('/uploads', express.static(LOCAL_ROOT, { maxAge: '1y', immutable: true }));
+
+// ── Local single-process mode (Portable Morpheus) ────────────────────────────
+// When a built frontend sits at <repo>/dist, serve it from THIS origin. That is the point of a local
+// install: one process hosting the app and every backend function, with the frontend calling the
+// same-origin `/api` (see src/api/base44Client.js's default base) — no second static server for the
+// operator to run, and no CORS allowlist for them to get wrong. `CORS_ORIGIN` stays untouched.
+//
+// On the hosted deployment this is a no-op: the backend image has no dist/ (the frontend is on
+// Netlify), so neither the mount nor the fallback is registered and production behaviour is unchanged.
+const PORTABLE_DIST = path.resolve(__dirname, '..', '..', 'dist');
+if (existsSync(path.join(PORTABLE_DIST, 'index.html'))) {
+  app.use(express.static(PORTABLE_DIST, { index: false }));
+  // The Deck is its own installed app with its own manifest — public/_redirects does this on Netlify,
+  // and a deep link like /deck/settings has to reach deck.html here for the same reason.
+  app.get(/^\/deck(\/.*)?$/, (_req, res) => res.sendFile(path.join(PORTABLE_DIST, 'deck.html')));
+  // SPA fallback: every other non-API path renders index.html so a refresh on a client route works.
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(PORTABLE_DIST, 'index.html')));
+  console.log('[morpheus] local mode: serving the built frontend from dist/');
+}
 
 app.use((err, _req, res, _next) => {
   console.error(err);

@@ -229,6 +229,11 @@ jobs:
       - name: Portable bundle is generated from the code it ships
         run: node scripts/verify-portable-bundle.mjs
 
+      # The installer has to finish the job on someone else's machine: real secrets, a database it
+      # delegates rather than re-implements, and an honest list of what it still does not do.
+      - name: Portable installer holds up its end
+        run: node scripts/verify-portable-setup.mjs
+
       # The inbox reply draft's failure path: an empty draft must not read as success, and
       # a failure must not be reported as a save error.
       - name: Reply draft failure
