@@ -1,0 +1,151 @@
+// Would what we generate actually run for the operator?
+//
+// WHY THIS EXISTS. The "self-hosted" posture promises one command, no account, no network. On
+// 2026-09-29 that promise was tested for real — a self-hosted backend was generated and run — and the app
+// failed twice before answering anything:
+//
+//   1. it declared `better-sqlite3`, which publishes no prebuilt binary for Node 22 and whose source does
+//      not compile against that V8, so the FIRST command in its README failed; and
+//   2. `server/db.js` exported `{ initialize, getDb }` while `server/routes/tasks.js` called
+//      `db.prepare(...)`, so the first request threw.
+//
+// `verify-server-imports.mjs` cannot see either: it checks that imports RESOLVE, not that the shape a
+// module receives is the shape it uses. And nothing in the repo ran generated output at all.
+//
+// So this guard does two things, and both matter:
+//   * it checks the fixture — a real, minimal, self-contained app — is ACCEPTED, so the checker is not
+//     merely allergic to everything; and
+//   * it checks the checker REJECTS each defect that was actually produced, reconstructed from the real
+//     output rather than described.
+//
+// What it does not do is prove an app runs. That is `scripts/smoke-generated-app.mjs`, which installs and
+// boots the same fixture; this file is the part that runs in CI's no-install job.
+//
+// Run:  node scripts/verify-generated-app.mjs
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  generatedAppProblems, dependencyProblems, moduleContractProblems, entryPointProblems,
+  packageJsonOf, declaredDependencies, withoutComments, RUNNABLE_APP_REQUIREMENTS, UNBUILDABLE_DEPS,
+} from '../server/src/lib/generatedAppCheck.js';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const FIXTURE = join(ROOT, 'server', 'test-fixtures', 'runnable-app');
+
+let failures = 0;
+let checks = 0;
+function check(name, actual, expected) {
+  checks++;
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) console.log(`  PASS  ${name}`);
+  else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
+}
+
+// The fixture as the generator would hand it over: a flat list of { path, content }.
+function readFixture() {
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.isDirectory()) return e.name === 'node_modules' ? [] : walk(join(dir, e.name));
+    return [join(dir, e.name)];
+  });
+  return walk(FIXTURE).map((p) => ({ path: relative(FIXTURE, p), content: readFileSync(p, 'utf8') }));
+}
+
+const good = readFixture();
+const clone = () => good.map((f) => ({ ...f }));
+const setFile = (files, path, content) => files.map((f) => (f.path === path ? { ...f, content } : f));
+const addFile = (files, path, content) => [...files, { path, content }];
+
+console.log('\n1. the fixture is a real app, and it is accepted');
+check('the fixture ships an entry point', existsSync(join(FIXTURE, 'server', 'index.js')), true);
+check('…and a database module', existsSync(join(FIXTURE, 'server', 'db.js')), true);
+check('a good app produces NO problems', generatedAppProblems(good), []);
+// The other direction. A checker that flags everything would pass every rejection test below and be
+// useless, so this asserts it can say yes before it is trusted to say no.
+check('…and every runnable-app requirement is satisfied by it', RUNNABLE_APP_REQUIREMENTS.map((r) => r.verify(good, packageJsonOf(good))).join(','), RUNNABLE_APP_REQUIREMENTS.map(() => 'true').join(','));
+
+console.log('\n2. defect 1, as actually produced: a dependency that cannot install');
+// Exactly the observed failure: the generated package.json declared better-sqlite3.
+// Written the long way on purpose: the first version called setFile(files, PATH, json) with the path as
+// the CONTENT argument, so nothing was actually changed and three checks passed for the wrong reason.
+const goodPkg = JSON.parse(good.find((f) => f.path === 'package.json').content);
+const withBadDep = JSON.stringify({ ...goodPkg, dependencies: { ...goodPkg.dependencies, 'better-sqlite3': '^11.0.0' } }, null, 2);
+const badDep = setFile(clone(), 'package.json', withBadDep);
+check('the defect-1 fixture really did change the manifest',
+  Boolean(packageJsonOf(badDep)?.data?.dependencies?.['better-sqlite3']), true);
+const depProblems = dependencyProblems(packageJsonOf(badDep));
+// `find`, not `[0]`: the fixture legitimately also carries sqlite3, and asserting on the first element
+// made this read as "sqlite3 is unbuildable" — which is exactly the false positive the list had.
+const unbuildable = depProblems.find((p) => p.kind === 'unbuildable');
+check('the unbuildable dependency is rejected', Boolean(unbuildable), true);
+check('…and named', unbuildable?.package, 'better-sqlite3');
+check('…with the measured reason, not a guess', /prebuilt binary/.test(unbuildable?.detail || ''), true);
+check('…and it points at the package that works', /use sqlite3/.test(unbuildable?.detail || ''), true);
+// sqlite3 is native but PREBUILT for this Node, so it must NOT be reported — measured, not assumed.
+check('a native addon with a prebuilt binary is not reported', depProblems.some((p) => p.package === 'sqlite3'), false);
+check('the measured defect is the one recorded in the table', Object.keys(UNBUILDABLE_DEPS), ['better-sqlite3']);
+check('a native-build dependency is reported too, since a clean machine has no toolchain',
+  dependencyProblems(packageJsonOf(setFile(clone(), 'package.json', JSON.stringify({ dependencies: { bcrypt: '^5' } })))).map((p) => p.kind), ['needs-compiler']);
+check('a pure-JS dependency set is left alone',
+  dependencyProblems(packageJsonOf(setFile(clone(), 'package.json', JSON.stringify({ dependencies: { express: '^4', dotenv: '^16' } })))), []);
+
+console.log('\n3. defect 2, as actually produced: the module contract');
+// `db.prepare(...)` on a module that exports a factory — the exact shape of the generated routes file.
+const badContract = setFile(clone(), 'server/routes/tasks.js',
+  "const express = require('express');\nconst db = require('../db');\nconst router = express.Router();\nrouter.get('/', (req, res) => {\n  const tasks = db.prepare('SELECT id FROM tasks').all();\n  res.json({ tasks });\n});\nmodule.exports = router;\n");
+const contractProblems = moduleContractProblems(badContract);
+check('calling the module as if it were the handle is rejected', contractProblems.map((p) => p.kind), ['module-contract']);
+check('…naming the file that breaks', contractProblems[0]?.file, 'server/routes/tasks.js');
+check('…and the call it made', /db\.prepare\(\)/.test(contractProblems[0]?.detail || ''), true);
+check('…and saying what to do instead', /call getDb\(\)/.test(contractProblems[0]?.detail || ''), true);
+check('the GOOD fixture is not flagged for the same call through getDb()', moduleContractProblems(good), []);
+// The prose trap, which caught the checker itself: the fixture's own comment quotes the bad call.
+check('a comment that quotes the bad call is not a defect',
+  moduleContractProblems(setFile(clone(), 'server/routes/tasks.js',
+    "const db = require('../db');\n// never call db.prepare() on the module — use db.getDb()\nmodule.exports = {};\n")), []);
+check('withoutComments really strips them', withoutComments('a // db.prepare()\nb /* db.query() */ c'), 'a \nb  c');
+
+console.log('\n4. the entry point the README tells you to run must exist');
+check('a start script pointing at a missing file is rejected',
+  entryPointProblems(clone(), { data: { scripts: { start: 'node server/index.js' } } }).length, 0);
+check('…and one pointing at a file that does not ship is reported',
+  entryPointProblems(clone(), { data: { scripts: { start: 'node server/missing.js' } } }).map((p) => p.kind), ['missing-entry']);
+check('no start script at all is reported, because the README gives one',
+  entryPointProblems(clone(), { data: { scripts: {} } }).map((p) => p.kind), ['no-start-script']);
+check('package.json is found wherever it sits', packageJsonOf(good)?.path, 'package.json');
+check('dependencies are read from both blocks', declaredDependencies({ dependencies: { a: '1' }, devDependencies: { b: '2' } }).sort().join(','), 'a,b');
+check('a broken package.json is not a crash', packageJsonOf([{ path: 'package.json', content: '{not json' }]), null);
+
+console.log('\n5. the checklist is complete, and each item can fail');
+check('it covers the six things a runnable app needs', RUNNABLE_APP_REQUIREMENTS.length, 6);
+for (const req of RUNNABLE_APP_REQUIREMENTS) {
+  check(`${req.id}: the good fixture passes it`, req.verify(good, packageJsonOf(good)), true);
+}
+// Each item must be able to FAIL, or it is decoration. Empty file lists except where the item is about
+// persistence, which legitimately only needs one file.
+const empties = { 'package-json': [], 'start-script': [], 'installable-deps': good, 'persistent-store': [{ path: 'x.txt', content: 'nothing' }], 'gitignore-secrets': [], 'readme-one-command': [] };
+for (const req of RUNNABLE_APP_REQUIREMENTS) {
+  const target = req.id === 'installable-deps' ? badDep : (empties[req.id] || []);
+  check(`${req.id}: fails when its subject is missing`, req.verify(target, packageJsonOf(target)), false);
+}
+
+console.log('\n6. the two defects would have stopped the build');
+// The end-to-end point, stated as one assertion per defect: what shipped on 2026-09-29 is caught by this.
+check('a generated app with defect 1 is rejected overall', generatedAppProblems(badDep).some((p) => p.kind === 'unbuildable'), true);
+check('a generated app with defect 2 is rejected overall', generatedAppProblems(badContract).some((p) => p.kind === 'module-contract'), true);
+check('…and both at once are both reported', generatedAppProblems(setFile(badDep, 'server/routes/tasks.js', badContract.find((f) => f.path === 'server/routes/tasks.js').content)).map((p) => p.kind).sort().join(','), 'module-contract,unbuildable');
+
+console.log('\n7. the route reaching the generator is asked for the same thing');
+// `generateBackend`'s brief and this checker are two halves of one promise; if the brief stops asking for
+// a one-command app, the checker starts rejecting everything and nobody knows why.
+const gen = readFileSync(join(ROOT, 'server', 'src', 'functions', 'generateBackend.js'), 'utf8');
+check('the generator still asks for one command', /ONE command must start everything/.test(
+  readFileSync(join(ROOT, 'server', 'src', 'lib', 'infrastructureComponents.js'), 'utf8')), true);
+check('…and injects that requirement into the brief', gen.includes('${runnableRequirement}'), true);
+
+console.log(`\n${checks - failures}/${checks} checks passed`);
+if (failures) {
+  console.log('\n✗ we could ship an app the operator cannot start\n');
+  process.exit(1);
+}
+console.log('a generated app is checked for the two ways it was measured to fail before it is shipped\n');

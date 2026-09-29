@@ -137,6 +137,15 @@ jobs:
       # The BUILT app, exactly as it ships — not the dev server. `npm run build`
       # rewrites src/MORPHEUS_DESIGN_PLAN.md (H3); that is build noise and is
       # warned about in the `build` job, not repeated here.
+      # INSTALLS AND BOOTS a real self-contained app, in the shape the generator is asked to produce,
+      # and hits the route that reads from the database. This lives here rather than in the no-install
+      # guards job because it needs the network and a real `npm install` — which is the entire point:
+      # the first command in a self-contained app's README is what failed on 2026-09-29, and a
+      # pre-installed fixture would have proved nothing about it. It exits 2 (not 1) when the registry
+      # is unreachable, so a network blip reports NOT VERIFIED instead of a false red.
+      - name: A self-contained app still installs, starts and answers
+        run: node scripts/smoke-generated-app.mjs
+
       - name: Build the frontend
         run: npm run build
 
@@ -256,6 +265,13 @@ jobs:
       # must arrive with a single command to start it.
       - name: An operator can run what they built
         run: node scripts/verify-delivery-posture.mjs
+
+      # Would the app we hand the operator actually run? Two defects were measured on 2026-09-29 by
+      # generating a self-hosted app and running it: a dependency with no prebuilt binary for this Node,
+      # and a module contract that could not hold. verify-server-imports cannot see either — it checks
+      # that imports RESOLVE, not that the shape a module receives is the shape it uses.
+      - name: The app we generate is one that runs
+        run: node scripts/verify-generated-app.mjs
 
       # There are TWO copies of the infrastructure registry and nothing kept them in step. That already
       # cost the posture feature its entire UI once, because BackendPanel.jsx imports the copy the work
