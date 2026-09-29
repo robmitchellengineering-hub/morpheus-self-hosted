@@ -384,7 +384,7 @@ export default function Workspace() {
       {isMobile ? (
         <div className="flex-1 flex overflow-hidden overscroll-none min-h-0">
           <div className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} flex-1 min-w-0 min-h-0`}>
-            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading}  onAutonomous={() => setShowAutonomous(true)} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} seed={seedPrompt} />
+            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} seed={seedPrompt} />
           </div>
           <div className={`${mobileTab === 'files' ? 'flex' : 'hidden'} flex-1 flex-col min-w-0 min-h-0`}>
             <FileTree files={ws.files} selectedFile={ws.selectedFile} onSelect={ws.setSelectedFile} />
@@ -397,7 +397,7 @@ export default function Workspace() {
       ) : (
         <PanelGroup direction="horizontal" className="flex-1 overflow-hidden min-h-0">
           <Panel defaultSize={33} minSize={15} className="min-w-0 overflow-hidden">
-            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading}  onAutonomous={() => setShowAutonomous(true)} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} seed={seedPrompt} />
+            <ChatPanel messages={ws.messages} loading={ws.loading} pipelineStages={ws.pipelineStages} onSend={ws.sendMessage} onRevert={ws.revertLastPrompt} canRevert={ws.snapshots.length > 0 && !ws.loading} chatMode={ws.chatMode} onSetChatMode={ws.setChatMode} webAccess={ws.webAccess} onSetWebAccess={ws.setWebAccess} seed={seedPrompt} />
           </Panel>
           <PanelResizeHandle className="relative w-2 bg-primary/10 hover:bg-primary/30 transition-colors cursor-col-resize shrink-0 group">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-12 bg-primary/30 group-hover:bg-primary rounded-full transition-colors" />
@@ -427,6 +427,27 @@ export default function Workspace() {
       <DomainPanel open={showDomain} onClose={() => setShowDomain(false)} projectId={ws.currentProject?.id} onSetChange={setDomainSet} />
       <ContentPanel open={showContent} onClose={() => setShowContent(false)} projectId={ws.currentProject?.id} />
       <WebsitePanel open={showWebsite} onClose={() => setShowWebsite(false)} projectId={ws.currentProject?.id} onConnectedChange={setWebsiteConnected} />
+      {/* HIDDEN, NOT REMOVED — Rob, 2026-09-29: "there is an old robot button on the chat that we
+          might not need anymore". The Bot button in ChatPanel renders ONLY when `onAutonomous` is
+          passed, so the two ChatPanel call sites above no longer pass it. Nothing else changed: this
+          panel, ws.runAutonomousStep (hooks/useWorkspace.js) and
+          server/src/functions/autonomousBuildStep.js are all still here.
+
+          TO BRING IT BACK: re-add `onAutonomous={() => setShowAutonomous(true)}` to BOTH ChatPanel
+          call sites.
+
+          The published capabilities entry "Autonomous build pipeline" is DELIBERATELY UNTOUCHED —
+          Rob's call: it describes the pipeline itself, which is built and working (compile → run →
+          diagnose → recompile), not this particular button. Its workflow line still names the bot
+          icon, which is a known and accepted consequence of hiding the button rather than removing
+          the mode.
+
+          Why hide rather than delete: usage_records shows action_type 'autonomous_step' with 36 runs
+          from 25 Aug to 8 Sep and NONE in the three weeks before this — so it is dormant, not
+          demonstrably superseded. It is also the only door to an unattended build that iterates until
+          a whole spec is done; the ordinary chat path does plan → code → review per message and then
+          stops. Test it before deciding to delete it. */}
+      <AutonomousPanel open={showAutonomous} onClose={() => setShowAutonomous(false)} project={ws.currentProject} onStep={ws.runAutonomousStep} onSendToChat={(msg) => { setShowAutonomous(false); setMobileTab('chat'); ws.sendMessage(msg); }} />
       <AutonomousPanel open={showAutonomous} onClose={() => setShowAutonomous(false)} project={ws.currentProject} onStep={ws.runAutonomousStep} onSendToChat={(msg) => { setShowAutonomous(false); setMobileTab('chat'); ws.sendMessage(msg); }} />
       <TestsPanel open={showTests} onClose={() => setShowTests(false)} project={ws.currentProject} onGenerate={ws.generateTests} />
       <UsagePanel open={showUsage} onClose={() => setShowUsage(false)} />
