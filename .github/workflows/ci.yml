@@ -251,6 +251,12 @@ jobs:
       - name: The installer works on all three platforms
         run: node scripts/verify-portable-platform.mjs
 
+      # A failed ADVISORY check must not throw away a build the user already paid for. Both directions
+      # are asserted: the coder's work survives a reviewer that throws, and the failure can never read
+      # as a pass.
+      - name: A failed AI gate does not cost the user their build
+        run: node scripts/verify-build-gate-failopen.mjs
+
       # The paid default is only paid if a brokered call actually reserves, charges and records. This
       # asserts the money paths: the reservation instead of a balance check, the flat rate instead of a
       # per-token price, the refusal of streaming, and the field names the two services share.
