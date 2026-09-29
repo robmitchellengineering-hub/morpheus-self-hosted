@@ -122,7 +122,25 @@ jobs:
   render:
     name: render
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # A real Postgres for the backend-generation harness, which runs the ACTUAL generateBackend handler
+    # against a database with the AI provider pointed at a fake. This is what makes that path testable
+    # for zero credits — the alternative was ~824 credits and an hour per question, which is how three
+    # defects got found the expensive way.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: morpheus
+          POSTGRES_PASSWORD: harness
+          POSTGRES_DB: harness
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -145,6 +163,18 @@ jobs:
       # is unreachable, so a network blip reports NOT VERIFIED instead of a false red.
       - name: A self-contained app still installs, starts and answers
         run: node scripts/smoke-generated-app.mjs
+
+      # The generator, run for real against the database above with a fake provider answering. Asserts what
+      # the MODEL was actually told (read off the wire), what got PERSISTED, and that the two context
+      # fixes hold end to end — none of which needs a real model, a key, or a credit.
+      - name: The backend generator runs end to end, offline
+        env:
+          HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+        run: |
+          cd server && npx prisma db push --skip-generate --accept-data-loss
+          cd ..
+          node scripts/backend-generation-harness.mjs
 
       - name: Build the frontend
         run: npm run build
