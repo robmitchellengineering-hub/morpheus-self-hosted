@@ -6,11 +6,20 @@
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { logUsage } from '../lib/projectUtils.js';
-import { COMPONENTS, getServiceOption, DEFAULT_COMPONENTS } from '../lib/infrastructureComponents.js';
+import { COMPONENTS, getServiceOption, DEFAULT_COMPONENTS, getPosture } from '../lib/infrastructureComponents.js';
 
 export default async function handler({ user, body }) {
-  const { projectId } = body || {};
+  const { projectId, posture: requestedPosture } = body || {};
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
+
+  // The whole-stack choice, when the operator made one. Validated rather than trusted: an unrecognised
+  // id is refused instead of being quietly defaulted, because defaulting a mistyped "self-hosted"
+  // would put their data in a cloud account they did not ask for. `null` means "let the architect
+  // choose", which is the existing behaviour and stays available.
+  const posture = requestedPosture ? getPosture(requestedPosture) : null;
+  if (requestedPosture && !posture) {
+    throw Object.assign(new Error(`Unknown delivery posture "${requestedPosture}". Expected one of: self-hosted, cloud, container.`), { status: 400 });
+  }
 
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
   if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
@@ -46,7 +55,12 @@ Identify what API calls the frontend makes (look for fetch, axios, API base URLs
 Available infrastructure components and their free-tier service options:
 ${COMPONENTS.map((c) => `- ${c.type} (${c.label}): ${c.options.map((o) => o.id).join(', ')}`).join('\n')}
 
-For each component the backend needs, suggest the best free-tier service and list 1-2 alternatives. Include a reason for each suggestion.
+${posture ? `THE OPERATOR HAS ALREADY CHOSEN WHERE THIS RUNS — plan for exactly this stack and do not substitute a managed service:
+${posture.label}: ${posture.summary}
+It guarantees: ${posture.guarantee}
+Its cost to the operator: ${posture.tradeoff}
+Use these components: ${Object.entries(posture.components).map(([t, i]) => `${t}=${i}`).join(', ')}.
+List alternatives only from the same posture (a self-contained stack has no managed alternative, so say so rather than offering one).` : 'For each component the backend needs, suggest the best free-tier service and list 1-2 alternatives. Include a reason for each suggestion.'}
 
 Respond as JSON with this exact structure:
 {
@@ -137,6 +151,15 @@ Respond as JSON with this exact structure:
   // Validate AI-suggested component IDs against the known COMPONENTS list.
   // If the AI hallucinated a service ID, fall back to the default for that
   // component type so deploy doesn't fail later with "Unknown service".
+  if (posture) {
+    // Stamped onto the plan so generateBackend and the operator's UI read the SAME decision this plan
+    // was written for. Without it, the posture lives only in the request that produced the file.
+    plan.posture = posture.id;
+    plan.components = (plan.components || []).map((c) => ({ ...c, suggested: posture.components[c.type] || c.suggested, reason: c.type in posture.components ? `Chosen by the "${posture.label}" posture.` : c.reason, alternatives: [] }));
+    for (const [type, id] of Object.entries(posture.components)) {
+      if (!plan.components.some((c) => c.type === type)) plan.components.push({ type, suggested: id, alternatives: [], reason: `Chosen by the "${posture.label}" posture.` });
+    }
+  }
   if (plan.components && Array.isArray(plan.components)) {
     for (const comp of plan.components) {
       const service = getServiceOption(comp.type, comp.suggested);

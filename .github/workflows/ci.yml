@@ -251,6 +251,12 @@ jobs:
       - name: The installer works on all three platforms
         run: node scripts/verify-portable-platform.mjs
 
+      # The operator's whole-stack choice, which is what decides whether what they build is something
+      # they can run without anyone's account. A posture is a COMPLETE stack, and a self-contained one
+      # must arrive with a single command to start it.
+      - name: An operator can run what they built
+        run: node scripts/verify-delivery-posture.mjs
+
       # A failed ADVISORY check must not throw away a build the user already paid for. Both directions
       # are asserted: the coder's work survives a reviewer that throws, and the failure can never read
       # as a pass.

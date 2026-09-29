@@ -6,7 +6,7 @@
 // records with a "backend/" path prefix.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
-import { buildCodegenPrompt, buildEnvVars } from '../lib/infrastructureComponents.js';
+import { buildCodegenPrompt, buildEnvVars, selfContainedRequirement } from '../lib/infrastructureComponents.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
 import { generateFilesChunked } from '../lib/chunkedFileGen.js';
@@ -43,11 +43,18 @@ export default async function handler({ user, body }) {
     .join('\n\n')
     .substring(0, 15000);
 
+  // The one thing that makes "runs on your own machine" true rather than advertised: a single command
+  // that brings the WHOLE thing up. Derived from the components (lib/infrastructureComponents.js) rather
+  // than from a posture name, so a stack that needs an account can never be handed this instruction —
+  // and so the exact words the model receives are assertable by a guard.
+  const runnableRequirement = selfContainedRequirement(components);
+
   const refSection = frontendFiles.length > 0
     ? `Reference files (for API contract reference — match the fetch/axios calls the frontend makes):\n${fileSummary}`
     : (isStandalone ? 'No reference files provided — generate the backend based on the plan and project description.' : 'No frontend files available.');
 
   const backendBrief = `You are Morpheus, a backend code generator. Generate production-ready backend code.
+${runnableRequirement}
 
 Infrastructure components (generate code that connects ALL of these):
 ${codegenHint}
