@@ -10,6 +10,7 @@
     "build": "vite build",
     "postbuild": "node scripts/seo-static.mjs && node scripts/build-portable-bundle.mjs",
     "portable:setup": "node scripts/portable-setup.mjs",
+    "portable:remote": "node scripts/portable-remote.mjs",
     "lint": "eslint . --quiet",
     "test": "node --test",
     "lint:fix": "eslint . --fix",

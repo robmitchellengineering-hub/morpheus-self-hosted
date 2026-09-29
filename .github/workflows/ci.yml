@@ -234,6 +234,11 @@ jobs:
       - name: Portable installer holds up its end
         run: node scripts/verify-portable-setup.mjs
 
+      # Remote access asks a stranger to expose a machine: it must not install a VPN, must not
+      # funnel to the open internet, and must not guess a CLI syntax that has changed across versions.
+      - name: Portable remote access holds up its end
+        run: node scripts/verify-portable-remote.mjs
+
       # The inbox reply draft's failure path: an empty draft must not read as success, and
       # a failure must not be reported as a save error.
       - name: Reply draft failure

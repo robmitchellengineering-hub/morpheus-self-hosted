@@ -85,7 +85,7 @@ export const INSTALL_STEPS = [
  * repo keeps catching. Keep this list current in the same change that closes an item.
  */
 export const NOT_INSTALLED_YET = [
-  'Remote access from outside your own network. Tailscale is the decided approach; it is not wired in.',
+  'Remote access is a script, but Tailscale itself is yours to install and sign in to: npm run portable:remote (we do not install a VPN for you).',
   'A wizard for choosing where AI comes from. The paid path will be the default, local the opt-in.',
   'A native app or installer — this is a command, not a double-clickable package.',
 ];
