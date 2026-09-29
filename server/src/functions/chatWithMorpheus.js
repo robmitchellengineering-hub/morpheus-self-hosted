@@ -9,6 +9,7 @@ import { invokeAI } from '../ai.js';
 import { createSnapshot, applyFileOperations, applyEdits, logUsage, syncProjectFilesToGithub } from '../lib/projectUtils.js';
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
+import { runReviewerFailOpen, reviewFailureNote } from '../lib/reviewFailOpen.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
 import { buildReviewerContext } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -1033,6 +1034,10 @@ OPERATOR SAYS: ${message}`;
   // bundle when what it actually did was take the wrong ink rung.
   let conventionFixAttempts = 0;
   let reviewerFixAttempts = 0;
+  // Why the review did not run, or null. The review is ADVISORY, so a reviewer that throws must not
+  // cost the user the coder's work — see the try/catch around reviewAndRetry below for the whole
+  // reasoning. This carries the reason into the reply and into the stage record.
+  let reviewerFailed = null;
   let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
   const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
   let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -1666,13 +1671,45 @@ OPERATOR SAYS: ${message}`;
             reviewContext += `\n\nCALLER IMPACT — this change modifies file(s) that other files import:\n${lines.join('\n')}\n\nThe change MUST keep every listed import valid: do not remove or rename an exported binding a caller uses, and do not change a function's signature or return shape in a way a caller relies on. Any such break is a CRITICAL issue — name the caller.`;
           }
         }
-        const reviewed = await reviewAndRetry(user.id, fileOps, reviewContext, plannerResult.plan, coderPrompt, stages.onProgress);
-        reviewerFixAttempts = reviewed.attempts || 0;
-        console.log(`[chatWithMorpheus] rework: syntax=${syntaxFixAttempts} bundle=${bundleFixAttempts} convention=${conventionFixAttempts} reviewer=${reviewerFixAttempts}${reviewed.criticalFound ? ' (reviewer found critical issues)' : ''} rss=${memMb()}MB ${containerMb()}`);
-        fileOps = reviewed.fileOps;
-        reviewerModel = reviewed.reviewerModel;
-        reviewSummary = reviewed.reviewSummary;
-        reviewIssues = reviewed.issues || [];
+        // ── The review is ADVISORY, so its failure must not discard the coder's work ────────────
+        //
+        // WHY THIS TRY/CATCH EXISTS. `reviewAndRetry` awaits `invokeAI`, and `invokeAI` throws: a
+        // provider 5xx crosses undici's header timeout (:45s), a truncated review completion raises
+        // OUTPUT_TRUNCATED, a drained balance raises InsufficientCreditsError. `reviewFileOperations`
+        // and `reviewAndRetry` catch none of it, and this call used to sit unwrapped — while
+        // `applyFileOperations` does not run until well below. So one failed REVIEW call reached the
+        // outer catch with `appliedOps` empty and discarded the entire turn: the plan, every chunk the
+        // coder produced, and the reply.
+        //
+        // That is the wrong trade even when it is deliberate. A review is a second opinion about code
+        // that already exists; the code is the thing the user asked for. Losing it because the second
+        // opinion could not be formed inverts the value of the two.
+        //
+        // What this does NOT do is pretend the review happened. `reviewResult` is null, the reason is
+        // carried into the reply and into `rework.reviewerFailed`, and the reviewer's own retry pass
+        // never runs — so nothing downstream can read a pass that was never given. The deliberately
+        // FAIL-CLOSED gate (the self-dev deep verify) keeps its refusal for the same reason and by a
+        // different route: an exception there is recorded as critical rather than allowed to throw, so
+        // the push still blocks and a self-dev step cannot advance. See that block below.
+        const review = await runReviewerFailOpen({
+          fileOps,
+          run: () => reviewAndRetry(user.id, fileOps, reviewContext, plannerResult.plan, coderPrompt, stages.onProgress),
+        });
+        reviewerFailed = review.failed;
+        // `fileOps` is the reviewer's version when it ran and the CODER'S OWN when it did not — that
+        // is the whole point, and it is the rule lib/reviewFailOpen.js asserts.
+        fileOps = review.fileOps;
+        if (review.reviewed) {
+          reviewerFixAttempts = review.reviewed.attempts || 0;
+          console.log(`[chatWithMorpheus] rework: syntax=${syntaxFixAttempts} bundle=${bundleFixAttempts} convention=${conventionFixAttempts} reviewer=${reviewerFixAttempts}${review.reviewed.criticalFound ? ' (reviewer found critical issues)' : ''} rss=${memMb()}MB ${containerMb()}`);
+          reviewerModel = review.reviewed.reviewerModel;
+          reviewSummary = review.reviewed.reviewSummary;
+          reviewIssues = review.reviewed.issues || [];
+        } else {
+          // Failed OPEN, loudly. `reviewerModel` stays undefined, so the usage row's `reviewed:
+          // !!reviewerModel` reports false rather than implying a pass.
+          console.error('[chatWithMorpheus] review failed — applying the coder\'s work WITHOUT a review:', reviewerFailed);
+        }
       }
 
       // ── Syntax gate: the change must at least parse ───────────────────────
@@ -1843,60 +1880,86 @@ OPERATOR SAYS: ${message}`;
         // workspace in memory at once, handed to esbuild. Its own memory line,
         // because a stage-level reading would only bracket it, not show it.
         console.log(`[chatWithMorpheus] deep-verify: ${fullFiles.length} file(s) in memory, rss=${memMb()}MB ${containerMb()} before bundling`);
-        let deep = await adapter.verify({ files: applyVirtual() });
-        console.log(`[chatWithMorpheus] deep-verify: done, ok=${deep.ok} errors=${deep.errorCount}, rss=${memMb()}MB ${containerMb()} after bundling`);
-        for (let attempt = 1; !deep.ok && attempt < MAX_GATE_ATTEMPTS; attempt++) {
-          bundleFixAttempts++;
-          const isConvention = (e) => String(e?.phase || '').startsWith('convention:');
-          if (deep.errors.some(isConvention)) conventionFixAttempts++;
-          // A house-rule failure is not a broken bundle, and telling the coder to
-          // "fix the missing export" when it took the wrong ink rung sends it to
-          // the wrong place. The error text already names the token each element
-          // needs, so the instruction only has to say: apply exactly that.
-          const conventionOnly = deep.errors.length > 0 && deep.errors.every(isConvention);
-          const foundBy = conventionOnly
-            ? 'a house-rule check this repo enforces found'
-            : 'a real bundle + cross-file export check found';
-          const fixGuidance = conventionOnly
-            ? 'Fix ONLY the rule violations above — each one names the token that element must use, so apply exactly that and change nothing else. The rule is stated under "UI conventions" in AGENTS.md; scripts/verify-prose-ink.mjs enforces it on every build, so leaving it is a red CI gate.'
-            : 'fix ONLY what breaks the check above (a missing/renamed export a caller still needs, a bad import path). Never remove or rename an export without checking every caller first. Change nothing else.';
-          const badPaths = [...new Set(deep.errors.map((e) => e.file).filter(Boolean))];
-          const curBlock = badPaths
-            .map((p) => fileOps.find((op) => op.path === p && typeof op.content === 'string'))
-            .filter(Boolean)
-            .map((op) => `--- ${op.path} ---\n${op.content}`)
-            .join('\n\n');
-          // An error can point at an IMPORTER this turn never touched (the
-          // caller of a changed export) — there's nothing to hand the
-          // coder a "current content" for if fileOps never opened that
-          // file. Surface it as critical straight away rather than asking
-          // it to blindly rewrite a file it was never shown.
-          if (!curBlock) break;
-          stages.start('verify');
-          try {
-            const fix = await invokeAI({
-              userId: user.id,
-              prompt: `${coderPrompt}\n\n${conventionOnly ? 'This change breaks a house rule' : 'This change breaks the wider repo'} — ${foundBy} (fix attempt ${attempt} of ${MAX_GATE_ATTEMPTS - 1}):\n${deep.errors.slice(0, 20).map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} [${e.phase}] — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT of the file(s) you touched:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — ${fixGuidance}`,
-              schema: coderSchema,
-              fileUrls,
-              role: 'coder',
-              maxTokens: 64000,
-            });
-            const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
-              .filter((op) => op.path && badPaths.includes(op.path) && typeof op.content === 'string');
-            for (const fx of fixOps) {
-              const orig = fileOps.find((op) => op.path === fx.path);
-              if (orig) orig.content = fx.content;
-            }
-          } catch (err) {
-            console.error('[chatWithMorpheus] deep-verify-fix retry failed:', err.message);
-            stages.done('verify');
-            break;
-          }
-          stages.done('verify');
+        // FAIL-CLOSED, and it stays that way: a verification that could not run is not a pass, and it
+        // must not become one. But "fail closed" and "throw" are not the same thing, and conflating
+        // them was the last way a whole turn could vanish — `verifyProject` writes every file to a temp
+        // directory and removes it again, and either can throw on a full or unwritable disk. A throw
+        // here reached the outer catch with `appliedOps` empty and discarded the entire turn.
+        // Recording it as CRITICAL keeps the refusal — the reply says the check did not pass, and
+        // `buildProgressed` goes false so a self-dev step cannot advance — while still applying the work
+        // the human asked for. That is the same trade the gates above already make. Note what is NOT
+        // done here: `deep` is never defaulted to `{ ok: true }`, so an exception cannot read as a pass.
+        // See verifyProject's own rule, "a pass from a check that examined nothing is not a pass".
+        let deep;
+        try {
           deep = await adapter.verify({ files: applyVirtual() });
+        } catch (verifyErr) {
+          const why = verifyErr?.message || String(verifyErr);
+          console.error('[chatWithMorpheus] deep-verify could not run:', why);
+          deepVerifyCritical = [`the self-dev verification could not run at all — ${why}`];
+          stages.done('verify');
         }
-        if (!deep.ok) deepVerifyCritical = deep.errors.slice(0, 10).map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
+        if (deep) {
+          console.log(`[chatWithMorpheus] deep-verify: done, ok=${deep.ok} errors=${deep.errorCount}, rss=${memMb()}MB ${containerMb()} after bundling`);
+          for (let attempt = 1; !deep.ok && attempt < MAX_GATE_ATTEMPTS; attempt++) {
+            bundleFixAttempts++;
+            const isConvention = (e) => String(e?.phase || '').startsWith('convention:');
+            if (deep.errors.some(isConvention)) conventionFixAttempts++;
+            // A house-rule failure is not a broken bundle, and telling the coder to
+            // "fix the missing export" when it took the wrong ink rung sends it to
+            // the wrong place. The error text already names the token each element
+            // needs, so the instruction only has to say: apply exactly that.
+            const conventionOnly = deep.errors.length > 0 && deep.errors.every(isConvention);
+            const foundBy = conventionOnly
+              ? 'a house-rule check this repo enforces found'
+              : 'a real bundle + cross-file export check found';
+            const fixGuidance = conventionOnly
+              ? 'Fix ONLY the rule violations above — each one names the token that element must use, so apply exactly that and change nothing else. The rule is stated under "UI conventions" in AGENTS.md; scripts/verify-prose-ink.mjs enforces it on every build, so leaving it is a red CI gate.'
+              : 'fix ONLY what breaks the check above (a missing/renamed export a caller still needs, a bad import path). Never remove or rename an export without checking every caller first. Change nothing else.';
+            const badPaths = [...new Set(deep.errors.map((e) => e.file).filter(Boolean))];
+            const curBlock = badPaths
+              .map((p) => fileOps.find((op) => op.path === p && typeof op.content === 'string'))
+              .filter(Boolean)
+              .map((op) => `--- ${op.path} ---\n${op.content}`)
+              .join('\n\n');
+            // An error can point at an IMPORTER this turn never touched (the
+            // caller of a changed export) — there's nothing to hand the
+            // coder a "current content" for if fileOps never opened that
+            // file. Surface it as critical straight away rather than asking
+            // it to blindly rewrite a file it was never shown.
+            if (!curBlock) break;
+            stages.start('verify');
+            try {
+              const fix = await invokeAI({
+                userId: user.id,
+                prompt: `${coderPrompt}\n\n${conventionOnly ? 'This change breaks a house rule' : 'This change breaks the wider repo'} — ${foundBy} (fix attempt ${attempt} of ${MAX_GATE_ATTEMPTS - 1}):\n${deep.errors.slice(0, 20).map((e) => `  ${e.file}${e.line ? ':' + e.line : ''} [${e.phase}] — ${e.text}`).join('\n')}\n\nCURRENT (broken) CONTENT of the file(s) you touched:\n${curBlock}\n\nReturn each of these file(s) as action "update" with the FULL corrected \`content\` — ${fixGuidance}`,
+                schema: coderSchema,
+                fileUrls,
+                role: 'coder',
+                maxTokens: 64000,
+              });
+              const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
+                .filter((op) => op.path && badPaths.includes(op.path) && typeof op.content === 'string');
+              for (const fx of fixOps) {
+                const orig = fileOps.find((op) => op.path === fx.path);
+                if (orig) orig.content = fx.content;
+              }
+            } catch (err) {
+              console.error('[chatWithMorpheus] deep-verify-fix retry failed:', err.message);
+              stages.done('verify');
+              break;
+            }
+            stages.done('verify');
+            // The re-verify is deliberately NOT wrapped: this line is only reached after a successful
+            // pass, and a failure here is a real regression in a harness that just worked.
+            deep = await adapter.verify({ files: applyVirtual() });
+          }
+          // INSIDE `if (deep)`: `deep` is undefined when the verification above could not run at all,
+          // and reading `.ok` off it would throw — the very failure this restructuring exists to
+          // remove. The exception path has already set deepVerifyCritical; this covers only a check
+          // that genuinely ran and genuinely failed.
+          if (!deep.ok) deepVerifyCritical = deep.errors.slice(0, 10).map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`);
+        }
       }
 
       // ── Accessibility gate (web-app builds) ──────────────────────────────
@@ -2110,6 +2173,9 @@ OPERATOR SAYS: ${message}`;
       const n = truncatedFiles.length;
       fullReply += `\n\n// INCOMPLETE: the coder's output was cut off by the token limit and could not be retried smaller, so ${n === 1 ? 'this was not written' : 'these were not written'}: ${truncatedFiles.join(', ')}. Everything else in this turn is intact — ask me to continue and I'll do ${n === 1 ? 'it' : 'them'} one at a time.`;
     }
+    // The wording lives in lib/reviewFailOpen.js beside the rule, so the sentence and the behaviour
+    // cannot drift apart. Returns null when the review ran, so this is a no-op in the normal case.
+    fullReply += reviewFailureNote(reviewerFailed) || '';
     if (deepVerifyCritical.length > 0) {
       // Two things this used to get wrong. (a) When no file in the change is implicated the loop
       // breaks BEFORE calling the coder, so "after a fix attempt" was said about an attempt that
@@ -2197,8 +2263,8 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
-    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length } }; } catch { /* no locals */ }
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // If the build already LANDED, an error event is the worst response available: the files are
@@ -2214,7 +2280,7 @@ OPERATOR SAYS: ${message}`;
           data: {
             reply: `${fullReply || reply}\n\n// NOTE: the build itself landed and everything above is applied, but something after it failed — ${err.message || 'unknown error'}. Ask me to retry the part that did not finish.`,
             fileOperations: appliedOps,
-            rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length },
+            rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length },
             featureChanged: false,
           },
         });

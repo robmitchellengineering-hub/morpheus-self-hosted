@@ -61,7 +61,14 @@ const verifyIdx = src.indexOf('deep-verify: ${fullFiles.length}');
 check('memory is logged before bundling', verifyIdx > -1, true);
 check('memory is logged after bundling', /deep-verify: done[\s\S]{0,160}rss=\$\{memMb\(\)\}MB[\s\S]{0,40}after bundling/.test(src), true);
 check('the reading names how many files are held', /\$\{fullFiles\.length\} file\(s\) in memory/.test(src), true);
-check('the before-reading comes before the verify call', verifyIdx < src.indexOf('let deep = await adapter.verify('), true);
+// This pinned `let deep = await adapter.verify(` as a literal, and that line was split when the first
+// deep verify was made fail-safe: the verification can now THROW (a full or unwritable disk in
+// verifyProject's temp directory) and recording it as critical rather than letting it discard the turn
+// is the whole point of that change. So the check now matches the FIRST verify call wherever it sits,
+// which is what "the reading comes before it" actually means — a literal spelling of the line was
+// testing the wrong thing.
+const firstVerifyCall = src.search(/deep\s*=\s*await adapter\.verify\(/);
+check('the before-reading comes before the verify call', firstVerifyCall > -1 && verifyIdx < firstVerifyCall, true);
 
 // ── 4. It survives the process being killed ─────────────────────────────────
 console.log('\n4. the readings go somewhere that outlives the request');

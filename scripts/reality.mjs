@@ -215,6 +215,18 @@ out.roadmap = [
 // yet." That was already false when written: 8 of the 9 steps are in the code.
 // Checked here so the claim cannot be repeated from memory.
 const has = (p) => existsSync(join(REPO, p));
+// Build-loop resilience — the class of defect where a check that COULD NOT RUN costs the user the work
+// it was checking. Derived, like step 7 above and for the same reason: the literal "still broken" claim
+// in OPEN-WORK.md's defect list rotted for two days after the truncation fix landed (`dbd73f7`), and it
+// sent a session to re-propose work that was already done.
+out.buildResilience = [
+  {
+    step: 'a failed advisory review cannot discard the build',
+    verdict: has('server/src/lib/reviewFailOpen.js') && has('scripts/verify-build-gate-failopen.mjs') ? 'BUILT' : 'NOT BUILT',
+    evidence: 'the review is a second opinion about code that already exists, but `reviewAndRetry` awaits invokeAI with no catch and the call site in chatWithMorpheus.js was unwrapped — while applyFileOperations does not run until ~300 lines later. A reviewer throw therefore reached the outer handler with appliedOps empty and took the plan, every coder chunk and the reply with it. invokeAI throws on a provider 5xx past undici\'s header timeout, on OUTPUT_TRUNCATED and on InsufficientCreditsError, so the loss needed no bug, only a slow reviewer. lib/reviewFailOpen.js now keeps the coder\'s operations on failure, reports the reason, and never fabricates a verdict; the reply says "NOT REVIEWED" and the usage row reports reviewed:false. Asserted as BEHAVIOUR (a throwing reviewer, a resolved-but-empty one, an invented pass) plus the ordering that made it fatal, by scripts/verify-build-gate-failopen.mjs. The self-dev deep verify is the same class and is deliberately still FAIL-CLOSED: an exception there is recorded as critical — so the push stays blocked and a self-dev step cannot advance — rather than being allowed to throw, and `deep` is never defaulted to a pass.',
+  },
+];
+
 out.billing = [
   { step: '1  schema (usage_events, credit_transactions, model_catalog_entries; users.credit_balance/role)', verdict: 'BUILT', evidence: 'all three tables and all three columns exist in production' },
   { step: '2  real metering (tokens + cost per call)', verdict: /recordUsageEvent/.test(srcFile('server/src/ai.js')) ? 'BUILT' : 'NOT BUILT', evidence: 'ai.js recordUsageEvent captures real input/output tokens and computes cost_usd' },
@@ -363,6 +375,12 @@ function render(o, targets) {
     L.push(`  ${c.verdict}`);
     L.push(`    claimed : ${c.claim}`);
     L.push(`    system  : ${c.evidence}`);
+  }
+
+  H('Build-loop resilience (a check that cannot run must not cost the build)');
+  for (const b of o.buildResilience || []) {
+    L.push(`  ${String(b.verdict).padEnd(16)} ${b.step}`);
+    L.push(`                   ${b.evidence}`);
   }
 
   H('Token / billing system (the docs say none of it is built)');
