@@ -136,20 +136,29 @@ export default function Landing() {
             </button>
           </div>
         )}
-        {/* The website button reads as the generic "I want a website" path, and
-            it is not: it is the WordPress integration, for a site the operator
-            already runs. Rob, 2026-09-28: it "needs to stress its for wordpress
-            integration and to get the plugin". Said under the button rather than
+        {/* Rob, 2026-09-28: the WordPress path "needs to stress its for wordpress
+            integration and to get the plugin". Said under the buttons rather than
             only inside the flow, because the person who needs to know is the one
             deciding whether to press it. The plugin itself is downloaded in the
             first step of /start (SetupTab), so this does not restate those steps
-            — it sets the expectation before the click. */}
+            — it sets the expectation before the click.
+
+            2026-09-29: the labels changed — the WordPress button now says so, and
+            a second one, BUILD A WEBSITE OR APP, was added for sites that do not
+            exist yet. The old wording ("the website button is the WordPress path")
+            survived that change and became actively misleading: TWO buttons now
+            say "website", and the one that is not WordPress is the one a reader
+            would pick. NAME THE BUTTONS AS THEY ARE LABELLED. A blurb that
+            identifies a button by a category stops identifying it the moment a
+            second button joins the category. Rob: "those buttons have changed but
+            a blurb there about the right button and wordpress plugin install is
+            helpful we just need to make it right". */}
         {showButtons && (
           <p className="mt-3 text-[11px] text-ink-max font-mono max-w-md mx-auto leading-relaxed">
-            The website button is the WordPress path: for a site you already run. You install the free Morpheus
-            plugin on it first, then Morpheus takes over the deploys, the shop, the content and the SEO from here —
-            from your phone if you like. If the site does not exist yet, start with BUILD A WEBSITE OR APP: Morpheus
-            builds it and takes it live on your own free hosting.
+            SET UP MY WORDPRESS SITE is for a site you already run: install the free Morpheus plugin on it
+            first, then Morpheus takes over the deploys, the shop, the content and the SEO from here — from
+            your phone if you like. If the site does not exist yet, start with BUILD A WEBSITE OR APP
+            instead: Morpheus builds it and takes it live on your own free hosting.
           </p>
         )}
         {/* Command Deck's own entry point — open to every signed-in account
@@ -190,7 +199,14 @@ export default function Landing() {
           <ul className="space-y-1.5">
             {MORPHEUS_CAPABILITIES.map((c) => (
               <li key={c.title} className="text-xs leading-snug">
-                <span className="text-ink-strong font-mono">{c.title}</span>
+                {/* Rob, 2026-09-29: "make the titles of all those paragraphs ... glow green".
+                    Green on a small-size span is allowed by the prose-ink rule only when it
+                    carries a title marker, so the title takes `tracking-wider` — not an
+                    exception to the rule, the rule's own allowance. The BODY stays ink: 16
+                    glowing lines are a masthead, 16 glowing paragraphs are a wall. And the glow
+                    is currentColor, so text-primary is what makes it green at all — neon-glow
+                    on an ink span would glow grey. */}
+                <span className="text-primary font-display tracking-wider neon-glow">{c.title}</span>
                 <span className="text-ink-strong font-mono"> — {c.body}</span>
               </li>
             ))}
