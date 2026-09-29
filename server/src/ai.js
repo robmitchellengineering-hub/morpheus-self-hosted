@@ -334,7 +334,7 @@ async function readDocumentFileContent(url) {
   }
 }
 
-async function resolveEndpoint(settings, role) {
+async function resolveEndpoint(settings, role, userId) {
   const roleModelEnv = {
     planner: process.env.LLM_PLANNER_MODEL,
     coder: process.env.LLM_CODER_MODEL,
@@ -382,14 +382,30 @@ async function resolveEndpoint(settings, role) {
 
   // Tier 3: no account key, no operator key — fall back to the Morpheus
   // Cloud default gateway (see config/hostedDefaults.js), if configured.
+  //
+  // Two ways to authenticate, and the difference is whether the call is billed to the account making
+  // it or to nobody in particular:
+  //   * a static MORPHEUS_AI_GATEWAY_TOKEN identifies a DEPLOYMENT at the gateway, which is why the
+  //     gateway cannot tell whose balance to charge — the unmetered stopgap; and
+  //   * no static token, and this deployment can sign — a token is minted for THIS account and the
+  //     gateway reserves its credits before the call. That is the paid default, and it is why the
+  //     branch below no longer requires `hosted.apiKey` to be present.
   const hosted = aiGatewayDefault();
-  if (hosted?.apiKey) {
-    return {
-      provider: 'morpheus-cloud',
-      baseUrl: hosted.baseUrl,
-      apiKey: hosted.apiKey,
-      model: roleModelEnv[role] || roleModelSetting[role] || (await resolvePlatformDefaultModel(role)) || (await resolveModel(process.env.LLM_MODEL, hosted.baseUrl, hosted.apiKey)),
-    };
+  if (hosted) {
+    let apiKey = hosted.apiKey;
+    if (!apiKey && hosted.metered) {
+      // Throws rather than falling through to "unconfigured": an unmetered call against a billed
+      // gateway is refused by the gateway anyway, and failing here says why.
+      apiKey = await hosted.mintForAccount(userId);
+    }
+    if (apiKey) {
+      return {
+        provider: 'morpheus-cloud',
+        baseUrl: hosted.baseUrl,
+        apiKey,
+        model: roleModelEnv[role] || roleModelSetting[role] || (await resolvePlatformDefaultModel(role)) || (await resolveModel(process.env.LLM_MODEL, hosted.baseUrl, apiKey)),
+      };
+    }
   }
 
   // Tier 4: nothing configured at all — no apiKey to discover a model with,
@@ -429,7 +445,7 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
   // the latency questions in every audit so far could only guess at.
   const startedAt = Date.now();
   const settings = await getUserSettings(userId);
-  const { provider, baseUrl, apiKey, model } = await resolveEndpoint(settings, role);
+  const { provider, baseUrl, apiKey, model } = await resolveEndpoint(settings, role, userId);
 
   if (!apiKey) {
     throw new Error(

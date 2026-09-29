@@ -230,6 +230,20 @@ out.billing = [
   // because nothing recomputes it: the file went on telling every session to build a shipped pass.
   // scripts/verify-context.mjs now fails the build if any verdict in this file is a literal absence.
   { step: '7  billing verification pass', verdict: has('scripts/verify-billing-ledger.mjs') && has('scripts/verify-billing-ledger-math.mjs') ? 'BUILT' : 'NOT BUILT', evidence: 'verify-billing-ledger.mjs reconciles credits_charged against the pricing policy and balances against purchases, on production data (exit 1 names the drift, exit 2 is never a pass); its import-free maths half — lib/billingLedger.js — runs in the CI no-install job' },
+  // Both derived, same rule as step 7. The paid AI default is the one part of the token system that
+  // did NOT exist until 2026-09-29, however complete the rest of this list looked: the broker that
+  // holds the upstream key had no account or credit concept at all, so "the paid default" was a name
+  // for a shared token list. What is still owed is stated in the evidence, not as a verdict.
+  {
+    step: '8  the paid AI default is metered (broker gateway)',
+    verdict: has('server/src/lib/cloudMetering.js') && has('scripts/verify-cloud-metering.mjs') && has('hosted-broker/src/metering.js') ? 'BUILT' : 'NOT BUILT',
+    evidence: 'hosted-broker/ proxies AI for installs with no key of their own, so every brokered call spends the operator\'s upstream key. It now asks the INSTANCE before and after each call: verify debits the account\'s credits with the product\'s own atomic reserveCredits (a balance CHECK is not a reservation — two calls in flight both pass one), the reservation travels back as a signed 5-minute ticket so the broker cannot invent an amount, usage trues up against the real token counts and writes a UsageEvent, and refund returns a reservation when the call never reached the model. Flat-rated models keep their flat 1 credit instead of being re-priced per token, streaming is refused because a stream cannot be metered, and with no metering configured the gateway falls back to the old shared-token list — unset is never "allow all". Guarded by scripts/verify-cloud-metering.mjs. Still owed: the broker is NOT DEPLOYED (needs BROKER_AI_UPSTREAM_KEY and the instance\'s https address, i.e. Tailscale), so the out-of-the-box paid path still cannot complete a call; per-token revocation needs a stored token row, so a leaked token is bounded only by its 7-day expiry and the account balance.',
+  },
+  {
+    step: '9  a gateway token belongs to an account, not a deployment',
+    verdict: has('server/src/lib/brokerMinting.js') && has('scripts/verify-broker-minting.mjs') && /mintForAccount/.test(srcFile('server/src/ai.js')) ? 'BUILT' : 'NOT BUILT',
+    evidence: 'a shared MORPHEUS_AI_GATEWAY_TOKEN identifies a DEPLOYMENT, so the gateway cannot tell whose balance to charge. With BROKER_GATEWAY_SIGNING_SECRET set, ai.js\'s tier 3 mints an mgw_ token FOR THE ACCOUNT making the call, from this server\'s own POST /api/broker/token, and caches it until shortly before expiry — so a user configures nothing and is still billed. That endpoint therefore accepts a caller that is not a user session, which is one conditional away from "anyone can mint a token for anybody"; the rule lives in lib/brokerMinting.js and is asserted as behaviour by scripts/verify-broker-minting.mjs (a session mints only for itself, the broker secret mints only for an account it names, nobody else gets anything). Still owed: a Settings surface so an operator can see and revoke the token their install is using.',
+  },
 ];
 
 // ── Portable Morpheus: the downloadable, self-hosted copy ────────────────────

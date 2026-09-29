@@ -15,6 +15,7 @@ import uploadsRoutes from './routes/uploads.routes.js';
 import mediaAssetsRoutes from './routes/mediaAssets.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import appCapabilityRoutes from './routes/appCapability.routes.js';
+import brokerRoutes from './routes/broker.routes.js';
 import { LOCAL_ROOT } from './storage.js';
 import { startFreshnessSchedule } from './freshnessSchedule.js';
 import { startDeepSeekBalanceSchedule } from './deepseekBalanceSchedule.js';
@@ -66,6 +67,13 @@ app.use('/api/admin', adminRoutes);
 // capability must never be able to borrow a session surface. See the route's own
 // header for why a static app cannot hold one of these at all.
 app.use('/api/app-capability', appCapabilityRoutes);
+
+// The Morpheus Cloud gateway — what a self-hosted install's broker asks before and after every
+// brokered AI call, and what an install calls once to mint its own gateway token. Under /api/broker
+// rather than /api/functions for the same reason as the capability grants above: verify/usage are
+// authenticated by a shared broker secret, not by a user session, and must not be reachable through
+// the dispatcher that turns a scoped token into a real user. See the route's own header.
+app.use('/api/broker', brokerRoutes);
 
 // Local-disk storage driver serves files from here. Swap to S3/R2 + a CDN
 // in front for anything beyond a single instance — see SCALING.md.

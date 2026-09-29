@@ -245,6 +245,18 @@ jobs:
       - name: Portable AI source holds up its end
         run: node scripts/verify-portable-ai.mjs
 
+      # The paid default is only paid if a brokered call actually reserves, charges and records. This
+      # asserts the money paths: the reservation instead of a balance check, the flat rate instead of a
+      # per-token price, the refusal of streaming, and the field names the two services share.
+      - name: Brokered AI calls are metered, not merely described
+        run: node scripts/verify-cloud-metering.mjs
+
+      # The metered gateway needs a token per ACCOUNT, so /api/broker/token accepts a caller that is
+      # not a user session. This asserts who may mint for whom — the one conditional standing between
+      # "the install serves its own operator" and "anyone can mint a token for anybody".
+      - name: Only the right caller can mint a gateway token
+        run: node scripts/verify-broker-minting.mjs
+
       # A launcher's two lies: opening the browser before the server answers, and reporting "stopped"
       # while it is still running. Both are asserted, along with the exec bit that makes it clickable.
       - name: Portable launcher holds up its end
