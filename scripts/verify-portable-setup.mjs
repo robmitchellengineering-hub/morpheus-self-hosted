@@ -25,6 +25,7 @@ import {
   preflight, generateSecrets, envFileContents, localUrl, redactEnvLine, DEV_DB_URL_PATTERN,
 } from '../server/src/lib/portableSetup.js';
 import { selectPortableFiles } from '../server/src/lib/portableBundle.js';
+import { mintGatewayToken, verifyGatewayToken } from '../server/src/lib/cloudMetering.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -46,12 +47,43 @@ check('a platform with no Postgres binaries is refused, with the way out',
   /existing DATABASE_URL/.test(preflight({ nodeMajor: 22, platform: 'sunos' }).problems[0]), true);
 
 console.log('\n2. the secrets a stranger cannot invent');
-const s1 = generateSecrets((n) => Buffer.alloc(n, 1));
-const s2 = generateSecrets((n) => Buffer.alloc(n, 2));
+// A byte source that VARIES per draw, because a constant one hides real properties: with
+// `Buffer.alloc(n, 1)` every field is the same bytes, so "the session secret and the gateway secret
+// differ" failed — and it failed on the fixture, not on the code, which is the kind of check that
+// teaches you nothing. This one is still deterministic (so the run is reproducible) but not uniform.
+const bytes = (fill) => (n) => Buffer.from(Array.from({ length: n }, (_, i) => (fill + i) % 256));
+const s1 = generateSecrets(bytes(1));
+const s2 = generateSecrets(bytes(2));
 check('ENCRYPTION_KEY decodes to exactly the 32 bytes lib/crypto.js demands',
   Buffer.from(s1.ENCRYPTION_KEY, 'base64').length, 32);
 check('JWT_SECRET is real entropy, not a placeholder', s1.JWT_SECRET.length >= 60, true);
 check('two installs get different secrets', s1.JWT_SECRET === s2.JWT_SECRET, false);
+// The gateway signing secret is this install's half of the broker pair, and it must be generated
+// rather than borrowed — a fresh install arrives able to issue gateway tokens for its own accounts,
+// which is what makes the paid default work for anyone rather than for whoever was handed a value.
+check('a gateway signing secret is generated, with real entropy',
+  (s1.BROKER_GATEWAY_SIGNING_SECRET || '').length >= 60, true);
+check('…and it is per-install, so one install cannot sign for another',
+  s1.BROKER_GATEWAY_SIGNING_SECRET === s2.BROKER_GATEWAY_SIGNING_SECRET, false);
+// NOT "…and it differs from JWT_SECRET". Both are 48-byte draws, so they are equal under any
+// deterministic byte source, and requiring them to differ is a property the code cannot guarantee
+// from a random source and does not need: two independent strong secrets that happen to collide are
+// still two strong secrets. What DOES matter, and is checkable, is that each is drawn separately —
+// a copy of another value would be one credential doing two jobs.
+let draws = 0;
+const counted = (n) => { draws++; return Buffer.from(Array.from({ length: n }, (_, i) => i % 256)); };
+generateSecrets(counted);
+check('every generated secret is drawn separately, not copied from another', draws >= 4, true);
+check('it is URL-safe, so it survives being pasted anywhere a URL goes',
+  /^[A-Za-z0-9_-]+$/.test(s1.BROKER_GATEWAY_SIGNING_SECRET || ''), true);
+// Against the real signing function, not a shape check: a value this install generates must be one
+// its OWN broker endpoints accept. verify-broker-minting.mjs covers what the signature MEANS; this
+// covers that the installer produces something usable at all.
+const selfSigned = mintGatewayToken({ accountId: 'a', secret: s1.BROKER_GATEWAY_SIGNING_SECRET }).token;
+check('the generated secret actually signs and verifies a gateway token',
+  verifyGatewayToken({ token: selfSigned, secret: s1.BROKER_GATEWAY_SIGNING_SECRET }).ok, true);
+check('…and a token signed with it is NOT accepted under a different install\'s secret',
+  verifyGatewayToken({ token: selfSigned, secret: s2.BROKER_GATEWAY_SIGNING_SECRET }).ok, false);
 check('the database URL is LOCAL — dev-db.mjs refuses anything else',
   /@127\.0\.0\.1:/.test(s1.DATABASE_URL) && new RegExp(`:${LOCAL_DB.port}/`).test(s1.DATABASE_URL), true);
 // Measured, not assumed: the first version of this URL had no password, and a real install got three
@@ -73,6 +105,16 @@ check('…including the port the server actually listens on', env.includes(`PORT
 check('AI is present but EMPTY, not pretended', /LLM_BASE_URL=\nLLM_API_KEY=\nLLM_MODEL=/.test(env), true);
 check('…and the three sources are named for the operator to choose', /locally hosted model[\s\S]*your own provider key[\s\S]*Morpheus account/.test(env), true);
 check('it warns the file holds secrets and must not be shared', /do not commit it/.test(env) && /chat or an issue/.test(env), true);
+// The gateway pair, stated IN THE FILE the operator opens — not only in a doc they may never read. A
+// generated secret with no line saying where it goes is a value nobody pairs with anything.
+check('it explains what the gateway signing secret is FOR, not just that it exists',
+  /it SIGNS/.test(env) && /VERIFIES with it/.test(env), true);
+check('…and names the value to set on the broker', /BROKER_GATEWAY_SIGNING_SECRET on the broker/.test(env), true);
+check('…and says the broker must be able to REACH this install, which a home machine is not by default',
+  /REACH this install/.test(env) && /portable:remote/.test(env), true);
+check('…and names the broker-side secret the operator still has to add', /BROKER_INTERNAL_SECRET/.test(env), true);
+check('the signing secret is redacted if the setup ever echoes an env line',
+  redactEnvLine(`BROKER_GATEWAY_SIGNING_SECRET=${s1.BROKER_GATEWAY_SIGNING_SECRET}`).includes('<generated'), true);
 check('Google/GitHub sign-in is stated as off, with the reason (no stable hostname)',
   /Google and GitHub sign-in are OFF/.test(env) && /redirect URIs/.test(env), true);
 

@@ -49,12 +49,14 @@ export default function PortableMorpheusDownload() {
       >
         DOWNLOAD PORTABLE MORPHEUS
       </a>
-      {/* Said here rather than discovered after unpacking: this is the source today, not an installer.
-          The bundle's own PORTABLE-README.md repeats it with the setup steps. */}
+      {/* Said here rather than discovered after unpacking. This used to promise "no wizard, no remote
+          access" — true when it was written, and false once portable:setup and portable:remote
+          shipped. Copy on a public page that under-sells a shipped feature is the same claim-vs-system
+          failure as one that oversells, so it now names what IS there and what is genuinely absent. */}
       <p className="text-[11px] text-ink-max max-w-md text-center leading-relaxed">
-        This is the source, not a one-click installer — no wizard, no remote access, and no AI
-        provider configured until you choose one. The bundle&rsquo;s PORTABLE-README.md lists exactly
-        what is and is not in it.
+        This is the source, not a signed native app — one command sets it up, but the download is not
+        notarised, so macOS will quarantine it and Windows will warn once. No AI provider is configured
+        until you choose one. The bundle&rsquo;s PORTABLE-README.md lists exactly what is and is not in it.
       </p>
     </div>
   );
