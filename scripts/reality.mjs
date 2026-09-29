@@ -232,6 +232,24 @@ out.billing = [
   { step: '7  billing verification pass', verdict: has('scripts/verify-billing-ledger.mjs') && has('scripts/verify-billing-ledger-math.mjs') ? 'BUILT' : 'NOT BUILT', evidence: 'verify-billing-ledger.mjs reconciles credits_charged against the pricing policy and balances against purchases, on production data (exit 1 names the drift, exit 2 is never a pass); its import-free maths half — lib/billingLedger.js — runs in the CI no-install job' },
 ];
 
+// ── Portable Morpheus: the downloadable, self-hosted copy ────────────────────
+// Rob, 2026-09-29: portable Morpheus is meant to be "an up to date, generated from current
+// capabilities and code, downloadable version of morpheus that installs a local server on your mac or
+// pc" — the whole product, builder AND Command Deck, on the operator's own machine.
+//
+// The verdict is DERIVED, per the rule this file now lives under: a literal absence rots the moment
+// the work lands and nothing recomputes it — which is exactly how step 7 above came to claim a shipped
+// pass was unbuilt. What is still MISSING is named in the evidence rather than as a verdict, because
+// that is prose about the current state, not a claim nothing checks.
+out.portable = [
+  {
+    step: 'bundle generated at build time from the current tree',
+    verdict: has('scripts/build-portable-bundle.mjs') && has('server/src/lib/portableBundle.js')
+      && /build-portable-bundle/.test(srcFile('package.json')) ? 'BUILT' : 'NOT BUILT',
+    evidence: 'postbuild writes dist/portable-morpheus.zip from the tree being built, so it cannot describe an older codebase — the previous hand-run mirror shipped base44/ for a month after the port. It carries the whole product (src/ and server/src/, so the builder AND the Command Deck). Still NOT in it: an installer or first-run wizard, remote access (Tailscale is decided, not built), and any AI provider configured by default.',
+  },
+];
+
 // Pricing coverage — the revenue-integrity check. A production model missing
 // from the static table silently bills at DEFAULT_PRICING, which nobody chose
 // for it. This claim is what FOUND that: gemini-3.5-flash-lite was in exactly
@@ -318,6 +336,12 @@ function render(o, targets) {
   for (const r of o.roadmap || []) {
     L.push(`  ${String(r.verdict).padEnd(14)} ${r.item}`);
     L.push(`                 ${r.evidence}`);
+  }
+
+  H('Portable Morpheus (downloadable, self-hosted)');
+  for (const p of o.portable || []) {
+    L.push(`  ${String(p.verdict).padEnd(16)} ${p.step}`);
+    L.push(`                   ${p.evidence}`);
   }
 
   L.push('', '  Regenerate any time. If this disagrees with a document, the document is', '  wrong — that is the whole point of it.', '');

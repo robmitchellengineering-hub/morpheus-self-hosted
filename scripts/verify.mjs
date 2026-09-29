@@ -84,6 +84,7 @@ const HARD = [
   'verify-workspace-search.mjs',
   'verify-onramp.mjs',
   'verify-deck-widget-build.mjs',
+  'verify-portable-bundle.mjs',
   'boot-smoke.mjs',
 ];
 
