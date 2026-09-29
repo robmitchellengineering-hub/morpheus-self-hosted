@@ -42,6 +42,7 @@ check('the frontend ships', isPortableFile('src/App.jsx'), true);
 check('…including the Command Deck', isPortableFile('src/pages/CommandDeck/DeckHome.jsx'), true);
 check('the backend ships — this IS the local server', isPortableFile('server/src/functions/chatWithMorpheus.js'), true);
 check('the schema ships', isPortableFile('server/prisma/schema.prisma'), true);
+check('the local Postgres script ships — the installer delegates to it', isPortableFile('server/scripts/dev-db.mjs'), true);
 check('the verification suite ships, so a self-hoster can check it', isPortableFile('scripts/verify.mjs'), true);
 check('root manifests ship', [isPortableFile('package.json'), isPortableFile('README.md')].join(','), 'true,true');
 

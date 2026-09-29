@@ -246,7 +246,12 @@ out.portable = [
     step: 'bundle generated at build time from the current tree',
     verdict: has('scripts/build-portable-bundle.mjs') && has('server/src/lib/portableBundle.js')
       && /build-portable-bundle/.test(srcFile('package.json')) ? 'BUILT' : 'NOT BUILT',
-    evidence: 'postbuild writes dist/portable-morpheus.zip from the tree being built, so it cannot describe an older codebase — the previous hand-run mirror shipped base44/ for a month after the port. It carries the whole product (src/ and server/src/, so the builder AND the Command Deck). Still NOT in it: an installer or first-run wizard, remote access (Tailscale is decided, not built), and any AI provider configured by default.',
+    evidence: 'postbuild writes dist/portable-morpheus.zip from the tree being built, so it cannot describe an older codebase — the previous hand-run mirror shipped base44/ for a month after the port. It carries the whole product (src/ and server/src/, so the builder AND the Command Deck). Still NOT in it: a first-run wizard, remote access (Tailscale is decided, not built), and any AI provider configured by default.',
+  },
+  {
+    step: 'one-command local setup (portable-setup.mjs)',
+    verdict: has('scripts/portable-setup.mjs') && has('server/src/lib/portableSetup.js') && has('server/scripts/dev-db.mjs') ? 'BUILT' : 'NOT BUILT',
+    evidence: 'generates the three secrets a downloader cannot invent (JWT_SECRET, ENCRYPTION_KEY, DATABASE_URL), then DELEGATES the database to server/scripts/dev-db.mjs — which drives real embedded-postgres binaries, because the library class stops Postgres when the process exits. The server now serves the built frontend from dist/ when it is present, so a local install is ONE process on one origin (no second static server, no CORS allowlist); on the hosted deployment there is no dist/ in the backend image, so that is a no-op. Guarded by scripts/verify-portable-setup.mjs, which also asserts the honest list of what is still missing.',
   },
 ];
 

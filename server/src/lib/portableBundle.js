@@ -29,6 +29,7 @@ export const PORTABLE_INCLUDE_ROOTS = [
   'src/',                    // the whole frontend, including the Command Deck and its widgets
   'server/src/',             // every backend function, route and library
   'server/prisma/',          // the schema a local Postgres is built from
+  'server/scripts/',         // dev-db.mjs — the local Postgres cluster a self-host actually runs
   'public/',                 // deck.html + manifests + icons the local server must serve
   'wp-plugin/',              // the WordPress plugin source, so a self-hoster can build it too
   'scripts/',                // the verification suite: the point of self-hosting is being able to check
