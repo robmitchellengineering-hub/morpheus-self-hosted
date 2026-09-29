@@ -31,9 +31,16 @@ export const DEFAULT_FALLBACK_MAX_TOKENS = 64000; // used only when plannedFiles
  * @param {object} opts
  * @param {string} opts.userId
  * @param {string[]} [opts.plannedFiles] — file paths to implement. Empty/absent -> single fallback call.
- * @param {(filesForThisStep: string[]|null, allPlannedFiles: string[]) => string} opts.buildPrompt
+ * @param {(filesForThisStep: string[]|null, allPlannedFiles: string[], writtenSoFar: object[]) => string} opts.buildPrompt
  *   Returns the prompt for one call. Called once per chunk with that chunk's file list (plus the
  *   full planned list for context), or once with `null` when there's no plannedFiles to chunk by.
+ *
+ *   `writtenSoFar` is the third argument and is ADDITIVE (2026-09-29): the operations produced by all
+ *   previous chunks, in order. It exists because chunking introduced a defect nobody had noticed — the
+ *   model was asked for `server/db.js` in one call and `server/routes/tasks.js` in the next with no way
+ *   to see the first, so a generated backend routinely disagreed with itself (three files, three ideas
+ *   of what `db` was, measured on a real run). A caller that ignores the argument behaves exactly as
+ *   before, which is why existing call sites needed no change.
  * @param {object} [opts.schema] — JSON schema for the response. Defaults to the standard
  *   `{ fileOperations: [{ path, content, action }] }` shape used across the codebase.
  * @param {string[]} [opts.fileUrls]
@@ -87,7 +94,9 @@ export async function generateFilesChunked({
     for (const chunk of chunks) {
       const response = await invokeAI({
         userId,
-        prompt: buildPrompt(chunk, cleanPlanned),
+        // The operations from every earlier chunk. A prompt builder that does not want them ignores the
+        // third argument; one that does can keep the backend from contradicting itself.
+        prompt: buildPrompt(chunk, cleanPlanned, fileOps.slice()),
         schema: fileOpsSchema,
         fileUrls,
         role,

@@ -266,6 +266,12 @@ jobs:
       - name: An operator can run what they built
         run: node scripts/verify-delivery-posture.mjs
 
+      # A backend is generated a few files per call, so a later chunk used to be written blind to what the
+      # earlier ones produced — measured 2026-09-29 as a backend whose files held three different beliefs
+      # about what `db` was. This asserts the mechanism that makes them visible to each other.
+      - name: Backend files are generated able to agree with each other
+        run: node scripts/verify-backend-chunk-context.mjs
+
       # Would the app we hand the operator actually run? Two defects were measured on 2026-09-29 by
       # generating a self-hosted app and running it: a dependency with no prebuilt binary for this Node,
       # and a module contract that could not hold. verify-server-imports cannot see either — it checks

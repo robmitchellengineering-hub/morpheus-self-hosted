@@ -95,6 +95,7 @@ const HARD = [
   'verify-delivery-posture.mjs',
   'verify-registry-parity.mjs',
   'verify-generated-app.mjs',
+  'verify-backend-chunk-context.mjs',
   'verify-broker-minting.mjs',
   'boot-smoke.mjs',
 ];

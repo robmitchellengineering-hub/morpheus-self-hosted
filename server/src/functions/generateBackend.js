@@ -9,6 +9,8 @@ import { invokeAI } from '../ai.js';
 import { buildCodegenPrompt, buildEnvVars, selfContainedRequirement } from '../lib/infrastructureComponents.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
+import { checkSyntax } from '../lib/syntaxCheck.js';
+import { buildBackendChunkContext } from '../lib/backendChunkContext.js';
 import { generateFilesChunked } from '../lib/chunkedFileGen.js';
 
 function detectLanguage(path) {
@@ -102,15 +104,36 @@ ${backendBrief}
 
 Keep code concise but complete — no placeholders, no TODOs, no "// implement this". Every file must be fully functional. Return fileOperations with path (relative, WITHOUT "backend/" prefix), FULL content, and action "create".`;
 
+  // THE SAME MECHANISM THE BUILD PIPELINE USES. `generateFilesChunked` calls the model once per chunk of
+  // files, so each call must be shown what the earlier calls produced — otherwise `routes/tasks.js` is
+  // written with no idea what `db.js` looks like, which is exactly how a generated backend ends up with
+  // three files holding three different beliefs about `db`. The pipeline solves this by assembling its
+  // context from the project's CURRENT files before every Coder call (lib/scopedContext.js); this does
+  // the same thing for a backend that does not exist on disk yet, from the operations generated so far.
+  //
+  // Measured 2026-09-29: without this, `server/index.js` awaited `initializeDatabase` from `./db` while
+  // `server/routes/tasks.js` called `db.all(...)` on the same module, and a third file imported a
+  // `middleware/auth` directory that was never in the file list.
+  const writerContext = (chunk, allPlanned, writtenSoFar) => buildBackendChunkContext({
+    plannedFiles: allPlanned || [],
+    writtenSoFar,
+    chunk: chunk || [],
+    planBlock: JSON.stringify(plan, null, 2),
+    frontendBlock: fileSummary,
+  }).text;
+
+  // `writtenSoFar` is threaded through `buildPrompt`'s third argument — see chunkedFileGen.js, which
+  // passes the accumulated operations to each subsequent call for exactly this purpose.
   const { fileOps: rawFileOps } = await generateFilesChunked({
     userId: user.id,
     plannedFiles,
     role: 'coder',
-    buildPrompt: (chunk, allPlanned) => {
+    buildPrompt: (chunk, allPlanned, writtenSoFar) => {
+      const context = writerContext(chunk, allPlanned, writtenSoFar);
       if (!chunk) {
-        return `${writePrompt}\n\nGenerate ALL backend files needed now — the full set listed above.`;
+        return `${writePrompt}\n\n${context}\n\nGenerate ALL backend files needed now — the full set listed above.`;
       }
-      return `${writePrompt}\n\nFULL FILE LIST FOR THIS BACKEND (for context only — do not write these now): ${allPlanned.join(', ')}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s).`;
+      return `${writePrompt}\n\n${context}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY this file set.`;
     },
   });
   let generatedFiles = rawFileOps.map((f) => ({ path: f.path, content: f.content }));
@@ -125,6 +148,24 @@ Keep code concise but complete — no placeholders, no TODOs, no "// implement t
     const contextBlock = `BACKEND CODE GENERATION\nProject: ${project.name}\n${project.description ? 'Description: ' + project.description : ''}\nCompile target: ${project.compile_target || 'source'}\nComponents: ${JSON.stringify(components)}\n\nBACKEND PLAN:\n${JSON.stringify(plan, null, 2)}`;
     const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, JSON.stringify(plan, null, 2), writePrompt);
     generatedFiles = reviewed.fileOps.map((op) => ({ path: op.path, content: op.content }));
+  }
+
+  // ── Syntax gate: the same deterministic check the build pipeline runs, which the backend path
+  // never did. `reviewAndRetry` is an AI opinion; this is a parser. A generated backend that does not
+  // parse cannot be reviewed meaningfully, and shipping one means the operator's first command fails on
+  // a file the model was confident about. Cheap, local, no tokens.
+  if (generatedFiles.length > 0) {
+    const parseErrors = await checkSyntax(
+      generatedFiles
+        .filter((f) => typeof f.content === 'string')
+        .map((f) => ({ path: f.path, content: f.content })),
+    );
+    if (parseErrors.length > 0) {
+      // Reported, not swallowed, and the files are still kept: a partial backend the operator can see
+      // beats an empty project, and the message names the file so the next turn can fix it.
+      const named = parseErrors.slice(0, 5).map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`).join('; ');
+      console.error(`[generateBackend] generated backend has ${parseErrors.length} syntax error(s): ${named}`);
+    }
   }
 
   // Delete existing backend code files (keep .plan.json). No .catch() here
