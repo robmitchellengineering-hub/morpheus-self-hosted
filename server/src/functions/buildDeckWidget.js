@@ -372,11 +372,21 @@ async function installWidgetInstance(userId, widgetKey) {
   }
 }
 
-// Not yet wired to any frontend call site or to chatWithJarvis.js (that's
-// Phase 3, along with the deckWidgets.js append-only push guard) — admin-
-// gated in functions.routes.js's ADMIN_FUNCTIONS as a defensive default
-// until then, since this file existing makes it reachable over HTTP the
-// moment it ships.
+// WIRED — and this comment claimed the opposite until 2026-09-29. It read "Not
+// yet wired to any frontend call site or to chatWithJarvis.js (that's Phase 3)
+// …", which was false for the path that is actually used: chatWithJarvis.js's
+// widget-build branch calls runBuildDeckWidget() directly once the classifier
+// says the message is asking for a widget. That is how Rob's "build me a widget
+// that displays my energy data as a sparkline" became a real build on
+// 2026-09-28 — while this comment, four hundred lines away, said no such wiring
+// existed. A comment that denies a live call path is worse than a missing one:
+// the next person reads it and builds the path again.
+//
+// Still accurate and still owed: the deckWidgets.js append-only push guard
+// (Phase 3), so the registry line a build appends is not yet enforced by
+// anything. The HTTP handler below stays admin-gated in functions.routes.js's
+// ADMIN_FUNCTIONS as a defensive default — being reachable over HTTP is not the
+// same as being the way widgets get built.
 export default async function handler({ user, body }) {
   const description = String(body?.description || '').trim();
   if (!description) throw Object.assign(new Error('description required'), { status: 400 });
