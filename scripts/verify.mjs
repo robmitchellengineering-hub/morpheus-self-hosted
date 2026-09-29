@@ -94,6 +94,7 @@ const HARD = [
   'verify-build-gate-failopen.mjs',
   'verify-delivery-posture.mjs',
   'verify-registry-parity.mjs',
+  'verify-generated-app.mjs',
   'verify-broker-minting.mjs',
   'boot-smoke.mjs',
 ];
