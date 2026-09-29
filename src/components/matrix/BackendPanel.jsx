@@ -10,7 +10,11 @@ import BackendConfigSection from './BackendConfigSection';
 import ExternalSources from './ExternalSources';
 import DiagnosisPanel, { DiagnosisLoading } from './DiagnosisPanel';
 import { useDiagnosis } from '@/hooks/useDiagnosis';
-import { COMPONENTS, DEFAULT_COMPONENTS, getServiceOption, hasCredentials } from '../../../base44/shared/infrastructureComponents';
+import {
+  COMPONENTS, DEFAULT_COMPONENTS, getServiceOption, hasCredentials,
+  DELIVERY_POSTURES, postureOf, stackRequirement,
+} from '../../../base44/shared/infrastructureComponents';
+import { componentsForPosture, selectionSummary, selectionSentence, postureBadge } from '@/lib/postureChoice';
 
 // Services that support live deploy (need credentials) vs ZIP-only vs code-level
 const LIVE_DEPLOY_SERVICES = ['cloudflare-workers', 'vercel', 'netlify', 'railway', 'render', 'fly'];
@@ -72,6 +76,10 @@ const COMPONENT_ICONS = {
 export default function BackendPanel({ open, onClose, project }) {
   const [phase, setPhase] = useState('idle');
   const [selectedComponents, setSelectedComponents] = useState(DEFAULT_COMPONENTS);
+  // The whole-stack choice. Initialised from whatever DEFAULT_COMPONENTS describes rather than hardcoded,
+  // so this feature changes nothing until an operator actually picks — and so it cannot silently
+  // re-point the existing default path at a different stack.
+  const [posture, setPosture] = useState(postureOf(DEFAULT_COMPONENTS));
   const [plan, setPlan] = useState(null);
   const [backendFiles, setBackendFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -174,7 +182,9 @@ export default function BackendPanel({ open, onClose, project }) {
     setPhase('planning');
     setLog(prev => [...prev, '> Analyzing project and planning infrastructure...']);
     try {
-      const res = await base44.functions.invoke('planBackend', { projectId: project.id });
+      // The posture travels with the plan request: the architect is told which stack to plan for, and the
+      // plan comes back stamped with it so what the operator reviews is what was planned for.
+      const res = await base44.functions.invoke('planBackend', { projectId: project.id, posture: posture || undefined });
       setPlan(res.data.plan);
       if (res.data.plan?.components) {
         const suggestions = {};
@@ -413,10 +423,61 @@ export default function BackendPanel({ open, onClose, project }) {
             </div>
           )}
 
+          {/* Where it runs — the whole stack in one decision, above the per-service list because the
+              services are not independent choices: a self-hosted API over a cloud database is not a
+              leaner stack, it is one that cannot run. */}
+          {phase === 'idle' && (
+            <div>
+              <div className="text-xs text-primary/75 uppercase mb-2">// where should this run?</div>
+              <div className="space-y-2">
+                {DELIVERY_POSTURES.map((p) => {
+                  const active = posture === p.id;
+                  const badge = postureBadge(selectionSummary({ components: p.components, postureOf, stackRequirement }));
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        // Two statements, not a `||` chain: setPosture returns undefined, so
+                        // `setPosture(x) || setSelectedComponents(...)` never ran the second call — a
+                        // handler that looked like it did two things and did one.
+                        const next = componentsForPosture(p);
+                        if (!next) return;
+                        setPosture(p.id);
+                        setSelectedComponents(next);
+                      }}
+                      className={`w-full text-left border p-2.5 transition-colors ${active ? 'border-primary bg-primary/10' : 'border-primary/20 hover:border-primary/50'}`}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm text-ink font-medium">{p.label}</span>
+                        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-ink-max/20 text-ink-max">
+                          {badge}
+                        </span>
+                      </div>
+                      <div className="text-xs text-ink-strong mt-1">{p.summary}</div>
+                      <div className="text-[11px] text-ink-max mt-1.5">{p.guarantee}</div>
+                      <div className="text-[11px] text-ink-max mt-1">{p.tradeoff}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[11px] text-ink-max mt-1.5">
+                Pick one and the connections below are set to match. You can still change any of them —
+                but a stack that mixes self-hosted and managed services may not run without those accounts.
+              </div>
+            </div>
+          )}
+
           {/* Infrastructure component selection */}
           {(phase === 'plan-ready' || phase === 'generated') && (
             <div>
               <div className="text-xs text-primary/75 uppercase mb-2">// infrastructure connections — auto-suggested, change as needed</div>
+              {/* The sentence that was missing when the default stack quietly put an operator's data in
+                  a cloud account: the services were all listed, and nothing ever added them up. The
+                  wording and the rules live in src/lib/postureChoice.js, where they are tested. */}
+              <div className="text-[11px] text-ink-max mb-2">
+                {selectionSentence(selectionSummary({ components: selectedComponents, postureOf, stackRequirement }))}
+              </div>
               <div className="space-y-2">
                 {COMPONENTS.map(comp => {
                   const Icon = COMPONENT_ICONS[comp.type] || Server;

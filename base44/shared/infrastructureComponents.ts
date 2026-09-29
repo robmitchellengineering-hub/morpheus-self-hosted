@@ -90,6 +90,7 @@ export const COMPONENTS: InfrastructureComponent[] = [
       },
       {
         id: 'self-hosted-docker',
+        selfContained: true,
         label: 'Self-Hosted Docker',
         freeTier: 'Your server',
         deployType: 'zip',
@@ -97,6 +98,7 @@ export const COMPONENTS: InfrastructureComponent[] = [
       },
       {
         id: 'standalone',
+        selfContained: true,
         label: 'Standalone Node',
         freeTier: 'npm start',
         deployType: 'zip',
@@ -136,12 +138,14 @@ export const COMPONENTS: InfrastructureComponent[] = [
       },
       {
         id: 'self-hosted-pg',
+        selfContained: true,
         label: 'Self-Hosted Postgres',
         freeTier: 'Your server',
         codegenHint: 'Connect to self-hosted PostgreSQL via pg driver. Use process.env.DATABASE_URL. Generate SQL migrations in migrations/. Include docker-compose.yml with postgres service if using Docker.'
       },
       {
         id: 'sqlite-local',
+        selfContained: true,
         label: 'SQLite (Local File)',
         freeTier: 'Unlimited',
         codegenHint: 'Use better-sqlite3 or sqlite3 npm package. Database stored in a local .db file. Generate schema in migrations/ using SQLite SQL. No external connection needed — great for standalone/self-hosted.'
@@ -168,12 +172,14 @@ export const COMPONENTS: InfrastructureComponent[] = [
       },
       {
         id: 'jwt-self',
+        selfContained: true,
         label: 'Self-Managed JWT',
         freeTier: 'Unlimited',
         codegenHint: 'Use jsonwebtoken npm package. Generate JWT on login, verify on protected routes. Use process.env.JWT_SECRET. Include auth middleware, login/register routes, password hashing with bcrypt.'
       },
       {
         id: 'none',
+        selfContained: true,
         label: 'No Auth',
         freeTier: 'N/A',
         codegenHint: 'No authentication. All routes are public. Skip auth middleware.'
@@ -200,12 +206,14 @@ export const COMPONENTS: InfrastructureComponent[] = [
       },
       {
         id: 'local',
+        selfContained: true,
         label: 'Local Filesystem',
         freeTier: 'Your server',
         codegenHint: 'Store files in a local uploads/ directory. Use fs/promises for read/write. Include static file serving for uploads/. Simple, no external service needed.'
       },
       {
         id: 'none',
+        selfContained: true,
         label: 'No File Storage',
         freeTier: 'N/A',
         codegenHint: 'No file upload support. Skip file storage routes.'
@@ -355,3 +363,145 @@ export const DEFAULT_COMPONENTS: Record<string, string> = {
   file_storage: 'supabase-storage',
   cache: 'none',
 };
+
+// ── Delivery postures: choose the whole stack, not five services one at a time ────────────────
+//
+// WHY THIS EXISTS. The five components are independent dropdowns, and `DEFAULT_COMPONENTS` was chosen
+// as the "best free-tier combo" — Cloudflare Workers + Supabase. Every option in every list is a LIVE
+// managed service, so the default path ends with the app's data in somebody else's account and no way
+// to run the thing without them. That is precisely the complaint the market research turned up again
+// and again: the source exports fine, and the MANAGED BACKEND is what people discover they cannot
+// leave. Morpheus's own commitment is the opposite — "the code is the user's, in their own repo, and
+// does not disappear when they stop paying" — and a stack they cannot run themselves fails it.
+//
+// The deeper problem is that the choices are not independent even though the UI presents them that
+// way. `api_host: self-hosted-docker` with `database: supabase-pg` is not a leaner setup, it is an
+// incoherent one: the user runs an API locally that needs a cloud account to boot. Nothing validated
+// that, so an operator could pick their way into a stack that cannot run anywhere.
+//
+// So the unit of choice is the POSTURE, and each one names the complete set of components that makes
+// it true. `components` is the whole answer to "where does this app run", and `guarantee` is what the
+// operator is actually buying — stated as a fact, because a posture that cannot deliver its guarantee
+// is worse than no posture at all.
+export const DELIVERY_POSTURES = [
+  {
+    id: 'self-hosted',
+    label: 'Runs on your own machine',
+    summary: 'One command starts the whole app — server, API and database — on this computer or any server you own.',
+    guarantee: 'No account with anyone. The data is a file on your disk and the app works with the network off.',
+    tradeoff: 'You are the operator: no automatic backups, no global CDN, and it is only reachable from your network until you expose it yourself.',
+    components: {
+      api_host: 'standalone',
+      database: 'sqlite-local',
+      auth: 'jwt-self',
+      file_storage: 'local',
+      cache: 'none',
+    },
+  },
+  {
+    id: 'cloud',
+    label: 'Deploy to a cloud provider',
+    summary: 'Morpheus provisions the app on managed services and gives you a live URL.',
+    guarantee: 'A public URL and managed backups, with no server to run yourself.',
+    tradeoff: 'Needs an account with each service it uses, and moving off them later means exporting the data and rebuilding the database somewhere else.',
+    components: {
+      api_host: 'cloudflare-workers',
+      database: 'supabase-pg',
+      auth: 'supabase-auth',
+      file_storage: 'supabase-storage',
+      cache: 'none',
+    },
+  },
+  {
+    id: 'container',
+    label: 'Run it in Docker, anywhere',
+    summary: 'A docker compose file that starts the app and its own Postgres — on your machine now, on a server later.',
+    guarantee: 'One compose file is the whole deployment, so the same thing runs on a laptop and on a VPS unchanged.',
+    tradeoff: 'Needs Docker installed, and Postgres is a service you now keep running and back up.',
+    components: {
+      api_host: 'self-hosted-docker',
+      database: 'self-hosted-pg',
+      auth: 'jwt-self',
+      file_storage: 'local',
+      cache: 'none',
+    },
+  },
+];
+
+/** The posture with this id, or null. Unknown ids are refused rather than defaulted — see applyPosture. */
+export function getPosture(id: string): (typeof DELIVERY_POSTURES)[number] | null {
+  return DELIVERY_POSTURES.find((p) => p.id === id) || null;
+}
+
+/**
+ * The component set a posture implies, or null when the id is not one we offer.
+ *
+ * Null rather than the default on purpose: `applyPosture(components, 'typo')` quietly returning the
+ * cloud stack would mean a user who asked for self-hosted and mistyped gets their data in Supabase.
+ * A caller must decide what an unknown posture means; nothing here decides for it.
+ */
+export function applyPosture(id: string): Record<string, string> | null {
+  const posture = getPosture(id);
+  return posture ? { ...posture.components } : null;
+}
+
+/**
+ * What a SELF-CONTAINED stack's generated code must do to deserve that name, or '' when the stack needs
+ * an account and the requirement does not apply.
+ *
+ * A pure function of the component set, and that is the point: the operator-facing claim "one command
+ * starts the whole app" is only true if the generator was actually told so, and a string buried in a
+ * prompt inside a database-touching function cannot be tested. Deriving it here means a guard can
+ * assert the exact words the model receives, and that a stack needing an account never receives them.
+ */
+export function selfContainedRequirement(components: Record<string, string> | null | undefined): string {
+  // An ABSENT component set is not a self-contained one. `stackRequirement(undefined)` treats it as an
+  // empty object, which reports self-contained — so without this guard, a caller that forgot to pass
+  // components would be handed a "must run with no account" instruction for a stack nobody described.
+  // An unknown stack gets no instruction; that is the safe direction.
+  if (!components || typeof components !== 'object' || Object.keys(components).length === 0) return '';
+  if (!stackRequirement(components).selfContained) return '';
+  return `
+SELF-CONTAINED STACK — this must run on the operator's machine with no account and no network:
+- ONE command must start everything (server, API and database). Add an "npm start" that does it, and a
+  single documented first-run command for anything that must happen once (creating the database file or
+  applying migrations). Do not require the operator to start a database separately.
+- The database must be created locally — a file, or a container the same command starts — and the
+  schema applied automatically on first run, or by that one command. Never "now set up Postgres".
+- Every required environment variable must have a working local default or be generated on first run,
+  so the command above works on a clean machine with nothing exported first. Secrets get generated
+  into a gitignored file, never committed and never a placeholder like "changeme".
+- README.md must open with that one command, then the URL to open. No prerequisites section beyond the
+  runtime itself.`;
+}
+
+/** Which posture a component set corresponds to, or null when it matches none of them. */
+export function postureOf(components: Record<string, string> | null | undefined): string | null {
+  if (!components) return null;
+  const match = DELIVERY_POSTURES.find((p) => Object.entries(p.components).every(([type, id]) => components[type] === id));
+  return match ? match.id : null;
+}
+
+/**
+ * What is runnable about this component set, and what it needs from the operator first.
+ *
+ * This is the sentence the operator should have been shown before choosing: a stack is either
+ * self-contained (starts with no accounts and no network) or it is not, and "not" should be said out
+ * loud rather than discovered at deploy time.
+ */
+export function stackRequirement(components: Record<string, string> = {}): { selfContained: boolean; needsAccounts: { type: string; id: string; label: string }[] } {
+  const needs = Object.entries(components)
+    // 'none' means the component is genuinely absent (no file storage, no cache), so it cannot be the
+    // thing that drags an account in.
+    .filter(([, id]) => id && id !== 'none')
+    .map(([type, id]) => ({ type, id, service: getServiceOption(type, id) }))
+    // Read ONLY the explicit flag. The first version of this inferred "self-contained" from a missing
+    // `deployType: 'live'` — and `supabase-pg` has no deployType at all, so a Supabase stack reported
+    // itself as needing one account instead of three. Inferring a property from the absence of a
+    // different one is how a check ends up measuring nothing.
+    .filter((s) => s.service && s.service.selfContained !== true);
+  return {
+    selfContained: needs.length === 0,
+    needsAccounts: needs.map((s) => ({ type: s.type, id: s.id, label: s.service.label })),
+  };
+}
