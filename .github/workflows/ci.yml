@@ -172,7 +172,10 @@ jobs:
           HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
           DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
         run: |
-          cd server && npx prisma db push --skip-generate --accept-data-loss
+          # `npm exec` uses the INSTALLED prisma (^5.20). Plain `npx prisma` fetched 8.0.0-rc from the
+          # registry instead, and v8 has no `push` command at all — which is how this step failed the
+          # first time it ran. Pin to the project's own binary.
+          cd server && npm exec -- prisma db push --skip-generate --accept-data-loss
           cd ..
           node scripts/backend-generation-harness.mjs
 
