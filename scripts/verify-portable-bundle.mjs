@@ -24,6 +24,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectPortableFiles, isPortableFile, portableBundleReadme, PORTABLE_EXCLUDE } from '../server/src/lib/portableBundle.js';
+import { platformSteps } from '../server/src/lib/platformCli.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -133,6 +134,27 @@ check('…and that a signed native app is what is still missing, not an installe
 check('it no longer claims there is no installer at all', /No installer and no first-run wizard/.test(readme), false);
 check('it says the setup generates the gateway signing key, so a stranger need not invent it',
   /signs AI gateway tokens with/.test(readme) && /cannot invent/.test(readme), true);
+// The download has to be ACTIONABLE on the machine it lands on, and the README is the only file a
+// downloader is certain to read. So the platform table is asserted against the same table the
+// installer prints (lib/platformCli.js) — a copy in the README would be free to drift from the
+// launcher that actually ships, which is exactly how the previous "no installer" claim survived.
+check('it gives the one command that installs it, for a terminal in the unzipped folder',
+  /node scripts\/portable-setup\.mjs/.test(readme), true);
+for (const p of ['darwin', 'linux', 'win32']) {
+  const steps = platformSteps(p);
+  check(`the README table covers ${steps.label}`, new RegExp(`\\*\\*${steps.label}\\*\\*`).test(readme), true);
+  check(`…and names ${steps.label}'s launcher, the one that ships`, readme.includes(steps.launcher), true);
+  const action = steps.prerequisites.find((s) => !/^No /.test(s.need));
+  check(`…and a command ${steps.label} users actually type`,
+    action.how.split(/[;,]/)[0].replace(/^\s+|\s+$/g, '').split(' ').slice(0, 4).join(' ').length > 3
+    && readme.includes(action.how.match(/(sudo [a-z-]+ install [a-z-]+|brew install node|xcode-select --install|https:\/\/nodejs\.org)/)?.[0] || '\u0000'), true);
+  check(`…and says where the database comes from, so nobody installs one`,
+    /No database|No toolchain/.test(readme), true);
+}
+check('it says what a WORKING install looks like, not just what to type',
+  /opens http:\/\/localhost:4500 by itself/.test(readme) && /sign-in page/.test(readme), true);
+check('it tells the reader they can read another platform\'s steps from this machine',
+  /--check --platform win32/.test(readme), true);
 check('it says remote access needs Tailscale installed by the operator, not by us',
   /Remote access needs Tailscale, which you install/.test(readme) && /does not install Tailscale/.test(readme), true);
 check('it says the AI is yours to choose, and that the paid default needs a broker that is not deployed',

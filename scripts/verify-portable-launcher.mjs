@@ -99,7 +99,15 @@ console.log('\n7. the thing it cannot do for you is stated');
 check('the unsigned-launcher caveat exists', /not a signed app/.test(PORTABLE_GATEKEEPER_NOTE), true);
 check('…and the setup prints it', /PORTABLE_GATEKEEPER_NOTE/.test(read('scripts/portable-setup.mjs')), true);
 check('…naming the mac and Windows steps', /right-click → Open/.test(PORTABLE_GATEKEEPER_NOTE) && /SmartScreen/.test(PORTABLE_GATEKEEPER_NOTE), true);
-check('the installer names a launcher for this platform', /Launcher:/.test(read('scripts/portable-setup.mjs')), true);
+// This checked for the literal label `Launcher:` until the closing summary was restructured to print
+// the platform's own whole block (prerequisites, command, launcher, caveat) from lib/platformCli.js.
+// So it now asserts the MECHANISM: the launcher shown is the one `launcherFor` resolves for this
+// platform, and the platform table is printed in both the plan and the summary.
+const setupSrc = read('scripts/portable-setup.mjs');
+check('the installer names the launcher for this platform', /launcherFor\(process\.platform\)\?\.file/.test(setupSrc), true);
+check('…from the generated launcher table, not a retyped filename',
+  LAUNCHERS.every((l) => !new RegExp(`'${l.file}'`).test(setupSrc)), true);
+check('…printed in the summary and in --check', (setupSrc.match(/(?<!function )sayPlatformSteps\(\)/g) || []).length, 2);
 
 console.log('\n8. the honest list moved with it');
 const setup = read('server/src/lib/portableSetup.js');

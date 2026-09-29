@@ -119,14 +119,39 @@ your own Mac, PC or Linux machine.
   for you, applies the schema and builds the frontend — then \`npm run portable:start\` (or the
   double-click launcher that ships here) opens it. What is still NOT one-click: no signed native app,
   so macOS quarantines a downloaded \`.command\` and Windows SmartScreen warns once.
-- **Remote access needs Tailscale, which you install.** \`npm run portable:remote\` exposes this
-  server to your own tailnet — end-to-end encrypted, no ports opened — but it does not install Tailscale
-  or create the account for you, and nothing is exposed until you run it. A Morpheus-hosted relay, for
-  anyone who would rather install nothing, is decided as the paid-tier successor and is not built.
 - **No AI configured until you choose one.** \`npm run portable:ai\` sets it: a model on this machine
   (private, free), or your own provider key. The Morpheus Cloud paid default is decided and its broker
   exists in \`hosted-broker/\`, but that service is **not deployed**, so it cannot complete a call today
   — and the wizard refuses to write the inert placeholder URL that would look like it did.
+- **Remote access needs Tailscale, which you install.** \`npm run portable:remote\` exposes this
+  server to your own tailnet — end-to-end encrypted, no ports opened — but it does not install Tailscale
+  or create the account for you, and nothing is exposed until you run it. A Morpheus-hosted relay, for
+  anyone who would rather install nothing, is decided as the paid-tier successor and is not built.
+
+## Install it — the same one command on all three
+
+Unzip this folder, open a terminal or command prompt **in it**, and run:
+
+\`\`\`
+node scripts/portable-setup.mjs
+\`\`\`
+
+That is the whole install. Not sure what your machine needs first? Ask it without changing anything —
+and it will print the steps for any platform, so the Windows ones can be read from a Mac:
+
+\`\`\`
+node scripts/portable-setup.mjs --check --platform win32
+\`\`\`
+
+| | What to install first | How to start it afterwards |
+|---|---|---|
+| **macOS** | Node 20+ (https://nodejs.org, or \`brew install node\`); Xcode command line tools (\`xcode-select --install\`). No database — the setup runs its own. | Double-click \`Portable-Morpheus.command\`. If macOS refuses it: right-click → Open, or \`xattr -d com.apple.quarantine "Portable-Morpheus.command"\` |
+| **Linux** | Node 20+ and npm (\`sudo apt install nodejs npm\`, or \`sudo dnf install nodejs npm\`); a toolchain (\`sudo apt install build-essential\`). No database. | \`chmod +x Portable-Morpheus.desktop\` then double-click it — or \`npm run portable:start\` |
+| **Windows** | Node 20+ — the LTS \`.msi\` from https://nodejs.org, then a **new** Command Prompt so PATH updates. No toolchain, no database. | Double-click \`Portable-Morpheus.bat\`. If SmartScreen warns: More info → Run anyway |
+
+A working install looks like this: \`npm run portable:start\` opens http://localhost:4500 by itself and
+the browser shows the Morpheus sign-in page. Nothing opens before the server answers, so a browser that
+appears is a server that is genuinely up.
 
 ## Why the source and not a re-implementation
 

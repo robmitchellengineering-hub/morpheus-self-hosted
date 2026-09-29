@@ -245,6 +245,12 @@ jobs:
       - name: Portable AI source holds up its end
         run: node scripts/verify-portable-ai.mjs
 
+      # The install has to work on a machine that is not this one. Two spawn calls in it were broken
+      # on Windows only and broken several steps in — unreachable from a Mac, so what is asserted here
+      # is the platform DECISION, exercised for win32/linux/darwin on any host.
+      - name: The installer works on all three platforms
+        run: node scripts/verify-portable-platform.mjs
+
       # The paid default is only paid if a brokered call actually reserves, charges and records. This
       # asserts the money paths: the reservation instead of a balance check, the flat rate instead of a
       # per-token price, the refusal of streaming, and the field names the two services share.
