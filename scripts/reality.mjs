@@ -258,6 +258,11 @@ out.portable = [
     verdict: has('scripts/portable-remote.mjs') && has('server/src/lib/portableRemote.js') ? 'BUILT' : 'NOT BUILT',
     evidence: 'tailscale serve — NOT funnel, so the app is exposed to the operator\'s own tailnet rather than the internet — gated on the CLI reporting a running backend and a DNS name, and it sets BACKEND_PUBLIC_URL to that stable name. It deliberately does NOT install Tailscale or guess the CLI\'s syntax: that has changed across versions, so the installed CLI is asked to do the work and its own error is shown verbatim. Guarded by scripts/verify-portable-remote.mjs. Still owed: the AI-source wizard, and a native package.',
   },
+  {
+    step: 'explicit AI source for a local install (portable-ai.mjs)',
+    verdict: has('scripts/portable-ai.mjs') && has('server/src/lib/portableAi.js') ? 'BUILT' : 'NOT BUILT',
+    evidence: 'detects a locally hosted OpenAI-compatible server, reports which of the three tiers ai.js will actually take (account override, this deployment\'s env, Morpheus gateway — asserted against ai.js rather than copied), and writes only the four keys it owns. It refuses to write the inert broker placeholder, because that would configure nothing while looking configured: the paid default is DECIDED but the hosted-broker service is NOT DEPLOYED, so the out-of-the-box paid path does not work yet. It also warns when a local model id matches no LOCAL_MODEL_PATTERNS entry, because the ledger would then price a free call from the generic default — the gemini-3.5-flash-lite bug in another disguise. Guarded by scripts/verify-portable-ai.mjs. Still owed: deploy the broker, and a native package.',
+  },
 ];
 
 // Pricing coverage — the revenue-integrity check. A production model missing

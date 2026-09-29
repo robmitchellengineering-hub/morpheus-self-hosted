@@ -110,7 +110,8 @@ check('it names the commit it was built from', /abc1234/.test(readme), true);
 check('it admits there is no installer or wizard', /No installer and no first-run wizard/.test(readme), true);
 check('it says remote access needs Tailscale installed by the operator, not by us',
   /Remote access needs Tailscale, which you install/.test(readme) && /does not install Tailscale/.test(readme), true);
-check('it admits no AI provider is configured', /No AI configured by default/.test(readme), true);
+check('it says the AI is yours to choose, and that the paid default needs a broker that is not deployed',
+  /No AI configured until you choose one/.test(readme) && /not deployed/.test(readme), true);
 check('it names the Command Deck, because that is the scope', /Command Deck/.test(readme), true);
 
 console.log('\n8. the authority reports it');
