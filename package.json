@@ -12,6 +12,8 @@
     "portable:setup": "node scripts/portable-setup.mjs",
     "portable:remote": "node scripts/portable-remote.mjs",
     "portable:ai": "node scripts/portable-ai.mjs",
+    "portable:start": "node scripts/portable-start.mjs",
+    "portable:stop": "node scripts/portable-stop.mjs",
     "lint": "eslint . --quiet",
     "test": "node --test",
     "lint:fix": "eslint . --fix",

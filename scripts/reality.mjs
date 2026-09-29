@@ -263,6 +263,11 @@ out.portable = [
     verdict: has('scripts/portable-ai.mjs') && has('server/src/lib/portableAi.js') ? 'BUILT' : 'NOT BUILT',
     evidence: 'detects a locally hosted OpenAI-compatible server, reports which of the three tiers ai.js will actually take (account override, this deployment\'s env, Morpheus gateway — asserted against ai.js rather than copied), and writes only the four keys it owns. It refuses to write the inert broker placeholder, because that would configure nothing while looking configured: the paid default is DECIDED but the hosted-broker service is NOT DEPLOYED, so the out-of-the-box paid path does not work yet. It also warns when a local model id matches no LOCAL_MODEL_PATTERNS entry, because the ledger would then price a free call from the generic default — the gemini-3.5-flash-lite bug in another disguise. Guarded by scripts/verify-portable-ai.mjs. Still owed: deploy the broker, and a native package.',
   },
+  {
+    step: 'one double-click to start it (portable-start.mjs + generated launchers)',
+    verdict: has('scripts/portable-start.mjs') && has('scripts/portable-stop.mjs') && has('server/src/lib/portableLaunch.js') ? 'BUILT' : 'NOT BUILT',
+    evidence: 'a per-platform launcher (.command/.bat/.desktop) is GENERATED into the bundle at build time with an exec bit, so there is no committed copy to drift from the rule that describes it; each one only runs `npm run portable:start`. Starting is idempotent (an already-answering server just brings the browser to it), the browser opens only after /api/health answers — opening first is how a launcher shows someone a connection-refused page and calls it success — and stopping says plainly that it stops the DATABASE and reports whether the server is still up, because the server owns its own window. Guarded by scripts/verify-portable-launcher.mjs. What is genuinely absent: code signing and auto-update (macOS quarantines a downloaded .command; SmartScreen warns once).',
+  },
 ];
 
 // Pricing coverage — the revenue-integrity check. A production model missing
