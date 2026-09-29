@@ -1,7 +1,13 @@
 // Portable Morpheus — one command from "I unzipped this" to "the server is running on this machine".
 //
-//   node scripts/portable-setup.mjs            # do it
-//   node scripts/portable-setup.mjs --check    # print the plan and what is missing, change nothing
+//   node scripts/portable-setup.mjs                        # do it
+//   node scripts/portable-setup.mjs --check                # print the plan and what is missing, change nothing
+//   node scripts/portable-setup.mjs --check --platform win32   # read the steps for ANOTHER platform
+//
+// `--platform` exists because the per-platform steps cannot otherwise be read from the wrong machine:
+// someone writing them on a Mac is guessing at Linux and Windows, and this repo's answer to guessing
+// is to make the thing checkable. It only affects --check output — the install itself always runs for
+// the machine it is on.
 //
 // WHAT THIS IS NOT: a second way to run a database. `server/scripts/dev-db.mjs` already drives real
 // Postgres binaries with initdb/pg_ctl (see its header for why not the library's class, which stops
@@ -12,7 +18,7 @@
 // The steps and every word about what is still missing live in server/src/lib/portableSetup.js, so the
 // guard in CI's no-install job can assert them without running any of this.
 //
-// Run:  node scripts/portable-setup.mjs [--check] [--skip-install] [--skip-build] [--yes]
+// Run:  node scripts/portable-setup.mjs [--check] [--platform darwin|linux|win32] [--skip-install] [--skip-build]
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, writeFileSync } from 'node:fs';
@@ -23,6 +29,9 @@ import {
   localUrl, REQUIRED_NODE_MAJOR,
 } from '../server/src/lib/portableSetup.js';
 import { PORTABLE_GATEKEEPER_NOTE, launcherFor } from '../server/src/lib/portableLaunch.js';
+import { platformSteps, PLATFORM_STEPS, setupCommand, pathCommand, spawnOptions } from '../server/src/lib/platformCli.js';
+
+const PLATFORM_STEPS_HAS = (p) => Boolean(p && PLATFORM_STEPS[p]);
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = join(ROOT, 'server');
@@ -31,15 +40,34 @@ const DEV_DB = join(SERVER, 'scripts', 'dev-db.mjs');
 
 const argv = process.argv.slice(2);
 const CHECK = argv.includes('--check');
+// --platform only ever changes what --check PRINTS. Letting it change what an install DOES would make
+// it possible to generate secrets and a database for a platform the machine is not.
+const PLATFORM_ARG = argv[argv.indexOf('--platform') + 1];
+const REPORT_PLATFORM = argv.includes('--platform') && PLATFORM_STEPS_HAS(PLATFORM_ARG) ? PLATFORM_ARG : process.platform;
 const SKIP_INSTALL = argv.includes('--skip-install');
 const SKIP_BUILD = argv.includes('--skip-build');
 
 const say = (s) => console.log(s);
 const step = (n, s) => console.log(`\n  [${n}/${INSTALL_STEPS.length}] ${s}`);
+/**
+ * Run a CLI by PATH name (npm), using the platform's own rules for reaching it.
+ *
+ * `run` takes `(cmd, args, cwd)`, so the argv from pathCommand has to be SPLIT — spreading it across
+ * the parameters passes `args` as a string and hands the shell nothing, which is what
+ * `npm install --no-audit` became: `run('npm', 'install', ...)` threw ERR_INVALID_ARG_TYPE at the
+ * first npm call, after the database had already been started.
+ */
+function runCli(command, cwd) {
+  run(command[0], command.slice(1), cwd);
+}
+
 function run(cmd, args, cwd) {
   // stdio inherited: this is an installer, and hiding npm's or initdb's output makes a failure
   // impossible for the operator to act on.
-  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit' });
+  //
+  // The Windows fix is in the ARGV (pathCommand's `cmd.exe /c`), not in a shell flag — see
+  // spawnOptions' comment for why passing both would wrap the command twice.
+  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit', ...spawnOptions(process.platform) });
   if (r.status !== 0) {
     console.error(`\n  ✗ "${cmd} ${args.join(' ')}" failed (exit ${r.status}). Nothing further was attempted.`);
     process.exit(1);
@@ -55,17 +83,41 @@ const pf = preflight({ nodeMajor, platform: process.platform });
 if (!pf.ok) {
   console.error('');
   for (const p of pf.problems) console.error(`  ✗ ${p}`);
+  console.error('\n  What this platform needs:');
+  for (const s of platformSteps(process.platform)?.prerequisites || []) console.error(`    · ${s.need}\n      ${s.how}`);
   console.error('\n  Nothing was changed.\n');
   process.exit(2);
 }
 say(`  Node ${process.versions.node} · ${process.platform}`);
 
+const steps = platformSteps(REPORT_PLATFORM);
+
+/**
+ * What a person on THIS platform does before the one command, and how to start it afterwards.
+ *
+ * Printed by both `--check` and the closing summary, from the same table, because the two used to
+ * disagree: the plan said "install Node 20+" and the summary said `cd server && npm start`, which is
+ * not what any of it actually runs. A stranger on a fresh Linux box had no way to know that a C
+ * toolchain is what `npm install` would stop on, or that the double-clickable file is a `.bat` on
+ * Windows and a `.desktop` on Linux.
+ */
+function sayPlatformSteps() {
+  if (!steps) return;
+  say(`\n  WHAT ${steps.label.toUpperCase()} NEEDS FIRST:`);
+  for (const p of steps.prerequisites) say(`    · ${p.need}\n      ${p.how}`);
+  say(`\n  THEN, ONCE:      ${setupCommand(REPORT_PLATFORM)}`);
+  say(`  THEN:            ${steps.launcher}`);
+  say(`    ${steps.launcherNote}`);
+}
+
 if (CHECK) {
   say('\n  PLAN (nothing will be written):');
+  if (steps) say(`  Platform: ${steps.label}`);
   INSTALL_STEPS.forEach((s, i) => say(`    ${i + 1}. ${s.title}`));
   say('\n  SECRETS this install will generate for itself (values are never printed):');
   for (const g of GENERATED_ENV) say(`    · ${g.key} — ${g.how}`);
   say(`\n  server/.env: ${existsSync(ENV_PATH) ? 'already exists — it will be LEFT ALONE' : 'will be created'}`);
+  sayPlatformSteps();
   say('\n  NOT INCLUDED YET:');
   for (const n of NOT_INSTALLED_YET) say(`    · ${n}`);
   say('\n  Re-run without --check to do it.\n');
@@ -90,8 +142,8 @@ step(3, INSTALL_STEPS[2].title);
 if (SKIP_INSTALL) {
   say('      skipped (--skip-install)');
 } else {
-  run('npm', ['install', '--no-audit', '--no-fund'], ROOT);
-  run('npm', ['install', '--no-audit', '--no-fund'], SERVER);
+  runCli(pathCommand(process.platform, 'npm', ['install', '--no-audit', '--no-fund']), ROOT);
+  runCli(pathCommand(process.platform, 'npm', ['install', '--no-audit', '--no-fund']), SERVER);
 }
 
 // ── 3. the local database, through the script that already owns this ────────
@@ -116,18 +168,19 @@ if (SKIP_BUILD) {
   // Built WITHOUT VITE_API_BASE_URL on purpose: the default is same-origin `/api`, and the server
   // serves this dist/ itself (server/src/index.js), so there is no second process and no CORS origin
   // to configure.
-  run('npm', ['run', 'build'], ROOT);
+  runCli(pathCommand(process.platform, 'npm', ['run', 'build']), ROOT);
 }
 
-say('\n  DONE.\n');
-say('  After this, you do not need a terminal vocabulary:');
-say('    - double-click the launcher for this platform (see below), or');
-say('    - npm run portable:start   (and npm run portable:stop to stop)');
+say('\n  DONE — everything this install needs on this machine is in place.\n');
+say('  TO START IT:');
+say(`    · double-click ${launcherFor(process.platform)?.file || '(no launcher for this platform — use the command below)'}`);
+say('    · or run:  npm run portable:start      (npm run portable:stop stops it)');
 say(`    ${PORTABLE_GATEKEEPER_NOTE}`);
 say('');
-say(`  Start it:      cd server && npm start`);
-say(`  Then open:     ${localUrl()}`);
-say(`  Launcher:      ${launcherFor(process.platform)?.file || '(none for this platform — use the npm command)'}`);
+say(`  When it is running it opens ${localUrl()} by itself, and that is the whole check:`);
+say('  the browser shows the Morpheus sign-in page.');
+say('');
+sayPlatformSteps();
 say('');
 say('  NOT INCLUDED YET:');
 for (const n of NOT_INSTALLED_YET) say(`    · ${n}`);

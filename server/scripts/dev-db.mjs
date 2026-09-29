@@ -30,6 +30,10 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync,
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// Platform-specific argv for the one external command this script runs. See that module's header:
+// the `.bin` shims it replaces are the reason a Windows install died several steps in while macOS
+// and Linux sailed through.
+import { binCommand, spawnOptions } from '../../server/src/lib/platformCli.js'
 
 // `pg` is a transitive dependency of embedded-postgres. Resolve it from the
 // server's own package root rather than assuming a hoisted path.
@@ -163,10 +167,20 @@ function reset() {
 
 function schema() {
   const cfg = readEnvUrl()
-  execFileSync(join(SERVER, 'node_modules', '.bin', 'prisma'), ['db', 'push', '--skip-generate', '--accept-data-loss'], {
+  // Through binCommand(), not a direct path to the `.bin` entry: on Windows that directory holds a
+  // `.cmd` shim, the shebang-only `prisma` beside it is not executable, and Node refuses to spawn
+  // either without a shell. On macOS and Linux `.bin/prisma` is a symlink to a JS file and runs
+  // happily — which is exactly why this was invisible until a Windows machine tried it.
+  const [cmd, ...args] = binCommand(
+    process.platform,
+    join(SERVER, 'node_modules', '.bin', 'prisma'),
+    ['db', 'push', '--skip-generate', '--accept-data-loss'],
+  )
+  execFileSync(cmd, args, {
     cwd: SERVER,
     env: { ...process.env, DATABASE_URL: `postgresql://${cfg.user}:${cfg.password}@${cfg.host}:${cfg.port}/${cfg.database}?schema=public` },
     stdio: 'inherit',
+    ...spawnOptions(process.platform),
   })
 }
 
