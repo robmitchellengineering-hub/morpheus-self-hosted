@@ -28,6 +28,7 @@ function check(name, actual, expected) {
 const tasks = readFileSync(new URL('../src/pages/CommandDeck/widgets/tasks.jsx', import.meta.url), 'utf8');
 const calendar = readFileSync(new URL('../src/pages/CommandDeck/widgets/calendar.jsx', import.meta.url), 'utf8');
 const deckUi = readFileSync(new URL('../src/pages/CommandDeck/DeckUI.jsx', import.meta.url), 'utf8');
+const deckCtx = readFileSync(new URL('../src/contexts/CommandDeckContext.jsx', import.meta.url), 'utf8');
 
 console.log('\n1. the person editor says what it edits, and is reachable where the person is');
 check('the toggle names the three fields, not "Manage people"',
@@ -51,6 +52,23 @@ check('…and the date input may shrink rather than push the button out',
   /flex: '1 1 130px', minWidth: 0/.test(calendar), true);
 check('…and the mic field wrapper may shrink too',
   /wrapperStyle=\{\{ minWidth: 0, flex: '1 1 160px' \}\}/.test(calendar), true);
+
+console.log('\n3. a dismissed widget-build card stays dismissed');
+// Rob, 2026-09-29: "the hung state is still in settings." The card was not hung — the build had
+// finished — but the X only cleared component state while the effect re-reads the NEWEST row on every
+// mount, so the card returned on every reload. A dismissal nobody can make stick reads exactly like a
+// stuck build, which is why this is pinned rather than left to a comment.
+check('the dismissed build id is remembered, not just dropped from state',
+  /localStorage\.setItem\(DISMISSED_WIDGET_BUILD_KEY/.test(deckCtx), true);
+check('…and read back before the newest row is shown',
+  /localStorage\.getItem\(DISMISSED_WIDGET_BUILD_KEY\)/.test(deckCtx), true);
+check('…so only a SETTLED build can be suppressed by it',
+  /const settled = latest \? \['done', 'failed'\]\.includes\(latest\.status\) : false/.test(deckCtx)
+  && /settled && latest\.id === dismissedId \? null : latest/.test(deckCtx), true);
+check('…and an unfinished build still shows and keeps polling',
+  /if \(latest && !settled\)/.test(deckCtx), true);
+check('the key is namespaced to the deck, not a bare word',
+  /'morpheus\.deck\.dismissedWidgetBuild'/.test(deckCtx), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }

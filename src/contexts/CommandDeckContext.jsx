@@ -15,6 +15,11 @@ import { summarizeFiling } from '@/pages/CommandDeck/dumpFiling';
 
 const CommandDeckContext = createContext(null);
 
+// Which finished widget-build card the operator has closed. Kept in localStorage because the card is
+// re-read from the NEWEST DeckWidgetBuild row on every mount — an in-memory dismissal was undone by
+// the next page load, so the X looked broken (see pollWidgetBuild/dismissWidgetBuild).
+const DISMISSED_WIDGET_BUILD_KEY = 'morpheus.deck.dismissedWidgetBuild';
+
 // Date-only fields (murbah's booking_date, a repair's promised_date) are stored as an ISO string and
 // never as a Date object: every row read back from the API comes JSON-serialized, so the renderers'
 // `(value || '').slice(0, 10)` — a string method — would throw on a real Date and blank the screen
@@ -317,8 +322,17 @@ export function CommandDeckProvider({ children }) {
     try {
       const rows = await base44.entities.DeckWidgetBuild.list('-created_date', 1);
       const latest = rows[0] || null;
-      setWidgetBuild(latest);
-      if (latest && !['done', 'failed'].includes(latest.status)) {
+      // A FINISHED card stays until the operator dismisses it, and the dismissal has to outlive the
+      // page. It did not: the X only cleared this component's state, while this effect re-reads the
+      // NEWEST row on every mount — so the card came back on every reload and the X looked broken.
+      // Rob, 2026-09-29: "the hung state is still in settings". The dismissed id is remembered
+      // instead, and only ever suppresses a SETTLED build: a running build has no X to press, and a
+      // new build carries a new id, so an old dismissal can never hide live progress.
+      let dismissedId = null;
+      try { dismissedId = window.localStorage.getItem(DISMISSED_WIDGET_BUILD_KEY); } catch { /* private mode */ }
+      const settled = latest ? ['done', 'failed'].includes(latest.status) : false;
+      setWidgetBuild(settled && latest.id === dismissedId ? null : latest);
+      if (latest && !settled) {
         widgetBuildPollTimer.current = window.setTimeout(pollWidgetBuild, 5000);
       }
     } catch {
@@ -329,7 +343,14 @@ export function CommandDeckProvider({ children }) {
     pollWidgetBuild();
     return () => window.clearTimeout(widgetBuildPollTimer.current);
   }, [pollWidgetBuild]);
-  const dismissWidgetBuild = () => setWidgetBuild(null);
+  const dismissWidgetBuild = () => {
+    setWidgetBuild((current) => {
+      if (current?.id) {
+        try { window.localStorage.setItem(DISMISSED_WIDGET_BUILD_KEY, current.id); } catch { /* private mode */ }
+      }
+      return null;
+    });
+  };
 
   // ---- brain dump --------------------------------------------------------
   // Deliberately name-only, not first-person — this drives the FAST,
