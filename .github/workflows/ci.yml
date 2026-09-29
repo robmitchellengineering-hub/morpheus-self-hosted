@@ -122,7 +122,25 @@ jobs:
   render:
     name: render
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # A real Postgres for the backend-generation harness, which runs the ACTUAL generateBackend handler
+    # against a database with the AI provider pointed at a fake. This is what makes that path testable
+    # for zero credits — the alternative was ~824 credits and an hour per question, which is how three
+    # defects got found the expensive way.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: morpheus
+          POSTGRES_PASSWORD: harness
+          POSTGRES_DB: harness
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -145,6 +163,28 @@ jobs:
       # is unreachable, so a network blip reports NOT VERIFIED instead of a false red.
       - name: A self-contained app still installs, starts and answers
         run: node scripts/smoke-generated-app.mjs
+
+      # The generator, run for real against the database above with a fake provider answering. Asserts what
+      # the MODEL was actually told (read off the wire), what got PERSISTED, and that the two context
+      # fixes hold end to end — none of which needs a real model, a key, or a credit.
+      #
+      # server/'s dependencies are installed HERE rather than by the root `npm ci`: there are no npm
+      # workspaces, and prisma lives in server/package.json, so the root install leaves server/node_modules
+      # absent. BOTH of this step's first two CI failures came from that — `npx prisma` and then
+      # `npm exec -- prisma` each quietly fetched prisma@8.0.0-rc from the registry instead of using a local
+      # binary, and v8 has no `push` command at all.
+      - name: Install the server workspace the harness runs against
+        run: cd server && npm install --no-audit --no-fund --no-save
+
+      - name: The backend generator runs end to end, offline
+        env:
+          HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+        run: |
+          # The LOCAL binary, by path — no registry lookup can substitute a different major version.
+          cd server && ./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
+          cd ..
+          node scripts/backend-generation-harness.mjs
 
       - name: Build the frontend
         run: npm run build
