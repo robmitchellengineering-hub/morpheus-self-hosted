@@ -148,7 +148,14 @@ export const COMPONENTS: InfrastructureComponent[] = [
         selfContained: true,
         label: 'SQLite (Local File)',
         freeTier: 'Unlimited',
-        codegenHint: 'Use better-sqlite3 or sqlite3 npm package. Database stored in a local .db file. Generate schema in migrations/ using SQLite SQL. No external connection needed — great for standalone/self-hosted.'
+        // `sqlite3`, NOT better-sqlite3, and not "either". Measured 2026-09-29 on the Node 22 this pipeline
+        // runs on: better-sqlite3 publishes NO prebuilt binary for it and its source fails to compile
+        // (`./src/util/macros.lzz: no matching member function for call to 'SetAccessor'` — a V8 API it
+        // has not caught up with). So a generated app told "either" picks it, and `npm install` fails
+        // on the FIRST command the README gives — which is the one promise a self-contained stack makes.
+        // sqlite3 ships a prebuilt binary for Node 22 and was verified working. Its callback API is
+        // also what the model writes correctly; better-sqlite3's synchronous API is a different shape.
+        codegenHint: 'Use the sqlite3 npm package (https://www.npmjs.com/package/sqlite3) — it ships a prebuilt binary and installs with no compiler. Do NOT use better-sqlite3: it has no prebuilt binary for current Node and its source build fails. Database stored in a local .db file, created on first run if absent. Generate schema in migrations/ using SQLite SQL and apply it at startup. No external connection needed — great for standalone/self-hosted.'
       },
     ]
   },
