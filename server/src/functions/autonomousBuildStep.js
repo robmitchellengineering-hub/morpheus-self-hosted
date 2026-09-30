@@ -7,6 +7,7 @@
 // clarification gate — autonomous mode always proceeds, making its own
 // reasonable choices instead of asking the operator.
 import { prisma } from '../db.js';
+import { appliedPaths } from '../lib/appliedOps.js';
 import { invokeAI } from '../ai.js';
 import { createSnapshot, applyFileOperations, logUsage } from '../lib/projectUtils.js';
 import { buildToolchain } from '../lib/toolchain.js';
@@ -274,5 +275,7 @@ ${historyContext}`;
     totalEstTokens: plannerMetrics.estTokens + coderMetrics.totalTokens,
   };
   await logUsage(user.id, 'autonomous_step', projectId, project.name, { isComplete: finalComplete, fileCount: fileOps.length, reviewed: !!reviewerModel, reviewApproved, truncated, outputMetrics, ...toolchain });
-  return { reply, fileOperations: appliedOps, isComplete: finalComplete, truncated, plannerAssessment: plannerResult.assessment, reviewStatus: { approved: reviewApproved, issues: reviewIssues, summary: reviewSummary }, outputMetrics };
+  // `fileOperations` is a MIXED list (refusals, skips and failures alongside real writes), so the paths
+  // that actually changed travel beside it — every function that ships an op list ships this too.
+  return { reply, fileOperations: appliedOps, changedPaths: appliedPaths(appliedOps), isComplete: finalComplete, truncated, plannerAssessment: plannerResult.assessment, reviewStatus: { approved: reviewApproved, issues: reviewIssues, summary: reviewSummary }, outputMetrics };
 }

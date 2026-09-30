@@ -109,7 +109,9 @@ export default function EmbedChat({ projectId, projectName, pageUrl, pageTitle, 
         (evt) => { if (evt.status === 'start') setStage(evt.label || 'Working'); },
       );
       setMessages((m) => [...m, { role: 'morpheus', content: data?.reply || '…', proposedAction: data?.proposedAction || null, proposedBulkAction: data?.proposedBulkAction || null }]);
-      const changed = (data?.fileOperations || []).filter((op) => op.action !== 'skipped_fake_binary');
+      // The server says what changed. This filter used to exclude only fake-binary skips, so a refused
+      // file, an empty-content skip and a failed edit all still counted as "this build changed…".
+      const changed = (data?.changedPaths || []).map((path) => ({ path }));
       if (mode === 'build' && changed.length) {
         setLastBuild({ paths: changed.map((op) => op.path) });
       }

@@ -420,6 +420,19 @@ jobs:
       # features simply did not persist on a fresh install, which is why it went unnoticed.
       - name: A fresh self-host gets the migrated schema
         run: node scripts/verify-bootstrap-sql.mjs
+      # Defect 9, from the first real end-to-end backend run: the plan asked for
+      # `migrations/001_initial.sql`, the generator wrote `migrations/0001_init.sql`, and the completeness
+      # check — a literal set difference — reported a file that EXISTS as missing. A false "missing" is
+      # worse than none, because it teaches the operator to ignore the flag.
+      - name: A planned file that was renamed is not reported missing
+        run: node scripts/verify-plan-reconciliation.mjs
+
+      # Defect 4: `appliedOps` is a MIXED list — real writes beside refusals, skips and failures — and
+      # `appliedOps.length` decided NINE things, so a turn where every operation was refused still triggered
+      # the GitHub auto-sync, ran the polish pass, was billed as `chat_build`, and told the workspace which
+      # files had changed. One definition now, published in the payload as `changedPaths`.
+      - name: A refused operation does not read as a change
+        run: node scripts/verify-applied-ops.mjs
 
       - name: The guard-mutation registry is honest
         run: node scripts/verify-guard-mutations.mjs

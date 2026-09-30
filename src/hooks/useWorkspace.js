@@ -291,9 +291,14 @@ export function useWorkspace() {
       }
       const morpheusMsg = { id: 'm-' + Date.now(), role: 'morpheus', content: res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
-      if (res.data.fileOperations?.length > 0) {
+      // `changedPaths` is the server's answer to "what actually changed" (defect 4). This used to map every
+      // entry of `fileOperations`, which is a MIXED list — refusals, skips and failed edits included — so a
+      // build in which every operation was refused still reloaded the tree and highlighted each refused file
+      // as just-touched. A file that was never written must not read as changed.
+      const changed = res.data.changedPaths || [];
+      if (changed.length > 0) {
         await loadFiles(currentProject.id);
-        setLastTouched(prev => ({ paths: res.data.fileOperations.map(op => op.path).filter(Boolean), rev: prev.rev + 1 }));
+        setLastTouched(prev => ({ paths: changed, rev: prev.rev + 1 }));
       }
     } catch (e) {
       const prefix = isBareNetworkFailure(e) ? '// SYSTEM FAILURE: connection dropped twice — ' : '// SYSTEM FAILURE: ';
@@ -468,7 +473,7 @@ export function useWorkspace() {
     if (!currentProject) return;
     try {
       const res = await base44.functions.invoke('generateTests', { projectId: currentProject.id, spec });
-      if (res.data?.fileOperations?.length > 0) {
+      if ((res.data?.changedPaths || []).length > 0) {
         await loadFiles(currentProject.id);
         await loadSnapshots(currentProject.id);
       }
@@ -487,7 +492,7 @@ export function useWorkspace() {
       const res = await base44.functions.invoke('autonomousBuildStep', { projectId: currentProject.id, spec });
       const morpheusMsg = { id: 'auto-' + Date.now(), role: 'morpheus', content: '[AUTONOMOUS] ' + res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
-      if (res.data.fileOperations?.length > 0) {
+      if ((res.data.changedPaths || []).length > 0) {
         await loadFiles(currentProject.id);
       }
       await loadSnapshots(currentProject.id);
@@ -504,7 +509,7 @@ export function useWorkspace() {
       const res = await base44.functions.invoke('updateDependencies', { projectId: currentProject.id });
       const morpheusMsg = { id: 'deps-' + Date.now(), role: 'morpheus', content: res.data.reply, project_id: currentProject.id };
       setMessages(prev => [...prev, morpheusMsg]);
-      if (res.data.fileOperations?.length > 0) {
+      if ((res.data.changedPaths || []).length > 0) {
         await loadFiles(currentProject.id);
         await loadSnapshots(currentProject.id);
       }
