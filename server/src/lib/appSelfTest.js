@@ -27,6 +27,17 @@
 /** The one command. Dependency-free, so it runs on a machine that has nothing but the app and Node. */
 export const SELFTEST_FILE = 'selftest.mjs';
 
+/**
+ * Where a run leaves its RESULT, so the evidence outlives the terminal.
+ *
+ * A printed line is gone the moment the window closes, and the machine that ran the test is the machine
+ * nobody can ask again. Writing the verdict next to the app means it can be read later — by the operator,
+ * by the next Morpheus build of that project, or by the installer that asked for it. Deliberately inside
+ * `.morpheus/`, which the generated app already treats as Morpheus bookkeeping and the export already
+ * excludes: this is a record about the app, not part of it.
+ */
+export const SELFTEST_RESULT_FILE = '.morpheus/selftest.json';
+
 /** The single line a run must print for its result to be readable. Last one wins. */
 export const SELFTEST_MARKER = 'MORPHEUS-SELFTEST:';
 
@@ -166,12 +177,30 @@ export function renderSelfTestRunner({ port = 3111, path: probePath = '/', start
 // and the exit code is nothing without the line — a caller needs both to tell "broken" from "not tested".
 import { spawn, spawnSync } from 'node:child_process';
 import { get } from 'node:http';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { hostname } from 'node:os';
 
 const PORT = process.env.SELFTEST_PORT || '${port}';
 const PROBE = process.env.SELFTEST_PATH || '${probePath}';
 const TIMEOUT_MS = Number(process.env.SELFTEST_TIMEOUT_MS || ${timeoutMs});
 const started = Date.now();
-const say = (rest, code) => { console.log('${SELFTEST_MARKER} ' + rest); process.exit(code); };
+const RESULT_FILE = '${SELFTEST_RESULT_FILE}';
+const say = (rest, code) => {
+  // Leave the result behind as well as printing it: the terminal closes, the machine that ran this cannot be
+  // asked again, and "it worked on my machine" is only worth anything if something recorded it.
+  try {
+    const name = rest.split(':')[0].trim();
+    const status = name === 'ok' ? 'ok' : (name === 'fail' ? 'failed' : 'could-not-run');
+    mkdirSync(dirname(RESULT_FILE), { recursive: true });
+    writeFileSync(RESULT_FILE, JSON.stringify({
+      status, detail: rest.slice(name.length).replace(/^:\\s*/, ''), at: new Date().toISOString(),
+      host: hostname(), platform: process.platform, command: '${startCommand}', exitCode: code,
+    }, null, 2));
+  } catch { /* a result we could not store must never change the verdict */ }
+  console.log('${SELFTEST_MARKER} ' + rest);
+  process.exit(code);
+};
 
 let child;
 
@@ -273,6 +302,58 @@ export function planSelfTestFile(files) {
   try { start = JSON.parse(pkg?.content || '{}')?.scripts?.start || null; } catch { start = null; }
   if (typeof start !== 'string' || !start.trim()) return null;
   return { path: SELFTEST_FILE, content: renderSelfTestRunner({ startCommand: start.trim() }) };
+}
+
+/**
+ * Read a result file.
+ *
+ * Same rule as the printed line, and it matters more here because the file is read LATER, by something that
+ * cannot ask a question: anything unreadable, out of shape or missing comes back `unknown`, and `unknown` is
+ * never verified. A file that has been sitting on disk for a month is still evidence — of what happened then
+ * — which is why the host and the time travel with it.
+ */
+export function parseSelfTestResult(value) {
+  let data = value;
+  if (typeof value === 'string') {
+    try { data = JSON.parse(value); } catch { return { status: 'unknown', detail: 'the result file is not readable JSON' }; }
+  }
+  if (!data || typeof data !== 'object') return { status: 'unknown', detail: 'no result was recorded' };
+  const status = ['ok', 'failed', 'could-not-run'].includes(data.status) ? data.status : 'unknown';
+  return {
+    status,
+    detail: typeof data.detail === 'string' ? data.detail : '',
+    at: typeof data.at === 'string' ? data.at : null,
+    host: typeof data.host === 'string' ? data.host : null,
+    command: typeof data.command === 'string' ? data.command : null,
+  };
+}
+
+/** The last result recorded for an app, read out of its own files. Null when there is none. */
+export function selfTestEvidence(files) {
+  const f = (files || []).find((x) => x && x.path === SELFTEST_RESULT_FILE);
+  if (!f) return null;
+  return parseSelfTestResult(f.content);
+}
+
+/**
+ * What the operator is owed when a build finds that this app was already tested on a machine — or is told
+ * nothing when it was not. Silence is right for "no result": a build should not be padded with a line saying
+ * nothing happened.
+ */
+export function selfTestEvidenceLine(evidence) {
+  if (!evidence) return null;
+  if (evidence.status === 'ok') {
+    const where = evidence.host ? ` on ${evidence.host}` : ' on your machine';
+    const when = evidence.at ? ` at ${evidence.at}` : '';
+    return `// VERIFIED WHERE IT RUNS: this app passed its own headless self-test${where}${when}.`;
+  }
+  if (evidence.status === 'failed') {
+    return `// LAST SELF-TEST FAILED${evidence.host ? ` on ${evidence.host}` : ''}: ${evidence.detail || 'the app reported a failure'}. Run \`node ${SELFTEST_FILE}\` again after fixing it.`;
+  }
+  if (evidence.status === 'could-not-run') {
+    return `// SELF-TEST COULD NOT RUN${evidence.host ? ` on ${evidence.host}` : ''}: ${evidence.detail || 'the test could not start'}.`;
+  }
+  return null; // an unreadable record is not worth a sentence
 }
 
 /** The marker line a runner is expected to print, for tests and for the installer's own messages. */

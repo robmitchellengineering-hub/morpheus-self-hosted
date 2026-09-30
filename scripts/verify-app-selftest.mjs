@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import {
   SELFTEST_FILE, SELFTEST_MARKER, SELFTEST_EXIT, SELFTEST_OUTCOMES, SELFTEST_REQUIREMENTS,
   parseSelfTestOutput, isVerified, selfTestSummary, selfTestProblems, renderSelfTestRunner, planSelfTestFile,
+  SELFTEST_RESULT_FILE, parseSelfTestResult, selfTestEvidence, selfTestEvidenceLine,
 } from '../server/src/lib/appSelfTest.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -99,6 +100,37 @@ check('an app that already ships one is never overwritten',
   planSelfTestFile([...nodeApp, { path: SELFTEST_FILE, content: '// mine' }]), null);
 check('junk does not crash it', planSelfTestFile(undefined), null);
 
+console.log('\n4c. the result survives the terminal');
+// A printed line dies with the window, and the machine that ran the test is the one nobody can ask again.
+check('a stored ok is read back as ok', parseSelfTestResult(JSON.stringify({ status: 'ok', host: 'mac', at: 'now' })).status, 'ok');
+// A file is read LATER, by something that cannot ask a question, so it gets the same treatment as the line.
+check('an unreadable file is unknown, never ok', parseSelfTestResult('{not json').status, 'unknown');
+check('a file with no status is unknown', parseSelfTestResult('{}').status, 'unknown');
+check('a made-up status is unknown, not taken at its word', parseSelfTestResult({ status: 'probably' }).status, 'unknown');
+check('nothing at all is unknown', [parseSelfTestResult(undefined), parseSelfTestResult(null)].map((r) => r.status), ['unknown', 'unknown']);
+check('host and time travel with the verdict', parseSelfTestResult({ status: 'ok', host: 'mac', at: '2026-10-01' }).host, 'mac');
+// Reading it out of an app, and saying something only when there is something to say.
+check('no result file means no evidence', selfTestEvidence([{ path: 'index.js', content: '' }]), null);
+check('…and no evidence means no line', selfTestEvidenceLine(null), null);
+check('…and an unreadable record is not worth a sentence', selfTestEvidenceLine(parseSelfTestResult('x')), null);
+check('an ok result reads as verified where it runs',
+  /VERIFIED WHERE IT RUNS/.test(selfTestEvidenceLine({ status: 'ok', host: 'mac', at: '2026-10-01T00:00:00Z' })), true);
+check('…naming the machine and the time',
+  selfTestEvidenceLine({ status: 'ok', host: 'mac', at: '2026-10-01T00:00:00Z' }).includes('mac') && selfTestEvidenceLine({ status: 'ok', host: 'mac', at: '2026-10-01T00:00:00Z' }).includes('2026-10-01'), true);
+check('a failure is reported with its reason, not as a pass',
+  /LAST SELF-TEST FAILED/.test(selfTestEvidenceLine({ status: 'failed', detail: 'exited with code 1' })), true);
+check('a test that could not run says exactly that',
+  /COULD NOT RUN/.test(selfTestEvidenceLine({ status: 'could-not-run', detail: 'no node' })), true);
+
+// ESCAPES INSIDE THE TEMPLATE. The runner is generated from a template literal, so a single backslash can
+// collapse before it is ever written: `/^:\s*/` in the outer file emits `/^:s*/` into the app, which strips
+// the wrong characters and cannot be seen by reading the generator. Lint caught it once; this keeps it caught.
+check('backslashes survive into the generated runner',
+  renderSelfTestRunner({ startCommand: 'node s.js' }).includes('replace(/^:\\s*/'), true);
+// The broken form is the literal `:s*` (the backslash collapsed); the correct one is `:\s*`.
+check('…and no generated line contains a collapsed escape',
+  renderSelfTestRunner({ startCommand: 'node s.js' }).includes(':s*'), false);
+
 console.log('\n5. the runner Morpheus writes — RUN, not read');
 // The only honest way to test a runner is to run it. Each case writes the generated file next to a real
 // little app in a temp dir and executes it.
@@ -135,6 +167,11 @@ try {
   check('a working app prints ok', okResult.status, 'ok');
 check('…and exits 0', ok.status, SELFTEST_EXIT.ok);
   check('…and the line is the one the contract names', ok.stdout.includes(`${SELFTEST_MARKER} ok`), true);
+  // Written by the RUN, then read back the way Morpheus would — the whole point of storing it.
+  const stored = selfTestEvidence([{ path: SELFTEST_RESULT_FILE, content: readFileSync(join(dir, SELFTEST_RESULT_FILE), 'utf8') }]);
+  check('…and the run left a result file beside the app', stored?.status, 'ok');
+  check('…carrying the machine that ran it', typeof stored?.host === 'string' && stored.host.length > 0, true);
+  check('…and the command it used', stored?.command, 'node app-ok.js');
 
   // (b) an app that starts and answers nothing — the smoke test that only proves it is alive
   write('app-quiet.js', `setInterval(() => {}, 1000);`);
@@ -147,6 +184,9 @@ check('…and exits 0', ok.status, SELFTEST_EXIT.ok);
   write('app-dead.js', `console.error('boom: missing dependency'); process.exit(3);`);
   write(SELFTEST_FILE, renderSelfTestRunner({ port: RENDERED_DEFAULT_PORT, startCommand: 'node app-dead.js', timeoutMs: 20_000 }));
   const dead = run(takePort());
+  // A FAILING run overwrites the good result — a stale "ok" next to a broken app is the worst outcome here.
+  check('a later failure replaces the stored ok',
+    selfTestEvidence([{ path: SELFTEST_RESULT_FILE, content: readFileSync(join(dir, SELFTEST_RESULT_FILE), 'utf8') }])?.status, 'failed');
   check('an app that exits early is reported with its code and its last output',
     /exited with code 3/.test(parseSelfTestOutput(dead.stdout).detail) && /boom/.test(parseSelfTestOutput(dead.stdout).detail), true);
   check('…and exits 1', dead.status, SELFTEST_EXIT.appFailed);
@@ -198,6 +238,10 @@ check('the build writes the runner into the app', /planSelfTestFile\(/.test(cwm)
 check('…through applyFileOperations, so it is snapshotted and synced like any other file',
   /await applyFileOperations\(userId, projectId, \[\{ path: plan\.path/.test(cwm), true);
 check('…and a failure to write it never costs the operator the build', /self-test runner write failed/.test(cwm), true);
+// The evidence is only worth storing if a later build READS it and says so.
+check('a build reads what the last self-test recorded', /selfTestEvidence\(withRunner\)/.test(cwm), true);
+check('…and tells the operator, but only when there is something to tell',
+  /if \(evidenceLine\) fullReply/.test(cwm), true);
 check('…and the operator is told the command', /TO PROVE IT RUNS WHERE YOU RUN IT/.test(readFileSync(join(ROOT, 'server/src/functions/chatWithMorpheus.js'), 'utf8')), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
