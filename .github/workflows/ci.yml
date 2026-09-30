@@ -183,6 +183,11 @@ jobs:
           # The LOCAL binary, by path — no registry lookup can substitute a different major version.
           cd server && ./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
 
+      # Files are written as they are produced, replaced rather than deleted first, and the stale sweep
+      # runs last — one missing field or one late failure can no longer discard the whole backend.
+      - name: A failed generation keeps the work that succeeded
+        run: node scripts/verify-incremental-persist.mjs
+
       # A review is a second opinion; ten of them is not ten times the confidence. Measured 2026-09-30:
       # one backend generation made TWELVE reviewer calls and burned 473 credits with nothing persisted,
       # because nothing bounded the loop and every re-review covered the whole file set again.
@@ -206,6 +211,17 @@ jobs:
         env:
           HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
           DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+        run: node scripts/backend-generation-harness.mjs
+
+      # A LATER STAGE FAILING MUST NOT ERASE WHAT EARLIER ONES SAVED. With the review rejected, every file
+      # the generation produced must still be in the database. Before incremental persistence this case lost
+      # all of them — that is how a token-cap truncation, a schema echo and a runaway review each turned
+      # into a total write-off of work the operator had already paid ~117-473 credits for.
+      - name: A failure after generation keeps what was generated
+        env:
+          HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          FAKE_FAIL_REVIEW: '1'
         run: node scripts/backend-generation-harness.mjs
 
       # THE FAILURE THAT COST ~117 CREDITS, reproduced for nothing. With the provider cutting every

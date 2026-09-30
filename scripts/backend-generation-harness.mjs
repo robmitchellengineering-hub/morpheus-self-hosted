@@ -127,13 +127,16 @@ try {
   check('the source checker finds nothing wrong with it', problems, []);
 
   console.log('\n6. one file with no content must not discard the rest (#444, as behaviour)');
-  // The real failure: a `.env.example` with no content reached `createMany`, and Prisma rejects the whole
-  // batch for one missing argument. The fix coerces to a string; this asserts the shape it produces.
+  // The real failure: a `.env.example` with no content reached a single batch write, and Prisma rejects the
+  // whole batch for one missing argument — nine generated files lost to one empty field.
+  //
+  // The defence is now stronger and lives in two places, so this asserts the PROPERTY rather than the
+  // literal that used to implement it. (The previous version pinned `content: typeof f.content === 'string'
+  // ? f.content : ''` — a spelling — and this change replaced it while making the behaviour better. That is
+  // the twelfth time a check in this suite has been bound to text rather than behaviour.)
   const gen = code(read('server/src/functions/generateBackend.js'));
-  check('the write coerces missing content rather than passing it through',
-    /content: typeof f\.content === 'string' \? f\.content : ''/.test(gen), true);
-  check('…and there is still exactly one write path, so the batch cannot half-apply',
-    (gen.match(/projectFile\.createMany\(/g) || []).length, 1);
+  check('the all-or-nothing batch write is gone', /projectFile\.createMany\(/.test(gen), false);
+  check('…and the generator persists through the incremental store', /persistIncrementally\(/.test(gen), true);
 
   console.log('\n7. the REAL handler, run end to end against a database and the fake provider');
   // The strongest test available for zero credits: call the actual function the app calls, with the
@@ -169,12 +172,19 @@ try {
 
     // The plan the harness asserted above, written the way planBackend writes it.
     resetReceivedPrompts();
+    let handlerError = null;
     const result = await handler({
       user,
       body: { projectId: project.id, components: { api_host: 'standalone', database: 'sqlite-local', auth: 'jwt-self', file_storage: 'local', cache: 'none' } },
-    });
-    check('the handler returns a file count', typeof result.fileCount, 'number');
-    check('…and it is more than the plan alone', result.fileCount > 1, true);
+    }).catch((e) => { handlerError = e; return null; });
+    // In the fail-after-generation scenario the handler legitimately throws, so the result checks only
+    // apply when it returned — and that scenario asserts the error's own shape instead.
+    if (handlerError) {
+      check('a failed run did not also return a result', result, null);
+    } else {
+      check('the handler returns a file count', typeof result.fileCount, 'number');
+      check('…and it is more than the plan alone', result.fileCount > 1, true);
+    }
 
     const rows = await prisma.projectFile.findMany({ where: { project_id: project.id }, select: { path: true, content: true } });
     const written = rows.filter((r) => r.path !== 'backend/.plan.json');
@@ -222,6 +232,18 @@ try {
         check('every coder call is shown the complete file list',
           coderPrompts.every((c) => wantedPlanList.every((p) => c.prompt.includes(p))), true);
       }
+    }
+
+    // FAIL-AFTER-GENERATION. With the review rejected, everything the generation produced must still be in
+    // the database. This is the property that turns a late failure from a total write-off into a partial
+    // result — before incremental persistence this case lost every file, at ~117-473 credits a time.
+    if (process.env.FAKE_FAIL_REVIEW === '1') {
+      check('…a review failure raised the error rather than reporting success', Boolean(handlerError), true);
+      check('…the error is marked partial', handlerError?.partial === true, true);
+      check('…and it names the files that survived', Array.isArray(handlerError?.savedFiles) && handlerError.savedFiles.length > 0, true);
+      check('…and those files are genuinely still in the database', written.length > 0, true);
+      check('…the message says the backend is incomplete, not that it failed silently',
+        /INCOMPLETE/.test(String(handlerError?.message || '')), true);
     }
 
     // Clean up this run's rows so repeated runs do not accumulate.

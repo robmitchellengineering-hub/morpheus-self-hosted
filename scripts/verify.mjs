@@ -97,6 +97,7 @@ const HARD = [
   'verify-generated-app.mjs',
   'verify-backend-chunk-context.mjs',
   'verify-review-budget.mjs',
+  'verify-incremental-persist.mjs',
   'verify-broker-minting.mjs',
   'boot-smoke.mjs',
 ];

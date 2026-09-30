@@ -11,6 +11,9 @@ import { logUsage } from '../lib/projectUtils.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { buildBackendChunkContext } from '../lib/backendChunkContext.js';
+import {
+  planWrites, staleBackendPaths, persistIncrementally, removeStale, partialRunNote, normalizeBackendPath,
+} from '../lib/incrementalPersist.js';
 import { generateFilesChunked } from '../lib/chunkedFileGen.js';
 
 function detectLanguage(path) {
@@ -108,119 +111,177 @@ HOW TO REPLY, and it matters more than it looks: reply with a single JSON object
 
 Do NOT reply with a JSON schema, a description of the shape, or the string "fileOperations" on its own — the whole object, with the real file content inside it. A reply that describes the format instead of using it produces nothing usable, and the run is wasted.`;
 
-  // THE SAME MECHANISM THE BUILD PIPELINE USES. `generateFilesChunked` calls the model once per chunk of
-  // files, so each call must be shown what the earlier calls produced — otherwise `routes/tasks.js` is
-  // written with no idea what `db.js` looks like, which is exactly how a generated backend ends up with
-  // three files holding three different beliefs about `db`. The pipeline solves this by assembling its
-  // context from the project's CURRENT files before every Coder call (lib/scopedContext.js); this does
-  // the same thing for a backend that does not exist on disk yet, from the operations generated so far.
-  //
-  // Measured 2026-09-29: without this, `server/index.js` awaited `initializeDatabase` from `./db` while
-  // `server/routes/tasks.js` called `db.all(...)` on the same module, and a third file imported a
-  // `middleware/auth` directory that was never in the file list.
-  const writerContext = (chunk, allPlanned, writtenSoFar) => buildBackendChunkContext({
-    plannedFiles: allPlanned || [],
-    writtenSoFar,
-    chunk: chunk || [],
-    planBlock: JSON.stringify(plan, null, 2),
-    frontendBlock: fileSummary,
-  }).text;
-
-  // `writtenSoFar` is threaded through `buildPrompt`'s third argument — see chunkedFileGen.js, which
-  // passes the accumulated operations to each subsequent call for exactly this purpose.
-  const { fileOps: rawFileOps } = await generateFilesChunked({
-    userId: user.id,
-    plannedFiles,
-    role: 'coder',
-    buildPrompt: (chunk, allPlanned, writtenSoFar) => {
-      const context = writerContext(chunk, allPlanned, writtenSoFar);
-      if (!chunk) {
-        return `${writePrompt}\n\n${context}\n\nGenerate ALL backend files needed now — the full set listed above.`;
+  // ── Persist as we go ────────────────────────────────────────────────────────────────────────────
+  // The store writes ONE file at a time, replacing by path, so a run that dies halfway keeps everything it
+  // had produced and leaves the previous version of anything it had not reached. The old code deleted the
+  // whole existing backend and then wrote the new set in a single batch at the very end, which is how a
+  // truncation, a schema echo and a runaway review each cost every file the run had generated.
+  const store = {
+    writeFile: async ({ path, content }) => {
+      const language = detectLanguage(path);
+      const existing = await prisma.projectFile.findUnique({
+        where: { project_id_path: { project_id: projectId, path } },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.projectFile.update({ where: { id: existing.id }, data: { content, language } });
+      } else {
+        await prisma.projectFile.create({ data: { created_by_id: user.id, project_id: projectId, path, content, language } });
       }
-      // The trailing sentence used to read "Return fileOperations for ONLY this file set", and THAT is
-      // what the model parroted back — it replied with the schema (`{"type":"object","properties":...}`)
-      // rather than any file. Measured by A/B on real calls, one variable at a time:
-      //
-      //   plan as JSON  + "Return fileOperations"  -> SCHEMA ECHO
-      //   plan as JSON  + "Reply with a single JSON object whose fileOperations array ..."  -> OK
-      //   no plan       + "Return fileOperations"  -> SCHEMA ECHO
-      //   plan as text  + "Return fileOperations"  -> OK
-      //
-      // So the instruction was the primary trigger and the plan format a secondary one; both are fixed.
-      // Asking for a named key and then naming it again as the instruction is an invitation to describe
-      // it rather than produce it.
-      return `${writePrompt}\n\n${context}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Reply with that single JSON object now, containing only this file set.`;
     },
-  });
-  let generatedFiles = rawFileOps.map((f) => ({ path: f.path, content: f.content }));
+    deleteByPath: async (path) => {
+      await prisma.projectFile.deleteMany({ where: { project_id: projectId, path } });
+    },
+    existingPaths: async () => (await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true } }))
+      .map((r) => r.path),
+  };
 
-  // ── Reviewer: check the generated backend code before commit, retry on critical issues ──
-  if (generatedFiles.length > 0) {
-    const fileOps = generatedFiles.map((f) => ({
-      path: f.path.startsWith('backend/') ? f.path : `backend/${f.path}`,
-      content: f.content,
-      action: 'create',
-    }));
-    const contextBlock = `BACKEND CODE GENERATION\nProject: ${project.name}\n${project.description ? 'Description: ' + project.description : ''}\nCompile target: ${project.compile_target || 'source'}\nComponents: ${JSON.stringify(components)}\n\nBACKEND PLAN:\n${JSON.stringify(plan, null, 2)}`;
-    const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, JSON.stringify(plan, null, 2), writePrompt);
-    generatedFiles = reviewed.fileOps.map((op) => ({ path: op.path, content: op.content }));
-  }
-
-  // ── Syntax gate: the same deterministic check the build pipeline runs, which the backend path
-  // never did. `reviewAndRetry` is an AI opinion; this is a parser. A generated backend that does not
-  // parse cannot be reviewed meaningfully, and shipping one means the operator's first command fails on
-  // a file the model was confident about. Cheap, local, no tokens.
-  if (generatedFiles.length > 0) {
-    const parseErrors = await checkSyntax(
-      generatedFiles
-        .filter((f) => typeof f.content === 'string')
-        .map((f) => ({ path: f.path, content: f.content })),
-    );
-    if (parseErrors.length > 0) {
-      // Reported, not swallowed, and the files are still kept: a partial backend the operator can see
-      // beats an empty project, and the message names the file so the next turn can fix it.
-      const named = parseErrors.slice(0, 5).map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`).join('; ');
-      console.error(`[generateBackend] generated backend has ${parseErrors.length} syntax error(s): ${named}`);
+  // Every path this run has put on disk, so the stale sweep at the end knows what it did NOT produce.
+  const savedPaths = new Set();
+  // Persist one chunk's operations the moment they arrive, and report what could not be saved without
+  // abandoning the chunks that could. `generateFilesChunked` accumulates its own in-memory ops for the
+  // context each chunk is shown; this mirrors them to the database as they land.
+  const persistChunk = async (ops) => {
+    const { writes } = planWrites(ops);
+    if (writes.length === 0) return { written: [], failed: [] };
+    const result = await persistIncrementally({ writes, store });
+    for (const p of result.written) savedPaths.add(p);
+    if (result.failed.length > 0) {
+      console.error(`[generateBackend] could not save ${result.failed.length} file(s): ${result.failed.map((f) => `${f.path} (${f.reason})`).join('; ')}`);
     }
-  }
+    return result;
+  };
 
-  // Delete existing backend code files (keep .plan.json). No .catch() here
-  // — the original base44 version had no local error handling on this
-  // delete either, so a failure propagates and aborts the request instead
-  // of silently leaving stale old backend files mixed in with the newly
-  // generated set (an earlier pass here added a swallowing `.catch(() => {})`).
-  const existingBackend = files.filter((f) => f.path.startsWith('backend/') && f.path !== 'backend/.plan.json');
-  for (const f of existingBackend) {
-    await prisma.projectFile.delete({ where: { id: f.id } });
-  }
+  try {
+    // THE SAME MECHANISM THE BUILD PIPELINE USES. `generateFilesChunked` calls the model once per chunk of
+    // files, so each call must be shown what the earlier calls produced — otherwise `routes/tasks.js` is
+    // written with no idea what `db.js` looks like, which is exactly how a generated backend ends up with
+    // three files holding three different beliefs about `db`. The pipeline solves this by assembling its
+    // context from the project's CURRENT files before every Coder call (lib/scopedContext.js); this does
+    // the same thing for a backend that does not exist on disk yet, from the operations generated so far.
+    //
+    // Measured 2026-09-29: without this, `server/index.js` awaited `initializeDatabase` from `./db` while
+    // `server/routes/tasks.js` called `db.all(...)` on the same module, and a third file imported a
+    // `middleware/auth` directory that was never in the file list.
+    const writerContext = (chunk, allPlanned, writtenSoFar) => buildBackendChunkContext({
+      plannedFiles: allPlanned || [],
+      writtenSoFar,
+      chunk: chunk || [],
+      planBlock: JSON.stringify(plan, null, 2),
+      frontendBlock: fileSummary,
+    }).text;
 
-  // Save new backend files (dedup by normalized path — the retry path in
-  // reviewAndRetry can return both "api/v1/tasks.js" and "backend/api/v1/tasks.js"
-  // which map to the same final path)
-  const recordByPath = new Map();
-  for (const f of generatedFiles) {
-    const normalizedPath = f.path.startsWith('backend/') ? f.path : `backend/${f.path}`;
-    recordByPath.set(normalizedPath, {
-      created_by_id: user.id,
-      project_id: projectId,
-      path: normalizedPath,
-      // `content` is a NON-NULLABLE column, and the model does not always fill it in — observed
-      // 2026-09-29, when a generated `backend/.env.example` arrived with no content at all. Prisma
-      // rejects the whole `createMany` for one missing argument, so a single empty file discarded
-      // EVERY file the build had produced: the run reported a validation error and the project kept
-      // nothing but its plan. Coercing to a string keeps the file (an untracked-but-empty
-      // `.env.example` is a legitimate thing to ship, since its secrets are generated at run time)
-      // and means one malformed entry can no longer destroy the rest.
-      content: typeof f.content === 'string' ? f.content : '',
-      language: detectLanguage(f.path),
+    // `writtenSoFar` is threaded through `buildPrompt`'s third argument — see chunkedFileGen.js, which
+    // passes the accumulated operations to each subsequent call for exactly this purpose.
+    const { fileOps: rawFileOps } = await generateFilesChunked({
+      userId: user.id,
+      plannedFiles,
+      role: 'coder',
+      // Files land in the database as each chunk arrives, so a failure in any later stage keeps them.
+      onChunk: persistChunk,
+      buildPrompt: (chunk, allPlanned, writtenSoFar) => {
+        const context = writerContext(chunk, allPlanned, writtenSoFar);
+        if (!chunk) {
+          return `${writePrompt}\n\n${context}\n\nGenerate ALL backend files needed now — the full set listed above.`;
+        }
+        // The trailing sentence used to read "Return fileOperations for ONLY this file set", and THAT is
+        // what the model parroted back — it replied with the schema (`{"type":"object","properties":...}`)
+        // rather than any file. Measured by A/B on real calls, one variable at a time:
+        //
+        //   plan as JSON  + "Return fileOperations"  -> SCHEMA ECHO
+        //   plan as JSON  + "Reply with a single JSON object whose fileOperations array ..."  -> OK
+        //   no plan       + "Return fileOperations"  -> SCHEMA ECHO
+        //   plan as text  + "Return fileOperations"  -> OK
+        //
+        // So the instruction was the primary trigger and the plan format a secondary one; both are fixed.
+        // Asking for a named key and then naming it again as the instruction is an invitation to describe
+        // it rather than produce it.
+        return `${writePrompt}\n\n${context}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Reply with that single JSON object now, containing only this file set.`;
+      },
     });
-  }
-  const records = Array.from(recordByPath.values());
-  if (records.length > 0) {
-    await prisma.projectFile.createMany({ data: records });
+    let generatedFiles = rawFileOps.map((f) => ({ path: f.path, content: f.content }));
+
+    // ── Reviewer: check the generated backend code before commit, retry on critical issues ──
+    if (generatedFiles.length > 0) {
+      const fileOps = generatedFiles.map((f) => ({
+        path: f.path.startsWith('backend/') ? f.path : `backend/${f.path}`,
+        content: f.content,
+        action: 'create',
+      }));
+      const contextBlock = `BACKEND CODE GENERATION\nProject: ${project.name}\n${project.description ? 'Description: ' + project.description : ''}\nCompile target: ${project.compile_target || 'source'}\nComponents: ${JSON.stringify(components)}\n\nBACKEND PLAN:\n${JSON.stringify(plan, null, 2)}`;
+      const reviewed = await reviewAndRetry(user.id, fileOps, contextBlock, JSON.stringify(plan, null, 2), writePrompt);
+      generatedFiles = reviewed.fileOps.map((op) => ({ path: op.path, content: op.content }));
+      // The reviewer may have corrected files. Write those too, so what was reviewed is what is on disk —
+      // and note that this REPLACES by path rather than deleting first, so a failure here leaves the
+      // pre-review version rather than nothing.
+      await persistChunk(reviewed.fileOps.map((op) => ({ path: op.path, content: op.content })));
+    }
+
+    // ── Syntax gate: the same deterministic check the build pipeline runs, which the backend path
+    // never did. `reviewAndRetry` is an AI opinion; this is a parser. A generated backend that does not
+    // parse cannot be reviewed meaningfully, and shipping one means the operator's first command fails on
+    // a file the model was confident about. Cheap, local, no tokens.
+    if (generatedFiles.length > 0) {
+      const parseErrors = await checkSyntax(
+        generatedFiles
+          .filter((f) => typeof f.content === 'string')
+          .map((f) => ({ path: f.path, content: f.content })),
+      );
+      if (parseErrors.length > 0) {
+        // Reported, not swallowed, and the files are still kept: a partial backend the operator can see
+        // beats an empty project, and the message names the file so the next turn can fix it.
+        const named = parseErrors.slice(0, 5).map((e) => `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}`).join('; ');
+        console.error(`[generateBackend] generated backend has ${parseErrors.length} syntax error(s): ${named}`);
+      }
+    }
+
+    // A LATER STAGE FAILING MUST NOT ERASE WHAT EARLIER ONES SAVED. Everything above persists as it goes,
+    // so by the time the reviewer or the syntax gate runs, the generated files are already on disk. Rethrown
+    // as-is, the failure reaches the caller as a bare error and the operator is told nothing about the work
+    // that succeeded — which is how a 473-credit run reported only "nothing was persisted". The note names
+    // the files that DID land and the ones that did not, so a partial backend is actionable.
+  } catch (err) {
+    const saved = [...savedPaths];
+    const note = partialRunNote({
+      written: saved,
+      total: plannedFiles.length || null,
+      reason: (err && err.message) || String(err),
+    });
+    if (note) console.error(`[generateBackend] run failed after saving ${saved.length} file(s): ${note}`);
+    const wrapped = new Error(`${(err && err.message) || String(err)}${note ? ` ${note}` : ''}`);
+    wrapped.cause = err;
+    wrapped.savedFiles = saved;
+    wrapped.partial = true;
+    throw wrapped;
   }
 
-  await logUsage(user.id, 'autonomous_step', projectId, project.name, { phase: 'backend_generate', components, fileCount: records.length });
+  // ── The stale sweep, ONLY now ────────────────────────────────────────────────────────────────────
+  // Files this run did not produce are leftovers from an earlier generation. The sweep runs LAST, after
+  // every stage that can still fail, because deleting first is exactly the mistake this replaced: the old
+  // code removed the whole existing backend up front and then began producing the one that might never
+  // arrive, so a failure left the operator with neither.
+  //
+  // It also cannot run before the reviewer has had its say: a file the reviewer DROPPED is legitimately
+  // stale, and one it merely has not corrected yet is not.
+  const existingPaths = await store.existingPaths();
+  const stale = staleBackendPaths(existingPaths, [...savedPaths]);
+  const swept = await removeStale({ paths: stale, store });
+  if (swept.failed.length > 0) {
+    console.error(`[generateBackend] could not remove ${swept.failed.length} stale file(s): ${swept.failed.map((f) => f.path).join(', ')}`);
+  }
 
-  return { fileCount: records.length, summary, status: 'generated' };
+  const savedCount = savedPaths.size;
+  await logUsage(user.id, 'autonomous_step', projectId, project.name, { phase: 'backend_generate', components, fileCount: savedCount });
+
+  // `summary` describes the WHOLE planned set; `fileCount` is what actually reached disk. When they
+  // disagree the caller is told, because a backend missing files and saying nothing is the failure this
+  // whole area keeps producing.
+  const allWritten = plannedFiles.length === 0 || plannedFiles.every((p) => savedPaths.has(normalizeBackendPath(p)));
+  return {
+    fileCount: savedCount,
+    summary,
+    status: 'generated',
+    incomplete: !allWritten,
+    missing: plannedFiles.map(normalizeBackendPath).filter((p) => !savedPaths.has(p)),
+  };
 }

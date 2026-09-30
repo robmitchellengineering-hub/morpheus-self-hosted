@@ -53,8 +53,14 @@ check('the recorder takes a status',
   /async function recordUsageEvent\(\{[^}]*\bstatus = 'ok'[^}]*\}\)/.test(code), true);
 check('the row stores it, defaulting to ok',
   /status: status === 'error' \? 'error' : 'ok',/.test(code), true);
+// `model`, NOT `resolvedModel`. This assertion pinned `model: resolvedModel` and therefore REQUIRED a
+// temporal dead zone: `resolvedModel` is declared below, from the response, so in this catch it throws
+// "Cannot access 'resolvedModel' before initialization" — and that error replaced the provider's, which is
+// the exact opposite of what the next check claims. Found 2026-09-29 by forcing a provider failure in a
+// harness: every provider error in the product reported a reference error instead of "AI endpoint error
+// (500)". A check can be satisfied by the bug it is meant to prevent.
 check('the provider round trip records a failure before rethrowing',
-  /recordUsageEvent\(\{\s*userId, role, provider, model: resolvedModel, isExempt, reservedCredits: 0,\s*usage: \{ input_tokens: 0, output_tokens: 0 \}, task, status: 'error', durationMs: Date\.now\(\) - callStartedAt,/.test(code), true);
+  code.includes('model, isExempt, reservedCredits: 0') && code.includes("status: 'error'"), true);
 check('…and it is still fire-and-forget, so it cannot replace the real error',
   /status: 'error', durationMs: Date\.now\(\) - callStartedAt,\s*\}\)\.catch\(\(\) => \{\}\);/.test(code), true);
 check('the refund path is untouched above it',

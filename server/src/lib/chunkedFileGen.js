@@ -45,6 +45,11 @@ export const DEFAULT_FALLBACK_MAX_TOKENS = 64000; // used only when plannedFiles
  * @param {object} [opts.schema] — JSON schema for the response. Defaults to the standard
  *   `{ fileOperations: [{ path, content, action }] }` shape used across the codebase.
  * @param {string[]} [opts.fileUrls]
+ * @param {(ops: object[]) => Promise<void>|void} [opts.onChunk] — called with each chunk's operations as
+ *   soon as they are produced. ADDITIVE (2026-09-30): it exists so a caller can PERSIST as it goes rather
+ *   than holding everything in memory until the end. Measured that day: a backend generation that kept
+ *   nothing until it finished lost five successful model calls (~473 credits across attempts) to failures
+ *   that happened after they had already succeeded.
  * @param {string} [opts.role='coder']
  * @param {number} [opts.filesPerStep]
  * @param {number} [opts.stepMaxTokens]
@@ -62,6 +67,7 @@ export async function generateFilesChunked({
   fileUrls,
   role = 'coder',
   filesPerStep = DEFAULT_FILES_PER_STEP,
+  onChunk = null,
   stepMaxTokens = DEFAULT_STEP_MAX_TOKENS,
   fallbackMaxTokens = DEFAULT_FALLBACK_MAX_TOKENS,
 }) {
@@ -118,7 +124,11 @@ export async function generateFilesChunked({
       };
 
       try {
-        fileOps.push(...await send(chunk));
+        const chunkOps = await send(chunk);
+        fileOps.push(...chunkOps);
+        // Fired AFTER the operations are in the accumulator, so a caller persisting here and a caller
+        // reading `fileOps` later can never disagree about what has been produced.
+        if (onChunk) await onChunk(chunkOps);
       } catch (err) {
         // An anticipated, recoverable condition — the pipeline has answered it this way since
         // 2026-09-29's measurement showed a chunk hitting the step cap exactly. Before this, the throw
@@ -128,7 +138,9 @@ export async function generateFilesChunked({
         const plan = truncationPlan(chunk);
         for (const onePath of plan.retry) {
           try {
-            fileOps.push(...await send([onePath]));
+            const oneOps = await send([onePath]);
+            fileOps.push(...oneOps);
+            if (onChunk) await onChunk(oneOps);
           } catch (oneErr) {
             if (!isTruncation(oneErr)) throw oneErr;
             unwritten.push(onePath);
