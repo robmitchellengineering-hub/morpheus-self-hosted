@@ -1,6 +1,6 @@
 ---
 name: morpheus-hazards
-description: "The H1–H18 list of self-inflicted breakage already suffered by morpheus-self-hosted, each with its detection rule. Check every proposed change against this list; a violation is a critical issue, not a nitpick."
+description: "The H1–H19 list of self-inflicted breakage already suffered by morpheus-self-hosted, each with its detection rule. Check every proposed change against this list; a violation is a critical issue, not a nitpick."
 whenToUse: "Load before reviewing or writing any change to morpheus-self-hosted, especially changes touching server/src/lib/github.js, prisma/schema.prisma, applyEdits/diff-mode edits, invokeAI calls, self-dev push/sync paths, or external API integrations."
 ---
 
@@ -36,5 +36,7 @@ Read it in full when a change touches any area below.
 ## Reviewer instruction
 
 For any proposed change, walk this table and state explicitly whether each item
-is touched. A violation of H1, H7, H8, H9, H11, H12, H17, or H18 is **critical** — it can break
+| **H19** | A guard can be satisfied by the bug it exists to prevent. Six times in one session: `verify-usage-observability.mjs` **required** `model: resolvedModel` in a catch where it is in a temporal dead zone, so the guard demanded H18's reference error (every provider error in the product reported it instead of the real one); a check asserted words that survived in a now-unused string after the line injecting them was deleted; another matched a literal call shape that broke on refactor while the behaviour was unchanged; a `/usage` check read the whole file and was satisfied by `/refund`; three matched their own comments; and `dependencyProblems` reported **no problems** for a manifest declaring an unbuildable package because the guard passed the wrong shape. 83 guards in this repo, 40+ sabotageable, none proving it can fail. | **Break the subject and confirm the check goes red before believing it.** One honest mutation — remove the guard clause, invert the condition, rename the field — and expect a non-zero exit. Strip comments before matching source (`const code = (src) => …`) and assert behaviour (call the function) rather than a spelling (grep the file). A guard that examines nothing is not a pass — see `scripts/verify-verifier-coverage.mjs`, the existing guard-that-tests-guards. |
+
+is touched. A violation of H1, H7, H8, H9, H11, H12, H17, H18, or H19 is **critical** — it can break
 production, destroy work, or ship a change nothing verified — and blocks the change.

@@ -487,6 +487,15 @@ for (const doc of DOCS) {
 }
 check(`every quoted hazard range ends at H${hMax}`, staleRanges, [])
 
+// …AND EVERY HAZARD IS ACTUALLY IN THE CHECKLIST. The endpoint check above cannot see a hazard that
+// was added to KNOWN-HAZARDS.md but never given a row in `morpheus-hazards`, which is the file a
+// reviewer is told to walk item by item. Updating the range and forgetting the row makes the range a
+// lie — the failure this whole section exists to prevent, one level up. (Found 2026-09-30 while
+// appending H19: the range across five documents was caught automatically, the missing row was not.)
+const skillTable = read('.dsh/skills/morpheus-hazards/SKILL.md')
+const missingRows = hazardNums.filter((n) => !new RegExp(`\\|\\s*\\*\\*H${n}\\*\\*\\s*\\|`).test(skillTable))
+check('every hazard has a row in the morpheus-hazards checklist', missingRows, [])
+
 // ═══ 11. The operator's surfaces are the ones we think ══════════════════════
 // A session asked to fix "the SEO tab in the WordPress plugin" went to wp-plugin/
 // — which ships no interface at all — while the operator was in the floating dock

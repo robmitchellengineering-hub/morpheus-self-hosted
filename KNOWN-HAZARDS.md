@@ -351,3 +351,52 @@ had one all along. Note what could not see it: `node --check` passes (valid
 syntax), the import resolver passes (the names are local), and the boot smoke
 passes because loading a module never calls the function that contains the bug.
 Only running the code, or `no-undef`, finds it.
+
+## H19 — a guard can be satisfied by the bug it exists to prevent
+
+**Incident (2026-09-30, PRs #443–#450):** four days of backend-generation work added
+six verify guards, and **the same failure appeared in almost every one** — the check
+passed while the thing it was written to catch was present. Six recorded instances, each
+found by *removing the code under test*, never by reading the guard:
+
+- `verify-usage-observability.mjs` **required** `recordUsageEvent({ model: resolvedModel, ... })`
+  in a catch block where `resolvedModel` is declared inside the sibling `try` — so the
+  guard demanded the temporal-dead-zone reference error of **H18**, which was replacing
+  every provider error in the product with "Cannot access 'resolvedModel' before
+  initialization". A guard that pins a bug is worse than no guard, because it feels like
+  coverage.
+- `verify-backend-chunk-context.mjs` asserted the words *"ONE command must start
+  everything"* appeared in `generateBackend.js`. **Deleting the line that injected that
+  requirement still passed** — the words survived in a now-unused string.
+- The same guard matched the literal `buildPrompt(chunk, cleanPlanned, fileOps.slice())`;
+  hoisting that call into a `send(paths)` helper broke the check while the behaviour was
+  unchanged.
+- A `/usage`-redeems-the-ticket check read the **whole file**, so it was satisfied by the
+  identical call in `/refund`.
+- `verify-cloud-metering.mjs` matched its own **comment** quoting the thing it forbade —
+  and so did `verify-backend-chunk-context.mjs` and `verify-incremental-persist.mjs`.
+- `verify-generated-app.mjs`'s `dependencyProblems` took a parsed manifest while the guard
+  passed `packageJsonOf`'s `{ path, data }` wrapper, so it reported **no problems** for a
+  manifest that declared an unbuildable package. Silent in the dangerous direction.
+
+Measured against this repo: **83 verify guards, 40+ importing a pure `lib/` module, and
+none proving it can fail.**
+
+**Rule:** before believing a green check, **break its subject and confirm the check goes
+red.** Remove the guard clause, invert the condition, rename the field — one honest
+mutation, run the guard, expect a non-zero exit. A guard whose failure cannot be
+demonstrated is a comment with a `console.log`. This is the same rule as **H17** ("nothing
+failed" is not "the gates ran") applied to the guard itself rather than to CI.
+
+**The mechanical version of this rule is worth building and does not exist yet:**
+a registry of one sabotage per guard — `{ guard, file, find, replace }` — plus a runner
+that copies the tree to a temp dir, applies the mutation, runs the guard and fails if it
+stays green. A mutation that no longer matches should be reported as **stale**, not
+skipped silently; a prototype of exactly this found three of the four mutations
+load-bearing and flagged the fourth as stale. `scripts/verify-verifier-coverage.mjs` is
+the existing precedent — a guard that tests guards — and is the shape to copy.
+
+**Two habits that produced every one of the six:** asserting on a guard's own prose
+(always strip comments before matching source — `const code = (src) => …`), and asserting
+a *spelling* rather than *behaviour* (call the function and check its return value; do not
+grep the file for the words it once contained).

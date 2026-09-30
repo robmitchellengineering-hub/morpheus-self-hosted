@@ -19,7 +19,7 @@ twelve), and `AGENTS.md` now carries the maintained map with a check behind it.
 | Where | What |
 |---|---|
 | `AGENTS.md` — "Agent harness (DSH)" | the maintained skill table and the hard rules; `verify-context.mjs` fails if a skill on disk is missing from it |
-| `.dsh/skills/morpheus-hazards` | the H1–H18 checklist, condensed with each rule |
+| `.dsh/skills/morpheus-hazards` | the H1–H19 checklist, condensed with each rule |
 
 `KNOWN-HAZARDS.md` remains the authoritative hazard source — the skill mirrors it.
 
