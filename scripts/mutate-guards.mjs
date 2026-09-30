@@ -49,6 +49,17 @@ if (!selected.length) {
   console.error(`no mutation matches ${filters.join(', ')} — see --list`);
   process.exit(2);
 }
+// A run that proves NOTHING must not report success. Without this, an emptied registry would print "0/0
+// guard(s) went red" and exit 0 — green, having examined nothing, which is H17 in the one place this file is
+// supposed to be the cure for it. `verify-guard-mutations.mjs` refuses an emptied registry too, via the
+// ratchet, but this tool is run by hand as well and must not lie on its own.
+//
+// The floor applies only to a FULL run: naming a guard is a deliberate, narrow question ("did my new entry
+// really land?"), and that is a legitimate one-mutation run.
+if (!filters.length && selected.length < 5) {
+  console.error(`only ${selected.length} mutation(s) are registered — that is not a run, it is an empty registry`);
+  process.exit(2);
+}
 
 /** Is this file free of uncommitted changes? Untracked counts as dirty: a crash would lose it. */
 function isDirty(file) {
