@@ -12,6 +12,7 @@ import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { runReviewerFailOpen, reviewFailureNote } from '../lib/reviewFailOpen.js';
 import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
 import { isContentOp, appliedPaths, appliedCount, unresolvedPaths } from '../lib/appliedOps.js';
+import { planSelfTestFile } from '../lib/appSelfTest.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
 import { buildReviewerContext } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -623,6 +624,30 @@ SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
  * an update op into `appliedOps` so the change is snapshotted, auto-synced to
  * GitHub and visible to the rest of this turn like any other write.
  */
+/**
+ * Give the app the one command that proves it works WHERE IT RUNS.
+ *
+ * WHY THIS IS AUTHORED RATHER THAN ASKED FOR. Same reasoning as the portable launcher and the provider
+ * honesty section: one implementation that cannot drift, and no two apps testing themselves differently. The
+ * coder is never asked to invent a test harness — see `lib/appSelfTest.js` for the contract and for why a
+ * run that prints nothing is not a pass.
+ *
+ * The point is the machine the app is installed on. A build machine cannot tell an operator their app works;
+ * the machine they run it on can, and this is the thing that asks it. Returns null when there is nothing
+ * honest to write (no `npm start`, or the app already ships its own).
+ */
+async function writeSelfTestRunner({ userId, projectId, files, appliedOps }) {
+  const plan = planSelfTestFile(files);
+  if (!plan) return null;
+  // Written through applyFileOperations like every other file — NOT a raw upsert. That is the one write path
+  // that snapshots, auto-syncs to GitHub and records the op, and a file Morpheus authored outside it is a
+  // file the next turn cannot see or undo. (The first version used prisma.projectFile.upsert with a
+  // detectLanguage() helper that does not exist in this file; lint caught the second half of that.)
+  appliedOps.push({ action: 'create', path: plan.path });
+  await applyFileOperations(userId, projectId, [{ path: plan.path, content: plan.content, action: 'create' }], []);
+  return { path: plan.path };
+}
+
 async function writeProviderHonestyToReadme({ userId, project, files, appliedOps, declared = [] }) {
   // The app's real deployed origin, when it has one — mode B's steps are useless
   // without it, and "open the app and copy the address bar" is the honest fallback
@@ -2108,6 +2133,18 @@ OPERATOR SAYS: ${message}`;
           });
         } catch (err) {
           console.error('[chatWithMorpheus] provider honesty write failed:', err.message);
+        }
+
+        // …and the command that proves the app works on the machine it is installed on. Same failure rule:
+        // never cost the operator a build that already succeeded.
+        try {
+          const withRunner = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+          const written = await writeSelfTestRunner({ userId: user.id, projectId, files: withRunner, appliedOps });
+          if (written) {
+            fullReply += `\n\n// TO PROVE IT RUNS WHERE YOU RUN IT: \`node ${written.path}\` — it starts the app headlessly, asks it something, and tells you plainly whether it answered. It needs nothing but the app and node, so it works on that machine and any later one.`;
+          }
+        } catch (err) {
+          console.error('[chatWithMorpheus] self-test runner write failed:', err.message);
         }
       }
 
