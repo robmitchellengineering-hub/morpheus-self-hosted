@@ -1,0 +1,31 @@
+# Netlify settings, in the repository rather than only in the site UI.
+#
+# ONLY the secrets-scan override is set here. The build command and the publish directory are configured
+# in the Netlify UI and are deliberately NOT repeated — a value written in two places drifts, and Netlify
+# merges this file over the UI for the keys it sets and leaves the rest alone.
+
+[build.environment]
+  # WHY THIS EXISTS (2026-09-30). Netlify's secrets scanner flags any environment value it finds in the
+  # build output. A `VITE_`-prefixed variable is INLINED INTO THE CLIENT BUNDLE BY DESIGN — that is what
+  # the prefix means — so every client-side variable trips the scanner on a perfectly correct build.
+  #
+  # What that looked like: `npm run build` SUCCEEDED and the deploy FAILED, on every commit, with no
+  # Netlify status attached to the merge commit and nothing in the code to find. The frontend silently
+  # stopped deploying from 04:41Z while the backend kept shipping, so half of each merged change was live
+  # and the other half was not. It read exactly like a broken build and it was not.
+  #
+  # TWO RULES FOR THIS LIST.
+  #   1. OMIT BY KEY, never by value. Values change, and a stale value stops omitting silently. Keys are
+  #      stable because they are part of the client's contract.
+  #   2. The scanner itself is NOT disabled. `SECRETS_SCAN_SMART_DETECTION_ENABLED` stays unset, because a
+  #      real secret reaching the client bundle must still fail the deploy — that is the whole point of
+  #      the feature. `SECRETS_SCAN_OMIT_VALUES` is not used either. Omitting a key is a claim that the
+  #      value is PUBLIC BY CONSTRUCTION, which is true of these and only these.
+  #
+  # Before this list was written, the shipped bundle was scanned for credential shapes (Google client
+  # secrets, API keys, JWTs, private keys, database URLs with passwords, gateway and widget tokens). It
+  # holds none: the only two matches were decimal.js's `LN10` constant and form-validation copy.
+  #
+  # `scripts/verify-client-env.mjs` fails the build if this list and the code ever drift apart, so a new
+  # `VITE_` variable cannot silently break the deploy the way this one did.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_API_BASE_URL,VITE_GOOGLE_AUTH_ENABLED,VITE_BASE44_APP_ID,VITE_BASE44_APP_BASE_URL,VITE_BASE44_FUNCTIONS_VERSION"

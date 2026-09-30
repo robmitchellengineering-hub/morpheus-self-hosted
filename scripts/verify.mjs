@@ -100,6 +100,7 @@ const HARD = [
   'verify-incremental-persist.mjs',
   'verify-security-posture.mjs',
   'verify-export-promise.mjs',
+  'verify-client-env.mjs',
   'verify-broker-minting.mjs',
   'boot-smoke.mjs',
 ];
