@@ -143,6 +143,22 @@ export function startServer(port = PORT) {
       try { parsed = JSON.parse(body || '{}'); } catch { /* answered as an empty prompt */ }
       const prompt = (parsed.messages || []).map((m) => m.content).join('\n');
       receivedPrompts.push({ prompt, at: Date.now() });
+
+      // TRUNCATION, on demand. A multi-file ask can be refused with the same shape a real provider produces
+      // when a completion hits the token cap (`finish_reason: 'length'`), so the recovery path can be
+      // tested without a model, a key or a credit. `FAKE_TRUNCATE_MULTI=1` makes every multi-file ask
+      // truncate and every single-file ask succeed — which is exactly the condition the recovery exists
+      // for, and which cost ~117 credits to discover by hand.
+      const multi = (requestedFilesFrom(prompt) || []).length > 1;
+      if (process.env.FAKE_TRUNCATE_MULTI === '1' && multi) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          id: 'fake-backend', object: 'chat.completion', model: MODEL,
+          choices: [{ index: 0, message: { role: 'assistant', content: '{"fileOperations":[{"path":"server/db.js","content":"const a = ' }, finish_reason: 'length' }],
+          usage: { prompt_tokens: 100, completion_tokens: 24000 },
+        }));
+        return;
+      }
       const answer = answerFor(prompt);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({

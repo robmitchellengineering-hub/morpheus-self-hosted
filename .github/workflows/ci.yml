@@ -186,6 +186,19 @@ jobs:
           cd ..
           node scripts/backend-generation-harness.mjs
 
+      # THE FAILURE THAT COST ~117 CREDITS, reproduced for nothing. With the provider cutting every
+      # multi-file ask off at the token cap, the generator must retry each file on its own and still
+      # persist the backend. Measured 2026-09-29 on a real run: a chunk returned exactly 24,000 tokens
+      # (the step cap), the throw propagated, and because nothing is persisted until the end, FIVE
+      # successful model calls were discarded and the project kept only its plan. Remove the recovery and
+      # this step does not merely fail — the harness dies on the propagating exception.
+      - name: A truncated step no longer discards the whole backend
+        env:
+          HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          FAKE_TRUNCATE_MULTI: '1'
+        run: node scripts/backend-generation-harness.mjs
+
       - name: Build the frontend
         run: npm run build
 
