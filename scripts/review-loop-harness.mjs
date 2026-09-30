@@ -21,9 +21,21 @@ import { reviewAndRetry } from '../server/src/lib/reviewer.js';
 import { REVIEW_BUDGET } from '../server/src/lib/reviewBudget.js';
 
 // The reviewer goes through `invokeAI`, which reads this instance's role settings from the database — so
-// the harness needs the same DATABASE_URL the rest of the local instance uses, or every settings lookup
-// errors and the run measures nothing. Pointed at the fake AFTER loading, so the .env cannot undo it.
-process.loadEnvFile(new URL('../server/.env', import.meta.url).pathname);
+// the harness needs a DATABASE_URL, or every settings lookup errors and the run measures nothing.
+//
+// LOCALLY that comes from server/.env; IN CI there is no .env (it is gitignored) and the job passes
+// DATABASE_URL in the environment instead. The first version called loadEnvFile unconditionally and the
+// harness died on ENOENT in CI — a local-only assumption baked into a test that only runs in CI.
+try {
+  process.loadEnvFile(new URL('../server/.env', import.meta.url).pathname);
+} catch {
+  // No .env: the caller has supplied the environment, which is how CI runs this.
+}
+if (!process.env.DATABASE_URL) {
+  console.log('\n  NOT VERIFIED — no DATABASE_URL, so role settings cannot be read and the run would');
+  console.log('  measure nothing. Set it to a throwaway Postgres. This is NOT a pass.\n');
+  process.exit(2);
+}
 
 const PORT = Number(process.env.REVIEW_HARNESS_PORT || 4626);
 const server = await startServer(PORT);
