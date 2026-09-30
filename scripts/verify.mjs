@@ -103,6 +103,7 @@ const HARD = [
   'verify-client-env.mjs',
   'verify-no-secret-fixtures.mjs',
   'verify-guard-mutations.mjs',
+  'verify-bootstrap-sql.mjs',
   'verify-broker-minting.mjs',
   'boot-smoke.mjs',
 ];

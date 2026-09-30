@@ -158,6 +158,13 @@ export const MUTATIONS = [
     replace: '"ios-app", "linux-binary-x", "linux-distro"',
   },
   {
+    guard: 'verify-bootstrap-sql.mjs',
+    file: 'server/prisma/manual-supabase-init.sql',
+    why: 'Removes a column the migrations add — exactly the drift that shipped: a fresh self-host came up missing seventeen columns and said nothing, because readers fall back to the pre-migration shape (H11).',
+    find: 'ALTER TABLE project_files ADD COLUMN IF NOT EXISTS synced_sha TEXT;',
+    replace: '',
+  },
+  {
     guard: 'verify-guard-mutations.mjs',
     file: 'scripts/guard-mutations.mjs',
     why: 'Raises this registry\'s own ratchet by one — precisely the edit that lets a new unproven guard through. The integrity guard exists to refuse that, so it must go red.',
