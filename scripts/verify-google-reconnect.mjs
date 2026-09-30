@@ -48,6 +48,20 @@ check('a transient failure says to try again rather than to reconnect',
   /try again in a moment/.test(reconnectMessage('network', 'X')), true);
 check('every reason answers — none falls through to an empty message',
   GOOGLE_REFRESH_REASONS.every((r) => reconnectMessage(r, 'X').length > 40), true);
+// …but `every` over a list this file does not PIN is a check that shrinks silently. Found 2026-09-30 by
+// mutation testing: deleting 'network' from the list left this guard GREEN, because there was one fewer
+// reason to check — and `classifyRefreshFailure` still RETURNS 'network' for an unrecognised refusal, so a
+// user would get whatever the fallback message is instead of the one written for it. H17's shape exactly:
+// a check that examined less, reporting the same "all good".
+check('the reason list is pinned, so removing one cannot shrink this check',
+  [...GOOGLE_REFRESH_REASONS].sort().join(','), 'network,not_configured,revoked');
+check('…and the classifier can only return reasons that have a message',
+  [
+    classifyRefreshFailure({ error: 'invalid_grant' }),
+    classifyRefreshFailure({ error: 'server_error' }),
+    classifyRefreshFailure(undefined),
+    classifyRefreshFailure({ error_reason: 'not_configured' }),
+  ].every((r) => GOOGLE_REFRESH_REASONS.includes(r)), true);
 
 console.log('\n3. no module hands out a token it knows is dead');
 const FILES = {
