@@ -405,6 +405,24 @@ jobs:
       - name: No committed fixture looks like a credential
         run: node scripts/verify-no-secret-fixtures.mjs
 
+      # H19: "before believing a green check, break its subject and confirm the check goes red. A guard whose
+      # failure cannot be demonstrated is a comment with a console.log." This repo has 86 guards and, until
+      # now, none of them proved it could fail — which cost real time twice in one day, once when a guard was
+      # found to REQUIRE the bug it existed to prevent, and once when a guard's own fixture could never
+      # satisfy its assertion, so no mutation of the subject would have found it.
+      #
+      # Both halves run here. The registry integrity guard is cheap and side-effect free: completeness, no
+      # stale or ambiguous `find`, and a ratchet that makes a new UNPROVEN guard impossible to add quietly.
+      - name: The guard-mutation registry is honest
+        run: node scripts/verify-guard-mutations.mjs
+
+      # And the proof itself: one sabotage per guard, applied to a real file, with the guard expected to go
+      # red — then restored byte-for-byte and hash-verified. ~6 seconds for the whole set. It fails on a guard
+      # that SURVIVES (a check that cannot fail), a STALE mutation (one that no longer matches, reported
+      # rather than skipped), or a guard that was already red before the sabotage.
+      - name: Every registered guard fails when its subject breaks
+        run: node scripts/mutate-guards.mjs
+
       # There are TWO copies of the infrastructure registry and nothing kept them in step. That already
       # cost the posture feature its entire UI once, because BackendPanel.jsx imports the copy the work
       # had not touched — and every guard passed. This compares them as DATA, by asking both the same

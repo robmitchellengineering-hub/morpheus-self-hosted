@@ -102,6 +102,7 @@ const HARD = [
   'verify-export-promise.mjs',
   'verify-client-env.mjs',
   'verify-no-secret-fixtures.mjs',
+  'verify-guard-mutations.mjs',
   'verify-broker-minting.mjs',
   'boot-smoke.mjs',
 ];
