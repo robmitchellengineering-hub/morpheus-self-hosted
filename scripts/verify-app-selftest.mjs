@@ -16,7 +16,7 @@
 //
 // Run:  node scripts/verify-app-selftest.mjs
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -83,16 +83,33 @@ console.log('\n5. the runner Morpheus writes — RUN, not read');
 // little app in a temp dir and executes it.
 const dir = mkdtempSync(join(tmpdir(), 'morpheus-selftest-'));
 const write = (p, c) => writeFileSync(join(dir, p), c);
-const run = (env = {}) => spawnSync(process.execPath, [SELFTEST_FILE], {
-  cwd: dir, encoding: 'utf8', timeout: 40_000, env: { ...process.env, ...env },
+const run = (port, env = {}) => spawnSync(process.execPath, [SELFTEST_FILE], {
+  cwd: dir, encoding: 'utf8', timeout: 60_000, env: { ...process.env, SELFTEST_PORT: port, ...env },
 });
-const PORT = '3199';
+// A DISTINCT PORT PER CASE. Measured in CI, and the reason this guard is worth more than it looks: with one
+// shared port, an app left running by an earlier case answered the later probes and four failing cases
+// reported four passes. Distinct ports make that impossible; the check after the first case below asserts
+// the runner did not leave the app behind in the first place.
+// The fallback baked into the generated file. Each case passes SELFTEST_PORT instead, so no two cases can
+// ever share a port — which is the bug this guard was rewritten for.
+const RENDERED_DEFAULT_PORT = '3209';
+let nextPort = 3210;
+const takePort = () => String(nextPort++);
+const portAnswers = async (port) => {
+  const { get } = await import('node:http');
+  return new Promise((resolve) => {
+    const req = get({ host: '127.0.0.1', port, path: '/', timeout: 1200 }, (res) => { res.resume(); resolve(true); });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
+  });
+};
 
 try {
   // (a) an app that starts and answers
   write('app-ok.js', `require('node:http').createServer((_, res) => { res.writeHead(200); res.end('hi'); }).listen(process.env.PORT);`);
-  write(SELFTEST_FILE, renderSelfTestRunner({ port: PORT, startCommand: 'node app-ok.js', timeoutMs: 20_000 }));
-  const ok = run({ SELFTEST_PORT: PORT });
+  write(SELFTEST_FILE, renderSelfTestRunner({ port: RENDERED_DEFAULT_PORT, startCommand: 'node app-ok.js', timeoutMs: 20_000 }));
+  const okPort = takePort();
+  const ok = run(okPort);
   const okResult = parseSelfTestOutput(ok.stdout);
   check('a working app prints ok', okResult.status, 'ok');
 check('…and exits 0', ok.status, SELFTEST_EXIT.ok);
@@ -100,28 +117,44 @@ check('…and exits 0', ok.status, SELFTEST_EXIT.ok);
 
   // (b) an app that starts and answers nothing — the smoke test that only proves it is alive
   write('app-quiet.js', `setInterval(() => {}, 1000);`);
-  write(SELFTEST_FILE, renderSelfTestRunner({ port: PORT, startCommand: 'node app-quiet.js', timeoutMs: 4000 }));
-  const quiet = run({ SELFTEST_PORT: PORT });
+  write(SELFTEST_FILE, renderSelfTestRunner({ port: RENDERED_DEFAULT_PORT, startCommand: 'node app-quiet.js', timeoutMs: 4000 }));
+  const quiet = run(takePort());
   check('an app that never answers FAILS rather than passing as alive', parseSelfTestOutput(quiet.stdout).status, 'failed');
   check('…and exits 1, not 0', quiet.status, SELFTEST_EXIT.appFailed);
 
   // (c) an app that dies immediately — the "it opened a window that did nothing" case
   write('app-dead.js', `console.error('boom: missing dependency'); process.exit(3);`);
-  write(SELFTEST_FILE, renderSelfTestRunner({ port: PORT, startCommand: 'node app-dead.js', timeoutMs: 20_000 }));
-  const dead = run({ SELFTEST_PORT: PORT });
+  write(SELFTEST_FILE, renderSelfTestRunner({ port: RENDERED_DEFAULT_PORT, startCommand: 'node app-dead.js', timeoutMs: 20_000 }));
+  const dead = run(takePort());
   check('an app that exits early is reported with its code and its last output',
     /exited with code 3/.test(parseSelfTestOutput(dead.stdout).detail) && /boom/.test(parseSelfTestOutput(dead.stdout).detail), true);
   check('…and exits 1', dead.status, SELFTEST_EXIT.appFailed);
 
   // (d) nothing to run at all — must be distinguishable from the app being broken
-  write(SELFTEST_FILE, renderSelfTestRunner({ port: PORT, startCommand: 'this-command-does-not-exist-xyz', timeoutMs: 6000 }));
-  const missing = run({ SELFTEST_PORT: PORT });
+  write(SELFTEST_FILE, renderSelfTestRunner({ port: RENDERED_DEFAULT_PORT, startCommand: 'this-command-does-not-exist-xyz', timeoutMs: 6000 }));
+  const missing = run(takePort());
   check('a start command that cannot be launched is could-not-run, not a broken app',
     parseSelfTestOutput(missing.stdout).status, 'could-not-run');
   check('…and exits 2, so a caller can tell "not tested" from "broken"', missing.status, SELFTEST_EXIT.couldNotRun);
 
   // (e) the parser against a runner that printed nothing at all
-  check('a runner that printed nothing is not verified', isVerified(parseSelfTestOutput(run({ SELFTEST_PORT: '1' }).stdout)), false);
+  check('a runner that printed nothing is not verified', isVerified(parseSelfTestOutput(run(takePort()).stdout)), false);
+
+  // THE ORPHAN CHECK, and it is the one CI bought: on a laptop the app died fast enough to hide it, while in
+  // CI the app from the first case was still listening and answered four later cases as passes. The runner
+  // now kills the process group AND waits for the port to stop answering.
+  //
+  // The detector is proved FIRST, on a listener deliberately left up. Without that, a `false` below would be
+  // indistinguishable from a detector that can never say true — a check that cannot fail reading as a check
+  // that passed, which is the hazard this whole file is about.
+  const strayPort = takePort();
+  const stray = spawn(process.execPath, ['-e', `require('node:http').createServer((_, r) => { r.writeHead(200); r.end(); }).listen(${strayPort})`], { stdio: 'ignore', detached: process.platform !== 'win32' });
+  await new Promise((r) => setTimeout(r, 800));
+  check('the orphan detector SEES a listener that is really there', await portAnswers(strayPort), true);
+  try { if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(stray.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-stray.pid, 'SIGKILL'); } catch { stray.kill('SIGKILL'); }
+  await new Promise((r) => setTimeout(r, 400));
+  check('…and stops seeing it once it is gone', await portAnswers(strayPort), false);
+  check('…so a successful run leaving NOTHING behind it is a real result', await portAnswers(okPort), false);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

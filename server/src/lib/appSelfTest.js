@@ -164,7 +164,7 @@ export function renderSelfTestRunner({ port = 3111, path: probePath = '/', start
 // It exits ${SELFTEST_EXIT.ok} when the app answered, ${SELFTEST_EXIT.appFailed} when the app started and failed, and
 // ${SELFTEST_EXIT.couldNotRun} when the test could not be run at all. Nothing it prints is a substitute for the exit code,
 // and the exit code is nothing without the line — a caller needs both to tell "broken" from "not tested".
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { get } from 'node:http';
 
 const PORT = process.env.SELFTEST_PORT || '${port}';
@@ -174,7 +174,36 @@ const started = Date.now();
 const say = (rest, code) => { console.log('${SELFTEST_MARKER} ' + rest); process.exit(code); };
 
 let child;
-const stop = () => { try { if (child && !child.killed) child.kill('SIGTERM'); } catch { /* already gone */ } };
+
+// Kill the whole process GROUP, and wait for it to actually be gone.
+//
+// The first version called child.kill(), which signals the SHELL that shell:true created and leaves the
+// real server running. (No backticks in this comment: it lives inside the template literal below, where a
+// stray backtick ends the generated source early — which is exactly what it did.) Measured in CI: the app from the first case stayed up, answered every later probe,
+// and made four failing cases look like four passes — on a laptop the timing hid it. An installer that
+// tests an app and leaves it running is its own bug, so this waits for the port to stop answering before
+// the verdict is printed, and escalates to SIGKILL if the app ignores SIGTERM.
+const stopAndWait = async () => {
+  if (!child || child.killed) return;
+  const pid = child.pid;
+  const kill = (sig) => {
+    try {
+      if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      else process.kill(-pid, sig);   // negative pid = the process group
+    } catch { try { child.kill(sig); } catch { /* already gone */ } }
+  };
+  kill('SIGTERM');
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    const gone = await new Promise((resolve) => {
+      const req = get({ host: '127.0.0.1', port: PORT, path: PROBE, timeout: 1000 }, (res) => { res.resume(); resolve(false); });
+      req.on('timeout', () => { req.destroy(); resolve(true); });
+      req.on('error', () => resolve(true));
+    });
+    if (gone) return;
+  }
+  kill('SIGKILL');
+};
 
 const ask = () => new Promise((resolve) => {
   const req = get({ host: '127.0.0.1', port: PORT, path: PROBE, timeout: 5000 }, (res) => {
@@ -186,7 +215,7 @@ const ask = () => new Promise((resolve) => {
 });
 
 try {
-  child = spawn('${startCommand}', { shell: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: String(PORT), NODE_ENV: process.env.NODE_ENV || 'production' } });
+  child = spawn('${startCommand}', { shell: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: String(PORT), NODE_ENV: process.env.NODE_ENV || 'production' } });
 } catch (e) {
   say('could-not-run: the start command could not be launched — ' + e.message, ${SELFTEST_EXIT.couldNotRun});
 }
@@ -204,7 +233,7 @@ child.on('exit', (code) => { exited = code; });
   let last = { ok: false, status: 0 };
   while (Date.now() - started < TIMEOUT_MS) {
     if (exited !== null) {
-      stop();
+      await stopAndWait();
       // 127 is the shell's "command not found" and 126 its "not executable" (9009 on cmd.exe). Those mean
       // the app was never STARTED, which is a different answer from "the app is broken" — the whole reason
       // there are two exit codes. Measured: without this, a wrong start command was reported as the app
@@ -213,10 +242,10 @@ child.on('exit', (code) => { exited = code; });
       say((cannotLaunch ? 'could-not-run: the start command could not be launched (exit ' + exited + ')' : 'fail: the app exited with code ' + exited + ' before answering') + (output ? ' — ' + output.trim().split('\\n').slice(-3).join(' | ').slice(0, 400) : ''), cannotLaunch ? ${SELFTEST_EXIT.couldNotRun} : ${SELFTEST_EXIT.appFailed});
     }
     last = await ask();
-    if (last.ok) { stop(); say('ok: ' + PROBE + ' answered ' + last.status, ${SELFTEST_EXIT.ok}); }
+    if (last.ok) { await stopAndWait(); say('ok: ' + PROBE + ' answered ' + last.status, ${SELFTEST_EXIT.ok}); }
     await new Promise((r) => setTimeout(r, 400));
   }
-  stop();
+  await stopAndWait();
   say('fail: ' + PROBE + ' never answered within ' + TIMEOUT_MS + 'ms' + (last.error ? ' (last error: ' + last.error + ')' : '') + (output ? ' — ' + output.trim().split('\\n').slice(-3).join(' | ').slice(0, 400) : ''), ${SELFTEST_EXIT.appFailed});
 })();
 `;
