@@ -81,8 +81,13 @@ try {
   check('it answers 200', res.status, 200);
   check('in the OpenAI shape the generator parses', typeof body.choices?.[0]?.message?.content, 'string');
   check('…with usage, so metering behaves as it does in production', typeof body.usage?.prompt_tokens, 'number');
-  const parsed = JSON.parse(body.choices[0].message.content);
-  check('…and the content is the generator\'s expected JSON', Array.isArray(parsed.fileOperations), true);
+  // Guarded: when the provider is deliberately truncating (FAKE_TRUNCATE_MULTI=1, used to exercise the
+  // recovery path) the body is a cut-off JSON string by design, and an unguarded JSON.parse crashed the
+  // harness instead of reporting anything — which is a worse failure than the one it was testing.
+  let parsed = null;
+  try { parsed = JSON.parse(body.choices[0].message.content); } catch { parsed = null; }
+  check('…and the content is the generator\'s expected JSON, unless deliberately truncated',
+    parsed === null ? process.env.FAKE_TRUNCATE_MULTI === '1' : Array.isArray(parsed.fileOperations), true);
 
   console.log('\n4. the context path, end to end — the property #445 added');
   // Replay the real chunk sequence through the real context builder and check what each chunk is TOLD,
@@ -197,14 +202,26 @@ try {
     check('…and the first call asked for a named subset', firstCoderFiles.length > 0, true);
     if (coderPrompts.length > 1 && firstCoderFiles.length > 0) {
       const contentOfFirst = FILES_BY_PATH[firstCoderFiles[0]] || '';
-      check('a LATER coder call is shown the content of a file an earlier call produced',
-        coderPrompts[1].prompt.includes(contentOfFirst.slice(0, 80)), true);
-      check('…under the heading that tells it to match, not restate',
-        /ALREADY WRITTEN BY EARLIER STEPS/.test(coderPrompts[1].prompt), true);
-      check('…and the first call was shown no such section, because nothing had been written yet',
-        /ALREADY WRITTEN BY EARLIER STEPS/.test(coderPrompts[0].prompt), false);
-      check('every coder call is shown the complete file list',
-        coderPrompts.every((c) => wantedPlanList.every((p) => c.prompt.includes(p))), true);
+      if (process.env.FAKE_TRUNCATE_MULTI === '1') {
+        // THE RECOVERY SCENARIO. Every multi-file ask is cut off at the token cap, exactly as the real run
+        // was, so what is being asserted is that the run SURVIVES it: each file is retried on its own and
+        // the backend is still persisted. Before the fix this threw and the project kept only its plan.
+        check('under truncation, the run still persists the backend',
+          written.length > 1, true);
+        check('…and the recovery asked for files ONE at a time',
+          coderPrompts.some((c) => (requestedFilesFrom(c.prompt) || []).length === 1), true);
+        check('…so the multi-file asks that truncated are still visible on the wire',
+          coderPrompts.some((c) => (requestedFilesFrom(c.prompt) || []).length > 1), true);
+      } else {
+        check('a LATER coder call is shown the content of a file an earlier call produced',
+          coderPrompts[1].prompt.includes(contentOfFirst.slice(0, 80)), true);
+        check('…under the heading that tells it to match, not restate',
+          /ALREADY WRITTEN BY EARLIER STEPS/.test(coderPrompts[1].prompt), true);
+        check('…and the first call was shown no such section, because nothing had been written yet',
+          /ALREADY WRITTEN BY EARLIER STEPS/.test(coderPrompts[0].prompt), false);
+        check('every coder call is shown the complete file list',
+          coderPrompts.every((c) => wantedPlanList.every((p) => c.prompt.includes(p))), true);
+      }
     }
 
     // Clean up this run's rows so repeated runs do not accumulate.

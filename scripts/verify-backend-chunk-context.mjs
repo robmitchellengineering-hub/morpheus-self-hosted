@@ -130,7 +130,12 @@ check('…and passes it into the prompt', /\$\{context\}/.test(read('server/src/
 
 console.log('\n8. the shared chunker hands each call what the earlier ones produced');
 const chunker = code(read('server/src/lib/chunkedFileGen.js'));
-check('it passes the accumulated operations as a third argument', /buildPrompt\(chunk, cleanPlanned, fileOps\.slice\(\)\)/.test(chunker), true);
+// The builder must receive the accumulated operations, whatever the call is spelled like. The first
+// version of this asserted the literal `buildPrompt(chunk, cleanPlanned, fileOps.slice())`, and the
+// truncation-recovery refactor (which hoisted the call into a `send(paths)` helper) broke it while the
+// BEHAVIOUR was unchanged — asserting a spelling rather than the property. This checks the property.
+const thirdArg = /buildPrompt\(\s*paths\s*,\s*cleanPlanned\s*,\s*fileOps\.slice\(\)\s*\)|buildPrompt\(chunk, cleanPlanned, fileOps\.slice\(\)\)/.test(chunker);
+check('it passes the accumulated operations as a third argument', thirdArg, true);
 // A COPY, not the live array: a builder that mutated it would silently corrupt the next chunk's context.
 check('…as a copy, so a builder cannot corrupt the accumulator', /fileOps\.slice\(\)/.test(chunker), true);
 check('…and the first call therefore sees an empty list, not undefined',

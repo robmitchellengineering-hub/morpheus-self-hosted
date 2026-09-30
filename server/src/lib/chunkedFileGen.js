@@ -17,6 +17,7 @@
 // those call sites (and any future one) get the same protection without
 // re-deriving the loop each time.
 import { invokeAI } from '../ai.js';
+import { isTruncation, truncationPlan, truncationOutcome } from './generationTruncation.js';
 
 export const DEFAULT_FILES_PER_STEP = 3;
 export const DEFAULT_STEP_MAX_TOKENS = 24000; // generous for 1-3 files' full content
@@ -48,7 +49,10 @@ export const DEFAULT_FALLBACK_MAX_TOKENS = 64000; // used only when plannedFiles
  * @param {number} [opts.filesPerStep]
  * @param {number} [opts.stepMaxTokens]
  * @param {number} [opts.fallbackMaxTokens]
- * @returns {Promise<{fileOps: object[], model: string|undefined, provider: string|undefined, chunked: boolean}>}
+ * @returns {Promise<{fileOps: object[], model: string|undefined, provider: string|undefined, chunked: boolean,
+ *   unwritten?: string[], truncationNote?: string|null}>}
+ *   `unwritten` (additive) names files the model could not finish even one at a time — report them, never
+ *   drop them silently. Absent on the fallback path, which has no file list to attribute a failure to.
  */
 export async function generateFilesChunked({
   userId,
@@ -91,23 +95,49 @@ export async function generateFilesChunked({
     for (let i = 0; i < cleanPlanned.length; i += filesPerStep) {
       chunks.push(cleanPlanned.slice(i, i + filesPerStep));
     }
+    // Files whose completion was cut off even when asked for on their own. Reported to the caller rather
+    // than dropped: a backend missing one file, and saying which, is usable and fixable; one that reports
+    // success over a missing file is the failure this whole area keeps producing.
+    const unwritten = [];
+
     for (const chunk of chunks) {
-      const response = await invokeAI({
-        userId,
-        // The operations from every earlier chunk. A prompt builder that does not want them ignores the
-        // third argument; one that does can keep the backend from contradicting itself.
-        prompt: buildPrompt(chunk, cleanPlanned, fileOps.slice()),
-        schema: fileOpsSchema,
-        fileUrls,
-        role,
-        maxTokens: stepMaxTokens,
-      });
-      model = response.model;
-      provider = response.provider;
-      const chunkOps = Array.isArray(response.result.fileOperations) ? response.result.fileOperations : [];
-      fileOps.push(...chunkOps);
+      const send = async (paths) => {
+        const response = await invokeAI({
+          userId,
+          // The operations from every earlier chunk. A prompt builder that does not want them ignores the
+          // third argument; one that does can keep the backend from contradicting itself.
+          prompt: buildPrompt(paths, cleanPlanned, fileOps.slice()),
+          schema: fileOpsSchema,
+          fileUrls,
+          role,
+          maxTokens: stepMaxTokens,
+        });
+        model = response.model;
+        provider = response.provider;
+        return Array.isArray(response.result.fileOperations) ? response.result.fileOperations : [];
+      };
+
+      try {
+        fileOps.push(...await send(chunk));
+      } catch (err) {
+        // An anticipated, recoverable condition — the pipeline has answered it this way since
+        // 2026-09-29's measurement showed a chunk hitting the step cap exactly. Before this, the throw
+        // propagated and the whole generation was lost, five successful calls included, because nothing
+        // is persisted until the end. See lib/generationTruncation.js.
+        if (!isTruncation(err)) throw err;
+        const plan = truncationPlan(chunk);
+        for (const onePath of plan.retry) {
+          try {
+            fileOps.push(...await send([onePath]));
+          } catch (oneErr) {
+            if (!isTruncation(oneErr)) throw oneErr;
+            unwritten.push(onePath);
+          }
+        }
+      }
     }
-    return { fileOps, model, provider, chunked: true };
+    const outcome = truncationOutcome({ unwritten });
+    return { fileOps, model, provider, chunked: true, unwritten, truncationNote: outcome.note };
   }
 
   // No plannedFiles to chunk by — one unscoped call, still with an explicit
