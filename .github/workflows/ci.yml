@@ -164,6 +164,21 @@ jobs:
       - name: A self-contained app still installs, starts and answers
         run: node scripts/smoke-generated-app.mjs
 
+      # A review is a second opinion; ten of them is not ten times the confidence. Measured 2026-09-30:
+      # one backend generation made TWELVE reviewer calls and burned 473 credits with nothing persisted,
+      # because nothing bounded the loop and every re-review covered the whole file set again.
+      - name: A review cannot run away with a build
+        run: node scripts/verify-review-budget.mjs
+
+      # THE ARITHMETIC ABOVE IS NOT THE CLAIM. This runs the REAL reviewAndRetry against a fake that
+      # NEVER approves — the adversarial case that made twelve calls in production — and counts the calls
+      # on the wire. Needs a database for role settings, hence this job.
+      - name: A review that never approves still stops, cheaply
+        env:
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          REVIEW_HARNESS_USER: ''
+        run: node scripts/review-loop-harness.mjs
+
       # The generator, run for real against the database above with a fake provider answering. Asserts what
       # the MODEL was actually told (read off the wire), what got PERSISTED, and that the two context
       # fixes hold end to end — none of which needs a real model, a key, or a credit.
