@@ -25,6 +25,44 @@
 //
 // Import-free, so the guard runs with no install.
 
+/**
+ * The plan as readable lines rather than JSON.
+ *
+ * Accepts either the object or a JSON string (the caller has both to hand). Everything the backend needs
+ * survives: the tables and their columns, the routes, the auth strategy, the storage, the env vars. What
+ * does not survive is the braces — which is the point.
+ */
+export function renderPlanAsText(plan) {
+  let p = plan;
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch { return `PLAN (unstructured):\n${plan}`; } }
+  if (!p || typeof p !== 'object') return '';
+
+  const lines = [];
+  if (p.summary) lines.push(`Summary: ${p.summary}`);
+
+  const tables = p.database?.tables;
+  if (Array.isArray(tables) && tables.length) {
+    lines.push('Tables:');
+    for (const t of tables) {
+      const cols = Array.isArray(t?.columns) ? t.columns.map((c) => `${c.name} ${c.type || ''}${c.primary ? ' PRIMARY KEY' : ''}${c.nullable === false ? ' NOT NULL' : ''}`.trim()).join(', ') : '';
+      lines.push(`  ${t?.name || 'unnamed'}${cols ? `: ${cols}` : ''}`);
+    }
+  }
+
+  const routes = p.api?.routes;
+  if (Array.isArray(routes) && routes.length) {
+    lines.push('Routes:');
+    for (const r of routes) lines.push(`  ${r?.method || 'GET'} ${r?.path || '/'}${r?.description ? ` — ${r.description}` : ''}`);
+  }
+
+  if (p.auth?.strategy) lines.push(`Auth: ${p.auth.strategy}${p.auth.details ? ` — ${p.auth.details}` : ''}`);
+  if (p.storage?.type) lines.push(`Storage: ${p.storage.type}${p.storage.details ? ` — ${p.storage.details}` : ''}`);
+  if (Array.isArray(p.envVars) && p.envVars.length) lines.push(`Environment variables: ${p.envVars.join(', ')}`);
+  if (p.recommendations) lines.push(`Notes: ${p.recommendations}`);
+
+  return `PLAN FOR THIS BACKEND (the requirements, in words — the response format is defined below, not here):\n${lines.join('\n')}`;
+}
+
 /** Roughly how much context one chunk may carry. Matches the scoped-context budget the pipeline uses. */
 export const BACKEND_CONTEXT_MAX_BYTES = 60_000;
 
@@ -90,7 +128,19 @@ export function buildBackendChunkContext({
   };
 
   // 1. The plan, and the app's own code — the requirement, which is what the backend exists to serve.
-  add('plan', planBlock ? `PLAN:\n${planBlock}` : '');
+  //
+  // RENDERED AS TEXT, NEVER AS JSON. This is the fix for a defect this very file introduced: the first
+  // version put the plan in as `JSON.stringify(plan, null, 2)` while the call asks for a JSON object back,
+  // and the model PARROTTED the first JSON block it could see — returning `{"type":"object",
+  // "properties":{...}}`, i.e. the schema, instead of any file. Measured by A/B on one real call:
+  //
+  //   with the plan as JSON   -> fileOperations NOT AN ARRAY, keys "type,properties"
+  //   with the plan as text   -> fileOperations = 2
+  //
+  // ABI.js already documents this failure mode for role-less calls ("it silently takes default_model");
+  // the shape trap is the same class. Handing a model an example of the format you want, and also asking
+  // it to produce that format, is an invitation to return the example.
+  add('plan', planBlock ? renderPlanAsText(planBlock) : '');
   add('frontend', frontendBlock ? `THE APP THIS BACKEND SERVES (its calls define the contract):\n${frontendBlock}` : '');
 
   // 2. THE WHOLE FILE LIST. Always, even when its contents do not fit — this is what stops a chunk

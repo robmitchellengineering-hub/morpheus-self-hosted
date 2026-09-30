@@ -102,7 +102,11 @@ Respond as JSON: { "plannedFiles": ["string" (path, relative, WITHOUT "backend/"
 
 ${backendBrief}
 
-Keep code concise but complete — no placeholders, no TODOs, no "// implement this". Every file must be fully functional. Return fileOperations with path (relative, WITHOUT "backend/" prefix), FULL content, and action "create".`;
+Keep code concise but complete — no placeholders, no TODOs, no "// implement this". Every file must be fully functional.
+
+HOW TO REPLY, and it matters more than it looks: reply with a single JSON object. Its "fileOperations" array has one entry per file, each with "path" (relative, WITHOUT the "backend/" prefix), FULL "content", and action "create".
+
+Do NOT reply with a JSON schema, a description of the shape, or the string "fileOperations" on its own — the whole object, with the real file content inside it. A reply that describes the format instead of using it produces nothing usable, and the run is wasted.`;
 
   // THE SAME MECHANISM THE BUILD PIPELINE USES. `generateFilesChunked` calls the model once per chunk of
   // files, so each call must be shown what the earlier calls produced — otherwise `routes/tasks.js` is
@@ -133,7 +137,19 @@ Keep code concise but complete — no placeholders, no TODOs, no "// implement t
       if (!chunk) {
         return `${writePrompt}\n\n${context}\n\nGenerate ALL backend files needed now — the full set listed above.`;
       }
-      return `${writePrompt}\n\n${context}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY this file set.`;
+      // The trailing sentence used to read "Return fileOperations for ONLY this file set", and THAT is
+      // what the model parroted back — it replied with the schema (`{"type":"object","properties":...}`)
+      // rather than any file. Measured by A/B on real calls, one variable at a time:
+      //
+      //   plan as JSON  + "Return fileOperations"  -> SCHEMA ECHO
+      //   plan as JSON  + "Reply with a single JSON object whose fileOperations array ..."  -> OK
+      //   no plan       + "Return fileOperations"  -> SCHEMA ECHO
+      //   plan as text  + "Return fileOperations"  -> OK
+      //
+      // So the instruction was the primary trigger and the plan format a secondary one; both are fixed.
+      // Asking for a named key and then naming it again as the instruction is an invitation to describe
+      // it rather than produce it.
+      return `${writePrompt}\n\n${context}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Reply with that single JSON object now, containing only this file set.`;
     },
   });
   let generatedFiles = rawFileOps.map((f) => ({ path: f.path, content: f.content }));
