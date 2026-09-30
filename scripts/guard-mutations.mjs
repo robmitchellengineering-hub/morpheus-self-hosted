@@ -179,6 +179,13 @@ export const MUTATIONS = [
     replace: "export const APPLIED_ACTIONS = ['create', 'update', 'delete', 'skipped_no_content'];",
   },
   {
+    guard: 'verify-app-selftest.mjs',
+    file: 'server/src/lib/appSelfTest.js',
+    why: 'Makes an unreadable result line report as "ok" — which is H17 in the one place it matters most: a self-test that printed nothing would read as a verified app on the machine of the person who installed it, where nobody is watching.',
+    find: "  return { status: 'unknown', detail: `unreadable result line: ${last.slice(0, 80)}` };",
+    replace: "  return { status: 'ok', detail: `unreadable result line: ${last.slice(0, 80)}` };",
+  },
+  {
     guard: 'verify-guard-mutations.mjs',
     file: 'scripts/guard-mutations.mjs',
     why: 'Raises this registry\'s own ratchet by one — precisely the edit that lets a new unproven guard through. The integrity guard exists to refuse that, so it must go red.',

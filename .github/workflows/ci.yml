@@ -434,6 +434,14 @@ jobs:
       - name: A refused operation does not read as a change
         run: node scripts/verify-applied-ops.mjs
 
+      # A desktop app built green on four platforms, downloaded, and died on first launch because
+      # PyInstaller collected a Qt framework twice — and no build machine could have caught it. The machine
+      # that RUNS the app is the only one that can test it, so a generated app must be drivable headlessly
+      # and must report a readable result. This guard WRITES the generated runner beside a real little app
+      # and RUNS it, for the reason the app just taught us: reading a runner proves nothing about a runner.
+      - name: An app can be tested on the machine it is installed on
+        run: node scripts/verify-app-selftest.mjs
+
       - name: The guard-mutation registry is honest
         run: node scripts/verify-guard-mutations.mjs
 
