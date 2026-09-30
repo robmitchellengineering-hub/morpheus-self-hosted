@@ -178,7 +178,11 @@ try {
   writeFileSync(join(fb, 'styles.css'), 'body{}');
   writeFileSync(join(fb, 'robots.txt'), 'User-agent: *\n');
   writeFileSync(join(fb, 'package.json'), '{"scripts":{"start":"node server.js"}}');
-  writeFileSync(join(fb, '.env'), 'STRIPE_SECRET_KEY=sk_live_not_a_real_key\n');
+  // Not `sk_live_…`: a fixture that looks like a live credential trips Netlify's secret scanner on the
+  // repository itself, which fails the DEPLOY while the build succeeds (2026-09-30). Only the file NAME
+  // matters to this test — the value must never be mistakable for a real key. See
+  // scripts/verify-no-secret-fixtures.mjs.
+  writeFileSync(join(fb, '.env'), 'STRIPE_SECRET_KEY=this-is-not-a-real-secret-0000\n');
   writeFileSync(join(fb, '.env.local'), 'OTHER=1\n');
   writeFileSync(join(fb, 'server-key.pem'), 'not a real key\n');
   mkdirSync(join(fb, 'backend'), { recursive: true });

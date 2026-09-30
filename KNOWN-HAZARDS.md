@@ -403,15 +403,29 @@ grep the file for the words it once contained).
 
 **A third habit, and the one the rule above cannot reach (2026-09-30, #452): check the
 FIXTURE as well as the assertion.** `verify-security-posture.mjs` asserted that the
-hardcoded-secret check fired for `const K = "sk-live-…"` — a single-letter identifier,
-while that check deliberately keys on the *name* a value is bound to. The assertion was
-correct; the input could never satisfy it. **Breaking the subject would not have found
-this**: delete the check and the guard goes red, keep it and the guard stays green, and
-both results are about the fixture rather than the code. A fixture is half of every
-assertion — the half that a mutation test cannot see, because it mutates the code and not
-the input. Ask instead what the fixture is *for*, and whether it could ever produce the
-condition: a guard whose fixture cannot fire is green for a reason unrelated to the
+hardcoded-secret check fired for `const K = "this-is-not-a-real-secret-0000"` — a
+single-letter identifier, while that check deliberately keys on the *name* a value is bound
+to. The assertion was correct; the input could never satisfy it. **Breaking the subject
+would not have found this**: delete the check and the guard goes red, keep it and the guard
+stays green, and both results are about the fixture rather than the code. A fixture is half
+of every assertion — the half that a mutation test cannot see, because it mutates the code
+and not the input. Ask instead what the fixture is *for*, and whether it could ever produce
+the condition: a guard whose fixture cannot fire is green for a reason unrelated to the
 subject.
+
+**And the fixture's VALUE is part of the repository (2026-09-30, same guard, and this one
+fails DEPLOYS).** The fixture above originally held a Stripe-shaped `sk-live-…` string.
+Netlify's smart detection scans **repository code**, so from the moment that guard landed the
+frontend stopped deploying: the build compiled, the scanner refused the deploy, no Netlify
+status reached the merge commit, and there was nothing in the application code to find. It
+cost an hour of hypotheses about build minutes and Netlify plan limits, and Netlify's own
+error template pointed at the wrong thing entirely (`VITE_` variables and
+`SECRETS_SCAN_OMIT_KEYS`) because it cannot know *which* string it matched — the answer was
+only in deploy-log lines that name the file and line. **A test fixture is committed code, so
+it must never be shaped like the thing it is testing for.** Use an obviously fake value:
+`this-is-not-a-real-secret-0000` exercises the same regex and cannot be mistaken for a
+credential. `scripts/verify-no-secret-fixtures.mjs` fails the build if a tracked file grows a
+real-looking one again.
 
 **And the way a check READS THE FILE is part of the check.** The same guard matched the
 rules inside the coder's instructions with a lazy `[\s\S]*?`, which scanned **straight out
