@@ -158,7 +158,11 @@ check('the all-or-nothing batch write is GONE', /projectFile\.createMany/.test(g
 check('…and so is the delete-everything-first', /existingBackend[\s\S]{0,200}projectFile\.delete\(/.test(gen), false);
 check('a mid-run failure rethrows with what was saved', /wrapped\.savedFiles = saved/.test(gen), true);
 check('…and is marked partial', /wrapped\.partial = true/.test(gen), true);
-check('the run reports what it did not produce', /missing: plannedFiles/.test(gen), true);
+// Was `/missing: plannedFiles/` — a spelling of the old literal set-difference, which reported a file that
+// EXISTS as missing when the coder named it differently (defect 9). The claim is that genuinely absent files
+// are reported, so this asserts the field AND that the answer comes from the reconciliation.
+check('the run reports what it did not produce', /missing: recon\.missing/.test(gen), true);
+check('…from a reconciliation, not a literal set difference', /reconcilePlannedFiles\(plannedFiles/.test(gen), true);
 
 console.log('\n7b. nothing else writes the backend in one all-or-nothing batch');
 // The rule is only load-bearing if every path obeys it. `createMany` is what turned one missing field into

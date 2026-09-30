@@ -158,6 +158,20 @@ export const MUTATIONS = [
     replace: '"ios-app", "linux-binary-x", "linux-distro"',
   },
   {
+    guard: 'verify-plan-reconciliation.mjs',
+    file: 'server/src/lib/planReconciliation.js',
+    why: 'Lets the rename pass accept TWO candidates, so it guesses which written file satisfies the plan. The guard exists to forbid exactly that: an eager reconciliation hides a real gap, which is the defect with the opposite sign.',
+    find: '    if (ext && siblings === 1 && candidates.length === 1) {',
+    replace: '    if (ext && siblings === 1 && candidates.length >= 1) {',
+  },
+  {
+    guard: 'verify-applied-ops.mjs',
+    file: 'server/src/lib/appliedOps.js',
+    why: 'Puts a skip back into the allow-list, so an operation that wrote nothing counts as a change — the defect itself (a refused or skipped op reading as work in the UI, the log, the bill and a commit).',
+    find: "export const APPLIED_ACTIONS = ['create', 'update', 'delete'];",
+    replace: "export const APPLIED_ACTIONS = ['create', 'update', 'delete', 'skipped_no_content'];",
+  },
+  {
     guard: 'verify-guard-mutations.mjs',
     file: 'scripts/guard-mutations.mjs',
     why: 'Raises this registry\'s own ratchet by one — precisely the edit that lets a new unproven guard through. The integrity guard exists to refuse that, so it must go red.',

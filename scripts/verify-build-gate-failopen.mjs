@@ -118,8 +118,14 @@ check('the first deep verify is guarded', iDeepTry > 0, true);
 check('…and `deep` is never defaulted to a pass', /deep\s*=\s*\{\s*ok:\s*true/.test(src), false);
 check('an unverifiable run is recorded as critical, so the refusal survives',
   /deepVerifyCritical = \[`the self-dev verification could not run at all/.test(raw), true);
+// The claim is which TERMS gate progress, not the exact text of the expression. The first version pinned the
+// whole line, so making the "did anything happen" term correct (real writes, not the mixed op list) failed a
+// guard whose subject was still true — H19's "asserting a spelling rather than behaviour", in the guard that
+// documents fail-open contracts. Split into the two properties it was really checking.
 check('…and the critical list still blocks a self-dev step from advancing',
-  /buildProgressed = appliedOps\.length > 0 && unresolved\.length === 0 && syntaxCritical\.length === 0 && deepVerifyCritical\.length === 0/.test(src), true);
+  /buildProgressed = [^\n]*deepVerifyCritical\.length === 0/.test(src), true);
+check('…and a step that wrote NOTHING does not count as progress',
+  /buildProgressed = [^\n]*appliedCount\(appliedOps\) > 0/.test(src), true);
 
 console.log('\n9. the failure is visible in the record, not only in the reply');
 check('rework carries the reviewer failure count', (src.match(/reviewerFailed: reviewerFailed \? 1 : 0/g) || []).length, 3);
