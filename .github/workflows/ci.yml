@@ -387,14 +387,23 @@ jobs:
       - name: A downloaded app keeps the promise on the button
         run: node scripts/verify-export-promise.mjs
 
-      # The frontend stopped deploying at 04:41Z on 2026-09-30 and NOTHING in this repo could see it: the
-      # compile succeeded, the deploy failed, and no Netlify status reached the merge commit. The cause was
-      # Netlify's secrets scanner flagging the values of `VITE_` variables, which Vite inlines into the
-      # client bundle BY DESIGN. `netlify.toml` omits those keys by name; this asserts that list and the
-      # code cannot drift apart, that the scanner is NOT switched off, and that no secret-shaped variable is
-      # ever inlined — because omitting a key is a claim that its value is public, and a claim needs a check.
+      # The frontend stopped deploying on 2026-09-30 and NOTHING in this repo could see it: the compile
+      # succeeded, the deploy failed, and no Netlify status reached the merge commit. `VITE_` variables are
+      # inlined into the client bundle BY DESIGN, so `netlify.toml` omits those keys from the secrets scanner
+      # by name. This asserts that list and the code cannot drift apart, that the scanner is NOT switched off,
+      # and that no secret-shaped variable is ever inlined — omitting a key is a claim its value is public,
+      # and a claim needs a check.
       - name: A new client variable cannot silently stop the frontend deploying
         run: node scripts/verify-client-env.mjs
+
+      # THE ACTUAL CAUSE of that outage, and it was a test fixture. `verify-security-posture.mjs` needed a
+      # hardcoded-secret fixture and used a Stripe-shaped `sk-live-…` string; smart detection scans REPOSITORY
+      # CODE, so from the moment that guard landed the deploy was refused while the build passed. Netlify's
+      # error template blamed the `VITE_` variables and offered to omit keys, which could not have worked —
+      # the flagged string was not an environment value at all. A fixture is committed code and must never be
+      # shaped like the thing it tests for; this fails the build if any tracked file grows one again.
+      - name: No committed fixture looks like a credential
+        run: node scripts/verify-no-secret-fixtures.mjs
 
       # There are TWO copies of the infrastructure registry and nothing kept them in step. That already
       # cost the posture feature its entire UI once, because BackendPanel.jsx imports the copy the work

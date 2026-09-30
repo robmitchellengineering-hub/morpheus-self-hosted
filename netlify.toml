@@ -5,14 +5,20 @@
 # merges this file over the UI for the keys it sets and leaves the rest alone.
 
 [build.environment]
-  # WHY THIS EXISTS (2026-09-30). Netlify's secrets scanner flags any environment value it finds in the
-  # build output. A `VITE_`-prefixed variable is INLINED INTO THE CLIENT BUNDLE BY DESIGN — that is what
-  # the prefix means — so every client-side variable trips the scanner on a perfectly correct build.
+  # WHY THIS EXISTS (2026-09-30) — AND WHAT IT DID *NOT* FIX, which is worth more than the setting.
   #
-  # What that looked like: `npm run build` SUCCEEDED and the deploy FAILED, on every commit, with no
-  # Netlify status attached to the merge commit and nothing in the code to find. The frontend silently
-  # stopped deploying from 04:41Z while the backend kept shipping, so half of each merged change was live
-  # and the other half was not. It read exactly like a broken build and it was not.
+  # `VITE_`-prefixed variables are INLINED INTO THE CLIENT BUNDLE BY DESIGN — that is what the prefix means —
+  # so a correct build does put their values in the build output, and Netlify's scanner considers them
+  # candidates. Omitting these keys is therefore right on its own merits and keeps a future genuinely-public
+  # value from tripping the scan.
+  #
+  # But this did NOT fix the outage it was written for, and the deploy log proves it: the run that failed with
+  # this file in place still printed `SECRETS_SCAN_OMIT_KEYS override option set to: …` — the setting was
+  # honoured — and the scan failed anyway. The flagged string was not an environment value at all: it was a
+  # Stripe-shaped test fixture in `scripts/verify-security-posture.mjs`, and smart detection scans REPOSITORY
+  # CODE. Netlify's error template offers this key and `…_OMIT_VALUES` as though the cause were known, which is
+  # how an hour went into plan limits and VITE_ variables. The real fix is that fixtures never look like
+  # credentials (`scripts/verify-no-secret-fixtures.mjs`).
   #
   # TWO RULES FOR THIS LIST.
   #   1. OMIT BY KEY, never by value. Values change, and a stale value stops omitting silently. Keys are

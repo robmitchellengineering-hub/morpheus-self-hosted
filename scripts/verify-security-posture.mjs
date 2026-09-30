@@ -74,7 +74,7 @@ check('a missing .gitignore is caught', ids(GOOD.filter((f) => f.path !== '.giti
 
 console.log('\n3. a secret written into the source');
 check('a long literal assigned to a secret-ish name is caught',
-  ids([...GOOD, { path: 'server/lib/config.js', content: 'const API_KEY = "sk-live-abcdefghijklmnopqrstuvwx";' }]).includes('hardcoded-secret'), true);
+  ids([...GOOD, { path: 'server/lib/config.js', content: 'const API_KEY = "this-is-not-a-real-secret-0000";' }]).includes('hardcoded-secret'), true);
 // The false-positive side matters as much: a check that cries wolf on every placeholder is one an
 // operator learns to ignore, which is worse than no check.
 for (const [what, content] of [
@@ -115,7 +115,7 @@ console.log('\n6. the report reads worst-first, and says so plainly');
 const mixed = securityFindings([
   ...GOOD,
   { path: '.env', content: 'JWT_SECRET=abc' },
-  { path: 'server/lib/config.js', content: 'const SECRET = "sk-live-abcdefghijklmnopqrstuvwx";' },
+  { path: 'server/lib/config.js', content: 'const SECRET = "this-is-not-a-real-secret-0000";' },
 ]);
 check('critical findings sort first', mixed[0].severity, 'critical');
 check('…and the order is by severity, not by check order',
@@ -135,10 +135,17 @@ check('…and the junk entries are not counted as files',
   ids([null, {}, { path: 42 }]).join(','), 'no-gitignore,no-security-headers-or-limits');
 check('a missing file list is not a crash', Array.isArray(securityFindings(undefined)), true);
 // The fixture's IDENTIFIER is what matters here: `hardcoded-secret` is deliberately narrow and keys on the
-// name the value is bound to, so `const K = "sk-live-…"` is genuinely not a finding — the first version of
-// this check asserted it was one, and passed only because a single-letter name tripped nothing either way.
+// name the value is bound to, so `const K = "this-is-not-a-real-secret-0000"` is genuinely not a finding —
+// the first version asserted it was one, and passed only because a single-letter name tripped nothing.
+//
+// THE VALUE'S SHAPE IS LOAD-BEARING TOO, and this is not a style preference. The fixture value used to be a
+// Stripe-shaped `sk-live-…` string, and Netlify's smart detection scans REPOSITORY CODE, so from the day
+// this guard landed the frontend stopped deploying — the build compiled and the scanner refused the deploy,
+// with nothing in the code to find. Fixtures must be obviously fake: `this-is-not-a-real-secret-0000`
+// exercises the same regex without looking like a credential. `scripts/verify-no-secret-fixtures.mjs`
+// now fails the build if any tracked file grows a real-looking one again.
 check('…and a real file among junk is still examined',
-  ids([null, { path: 'server/x.js', content: 'const API_KEY = "sk-live-abcdefghijklmnopqrstuvwx";' }]).includes('hardcoded-secret'), true);
+  ids([null, { path: 'server/x.js', content: 'const API_KEY = "this-is-not-a-real-secret-0000";' }]).includes('hardcoded-secret'), true);
 check('a check that throws reports that it did not run rather than reading as clean',
   securityFindings([{ path: '.env', content: 'x' }]).some((f) => f.id === 'env-committed'), true);
 
@@ -187,7 +194,7 @@ check('…and returns it', /security,/.test(gen), true);
 // every check above still green — field drift, which this repo has already paid for once with `maxTokens`.
 const evidenceFixture = [
   { path: '.env', content: 'JWT_SECRET=abc' },
-  { path: 'server/lib/config.js', content: 'const API_KEY = "sk-live-abcdefghijklmnopqrstuvwx";' },
+  { path: 'server/lib/config.js', content: 'const API_KEY = "this-is-not-a-real-secret-0000";' },
   { path: 'server/index.js', content: "app.use(cors({ origin: '*', credentials: true }));" },
 ];
 const evidenceFindings = securityFindings(evidenceFixture);
