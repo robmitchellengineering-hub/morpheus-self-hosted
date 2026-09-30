@@ -10,6 +10,7 @@ import { createSnapshot, applyFileOperations, applyEdits, logUsage, syncProjectF
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { runReviewerFailOpen, reviewFailureNote } from '../lib/reviewFailOpen.js';
+import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
 import { buildReviewerContext } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -336,7 +337,7 @@ You are the CODING agent in Morpheus's two-phase build pipeline.
 You receive a build plan from the planning agent. Implement it precisely — write clean, efficient, production-ready code. No placeholders, no TODOs, no pseudo-code. Follow the plan exactly. Every file must have FULL content (never partial).
 
 Apply all the build configuration rules from your system instructions — package.json, README.md, build configs matching the compile target, etc.
-
+${SECURITY_PROMPT_BLOCK}
 Return JSON with:
 - fileOperations: an array of file operations.
   - action "create": include the full \`content\` of the new file.
@@ -1038,6 +1039,10 @@ OPERATOR SAYS: ${message}`;
   // cost the user the coder's work — see the try/catch around reviewAndRetry below for the whole
   // reasoning. This carries the reason into the reply and into the stage record.
   let reviewerFailed = null;
+  // Security findings for the whole project, filled in after the apply so the report describes what
+  // exists rather than what this turn happened to touch. Declared here so the outer catch can still
+  // report what was found (H18: a declaration that must outlive its block goes outside it).
+  let securityReport = null;
   let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
   const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
   let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -2189,6 +2194,33 @@ OPERATOR SAYS: ${message}`;
       fullReply += `\n\n// A11Y: ${a11yNotes.length} accessibility issue${a11yNotes.length === 1 ? '' : 's'} left after a fix pass — ${a11yNotes.join('; ')}. The site still works; ask me to fix ${a11yNotes.length === 1 ? 'it' : 'them'}.`;
     }
 
+    // ── Security posture ──────────────────────────────────────────────────
+    // The reviewer's PROMPT has always asked for secure code; nothing ever EXAMINED what was produced, and
+    // the operator was told nothing either way. This runs the same checks over the project as it now
+    // stands — not just this turn's files, because .env, .gitignore and whether auth exists at all are
+    // properties of the whole app — and says the result out loud.
+    //
+    // Reported, not enforced: a critical finding names the danger and the fix and blocks nothing. Blocking
+    // would be a policy decision about generated apps that nobody has made, and a gate that silently
+    // refuses would be worse than a sentence the operator can act on.
+    try {
+      const projectFiles = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+      const findings = securityFindings(projectFiles);
+      securityReport = { findings, summary: securitySummary(findings, { filesExamined: projectFiles.length }) };
+      const critical = findings.filter((f) => f.severity === 'critical');
+      const high = findings.filter((f) => f.severity === 'high');
+      if (critical.length > 0) {
+        fullReply += `\n\n// SECURITY — DO NOT SHIP AS IS: ${critical.map((f) => `${f.title} (${f.evidence.join(', ')})`).join('; ')}. ${critical.map((f) => f.fix).join(' ')}`;
+      } else if (high.length > 0) {
+        fullReply += `\n\n// SECURITY: ${high.map((f) => f.title).join('; ')}. ${high.map((f) => f.fix).join(' ')}`;
+      }
+    } catch (err) {
+      // A security check that could not run must say so, never read as clean — the repo's own rule for a
+      // check that examined nothing.
+      securityReport = { findings: [], summary: `the security check could not run — ${err.message}`, failed: true };
+      console.error('[chatWithMorpheus] security check failed:', err.message);
+    }
+
     // ── Feature progress ──────────────────────────────────────────────────
     // Escalation turn: announce the plan and advance past step 1 (just built).
     // Ongoing feature turn (non-self-dev): advance the active step when the
@@ -2263,8 +2295,12 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
+    //
+    // The security report is NOT put here: it is not part of the stage detail the dispatcher records, and a
+    // `res.locals` entry nothing reads is a channel that only looks like one. It travels on the `result`
+    // event below, which is the contract the client already receives.
     try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, security: securityReport, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // If the build already LANDED, an error event is the worst response available: the files are

@@ -14,6 +14,7 @@ import { buildBackendChunkContext } from '../lib/backendChunkContext.js';
 import {
   planWrites, staleBackendPaths, persistIncrementally, removeStale, partialRunNote, normalizeBackendPath,
 } from '../lib/incrementalPersist.js';
+import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
 import { generateFilesChunked } from '../lib/chunkedFileGen.js';
 
 function detectLanguage(path) {
@@ -102,6 +103,7 @@ Respond as JSON: { "plannedFiles": ["string" (path, relative, WITHOUT "backend/"
   const summary = filePlan.summary || 'Backend generated.';
 
   const writePrompt = `You are Morpheus, a backend code generator. Write full, production-ready file content for the requested file(s) only.
+${SECURITY_PROMPT_BLOCK}
 
 ${backendBrief}
 
@@ -271,6 +273,23 @@ Do NOT reply with a JSON schema, a description of the shape, or the string "file
   }
 
   const savedCount = savedPaths.size;
+
+  // The same security posture the main build reports — over the WHOLE project, not this generation's files.
+  // `.env`, `.gitignore` and whether auth exists in front of the data routes are properties of the app, so a
+  // backend written into an app that already has a `.gitignore` must not be told it is missing one. Reported,
+  // not enforced — see the note in chatWithMorpheus.js.
+  let security = null;
+  try {
+    const projectFiles = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+    const findings = securityFindings(projectFiles);
+    security = { findings, summary: securitySummary(findings, { filesExamined: projectFiles.length }) };
+    const critical = findings.filter((f) => f.severity === 'critical');
+    if (critical.length > 0) {
+      console.error(`[generateBackend] SECURITY — DO NOT SHIP AS IS: ${critical.map((f) => `${f.title} (${f.evidence.join(', ')})`).join('; ')}`);
+    }
+  } catch (err) {
+    security = { findings: [], summary: `the security check could not run — ${err.message}`, failed: true };
+  }
   await logUsage(user.id, 'autonomous_step', projectId, project.name, { phase: 'backend_generate', components, fileCount: savedCount });
 
   // `summary` describes the WHOLE planned set; `fileCount` is what actually reached disk. When they
@@ -283,5 +302,6 @@ Do NOT reply with a JSON schema, a description of the shape, or the string "file
     status: 'generated',
     incomplete: !allWritten,
     missing: plannedFiles.map(normalizeBackendPath).filter((p) => !savedPaths.has(p)),
+    security,
   };
 }
