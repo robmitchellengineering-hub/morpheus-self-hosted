@@ -625,8 +625,14 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     // maxTokens`. Record the attempt: no tokens (the provider never reported any), the real duration,
     // and status 'error'. Fire-and-forget, because recording a failure must never replace the error
     // the caller needs to see.
+    // `model`, NOT `resolvedModel`. `resolvedModel` is declared BELOW, from the response (`data?.model`),
+    // so in this catch it is in its temporal dead zone — referencing it threw
+    // "Cannot access 'resolvedModel' before initialization" and THAT replaced the provider's error, which
+    // is the precise opposite of what the comment above promises. Found 2026-09-29 by forcing a provider
+    // failure in a harness: the caller saw a reference error instead of "AI endpoint error (500)".
+    // The request's own model is the honest value here anyway — nothing was served, so nothing renamed it.
     recordUsageEvent({
-      userId, role, provider, model: resolvedModel, isExempt, reservedCredits: 0,
+      userId, role, provider, model, isExempt, reservedCredits: 0,
       usage: { input_tokens: 0, output_tokens: 0 }, task, status: 'error', durationMs: Date.now() - callStartedAt,
     }).catch(() => {});
     throw err;

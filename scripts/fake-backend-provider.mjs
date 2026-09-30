@@ -163,6 +163,15 @@ export function startServer(port = PORT) {
       // tested without a model, a key or a credit. `FAKE_TRUNCATE_MULTI=1` makes every multi-file ask
       // truncate and every single-file ask succeed — which is exactly the condition the recovery exists
       // for, and which cost ~117 credits to discover by hand.
+      // FAIL THE REVIEW, ON DEMAND. `FAKE_FAIL_REVIEW=1` rejects every review ask, which is the exact shape
+      // of "a later stage failed after the generation succeeded" — the case that used to discard every
+      // generated file because nothing was persisted until the very end.
+      if (process.env.FAKE_FAIL_REVIEW === '1' && wantsReview(prompt)) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'harness: review unavailable' } }));
+        return;
+      }
+
       const multi = (requestedFilesFrom(prompt) || []).length > 1;
       if (process.env.FAKE_TRUNCATE_MULTI === '1' && multi) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
