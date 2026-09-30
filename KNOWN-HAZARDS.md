@@ -400,3 +400,23 @@ the existing precedent — a guard that tests guards — and is the shape to cop
 (always strip comments before matching source — `const code = (src) => …`), and asserting
 a *spelling* rather than *behaviour* (call the function and check its return value; do not
 grep the file for the words it once contained).
+
+**A third habit, and the one the rule above cannot reach (2026-09-30, #452): check the
+FIXTURE as well as the assertion.** `verify-security-posture.mjs` asserted that the
+hardcoded-secret check fired for `const K = "sk-live-…"` — a single-letter identifier,
+while that check deliberately keys on the *name* a value is bound to. The assertion was
+correct; the input could never satisfy it. **Breaking the subject would not have found
+this**: delete the check and the guard goes red, keep it and the guard stays green, and
+both results are about the fixture rather than the code. A fixture is half of every
+assertion — the half that a mutation test cannot see, because it mutates the code and not
+the input. Ask instead what the fixture is *for*, and whether it could ever produce the
+condition: a guard whose fixture cannot fire is green for a reason unrelated to the
+subject.
+
+**And the way a check READS THE FILE is part of the check.** The same guard matched the
+rules inside the coder's instructions with a lazy `[\s\S]*?`, which scanned **straight out
+of one template literal into the next** — so a mutation that moved the rules onto a single
+coder branch, leaving the shared instructions bare, still passed. Anchor a class or
+literal match to its own delimiters; a lazy quantifier over the whole file is a wildcard,
+and a wildcard is how a guard ends up measuring a region nobody chose.
+
