@@ -11,6 +11,7 @@ import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { runReviewerFailOpen, reviewFailureNote } from '../lib/reviewFailOpen.js';
 import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
+import { isContentOp, appliedPaths, appliedCount, unresolvedPaths } from '../lib/appliedOps.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
 import { buildReviewerContext } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -2036,7 +2037,7 @@ OPERATOR SAYS: ${message}`;
       // A second, lightweight coder call that touches ONLY styling files. It
       // runs when project.polish_ui is on and the build produced web-facing
       // files (or the target is web-app). Never runs for pure native/CLI builds.
-      if (project.polish_ui && appliedOps.length > 0 && !isSelfDev) {
+      if (project.polish_ui && appliedCount(appliedOps) > 0 && !isSelfDev) {
         const hasWebFiles = appliedOps.some((op) => /\.(html|css|jsx|tsx|vue|svelte)$/i.test(op.path) || op.path === 'styles.css');
         if ((hasWebFiles || isWebApp) && !isWordPress) {
           // Same fix as the `files` query above -- ProjectFile uniqueness is
@@ -2078,7 +2079,7 @@ OPERATOR SAYS: ${message}`;
             // Count only operations that actually WROTE something. `appliedOps` also carries refusals
             // (`policy_denied`), skips (`skipped_fake_binary`, `skipped_no_content`) and failures
             // (`edit_failed`), and counting those as "refined" made the POLISH line overstate the pass.
-            polishCount = appliedPolish.filter((op) => /^(create|update|delete)$/.test(String(op.action))).length;
+            polishCount = appliedCount(appliedPolish);
           }
         }
       }
@@ -2091,7 +2092,7 @@ OPERATOR SAYS: ${message}`;
       // model produced, and running it through the gates would only be able to
       // fail on our own text. A failure here must never cost the operator the
       // build that already succeeded, so it is caught and reported.
-      if (!isSelfDev && appliedOps.some((op) => /^(create|update)$/.test(String(op.action)))) {
+      if (!isSelfDev && appliedOps.some(isContentOp)) {
         try {
           // The files as they are NOW, read fresh: the in-memory `files` array
           // predates this turn's writes, and mode is decided from the app's real
@@ -2115,14 +2116,14 @@ OPERATOR SAYS: ${message}`;
       // syncProjectFilesToGithub's own comment for why this is never
       // awaited: a slow/failed GitHub call must never delay or break the
       // chat response.
-      if (appliedOps.length > 0 && project.github_repo) {
+      if (appliedCount(appliedOps) > 0 && project.github_repo) {
         syncProjectFilesToGithub(user.id, project, appliedOps).catch((err) => {
           console.error('[chatWithMorpheus] github auto-sync failed:', err.message);
         });
       }
     }
 
-    const reviewBlock = (reviewSummary || reviewIssues.some((i) => i.severity === 'critical')) && appliedOps.length > 0
+    const reviewBlock = (reviewSummary || reviewIssues.some((i) => i.severity === 'critical')) && appliedCount(appliedOps) > 0
       ? formatReviewChatBlock({ summary: reviewSummary, approved: !reviewIssues.some((i) => i.severity === 'critical'), issues: reviewIssues })
       : '';
     fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
@@ -2148,7 +2149,7 @@ OPERATOR SAYS: ${message}`;
     // knows it's unchanged rather than assuming it was edited.
     const unresolved = [...new Set([
       ...editFailPaths,
-      ...appliedOps.filter((op) => op.action === 'edit_failed' || op.action === 'apply_failed').map((op) => op.path),
+      ...unresolvedPaths(appliedOps),
     ])];
     if (unresolved.length > 0) {
       fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
@@ -2227,7 +2228,7 @@ OPERATOR SAYS: ${message}`;
     // build changed files — the planner's context said to build that step, so
     // it's done; the operator can reopen it from the FEATURE panel to refine.
     // Self-dev advances its steps manually (on push, from the panel).
-    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0 && truncatedFiles.length === 0;
+    const buildProgressed = appliedCount(appliedOps) > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0 && truncatedFiles.length === 0;
     if (escalatedFeature && escalatedFeature.activeStep) {
       fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
       // Step 1 having been drafted this turn doesn't mean it actually
@@ -2260,7 +2261,7 @@ OPERATOR SAYS: ${message}`;
 
     await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: fullReply } });
 
-    if (appliedOps.length > 0) {
+    if (appliedCount(appliedOps) > 0) {
       await prisma.project.update({ where: { id: projectId }, data: { status: 'building' } });
     }
 
@@ -2272,17 +2273,17 @@ OPERATOR SAYS: ${message}`;
       coder: coderModel,
       reviewer: reviewerModel,
     });
-    await logUsage(user.id, appliedOps.length > 0 ? 'chat_build' : 'chat_simple', projectId, project.name, {
+    await logUsage(user.id, appliedCount(appliedOps) > 0 ? 'chat_build' : 'chat_simple', projectId, project.name, {
       messageLength: message.length,
       needsCode,
-      fileCount: appliedOps.length,
+      fileCount: appliedCount(appliedOps),
       reviewed: !!reviewerModel,
       ...toolchain,
     });
 
     // Decisions log: record what this change did + why, so later planning
     // turns build on it. Any project, only when files actually changed.
-    if (appliedOps.length > 0) {
+    if (appliedCount(appliedOps) > 0) {
       await recordDecision(
         user.id, projectId,
         plannerResult.decisionSummary || plannerResult.plan?.split('\n')[0] || reply,
@@ -2300,7 +2301,10 @@ OPERATOR SAYS: ${message}`;
     // `res.locals` entry nothing reads is a channel that only looks like one. It travels on the `result`
     // event below, which is the contract the client already receives.
     try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, security: securityReport, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, // The paths that ACTUALLY changed, so no consumer has to re-derive it from `fileOperations`, which is a
+// mixed list carrying refusals (`policy_denied`), skips and failures alongside real writes. Three
+// consumers had each derived their own answer and two were wrong (defect 4).
+changedPaths: appliedPaths(appliedOps), security: securityReport, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedCount(appliedOps) > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // If the build already LANDED, an error event is the worst response available: the files are
@@ -2308,7 +2312,7 @@ OPERATOR SAYS: ${message}`;
     // failure and re-runs the whole turn — a second full build on top of the first, for spend. A
     // throw AFTER apply (the polish pass, the chat row, the project status, usage) must not cost the
     // user their reply. So deliver what we have, and name what failed.
-    if (appliedOps.length > 0) {
+    if (appliedCount(appliedOps) > 0) {
       // Shaped exactly like the success emit below, so the stream reader cannot tell them apart.
       try {
         emit({
@@ -2316,6 +2320,7 @@ OPERATOR SAYS: ${message}`;
           data: {
             reply: `${fullReply || reply}\n\n// NOTE: the build itself landed and everything above is applied, but something after it failed — ${err.message || 'unknown error'}. Ask me to retry the part that did not finish.`,
             fileOperations: appliedOps,
+            changedPaths: appliedPaths(appliedOps),
             rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length },
             featureChanged: false,
           },

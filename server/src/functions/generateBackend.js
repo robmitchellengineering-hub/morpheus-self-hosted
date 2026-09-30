@@ -11,8 +11,9 @@ import { logUsage } from '../lib/projectUtils.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { buildBackendChunkContext } from '../lib/backendChunkContext.js';
+import { reconcilePlannedFiles, reconciliationNote } from '../lib/planReconciliation.js';
 import {
-  planWrites, staleBackendPaths, persistIncrementally, removeStale, partialRunNote, normalizeBackendPath,
+  planWrites, staleBackendPaths, persistIncrementally, removeStale, partialRunNote,
 } from '../lib/incrementalPersist.js';
 import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
 import { generateFilesChunked } from '../lib/chunkedFileGen.js';
@@ -295,13 +296,22 @@ Do NOT reply with a JSON schema, a description of the shape, or the string "file
   // `summary` describes the WHOLE planned set; `fileCount` is what actually reached disk. When they
   // disagree the caller is told, because a backend missing files and saying nothing is the failure this
   // whole area keeps producing.
-  const allWritten = plannedFiles.length === 0 || plannedFiles.every((p) => savedPaths.has(normalizeBackendPath(p)));
+  //
+  // This used to be a literal set difference (`planned.filter(p => !saved.has(p))`), which reported a file
+  // that EXISTS as missing: the plan asked for `migrations/001_initial.sql` and the coder wrote
+  // `migrations/0001_init.sql`. A false "missing" is worse than none, because it teaches the operator to
+  // ignore the flag. `reconcilePlannedFiles` claims a substitution only when it is unambiguous both ways,
+  // so two candidates still read as missing rather than as present.
+  const recon = reconcilePlannedFiles(plannedFiles, [...savedPaths]);
+  const planNote = reconciliationNote(recon);
   return {
     fileCount: savedCount,
-    summary,
+    summary: planNote ? `${summary} ${planNote}` : summary,
     status: 'generated',
-    incomplete: !allWritten,
-    missing: plannedFiles.map(normalizeBackendPath).filter((p) => !savedPaths.has(p)),
+    incomplete: recon.missing.length > 0,
+    missing: recon.missing,
+    // Kept beside `missing` so a reader of this report can see WHY nothing is missing when the names differ.
+    substituted: recon.substituted,
     security,
   };
 }

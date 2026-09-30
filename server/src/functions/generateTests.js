@@ -3,6 +3,7 @@
 // Analyzes the operator's construct and writes a complete test suite + CI
 // workflow as project files.
 import { prisma } from '../db.js';
+import { appliedPaths } from '../lib/appliedOps.js';
 import { invokeAI } from '../ai.js';
 import { createSnapshot, applyFileOperations, logUsage } from '../lib/projectUtils.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
@@ -138,5 +139,5 @@ ${filesContext}`;
   });
 
   await logUsage(user.id, 'test_generation', projectId, project.name, { testCount, fileCount: fileOps.length, chunked });
-  return { reply, fileOperations: appliedOps, testCount };
+  return { reply, fileOperations: appliedOps, changedPaths: appliedPaths(appliedOps), testCount };
 }
