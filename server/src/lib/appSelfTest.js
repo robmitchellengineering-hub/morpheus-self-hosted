@@ -243,12 +243,36 @@ child.on('exit', (code) => { exited = code; });
     }
     last = await ask();
     if (last.ok) { await stopAndWait(); say('ok: ' + PROBE + ' answered ' + last.status, ${SELFTEST_EXIT.ok}); }
+    // An HTTP status IS an answer. The first version kept polling on a 404 or a 500 and then reported
+    // "never answered", which is false and sends the reader looking for a server that is right there. Say
+    // what it said, and say it immediately.
+    if (last.status >= 400) { await stopAndWait(); say('fail: ' + PROBE + ' answered ' + last.status, ${SELFTEST_EXIT.appFailed}); }
     await new Promise((r) => setTimeout(r, 400));
   }
   await stopAndWait();
   say('fail: ' + PROBE + ' never answered within ' + TIMEOUT_MS + 'ms' + (last.error ? ' (last error: ' + last.error + ')' : '') + (output ? ' — ' + output.trim().split('\\n').slice(-3).join(' | ').slice(0, 400) : ''), ${SELFTEST_EXIT.appFailed});
 })();
 `;
+}
+
+/**
+ * What to WRITE into the app so it can be tested where it runs.
+ *
+ * Morpheus authors this file rather than asking the coder for one, exactly like the portable launcher and
+ * the provider-honesty README: one implementation that cannot drift, and no two apps testing themselves
+ * differently. It returns null — and writes nothing — when it cannot be honest about it:
+ *
+ *   * the app already ships a selftest.mjs, so it is never overwritten;
+ *   * there is no `npm start`, because a runner that cannot start the app would only be able to report
+ *     could-not-run on the operator's machine, which is worse than not shipping one.
+ */
+export function planSelfTestFile(files) {
+  if ((files || []).some((f) => f && f.path === SELFTEST_FILE)) return null;
+  const pkg = (files || []).find((f) => f && f.path === 'package.json');
+  let start = null;
+  try { start = JSON.parse(pkg?.content || '{}')?.scripts?.start || null; } catch { start = null; }
+  if (typeof start !== 'string' || !start.trim()) return null;
+  return { path: SELFTEST_FILE, content: renderSelfTestRunner({ startCommand: start.trim() }) };
 }
 
 /** The marker line a runner is expected to print, for tests and for the installer's own messages. */

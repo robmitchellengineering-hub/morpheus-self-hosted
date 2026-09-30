@@ -15,14 +15,14 @@
 // laptop, where nobody is watching).
 //
 // Run:  node scripts/verify-app-selftest.mjs
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   SELFTEST_FILE, SELFTEST_MARKER, SELFTEST_EXIT, SELFTEST_OUTCOMES, SELFTEST_REQUIREMENTS,
-  parseSelfTestOutput, isVerified, selfTestSummary, selfTestProblems, renderSelfTestRunner,
+  parseSelfTestOutput, isVerified, selfTestSummary, selfTestProblems, renderSelfTestRunner, planSelfTestFile,
 } from '../server/src/lib/appSelfTest.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -77,6 +77,27 @@ check('…and is a finding when it has none', selfTestProblems([good[0]], { kind
 check('every finding carries a fix, not only a complaint', selfTestProblems([{ path: 'x', content: '' }]).every((p) => typeof p.fix === 'string' && p.fix.length > 20), true);
 check('every requirement says why', SELFTEST_REQUIREMENTS.every((r) => typeof r.why === 'string' && r.why.length > 60), true);
 check('junk does not crash it', Array.isArray(selfTestProblems(undefined)), true);
+
+console.log('\n4b. the runner Morpheus WRITES INTO the app');
+// The file is authored by Morpheus, so the app ships a test it did not have to invent.
+const nodeApp = [
+  { path: 'package.json', content: JSON.stringify({ scripts: { start: 'node server.js' } }) },
+  { path: 'server.js', content: 'x' },
+];
+const plan = planSelfTestFile(nodeApp);
+check('a runnable Node app gets a runner', plan?.path, SELFTEST_FILE);
+check('…and it starts the app the app itself starts', plan.content.includes('node server.js'), true);
+check('…and it speaks the same contract as the one we test here', plan.content.includes(SELFTEST_MARKER), true);
+// Three refusals, each for a reason. A runner that cannot start the app could only ever report
+// could-not-run on the operator machine, which is worse than shipping nothing.
+check('no start script means no runner', planSelfTestFile([{ path: 'server.js', content: 'x' }]), null);
+check('a package.json with no start script means no runner',
+  planSelfTestFile([{ path: 'package.json', content: JSON.stringify({ scripts: { dev: 'vite' } }) }]), null);
+check('an unparseable package.json means no runner',
+  planSelfTestFile([{ path: 'package.json', content: 'not json' }]), null);
+check('an app that already ships one is never overwritten',
+  planSelfTestFile([...nodeApp, { path: SELFTEST_FILE, content: '// mine' }]), null);
+check('junk does not crash it', planSelfTestFile(undefined), null);
 
 console.log('\n5. the runner Morpheus writes — RUN, not read');
 // The only honest way to test a runner is to run it. Each case writes the generated file next to a real
@@ -137,6 +158,14 @@ check('…and exits 0', ok.status, SELFTEST_EXIT.ok);
     parseSelfTestOutput(missing.stdout).status, 'could-not-run');
   check('…and exits 2, so a caller can tell "not tested" from "broken"', missing.status, SELFTEST_EXIT.couldNotRun);
 
+  // (d2) an app that is up but answers 404 — the failure the first runner hid behind a timeout
+  write('app-404.js', `require('node:http').createServer((_, res) => { res.writeHead(404); res.end('no'); }).listen(process.env.PORT);`);
+  write(SELFTEST_FILE, renderSelfTestRunner({ port: RENDERED_DEFAULT_PORT, startCommand: 'node app-404.js', timeoutMs: 9000 }));
+  const notFound = run(takePort());
+  check('an HTTP error status is reported as an answer, not as silence',
+    parseSelfTestOutput(notFound.stdout).detail.includes('404'), true);
+  check('…and it still exits 1, because a 404 root is not a working app', notFound.status, SELFTEST_EXIT.appFailed);
+
   // (e) the parser against a runner that printed nothing at all
   check('a runner that printed nothing is not verified', isVerified(parseSelfTestOutput(run(takePort()).stdout)), false);
 
@@ -158,6 +187,18 @@ check('…and exits 0', ok.status, SELFTEST_EXIT.ok);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
+
+console.log('\n6. the app is actually given one');
+// A writer nobody calls is a file that never ships. Asserted on comment-stripped source, because a guard
+// satisfied by the comment explaining the fix is this repo's most-repeated mistake.
+const cwm = readFileSync(join(ROOT, 'server/src/functions/chatWithMorpheus.js'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+check('the build writes the runner into the app', /planSelfTestFile\(/.test(cwm), true);
+// Through the ONE write path, not a raw upsert: applyFileOperations is what snapshots and syncs it.
+check('…through applyFileOperations, so it is snapshotted and synced like any other file',
+  /await applyFileOperations\(userId, projectId, \[\{ path: plan\.path/.test(cwm), true);
+check('…and a failure to write it never costs the operator the build', /self-test runner write failed/.test(cwm), true);
+check('…and the operator is told the command', /TO PROVE IT RUNS WHERE YOU RUN IT/.test(readFileSync(join(ROOT, 'server/src/functions/chatWithMorpheus.js'), 'utf8')), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
