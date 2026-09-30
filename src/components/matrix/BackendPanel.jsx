@@ -5,6 +5,8 @@ import SheetSelect from './SheetSelect';
 import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import JSZip from 'jszip';
+import { toast } from '@/components/ui/use-toast';
+import { exportPlan } from '@/lib/exportPromise';
 import HelpHint from './HelpHint';
 import BackendConfigSection from './BackendConfigSection';
 import ExternalSources from './ExternalSources';
@@ -328,10 +330,12 @@ export default function BackendPanel({ open, onClose, project }) {
 
   const downloadZip = async () => {
     const allFiles = await base44.entities.ProjectFile.filter({ project_id: project.id });
+    // Same single mechanism as the workspace export (src/lib/exportPromise.js): ship the real files —
+    // including dropping Morpheus's own `backend/.plan.json` — and report the command that starts each
+    // part instead of asserting in the help text that one exists.
+    const plan = exportPlan(allFiles);
     const zip = new JSZip();
-    allFiles.forEach(f => {
-      if (f.path !== 'backend/.plan.json') zip.file(f.path, f.content);
-    });
+    plan.files.forEach(f => zip.file(f.path, f.content));
     const slug = project.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -342,6 +346,11 @@ export default function BackendPanel({ open, onClose, project }) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    toast({
+      title: plan.verdict.ok ? 'Ready to run' : 'Not runnable yet',
+      description: plan.verdict.summary,
+      variant: plan.verdict.ok ? 'default' : 'destructive',
+    });
   };
 
   if (!open) return null;
@@ -795,7 +804,7 @@ export default function BackendPanel({ open, onClose, project }) {
                 <HelpHint id="backend-auto-deploy" title="Auto-Deploy Pipeline" body="Fully automated loop: deploy → health check → if unhealthy, AI diagnose and auto-fix → redeploy. Runs up to 8 iterations with a live timer and stop button.">
                   <button onClick={() => setPipelineRunning(true)} className="flex items-center gap-1 px-3 py-2 border border-primary/60 text-primary/80 hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors text-sm font-bold"><ZapIcon size={14} /> AUTO</button>
                 </HelpHint>
-                <HelpHint id="backend-download" title="Download ZIP" body="Downloads all project files (frontend + backend) as a ZIP. For Docker: run docker-compose up. For Standalone: run npm install && npm start.">
+                <HelpHint id="backend-download" title="Download ZIP" body="Downloads your project files as a ZIP — the real ones, with nothing invented. You'll be told the command that starts each part, or what is still missing before it can run.">
                   <button onClick={downloadZip} className="flex items-center gap-1 text-xs text-primary/60 hover:text-primary px-3 py-2"><Download size={14} /> ZIP</button>
                 </HelpHint>
                 <button onClick={() => setPhase('plan-ready')} className="flex items-center gap-1 text-xs text-primary/60 hover:text-primary px-3 py-2"><RefreshCw size={12} /> REGENERATE</button>
