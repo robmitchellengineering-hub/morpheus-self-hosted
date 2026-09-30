@@ -94,8 +94,22 @@ Then open http://localhost:3000
 The database file is created on first run and the schema is applied at startup.
 `;
 
+/** A review ask is recognised by its own schema request. */
+export function wantsReview(prompt) {
+  return /"issues"/.test(String(prompt || '')) && /severity/.test(String(prompt || ''));
+}
+
 export function answerFor(prompt) {
   if (wantsPlan(prompt)) return { plannedFiles: PLAN.plannedFiles, summary: PLAN.summary };
+
+  // ALWAYS FINDS A CRITICAL ISSUE, which is the non-converging case that cost twelve reviewer calls in the
+  // real run. A fake that approved on the second pass would prove the loop CAN terminate, not that it is
+  // BOUNDED — and bounded is what was missing.
+  if (wantsReview(prompt)) {
+    const paths = [...String(prompt).matchAll(/---\s*([^\s-][^-]*?)\s*---/g)].map((m) => m[1].trim());
+    const named = paths.find((p) => /\.[a-z]+$/i.test(p)) || 'server/routes/tasks.js';
+    return { approved: false, summary: 'Found a critical issue.', issues: [{ severity: 'critical', path: named, message: 'the database handle is used without getDb()' }] };
+  }
 
   const requested = requestedFilesFrom(prompt);
   const wanted = requested && requested.length > 0 ? requested : FILE_LIST;
