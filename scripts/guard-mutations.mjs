@@ -158,6 +158,13 @@ export const MUTATIONS = [
     replace: '"ios-app", "linux-binary-x", "linux-distro"',
   },
   {
+    guard: 'verify-bootstrap-sql.mjs',
+    file: 'server/prisma/manual-supabase-init.sql',
+    why: 'Removes a column the migrations add — exactly the drift that shipped: a fresh self-host came up missing seventeen columns and said nothing, because readers fall back to the pre-migration shape (H11).',
+    find: 'ALTER TABLE project_files ADD COLUMN IF NOT EXISTS synced_sha TEXT;',
+    replace: '',
+  },
+  {
     guard: 'verify-plan-reconciliation.mjs',
     file: 'server/src/lib/planReconciliation.js',
     why: 'Lets the rename pass accept TWO candidates, so it guesses which written file satisfies the plan. The guard exists to forbid exactly that: an eager reconciliation hides a real gap, which is the defect with the opposite sign.',

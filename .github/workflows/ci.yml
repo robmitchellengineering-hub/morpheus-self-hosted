@@ -413,6 +413,13 @@ jobs:
       #
       # Both halves run here. The registry integrity guard is cheap and side-effect free: completeness, no
       # stale or ambiguous `find`, and a ratchet that makes a new UNPROVEN guard impossible to add quietly.
+      # A FRESH self-host came up missing seventeen columns and said nothing. `manual-supabase-init.sql` is
+      # the bootstrap for a new install, and the selfdev-* migrations were applied to production and never
+      # mirrored into it: synced_sha, the CRM fields (#383), the fee tiers (#394) and the usage-event
+      # observability columns. Nothing broke loudly — readers fall back to the pre-migration shape, so the
+      # features simply did not persist on a fresh install, which is why it went unnoticed.
+      - name: A fresh self-host gets the migrated schema
+        run: node scripts/verify-bootstrap-sql.mjs
       # Defect 9, from the first real end-to-end backend run: the plan asked for
       # `migrations/001_initial.sql`, the generator wrote `migrations/0001_init.sql`, and the completeness
       # check — a literal set difference — reported a file that EXISTS as missing. A false "missing" is
