@@ -20,7 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildBackendChunkContext, normalizeBackendPath, BACKEND_CONTEXT_MAX_BYTES } from '../server/src/lib/backendChunkContext.js';
+import { buildBackendChunkContext, normalizeBackendPath, renderPlanAsText, BACKEND_CONTEXT_MAX_BYTES } from '../server/src/lib/backendChunkContext.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -99,8 +99,19 @@ const withApp = buildBackendChunkContext({ plannedFiles: PLANNED, chunk: [], fro
 check('the app block is present when the app is given', withApp.text.includes('THE APP THIS BACKEND SERVES'), true);
 check('…naming its calls as the contract', withApp.text.includes('its calls define the contract'), true);
 check('…and without an app block there is no empty heading', second.text.includes('THE APP THIS BACKEND SERVES'), false);
-check('the plan is included', withApp.text.includes('{"tables":[]}'), true);
-check('the plan heading is present too', withApp.text.includes('PLAN:'), true);
+// THE PLAN IS RENDERED AS TEXT, NOT JSON — and this is a fix, not a preference. Putting the plan in as
+// `JSON.stringify(...)` while asking for a JSON object back made the model PARROT the first JSON block it
+// saw: measured by A/B on one real call, the answer came back as `{"type":"object","properties":{...}}` —
+// the schema — instead of any file. So the assertion is now that no JSON block reaches the prompt.
+check('the plan reaches the prompt as text', withApp.text.includes('PLAN FOR THIS BACKEND'), true);
+check('…with the requirements still in it', withApp.text.includes('/api/tasks') || withApp.text.includes('tasks'), true);
+check('…and NO raw JSON, which is what the model echoed back', /\{\s*"tables"/.test(withApp.text), false);
+check('…nor any brace at all in the plan section', renderPlanAsText({ database: { tables: [{ name: 'tasks' }] } }).includes('{'), false);
+check('a plan given as an object renders the same as one given as a string',
+  renderPlanAsText({ summary: 'x' }), renderPlanAsText('{"summary":"x"}'));
+check('an unparseable plan string still yields something, not a crash',
+  renderPlanAsText('not json at all').includes('not json'), true);
+check('an absent plan yields nothing', renderPlanAsText(null), '');
 // A file larger than the whole budget: the earlier file is what gets dropped, not the list.
 const overBudget = buildBackendChunkContext({
   plannedFiles: ['server/big.js', 'server/routes/tasks.js'],
@@ -121,6 +132,24 @@ check('…while the file list still survives, because it is unshifted',
 check('an empty input produces no crash and no invented content', buildBackendChunkContext({}).text.includes('ALREADY WRITTEN'), false);
 check('a written file with no content is shown as empty, not as undefined',
   buildBackendChunkContext({ plannedFiles: ['a.js'], writtenSoFar: [{ path: 'a.js' }], chunk: [] }).text.includes('--- a.js ---'), true);
+
+console.log('\n6b. the prompt does not contain the phrase the model parroted back');
+// Measured by A/B on real calls, one variable at a time. The coder instruction used to end
+// "Return fileOperations for ONLY this file set", and the model replied with a JSON SCHEMA
+// (`{"type":"object","properties":{...}}`) instead of any file:
+//
+//   plan as JSON + "Return fileOperations"  -> SCHEMA ECHO
+//   plan as JSON + "Reply with a single JSON object whose fileOperations array ..."  -> OK
+//   no plan      + "Return fileOperations"  -> SCHEMA ECHO
+//
+// Asking for a named key and then naming it again as the instruction invites a description of it rather
+// than a use of it. This asserts the phrase is gone from the prompt BUILDS, comments excluded.
+for (const file of ['server/src/functions/generateBackend.js', 'server/src/functions/generateTests.js']) {
+  check(`${file} no longer contains the trigger phrase`, /Return fileOperations/.test(code(read(file))), false);
+  check(`…and still asks for the object it wants`, /fileOperations/.test(code(read(file))), true);
+}
+check('the plan is not handed to the model as raw JSON',
+  /\{\s*"tables"/.test(buildBackendChunkContext({ plannedFiles: ['a.js'], chunk: [], planBlock: { database: { tables: [{ name: 't' }] } } }).text), false);
 
 console.log('\n7. the generator actually uses it — a builder nobody calls changes nothing');
 const gen = code(read('server/src/functions/generateBackend.js'));

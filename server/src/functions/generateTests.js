@@ -50,7 +50,7 @@ You do not narrate — you produce files.
 
 ${TESTS_RULES}
 
-Return fileOperations for ONLY the file(s) requested for this step. Each item: path, FULL content, action ("create" or "update"). Never use "delete" in this mode. Full content for each — never partial, never "continued".`;
+Reply with a single JSON object whose "fileOperations" array has one entry per requested file (path, FULL content, action "create" or "update"). Never "delete" in this mode, never partial content, never "continued". Do NOT reply with a schema or a description of the shape — the whole object, with the real content inside it.`;
 
 export default async function handler({ user, body }) {
   const { projectId, spec } = body || {};
@@ -110,9 +110,9 @@ ${filesContext}`;
     buildPrompt: (chunk, allPlanned) => {
       if (!chunk) {
         // No plannedFiles came back — fall back to the original one-shot ask.
-        return `${TESTS_WRITE_PROMPT}\n\n${projectContext}\n\nAnalyze the construct. Generate a complete test suite and CI pipeline now. Return fileOperations for all test files, CI config, and any dependency updates needed.`;
+        return `${TESTS_WRITE_PROMPT}\n\n${projectContext}\n\nAnalyze the construct. Generate a complete test suite and CI pipeline now. Reply with that single JSON object now, covering the test files, CI config, and any dependency updates.`;
       }
-      return `${TESTS_WRITE_PROMPT}\n\n${projectContext}\n\nFULL FILE LIST FOR THIS TEST SUITE (for context only — do not write these now): ${allPlanned.join(', ')}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s).`;
+      return `${TESTS_WRITE_PROMPT}\n\n${projectContext}\n\nFULL FILE LIST FOR THIS TEST SUITE (for context only — do not write these now): ${allPlanned.join(', ')}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Reply with that single JSON object now, containing only these files.`;
     },
   });
   let fileOps = generatedOps;
