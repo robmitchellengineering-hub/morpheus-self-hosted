@@ -172,6 +172,17 @@ jobs:
       - name: Install the server workspace the harnesses run against
         run: cd server && npm install --no-audit --no-fund --no-save
 
+      # The schema has to exist before EITHER harness runs: both go through invokeAI, which reads the
+      # role model settings from platform_settings. The review harness ran before this step existed and
+      # reported "The table public.platform_settings does not exist" on every settings lookup — noisy,
+      # and it meant the run was measuring the no-settings path rather than the real one.
+      - name: Apply the schema to the harness database
+        env:
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+        run: |
+          # The LOCAL binary, by path — no registry lookup can substitute a different major version.
+          cd server && ./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
+
       # A review is a second opinion; ten of them is not ten times the confidence. Measured 2026-09-30:
       # one backend generation made TWELVE reviewer calls and burned 473 credits with nothing persisted,
       # because nothing bounded the loop and every re-review covered the whole file set again.
@@ -195,11 +206,7 @@ jobs:
         env:
           HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
           DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
-        run: |
-          # The LOCAL binary, by path — no registry lookup can substitute a different major version.
-          cd server && ./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
-          cd ..
-          node scripts/backend-generation-harness.mjs
+        run: node scripts/backend-generation-harness.mjs
 
       # THE FAILURE THAT COST ~117 CREDITS, reproduced for nothing. With the provider cutting every
       # multi-file ask off at the token cap, the generator must retry each file on its own and still
