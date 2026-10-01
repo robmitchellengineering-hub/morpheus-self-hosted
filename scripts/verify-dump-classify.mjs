@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import {
   CLASSIFY_SCHEMA, DESTINATIONS, LIFE_STREAM_KEYS, MAX_ITEMS,
   FALLBACK_INCOMPLETE, FALLBACK_NOTHING_CLASSIFIED,
-  buildClassifyPrompt, normalizeClassifyResult,
+  buildClassifyPrompt, normalizeClassifyResult, patternClassify,
 } from '../server/src/lib/deckDumpClassify.js';
 
 // The last section reads two sources rather than only exercising the pure module: the claim it makes
@@ -297,6 +297,56 @@ check('the pile still has exactly one creator — a classification that threw',
   (deckContext.match(/DeckDumpItem\.create\(/g) || []).length, 1);
 check('…and it is the catch around the classify call',
   /catch \{[\s\S]{0,700}?DeckDumpItem\.create\(\{ text \}\)/.test(deckContext), true);
+
+console.log('\n10. an unambiguous errand is a task, decided in code, without asking the model');
+// 2026-10-01. Rob: "i need to get cheese", "Rob needs to get bread", "I need to get fruit" — "clearly
+// and unambiguously tasks for me" — were NOT filed as tasks. Eight measured classify calls each ended
+// at exactly the output cap (4000, then 8000) after 18-34s, one of them using 7905 tokens of reasoning
+// to answer a six-word note. The prompt already states the rule this encodes; deciding it in code is
+// instant, identical every time, and free.
+const FAST_PEOPLE = ['Dave', 'Alice'];
+const FAST_SELF = ['Rob'];
+const fast = (t) => patternClassify(t, { people: FAST_PEOPLE, selfNames: FAST_SELF });
+const asTask = (t, owner = null) => [{ text: t, destination: 'task', life_stream_key: null, owner_name: owner }];
+
+check("Rob's own words file as his task", fast('I need to get cheese'), asTask('I need to get cheese'));
+check('…lowercase too, because dictation', fast('i need to get fruit'), asTask('i need to get fruit'));
+check('…and his own name said by him is still his task, not a stranger',
+  fast('Rob needs to get bread'), asTask('Rob needs to get bread'));
+check('a named person gets their own task', fast('Dave needs to pick up the trailer'), asTask('Dave needs to pick up the trailer', 'Dave'));
+check("'remember to' and 'don't forget to' are the same rule",
+  fast("Don't forget to pay the rego"), asTask("Don't forget to pay the rego"));
+check('and so is an explicit todo line', fast('TODO: chase the Henderson quote'), asTask('TODO: chase the Henderson quote'));
+check('…with any surrounding case', fast('remember to book the dentist'), asTask('remember to book the dentist'));
+
+// The negative half is the important half: this must stay narrow. Anything with a second thought in it
+// belongs to the model, because a fast path that guesses at SPLITTING is the failure this feature keeps
+// having — a split is what put "get milk and ask Dave about the trailer" on Dave's list.
+check('two thoughts is not one task — the model splits it',
+  fast('I need to get cheese and Rob needs to get bread'), null);
+check('a comma is a second thought', fast('Book the kids into swimming, pay the rego'), null);
+check('a second sentence is a second thought', fast('I need to get milk. Also call Dave'), null);
+check('a status note is not an action', fast('spending feels out of control'), null);
+check('a fact is not an action', fast('the Traynor amp is worth about $2k'), null);
+check('a reflection beginning "I built" is not an action', fast('I built morpheus and command deck to help me'), null);
+check('an unknown name is left to the model, never guessed at', fast('Brian needs to call me'), null);
+check('an empty dump decides nothing', fast('   '), null);
+
+// Documented, deliberate consequence: the prompt's own rule is "If it reads as 'I need to X' … it is a
+// task even if X is a two-second errand", and "think about X" is an X. Pinned so it cannot change
+// silently and so the next session can see it was chosen rather than missed.
+check('"I need to think about X" is a task, by the rule the prompt itself states — deliberate',
+  fast('I need to think about whether the shop is working')?.[0]?.destination, 'task');
+
+const handlerSrc = read('../server/src/functions/classifyDeckDumpItem.js');
+check('the handler decides in code BEFORE it builds a prompt',
+  handlerSrc.indexOf('patternClassify(text') < handlerSrc.indexOf('buildClassifyPrompt({'), true);
+check('…and returns without calling the model at all',
+  /if \(decided\) \{[\s\S]{0,300}?return \{ items: decided/.test(handlerSrc), true);
+check('…against the speaker\'s own name as well as other people\'s',
+  /selfNames/.test(handlerSrc) && /selfNames: selfNames|selfNames \}/.test(handlerSrc), true);
+check('…while the PROMPT still gets only other people',
+  /peopleNames = people\.filter\(\(p\) => !p\.is_self\)/.test(handlerSrc), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

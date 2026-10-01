@@ -14,7 +14,7 @@
 import { invokeAI } from '../ai.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { prisma } from '../db.js';
-import { CLASSIFY_SCHEMA, buildClassifyPrompt, normalizeClassifyResult } from '../lib/deckDumpClassify.js';
+import { CLASSIFY_SCHEMA, buildClassifyPrompt, normalizeClassifyResult, patternClassify } from '../lib/deckDumpClassify.js';
 
 export default async function handler({ user, body }) {
   const text = (body?.text || '').trim();
@@ -22,18 +22,31 @@ export default async function handler({ user, body }) {
 
   const [businessContext, people] = await Promise.all([
     getDeckBusinessContext(user.id),
-    // Only OTHER people — the speaker's own to-dos need no owner hint, and
-    // offering their own name invites the model to assign everything to them.
-    // A failure to list people must not break capture, so this fails open to
-    // "no assignable owners" rather than throwing — but it says so, because a
-    // silently empty list would quietly stop owner assignment forever.
-    prisma.deckPerson.findMany({ where: { created_by_id: user.id, is_self: false }, select: { name: true } })
+    // Names are fetched WITHOUT filtering to other people, because the code fast path needs to
+    // recognise the speaker's own name too ("Rob needs to get bread" said by Rob). The PROMPT still
+    // gets only other people — offering the speaker their own name invites the model to assign
+    // everything to them. A failure to list people must not break capture, so this fails open to
+    // "no assignable owners" rather than throwing — but it says so, because a silently empty list
+    // would quietly stop owner assignment forever.
+    prisma.deckPerson.findMany({ where: { created_by_id: user.id }, select: { name: true, is_self: true } })
       .catch((err) => {
         console.warn('[classifyDeckDumpItem] deck_people lookup failed — items will be filed without owner assignment:', err?.message || err);
         return [];
       }),
   ]);
-  const peopleNames = people.map((p) => p.name);
+  const peopleNames = people.filter((p) => !p.is_self).map((p) => p.name);
+  const selfNames = people.filter((p) => p.is_self).map((p) => p.name);
+
+  // THE EXPLICIT CASES NEVER REACH THE MODEL — see patternClassify. "I need to get cheese" is a task
+  // by the prompt's own rule, and eight measured calls show the model spends its entire output budget
+  // (4000, then 8000) deliberating about exactly that kind of sentence, for 18-34 seconds, before
+  // either falling back or filing it as knowledge. Deciding it here is instant, identical every time
+  // and free; the model keeps the dumps that need judgement.
+  const decided = patternClassify(text, { people: peopleNames, selfNames });
+  if (decided) {
+    console.log(`[classifyDeckDumpItem] decided in code — explicit action phrasing, single thought — no model call (${decided.length} item(s))`);
+    return { items: decided, destination: decided[0].destination, life_stream_key: decided[0].life_stream_key, decidedBy: 'pattern' };
+  }
 
   const prompt = buildClassifyPrompt({ text, businessContext, peopleNames });
 
