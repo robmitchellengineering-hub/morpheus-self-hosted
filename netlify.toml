@@ -4,6 +4,30 @@
 # in the Netlify UI and are deliberately NOT repeated — a value written in two places drifts, and Netlify
 # merges this file over the UI for the keys it sets and leaves the rest alone.
 
+
+# 2026-10-01 — AND THE SITE WENT DOWN FOR EXCEEDING A PLAN ALLOWANCE. WHICH IS ABOUT HOW OFTEN THIS SITE
+# IS BUILT, NOT ABOUT ANYTHING IN THIS FILE.
+#
+# morpheus.nz began answering `503 {"error":"usage_exceeded","message":"Usage exceeded"}` on every path,
+# including robots.txt, straight from Netlify's edge (`server: Netlify`) — while api.morpheus.nz on
+# Northflank stayed at 200 the whole time. Rob, from the account: "We used 500 credits in just a few
+# days." Nothing was misconfigured and no deploy failed; the account ran out.
+#
+# The volume is the cause, and it counts easily. GitHub's push events for the three days before are 13,
+# 23 and 18 pushes, and today alone was 15 merges to main plus ~19 PR branches. EVERY PUSH BUILDS: a
+# production build on main, and a DEPLOY PREVIEW on a branch — so a day of landing one small fix per PR
+# is 20-35 full builds of an app whose build runs `npm ci`, `vite build` and the 813-file portable
+# bundle. Two habits, both mine, and neither needs a settings change to fix:
+#   1. batch related changes into ONE pull request instead of one PR per fix;
+#   2. push ONCE per PR, after the gates pass locally, instead of pushing and then pushing the fix.
+# If the previews are not worth a build each, turn deploy previews off in the site's Deploy contexts —
+# that affects pull requests only and cannot make the live site stale.
+#
+# WHAT WAS DELIBERATELY NOT DONE: a `[build] ignore` rule that skips builds for paths the site does not
+# need. It is the obvious saving and it is a trap — an incomplete path list leaves the deployed site
+# SILENTLY stale, which is a worse failure than the bill, and it cannot be tested from a repository. Do
+# not add one without proving that a real frontend change still deploys.
+
 [build.environment]
   # WHY THIS EXISTS (2026-09-30) — AND WHAT IT DID *NOT* FIX, which is worth more than the setting.
   #
