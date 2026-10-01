@@ -3,6 +3,7 @@
 // Node: @yao-pkg/pkg. Python: PyInstaller with --windowed for .app bundle.
 // Wraps raw binaries in a proper .app bundle with Info.plist.
 
+import { USER_MANUAL_FILE } from '../appUserManual.js';
 import {
   isNodeProject, isPythonProject, isSwiftProject, parsePackageJson, detectPythonEntry,
   detectDataDirs, detectHiddenImports, detectIcon, detectNodeVersion,
@@ -87,6 +88,10 @@ function gatekeeperReadme(appName) {
 function dmgBuildStep(stagingDir, volname, dmgName) {
   const dmg = dmgName || 'app.dmg';
   return [
+    // The user manual goes INSIDE the disk image as well as beside it on the release, because the
+    // person who needs it most is the one who has already dragged the app out and is staring at a
+    // window wondering why nothing matches what they expected. Written by the workflow's first step.
+    `if [ -f ${USER_MANUAL_FILE} ]; then cp ${USER_MANUAL_FILE} ${stagingDir}/; fi`,
     `if compgen -G "${stagingDir}/*.app" > /dev/null; then ln -s /Applications "${stagingDir}/Applications"; fi`,
     `hdiutil create -volname "${volname}" -srcfolder "${stagingDir}" -ov -format UDZO ${dmg}`,
     `test -f ${dmg} || { echo "Failed to create .dmg"; exit 1; }`

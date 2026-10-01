@@ -193,6 +193,13 @@ export const MUTATIONS = [
     replace: "    { runner: 'macos-latest', arch: 'intel' },",
   },
   {
+    guard: 'verify-user-manual.mjs',
+    file: 'server/src/lib/appUserManual.js',
+    why: 'Stops stripping the heredoc terminator out of the manual, so a project README containing that line ends the heredoc early and every line after it runs as shell in a workflow holding contents:write. This is the guard\'s only structural claim, and it is checked as an attack rather than as formatting.',
+    find: "    .filter((line) => line.trim() !== delimiter)",
+    replace: "    .filter(() => true)",
+  },
+  {
     guard: 'verify-guard-mutations.mjs',
     file: 'scripts/guard-mutations.mjs',
     why: 'Raises this registry\'s own ratchet by one — precisely the edit that lets a new unproven guard through. The integrity guard exists to refuse that, so it must go red.',
