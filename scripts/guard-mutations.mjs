@@ -186,6 +186,13 @@ export const MUTATIONS = [
     replace: "  return { status: 'ok', detail: `unreadable result line: ${last.slice(0, 80)}` };",
   },
   {
+    guard: 'verify-mac-app-arch.mjs',
+    file: 'server/src/lib/compile-targets/mac-app.js',
+    why: 'Puts the Python build back on macos-latest, which is the whole defect: PyInstaller compiles for the machine it runs on, so an Apple-silicon runner makes every macOS download arm64-only and an Intel Mac refuses it with "not supported on this Mac".',
+    find: "    { runner: 'macos-15-intel', arch: 'intel' },",
+    replace: "    { runner: 'macos-latest', arch: 'intel' },",
+  },
+  {
     guard: 'verify-guard-mutations.mjs',
     file: 'scripts/guard-mutations.mjs',
     why: 'Raises this registry\'s own ratchet by one — precisely the edit that lets a new unproven guard through. The integrity guard exists to refuse that, so it must go red.',

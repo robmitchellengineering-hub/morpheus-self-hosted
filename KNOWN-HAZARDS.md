@@ -434,3 +434,49 @@ coder branch, leaving the shared instructions bare, still passed. Anchor a class
 literal match to its own delimiters; a lazy quantifier over the whole file is a wildcard,
 and a wildcard is how a guard ends up measuring a region nobody chose.
 
+## H20 — a build can only run on the machine that made it, and nothing says which machine that was
+
+**Incident (2026-10-01, Rob: "This app is not suported on this mac").** He compiled the WikiData
+Batch Uploader as a **macOS App**, downloaded the disk image Morpheus had just built him, mounted
+it, and macOS refused to open the app. Two separate faults, and the second one is the dangerous
+one because it makes a *correct* build look broken:
+
+- **The Python path had exactly one runner.** `mac-app` ran on `macos-latest` — Apple silicon —
+  and PyInstaller compiles for the machine it runs on. So every Python/Qt app it produced was
+  arm64-only, every Intel Mac refused it, and **there was no Intel build to ask for and nothing in
+  the product that said so**. The Swift path genuinely cross-builds (`swift build --arch arm64
+  --arch x86_64`) and the Node path ships both binaries behind a `uname -m` dispatcher, so this was
+  a property of one branch, invisible from the target's own declaration (`runner: 'macos-latest'`).
+  The previous fix (`#463`) *reported* the architecture after the fact — a warning in a CI log
+  nobody reads, and a line inside the README the user cannot open, being inside the app that will
+  not open. Reporting is not shipping an option.
+- **GitHub's artifact zip destroys a macOS `.app`.** Before the disk image existed, the build's
+  four platform jobs uploaded the raw `.app` as an Action artifact. Downloading it and running it
+  gives an instant `SIGSEGV` **before Python starts**: `QtCore.abi3.so`'s static initialiser calls
+  `CFBundleCopyBundleURL(CFBundleGetMainBundle())`, and a PyInstaller macOS bundle is held together
+  by ~400 **symlinks** (`Contents/Frameworks/QtCore` → `PyQt6/Qt6/lib/QtCore.framework/...`). The
+  artifact zip does not preserve them, so the framework is a hard copy, `CFBundleGetMainBundle()`
+  returns NULL, and the app dies in `_GLOBAL__sub_I_qdarwinpermissionplugin_location.mm`. Nothing
+  about the build changed; the *transport* broke it. Every gate was green, the artifact downloaded
+  fine, and the crash report names Qt rather than the zip. (PyInstaller issue #9367; the same
+  answer for zip/tar pipelines: `zip -y`, or ship a `.dmg`/`.tar`.)
+
+**Rule: a build target must name the machines its output runs on, and the product must offer one
+per machine the user might have.** A `runner` that is a single string silently means "whatever
+architecture GitHub gives us today" — so a target that cannot cross-build declares **one runner per
+architecture** and the release carries one file per architecture, named for it: `app-macos-intel.dmg`
+next to `app-macos-apple-silicon.dmg`. The filename is the only thing a person browsing a release
+can go by, so it carries the fact; the release glob, the verify step and the disk image name all
+have to agree with it, or the build goes green having published nothing. `scripts/verify-mac-app-arch.mjs`
+asserts all of it, and `scripts/mutate-guards.mjs` proves it can fail.
+
+**And: never conclude "the build is broken" from an artifact's behaviour without checking what the
+transport did to it.** A zipped `.app` is not the `.app` that was built — the cheap test is
+`find TheApp.app -type l | wc -l`, which is zero for a bundle whose symlinks were flattened. Ship
+macOS bundles as a `.dmg` (which `hdiutil` writes with symlinks intact) and say so where the
+download is offered.
+
+**Corollary, from the same afternoon:** the app had a self-test that could not fail. `core/diagnostics.py`
+computed the verdict properly (`selftest_verdict`) and then the `print`/`sys.exit(code)` that used it
+sat **after a `return`** — unreachable. Its unit test passed, because it tested the pure function and
+never the wiring. A self-test whose failure cannot be observed is H17 with a nicer name.
