@@ -813,8 +813,14 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   <div className="flex items-center gap-2 text-ink text-sm">
                     <CheckCircle size={16} /> Build complete!
                   </div>
+                  {/* THE OPERATOR'S APP, WHERE THE BUILD FINISHED. This used to say "Compiled package saved
+                      to your file tree under _compiled/. Switch to the FILES tab to download." — which is a
+                      hunt through a file tree for a folder whose name starts with an underscore, and Rob,
+                      who BUILT the feature, could not find it. The person this is for never would. The
+                      download is right below; this sentence points at it instead of away from it. */}
                   <p className="text-xs text-ink-strong">
-                    // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
+                    // Your app is ready — download it below, or open the FILES tab and look for _compiled/ if you
+                    {' '}need it again later.
                   </p>
                 </>
               ))}
@@ -921,8 +927,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   link. */}
               {status?.savedArtifacts?.length > 0
                 ? status.savedArtifacts.map((a, i) => (
-                    <a key={i} href={a.url} download={a.name} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
-                      <Download size={14} /> {a.name}{a.size ? ` (${(a.size / 1024 / 1024).toFixed(1)} MB)` : ''}
+                    <a key={i} href={a.url} download={a.name} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 py-3 px-4 border-2 border-primary bg-primary/10 hover:bg-primary hover:text-black transition-colors">
+                      <span className="flex items-center gap-2 text-sm font-bold">
+                        <Download size={16} /> DOWNLOAD {a.name}
+                      </span>
+                      {a.size ? <span className="text-xs font-mono opacity-80">{(a.size / 1024 / 1024).toFixed(1)} MB</span> : null}
                     </a>
                   ))
                 : status?.assets?.map((a, i) => (
