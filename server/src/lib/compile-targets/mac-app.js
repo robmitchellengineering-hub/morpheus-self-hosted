@@ -416,6 +416,22 @@ export const macApp = {
           `pyinstaller ${args.join(' ')}`,
           'ls dist/',
           'test -d "dist/MorpheusApp.app" || test -f "dist/MorpheusApp" || { echo "PyInstaller produced no output"; exit 1; }',
+          // SAY WHICH MACS THIS RUNS ON, because the user cannot find out any other way.
+          //
+          // The Swift and Node paths both cross-build (swift build --arch arm64 --arch x86_64; pkg for
+          // macos-x64 AND macos-arm64). THIS path has no cross-build at all: PyInstaller builds for the
+          // machine it runs on, and every runner here is macos-latest (Apple Silicon), so a Python/Qt app
+          // comes out arm64-only and an Intel Mac answers "not supported on this Mac" — with no way for the
+          // operator to know why, and no Intel option to ask for. Measured 2026-10-01 when Rob compiled a
+          // Qt app and could not open it.
+          //
+          // A hard failure would be wrong (an arm64 app is correct for an Apple Silicon user), so this
+          // reports rather than refuses — and it puts the answer INSIDE the artifact, where the person
+          // hitting the message can read it.
+          'APP_BIN="dist/MorpheusApp.app/Contents/MacOS/MorpheusApp"; [ -f "$APP_BIN" ] || APP_BIN="dist/MorpheusApp"',
+          'ARCHS=$(lipo -archs "$APP_BIN" 2>/dev/null || echo unknown)',
+          'echo "Mach-O architectures produced: $ARCHS (runner: $(uname -m))"',
+          'case "$ARCHS" in *x86_64*) ;; *) echo "::warning::This macOS build is $ARCHS only, so it will NOT open on an Intel Mac (macOS says: not supported on this Mac). The Swift and Node targets cross-build for both; this Python path does not yet.";; esac',
           // See the comment above gatekeeperReadme() (mac-app.js) — ad-hoc
           // signing isn't real notarization, but it turns macOS's dead-end
           // "damaged, move to Bin" message into a clickable "Open Anyway"
@@ -426,6 +442,10 @@ export const macApp = {
           'cat > dist/README.txt <<GATEKEEPER_README',
           gatekeeperReadme('MorpheusApp'),
           'GATEKEEPER_README',
+          // Same reason as the warning above, and AFTER the heredoc terminator — inside it these lines would
+          // be written into the README as literal text instead of running.
+          'printf "\\nThis build was compiled for: %s\\n" "$ARCHS" >> dist/README.txt',
+          'case "$ARCHS" in *x86_64*) ;; *) printf "An Intel Mac will refuse it: not supported on this Mac.\\n" >> dist/README.txt;; esac',
           'mkdir -p dmg_staging',
           'cp -R dist/. dmg_staging/',
           dmgBuildStep('dmg_staging', 'MorpheusApp')
