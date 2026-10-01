@@ -26,6 +26,8 @@ import {
 } from '../server/src/lib/portableSetup.js';
 import { selectPortableFiles } from '../server/src/lib/portableBundle.js';
 import { mintGatewayToken, verifyGatewayToken } from '../server/src/lib/cloudMetering.js';
+import { PORTABLE_SELFTEST } from '../server/src/lib/portableSetup.js';
+import { HEALTH_PATH } from '../server/src/lib/portableLaunch.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -170,6 +172,31 @@ check('scripts/portable-setup.mjs ships', inBundle.includes('scripts/portable-se
 check('server/src/lib/portableSetup.js ships', inBundle.includes('server/src/lib/portableSetup.js'), true);
 check('server/scripts/dev-db.mjs ships — the installer is useless without it',
   inBundle.includes('server/scripts/dev-db.mjs'), true);
+
+console.log('\n8b. the install is CHECKED before it is called done');
+// Rob's ask: a way to test the thing on the machine it is installed on, as it is installed and after. The
+// installer used to finish by telling the operator to look at a browser page — a person eyeballing a window
+// was the only verification there was, and that is the claim this asserts against.
+check('verifying is one of the install steps', INSTALL_STEPS.some((s) => s.id === 'verify'), true);
+check('…and it is the LAST one, so nothing is claimed before it', INSTALL_STEPS[INSTALL_STEPS.length - 1].id, 'verify');
+const setupSrc = read('scripts/portable-setup.mjs');
+check('the installer writes the runner into the install', /renderSelfTestRunner\(/.test(setupSrc), true);
+check('…runs it', /spawnSync\(process\.execPath, \[selfTestPath\]/.test(setupSrc), true);
+// THE POINT: a failed check must stop it claiming DONE. Both halves asserted, because either alone is a
+// check that cannot fail or a failure that changes nothing.
+check('…and refuses to say DONE when it does not verify', /if \(!isVerified\(verdict\)\)/.test(setupSrc), true);
+check('…exiting non-zero rather than warning', /NOT VERIFIED[\s\S]{0,600}process\.exit\(1\)/.test(setupSrc), true);
+// The closing sentence must stop claiming the browser is the check.
+check('…and the browser is no longer described as the whole check', /that is the whole check/.test(setupSrc), false);
+check('…the operator is told the check and how to repeat it', /VERIFIED ON THIS MACHINE/.test(setupSrc) && /re-run it any time/.test(setupSrc), true);
+
+// A CROSS-FILE CONTRACT, asserted rather than trusted: the installer's check must be the same server and the
+// same endpoint the launcher uses, or the install would verify something nobody ever runs.
+const launch = read('scripts/portable-start.mjs');
+check('the check starts the server the way the launcher does',
+  launch.includes(`process.execPath, ['src/index.js']`) && launch.includes('cwd: SERVER') && PORTABLE_SELFTEST.command === 'node src/index.js' && PORTABLE_SELFTEST.cwd === 'server', true);
+check('…and asks the same endpoint the launcher waits on', PORTABLE_SELFTEST.path, HEALTH_PATH);
+check('…and has a timeout long enough for a first start', PORTABLE_SELFTEST.timeoutMs >= 60_000, true);
 
 console.log('\n9. the authority reports it');
 check('reality.mjs knows about the local setup', /one-command local setup|portable-setup/i.test(read('scripts/reality.mjs')), true);

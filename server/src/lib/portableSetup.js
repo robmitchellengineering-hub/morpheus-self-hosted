@@ -90,7 +90,26 @@ export const INSTALL_STEPS = [
   { id: 'db', title: 'Start the local Postgres cluster (server/scripts/dev-db.mjs start)' },
   { id: 'schema', title: 'Apply the Prisma schema to it (server/scripts/dev-db.mjs schema)' },
   { id: 'build', title: 'Build the frontend, which the server then serves from the same origin' },
+  { id: 'verify', title: 'Start it once, ask /api/health, and only then call the install done' },
 ];
+
+/**
+ * How THIS install proves it works, on the machine it was installed on.
+ *
+ * The values are a contract with two other files, and the guard asserts all three agree rather than trusting
+ * a comment: the command and directory are how `scripts/portable-start.mjs` launches the server
+ * (`node src/index.js` with `cwd: server`, because that is where `.env` and every relative path live), and
+ * the path is the same `/api/health` the launcher waits on before it opens a browser.
+ *
+ * The installer runs exactly this before it calls the install done, and writes it into the install root as
+ * `selftest.mjs` so the operator can ask the same question again a year later.
+ */
+export const PORTABLE_SELFTEST = Object.freeze({
+  command: 'node src/index.js',
+  cwd: 'server',
+  path: '/api/health',
+  timeoutMs: 120_000,
+});
 
 /**
  * What a local install still does NOT do. Printed by `--check` and by the setup's closing summary, and
