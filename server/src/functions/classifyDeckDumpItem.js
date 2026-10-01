@@ -59,15 +59,50 @@ export default async function handler({ user, body }) {
   // MEASURED 2026-09-28, AND 4000 WAS NOT ENOUGH: the one `classify` call since the cap was
   // raised (2026-09-27 20:48) ended at `out=4000` from a 962-token prompt after 18.98s — the whole
   // budget, on a 27-character dump. Rob's report ("brain dump is not filing") is that call: it
-  // truncated, threw, and the dump landed in the unsorted pile. Two things follow, and the second
-  // is the fix. (1) Raising the cap again is the move this was already tried with, and a bigger
-  // budget buys the model more *thinking*, not more classification. (2) A truncated LIST is not a
-  // truncated answer: the items already written are complete, so `salvagePartial` recovers them
-  // and `normalizeClassifyResult`'s coverage guard files whatever the answer did not reach. The
-  // call can no longer be destroyed by the reasoning tax — only shortened, and honestly.
-  const { result, truncated } = await invokeAI({
-    userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000, salvagePartial: true,
-  });
+  // truncated, threw, and the dump landed in the unsorted pile. (1) Raising the cap again is the
+  // move this was already tried with, and a bigger budget buys the model more *thinking*, not more
+  // classification. (2) A truncated LIST is not a truncated answer: the items already written are
+  // complete, so `salvagePartial` recovers them and `normalizeClassifyResult`'s coverage guard
+  // files whatever the answer did not reach.
+  //
+  // MEASURED 2026-10-01, AND (2) IS NOT ENOUGH ON ITS OWN. Rob again: "the brain dump keeps filing
+  // files to unfiled ... that's a just in case so you can file it manually". The pile is the ONLY
+  // fallback the frontend has, and its only creator is the catch around this call (checked:
+  // CommandDeckContext.jsx has the sole DeckDumpItem.create in the codebase). Reading
+  // `usage_events` for the last four brain-dump calls: **every one of them ended at exactly
+  // out=4000 from a ~961-token prompt after ~18-19s**, and three logged OUTPUT_TRUNCATED *after*
+  // #390 landed. So the model spends the entire budget thinking and sometimes never emits a single
+  // complete item, which leaves `salvageJson` nothing to recover and rethrows — four for four.
+  //
+  // The fix is therefore not another cap. It is to make the outcome independent of the model: a
+  // failure here may NEVER hand the dump back to the operator as a manual chore. One bounded retry
+  // — the four measured truncations were four different dumps, so "always truncates" is not
+  // established and a second draw is the cheapest way to find out — and then the deterministic
+  // fallback that already exists (`normalizeClassifyResult` with no result files the whole dump to
+  // Knowledge and marks it `nothing-classified`, which the card reports as "I could not classify it,
+  // so your words are in there whole"). The pile goes back to meaning what Rob says it means: the
+  // last resort for when Morpheus cannot be reached at all.
+  let result = null;
+  let truncated = false;
+  try {
+    ({ result, truncated } = await invokeAI({
+      userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000, salvagePartial: true,
+    }));
+  } catch (firstErr) {
+    console.warn('[classifyDeckDumpItem] classification failed, retrying once before falling back:', firstErr?.message || firstErr);
+    try {
+      ({ result, truncated } = await invokeAI({
+        userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000, salvagePartial: true,
+      }));
+    } catch (retryErr) {
+      // NOT A THROW. The words are the valuable part and they are still in hand, so the dump is
+      // filed as one unclassified item and the operator is told which it was — never left to file
+      // it by hand, which is what the unsorted pile is for and what kept happening instead.
+      console.warn('[classifyDeckDumpItem] classification failed twice — filing the whole dump as one unclassified item instead of the unsorted pile:', retryErr?.message || retryErr);
+      result = null;
+      truncated = true;
+    }
+  }
 
   const items = normalizeClassifyResult(result, text, peopleNames);
 
