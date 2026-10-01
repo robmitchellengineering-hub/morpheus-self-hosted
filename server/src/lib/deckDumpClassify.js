@@ -163,6 +163,67 @@ function resolveOwner(rawName, peopleNames) {
   return hit ? collapse(hit) : null;
 }
 
+// THE UNAMBIGUOUS CASES NEVER REACH THE MODEL.
+//
+// WHY THIS EXISTS (2026-10-01). Rob: "i need to get cheese", "Rob needs to get bread", "I need to get
+// fruit" — "clearly and unambiguously tasks for me" — were not filed as tasks. Measured on the way
+// there: EIGHT consecutive brain-dump classify calls each ended at exactly the output cap (4000, then
+// 8000 after it was raised) after 18-34 seconds, and the one that squeaked in under the new cap used
+// 7905 tokens of reasoning to answer a six-word note. The model spends its whole budget deliberating
+// about whether a shopping errand is actionable.
+//
+// Raising the cap is now measured as hopeless in both directions, so the fix is to stop asking. The
+// prompt already states the rule this encodes — "If it reads as 'I need to X' / 'remember to X' / an
+// instruction to do something, it is a task even if X is a two-second errand" — so the explicit
+// phrasing can be decided here, in code, instantly and identically every time, and the model is left
+// for the dumps that genuinely need judgement.
+//
+// Deliberately NARROW. It fires only when the WHOLE dump matches an explicit action pattern AND
+// contains no clause joiner, so it is one thought by construction — "I need to get cheese and Rob
+// needs to get bread" is two thoughts and goes to the model, because a fast path that guesses at
+// splitting would be the exact failure this feature keeps having. Anything it does not recognise is
+// simply not its business.
+const ACTION_PATTERNS = [
+  { re: /^(?:i|we)\s+(?:really\s+|still\s+|also\s+|just\s+)?(?:need|have|must|gotta|got)\s*(?:to|got to)\s+\S/i, owner: 'self' },
+  { re: /^(?:remember|don'?t forget|do not forget|make sure)\s+to\s+\S/i, owner: 'self' },
+  { re: /^(?:todo|to-do|to do|action item|action)\s*[:-]\s*\S/i, owner: 'self' },
+];
+
+// A second thought hiding behind a connective — the model's job, not this one's.
+const CLAUSE_JOINER = /(?:,\s|;|\s+and\s+|\s+also\s+|\s+plus\s+|\s+then\s+|\n)/i;
+
+// The system prompt's own rule, applied to a sentence: one of these is a sentence break.
+const MULTI_SENTENCE = /[.!?]\s+\S/;
+
+/**
+ * The unambiguous action case, decided in code. Returns an item list or null.
+ *
+ * `null` means "not this function's business" — never "not a task". Callers fall through to the model.
+ */
+export function patternClassify(originalText, { people = [], selfNames = [] } = {}) {
+  const text = collapse(originalText);
+  if (!text || text.length > 240) return null;
+  if (CLAUSE_JOINER.test(text) || MULTI_SENTENCE.test(text)) return null;
+
+  // "<someone> needs to ..." — resolved against the real people list AND the speaker's own name, so
+  // "Rob needs to get bread" said by Rob is Rob's own task (owner_name null means "the speaker") and
+  // not an unknown person nobody can resolve. An unrecognised name falls through to the model, which
+  // has the whole dump to judge; this function never guesses at a person.
+  const named = /^(\S+(?:\s+\S+)?)\s+(?:needs?|has|must|should|will|is going)\s+to\s+\S/i.exec(text);
+  if (named) {
+    const candidate = collapse(named[1]);
+    const isSelf = selfNames.some((n) => collapse(n).toLowerCase() === candidate.toLowerCase());
+    if (isSelf) return [{ text, destination: 'task', life_stream_key: null, owner_name: null }];
+    const who = resolveOwner(candidate, people);
+    if (who) return [{ text, destination: 'task', life_stream_key: null, owner_name: who }];
+  }
+
+  for (const { re } of ACTION_PATTERNS) {
+    if (re.test(text)) return [{ text, destination: 'task', life_stream_key: null, owner_name: null }];
+  }
+  return null;
+}
+
 export function normalizeClassifyResult(result, originalText, peopleNames = []) {
   const text = collapse(originalText);
   const raw = extractRawItems(result, text);
