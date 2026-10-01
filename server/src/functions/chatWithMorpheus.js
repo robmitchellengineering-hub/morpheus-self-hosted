@@ -12,7 +12,7 @@ import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { runReviewerFailOpen, reviewFailureNote } from '../lib/reviewFailOpen.js';
 import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
 import { isContentOp, appliedPaths, appliedCount, unresolvedPaths } from '../lib/appliedOps.js';
-import { planSelfTestFile } from '../lib/appSelfTest.js';
+import { planSelfTestFile, selfTestEvidence, selfTestEvidenceLine } from '../lib/appSelfTest.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
 import { buildReviewerContext } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -2143,6 +2143,11 @@ OPERATOR SAYS: ${message}`;
           if (written) {
             fullReply += `\n\n// TO PROVE IT RUNS WHERE YOU RUN IT: \`node ${written.path}\` — it starts the app headlessly, asks it something, and tells you plainly whether it answered. It needs nothing but the app and node, so it works on that machine and any later one.`;
           }
+          // If this app has ALREADY been tested on a machine, say so — the evidence is stored in the app's own
+          // files, so a later build can report what happened rather than only what should. Nothing is said
+          // when there is no record: a build padded with a line about nothing is a build nobody reads.
+          const evidenceLine = selfTestEvidenceLine(selfTestEvidence(withRunner));
+          if (evidenceLine) fullReply += `\n\n${evidenceLine}`;
         } catch (err) {
           console.error('[chatWithMorpheus] self-test runner write failed:', err.message);
         }
