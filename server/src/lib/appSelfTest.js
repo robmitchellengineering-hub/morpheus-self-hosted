@@ -163,7 +163,7 @@ export function selfTestProblems(files, { kind = 'fullstack' } = {}) {
  * It prints exactly one `MORPHEUS-SELFTEST:` line and exits 0, 1 or 2 (see SELFTEST_EXIT), so a caller can
  * tell "the app is broken" from "we could not ask it".
  */
-export function renderSelfTestRunner({ port = 3111, path: probePath = '/', startCommand = 'npm start', timeoutMs = 60_000 } = {}) {
+export function renderSelfTestRunner({ port = 3111, path: probePath = '/', startCommand = 'npm start', timeoutMs = 60_000, cwd = null } = {}) {
   return `#!/usr/bin/env node
 // Written by Morpheus into this app. Do not edit by hand — regenerate it instead.
 //
@@ -244,7 +244,7 @@ const ask = () => new Promise((resolve) => {
 });
 
 try {
-  child = spawn('${startCommand}', { shell: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: String(PORT), NODE_ENV: process.env.NODE_ENV || 'production' } });
+  child = spawn('${startCommand}', { cwd: ${cwd ? `'${cwd}'` : 'undefined'}, shell: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: String(PORT), NODE_ENV: process.env.NODE_ENV || 'production' } });
 } catch (e) {
   say('could-not-run: the start command could not be launched — ' + e.message, ${SELFTEST_EXIT.couldNotRun});
 }
