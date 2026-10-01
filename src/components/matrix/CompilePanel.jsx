@@ -307,7 +307,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       // Success — reset the error counter
       errorCountRef.current = 0;
       setStatus(data);
-      if (data.status === 'completed') {
+      // A completed run whose release is still uploading its assets is not finished: keep polling
+      // instead of calling saveCompiledArtifacts against a release that has nothing in it yet, which
+      // used to surface as "Build failed" on a build that had succeeded. See getCompileStatus.js.
+      const stillPublishing = data.status === 'completed' && data.artifactsPending;
+      if (data.status === 'completed' && !stillPublishing) {
         stopPolling();
         if (data.conclusion === 'success') {
           setPhase('saving');
@@ -914,7 +918,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   )}
                 </div>
               )}
-              {status?.assets?.length === 0 && (
+              {status?.assets?.length === 0 && !status?.artifactsPending && (
                 <p className="text-xs text-yellow-500/80">
                   // Build succeeded but published no downloadable artifact. Check the release on GitHub.
                 </p>

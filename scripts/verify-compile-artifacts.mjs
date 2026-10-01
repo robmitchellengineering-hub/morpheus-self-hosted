@@ -266,6 +266,31 @@ const withBuild = webApp.validate([
 check('…and neither does a project WITH a build script (the gate is the fallback path)',
   withBuild.warnings.some((w) => /two copies|NO homepage/.test(w)), false);
 
+console.log('4. a build that is still publishing its download is not a failed build');
+// 2026-10-01: Rob, two compiles two minutes apart — "just had a build failded message come up but it
+// still gave me both links to the mac builds". Both runs were green. getCompileStatus asked for
+// `releases/latest`, which with two compiles in flight can answer with a release whose assets are
+// still uploading; it then reported a finished build with no artifact, the panel called
+// saveCompiledArtifacts, and the user was told "Build failed". The workflow tags its release with its
+// own run id, so the lookup is unambiguous and the empty window is a state, not a verdict.
+const statusFn = read('../server/src/functions/getCompileStatus.js');
+const panelSrc = read('../src/components/matrix/CompilePanel.jsx');
+check('the release is looked up by the RUN\'s own tag, not "the latest"',
+  /releases\/tags\/\$\{releaseTag\}/.test(statusFn), true);
+check('…and the tag is built from the run id the workflow names its release with',
+  /const releaseTag = `v\$\{latestRun\.id\}`;/.test(statusFn), true);
+check('an unpopulated release is reported as publishing, not as finished',
+  /result\.artifactsPending = true;/.test(statusFn), true);
+check('…with a message that says so', /publishing the download/.test(statusFn), true);
+check('…and a release that never appears is still distinguished from a failed build',
+  /Build succeeded but no downloadable artifact was published\./.test(statusFn), true);
+check('the panel keeps polling while the download is still publishing',
+  /const stillPublishing = data\.status === 'completed' && data\.artifactsPending;/.test(panelSrc), true);
+check('…and does not stop the poll loop on that state',
+  /if \(data\.status === 'completed' && !stillPublishing\) \{/.test(panelSrc), true);
+check('…and does not show "published no downloadable artifact" while it is publishing',
+  /status\?\.assets\?\.length === 0 && !status\?\.artifactsPending/.test(panelSrc), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
