@@ -15,7 +15,7 @@ preserve existing conventions (the doc-comment style at the top of most
 `server/src/` files in particular — match it).
 
 **Read `KNOWN-HAZARDS.md` before changing anything, and again before writing a
-guard.** It is self-inflicted breakage that has already happened here (H1–H19), each with
+guard.** It is self-inflicted breakage that has already happened here (H1–H20), each with
 the incident and the rule. It was only *mentioned* in passing below until 2026-09-30, and
 a session consequently re-derived **H18 by hand** — the temporal-dead-zone catch in
 `ai.js` — as though it were new, four days after H18 documented it. The reviewer is given
@@ -156,7 +156,7 @@ catalog is the source of truth for what exists; the table below is the map, and
 | Skill | Load it when |
 |---|---|
 | `morpheus-dev-protocol` | Before **any** change — branch/PR workflow, never-push-`main`, resync rules |
-| `morpheus-hazards` | Before writing or reviewing a change — the H1–H19 checklist of self-inflicted breakage |
+| `morpheus-hazards` | Before writing or reviewing a change — the H1–H20 checklist of self-inflicted breakage |
 | `morpheus-stack` | When you need the stack map, commands, or verification steps |
 | `morpheus-architecture` | When you need to know how a request reaches a handler, or how the build loop and self-dev engine work |
 | `morpheus-deck` | Before touching anything under `/deck` — own-data architecture, additive migrations, Jarvis persona |

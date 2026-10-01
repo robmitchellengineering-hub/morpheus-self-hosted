@@ -65,8 +65,15 @@ export default async function handler({ user, body, res }) {
   const files = scaffold.files;
 
   // 3. Generate structured build steps → render to workflow YAML
+  //
+  // A target may declare `runners(files)` instead of a single `runner` when one
+  // machine cannot produce everything it has to ship — mac-app's Python path
+  // needs one job per architecture, because PyInstaller cannot cross-build and
+  // an Apple-silicon-only disk image is refused outright by an Intel Mac. See
+  // macAppRunners(). Targets without the hook are unchanged.
+  const runners = typeof adapter.runners === 'function' ? adapter.runners(files) : null;
   const steps = adapter.buildSteps(files);
-  const workflow = renderWorkflow(adapter.runner, steps, adapter.artifact);
+  const workflow = renderWorkflow(runners || adapter.runner, steps, adapter.artifact);
 
   // Dry-run mode: return the build preview (scaffolded files, workflow YAML,
   // artifact spec) without pushing to GitHub. Lets the user catch
@@ -77,6 +84,7 @@ export default async function handler({ user, body, res }) {
       target,
       label: adapter.label,
       runner: adapter.runner,
+      runners,
       validation: { valid: true, warnings: validation.warnings || [] },
       generatedFiles: scaffold.generated,
       totalFiles: files.length,

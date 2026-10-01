@@ -939,6 +939,19 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                       <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
                     </a>
                   ))}
+              {/* WHICH OF THESE IS MINE? A macOS App compile now publishes one disk image per
+                  architecture, because PyInstaller cannot cross-build and an Apple-silicon-only
+                  image is refused outright by an Intel Mac ("not supported on this Mac"). The
+                  filenames say which is which, but the person reading them may not know which
+                  Mac they are on — macOS 26's own "About This Mac" hides the CPU name — so say
+                  it here rather than let them find out from a refusal. 2026-10-01, Rob. */}
+              {target === 'mac-app' && (
+                <p className="text-xs text-ink-strong">
+                  Pick the one your Mac can open: <span className="font-mono">intel</span> for an
+                  Intel Mac, <span className="font-mono">apple-silicon</span> for an M-series Mac.
+                  Apple menu → About This Mac names the chip.
+                </p>
+              )}
               {status?.releaseUrl && (
                 <a href={status.releaseUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary/50 hover:text-primary">
                   <ExternalLink size={12} /> View release on GitHub (requires GitHub access)

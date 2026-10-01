@@ -79,6 +79,26 @@ export function renderWorkflow(runner, steps, artifact) {
     ? `\n      - name: Verify artifact\n        run: |\n${artifact.verifyCommand.split('\n').map(l => '          ' + l).join('\n')}`
     : '';
 
+  // A TARGET MAY NEED MORE THAN ONE RUNNER. Before 2026-10-01 `runner` was always a string, so a compile
+  // target had exactly one machine and therefore exactly one architecture — fine for the Swift path (it
+  // cross-builds) and the Node path (it ships both binaries behind a dispatcher), wrong for Python, where
+  // PyInstaller can only build for the machine running it. A Python/Qt app therefore came out arm64-only
+  // and an Intel Mac refused it with "not supported on this Mac", with no Intel option to ask for.
+  //
+  // Passing a list renders a matrix: one job per entry, each with `matrix.runner` and `matrix.arch`
+  // available to the build steps — which is how the disk image gets the architecture in its filename. A
+  // list of ONE still renders a matrix on purpose, so a target whose steps and artifact name reference
+  // `${{ matrix.arch }}` behaves the same whether it declared one runner or two.
+  const matrix = Array.isArray(runner) ? runner : null;
+  const jobHeader = matrix
+    ? `    strategy:
+      fail-fast: false
+      matrix:
+        include:
+${matrix.map((r) => `          - runner: ${r.runner}\n            arch: ${r.arch}`).join('\n')}
+    runs-on: \${{ matrix.runner }}`
+    : `    runs-on: ${runner}`;
+
   return `name: Build
 
 on:
@@ -86,7 +106,7 @@ on:
 
 jobs:
   build:
-    runs-on: ${runner}
+${jobHeader}
     permissions:
       contents: write
     steps:

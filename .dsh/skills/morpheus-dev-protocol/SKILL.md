@@ -183,7 +183,7 @@ why — searchable with `--kind user,assistant,tool,result` and `--reasoning`.
 ## Related
 
 - `working-with-rob` — his standing priorities and how he expects results reported.
-- `morpheus-hazards` — the H1–H19 list to check every change against.
+- `morpheus-hazards` — the H1–H20 list to check every change against.
 - `morpheus-stack` — stack map, commands, key files.
 - `morpheus-build-library` — the index of build knowledge, one short card per
   topic. Load it when the task touches something unfamiliar, and add to it when

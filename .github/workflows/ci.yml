@@ -734,6 +734,14 @@ jobs:
       - name: Compile-artifact save is honest about partials
         run: node scripts/verify-compile-artifacts.mjs
 
+      # A macOS app compiled on macos-latest is Apple-silicon-only, and an Intel Mac answers
+      # "not supported on this Mac" — Rob, holding a disk image Morpheus had just built him.
+      # This asserts the Python path builds on both runners, that each disk image is named for
+      # the Mac it opens on (and that the glob and the verify step agree with that name), and
+      # that a project's own .dmg is never nested inside ours.
+      - name: macOS builds cover both Macs, and say which is which
+        run: node scripts/verify-mac-app-arch.mjs
+
       # A Prisma call naming a column that does not exist fails at runtime, and esbuild, lint
       # and the import guards are all blind to it.
       - name: Prisma field gate
