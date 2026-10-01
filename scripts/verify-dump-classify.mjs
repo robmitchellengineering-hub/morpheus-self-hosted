@@ -8,11 +8,17 @@
 // The load-bearing case is 3: a dictated dump containing several thoughts must
 // file each one separately. Before this, the classifier returned a single
 // destination and the rest of the sentence was silently entombed in it.
+import { readFileSync } from 'node:fs';
 import {
   CLASSIFY_SCHEMA, DESTINATIONS, LIFE_STREAM_KEYS, MAX_ITEMS,
   FALLBACK_INCOMPLETE, FALLBACK_NOTHING_CLASSIFIED,
   buildClassifyPrompt, normalizeClassifyResult,
 } from '../server/src/lib/deckDumpClassify.js';
+
+// The last section reads two sources rather than only exercising the pure module: the claim it makes
+// is about the WIRING around it (a failed call must not reach the pile), and that wiring is where the
+// bug actually was.
+const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
 
 let failures = 0;
 let checks = 0;
@@ -241,6 +247,45 @@ check('a faithful split carries no marker at all',
       { text: 'chase the Henderson quote', destination: 'task' },
     ],
   }, 'get milk and chase the Henderson quote').every((i) => i.fallback_reason === undefined), true);
+
+console.log('\n9. a failed classification can never hand the dump back as a manual chore');
+// 2026-10-01, Rob: "the brain dump keeps filing files to unfiled ... that's a just in case so you
+// can file it manually". The unsorted pile has exactly ONE creator in the whole codebase — the
+// catch around classifyDeckDumpItem in CommandDeckContext — so every dump that landed there was a
+// classification that THREW. Measured: the last four brain-dump classify calls all ended at exactly
+// out=4000 from a ~961-token prompt after ~18s, and three logged OUTPUT_TRUNCATED after #390's
+// salvage was supposed to have made that survivable. `salvageJson` recovers a complete PREFIX; when
+// the model spends the whole budget thinking there is no prefix to recover and it rethrows.
+//
+// So the claim the guard makes is the one Rob asked for: whatever the model does, the dump is filed.
+const handler = read('../server/src/functions/classifyDeckDumpItem.js');
+check('the fallback is total — no result still files the whole dump',
+  normalizeClassifyResult(null, 'get milk and chase the Henderson quote at 4', ['Dave']), [{
+    text: 'get milk and chase the Henderson quote at 4',
+    destination: 'knowledge',
+    life_stream_key: null,
+    owner_name: null,
+    fallback_reason: FALLBACK_NOTHING_CLASSIFIED,
+  }]);
+check('…and it names the destination the frontend will actually file it to',
+  normalizeClassifyResult(undefined, 'anything')[0].destination, 'knowledge');
+check('the handler asks the model from inside a try', /try \{\s*\n\s*\(\(?\{ result, truncated \}\)? = await invokeAI\(\{/.test(handler), true);
+check('…with exactly two attempts — one retry, not an unbounded loop',
+  (handler.match(/await invokeAI\(\{/g) || []).length, 2);
+check('…and the second attempt only runs after the first failed',
+  /catch \(firstErr\) \{[\s\S]{0,400}?await invokeAI\(\{/.test(handler), true);
+check('a second failure files the dump instead of throwing',
+  /catch \(retryErr\) \{[\s\S]{0,600}?result = null;/.test(handler), true);
+check('…and nothing in the AI path rethrows at the caller',
+  /throw/.test(handler.slice(handler.indexOf('let result = null;'))), false);
+check('the items are normalised once, after the attempts, from whatever we got',
+  /const items = normalizeClassifyResult\(result, text, peopleNames\);\n\n  \/\/ The truncation/.test(handler), true);
+
+const deckContext = read('../src/contexts/CommandDeckContext.jsx');
+check('the pile still has exactly one creator — a classification that threw',
+  (deckContext.match(/DeckDumpItem\.create\(/g) || []).length, 1);
+check('…and it is the catch around the classify call',
+  /catch \{[\s\S]{0,700}?DeckDumpItem\.create\(\{ text \}\)/.test(deckContext), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
