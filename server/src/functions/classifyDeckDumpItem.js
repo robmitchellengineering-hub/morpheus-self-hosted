@@ -74,34 +74,48 @@ export default async function handler({ user, body }) {
   // #390 landed. So the model spends the entire budget thinking and sometimes never emits a single
   // complete item, which leaves `salvageJson` nothing to recover and rethrows — four for four.
   //
-  // The fix is therefore not another cap. It is to make the outcome independent of the model: a
-  // failure here may NEVER hand the dump back to the operator as a manual chore. One bounded retry
-  // — the four measured truncations were four different dumps, so "always truncates" is not
-  // established and a second draw is the cheapest way to find out — and then the deterministic
-  // fallback that already exists (`normalizeClassifyResult` with no result files the whole dump to
-  // Knowledge and marks it `nothing-classified`, which the card reports as "I could not classify it,
-  // so your words are in there whole"). The pile goes back to meaning what Rob says it means: the
-  // last resort for when Morpheus cannot be reached at all.
+  // AND THAT, ON A 963-TOKEN PROMPT, IS THE WRONG BUDGET — measured again 2026-10-01 12:41Z and 12:43Z
+  // on two six-word dumps ("I need to get cheese", "Rob needs to get bread"): in=961, out=4000, ~19s,
+  // nothing salvageable, pile. Six for six. So the cost of a failure is not the reason to leave it.
+  //
+  // MODEL-DECISIONS.md records "do not fix a truncating SMALL call by raising its cap — the reasoning
+  // tax was the cause". This is not a small call: it splits a dictation, decides actionable-vs-not per
+  // thought, picks a life stream and resolves an owner. It was swept into the `classify` role, whose
+  // other callers are booleans (~250-token prompts answering in 30-74 output tokens — measured). The
+  // budget is raised from 4000 to 8000 for the same reason `diagnosis` went 1200 -> 8000 and was
+  // recorded as FIXED by it, and with a decision rule declared in advance:
+  //
+  //   * calls now finish at out ≈ 100-500  -> the cap was the problem; leave it.
+  //   * calls still end at exactly 8000    -> the model consumes whatever it is given, the cap is
+  //     hopeless, and the next move is the PROMPT or the design (the instruction block is ~460 of the
+  //     963 tokens) — not another cap.
+  //
+  // A larger cap costs nothing unless it is used: billing is on tokens actually produced.
+  //
+  // NO RETRY. #467 added one, and the very next dump settled it: "I need to get fruit" made TWO
+  // calls 19 seconds apart, in=961, out=4000, out=4000 — the same prompt, two independent draws, the
+  // identical saturation both times. The failure is a property of the prompt, not of the draw, so a
+  // retry buys nothing and costs the operator another ~19 seconds of a capture that is supposed to be
+  // thoughtless. It is gone.
+  //
+  // Whatever the cap does, the outcome is independent of the model: a failure here may NEVER hand the
+  // dump back to the operator as a manual chore. One call, and then the deterministic fallback that
+  // already exists (`normalizeClassifyResult` with no result files the whole dump to Knowledge and
+  // marks it `nothing-classified`, which the card reports as "I could not classify it, so your words
+  // are in there whole"). The pile goes back to meaning what Rob says it means: the last resort for
+  // when Morpheus cannot be reached at all.
   let result = null;
   let truncated = false;
   try {
     ({ result, truncated } = await invokeAI({
-      userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000, salvagePartial: true,
+      userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 8000, salvagePartial: true,
     }));
-  } catch (firstErr) {
-    console.warn('[classifyDeckDumpItem] classification failed, retrying once before falling back:', firstErr?.message || firstErr);
-    try {
-      ({ result, truncated } = await invokeAI({
-        userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000, salvagePartial: true,
-      }));
-    } catch (retryErr) {
-      // NOT A THROW. The words are the valuable part and they are still in hand, so the dump is
-      // filed as one unclassified item and the operator is told which it was — never left to file
-      // it by hand, which is what the unsorted pile is for and what kept happening instead.
-      console.warn('[classifyDeckDumpItem] classification failed twice — filing the whole dump as one unclassified item instead of the unsorted pile:', retryErr?.message || retryErr);
-      result = null;
-      truncated = true;
-    }
+  } catch (aiErr) {
+    // NOT A THROW. The words are the valuable part and they are still in hand, so the dump is filed
+    // as one unclassified item and the operator is told which it was — never left to file it by hand.
+    console.warn('[classifyDeckDumpItem] classification failed — filing the whole dump as one unclassified item rather than the unsorted pile:', aiErr?.message || aiErr);
+    result = null;
+    truncated = true;
   }
 
   const items = normalizeClassifyResult(result, text, peopleNames);
