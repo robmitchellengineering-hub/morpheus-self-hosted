@@ -6,6 +6,7 @@ import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { getCompileTarget, listCompileTargets } from '../lib/compile-targets/index.js';
 import { renderWorkflow } from '../lib/compile-targets/workflow-renderer.js';
+import { renderUserManual, manualDownloads } from '../lib/appUserManual.js';
 import { getGithubToken, createRepo, pushFiles, ghHeaders, ghJson } from '../lib/github.js';
 
 const GH_API = 'https://api.github.com';
@@ -73,7 +74,19 @@ export default async function handler({ user, body, res }) {
   // macAppRunners(). Targets without the hook are unchanged.
   const runners = typeof adapter.runners === 'function' ? adapter.runners(files) : null;
   const steps = adapter.buildSteps(files);
-  const workflow = renderWorkflow(runners || adapter.runner, steps, adapter.artifact);
+
+  // 4. The user manual that travels with the artifact. Generated here, from the project as it is
+  // being compiled, and written by the workflow — see lib/appUserManual.js for why it exists and
+  // for the rule it is held to (it may not describe anything Morpheus has not read).
+  const manual = renderUserManual({
+    projectName: project.name,
+    target,
+    targetLabel: adapter.label,
+    files,
+    generatedAt: new Date().toISOString().slice(0, 10),
+    downloads: manualDownloads({ artifactGlob: adapter.artifact.glob, runners }),
+  });
+  const workflow = renderWorkflow(runners || adapter.runner, steps, adapter.artifact, manual);
 
   // Dry-run mode: return the build preview (scaffolded files, workflow YAML,
   // artifact spec) without pushing to GitHub. Lets the user catch

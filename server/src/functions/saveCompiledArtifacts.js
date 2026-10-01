@@ -16,6 +16,7 @@ import { prisma } from '../db.js';
 import { ghHeaders, ghJson, getGithubToken } from '../lib/github.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { summarizeArtifactSave } from '../lib/artifactSaveOutcome.js';
+import { USER_MANUAL_FILE } from '../lib/appUserManual.js';
 import { uploadFileStream } from '../storage.js';
 import https from 'node:https';
 
@@ -249,7 +250,9 @@ export default async function handler({ user, body, res }) {
         repoFullName,
         headers: h,
         artifactName,
-        isPrimary: i === 0 && !!artifactName,
+        // Never the manual: the primary asset is RENAMED to artifactName, so if the manual ever
+        // landed first the download named app.apk would be a text file. See lib/appUserManual.js.
+        isPrimary: i === 0 && !!artifactName && asset.name !== USER_MANUAL_FILE,
         releaseTag,
         bodyAssetsMode: useBodyAssets,
       });

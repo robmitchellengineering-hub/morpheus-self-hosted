@@ -1,3 +1,5 @@
+import { USER_MANUAL_FILE, USER_MANUAL_DELIMITER } from '../appUserManual.js';
+
 // Structured GitHub Actions workflow renderer.
 // Turns BuildStep[] into valid YAML — no more string concatenation scattered
 // across target adapters. Each step is a structured object; this renderer
@@ -71,8 +73,26 @@ function renderStep(step) {
   return lines.join('\n');
 }
 
-export function renderWorkflow(runner, steps, artifact) {
-  const yamlSteps = steps.map(renderStep).join('\n');
+export function renderWorkflow(runner, steps, artifact, manual) {
+  // THE MANUAL IS PART OF THE BUILD, NOT AN EXTRA. It is written by a generated step before anything
+  // else runs, so every target gets it without having to remember, and it is uploaded beside the
+  // artifact so it is a download of its own rather than a file buried inside one. See
+  // lib/appUserManual.js for why it exists (Rob, 2026-10-01: "there also needs to be a downloadable
+  // user manual that comes with a compiled app") and for what it is allowed to claim.
+  const manualStep = manual
+    ? renderStep({
+        name: 'Write the user manual',
+        run: [
+          `cat > ${USER_MANUAL_FILE} <<'${USER_MANUAL_DELIMITER}'`,
+          manual,
+          USER_MANUAL_DELIMITER,
+          // A build that ships no manual, or an empty one, must fail rather than publish quietly —
+          // the same rule as every other "no result is not a pass" check in this repo.
+          `test -s ${USER_MANUAL_FILE} || { echo "${USER_MANUAL_FILE} is empty - refusing to publish a build with no manual"; exit 1; }`
+        ].join('\n')
+      })
+    : '';
+  const yamlSteps = [manualStep, ...steps.map(renderStep)].filter(Boolean).join('\n');
 
   // If the adapter declares a verify command, inject it as a step before the release
   const verifySection = artifact.verifyCommand
@@ -115,7 +135,8 @@ ${yamlSteps}${verifySection}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v\${{ github.run_id }}
-          files: ${artifact.glob}
+          files: |
+            ${artifact.glob}${manual ? `\n            ${USER_MANUAL_FILE}` : ''}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}

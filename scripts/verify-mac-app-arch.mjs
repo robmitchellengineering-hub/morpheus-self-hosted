@@ -112,7 +112,7 @@ for (const [label, files] of [['python (own build script)', pythonOwnScript], ['
     new RegExp(`hdiutil create[^\\n]*-format UDZO ${ARCH_NAME.replace(/[$]/g, '\\$').replace(/\{\{/g, '\\{\\{').replace(/\}\}/g, '\\}\\}')}`).test(run), true);
 }
 check('the release step uploads the file the build wrote',
-  pyWorkflow.includes(`files: ${ARCH_NAME}`), true);
+  pyWorkflow.split('\n').some((l) => l.trim() === ARCH_NAME), true);
 
 console.log('\n5. a project\'s own disk image is never nested inside ours');
 for (const [label, files] of [['python (own build script)', pythonOwnScript], ['python (plain)', pythonPlain]]) {
@@ -129,7 +129,7 @@ const compileProject = read('../server/src/functions/compileProject.js');
 check('compileProject asks the adapter for its runners',
   /adapter\.runners\(files\)/.test(compileProject), true);
 check('…and hands them to the renderer instead of always using adapter.runner',
-  /renderWorkflow\(runners \|\| adapter\.runner, steps, adapter\.artifact\)/.test(compileProject), true);
+  /renderWorkflow\(runners \|\| adapter\.runner, steps, adapter\.artifact/.test(compileProject), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) {
