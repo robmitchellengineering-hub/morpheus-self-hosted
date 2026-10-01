@@ -270,15 +270,26 @@ check('the fallback is total — no result still files the whole dump',
 check('…and it names the destination the frontend will actually file it to',
   normalizeClassifyResult(undefined, 'anything')[0].destination, 'knowledge');
 check('the handler asks the model from inside a try', /try \{\s*\n\s*\(\(?\{ result, truncated \}\)? = await invokeAI\(\{/.test(handler), true);
-check('…with exactly two attempts — one retry, not an unbounded loop',
-  (handler.match(/await invokeAI\(\{/g) || []).length, 2);
-check('…and the second attempt only runs after the first failed',
-  /catch \(firstErr\) \{[\s\S]{0,400}?await invokeAI\(\{/.test(handler), true);
-check('a second failure files the dump instead of throwing',
-  /catch \(retryErr\) \{[\s\S]{0,600}?result = null;/.test(handler), true);
+// ONE attempt. #467 shipped a retry; the very next dump ("I need to get fruit") made two calls 19s
+// apart and saturated at exactly the same output both times, so the failure belongs to the prompt and
+// a retry only costs the operator another ~19 seconds.
+check('…with exactly one attempt', (handler.match(/await invokeAI\(\{/g) || []).length, 1);
+check('a failed attempt files the dump instead of throwing',
+  /catch \(aiErr\) \{[\s\S]{0,600}?result = null;/.test(handler), true);
 check('…and nothing in the AI path rethrows at the caller',
   /throw/.test(handler.slice(handler.indexOf('let result = null;'))), false);
-check('the items are normalised once, after the attempts, from whatever we got',
+// The budget is a DECISION with a measurement behind it, not a default: every brain-dump call measured
+// from 2026-09-27 to 2026-10-01 ended at exactly the old cap with nothing salvageable. Pinned so it
+// cannot drift back silently — and so the next session sees it was chosen.
+check('the call is given a budget that outlives the measured truncation point',
+  /maxTokens: (\d+)/.exec(handler) && Number(/maxTokens: (\d+)/.exec(handler)[1]) >= 8000, true);
+check('…and it is the only budget in the call', (handler.match(/maxTokens: /g) || []).length, 1);
+// Prose is wrapped at 100 columns and every line carries a comment marker, so the comment is unwrapped
+// before matching — the same reason the repo strips comments when it matches CODE, in reverse.
+const handlerProse = handler.replace(/^\s*\/\/ ?/gm, '').replace(/\s+/g, ' ');
+check('…and the reason it is not "just another cap raise" is written down next to it',
+  /reasoning tax was the cause[\s\S]{0,900}?decision rule declared in advance/.test(handlerProse), true);
+check('the items are normalised once, after the attempt, from whatever we got',
   /const items = normalizeClassifyResult\(result, text, peopleNames\);\n\n  \/\/ The truncation/.test(handler), true);
 
 const deckContext = read('../src/contexts/CommandDeckContext.jsx');
