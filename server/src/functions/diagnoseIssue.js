@@ -221,10 +221,14 @@ async function diagnoseCompile(userId, projectId, project, files, errorContext) 
   // 32,000-token diagnosis (40,365 in, OUTPUT_TRUNCATED, recorded `status: ok`) trying to
   // fix something no app file could fix, on a workflow Morpheus regenerates every compile.
   //
-  // Only a confident, evidence-backed 'morpheus' verdict returns here. 'app',
-  // 'credentials' and 'unknown' fall through to the code below EXACTLY as it was, because
-  // the build pipeline must stay as free as possible — a miss is acceptable, a false
-  // "this is Morpheus's fault" that stops a real fix is not (lib/buildFailureOwner.js).
+  // Only a confident, evidence-backed 'morpheus' verdict returns here. 'app' and
+  // 'unknown' fall through to the code below EXACTLY as it was, because the build
+  // pipeline must stay as free as possible — a miss is acceptable, a false "this is
+  // Morpheus's fault" that stops a real fix is not (lib/buildFailureOwner.js).
+  //
+  // Credentials are NOT this classifier's class. The `isAuthError` branch below is
+  // unchanged and still owns it; a credential-shaped error carries no Morpheus signature,
+  // so it classifies 'unknown' and reaches that branch exactly as it did before.
   const ownership = classifyBuildFailure({ error, logs, target, artifactGlob: artifactGlobFor(target) });
   if (ownerIsMorpheus(ownership)) {
     console.warn(`[diagnoseIssue] morpheus-owned compile failure: reason=${ownership.reason} step=${ownership.evidence?.step || '-'} file=${ownership.evidence?.file || '-'} target=${target || '-'} — no AI call made`);

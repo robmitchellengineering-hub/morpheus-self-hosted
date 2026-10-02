@@ -16,15 +16,17 @@
 //
 // This guard drives the classifier that stops that, and — the rule that matters most —
 // proves that only a confident, evidence-backed 'morpheus' verdict suppresses the fix
-// path. 'app', 'credentials' and 'unknown' keep today's behaviour, because the build
-// pipeline must stay as free as possible. A miss is acceptable; a false "this is
-// Morpheus's fault" that stops a real fix is not.
+// path. 'app' and 'unknown' keep today's behaviour, and a credential gap stays the
+// caller's own classification (see section 4), because the build pipeline must stay as
+// free as possible. A miss is acceptable; a false "this is Morpheus's fault" that stops a
+// real fix is not.
 //
 // Pure: no model, no key, no network, no database. Run:
 //   node scripts/verify-build-failure-owner.mjs
 import { readFileSync } from 'node:fs';
-import { classifyBuildFailure, ownerIsMorpheus, shouldRunAiFix, MORPHEUS_OWNED_SIGNATURES } from '../server/src/lib/buildFailureOwner.js';
+import * as ownerModule from '../server/src/lib/buildFailureOwner.js';
 import { USER_MANUAL_FILE } from '../server/src/lib/appUserManual.js';
+const { classifyBuildFailure, ownerIsMorpheus, shouldRunAiFix, MORPHEUS_OWNED_SIGNATURES } = ownerModule;
 
 let failures = 0;
 let checks = 0;
@@ -116,9 +118,12 @@ const mixed = classifyBuildFailure({
 check('an app error elsewhere in the logs wins over a Morpheus signature', mixed.owner, 'app');
 check('…and keeps the fix path', shouldRunAiFix(mixed), true);
 
-console.log('\n4. credentials stay credentials, and today\'s behaviour with them');
-// The canonical predicates live in lib/diagnosis.js (which reaches @prisma/client);
-// these are the messages they match, driven through the classifier that mirrors them.
+console.log('\n4. credentials are the caller\'s class, never this module\'s opinion');
+// THE BOUNDARY THIS DOCUMENTS. diagnoseIssue.js answers a credential gap with the
+// canonical isCredentialError() / isAuthError() branches, which this change leaves
+// untouched — the ownership check does not replace them. So this classifier must carry
+// no credential vocabulary at all: a credential-shaped message with no Morpheus
+// signature falls through to 'unknown' and the caller keeps that class exactly as it was.
 for (const message of [
   'GitHub connection not connected',
   'credentials not configured',
@@ -127,9 +132,13 @@ for (const message of [
   '401 from github',
 ]) {
   const result = classifyBuildFailure({ error: message });
-  check(`"${message}" classifies credentials`, result.owner, 'credentials');
+  check(`"${message}" is not claimed as Morpheus's`, result.owner, 'unknown');
   check(`…and keeps today's behaviour`, shouldRunAiFix(result), true);
 }
+// The module has no credential opinion to drift from the caller's — asserted on the
+// exported surface, not on prose.
+check('the classifier exports no credential vocabulary',
+  Object.keys(ownerModule).filter((k) => /credential|auth/i.test(k)), []);
 
 console.log('\n5. a novel failure falls through, and does NOT become Morpheus\'s');
 const novel = classifyBuildFailure({ error: 'The build failed for an unexpected reason', logs: ['something nobody has seen before'] });

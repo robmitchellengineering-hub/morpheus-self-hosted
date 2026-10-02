@@ -21,9 +21,9 @@
 //
 // THE RULE THAT MATTERS MOST — DO NOT NARROW MORPHEUS. Only a confident, evidence-backed
 // 'morpheus' result may skip the AI fix path (see ownerIsMorpheus / shouldRunAiFix).
-// 'unknown', 'app' and 'credentials' keep the caller's existing behaviour EXACTLY. The
-// build pipeline must stay as free as possible; the point is to stop one specific waste
-// and one specific lie, not to make the loop more cautious in general.
+// 'app' and 'unknown' keep the caller's existing behaviour EXACTLY. The build pipeline
+// must stay as free as possible; the point is to stop one specific waste and one specific
+// lie, not to make the loop more cautious in general.
 //
 // WHAT IT CANNOT DO — and the limit is deliberate. It reads TEXT SIGNATURES. A
 // Morpheus-owned failure with a novel signature falls through to 'unknown' and today's
@@ -33,14 +33,17 @@
 // evidence.
 //
 // IMPORT-FREE ON PURPOSE. This runs inside CI's no-install guards job
-// (`scripts/verify-build-failure-owner.mjs`), so it may not reach a package import —
-// and lib/diagnosis.js, which owns the canonical credential predicates, reaches
-// @prisma/client through ../db.js. The credential vocabulary below therefore MIRRORS
-// isCredentialError() / isAuthError() verbatim and classifies 'credentials'
-// consistently with them, and MANUAL_FILE mirrors USER_MANUAL_FILE in
-// lib/appUserManual.js. Keep each pair in step: the guard drives this module with the
-// canonical USER_MANUAL_FILE constant, so a rename on either side goes red rather than
+// (`scripts/verify-build-failure-owner.mjs`), so it may not reach a package import.
+// MANUAL_FILE mirrors USER_MANUAL_FILE in lib/appUserManual.js; the guard drives this
+// module with the canonical constant, so a rename on either side goes red rather than
 // silently decoupling.
+//
+// CREDENTIALS ARE THE CALLER'S CLASSIFICATION, DELIBERATELY NOT THIS MODULE'S OPINION.
+// A missing or expired credential is answered by diagnoseIssue.js's own canonical
+// isCredentialError() / isAuthError() branches, which this change leaves untouched and
+// which the ownership check does not replace. This module therefore carries no credential
+// vocabulary at all: a credential-shaped message with no Morpheus signature falls through
+// to 'unknown', and the caller keeps that class exactly as it was.
 
 // Mirrors USER_MANUAL_FILE in lib/appUserManual.js. Import-free, so it is a literal.
 const MANUAL_FILE = 'USER-MANUAL.txt';
@@ -89,26 +92,6 @@ function normalizeArtifacts(artifactGlob, artifactGlobs) {
   if (Array.isArray(artifactGlobs)) list.push(...artifactGlobs);
   else if (typeof artifactGlobs === 'string' && artifactGlobs) list.push(artifactGlobs);
   return [...new Set(list.filter((g) => typeof g === 'string' && g))];
-}
-
-// ── Credentials ──────────────────────────────────────────────────────────────
-// Verbatim mirror of isCredentialError() / isAuthError() in lib/diagnosis.js, which
-// cannot be imported here (see the header). If one side's vocabulary changes, the
-// other must change with it — the classifier's job is to agree with the canonical
-// predicates, not to improve on them.
-function credentialGap(lower) {
-  if (lower.includes('credentials not configured')) return true;
-  if (lower.includes('not configured')) return true;
-  if (lower.includes('project ref not configured')) return true;
-  if (lower.includes('access token not set')) return true;
-  if (lower.includes('api token') && lower.includes('missing')) return true;
-  if (lower.includes('unauthorized') && lower.includes('token')) return true;
-  if (lower.includes('github connection')) return true;
-  if (lower.includes('not connected')) return true;
-  if (lower.includes('not authenticated')) return true;
-  if (lower.includes('401') && lower.includes('github')) return true;
-  if (lower.includes('connect your github')) return true;
-  return false;
 }
 
 // ── The app's own failures ───────────────────────────────────────────────────
@@ -237,7 +220,6 @@ export const MORPHEUS_OWNED_SIGNATURES = [
 const HEADLINES = {
   morpheus: "Morpheus's own build pipeline failed, not your app.",
   app: "This build failure is in your app's own code.",
-  credentials: 'This build failure is a missing or expired credential.',
   unknown: 'The build failed for a reason Morpheus does not recognise yet.',
 };
 
@@ -250,7 +232,6 @@ const MORPHEUS_STEPS = [
 // Informational only: the caller keeps its existing behaviour for these owners.
 const EXISTING_PATH = {
   app: "The failing step is the app's own build, so the normal diagnosis and auto-fix path applies.",
-  credentials: 'A connection or token is missing or expired; the normal credential path applies.',
   unknown: 'No Morpheus-owned signature matched, so the normal diagnosis and auto-fix path applies.',
 };
 
@@ -274,19 +255,14 @@ function buildResult(owner, reason, evidence) {
  * Classify who owns a failed build.
  *
  * @param {{ error?: any, logs?: any, target?: string|null, artifactGlob?: string|string[]|null, artifactGlobs?: string[]|null }} [context]
- * @returns {{ owner: 'morpheus'|'app'|'credentials'|'unknown', reason: string|null,
+ * @returns {{ owner: 'morpheus'|'app'|'unknown', reason: string|null,
  *            evidence: { step: string|null, file: string|null }, headline: string,
  *            detail: string, steps: string[] }}
  */
 export function classifyBuildFailure({ error, logs, target, artifactGlob, artifactGlobs } = {}) {
   const text = failureText(error, logs);
-  const lower = text.toLowerCase();
   const artifacts = normalizeArtifacts(artifactGlob, artifactGlobs);
-  const ctx = { text, lower, target: target || null, artifacts, step: stepFromText(text) };
-
-  // Credentials first, matching the precedence diagnoseCompile already uses for
-  // isAuthError: a credential gap is answered the way it always was.
-  if (credentialGap(lower)) return buildResult('credentials', 'credential-gap', { step: ctx.step, file: null });
+  const ctx = { text, target: target || null, artifacts, step: stepFromText(text) };
 
   // Then the app's own failures — the safe direction (see the note on the list).
   for (const signature of APP_OWNED_SIGNATURES) {
@@ -319,9 +295,9 @@ export function ownerIsMorpheus(result) {
 
 /**
  * True when the classifier does NOT suppress the caller's existing path — i.e. every
- * owner except a confident, evidence-backed 'morpheus'. The caller proceeds exactly as
- * it did before this module existed (which may itself end in the AI fix path, as it
- * does for an app error, or in a credential action, as it does today for an auth error).
+ * owner except a confident, evidence-backed 'morpheus'. The caller proceeds exactly as it
+ * did before this module existed, which is where the credential, github and deploy
+ * branches it already owns are decided.
  */
 export function shouldRunAiFix(result) {
   return !ownerIsMorpheus(result);
