@@ -191,6 +191,32 @@ const ACTION_PATTERNS = [
   { re: /^(?:todo|to-do|to do|action item|action)\s*[:-]\s*\S/i, owner: 'self' },
 ];
 
+// The other half of the rule ACTION_PATTERNS encodes, and the half it was missing.
+//
+// "I need to do more exercise" matches the explicit-action pattern below exactly as "I need to get
+// milk" does, so the fast path filed it as a task (Rob, 2026-10-02: "i need to do more exercise, that
+// just went to tasks too"). But it names nothing to go and do — it is a direction, not an errand, and
+// by the prompt's own rule it is a REFLECTION about an area of life, which is the life_stream bucket.
+// A general intention is not a to-do; a specific one is.
+//
+// Deliberately narrow, in the same way ACTION_PATTERNS is: it fires only when the phrasing is an
+// OPEN-ENDED improvement ("more", "less", "better", "healthier") ABOUT a named area of life, so it
+// has somewhere specific to file it. A real errand that merely contains one of those words is
+// untouched — "I need to get more milk", "I need to pay the gym membership" and "I need to book a
+// dentist appointment" all stay tasks, and the guard asserts each. Anything it does not recognise
+// falls through to the patterns below and then to the model, exactly as before.
+const OPEN_ENDED = /\b(more|less|better|healthier|more often|regularly)\b/i;
+
+// The area of life an open-ended intention belongs to, checked in order. These are the deck's own five
+// streams, so a phrase that names one has somewhere specific to go.
+const LIFE_AREA = [
+  { key: 'health', re: /\b(exercise|work ?out|gym|fitness|diet|eat|sleep|weight|walk|run|drink|smoke)\b/i },
+  { key: 'money', re: /\b(save|saving|savings|spend|budget|money|debt|invest)\b/i },
+  { key: 'people', re: /\b(kids|children|family|friends|mum|dad|wife|husband|partner)\b/i },
+  { key: 'growth', re: /\b(read|learn|study|practice|practise|meditate)\b/i },
+  { key: 'home', re: /\b(tidy|clean|organi[sz]e|declutter|garden|house)\b/i },
+];
+
 // A second thought hiding behind a connective — the model's job, not this one's.
 const CLAUSE_JOINER = /(?:,\s|;|\s+and\s+|\s+also\s+|\s+plus\s+|\s+then\s+|\n)/i;
 
@@ -218,6 +244,14 @@ export function patternClassify(originalText, { people = [], selfNames = [] } = 
     if (isSelf) return [{ text, destination: 'task', life_stream_key: null, owner_name: null }];
     const who = resolveOwner(candidate, people);
     if (who) return [{ text, destination: 'task', life_stream_key: null, owner_name: who }];
+  }
+
+  // An open-ended intention about a named area of life is a life-stream note, not a to-do — see
+  // OPEN_ENDED / LIFE_AREA. Checked before the action patterns, because "I need to do more exercise"
+  // matches one of those too and would otherwise be claimed as a task.
+  if (/^(?:i|we)\b/i.test(text) && OPEN_ENDED.test(text)) {
+    const area = LIFE_AREA.find(({ re }) => re.test(text));
+    if (area) return [{ text, destination: 'life_stream', life_stream_key: area.key, owner_name: null }];
   }
 
   for (const { re } of ACTION_PATTERNS) {
