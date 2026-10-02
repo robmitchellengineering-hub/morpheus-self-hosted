@@ -128,6 +128,18 @@ check('the context actually exports it', /quickFileMsg, dumpError,/.test(ctxSrc)
 check('the widget renders it as an alert, not as a quiet suffix',
   /\{dumpError && \(/.test(widgetSrc) && /role="alert"/.test(widgetSrc), true);
 
+console.log('\n7. a failed classification files the words somewhere real, not straight to the pile');
+// Measured 2026-10-02: "I have AuHD and excecutive disfunction issue, i have a hard time keeping track
+// of things and actioning tasks" landed in deck_dump_items — the unsorted pile — via this catch, while
+// the create itself succeeded, which proves the API was up. Rob on the pile: "thats a just in case so
+// you can file it manually". A failed classify call is not Morpheus being unreachable, so the pile is
+// the wrong first answer; Knowledge is where the server already files a dump it could not classify.
+const catchBlock = ctxSrc.slice(ctxSrc.indexOf('Classification unavailable'), ctxSrc.indexOf('const selfId = people.find(isYou)'));
+check('the no-name fallback creates a Knowledge note', /DeckKnowledgeNote\.create\(\{ text \}\)/.test(catchBlock), true);
+check('…says so, and that the words are whole', /it would not classify, so your words are in there whole/.test(catchBlock), true);
+check('…and the pile is kept only as a second fallback',
+  catchBlock.indexOf('DeckKnowledgeNote.create') < catchBlock.indexOf('DeckDumpItem.create') && /catch \{\s*const created = await base44\.entities\.DeckDumpItem\.create/.test(catchBlock), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);

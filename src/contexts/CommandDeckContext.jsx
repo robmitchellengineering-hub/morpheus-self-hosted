@@ -439,17 +439,32 @@ export function CommandDeckProvider({ children }) {
           // answers in the single-destination shape.
           : [{ text, destination: data?.destination, life_stream_key: data?.life_stream_key, owner_name: null }];
       } catch {
-        // Classification unavailable — fall back to the name regex, or to the
-        // unsorted pile so nothing is lost; the promote buttons cover it by hand.
+        // Classification unavailable — fall back to the name regex, and otherwise to KNOWLEDGE rather
+        // than straight to the unsorted pile.
+        //
+        // The pile is the last resort for when Morpheus cannot be reached at all, and a failed
+        // classify call does not mean that: measured 2026-10-02, a 108-character reflection —
+        // "I have AuHD and excecutive disfunction issue, i have a hard time keeping track of things
+        // and actioning tasks" — landed in the pile this way while the create itself succeeded, which
+        // proves the API was up. Rob on the pile: "thats a just in case so you can file it manually".
+        // Knowledge is where the server already files a dump it could not classify, so this makes the
+        // two halves agree; the pile is kept as a SECOND fallback, because a create that fails must
+        // still not lose what someone just typed.
         const owner = detectOwner(text);
         if (owner) {
           const created = await base44.entities.DeckTask.create({ text, owner_person_id: owner.id, energy: 'any', done: false });
           setTasks((prev) => [created, ...prev]);
           flagQuickFile(`Filed straight to ${owner.name}'s tasks`);
         } else {
-          const created = await base44.entities.DeckDumpItem.create({ text });
-          setDump((prev) => [created, ...prev]);
-          flagQuickFile('Saved to the unsorted pile');
+          try {
+            const created = await base44.entities.DeckKnowledgeNote.create({ text });
+            setKnowledge((prev) => [created, ...prev]);
+            flagQuickFile('Filed to Knowledge — it would not classify, so your words are in there whole');
+          } catch {
+            const created = await base44.entities.DeckDumpItem.create({ text });
+            setDump((prev) => [created, ...prev]);
+            flagQuickFile('Saved to the unsorted pile');
+          }
         }
         return;
       }
