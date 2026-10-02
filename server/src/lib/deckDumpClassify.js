@@ -135,9 +135,11 @@ Each item's "text" must be the speaker's OWN WORDS, not a summary — copy the w
 
 The deciding question for destination is ACTIONABLE vs NOT — never business vs personal; a personal errand is just as much a task as a business one:
 - task: ANY concrete thing to actually go do or follow up on — business related (call a supplier, follow up a job, list an item) OR personal/home/family (get milk, book a dentist appointment, pick up the kids, pay a bill). If it reads as "I need to X" / "remember to X" / an instruction to do something, it is a task even if X is a two-second errand.
-- strategy: a business strategy, plan, or approach worth tracking — not a single action, a way of doing things
+- strategy: a business strategy, plan, approach, opportunity or direction worth tracking — not a single action, a way of doing things
 - knowledge: a fact, reference, or idea worth keeping that isn't itself an action
 - life_stream: a STATUS UPDATE or REFLECTION about health, money (personal, not business cashflow), home, relationships/people, or personal growth — e.g. "haven't slept well this week", "spending feels out of control", "barely see the kids lately". These describe how an area of life is going; they do NOT ask for a specific action to be taken. If it names a specific thing to go do, it's a task instead, even if that area of life is health/home/etc.
+
+THINKING ABOUT something is not DOING it, and this is the case the rule above gets wrong most often. A possibility being turned over — "I'm thinking about X", "I might X", "maybe X", "I'm considering X", "what if we X", "X is up for sale" — is STRATEGY when it concerns the business, even though it names something the business could do: nothing has been decided yet, so there is no to-do. "I think I might look at buying two more shops, maybe" is strategy. "I need to get milk" is a task. Use task only when the speaker has resolved to do the thing or asked to be reminded of it.
 
 If an item's destination is life_stream, also set life_stream_key to whichever of health/money/home/people/growth fits best.
 

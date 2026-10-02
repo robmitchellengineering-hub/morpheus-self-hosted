@@ -348,6 +348,31 @@ check('…against the speaker\'s own name as well as other people\'s',
 check('…while the PROMPT still gets only other people',
   /peopleNames = people\.filter\(\(p\) => !p\.is_self\)/.test(handlerSrc), true);
 
+console.log('\n11. thinking about something is not doing it — the prompt states the rule it was deciding against');
+// Rob, 2026-10-02: "i also just said im thinking about buying murbah music 2 shops maybe and it filled
+// that to tasks too, thats clearly strategy type stuff". Measured in usage_events: the classify call
+// ran (in=976, out=4201, 20s) and returned task, against the prompt's own rule that a task reads as
+// "I need to X" / an instruction to do something. The prompt named no test for a possibility being
+// turned over, so the model had only the ACTIONABLE-vs-NOT question to go on and "buying two shops"
+// answered it.
+//
+// This can only assert the RULE IS IN THE PROMPT — the model's obedience is not reachable from here
+// (this Mac's server/.env is the dock-rig mock). What it prevents is the rule silently falling out
+// again, which is how the gap appeared in the first place.
+const considerationPrompt = buildClassifyPrompt({ text: 'i think I might look at buying murbah music its upforsale 2 shops maybe', businessContext: 'a music shop' });
+check('the prompt says a consideration is not an action',
+  /THINKING ABOUT something is not DOING it/.test(considerationPrompt), true);
+check('…and names the hedging language that makes it one',
+  ['thinking about', 'might', 'maybe', 'considering', 'what if we'].every((w) => considerationPrompt.includes(w)), true);
+check('…and routes it to strategy, not task',
+  /is STRATEGY when it concerns the business/.test(considerationPrompt), true);
+check('…with a worked example of the business case',
+  /buying two more shops, maybe" is strategy/.test(considerationPrompt), true);
+check('…while still keeping the everyday action case as a task',
+  /"I need to get milk" is a task/.test(considerationPrompt) && /If it reads as "I need to X"/.test(considerationPrompt), true);
+check('the strategy bucket now covers an opportunity or direction, not only a plan',
+  /strategy, plan, approach, opportunity or direction worth tracking/.test(considerationPrompt), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
