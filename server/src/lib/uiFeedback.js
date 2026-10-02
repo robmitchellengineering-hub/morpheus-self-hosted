@@ -96,22 +96,55 @@ export const UI_FEEDBACK_ACCEPTANCE =
   'Try it before you trust it: a large upload; unplug the network mid-upload; a wrong password; an empty file; and clicking again while it is busy.';
 
 /**
- * Strip comments and string/template literals, so a check can only ever be satisfied by CODE.
+ * The scanner behind both strippers. `stripStrings` is the only difference between them.
  *
- * This is the load-bearing function of the whole module. H19 records six guards this repo shipped that
- * were satisfied by the bug they existed to prevent, and two of those matched their own comment quoting
- * the forbidden thing. A `// TODO: call fetch(` must not read as a network call.
+ * It knows `//`, `/* *\/` and the three JS string quotes. It does NOT know regex literals, so a regex
+ * containing `//` can swallow the rest of its line — that failure direction is the safe one, since it can
+ * only lose a finding, never invent one.
  *
- * The scanner is deliberately simple and language-agnostic: it knows `//`, `/* *\/`, and the three JS
- * string quotes (template literals included, since an interpolated string is still a string here). It
- * does NOT know regex literals, so a regex containing `//` can swallow the rest of its line. That failure
- * direction is the safe one — it can only lose a finding, never invent one.
+ * Template literals are scanned with their `${ … }` expressions, because the first version was not and it
+ * closed the literal at the first INNER backtick: in `` `${a ? `<b>` : ''}` `` the HTML after the inner
+ * backtick was emitted as though it were code. On a real generated app that made a vanilla-JS
+ * `public/script.js` look like a JSX component, so the file scoping did not exclude it. An interpolated
+ * string is still a string here — the expression inside it is dropped with it.
  */
-export function stripProse(source) {
+function scan(source, stripStrings) {
   const src = typeof source === 'string' ? source : '';
+  const n = src.length;
   let cleaned = '';
   let i = 0;
-  const n = src.length;
+
+  /** Index just past a string/template that starts at `start`, or the end of the source. */
+  function endOfString(start, quote) {
+    let j = start + 1;
+    while (j < n) {
+      if (src[j] === '\\') { j += 2; continue; }
+      if (src[j] === quote) return j + 1;
+      // A normal string cannot span a newline; a template literal can.
+      if (src[j] === '\n' && quote !== '`') return j;
+      if (quote === '`' && src[j] === '$' && src[j + 1] === '{') { j = endOfExpression(j + 2); continue; }
+      j++;
+    }
+    return j;
+  }
+
+  /** Index just past the `}` matching a `${` whose body starts at `start`; handles nesting. */
+  function endOfExpression(start) {
+    let depth = 1;
+    let j = start;
+    while (j < n) {
+      const c = src[j];
+      if (c === '\\') { j += 2; continue; }
+      if (c === '"' || c === "'" || c === '`') { j = endOfString(j, c); continue; }
+      if (c === '/' && src[j + 1] === '/') { while (j < n && src[j] !== '\n') j++; continue; }
+      if (c === '/' && src[j + 1] === '*') { j += 2; while (j < n && !(src[j] === '*' && src[j + 1] === '/')) j++; j += 2; continue; }
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) return j + 1; }
+      j++;
+    }
+    return j;
+  }
+
   while (i < n) {
     const c = src[i];
     const next = src[i + 1];
@@ -127,16 +160,11 @@ export function stripProse(source) {
       continue;
     }
     if (c === '"' || c === "'" || c === '`') {
-      const quote = c;
-      i++;
-      while (i < n) {
-        if (src[i] === '\\') { i += 2; continue; }
-        if (src[i] === quote) { i++; break; }
-        // A normal string cannot span a newline; a template literal can.
-        if (src[i] === '\n' && quote !== '`') break;
-        i++;
-      }
-      cleaned += '""';
+      const end = endOfString(i, c);
+      // Stripped to a placeholder, or copied verbatim when only comments are being removed. Copying the
+      // whole literal is what stops a `//` INSIDE a string from reading as a line comment.
+      cleaned += stripStrings ? '""' : src.slice(i, end);
+      i = end;
       continue;
     }
     cleaned += c;
@@ -145,27 +173,61 @@ export function stripProse(source) {
   return cleaned;
 }
 
+/**
+ * Strip comments and string/template literals, so a check can only ever be satisfied by CODE.
+ *
+ * This is the load-bearing function of the whole module. H19 records six guards this repo shipped that
+ * were satisfied by the bug they existed to prevent, and two of those matched their own comment quoting
+ * the forbidden thing. A `// TODO: call fetch(` must not read as a network call.
+ */
+export function stripProse(source) {
+  return scan(source, true);
+}
+
+/**
+ * Strip COMMENTS ONLY, leaving string literals in place. Exactly one shape needs this: the HTTP method of
+ * a `fetch`, which only ever exists inside a string literal (`{ method: 'DELETE' }`). Comments are still
+ * removed, which is the risk that matters — a comment describing a delete cannot satisfy it. Nothing else
+ * in the module uses this.
+ */
+export function stripComments(source) {
+  return scan(source, false);
+}
+
 const UI_EXTENSIONS = ['jsx', 'tsx', 'vue', 'svelte', 'html', 'htm'];
 const JS_EXTENSIONS = ['js', 'ts', 'mjs', 'cjs'];
 const jsxTag = /<\/?[A-Za-z][A-Za-z0-9.]*(\s[^<>]*)?\/?>/;
 
 /**
- * Is this a UI app at all? Decided by the FILES, so a backend-only project is never lectured about its
- * empty states.
+ * Is this ONE file UI code? The per-file half of `isUiApp`, and the predicate every check runs behind.
  *
  * `.jsx/.tsx/.vue/.svelte/.html` are UI by extension. A plain `.js`/`.ts` only counts when it actually
- * contains JSX markup or a `React.createElement` call — every Express route in a generated backend is a
- * `.js` file, and treating those as screens would produce findings about a UI that does not exist.
+ * contains JSX markup or a `React.createElement` call — and the test runs on `stripProse(content)`, not the
+ * raw source, because the first version did not and misread HTML that lives in a STRING as JSX. Measured on
+ * a real generated app: `server.js` builds an email body from `'<h2>…</h2>'` string literals and
+ * `public/script.js` renders HTML from template literals, so both were classified as UI and examined — the
+ * exact files the scoping fix exists to exclude. Real JSX is code, so it survives the strip; HTML in a
+ * string does not.
+ */
+export function isUiFile(f) {
+  if (!f || typeof f.path !== 'string' || typeof f.content !== 'string') return false;
+  const ext = (f.path.split('.').pop() || '').toLowerCase();
+  if (UI_EXTENSIONS.includes(ext)) return true;
+  if (JS_EXTENSIONS.includes(ext)) {
+    const markup = stripProse(f.content);
+    return jsxTag.test(markup) || /\bReact\.createElement\b/.test(markup);
+  }
+  return false;
+}
+
+/**
+ * Is this a UI app at all? Decided by the FILES, so a backend-only project is never lectured about its
+ * empty states. Kept at the project level for the "NOT EXAMINED" answer; the checks themselves run only
+ * over the files `isUiFile` accepts.
  */
 export function isUiApp(files) {
   const list = (Array.isArray(files) ? files : []).filter((f) => f && typeof f.path === 'string');
-  return list.some((f) => {
-    if (typeof f.content !== 'string') return false;
-    const ext = (f.path.split('.').pop() || '').toLowerCase();
-    if (UI_EXTENSIONS.includes(ext)) return true;
-    if (JS_EXTENSIONS.includes(ext)) return jsxTag.test(f.content) || /\bReact\.createElement\b/.test(f.content);
-    return false;
-  });
+  return list.some(isUiFile);
 }
 
 /** A check's `applies` returns the file refs it found, or null for nothing. */
@@ -177,12 +239,68 @@ const ERROR_BRANCH = /\btry\b|\bcatch\s*\(|\.catch\s*\(/;
 const CLIENT_CALL = /\b(fetch\s*\(|axios\b|XMLHttpRequest\b)/;
 const ASYNC = /\basync\b/;
 const HANDLER = /\b(onSubmit|onClick|onChange|onPress|handleSubmit|handleClick|handleSave|handleUpload|handleDelete|handleRemove)\b/;
-const DESTRUCTIVE = /\.\s*(delete|deleteMany|remove|destroy)\s*\(|\b(deleteAll|removeAll|clearAll|destroyAll|purgeAll|wipeAll)\b/;
+// A destructive call must be API/DATABASE-shaped. A bare `.delete(`/`.remove(` cannot tell an ORM or an
+// HTTP client from a `Map`, `Set`, array or cache — measured on a real generated app, where
+// `rateLimitMap.delete(ip)` (a rate-limiter cache eviction) was reported as an unconfirmed user delete.
+const API_RECEIVER = /\b(prisma|db|database|supabase|api|axios|client|http|ky|got|repository|repo)\b/;
+const DESTRUCTIVE_METHOD = /\.\s*(delete|deleteMany|remove|destroy)\s*\(/;
+const METHOD_DELETE = /\bmethod\s*:\s*['"`]DELETE['"`]/i;
+
+/** True when a destructive METHOD call is on an API/DB receiver, never on a collection primitive. */
+function hasApiDestructive(code) {
+  const re = new RegExp(DESTRUCTIVE_METHOD.source, 'g');
+  let m;
+  while ((m = re.exec(code))) {
+    const before = code.slice(Math.max(0, m.index - 60), m.index);
+    // Same statement, with a receiver word in it: `axios.delete(`, `prisma.item.delete(`,
+    // `supabase.from('x').delete()`. `rateLimitMap.delete(` has neither.
+    if (!before.includes(';') && API_RECEIVER.test(before)) return true;
+  }
+  return false;
+}
+
 const CONFIRMATION = /\b(confirm|Confirm|ConfirmDialog|useConfirm|confirmDelete|showConfirm|setConfirm|isConfirming|confirmOpen)\b/;
 const CLEAR_TO_NON_INPUT = /^(Error|Err|Message|Status|Loading|Pending|Progress|Result|Saving|Busy|Success|Failed|Items|List|Data|Results|Files|Search|Query|Open|Show|Visible)/;
 const LIST_RENDER = /\.map\s*\(/;
 const EMPTY_STATE = /\.length\s*(===?|!==?|<|>)|!\s*[A-Za-z_$][\w$]*\.length|\b(isEmpty|emptyState|EmptyState|noResults|NoResults|emptyList|EmptyList)\b/;
-const LONG_OPERATION = /[A-Za-z0-9_]*(upload|compile|sync|generate|deploy|convert|download|import|export)[A-Za-z0-9_]*\s*\(/i;
+const DATA_SOURCE = /\b(fetch\s*\(|axios|useState\s*\(|useEffect\s*\(|useQuery\s*\(|useSWR\s*\(|supabase|api\s*\.|client\s*\.)/;
+// Page chrome: a `.map(` over these has no empty state to design and is usually already guarded with
+// `|| []`. Measured on a real generated app: `(site.nav || []).map(...)` and
+// `(site.footer?.links || []).map(...)` were reported as data lists with no empty branch.
+const CHROME_WORD = /\b(nav|navbar|navigation|footer|links|menu|breadcrumb|breadcrumbs|socials?|socialLinks|siteLinks)\b/i;
+
+/** Is the `.map(` at this index over page chrome rather than a data list? */
+function isChromeMap(code, index) {
+  const window = code.slice(Math.max(0, index - 140), index);
+  const cut = Math.max(window.lastIndexOf(';'), window.lastIndexOf('{'), window.lastIndexOf('=>'));
+  const receiver = cut >= 0 ? window.slice(cut + 1) : window;
+  return CHROME_WORD.test(receiver);
+}
+
+/** Does the file have at least one `.map(` that is NOT page chrome? */
+function hasDataMap(code) {
+  const re = new RegExp(LIST_RENDER.source, 'g');
+  let m;
+  while ((m = re.exec(code))) {
+    if (!isChromeMap(code, m.index)) return true;
+  }
+  return false;
+}
+
+// `sync` inside `async` is not a long operation — measured on a real generated app, where `async (req,
+// res)` in an Express route matched. The keyword must be its own camelCase/snake_case SEGMENT of the
+// identifier being called, so `handleUpload(` matches and `async (` does not.
+const LONG_OPERATION_WORDS = ['upload', 'compile', 'sync', 'generate', 'deploy', 'convert', 'download', 'import', 'export'];
+function hasLongOperation(code) {
+  const re = /([A-Za-z0-9_$]+)\s*\(/g;
+  let m;
+  while ((m = re.exec(code))) {
+    const segments = m[1].split(/[^A-Za-z0-9]+|(?=[A-Z])/).map((s) => s.toLowerCase()).filter(Boolean);
+    if (segments.some((s) => LONG_OPERATION_WORDS.includes(s))) return true;
+  }
+  return false;
+}
+
 const PROGRESS_SURFACE = /\b(progress|percent|percentage|pct|elapsed|elapsedMs|eta|loaded|total|bytesLoaded|totalBytes|bytesTotal|onUploadProgress|onDownloadProgress|progressBar|setProgress|uploaded|remaining)\b/i;
 
 /**
@@ -240,9 +358,13 @@ export const UI_FEEDBACK_CHECKS = [
       for (const f of files) {
         if (typeof f.content !== 'string') continue;
         const code = stripProse(f.content);
-        if (!DESTRUCTIVE.test(code)) continue;
+        // Either an API/DB method call, or a `fetch` whose HTTP method is DELETE. The latter is the one
+        // shape that lives only inside a string literal, so it reads a comments-stripped copy — a comment
+        // still cannot satisfy it.
+        const fetchDelete = /\bfetch\s*\(/.test(code) && METHOD_DELETE.test(stripComments(f.content));
+        if (!hasApiDestructive(code) && !fetchDelete) continue;
         if (CONFIRMATION.test(code)) continue;
-        hits.push(hit(f.path, 'a destructive call with no confirmation step in the file'));
+        hits.push(hit(f.path, 'an API/database delete with no confirmation step in the file'));
       }
       return hits.length ? hits : null;
     },
@@ -288,7 +410,12 @@ export const UI_FEEDBACK_CHECKS = [
         const code = stripProse(f.content);
         if (!LIST_RENDER.test(code)) continue;
         if (EMPTY_STATE.test(code)) continue;
-        hits.push(hit(f.path, 'a `.map(` render path with no empty or length branch in the file'));
+        // It must actually fetch or hold the data — a `.map(` over a literal array is not a data list,
+        // and a static marketing page maps its own menu.
+        if (!DATA_SOURCE.test(code)) continue;
+        // And at least one of its maps must be over data rather than page chrome.
+        if (!hasDataMap(code)) continue;
+        hits.push(hit(f.path, 'a data list rendered with `.map(` and no empty or length branch in the file'));
       }
       return hits.length ? hits : null;
     },
@@ -304,7 +431,7 @@ export const UI_FEEDBACK_CHECKS = [
       for (const f of files) {
         if (typeof f.content !== 'string') continue;
         const code = stripProse(f.content);
-        if (!LONG_OPERATION.test(code)) continue;
+        if (!hasLongOperation(code)) continue;
         if (PROGRESS_SURFACE.test(code)) continue;
         hits.push(hit(f.path, 'a long-running operation with no count, percentage or elapsed-time reference'));
       }
@@ -316,17 +443,24 @@ export const UI_FEEDBACK_CHECKS = [
 /**
  * Run every check over a generated file list, and return the findings.
  *
+ * Only UI FILES are examined. The project-level gate (`isUiApp`) says whether there is a UI at all; this
+ * narrows further, because a generated app routinely mixes a UI with an Express `server.js`, a
+ * `package.json` and static content, and a rule about what a screen shows must not be applied to the
+ * server. Measured on a real generated app: three of four findings were about `server.js` and static page
+ * chrome, none of which is a screen.
+ *
  * A non-UI app returns no findings because there is nothing to check — the SUMMARY is what must say so,
  * and `uiFeedbackSummary` refuses to call that clean.
  */
 export function uiFeedbackFindings(files) {
   const list = (Array.isArray(files) ? files : []).filter((f) => f && typeof f.path === 'string');
   if (!isUiApp(list)) return [];
+  const uiFiles = list.filter(isUiFile);
   const findings = [];
   for (const check of UI_FEEDBACK_CHECKS) {
     let result;
     try {
-      result = check.applies(list);
+      result = check.applies(uiFiles);
     } catch {
       // A check that threw must never take the build down, and must never read as "clean" either:
       // an unrun check is reported as a check that did not run.

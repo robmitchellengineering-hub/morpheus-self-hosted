@@ -18,7 +18,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   UI_FEEDBACK_RULES, UI_FEEDBACK_CHECKS, UI_FEEDBACK_PROMPT_BLOCK, UI_FEEDBACK_ACCEPTANCE,
-  uiFeedbackFindings, uiFeedbackSummary, isUiApp, stripProse,
+  uiFeedbackFindings, uiFeedbackSummary, isUiApp, isUiFile, stripProse, stripComments,
 } from '../server/src/lib/uiFeedback.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -155,6 +155,86 @@ const NON_UI = [
   { path: 'firmware.ino', content: 'void setup() { Serial.begin(9600); }\nvoid loop() {}\n' },
 ];
 
+// Modelled on a REAL generated app — morpheus-project-web-page-test-e807a4f5-d8fb-48ae-8be7-9213834e4eb1
+// (commit 9209661), a static site plus an Express `server.js`, cloned to /tmp and run through
+// uiFeedbackFindings. Before the scoping fix it produced four findings, all of them noise:
+//   * `unconfirmed-destructive` on `server.js` for `rateLimitMap.delete(ip)` — a Map cache eviction
+//   * `no-progress-surface` on `server.js` — backend code, and the match was `async (` containing `sync`
+//   * `no-empty-state` on `public/privacy.html` and `public/terms.html` — `(site.nav || []).map(...)` and
+//     `(site.footer?.links || []).map(...)`, navigation and footer chrome
+// This is that shape. The server also carries a real API-shaped delete, so a regression in the file
+// scoping cannot hide behind the other suppressions.
+const REAL_APP = [
+  { path: 'server.js', content: [
+    "const express = require('express');",
+    'const app = express();',
+    'const rateLimitMap = new Map();',
+    'setInterval(function () {',
+    '  rateLimitMap.forEach(function (timestamps, ip) {',
+    '    if (timestamps.length === 0) rateLimitMap.delete(ip);',
+    '  });',
+    '}, 300000).unref();',
+    "function emailHtml(name) { return '<h2>New Inquiry</h2><p>' + name + '</p>'; }",
+    "app.post('/api/contact', async function (req, res) {",
+    '  const removed = await db.inquiries.delete({ where: { id: req.body.id } });',
+    '  res.json(removed);',
+    '});',
+  ].join('\n') },
+  { path: 'public/privacy.html', content: [
+    '<!doctype html><html><body>',
+    '<div id="page-content"></div>',
+    '<script>',
+    '  (async function() {',
+    '    try {',
+    '      const site = await fetch("/content/site.json").then(function (r) { return r.json(); });',
+    '      const nav = (site.nav || []).map(function (i) { return i.label; }).join("");',
+    '      const footerLinks = (site.footer && site.footer.links || []).map(function (l) { return l.label; }).join("");',
+    '      document.getElementById("page-content").innerHTML = nav + footerLinks;',
+    '    } catch (err) { console.error(err); }',
+    '  })();',
+    '</script>',
+    '</body></html>',
+  ].join('\n') },
+];
+
+// A collection primitive is not a user-facing delete: a `Map`/`Set`/array/cache eviction has nothing to
+// confirm. This is the shape the real app tripped on.
+const MAP_DELETE_UI = [{ path: 'src/Cache.jsx', content: [
+  "import { useRef } from 'react';",
+  'export default function Cache() {',
+  '  const cache = useRef(new Map());',
+  '  function evict(key) { cache.current.delete(key); }',
+  '  return <button onClick={() => evict("x")}>Evict</button>;',
+  '}',
+].join('\n') }];
+
+// …and the real bug still fires.
+const API_DELETE_UI = [{ path: 'src/Rows.jsx', content: [
+  "import axios from 'axios';",
+  'export default function Rows({ items }) {',
+  '  function remove(id) { return axios.delete("/api/items/" + id); }',
+  '  return <ul>{items.length === 0 ? <li>Nothing</li> : items.map((i) => <li key={i.id} onClick={() => remove(i.id)}>{i.name}</li>)}</ul>;',
+  '}',
+].join('\n') }];
+
+// `async (` is not a long operation — the old keyword regex matched `sync` inside `async`, so EVERY UI
+// file with an async handler and no progress word could be flagged.
+const ASYNC_NOOP_UI = [{ path: 'src/Save.jsx', content: [
+  "import { useState } from 'react';",
+  'export default function Save() {',
+  '  const [busy, setBusy] = useState(false);',
+  '  async function save() { setBusy(true); await Promise.resolve(); setBusy(false); }',
+  '  return <button disabled={busy} onClick={async () => { await save(); }}>{busy ? "Saving" : "Save"}</button>;',
+  '}',
+].join('\n') }];
+
+// A comment that NAMES a DELETE fetch must not read as one — the string-literal half of the method check
+// runs on a comments-stripped copy, so the comment is gone before the string can be seen.
+const COMMENT_DELETE_UI = [{ path: 'src/Note.jsx', content: [
+  "// fetch('/api/items/1', { method: 'DELETE' })",
+  'export default function Note() { return <p>hi</p>; }',
+].join('\n') }];
+
 console.log('\n1. a good UI app is clean, and the report says what that means');
 check('no findings on a well-formed UI app', ids(GOOD), []);
 check('…and the app is recognised as a UI app', isUiApp(GOOD), true);
@@ -203,6 +283,43 @@ const PROSE_ONLY = [{ path: 'src/Prose.jsx', content: [
 ].join('\n') }];
 check('a UI file whose only shapes are prose produces no findings', ids(PROSE_ONLY), []);
 
+console.log('\n3b. the real-app shapes — quiet on backend and chrome, loud on the real bugs');
+// The whole point of the scoping fix, asserted against a fixture built from a real generated app rather
+// than from a shape the author imagined.
+check('the real-app shape produces no findings at all', ids(REAL_APP), []);
+check('…the Express server is not examined as UI', isUiFile(REAL_APP[0]), false);
+check('…the static page is', isUiFile(REAL_APP[1]), true);
+check('…so the Map eviction never reaches the destructive check',
+  ids(REAL_APP).includes('unconfirmed-destructive'), false);
+check('…and the nav/footer maps never reach the empty-state check',
+  ids(REAL_APP).includes('no-empty-state'), false);
+// Markup inside a STRING is not JSX. The real app's `server.js` builds an email body from `'<h2>…</h2>'`
+// and `public/script.js` builds HTML from template literals; both were classified as UI until the JSX
+// test ran on stripped code.
+check('a .js file whose only markup is HTML in string literals is not UI',
+  isUiFile({ path: 'server.js', content: "const html = '<h2>New Inquiry</h2><p>Hi</p>';\napp.post('/api/x', h);" }), false);
+check('…nor one that builds HTML in a template literal',
+  isUiFile({ path: 'public/script.js', content: 'const html = `<div class="x">${name}</div>`;\nel.innerHTML = html;' }), false);
+check('…nor a nested template with HTML in the inner literal',
+  isUiFile({ path: 'public/script.js', content: 'const h = `${a ? `<b>x</b>` : ""}`;' }), false);
+check('a nested template literal is stripped whole',
+  stripProse('const h = `${a ? `<b>x</b>` : ""}`;').includes('<b>'), false);
+check('…but a real JSX .js file still is UI',
+  isUiFile({ path: 'src/App.js', content: 'export default function App({ items }) { return <ul className="list">{items.map((i) => <li key={i.id}>{i.name}</li>)}</ul>; }' }), true);
+// The two new suppressions, each on its own, so a regression cannot be masked by the other.
+check('a Map/Set/cache eviction is not an unconfirmed delete',
+  ids(MAP_DELETE_UI).includes('unconfirmed-destructive'), false);
+check('an API delete with no confirmation still fires',
+  ids(API_DELETE_UI).includes('unconfirmed-destructive'), true);
+check('`async (` is not a long operation', ids(ASYNC_NOOP_UI), []);
+check('a comment naming a DELETE fetch is not a destructive call', ids(COMMENT_DELETE_UI), []);
+// `stripComments` is the one place strings survive; prove it is still stripping the comments, or the
+// comment fixture above would pass for the wrong reason.
+check('the comments-only stripper keeps strings but drops comments',
+  stripComments("// fetch('/x', { method: 'DELETE' })\nconst s = \"kept\";").includes('DELETE'), false);
+check('…and it does keep a real string literal',
+  stripComments("const s = \"kept\";").includes('kept'), true);
+
 console.log('\n4. a non-UI app is NOT examined — never "clean"');
 check('a backend-only app is not a UI app', isUiApp(NON_UI), false);
 check('…and no check runs over it', ids(NON_UI), []);
@@ -212,8 +329,12 @@ check('…and it denies being a pass', /not a pass/.test(nonUiSummary), true);
 check('…and it never wears the word "clean"', /\bclean\b/i.test(nonUiSummary), false);
 check('a plain .js file with no JSX is not a UI app',
   isUiApp([{ path: 'server/routes/tasks.js', content: 'router.get("/api/tasks", list);' }]), false);
+check('…and its individual file is not UI either',
+  isUiFile({ path: 'server/routes/tasks.js', content: 'router.get("/api/tasks", list);' }), false);
 check('a .js file that really renders JSX is one',
   isUiApp([{ path: 'src/widget.js', content: "export default function W() { return <button onClick={go}>Go</button>; }" }]), true);
+check('…as is its individual file',
+  isUiFile({ path: 'src/widget.js', content: "export default function W() { return <button onClick={go}>Go</button>; }" }), true);
 
 console.log('\n5. the report is actionable and its evidence is a path');
 const badFindings = uiFeedbackFindings(BAD);
