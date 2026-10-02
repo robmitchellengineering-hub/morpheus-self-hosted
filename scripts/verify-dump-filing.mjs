@@ -8,7 +8,7 @@
 //     stayed, so the retry duplicated everything that had succeeded;
 //   - a swallowed life-stream failure was still counted in the green "Filed N items"
 //     line, so a lost note read as filed.
-import { summarizeFiling } from '../src/pages/CommandDeck/dumpFiling.js';
+import { summarizeFiling, captureFailureMessage } from '../src/pages/CommandDeck/dumpFiling.js';
 import { readFileSync } from 'node:fs';
 
 let failures = 0;
@@ -88,6 +88,45 @@ check('the loop passes the reasons through',
   /summarizeFiling\(\{ labels, failedTexts, originalText: text, fallbackReasons \}\)/.test(readFileSync(new URL('../src/contexts/CommandDeckContext.jsx', import.meta.url), 'utf8')), true);
 check('…and collects them from the marked items',
   /if \(item\?\.fallback_reason\) fallbackReasons\.push\(item\.fallback_reason\)/.test(readFileSync(new URL('../src/contexts/CommandDeckContext.jsx', import.meta.url), 'utf8')), true);
+
+console.log('\n5. a capture that filed nothing says WHY, and says the words are safe');
+// Rob, 2026-10-02: "just sits there doing nothing when i hit the plus button." Sixteen hours of
+// production showed nothing written to any deck table, and the only signal a failed capture
+// produced was a generic save flag rendered as a suffix elsewhere on the page. A silent failed
+// capture is indistinguishable from a dead button, which is exactly how it was reported.
+const timedOut = { code: 'CLIENT_TIMEOUT', status: 0 };
+check('an expired sign-in says so, and names the next move',
+  /sign-in has expired/.test(captureFailureMessage({ status: 401 })) && /[Ss]ign in again/.test(captureFailureMessage({ status: 401 })), true);
+check('a timeout is not reported as a connection failure — different cause, different next move',
+  /did not answer in time/.test(captureFailureMessage(timedOut)) && !/Could not reach/.test(captureFailureMessage(timedOut)), true);
+check('a refused connection is a connection problem',
+  /Could not reach Morpheus/.test(captureFailureMessage(new TypeError('Failed to fetch'))), true);
+check('a server error is named as one, with the status',
+  /server error 500/.test(captureFailureMessage({ status: 500, message: 'boom' })), true);
+check('an unrecognised failure still reports rather than swallowing',
+  /Nothing was filed \(418/.test(captureFailureMessage({ status: 418, message: 'teapot' })), true);
+// The part that must never be left to be discovered: the words survived.
+for (const [name, err] of [['timeout', timedOut], ['401', { status: 401 }], ['500', { status: 500 }], ['offline', new TypeError('Failed to fetch')], ['unknown', { status: 418 }]]) {
+  check(`…and "${name}" promises the words are still in the box`,
+    captureFailureMessage(err).endsWith('Your words are still in the box.'), true);
+}
+
+console.log('\n6. the wiring that makes a failure visible is present');
+const ctxSrc = readFileSync(new URL('../src/contexts/CommandDeckContext.jsx', import.meta.url), 'utf8');
+const widgetSrc = readFileSync(new URL('../src/pages/CommandDeck/widgets/brain_dump.jsx', import.meta.url), 'utf8');
+check('the classify call is bounded well below the global 210s API timeout',
+  /CLASSIFY_TIMEOUT_MS = 45_000/.test(ctxSrc) && /withTimeout\(base44\.functions\.invoke\('classifyDeckDumpItem'/.test(ctxSrc), true);
+// The cap must not cut off the slow path that actually works: the model-enabled classify call
+// measured 18-34s, and the 34s one is the last dump that filed successfully.
+check('…and sits above the measured 34s slow path, so a slow success is not thrown away',
+  Number((/CLASSIFY_TIMEOUT_MS = ([\d_]+)/.exec(ctxSrc) || [])[1]?.replace(/_/g, '')) > 34_000, true);
+check('the outer catch binds the error and turns it into the operator-facing message',
+  /catch \(err\) \{[\s\S]{0,400}setDumpError\(captureFailureMessage\(err\)\)/.test(ctxSrc), true);
+check('a new press clears the previous failure',
+  /setDumpInput\(''\);\n\s*setDumpError\(null\);/.test(ctxSrc), true);
+check('the context actually exports it', /quickFileMsg, dumpError,/.test(ctxSrc), true);
+check('the widget renders it as an alert, not as a quiet suffix',
+  /\{dumpError && \(/.test(widgetSrc) && /role="alert"/.test(widgetSrc), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

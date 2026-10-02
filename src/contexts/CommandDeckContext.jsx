@@ -6,7 +6,7 @@ import {
   isYou, todayKey, todayISO, randomDeleteConfirmPhrase, commissionFor, feeTiersFromProfile,
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
-import { summarizeFiling } from '@/pages/CommandDeck/dumpFiling';
+import { summarizeFiling, captureFailureMessage } from '@/pages/CommandDeck/dumpFiling';
 
 // All of Command Deck's shared state, data loading, and CRUD handlers —
 // lifted out of the old single-file CommandDeck.jsx unchanged, so every tab
@@ -31,6 +31,34 @@ export function useCommandDeck() {
   const ctx = useContext(CommandDeckContext);
   if (!ctx) throw new Error('useCommandDeck must be used within CommandDeckProvider');
   return ctx;
+}
+
+// A capture is supposed to be instant — the classifier's own code fast path answers without any
+// model call at all. The global 210s API timeout (base44Client's API_FETCH_TIMEOUT_MS) is right for
+// a compile and wrong here: it left a failed press silent for three and a half minutes, and an
+// operator gives up long before that (measured 2026-10-02).
+//
+// The cap has to sit ABOVE the slow path, not below it. Measured in usage_events: the classify call
+// that reaches the model takes 18-34s, and the 34s one is the last dump that ever filed anything
+// successfully (it wrote the strategy and knowledge notes at 2026-10-01T02:58:38Z). A 20s cap would
+// have thrown that success away and piled it, so the wait is bounded at 45s — past every observed
+// finish, far short of the 210s that made a failure look like a dead button.
+//
+// Abandoning the wait loses nothing that has not already been lost: the server only classifies and
+// every row is written by the caller below, so a request we stop waiting for has filed nothing.
+const CLASSIFY_TIMEOUT_MS = 45_000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => {
+        const err = new Error(`No answer from Morpheus within ${Math.round(ms / 1000)}s.`);
+        err.code = 'CLIENT_TIMEOUT';
+        reject(err);
+      }, ms);
+    }),
+  ]);
 }
 
 export function CommandDeckProvider({ children }) {
@@ -83,6 +111,9 @@ export function CommandDeckProvider({ children }) {
   const [dumpInput, setDumpInput] = useState('');
   const [quickFileMsg, setQuickFileMsg] = useState(null);
   const quickFileTimeout = useRef(null);
+  // Why the last capture filed nothing. Separate from quickFileMsg, which is the green "where it
+  // went" line: a failure and a success must not share a channel, or a failed capture reads as one.
+  const [dumpError, setDumpError] = useState(null);
 
   const [tasks, setTasks] = useState([]);
   const [taskInput, setTaskInput] = useState('');
@@ -385,6 +416,7 @@ export function CommandDeckProvider({ children }) {
     // Clear immediately, so even a press that slips past the guard finds nothing to submit.
     // Restored in the catch below, so a capture is never lost to a failure.
     setDumpInput('');
+    setDumpError(null);
     // Declared out here so the catch below can tell "nothing landed" from "some landed":
     // restoring the whole dump after a partial success would duplicate the items that
     // already filed. See ./dumpFiling.js.
@@ -400,7 +432,7 @@ export function CommandDeckProvider({ children }) {
       // item, so a dictated dump lands in several places instead of one.
       let items;
       try {
-        const { data } = await base44.functions.invoke('classifyDeckDumpItem', { text });
+        const { data } = await withTimeout(base44.functions.invoke('classifyDeckDumpItem', { text }), CLASSIFY_TIMEOUT_MS);
         items = Array.isArray(data?.items) && data.items.length
           ? data.items
           // A backend still on the previous build (it deploys independently)
@@ -472,7 +504,11 @@ export function CommandDeckProvider({ children }) {
         flagSaveErr();
       }
       if (outcome.message) flagQuickFile(outcome.message);
-    } catch {
+    } catch (err) {
+      // Say WHY, here, next to the box the operator just typed in. The generic save flag renders
+      // as a suffix elsewhere on the page and was the only signal a failed capture produced — so a
+      // press that filed nothing looked identical to a press that did nothing at all.
+      setDumpError(captureFailureMessage(err));
       flagSaveErr();
       // Put it back: the box was cleared optimistically on the way in, and losing what
       // someone just typed is worse than making them press again — but only when NOTHING
@@ -1156,7 +1192,7 @@ export function CommandDeckProvider({ children }) {
   // still in flight".
   const value = {
     loaded, saveErr, addPending,
-    dump, dumpInput, setDumpInput, dumpPending: !!addPending.dump, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
+    dump, dumpInput, setDumpInput, dumpPending: !!addPending.dump, quickFileMsg, dumpError, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
     people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,
