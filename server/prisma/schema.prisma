@@ -96,6 +96,7 @@ model User {
   deck_knowledge_notes DeckKnowledgeNote[]
   deck_life_streams  DeckLifeStream[]
   deck_life_stream_notes DeckLifeStreamNote[]
+  deck_life_files DeckLifeFile[]
   deck_energy_log_entries DeckEnergyLogEntry[]
   deck_focus_entries DeckFocusEntry[]
   deck_play_credits DeckPlayCredit[]
@@ -1378,6 +1379,7 @@ model DeckLifeStream {
   stream_key    String   // health | money | home | people | growth
   status        String   @default("needs_work") // on | needs_work
   notes         DeckLifeStreamNote[]
+  files         DeckLifeFile[]
 
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
@@ -1567,4 +1569,29 @@ model DeckPlayScore {
 
   @@index([score])
   @@map("deck_play_scores")
+}
+
+// A file attached to a life stream — a photo of a bill, a scan, a document.
+//
+// The old base44 deck had this (`LifeFile`: stream, url, name, type, is_image, note) and the port kept
+// text notes only, so a stream could hold prose and nothing else. It matters twice: it is how a bill or
+// a lab result actually gets kept, and the synthesis can only reason over what is there — the old
+// synthesis passed stream ATTACHMENT urls to the model, and the new snapshot has none.
+model DeckLifeFile {
+  id             String         @id @default(uuid())
+  life_stream_id String
+  life_stream    DeckLifeStream @relation(fields: [life_stream_id], references: [id], onDelete: Cascade)
+  created_by_id  String
+  user           User           @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  file_url       String
+  file_name      String   @default("")
+  file_type      String   @default("")
+  is_image       Boolean  @default(false)
+  note           String?  @db.Text
+
+  created_date   DateTime @default(now())
+
+  @@index([life_stream_id])
+  @@map("deck_life_files")
 }

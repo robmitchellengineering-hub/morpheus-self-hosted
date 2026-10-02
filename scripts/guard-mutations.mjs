@@ -303,6 +303,13 @@ export const MUTATIONS = [
     find: '  d.setUTCDate(d.getUTCDate() + 1);',
     replace: '  d.setUTCDate(d.getUTCDate());',
   },
+  {
+    guard: 'verify-life-files.mjs',
+    file: 'src/pages/CommandDeck/lifeFiles.js',
+    why: 'Calls every attachment an image, so a scanned PDF renders as a broken <img> in the stream — the direction this deliberately errs away from.',
+    find: "    is_image: type.startsWith('image/'),",
+    replace: '    is_image: true,',
+  },
 ];
 
 /**

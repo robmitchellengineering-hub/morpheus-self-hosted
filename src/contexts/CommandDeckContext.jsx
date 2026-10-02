@@ -262,7 +262,7 @@ export function CommandDeckProvider({ children }) {
           murbahRows, inboxRows, strategyRows, knowledgeRows, lifeStreamRows,
           lifeStreamNoteRows, energyRows, focusRows, jarvisRows,
           widgetRows, businessProfileRows,
-          playCreditRows, playScoreRows,
+          playCreditRows, playScoreRows, lifeFileRows,
         ] = await Promise.all([
           base44.entities.DeckDumpItem.list(),
           base44.entities.DeckPerson.list('created_date'),
@@ -285,6 +285,9 @@ export function CommandDeckProvider({ children }) {
           // every credit and score, and the board needs everyone's best — see game/playBank.js.
           base44.entities.DeckPlayCredit.list(),
           base44.entities.DeckPlayScore.list(),
+          // Life-stream attachments. `life_stream_id` on each row lets them hang on the stream the
+          // widget already renders, exactly as the notes above do.
+          base44.entities.DeckLifeFile.list(),
         ]);
 
         let peopleList = peopleRows;
@@ -329,7 +332,11 @@ export function CommandDeckProvider({ children }) {
         setKnowledge(knowledgeRows);
         setLifeStreams(Object.fromEntries(lifeStreamRowsFinal.map((ls) => [
           ls.stream_key,
-          { ...ls, notes: lifeStreamNoteRows.filter((n) => n.life_stream_id === ls.id) },
+          {
+            ...ls,
+            notes: lifeStreamNoteRows.filter((n) => n.life_stream_id === ls.id),
+            files: lifeFileRows.filter((f) => f.life_stream_id === ls.id),
+          },
         ])));
         setEnergyHistory(energyRows);
         setJarvisMessages(jarvisRows);
@@ -922,6 +929,31 @@ export function CommandDeckProvider({ children }) {
     try { await base44.entities.DeckLifeStreamNote.delete(noteId); } catch { flagSaveErr(); }
   };
 
+  // Attachments on a stream — a bill, a scan, a photo. The files arrive already uploaded (the widget
+  // uses the same uploadFile() every other Deck photo does), so this only records them, exactly as the
+  // repair files do. `describeUpload` decides is_image, because guessing the other way round shows a
+  // broken <img> where a document icon would have been merely plain.
+  const addLifeFiles = (streamKey, uploadedFiles) => guardAdd(`lifeFiles:${streamKey}`, async () => {
+    const stream = lifeStreams[streamKey];
+    if (!stream || !uploadedFiles?.length) return;
+    try {
+      const created = await Promise.all(uploadedFiles.map((f) => base44.entities.DeckLifeFile.create({
+        life_stream_id: stream.id,
+        file_url: f.file_url,
+        file_name: f.file_name,
+        file_type: f.file_type,
+        is_image: f.is_image,
+      })));
+      setLifeStreams((prev) => ({ ...prev, [streamKey]: { ...stream, files: [...created, ...(stream.files || [])] } }));
+    } catch { flagSaveErr(); }
+  });
+  const removeLifeFile = async (streamKey, fileId) => {
+    const stream = lifeStreams[streamKey];
+    if (!stream) return;
+    setLifeStreams((prev) => ({ ...prev, [streamKey]: { ...stream, files: (stream.files || []).filter((f) => f.id !== fileId) } }));
+    try { await base44.entities.DeckLifeFile.delete(fileId); } catch { flagSaveErr(); }
+  };
+
   // ---- inbox -------------------------------------------------------------
   const addInbox = () => guardAdd('inbox', async () => {
     if (!iForm.message.trim()) return;
@@ -1291,7 +1323,7 @@ export function CommandDeckProvider({ children }) {
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
     replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, replyDraftErr, startReplyDraft, cancelReplyDraft, sendReplyDraft,
-    lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
+    lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote, addLifeFiles, removeLifeFile,
     lightboxImg, setLightboxImg,
     confirmDeleteState, askToDelete, resolveConfirmDelete,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
