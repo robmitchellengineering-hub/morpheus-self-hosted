@@ -12,8 +12,8 @@
 // stuck on "saving" past the staleness bound is reported as `interrupted`, never
 // as still-saving and never as done.
 import { prisma } from '../db.js';
-import { artifactSaveResponse } from '../lib/artifactSaveJob.js';
-import { readArtifactSaveRecord } from '../lib/artifactSaveJobStore.js';
+import { artifactSaveResponse, ARTIFACT_SAVE_RECORD_TTL_MS } from '../lib/artifactSaveJob.js';
+import { readArtifactSaveRecord, clearArtifactSaveRecord } from '../lib/artifactSaveJobStore.js';
 
 export default async function handler({ user, body }) {
   const projectId = body?.projectId;
@@ -32,5 +32,16 @@ export default async function handler({ user, body }) {
   })).filter((f) => f.path.startsWith('_compiled/'));
 
   const record = await readArtifactSaveRecord(projectId);
-  return artifactSaveResponse({ record, savedRows });
+  const response = artifactSaveResponse({ record, savedRows });
+
+  // Bounded retention: once a record is settled AND old enough that no panel can
+  // still be polling it, drop the row instead of leaving one per project in
+  // platform_settings forever. A stale "saving" record reports `interrupted`, so
+  // it is settled too. The `_compiled/` rows are the durable record either way.
+  if (record && response.phase !== 'saving'
+    && Date.now() - (record.finishedAt || record.updatedAt || record.startedAt || 0) > ARTIFACT_SAVE_RECORD_TTL_MS) {
+    await clearArtifactSaveRecord(projectId);
+  }
+
+  return response;
 }

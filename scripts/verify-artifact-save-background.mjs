@@ -191,6 +191,10 @@ check('the panel shows saved/total progress',
 check('…and names the asset currently being copied', /saveState\.currentAsset/.test(panel), true);
 check('the panel resumes a running save when it opens (page reload mid-save)',
   /onCheckSave\?\.\(project\.id\)[\s\S]{0,300}data\?\.active[\s\S]{0,200}setPhase\('saving'\)/.test(panel), true);
+// Bounded retention: the record is a transient job row, not a per-project
+// fixture of platform_settings. A settled record must eventually be dropped.
+check('a settled, old record is cleared rather than accumulated',
+  /response\.phase !== 'saving'[\s\S]{0,300}clearArtifactSaveRecord\(projectId\)/.test(statusFn), true);
 
 // ═══ 7. streaming and idempotent resume are preserved ═══════════════════════
 console.log('\n7. the save is still streamed, and resuming is safe');

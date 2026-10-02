@@ -282,6 +282,13 @@ export const MUTATIONS = [
     find: '  void runArtifactSave(record, plan, {',
     replace: '  await runArtifactSave(record, plan, {',
   },
+  {
+    guard: 'verify-artifact-save-background.mjs',
+    file: 'server/src/functions/getArtifactSaveStatus.js',
+    why: 'Never retires a settled job record, so every project that ever compiles leaves a transient job row in platform_settings forever — the cleanup the guard claims exists.',
+    find: "  if (record && response.phase !== 'saving'",
+    replace: '  if (record && false',
+  },
 ];
 
 /**

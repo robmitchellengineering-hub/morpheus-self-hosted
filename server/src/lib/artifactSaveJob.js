@@ -44,8 +44,12 @@ export const ARTIFACT_SAVE_RECORD_PREFIX = 'artifact_save_job:';
 // without letting a dead process report "saving" indefinitely.
 export const ARTIFACT_SAVE_STALE_MS = 15 * 60 * 1000;
 
-/** All the phases a save can be observed in. */
-export const ARTIFACT_SAVE_PHASES = Object.freeze(['idle', 'saving', 'done', 'partial', 'failed', 'interrupted']);
+// How long a FINISHED record is kept before it is cleared. It has to outlive the
+// last poll of any open panel (so a failed save can still name what did not
+// land), but it must not accumulate one row per project in platform_settings
+// forever. Six hours is far past any panel's final poll and keeps the store
+// bounded.
+export const ARTIFACT_SAVE_RECORD_TTL_MS = 6 * 60 * 60 * 1000;
 
 function normalizeAssets(assets) {
   return (Array.isArray(assets) ? assets : []).map((a) => ({
