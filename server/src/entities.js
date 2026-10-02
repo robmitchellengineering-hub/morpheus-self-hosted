@@ -56,6 +56,7 @@ const ENTITY_MAP = {
   DeckKnowledgeNote: 'deckKnowledgeNote',
   DeckLifeStream: 'deckLifeStream',
   DeckLifeStreamNote: 'deckLifeStreamNote',
+  DeckLifeFile: 'deckLifeFile',
   DeckEnergyLogEntry: 'deckEnergyLogEntry',
   DeckFocusEntry: 'deckFocusEntry',
   DeckWidgetInstance: 'deckWidgetInstance',

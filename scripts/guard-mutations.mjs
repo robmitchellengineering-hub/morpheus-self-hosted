@@ -303,6 +303,20 @@ export const MUTATIONS = [
     find: '  d.setUTCDate(d.getUTCDate() + 1);',
     replace: '  d.setUTCDate(d.getUTCDate());',
   },
+  {
+    guard: 'verify-life-files.mjs',
+    file: 'src/pages/CommandDeck/lifeFiles.js',
+    why: 'Calls every attachment an image, so a scanned PDF renders as a broken <img> in the stream — the direction this deliberately errs away from.',
+    find: "    is_image: type.startsWith('image/'),",
+    replace: '    is_image: true,',
+  },
+  {
+    guard: 'verify-jarvis-voice.mjs',
+    file: 'src/hooks/useMorpheusVoice.js',
+    why: 'Plays the butler voice at normal speed again — the 23%-slower delivery that made the old deck feel faster, and a change no test would otherwise notice.',
+    find: '        audio.playbackRate = PLAYBACK_RATE;',
+    replace: '        audio.playbackRate = 1;',
+  },
 ];
 
 /**

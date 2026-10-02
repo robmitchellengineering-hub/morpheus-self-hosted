@@ -1228,3 +1228,24 @@ alter table deck_murbah_opportunities add column if not exists price double prec
 alter table deck_murbah_opportunities add column if not exists deposit_paid boolean not null default false;
 alter table deck_murbah_opportunities add column if not exists paid boolean not null default false;
 alter table deck_murbah_opportunities add column if not exists end_date timestamp(3);
+
+-- add-deck-life-files.sql — attachments on a life stream (see that file for why).
+CREATE TABLE "deck_life_files" (
+    "id" TEXT NOT NULL,
+    "life_stream_id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "file_url" TEXT NOT NULL,
+    "file_name" TEXT NOT NULL DEFAULT '',
+    "file_type" TEXT NOT NULL DEFAULT '',
+    "is_image" BOOLEAN NOT NULL DEFAULT false,
+    "note" TEXT,
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "deck_life_files_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX "deck_life_files_life_stream_id_idx" ON "deck_life_files"("life_stream_id");
+
+ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_life_stream_id_fkey" FOREIGN KEY ("life_stream_id") REFERENCES "deck_life_streams"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
