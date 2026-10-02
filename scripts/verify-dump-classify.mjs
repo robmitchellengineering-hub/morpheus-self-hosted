@@ -415,6 +415,17 @@ check('"get MORE milk" is a quantity of an errand, not an intention', lifeIntent
 check('paying the gym is a payment, not a health intention', lifeIntent('I need to pay the gym membership'), 'task');
 check('booking the dentist is a specific thing to do', lifeIntent('I need to book a dentist appointment'), 'task');
 check('"call the bank" is still a task', lifeIntent('I need to call the bank'), 'task');
+// The distinction Rob called "perfect differentiation", verified in production 2026-10-02 and locked here so
+// a future edit to OPEN_ENDED cannot quietly lose it. Same subject, same activity, different KIND: a direction
+// to move in versus an instance to do. Note this is NOT a rule about the word "today" — the open-ended marker
+// is the only thing that routes to a life stream, so anything time-bound or specific falls to the errand
+// default. That is why the pair separates without either phrase being enumerated.
+check('"MORE exercise" is the health stream (the direction)',
+  lifeIntent('I need to do more exercise'), 'life_stream/health');
+check('"some exercises TODAY" is a task (the instance)',
+  lifeIntent('I need to do some exercises today'), 'task');
+check('…and a bare instance is a task too, with no marker at all',
+  lifeIntent('I need to exercise today'), 'task');
 check('the other #469 cases still hold',
   lifeIntent('I need to get cheese') === 'task' && lifeIntent('Rob needs to get bread') === 'task', true);
 check('two thoughts are still the model\'s job, whatever the words',
