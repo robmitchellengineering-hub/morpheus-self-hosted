@@ -10,8 +10,15 @@ import MatrixRain from '@/components/matrix/MatrixRain';
 // (see App.jsx's comment) since that redirects to a bare /login with no way
 // back to this exact URL — the ?code= has to survive the login round trip,
 // so this page drives that redirect itself via redirectToLogin.
+//
+// The account being charged is named on this screen on purpose. Approving
+// binds the device token to whoever is signed in HERE, not to the app's owner
+// — so a token approved while a different account was signed in spends THAT
+// account's credits. On 2026-09-30 a WikiData uploader's request was approved
+// on a different, empty account and every AI call after it answered 402
+// "Insufficient credits", while the screen had only ever named the app.
 export default function ConnectDevice() {
-  const { isAuthenticated, isLoadingAuth, authChecked, checkUserAuth } = useAuth();
+  const { user, isAuthenticated, isLoadingAuth, authChecked, checkUserAuth } = useAuth();
   const [codeInput, setCodeInput] = useState('');
   const [code, setCode] = useState(() => new URLSearchParams(window.location.search).get('code') || '');
   const [pending, setPending] = useState(null); // { client_label, status }
@@ -146,6 +153,18 @@ export default function ConnectDevice() {
               <strong className="text-primary">{pending.client_label}</strong> wants to connect to your Morpheus
               account and use your credits for AI actions.
             </p>
+
+            {/* The account that will actually be charged. Approval binds this
+                device token to whoever is signed in here, so the email has to
+                be on screen before APPROVE — nothing else in the flow names it. */}
+            <div className="border border-primary/20 px-3 py-2 mb-4">
+              <p className="text-primary/80 text-xs uppercase tracking-wider mb-1">Approving as</p>
+              <p className="text-ink text-sm break-all">{user?.email || 'your signed-in account'}</p>
+              <p className="text-ink-strong text-xs mt-1">
+                Approving uses this account's credits for {pending.client_label}'s AI actions.
+              </p>
+            </div>
+
             <div className="flex gap-2">
               <button
                 onClick={approve}
