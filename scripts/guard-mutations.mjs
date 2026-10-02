@@ -69,6 +69,13 @@ export const MUTATIONS = [
     replace: '  return false;',
   },
   {
+    guard: 'verify-ui-feedback.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    why: 'Wires the report into control flow — an early return when there are findings — which is the enforcement the posture forbids and the shape a later "skip the build on findings" change would take.',
+    find: '      const uiApp = isUiApp(projectFiles);\n      const findings = uiFeedbackFindings(projectFiles);',
+    replace: '      const uiApp = isUiApp(projectFiles);\n      const findings = uiFeedbackFindings(projectFiles);\n      if (findings.length > 0) return;',
+  },
+  {
     guard: 'verify-export-promise.mjs',
     file: 'src/lib/exportPromise.js',
     why: 'Makes every verdict "ok", so an empty project reports itself runnable — the overclaim the module exists to prevent.',
