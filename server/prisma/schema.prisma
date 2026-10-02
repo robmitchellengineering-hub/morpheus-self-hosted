@@ -1289,6 +1289,19 @@ model DeckMurbahOpportunity {
   booking_date     DateTime?
   calendar_event_id String?
 
+  // ── The money half (2026-10-02) ─────────────────────────────────────────
+  // The old base44 deck's Murbah panel was a BOOKINGS LEDGER: price, deposit paid, fully paid, and a
+  // start–end range, with every edit re-pushing the whole booking — payment flags included — into the
+  // Calendar event. The calendar half came across when this was ported; the money half did not, which
+  // is the half that matters.
+  //
+  // booking_date stays the START and the thing Calendar is given, so no existing date is
+  // reinterpreted and nothing needs backfilling; end_date is simply the other end of the range.
+  price        Float?
+  deposit_paid Boolean @default(false)
+  paid         Boolean @default(false)
+  end_date     DateTime?
+
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 

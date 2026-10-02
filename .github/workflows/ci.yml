@@ -310,6 +310,12 @@ jobs:
       - name: Asteroids play bank and board
         run: node scripts/verify-deck-play.mjs
 
+      # The Murbah ledger: a half-typed price must not become NaN or a coerced 0, and an all-day
+      # Calendar event ends EXCLUSIVELY while the booking range is inclusive — an off-by-one there
+      # shifts every booking by a day, silently.
+      - name: Murbah ledger money and range
+        run: node scripts/verify-murbah-money.mjs
+
       # The Deck's long-term memory fold: a valid answer with no memory text must
       # not mark a batch of turns as folded, which would drop them from memory
       # permanently and without a word.
