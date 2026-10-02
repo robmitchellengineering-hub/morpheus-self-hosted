@@ -2296,8 +2296,10 @@ OPERATOR SAYS: ${message}`;
         fullReply += `\n\n// UI FEEDBACK: ${high.map((f) => `${f.title} (${f.path})`).join('; ')}. ${high.map((f) => f.fix).join(' ')}`;
       }
       // The checklist travels with the report rather than only when something is wrong: the rules cannot
-      // be verified from the files, so the one thing a person must do by hand is always said out loud.
-      if (uiApp) fullReply += `\n\n// UI CHECK: ${UI_FEEDBACK_ACCEPTANCE}`;
+      // be verified from the files, so the one thing a person must do by hand is always said out loud —
+      // but ONLY for a turn that actually changed the app. This block is reached on a pure-conversation
+      // turn too, and answering "what does this button do?" with a build checklist is noise, not a report.
+      if (uiApp && appliedCount(appliedOps) > 0) fullReply += `\n\n// UI CHECK: ${UI_FEEDBACK_ACCEPTANCE}`;
     } catch (err) {
       // A UI check that could not run must say so, never read as clean.
       uiFeedbackReport = { findings: [], uiApp: false, acceptance: UI_FEEDBACK_ACCEPTANCE, summary: `the UI feedback check could not run — ${err.message}`, failed: true };

@@ -277,6 +277,11 @@ check('…and reports it in the reply', /UI FEEDBACK:/.test(rawChat), true);
 // comments — which is exactly what the `// UI CHECK:` line looks like.
 check('…and carries the acceptance checklist in the reply',
   /\/\/ UI CHECK: \$\{UI_FEEDBACK_ACCEPTANCE\}/.test(rawChat), true);
+// Only for a turn that changed the app. The `if (uiApp) ...` version was the first attempt, and it put a
+// build checklist on the end of every conversational reply about a UI project — the block below is reached
+// on a `needsCode:false` turn too.
+check('…and only for a turn that actually changed the app',
+  /appliedCount\(appliedOps\) > 0\) fullReply \+= `\\n\\n\/\/ UI CHECK/.test(rawChat), true);
 check('…and in the result payload', /uiFeedback: uiFeedbackReport/.test(codeChat), true);
 check('…and a failed check is reported, not treated as clean',
   /the UI feedback check could not run/.test(rawChat), true);
