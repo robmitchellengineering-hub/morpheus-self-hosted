@@ -12,6 +12,18 @@
 // must be stripped before any check runs (H19 records six guards this repo shipped that were satisfied by
 // their own prose).
 //
+// REPORTED, NEVER ENFORCED — AND THAT IS A DECISION MADE MECHANICAL. The posture is a report: no finding
+// blocks a build, refuses a reply or changes whether code lands. That is the product owner's constraint
+// (the pipeline stays free to build), and it is the kind of decision a later change can quietly reverse by
+// wiring a finding into control flow. Section 8 is the tripwire for that reversal.
+//
+// IT IS A TRIPWIRE, NOT A PROOF, the same way `check-not-wired.mjs` in the workspace is. Section 8 reads
+// source SHAPES, and a determined rearrangement that keeps the same gating behaviour can evade it: a helper
+// that returns a boolean and is tested instead, a finding smuggled through a differently-named binding, a
+// gate assembled from pieces on separate lines, or an identifier reached through property access it does
+// not name. It catches the OBVIOUS wiring — `if (findings.length) return`, a `throw` on a report — not the
+// absence of wiring. A pass means "nothing here gates", not "nothing can gate".
+//
 // Run:  node scripts/verify-ui-feedback.mjs
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -430,6 +442,110 @@ check('the backend generator examines the whole project too', /uiFeedbackFinding
 check('…and returns it', /uiFeedback,/.test(codeGen), true);
 check('…and reports a failed check rather than clean',
   /the UI feedback check could not run/.test(rawGen), true);
+
+console.log('\n8. the report is never a gate — no export and no call site can refuse, block or require');
+// The report identifiers, plus any local bound directly from `uiFeedbackFindings`, so a rename is followed
+// rather than missed. A finding passed through a DIFFERENT name (a helper's return, a property) is invisible
+// here — that is the limit the header states.
+const FINDING_NAMES = ['uiFeedbackFindings', 'uiFeedbackReport', 'uiFeedback'];
+function findingNamesIn(src) {
+  const names = new Set(FINDING_NAMES);
+  const re = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?uiFeedbackFindings\s*\(/g;
+  let m;
+  while ((m = re.exec(src))) names.add(m[1]);
+  return [...names];
+}
+
+/** Is the character at `idx` inside the parentheses of an `if`/`while`/`for`/`switch` condition? */
+function insideControlCondition(src, idx) {
+  let depth = 0;
+  for (let j = idx - 1; j >= 0; j--) {
+    const c = src[j];
+    if (c === ')') depth++;
+    else if (c === '(') {
+      if (depth > 0) { depth--; continue; }
+      if (/\b(if|while|for|switch)\s*$/.test(src.slice(Math.max(0, j - 12), j))) return true;
+    } else if (depth === 0 && (c === ';' || c === '{' || c === '}')) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Index just past the last statement boundary before `idx`. */
+function statementStart(src, idx) {
+  return Math.max(src.lastIndexOf(';', idx), src.lastIndexOf('{', idx), src.lastIndexOf('}', idx)) + 1;
+}
+
+/** Unmatched `{` between `from` and `idx` — i.e. is `idx` inside an object literal? */
+function objectDepth(src, from, idx) {
+  let depth = 0;
+  for (let j = from; j < idx; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}') depth--;
+  }
+  return depth;
+}
+
+/** Every place a finding/report name decides control flow rather than being reported. Empty is the pass. */
+function controlFlowUses(src, names) {
+  const offenders = [];
+  const re = new RegExp(`\\b(${names.join('|')})\\b`, 'g');
+  let m;
+  while ((m = re.exec(src))) {
+    const idx = m.index;
+    const lineStart = src.lastIndexOf('\n', idx) + 1;
+    const lineEnd = src.indexOf('\n', idx);
+    const line = src.slice(lineStart, lineEnd === -1 ? src.length : lineEnd).trim();
+    if (insideControlCondition(src, idx)) { offenders.push(`conditional: ${line}`); continue; }
+    const start = statementStart(src, idx);
+    const head = src.slice(start, idx);
+    if (/\bthrow\b/.test(head)) { offenders.push(`throw: ${line}`); continue; }
+    // A returned object literal is a report payload. Anything else returned off a finding is a short-circuit.
+    if (/^\s*return\b/.test(head) && objectDepth(src, start, idx) === 0) { offenders.push(`return: ${line}`); continue; }
+    if (/^\s*(break|continue)\b/.test(line)) { offenders.push(`loop control: ${line}`); continue; }
+  }
+  return offenders;
+}
+
+// 8a. The module's API, checked against an explicit allow-list so a new export has to be a deliberate act.
+const EXPORTED = Object.keys(await import('../server/src/lib/uiFeedback.js')).filter((k) => k !== 'default').sort();
+const ALLOWED_EXPORTS = [
+  'UI_FEEDBACK_ACCEPTANCE', 'UI_FEEDBACK_CHECKS', 'UI_FEEDBACK_PROMPT_BLOCK', 'UI_FEEDBACK_RULES',
+  'isUiApp', 'isUiFile', 'stripComments', 'stripProse', 'uiFeedbackFindings', 'uiFeedbackSummary',
+].sort();
+check('the module exports exactly its allow-list', EXPORTED, ALLOWED_EXPORTS);
+check('…and no export is named like a gate — nothing can refuse, block or require',
+  EXPORTED.filter((n) => /(blocking|gate|enforce|must|require|refuse|deny|fail|throw)/i.test(n)), []);
+
+// 8b. Every call site in the three files that carry the report, with prose stripped first.
+const REPORT_FILES = [
+  'server/src/functions/chatWithMorpheus.js',
+  'server/src/functions/generateBackend.js',
+  'server/src/functions/planBackend.js',
+];
+const reportSources = REPORT_FILES.map((f) => stripProse(read(f)));
+for (let i = 0; i < REPORT_FILES.length; i++) {
+  check(`${REPORT_FILES[i]}: a finding is never used as control flow`,
+    controlFlowUses(reportSources[i], findingNamesIn(reportSources[i])), []);
+}
+// The scan is not vacuous: it must actually follow the `findings` binding in the file that has one.
+check('…and the scan followed the report binding, rather than finding nothing to scan',
+  findingNamesIn(reportSources[0]).includes('findings'), true);
+// The detector's own negative tests — a tripwire that cannot trip is a comment with a console.log.
+check('the detector catches an early return on findings',
+  controlFlowUses('if (findings.length > 0) return;', ['findings']).length > 0, true);
+check('…catches a throw on findings',
+  controlFlowUses('if (findings.length > 0) throw new Error("no");', ['findings']).length > 0, true);
+check('…catches a loop skip that changes whether work proceeds',
+  controlFlowUses('for (const f of findings) { if (f.severity) continue; }', ['findings']).length > 0, true);
+check('…catches a boolean returned off a report',
+  controlFlowUses('return uiFeedbackReport.findings.length > 0;', ['uiFeedbackReport']).length > 0, true);
+check('…and allows the three reporting uses',
+  controlFlowUses(
+    'const findings = uiFeedbackFindings(files);\nuiFeedback = { findings, summary: uiFeedbackSummary(findings) };\nreturn { uiFeedback };',
+    ['findings', 'uiFeedback', 'uiFeedbackFindings'],
+  ), []);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
