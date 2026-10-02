@@ -146,8 +146,30 @@ check('a missing file list is not a crash', Array.isArray(securityFindings(undef
 // now fails the build if any tracked file grows a real-looking one again.
 check('…and a real file among junk is still examined',
   ids([null, { path: 'server/x.js', content: 'const API_KEY = "this-is-not-a-real-secret-0000";' }]).includes('hardcoded-secret'), true);
+// The throw path is exercised BEHAVIOURALLY. The first version of this assertion called
+// `securityFindings([{ path: '.env', … }])` and asserted `env-committed` fired — which is true with or
+// without the try/catch, so the name overclaimed what it proved (H19: asserting a spelling rather than
+// behaviour). A deliberately throwing check is pushed onto the exported list, run, and popped in a
+// `finally`, so the module is left exactly as it was found.
+const securityChecksBefore = SECURITY_CHECKS.length;
+SECURITY_CHECKS.push({
+  id: 'throws-on-purpose',
+  severity: 'note',
+  title: 'A check injected by the guard to prove the throw path',
+  why: 'Not a real rule — the guard needs a check that throws so the try/catch around `applies` is exercised.',
+  fix: 'Nothing to fix; this entry exists only inside the guard run.',
+  applies: () => { throw new Error('injected by verify-security-posture.mjs'); },
+});
+let thrownFindings;
+try {
+  thrownFindings = securityFindings([{ path: '.env', content: 'x' }]);
+} finally {
+  SECURITY_CHECKS.pop();
+}
 check('a check that throws reports that it did not run rather than reading as clean',
-  securityFindings([{ path: '.env', content: 'x' }]).some((f) => f.id === 'env-committed'), true);
+  thrownFindings.find((f) => f.id === 'throws-on-purpose')?.evidence, ['(check failed to run)']);
+check('…and the injected check is removed in a finally, leaving SECURITY_CHECKS as found',
+  SECURITY_CHECKS.length === securityChecksBefore && !SECURITY_CHECKS.some((c) => c.id === 'throws-on-purpose'), true);
 
 console.log('\n7. the rules the coder is CHECKED against are the rules it is GIVEN');
 // A check without the matching instruction is a trap: it fails work the model was never told about.
