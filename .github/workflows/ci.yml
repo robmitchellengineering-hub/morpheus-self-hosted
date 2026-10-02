@@ -452,6 +452,18 @@ jobs:
       - name: An app can be tested on the machine it is installed on
         run: node scripts/verify-app-selftest.mjs
 
+      # A compile of a REAL app failed on both macOS jobs inside Morpheus's OWN generated workflow: the
+      # Release step published USER-MANUAL.txt, which the renderer writes in BEFORE actions/checkout@v4,
+      # and the checkout cleans the workspace and deletes it. The diagnosis loop could not fix that and
+      # should not have tried — it writes to the construct's files while Morpheus regenerates the workflow
+      # every compile — yet it spent a full 32,000-token call (40,365 in, OUTPUT_TRUNCATED, recorded
+      # `status: ok`) on it. This guard drives the owner classifier that stops that, and proves the rule
+      # that matters most: only a confident, evidence-backed 'morpheus' verdict skips the AI fix path.
+      # 'app', 'credentials' and 'unknown' keep today's behaviour, because the build pipeline must stay as
+      # free as possible. A miss is acceptable; a false "this is Morpheus's fault" that stops a real fix is not.
+      - name: A Morpheus-owned build failure is not sent to the app
+        run: node scripts/verify-build-failure-owner.mjs
+
       - name: The guard-mutation registry is honest
         run: node scripts/verify-guard-mutations.mjs
 

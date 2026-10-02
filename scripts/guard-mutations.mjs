@@ -244,6 +244,13 @@ export const MUTATIONS = [
     replace: "    .filter(() => true)",
   },
   {
+    guard: 'verify-build-failure-owner.mjs',
+    file: 'server/src/lib/buildFailureOwner.js',
+    why: 'Stops the classifier ever naming Morpheus as the owner, so the exact failure this change exists to catch — a Release step failing on the generated USER-MANUAL.txt — goes back to the AI fix path as an "app" failure: 40,365 input tokens, a 32,000-token call recorded `status: ok`, then OUTPUT_TRUNCATED and no diagnosis. The guard claims that failure is Morpheus-owned, so it must go red.',
+    find: "    if (evidence) return buildResult('morpheus', signature.id, evidence);",
+    replace: "    if (evidence) return buildResult('app', signature.id, evidence);",
+  },
+  {
     guard: 'verify-guard-mutations.mjs',
     file: 'scripts/guard-mutations.mjs',
     why: 'Raises this registry\'s own ratchet by one — precisely the edit that lets a new unproven guard through. The integrity guard exists to refuse that, so it must go red.',
