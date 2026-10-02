@@ -321,6 +321,11 @@ jobs:
       - name: Life-stream attachments
         run: node scripts/verify-life-files.mjs
 
+      # Jarvis's voice: the prompt constraints that keep replies speakable (dropped once already, and a
+      # prompt is prose — nothing fails when a rule disappears), and the 1.3x butler playback.
+      - name: Jarvis voice and playback
+        run: node scripts/verify-jarvis-voice.mjs
+
       # The Deck's long-term memory fold: a valid answer with no memory text must
       # not mark a batch of turns as folded, which would drop them from memory
       # permanently and without a word.
