@@ -373,6 +373,23 @@ check('…while still keeping the everyday action case as a task',
 check('the strategy bucket now covers an opportunity or direction, not only a plan',
   /strategy, plan, approach, opportunity or direction worth tracking/.test(considerationPrompt), true);
 
+console.log('\n11b. a statement about how the speaker IS is a reflection, not a task about the tasks');
+// Rob, 2026-10-02. The dump — "I have AuHD and excecutive disfunction issue, i have a hard time keeping
+// track of things and actioning tasks" — made flash burn 6277 and then 8000 output tokens across two
+// attempts (28s, 35s), and the words ended up in the unsorted pile. The life_stream bullet described an
+// area of life going badly but said nothing about the speaker describing THEMSELVES, and the trailing
+// "actioning tasks" is the trap: it reads as work not getting done, which invites the task bucket and a
+// long argument with itself.
+const selfDescription = buildClassifyPrompt({ text: 'I have AuHD and excecutive disfunction issue, i have a hard time keeping track of things and actioning tasks', businessContext: 'a music shop' });
+check('the prompt covers the speaker describing themselves',
+  /statement about how the SPEAKER IS/.test(selfDescription), true);
+check('…and says it is life_stream even when it mentions tasks',
+  /always life_stream, even when it mentions tasks or things not getting done/.test(selfDescription), true);
+check('…with the real case as its worked example',
+  /I have ADHD and executive dysfunction/.test(selfDescription), true);
+check('…and tells the model not to deliberate on it, which is the cost being fixed',
+  /Do not deliberate over this one/.test(selfDescription), true);
+
 console.log('\n12. an open-ended intention about a life area is not an errand');
 // Rob, 2026-10-02: "i need to do more exercise, that just went to tasks too". Confirmed in production:
 // no usage_events row at all, so this was NEVER the model — the code fast path owns every "I need to

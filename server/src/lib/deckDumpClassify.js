@@ -141,6 +141,8 @@ The deciding question for destination is ACTIONABLE vs NOT — never business vs
 
 THINKING ABOUT something is not DOING it, and this is the case the rule above gets wrong most often. A possibility being turned over — "I'm thinking about X", "I might X", "maybe X", "I'm considering X", "what if we X", "X is up for sale" — is STRATEGY when it concerns the business, even though it names something the business could do: nothing has been decided yet, so there is no to-do. "I think I might look at buying two more shops, maybe" is strategy. "I need to get milk" is a task. Use task only when the speaker has resolved to do the thing or asked to be reminded of it.
 
+A statement about how the SPEAKER IS — a difficulty they have, a condition, how they are coping — is always life_stream, even when it mentions tasks or things not getting done. "I have ADHD and executive dysfunction, I have a hard time keeping track of things and actioning tasks" is the speaker telling you how they are: it is health. It is NOT a task about the tasks, and it is not knowledge. Do not deliberate over this one — the mention of work that is not getting done is context, not an instruction. Decide it and move on.
+
 If an item's destination is life_stream, also set life_stream_key to whichever of health/money/home/people/growth fits best.
 
 TEXT: "${collapse(text)}"${ownerBlock}`;
