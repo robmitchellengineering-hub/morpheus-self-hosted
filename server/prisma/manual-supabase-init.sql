@@ -1222,3 +1222,9 @@ CREATE INDEX "deck_play_scores_score_idx" ON "deck_play_scores"("score");
 ALTER TABLE "deck_play_credits" ADD CONSTRAINT "deck_play_credits_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "deck_play_scores" ADD CONSTRAINT "deck_play_scores_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- add-deck-murbah-money.sql — the money half of the Murbah ledger (see that file for why).
+alter table deck_murbah_opportunities add column if not exists price double precision;
+alter table deck_murbah_opportunities add column if not exists deposit_paid boolean not null default false;
+alter table deck_murbah_opportunities add column if not exists paid boolean not null default false;
+alter table deck_murbah_opportunities add column if not exists end_date timestamp(3);

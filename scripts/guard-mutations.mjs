@@ -296,6 +296,13 @@ export const MUTATIONS = [
     find: '  return Math.max(0, creditedSeconds(credits) - playedSeconds(scores));',
     replace: '  return Math.max(0, creditedSeconds(credits));',
   },
+  {
+    guard: 'verify-murbah-money.mjs',
+    file: 'server/src/lib/murbahBooking.js',
+    why: 'Drops the exclusive-end off-by-one, so a booking that ends on the 5th ends on the 5th in Calendar — every Murbah booking silently a day short, in the place Rob actually reads it.',
+    find: '  d.setUTCDate(d.getUTCDate() + 1);',
+    replace: '  d.setUTCDate(d.getUTCDate());',
+  },
 ];
 
 /**

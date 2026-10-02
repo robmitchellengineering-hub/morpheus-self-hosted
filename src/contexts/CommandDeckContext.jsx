@@ -8,6 +8,7 @@ import {
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
 import { summarizeFiling, captureFailureMessage } from '@/pages/CommandDeck/dumpFiling';
 import { SECONDS_PER_TASK, bankSeconds } from '@/pages/CommandDeck/game/playBank';
+import { normalizePrice } from '@/pages/CommandDeck/murbahMoney';
 import PlayModal from '@/pages/CommandDeck/game/PlayModal';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -825,6 +826,26 @@ export function CommandDeckProvider({ children }) {
       try { await base44.entities.DeckMurbahOpportunity.update(id, { booking_date: date }); } catch { flagSaveErr(); }
     });
   };
+  // The money half — price, deposit paid, fully paid, and the end of the range. One handler, because
+  // they are edited together and share a debounce.
+  //
+  // `price` arrives as the raw input string, so it is normalised here: an empty box means "no price"
+  // (null), never NaN and never 0 — a booking at zero and a booking with no price agreed are
+  // different facts, and only one of them should show as £0. A half-typed number is dropped rather
+  // than stored, so "1e" or "-" mid-keystroke cannot become a value.
+  const updateMurbahMoney = (id, patch) => {
+    const clean = { ...patch };
+    if ('price' in clean) {
+      const { ok, value } = normalizePrice(clean.price);
+      if (!ok) return; // a keystroke in progress, not a value — store nothing
+      clean.price = value;
+    }
+    if ('end_date' in clean) clean.end_date = toIsoDate(clean.end_date);
+    setMurbahOpps((prev) => prev.map((m) => (m.id === id ? { ...m, ...clean } : m)));
+    debouncedSave(`murbah-money-${id}`, async () => {
+      try { await base44.entities.DeckMurbahOpportunity.update(id, clean); } catch { flagSaveErr(); }
+    });
+  };
   const syncMurbahCalendar = async (id) => {
     setMurbahSyncBusy(id);
     setMurbahSyncMsg(null);
@@ -1264,7 +1285,7 @@ export function CommandDeckProvider({ children }) {
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, updateConsignment, removeConsignment,
     rForm, setRForm, addRepair, updateRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
-    cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
+    cycleMurbahStage, updateMurbahNote, updateMurbahDate, updateMurbahMoney, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
     murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,

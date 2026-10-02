@@ -87,6 +87,15 @@ DDL. `pushSelfDevToGithub` blocks a schema change with no migration;
 `applySelfDevMigrations` runs additive ones after the merge (destructive DDL is
 left for a human).
 
+**There are TWO SQL files, and a new model needs both.** The migration above is
+what *production* runs; `server/prisma/manual-supabase-init.sql` is what a
+**fresh install** runs, and it holds its own `CREATE TABLE` / index / foreign key
+for every model. Shipping one without the other is invisible in production and
+leaves every new self-host a lesser install. `scripts/verify-bootstrap-sql.mjs`
+counts them against the schema. (2026-10-02: the two `deck_play_*` models shipped
+with their `add-deck-play.sql` migration and nothing in the bootstrap — 55 tables
+against 57 models. Caught by the guard, in the full suite.)
+
 ## H7 — self-dev pushes must never touch `base44/`, lockfiles, or binaries
 `shouldExclude()` (`server/src/lib/selfDevRepo.js`) defines what self-dev
 mirrors. A 2026-09-06 rewrite of `pushSelfDevToGithub.js` computed deletions
@@ -321,6 +330,20 @@ rename on either side cannot silently disable the requirement. A repo with no
 known gates keeps the old behaviour, and a conflict is answered as a conflict:
 it is the reason the run never appeared. Never let a *host's* green preview stand
 in for verification of the change.
+
+**The same shape one level down, and it bit on 2026-10-02: a guard that is not in
+CI is a guard that never runs on a PR.** A new guard added to `scripts/verify.mjs`
+and nowhere else passes every local suite — including the whole of `verify.mjs` —
+while never executing on a pull request, because the workflow runs each guard as
+its own named step. Green locally, absent from the gate. **Adding a guard is a
+three-place change:** `scripts/verify.mjs`, a step in
+`.github/workflows/ci.yml`, and an entry in the mutation registry
+(`scripts/guard-mutations.mjs`, proving it can actually go red — H19). Two guards
+now refuse the omission: `scripts/verify-context.mjs` fails a hard gate CI does
+not run, and `scripts/verify-guard-mutations.mjs` refuses an unproven one. **Run
+the whole suite, not the checks you remember writing** — that run is what caught
+this and the bootstrap-SQL gap in H8 above, neither of which appeared in the
+hand-picked guards run while writing them.
 
 
 
