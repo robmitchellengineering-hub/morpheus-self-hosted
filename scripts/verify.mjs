@@ -32,6 +32,7 @@ const HARD = [
   'verify-context.mjs',
   'verify-dump-classify.mjs',
   'verify-dump-filing.mjs',
+  'verify-deck-play.mjs',
   'verify-gmail-sync.mjs',
   'verify-deck-draft.mjs',
   'verify-deck-document.mjs',

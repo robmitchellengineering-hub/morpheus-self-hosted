@@ -7,6 +7,9 @@ import {
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
 import { summarizeFiling, captureFailureMessage } from '@/pages/CommandDeck/dumpFiling';
+import { SECONDS_PER_TASK, bankSeconds } from '@/pages/CommandDeck/game/playBank';
+import PlayModal from '@/pages/CommandDeck/game/PlayModal';
+import { useAuth } from '@/lib/AuthContext';
 
 // All of Command Deck's shared state, data loading, and CRUD handlers —
 // lifted out of the old single-file CommandDeck.jsx unchanged, so every tab
@@ -114,6 +117,20 @@ export function CommandDeckProvider({ children }) {
   // Why the last capture filed nothing. Separate from quickFileMsg, which is the green "where it
   // went" line: a failure and a success must not share a channel, or a failed capture reads as one.
   const [dumpError, setDumpError] = useState(null);
+
+  // ---- Asteroids reward ---------------------------------------------------
+  // The bank is a ledger read whole (every credit, every game), and the popup is opened by ticking a
+  // task off. See src/pages/CommandDeck/game/.
+  const [playCredits, setPlayCredits] = useState([]);
+  const [playScores, setPlayScores] = useState([]);
+  const [playOpen, setPlayOpen] = useState(false);
+  // The board is Morpheus-wide, so it has to know which row is the viewer's — and the initials the
+  // player last used are their own most recent score, which is why nothing separate stores them.
+  const { user } = useAuth();
+  const meId = user?.id || null;
+  const playInitials = playScores
+    .filter((s) => s.created_by_id === meId)
+    .sort((a, b) => String(b.created_date || '').localeCompare(String(a.created_date || '')))[0]?.initials || '';
 
   const [tasks, setTasks] = useState([]);
   const [taskInput, setTaskInput] = useState('');
@@ -244,6 +261,7 @@ export function CommandDeckProvider({ children }) {
           murbahRows, inboxRows, strategyRows, knowledgeRows, lifeStreamRows,
           lifeStreamNoteRows, energyRows, focusRows, jarvisRows,
           widgetRows, businessProfileRows,
+          playCreditRows, playScoreRows,
         ] = await Promise.all([
           base44.entities.DeckDumpItem.list(),
           base44.entities.DeckPerson.list('created_date'),
@@ -262,6 +280,10 @@ export function CommandDeckProvider({ children }) {
           base44.entities.DeckJarvisMessage.list('created_date', 50),
           base44.entities.DeckWidgetInstance.list(),
           base44.entities.DeckBusinessProfile.list(),
+          // The Asteroids reward's ledger. Both are read whole: the bank is a running total over
+          // every credit and score, and the board needs everyone's best — see game/playBank.js.
+          base44.entities.DeckPlayCredit.list(),
+          base44.entities.DeckPlayScore.list(),
         ]);
 
         let peopleList = peopleRows;
@@ -312,6 +334,8 @@ export function CommandDeckProvider({ children }) {
         setJarvisMessages(jarvisRows);
         setWidgetInstances(widgetList);
         setBusinessProfile(businessProfileRows[0] || null);
+        setPlayCredits(playCreditRows);
+        setPlayScores(playScoreRows);
 
         const today = todayKey();
         const todayEnergy = energyRows.find((e) => (e.date || '').slice(0, 10) === today);
@@ -566,12 +590,37 @@ export function CommandDeckProvider({ children }) {
   const toggleTask = async (id) => {
     const t = tasks.find((x) => x.id === id);
     if (!t) return;
-    setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
-    try { await base44.entities.DeckTask.update(id, { done: !t.done }); } catch { flagSaveErr(); }
+    const nowDone = !t.done;
+    setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, done: nowDone } : x)));
+    try { await base44.entities.DeckTask.update(id, { done: nowDone }); } catch { flagSaveErr(); }
+    // Completing a task earns a minute of Asteroids — "you can play asteroids for 1 min or choose to
+    // bank the time to play more later". The credit is written either way, so the popup's two answers
+    // are really "play now" and "play later"; both are the same bank.
+    //
+    // Un-ticking does NOT take the minute back — the credit is a ledger row, and clawing it back
+    // would let a mis-tap destroy play time that was already earned. Re-ticking cannot earn a SECOND
+    // one: deck_play_credits is unique on (created_by_id, task_id), so the duplicate create is
+    // refused by the database. That refusal is the intended outcome, not an error to show.
+    if (nowDone) {
+      try {
+        const credit = await base44.entities.DeckPlayCredit.create({ task_id: id, seconds: SECONDS_PER_TASK, reason: 'task' });
+        setPlayCredits((prev) => [...prev, credit]);
+      } catch { /* already paid for this task, or offline — the task itself is still done */ }
+      setPlayOpen(true);
+    }
   };
   const removeTask = async (id) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     try { await base44.entities.DeckTask.delete(id); } catch { flagSaveErr(); }
+  };
+
+  // One row per game played. The time was already spent when the session opened, so a failure here
+  // loses the score (flagged) rather than the score being double-counted.
+  const submitPlayScore = async ({ score, seconds_played, initials }) => {
+    try {
+      const created = await base44.entities.DeckPlayScore.create({ score, seconds_played, initials });
+      setPlayScores((prev) => [...prev, created]);
+    } catch { flagSaveErr(); }
   };
 
   // ---- people ----------------------------------------------------------
@@ -1237,5 +1286,21 @@ export function CommandDeckProvider({ children }) {
     calendarEvents, calendarLoading, calendarForm, setCalendarForm, calendarBusy, loadCalendarEvents, addCalendarEvent,
   };
 
-  return <CommandDeckContext.Provider value={value}>{children}</CommandDeckContext.Provider>;
+  return (
+    <CommandDeckContext.Provider value={value}>
+      {children}
+      {/* The Asteroids reward, opened by ticking a task off. Rendered by the provider rather than a
+          widget so it survives whichever tab or widget set the account has enabled. */}
+      {playOpen && (
+        <PlayModal
+          seconds={bankSeconds(playCredits, playScores)}
+          initials={playInitials}
+          scores={playScores}
+          meId={meId}
+          onClose={() => setPlayOpen(false)}
+          onSubmitScore={submitPlayScore}
+        />
+      )}
+    </CommandDeckContext.Provider>
+  );
 }

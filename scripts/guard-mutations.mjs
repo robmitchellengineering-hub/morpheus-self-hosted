@@ -289,6 +289,13 @@ export const MUTATIONS = [
     find: "  if (record && response.phase !== 'saving'",
     replace: '  if (record && false',
   },
+  {
+    guard: 'verify-deck-play.mjs',
+    file: 'src/pages/CommandDeck/game/playBank.js',
+    why: 'Stops the bank spending what a game played, so play time is never used up — the arithmetic the whole reward rests on, and the one slip that hands out unlimited Asteroids.',
+    find: '  return Math.max(0, creditedSeconds(credits) - playedSeconds(scores));',
+    replace: '  return Math.max(0, creditedSeconds(credits));',
+  },
 ];
 
 /**
