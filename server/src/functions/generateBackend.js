@@ -16,6 +16,9 @@ import {
   planWrites, staleBackendPaths, persistIncrementally, removeStale, partialRunNote,
 } from '../lib/incrementalPersist.js';
 import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
+import {
+  uiFeedbackFindings, uiFeedbackSummary, isUiApp, UI_FEEDBACK_PROMPT_BLOCK, UI_FEEDBACK_ACCEPTANCE,
+} from '../lib/uiFeedback.js';
 import { generateFilesChunked } from '../lib/chunkedFileGen.js';
 
 function detectLanguage(path) {
@@ -80,6 +83,7 @@ ${refSection}`;
   // followed by a chunked WRITE pass, same pattern as chatWithMorpheus.js
   // and generateTests.js.
   const planPrompt = `${backendBrief}
+${UI_FEEDBACK_PROMPT_BLOCK}
 
 Decide which backend files are needed. You do not write file content yet. Include:
 - Server entry point and all route handlers
@@ -105,6 +109,7 @@ Respond as JSON: { "plannedFiles": ["string" (path, relative, WITHOUT "backend/"
 
   const writePrompt = `You are Morpheus, a backend code generator. Write full, production-ready file content for the requested file(s) only.
 ${SECURITY_PROMPT_BLOCK}
+${UI_FEEDBACK_PROMPT_BLOCK}
 
 ${backendBrief}
 
@@ -291,6 +296,28 @@ Do NOT reply with a JSON schema, a description of the shape, or the string "file
   } catch (err) {
     security = { findings: [], summary: `the security check could not run — ${err.message}`, failed: true };
   }
+
+  // The same UI feedback posture the main build reports, over the WHOLE project for the same reason: the
+  // screens live in the frontend files, not in this generation. UI apps only — a standalone backend has no
+  // screens, and its summary says NOT EXAMINED rather than clean (H17). Reported, never enforced.
+  let uiFeedback = null;
+  try {
+    const projectFiles = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+    const uiApp = isUiApp(projectFiles);
+    const findings = uiFeedbackFindings(projectFiles);
+    uiFeedback = {
+      findings,
+      uiApp,
+      acceptance: UI_FEEDBACK_ACCEPTANCE,
+      summary: uiFeedbackSummary(findings, { filesExamined: projectFiles.length, uiApp }),
+    };
+    const high = findings.filter((f) => f.severity === 'high');
+    if (uiApp && high.length > 0) {
+      console.error(`[generateBackend] UI FEEDBACK: ${high.map((f) => `${f.title} (${f.path})`).join('; ')}`);
+    }
+  } catch (err) {
+    uiFeedback = { findings: [], uiApp: false, acceptance: UI_FEEDBACK_ACCEPTANCE, summary: `the UI feedback check could not run — ${err.message}`, failed: true };
+  }
   await logUsage(user.id, 'autonomous_step', projectId, project.name, { phase: 'backend_generate', components, fileCount: savedCount });
 
   // `summary` describes the WHOLE planned set; `fileCount` is what actually reached disk. When they
@@ -313,5 +340,6 @@ Do NOT reply with a JSON schema, a description of the shape, or the string "file
     // Kept beside `missing` so a reader of this report can see WHY nothing is missing when the names differ.
     substituted: recon.substituted,
     security,
+    uiFeedback,
   };
 }

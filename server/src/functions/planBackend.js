@@ -7,6 +7,7 @@ import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { COMPONENTS, getServiceOption, DEFAULT_COMPONENTS, getPosture } from '../lib/infrastructureComponents.js';
+import { UI_FEEDBACK_PROMPT_BLOCK } from '../lib/uiFeedback.js';
 
 export default async function handler({ user, body }) {
   const { projectId, posture: requestedPosture } = body || {};
@@ -51,6 +52,7 @@ ${fileSummary}
 Identify what API calls the frontend makes (look for fetch, axios, API base URLs), what data entities it needs, and what authentication it expects. Then design a complete backend plan.`;
 
   const prompt = `You are Morpheus, a backend architect. ${projectContext}
+${UI_FEEDBACK_PROMPT_BLOCK}
 
 Available infrastructure components and their free-tier service options:
 ${COMPONENTS.map((c) => `- ${c.type} (${c.label}): ${c.options.map((o) => o.id).join(', ')}`).join('\n')}

@@ -11,6 +11,9 @@ import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { runReviewerFailOpen, reviewFailureNote } from '../lib/reviewFailOpen.js';
 import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
+import {
+  uiFeedbackFindings, uiFeedbackSummary, isUiApp, UI_FEEDBACK_PROMPT_BLOCK, UI_FEEDBACK_ACCEPTANCE,
+} from '../lib/uiFeedback.js';
 import { isContentOp, appliedPaths, appliedCount, unresolvedPaths } from '../lib/appliedOps.js';
 import { planSelfTestFile, selfTestEvidence, selfTestEvidenceLine } from '../lib/appSelfTest.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
@@ -278,6 +281,7 @@ Keep your reply short — a sentence or two of guidance, maybe a question or a c
 const PLANNER_INSTRUCTIONS = `
 
 You are operating in TWO-PHASE BUILD MODE as the PLANNING agent.
+${UI_FEEDBACK_PROMPT_BLOCK}
 
 Analyze the operator's message carefully:
 - If they are asking you to BUILD, CREATE, or MODIFY something, set needsCode: true and produce a precise build plan — file-by-file, with architecture decisions, implementation notes, and design rationale. Think deeply about reliability, usability, aesthetics, and edge cases. Your plan must be specific enough that a fast coder agent can implement it without ambiguity.
@@ -340,6 +344,7 @@ You receive a build plan from the planning agent. Implement it precisely — wri
 
 Apply all the build configuration rules from your system instructions — package.json, README.md, build configs matching the compile target, etc.
 ${SECURITY_PROMPT_BLOCK}
+${UI_FEEDBACK_PROMPT_BLOCK}
 Return JSON with:
 - fileOperations: an array of file operations.
   - action "create": include the full \`content\` of the new file.
@@ -1069,6 +1074,10 @@ OPERATOR SAYS: ${message}`;
   // exists rather than what this turn happened to touch. Declared here so the outer catch can still
   // report what was found (H18: a declaration that must outlive its block goes outside it).
   let securityReport = null;
+  // The UI feedback posture for the whole project, filled in beside the security report for the same
+  // reason: the summary must describe the app that exists, not only this turn's diff. Declared here so
+  // the outer catch can still report what was found (H18).
+  let uiFeedbackReport = null;
   let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
   const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
   let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -2264,6 +2273,39 @@ OPERATOR SAYS: ${message}`;
       console.error('[chatWithMorpheus] security check failed:', err.message);
     }
 
+    // ── UI feedback posture ───────────────────────────────────────────────
+    // The planner and the coder are both given the ten UI rules (UI_FEEDBACK_PROMPT_BLOCK); this examines
+    // what came back and tells the operator how the screens behave — the same shape as the security report
+    // above, and run over the whole project for the same reason.
+    //
+    // UI apps only. A project with no UI files has nothing to check and the summary says NOT EXAMINED,
+    // never "clean" — "nothing was found" and "nothing was looked at" are different sentences (H17).
+    // Reported, not enforced: nothing here stops a build or refuses a reply.
+    try {
+      const projectFiles = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+      const uiApp = isUiApp(projectFiles);
+      const findings = uiFeedbackFindings(projectFiles);
+      uiFeedbackReport = {
+        findings,
+        uiApp,
+        acceptance: UI_FEEDBACK_ACCEPTANCE,
+        summary: uiFeedbackSummary(findings, { filesExamined: projectFiles.length, uiApp }),
+      };
+      const high = findings.filter((f) => f.severity === 'high');
+      if (uiApp && high.length > 0) {
+        fullReply += `\n\n// UI FEEDBACK: ${high.map((f) => `${f.title} (${f.path})`).join('; ')}. ${high.map((f) => f.fix).join(' ')}`;
+      }
+      // The checklist travels with the report rather than only when something is wrong: the rules cannot
+      // be verified from the files, so the one thing a person must do by hand is always said out loud —
+      // but ONLY for a turn that actually changed the app. This block is reached on a pure-conversation
+      // turn too, and answering "what does this button do?" with a build checklist is noise, not a report.
+      if (uiApp && appliedCount(appliedOps) > 0) fullReply += `\n\n// UI CHECK: ${UI_FEEDBACK_ACCEPTANCE}`;
+    } catch (err) {
+      // A UI check that could not run must say so, never read as clean.
+      uiFeedbackReport = { findings: [], uiApp: false, acceptance: UI_FEEDBACK_ACCEPTANCE, summary: `the UI feedback check could not run — ${err.message}`, failed: true };
+      console.error('[chatWithMorpheus] UI feedback check failed:', err.message);
+    }
+
     // ── Feature progress ──────────────────────────────────────────────────
     // Escalation turn: announce the plan and advance past step 1 (just built).
     // Ongoing feature turn (non-self-dev): advance the active step when the
@@ -2346,7 +2388,7 @@ OPERATOR SAYS: ${message}`;
     emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, // The paths that ACTUALLY changed, so no consumer has to re-derive it from `fileOperations`, which is a
 // mixed list carrying refusals (`policy_denied`), skips and failures alongside real writes. Three
 // consumers had each derived their own answer and two were wrong (defect 4).
-changedPaths: appliedPaths(appliedOps), security: securityReport, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedCount(appliedOps) > 0 && !isSelfDev)) } });
+changedPaths: appliedPaths(appliedOps), security: securityReport, uiFeedback: uiFeedbackReport, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedCount(appliedOps) > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // If the build already LANDED, an error event is the worst response available: the files are
