@@ -44,6 +44,10 @@
 // which the ownership check does not replace. This module therefore carries no credential
 // vocabulary at all: a credential-shaped message with no Morpheus signature falls through
 // to 'unknown', and the caller keeps that class exactly as it was.
+//
+// PRECEDENCE, in the order it actually executes: the caller's own credential branch (run
+// before this module is consulted) → app → morpheus → unknown. Only the last three are
+// decided here, and an app-owned signature outranks a Morpheus one.
 
 // Mirrors USER_MANUAL_FILE in lib/appUserManual.js. Import-free, so it is a literal.
 const MANUAL_FILE = 'USER-MANUAL.txt';

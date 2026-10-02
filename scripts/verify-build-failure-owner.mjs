@@ -17,9 +17,9 @@
 // This guard drives the classifier that stops that, and — the rule that matters most —
 // proves that only a confident, evidence-backed 'morpheus' verdict suppresses the fix
 // path. 'app' and 'unknown' keep today's behaviour, and a credential gap stays the
-// caller's own classification (see section 4), because the build pipeline must stay as
-// free as possible. A miss is acceptable; a false "this is Morpheus's fault" that stops a
-// real fix is not.
+// caller's own classification and outranks the ownership verdict (sections 4 and 8),
+// because the build pipeline must stay as free as possible. A miss is acceptable; a false
+// "this is Morpheus's fault" that stops a real fix is not.
 //
 // Pure: no model, no key, no network, no database. Run:
 //   node scripts/verify-build-failure-owner.mjs
@@ -183,6 +183,33 @@ check('…before it reaches autoFixCodeErrors',
   compileBody.indexOf('ownerIsMorpheus(') > -1 && compileBody.indexOf('ownerIsMorpheus(') < compileBody.indexOf('autoFixCodeErrors('), true);
 const buildBody = issueSrc.slice(issueSrc.indexOf('async function diagnoseBuild('));
 check('the autonomous build path classifies too', buildBody.includes('classifyBuildFailure('), true);
+
+console.log('\n8. the caller\'s credential class outranks the ownership verdict');
+// THE FIXTURE. A top-level auth error whose logs ALSO carry a Morpheus-owned signature.
+// Asked on its own, the classifier says 'morpheus' — which is exactly why the caller's
+// own credential branch has to be reached first, and why the order is a property rather
+// than a comment.
+const authPlusMorpheus = {
+  error: 'GitHub connection not connected',
+  logs: [{ job: 'build (macos-15-intel)', log: REAL_LOG }],
+  target: 'mac-app',
+  artifactGlob: 'app-macos-*.dmg'
+};
+check('the scenario really does carry a Morpheus-owned signature',
+  classifyBuildFailure(authPlusMorpheus).owner, 'morpheus');
+// diagnoseIssue.js cannot be imported here — it reaches @prisma/client, and this runs in
+// the no-install guards job — so the caller's ORDER is pinned on comment-stripped source,
+// exactly as section 7 pins the auto-fix ordering. The gate is the claim: if the ownership
+// verdict ran unconditionally, this scenario would return the Morpheus sentence and the
+// credential action would never be built.
+const authAt = compileBody.indexOf('isAuthError(');
+const ownershipAt = compileBody.indexOf('classifyBuildFailure(');
+const gateAt = compileBody.indexOf('if (!isAuthError(error)) {');
+check('the caller decides its credential class before the ownership verdict',
+  authAt > -1 && ownershipAt > -1 && authAt < ownershipAt, true);
+check('…and the ownership verdict is gated on it', gateAt > -1 && gateAt < ownershipAt, true);
+check('…so the credential action is still built by the caller',
+  compileBody.includes("label: 'GitHub Connection'") && compileBody.indexOf("label: 'GitHub Connection'") < ownershipAt, true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) {

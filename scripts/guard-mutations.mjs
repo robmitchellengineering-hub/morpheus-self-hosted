@@ -251,6 +251,13 @@ export const MUTATIONS = [
     replace: "    if (evidence) return buildResult('app', signature.id, evidence);",
   },
   {
+    guard: 'verify-build-failure-owner.mjs',
+    file: 'server/src/functions/diagnoseIssue.js',
+    why: 'Removes the gate that keeps the ownership verdict behind the caller\'s own credential branch. With it gone, a credential failure whose logs also carry a Morpheus signature returns the Morpheus sentence and skips the credential action — the precedence the header claims and section 8 of the guard pins as an order the code executes, not a comment.',
+    find: '  if (!isAuthError(error)) {\n    const ownership = classifyBuildFailure(',
+    replace: '  if (true) {\n    const ownership = classifyBuildFailure(',
+  },
+  {
     guard: 'verify-guard-mutations.mjs',
     file: 'scripts/guard-mutations.mjs',
     why: 'Raises this registry\'s own ratchet by one — precisely the edit that lets a new unproven guard through. The integrity guard exists to refuse that, so it must go red.',
