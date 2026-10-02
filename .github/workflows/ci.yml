@@ -326,6 +326,11 @@ jobs:
       - name: Jarvis voice and playback
         run: node scripts/verify-jarvis-voice.mjs
 
+      # Exporting a reply: the filename must survive a downloads folder, a comma inside a cell must not
+      # split the columns, and only a real table should offer a spreadsheet.
+      - name: Document export
+        run: node scripts/verify-doc-export.mjs
+
       # The Deck's long-term memory fold: a valid answer with no memory text must
       # not mark a batch of turns as folded, which would drop them from memory
       # permanently and without a word.
