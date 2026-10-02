@@ -230,6 +230,26 @@ check('the summary names the app as a UI app when it is one',
   /UI feedback finding|note\(s\)|not the same as/.test(uiFeedbackSummary(badFindings, { filesExamined: BAD.length, uiApp: true })), true);
 check('a malformed file entry does not crash the checker', Array.isArray(uiFeedbackFindings([null, {}, { path: 42 }])), true);
 check('a missing file list is not a crash', Array.isArray(uiFeedbackFindings(undefined)), true);
+// A check that throws must report that it did not run rather than reading as clean (H17). This is
+// exercised BEHAVIOURALLY — a real throwing check is pushed onto the exported list and run — because the
+// security guard's version of this assertion only re-tests that `env-committed` fires, which it does with
+// or without the try/catch, so its name overclaims what it proves.
+UI_FEEDBACK_CHECKS.push({
+  id: 'throws-on-purpose',
+  severity: 'note',
+  title: 'A check injected by the guard to prove the throw path',
+  why: 'Not a real rule — the guard needs a check that throws to prove a failed check never reads as clean.',
+  fix: 'Nothing to fix; this entry exists only inside the guard run.',
+  applies: () => { throw new Error('injected by verify-ui-feedback.mjs'); },
+});
+let thrownFindings;
+try {
+  thrownFindings = uiFeedbackFindings(BAD);
+} finally {
+  UI_FEEDBACK_CHECKS.pop();
+}
+check('a check that throws reports that it did not run rather than reading as clean',
+  thrownFindings.some((f) => f.id === 'throws-on-purpose' && f.path === '(check failed to run)'), true);
 
 console.log('\n6. the rules the app is CHECKED against are the rules it is GIVEN');
 check('the prompt block carries all ten rules', UI_FEEDBACK_RULES.every((r) => UI_FEEDBACK_PROMPT_BLOCK.includes(r.rule)), true);
