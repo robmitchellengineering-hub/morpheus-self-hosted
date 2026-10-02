@@ -32,6 +32,13 @@ export const MUTATIONS = [
     replace: "    id: 'env-committed',\n    severity: 'note',",
   },
   {
+    guard: 'verify-ui-feedback.mjs',
+    file: 'server/src/lib/uiFeedback.js',
+    why: 'Makes stripProse a no-op, so comments and string literals count as code — the exact prose-satisfies-the-check failure H19 records six times, and the property the whole conservative design rests on.',
+    find: '  return cleaned;\n}',
+    replace: '  return src;\n}',
+  },
+  {
     guard: 'verify-export-promise.mjs',
     file: 'src/lib/exportPromise.js',
     why: 'Makes every verdict "ok", so an empty project reports itself runnable — the overclaim the module exists to prevent.',

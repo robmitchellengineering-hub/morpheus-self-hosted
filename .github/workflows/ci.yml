@@ -378,6 +378,16 @@ jobs:
       - name: A generated app arrives with its dangers named
         run: node scripts/verify-security-posture.mjs
 
+      # Security is the first posture; this is the second, with the opposite failure mode. An app that
+      # never shows a busy state, swallows a failure with nothing on screen and clears the form on the way
+      # out is not dangerous — it is untrustworthy, and it raises no error anywhere. The ten rules are given
+      # to the planner and the coder, the six mechanically detectable ones are checked over the generated
+      # files, the result is REPORTED and never enforced, and a non-UI app is reported as NOT EXAMINED
+      # rather than clean. What is asserted here is that every check can fire, that comments and string
+      # literals cannot satisfy one, and that both generating paths tell the model and report the result.
+      - name: A generated app is asked to show its work
+        run: node scripts/verify-ui-feedback.mjs
+
       # Every builder in this category exports SOURCE and leaves the user with a pile of files; the
       # market's complaint is that they cannot get to a RUNNING system. Morpheus made it worse: the export
       # invented a package.json (`start: node index.js`) and a README (`npm install && npm start`) when the

@@ -101,6 +101,7 @@ const HARD = [
   'verify-review-budget.mjs',
   'verify-incremental-persist.mjs',
   'verify-security-posture.mjs',
+  'verify-ui-feedback.mjs',
   'verify-export-promise.mjs',
   'verify-client-env.mjs',
   'verify-no-secret-fixtures.mjs',
