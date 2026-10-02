@@ -261,6 +261,34 @@ export const MUTATIONS = [
     find: '\nexport const UNPROVEN_BASELINE = 67;\n',
     replace: '\nexport const UNPROVEN_BASELINE = 68;\n',
   },
+  {
+    guard: 'verify-artifact-save-background.mjs',
+    file: 'server/src/lib/artifactSaveJob.js',
+    why: 'Reports a save whose process is gone as still saving (dropping the staleness branch), so a backend restart mid-save leaves the panel polling forever and a dead job reads as progress — the exact lie the guard exists to prevent.',
+    find: "  const phase = stale ? 'interrupted' : record.phase;",
+    replace: '  const phase = record.phase;',
+  },
+  {
+    guard: 'verify-artifact-save-background.mjs',
+    file: 'src/components/matrix/CompilePanel.jsx',
+    why: 'Turns a save that failed into the BUILD FAILED heading — the 2026-10-02 incident verbatim: a build that succeeded reported as a failed build, on top of an app that already exists and is downloadable.',
+    find: "BUILD SUCCEEDED — THE APP COULDN'T BE SAVED TO YOUR FILES",
+    replace: "BUILD FAILED — THE APP COULDN'T BE SAVED TO YOUR FILES",
+  },
+  {
+    guard: 'verify-artifact-save-background.mjs',
+    file: 'server/src/functions/saveCompiledArtifacts.js',
+    why: 'Awaits the ~217 MB download/re-upload loop inside the request again, which is exactly the long HTTP request Cloudflare\'s ~100s proxy read timeout cut — the mechanical cause of the whole incident.',
+    find: '  void runArtifactSave(record, plan, {',
+    replace: '  await runArtifactSave(record, plan, {',
+  },
+  {
+    guard: 'verify-artifact-save-background.mjs',
+    file: 'server/src/functions/getArtifactSaveStatus.js',
+    why: 'Never retires a settled job record, so every project that ever compiles leaves a transient job row in platform_settings forever — the cleanup the guard claims exists.',
+    find: "  if (record && response.phase !== 'saving'",
+    replace: '  if (record && false',
+  },
 ];
 
 /**

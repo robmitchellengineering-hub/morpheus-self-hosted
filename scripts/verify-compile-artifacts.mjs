@@ -82,24 +82,34 @@ check('every failed asset is named, in release order', many.failed, ['morpheus-o
 check('saved is the landed count, not the attempted count', many.saved, 1);
 
 console.log('\n4. the handler cannot drop the failures again');
+// 2026-10-02: the save moved off the request (it now runs as a background job —
+// see scripts/verify-artifact-save-background.mjs for that half). The failure
+// accounting itself is unchanged: every asset that does not land is recorded by
+// name into the job record, and the outcome helper still owns the partial shape.
 const handler = read('../server/src/functions/saveCompiledArtifacts.js');
-check('it records each failed asset name', /failed\.push\(name\)/.test(handler), true);
+const jobState = read('../server/src/lib/artifactSaveJob.js');
+const saveStatusFn = read('../server/src/functions/getArtifactSaveStatus.js');
+check('it records each failed asset name', /markArtifactFailed\(record/.test(handler), true);
+check('…and the pure state module appends it by name',
+  /record\.failed = \[\.\.\.record\.failed, name\]/.test(jobState), true);
 check('it returns the outcome helper rather than a bare literal',
-  /return summarizeArtifactSave\(/.test(handler), true);
-check('it passes the failures into it', /failed, errors \}\)/.test(handler), true);
-check('a save where nothing landed is still a hard 500, not a "partial" success',
-  /saved\.length === 0/.test(handler) && /res\.status\(500\)/.test(handler), true);
+  /artifactSaveResponse\(/.test(handler) && /summarizeArtifactSave\(/.test(jobState), true);
+check('…and the status endpoint answers through the same helper',
+  /artifactSaveResponse\(/.test(saveStatusFn), true);
+check('a save where nothing landed is a `failed` phase, not a "partial" success',
+  /fatalError/.test(jobState) && /record\.phase = 'failed'/.test(jobState), true);
 check('the all-saved short-circuit still returns files + artifacts',
-  /return \{\s*saved: alreadySaved\.length/.test(handler) || /alreadyExists: true/.test(handler), true);
+  /alreadyExists: true/.test(handler), true);
 
 console.log('\n5. the UI cannot read a partial save as "Build complete"');
 const panel = read('../src/components/matrix/CompilePanel.jsx');
-check('the panel reads the failures off the save result',
-  /saveResult\?\.partial/.test(panel) && /saveResult\.failed/.test(panel), true);
+check('the panel reads the failures off the save status',
+  /data\.phase === 'partial'/.test(panel) && /data\.failed/.test(panel), true);
 check('the done phase branches on them', /saveFailures\.length > 0/.test(panel), true);
 check('the missing files are named on screen', /saveFailures\.map\(/.test(panel), true);
 check('a partial save does NOT send the success notification',
-  /if \(!saveWasPartial\) notifyComplete\('success'/.test(panel), true);
+  /data\.phase === 'done'\) \{[\s\S]{0,300}notifyComplete\('success'/.test(panel)
+  && !/data\.phase === 'partial'[\s\S]{0,300}notifyComplete\('success'/.test(panel), true);
 check('a partial save sends its own notification', /notifyComplete\('partial'/.test(panel), true);
 check('the partial heading is not the success heading',
   /DID NOT SAVE/.test(panel) && /Build complete!/.test(panel), true);

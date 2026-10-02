@@ -756,6 +756,15 @@ jobs:
       - name: Compile-artifact save is honest about partials
         run: node scripts/verify-compile-artifacts.mjs
 
+      # The save of a real macOS build is ~217 MB, downloaded and re-uploaded. It ran inside
+      # one HTTP request, so Cloudflare's ~100s proxy read timeout cut it before the browser's
+      # own 210s timeout could fire — and a build that had SUCCEEDED was reported as failed,
+      # with "tap RECOMPILE" on an app that already existed. This asserts the save is a
+      # background job with a polled status that survives a reload, that it stays streamed and
+      # resumable, and that a save failure is never a build failure.
+      - name: The artifact save runs in the background and never reads as a failed build
+        run: node scripts/verify-artifact-save-background.mjs
+
       # A macOS app compiled on macos-latest is Apple-silicon-only, and an Intel Mac answers
       # "not supported on this Mac" — Rob, holding a disk image Morpheus had just built him.
       # This asserts the Python path builds on both runners, that each disk image is named for

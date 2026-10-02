@@ -23,6 +23,7 @@ const HARD = [
   'verify-review-context.mjs',
   'verify-caller-check.mjs',
   'verify-compile-artifacts.mjs',
+  'verify-artifact-save-background.mjs',
   'verify-mac-app-arch.mjs',
   'verify-user-manual.mjs',
   'verify-prisma-fields.mjs',

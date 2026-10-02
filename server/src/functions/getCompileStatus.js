@@ -181,6 +181,9 @@ export default async function handler({ user, body }) {
   // the run's own success conclusion, and let the panel poll again rather than declaring failure.
   if (runStatus === 'completed' && runConclusion === 'success') {
     const releaseTag = `v${latestRun.id}`;
+    // The save endpoint takes this, so it fetches THIS run's release by tag
+    // instead of `releases/latest` — the same ambiguity fix as the lookup below.
+    result.releaseTag = releaseTag;
     let releaseBody = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       const releaseRes = await fetch(`${GH_API}/repos/${repoFullName}/releases/tags/${releaseTag}`, { headers: h });

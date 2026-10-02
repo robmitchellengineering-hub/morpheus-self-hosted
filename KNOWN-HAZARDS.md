@@ -480,3 +480,37 @@ download is offered.
 computed the verdict properly (`selftest_verdict`) and then the `print`/`sys.exit(code)` that used it
 sat **after a `return`** — unreachable. Its unit test passed, because it tested the pure function and
 never the wiring. A self-test whose failure cannot be observed is H17 with a nicer name.
+
+## H21 — a save that fails can read as a build that failed
+
+**Incident (2026-10-02, the WikiData Batch Uploader's macOS build).** The build **SUCCEEDED** — release
+`v36970869714` published `app-macos-apple-silicon.dmg` (103,456,328 bytes), `app-macos-intel.dmg`
+(113,581,692 bytes) and `USER-MANUAL.txt` (25,553 bytes). The UI reported:
+
+> "Build succeeded but the compiled app couldn't be saved to your files: NetworkError when attempting
+> to fetch resource."
+
+and told the operator to tap **RECOMPILE** — to spend credits rebuilding an app that already existed,
+was already published, and was still downloadable.
+
+The plumbing: `CompilePanel` awaited `onCompileSuccess` → `useWorkspace.saveCompiledArtifacts` → the
+server function `saveCompiledArtifacts`, all as **ONE long HTTP request** that downloaded every release
+asset from GitHub and re-uploaded each into Morpheus storage **sequentially in a loop** — ~217 MB across
+the two disk images. The browser's own timeout is 210 s (`src/api/base44Client.js`
+`API_FETCH_TIMEOUT_MS`), but **Cloudflare's proxy read timeout is ~100 s**, so the edge cut the
+connection first and the client's own timeout message never appeared. `useWorkspace` caught the
+`NetworkError` and returned `{ error: e.message }`, and the panel treated that as the build's verdict.
+Both halves are the defect: a long job on the request path, and one catch that erases the difference
+between "the app was not built" and "the app was built but not copied".
+
+**Rule: a build's verdict is decided by the build, and nothing downstream of it may overwrite that.**
+When a long job follows a success, it runs off the request path (a background job the client polls),
+it persists progress as it goes so a reload can reconstruct it, and a failure in it is reported as its
+own state — naming the working fallback — never as a failure of the step that already succeeded. This is
+H14's "a green build can ship an artifact that cannot run" seen from the other side: **a green build must
+not be reported as a red one either.** Two concrete guards: never put a >100 s job behind one HTTP
+request when a proxy sits in front of it, and never let one `catch` collapse "save failed" into the
+phase that offers a rebuild. `scripts/verify-artifact-save-background.mjs` asserts the save is a polled
+background job that stays streamed and resumable, and that a failed or interrupted save renders as
+`BUILD SUCCEEDED — THE APP COULDN'T BE SAVED TO YOUR FILES` with the release links and no RECOMPILE.
+
