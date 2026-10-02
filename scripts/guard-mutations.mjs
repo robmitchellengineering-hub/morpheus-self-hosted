@@ -1,4 +1,6 @@
-// One honest sabotage per guard: what breaks each guard's claim.
+// One honest sabotage per CLAIM: what breaks each guard's claim. A guard with several independent claims
+// gets one mutation each — otherwise the second claim is unproven, which is the hole this file exists to
+// close.
 //
 // WHY THIS EXISTS (hazard H19, and the afternoon of 2026-09-30 that proved it). This repo has 86 guards and
 // **none of them proved it could fail**. Twice in one day that cost real time:
@@ -12,14 +14,14 @@
 //     subject would have found it**: break the check and the guard goes red for the wrong reason, leave it
 //     and it passes. (That fixture was also the string that stopped the frontend deploying for half a day.)
 //
-// So: every guard here gets ONE mutation, in the file it actually reads, chosen so that the guard's own
-// claim becomes false. `scripts/mutate-guards.mjs` applies it, runs the guard, and fails if the guard stays
-// green. `scripts/verify-guard-mutations.mjs` keeps this registry honest in CI — completeness, no stale
-// `find`, and a ratchet so a new guard cannot arrive unproven.
+// So: every claim below gets ONE mutation, in the file it actually reads, chosen so that the claim becomes
+// false. `scripts/mutate-guards.mjs` applies it, runs the guard, and fails if the guard stays green.
+// `scripts/verify-guard-mutations.mjs` keeps this registry honest in CI — completeness, no stale `find`, no
+// two identical entries, and a ratchet so a new guard cannot arrive unproven.
 //
-// HOW TO ADD ONE. Pick the smallest edit that makes the guard's claim false — rename a field, invert a
-// condition, drop a case. Not a syntax error: a guard that dies on a missing file proves nothing. Keep the
-// `find` long enough to occur EXACTLY ONCE in the file; the integrity guard fails a stale or ambiguous one.
+// HOW TO ADD ONE. Pick the smallest edit that makes the claim false — rename a field, invert a condition,
+// drop a case. Not a syntax error: a guard that dies on a missing file proves nothing. Keep the `find` long
+// enough to occur EXACTLY ONCE in the file; the integrity guard fails a stale or ambiguous one.
 //
 // Import-free data, so both the runner and the CI guard can read it without an install.
 
@@ -37,6 +39,34 @@ export const MUTATIONS = [
     why: 'Makes stripProse a no-op, so comments and string literals count as code — the exact prose-satisfies-the-check failure H19 records six times, and the property the whole conservative design rests on.',
     find: '  return cleaned;\n}',
     replace: '  return src;\n}',
+  },
+  {
+    guard: 'verify-ui-feedback.mjs',
+    file: 'server/src/lib/uiFeedback.js',
+    why: 'Lets the checks run over every file again, so an Express server.js is examined as UI — how a real generated app got "unconfirmed delete" and "no progress" findings about a backend that has no screens.',
+    find: '  const uiFiles = list.filter(isUiFile);',
+    replace: '  const uiFiles = list;',
+  },
+  {
+    guard: 'verify-ui-feedback.mjs',
+    file: 'server/src/lib/uiFeedback.js',
+    why: 'Tests JSX on the RAW source again, so HTML inside a string literal classifies a server file as UI — the real app\'s server.js (email HTML strings) and public/script.js (HTML template literals) were both examined this way.',
+    find: '    const markup = stripProse(f.content);\n    return jsxTag.test(markup) || /\\bReact\\.createElement\\b/.test(markup);',
+    replace: '    return jsxTag.test(f.content) || /\\bReact\\.createElement\\b/.test(f.content);',
+  },
+  {
+    guard: 'verify-ui-feedback.mjs',
+    file: 'server/src/lib/uiFeedback.js',
+    why: 'Drops the API-receiver requirement, so a bare `.delete(` matches — a Map/Set/cache eviction becomes "your delete has no confirmation", the false finding measured on the real generated app.',
+    find: "    if (!before.includes(';') && API_RECEIVER.test(before)) return true;",
+    replace: '    if (true) return true;',
+  },
+  {
+    guard: 'verify-ui-feedback.mjs',
+    file: 'server/src/lib/uiFeedback.js',
+    why: 'Stops recognising page chrome, so a nav/footer `.map(` is reported as a data list with no empty state — the other false finding measured on the real generated app.',
+    find: '  return CHROME_WORD.test(receiver);',
+    replace: '  return false;',
   },
   {
     guard: 'verify-export-promise.mjs',

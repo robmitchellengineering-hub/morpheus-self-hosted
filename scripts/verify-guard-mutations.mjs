@@ -42,8 +42,12 @@ console.log(`\n1. every mutation is usable (${MUTATIONS.length} mutation(s) for 
 const guardsInHard = new Set(hard);
 check('no mutation names a guard that is not in the gate',
   MUTATIONS.map((m) => m.guard).filter((g) => !guardsInHard.has(g)), []);
-check('no guard is mutated twice',
-  [...new Set(MUTATIONS.map((m) => m.guard).filter((g, i, a) => a.indexOf(g) !== i))], []);
+// One mutation per CLAIM, not per guard. A guard can hold several independent claims — verify-ui-feedback
+// asserts file scoping, an API-receiver requirement and a page-chrome exclusion — and each has to be
+// breakable on its own, or the second one is a comment with a console.log (H19). Exact duplicates are
+// still refused: two identical entries are one mutation wearing two hats.
+check('no two mutations are identical',
+  new Set(MUTATIONS.map((m) => `${m.guard}\u0000${m.file}\u0000${m.find}`)).size, MUTATIONS.length);
 check('every mutation names a file that exists',
   MUTATIONS.filter((m) => !existsSync(join(ROOT, m.file))).map((m) => m.file), []);
 check('every mutation says WHY it falsifies the guard',
