@@ -541,26 +541,33 @@ export function useWorkspace() {
     return res.data;
   }, [currentProject]);
 
-  // After a successful compile, download the release artifacts and save them
-  // as ProjectFile records under _compiled/ so they appear in the file tree
-  // as downloadable packages alongside the source code.
-  const saveCompiledArtifacts = useCallback(async (repoFullName, assets) => {
-    if (!currentProject) return;
-    try {
-      const body = { projectId: currentProject.id, repoFullName, target: currentProject.compile_target };
-      if (assets) body.assets = assets;
-      const res = await base44.functions.invoke('saveCompiledArtifacts', body);
-      if (res.data?.saved > 0) {
-        await loadFiles(currentProject.id);
-      }
-      return res.data;
-    } catch (e) {
-      console.error('Failed to save compiled artifacts:', e?.message || e);
-      return { error: e?.message || 'Failed to save artifacts' };
-    }
-  }, [currentProject, loadFiles]);
+  // Start the compiled-artifact save as a BACKGROUND JOB, and return as soon as
+  // the job is registered. The download + re-upload (~217 MB across a macOS
+  // build's two disk images) runs server-side and is polled via
+  // getArtifactSaveStatus. Holding this request open is exactly what Cloudflare's
+  // ~100s proxy read timeout used to cut, which then surfaced as a failed build.
+  // It throws on a start failure so the caller can say "the build succeeded, the
+  // save did not" instead of the panel turning it into a build error.
+  const saveCompiledArtifacts = useCallback(async (repoFullName, opts = {}) => {
+    if (!currentProject) return null;
+    const body = { projectId: currentProject.id, repoFullName, target: currentProject.compile_target };
+    if (opts?.assets?.length) body.assets = opts.assets;
+    if (opts?.releaseTag) body.releaseTag = opts.releaseTag;
+    const res = await base44.functions.invoke('saveCompiledArtifacts', body);
+    return res.data;
+  }, [currentProject]);
+
+  // The state of a compiled-artifact save. The server reconstructs it from the
+  // durable job record and the `_compiled/` rows, so this answers correctly after
+  // a page reload mid-save — the panel does not have to remember anything.
+  const getArtifactSaveStatus = useCallback(async (projectId) => {
+    const id = projectId || currentProject?.id;
+    if (!id) return null;
+    const res = await base44.functions.invoke('getArtifactSaveStatus', { projectId: id });
+    return res.data;
+  }, [currentProject]);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  return { projects, currentProject, files, selectedFile, messages, loading, loadError, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, setStorageMode, pushToDrive, pullFromDrive, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, updateDependencies, renameProject, togglePolishUi };
+  return { projects, currentProject, files, selectedFile, messages, loading, loadError, pipelineStages, chatMode, setChatMode, webAccess, setWebAccess, snapshots, lastTouched, selectProject, deselectProject, deleteProject, createProject, updateCompileTarget, sendMessage, exportProject, uploadToGithub, disconnectGithub, syncFromGithub, setStorageMode, pushToDrive, pullFromDrive, emailProjectFiles, restoreSnapshot, revertLastPrompt, runAutonomousStep, generateTests, importFromGithub, setSelectedFile, loadProjects, loadSnapshots, loadFiles, compileProject, previewCompile, checkCompileStatus, saveCompiledArtifacts, getArtifactSaveStatus, updateDependencies, renameProject, togglePolishUi };
 }

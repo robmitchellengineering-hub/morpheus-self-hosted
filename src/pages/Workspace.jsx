@@ -454,7 +454,7 @@ export default function Workspace() {
       <UsagePanel open={showUsage} onClose={() => setShowUsage(false)} />
       <MarketplacePanel open={showMarket} onClose={() => setShowMarket(false)} currentProject={ws.currentProject} onInstalled={async (data) => { await ws.loadProjects(); setShowMarket(false); if (data?.projectId) navigate('/workspace/' + data.projectId); }} />
       <SellerPanel open={showSeller} onClose={() => setShowSeller(false)} />
-      <CompilePanel open={showCompile} onClose={() => setShowCompile(false)} project={ws.currentProject} onCompile={ws.compileProject} onPreview={ws.previewCompile} onCheckStatus={ws.checkCompileStatus} onCompileSuccess={ws.saveCompiledArtifacts} onBuildBackend={() => { setShowCompile(false); setShowBackend(true); }} onAskMorpheus={(diagnosis) => {
+      <CompilePanel open={showCompile} onClose={() => setShowCompile(false)} project={ws.currentProject} onCompile={ws.compileProject} onPreview={ws.previewCompile} onCheckStatus={ws.checkCompileStatus} onCompileSuccess={ws.saveCompiledArtifacts} onCheckSave={ws.getArtifactSaveStatus} onReloadFiles={() => { if (ws.currentProject?.id) ws.loadFiles(ws.currentProject.id); }} onBuildBackend={() => { setShowCompile(false); setShowBackend(true); }} onAskMorpheus={(diagnosis) => {
         // 2026-09-04: the diagnoseIssue backend function now automatically
         // logs a "// SYSTEM — AI DIAGNOSIS ..." message (same summary/
         // autoFixed/needsUserAction detail this used to re-type here) into
