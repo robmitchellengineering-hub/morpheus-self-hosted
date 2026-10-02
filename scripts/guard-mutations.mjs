@@ -317,6 +317,13 @@ export const MUTATIONS = [
     find: '        audio.playbackRate = PLAYBACK_RATE;',
     replace: '        audio.playbackRate = 1;',
   },
+  {
+    guard: 'verify-doc-export.mjs',
+    file: 'src/pages/CommandDeck/exportDoc.js',
+    why: 'Stops a filename falling back when everything was stripped, so exporting a reply with no usable title produces a file called ".pdf" — a real download with a confusing name, which is the case the fallback exists for.',
+    find: '  return base || fallback;',
+    replace: '  return base;',
+  },
 ];
 
 /**
