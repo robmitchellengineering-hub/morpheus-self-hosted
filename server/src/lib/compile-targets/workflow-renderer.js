@@ -74,11 +74,11 @@ function renderStep(step) {
 }
 
 export function renderWorkflow(runner, steps, artifact, manual) {
-  // THE MANUAL IS PART OF THE BUILD, NOT AN EXTRA. It is written by a generated step before anything
-  // else runs, so every target gets it without having to remember, and it is uploaded beside the
-  // artifact so it is a download of its own rather than a file buried inside one. See
-  // lib/appUserManual.js for why it exists (Rob, 2026-10-01: "there also needs to be a downloadable
-  // user manual that comes with a compiled app") and for what it is allowed to claim.
+  // THE MANUAL IS PART OF THE BUILD, NOT AN EXTRA. It is written by a generated step in the workflow
+  // itself, so every target gets it without having to remember, and it is uploaded beside the artifact
+  // so it is a download of its own rather than a file buried inside one. See lib/appUserManual.js for
+  // why it exists (Rob, 2026-10-01: "there also needs to be a downloadable user manual that comes with
+  // a compiled app") and for what it is allowed to claim.
   const manualStep = manual
     ? renderStep({
         name: 'Write the user manual',
@@ -92,7 +92,24 @@ export function renderWorkflow(runner, steps, artifact, manual) {
         ].join('\n')
       })
     : '';
-  const yamlSteps = [manualStep, ...steps.map(renderStep)].filter(Boolean).join('\n');
+
+  // THE MANUAL GOES AFTER THE FIRST CHECKOUT, NEVER BEFORE IT. `actions/checkout` cleans the workspace
+  // by default, so writing USER-MANUAL.txt and then checking out deletes it — which is what shipped:
+  // every macOS compile failed at Release with "Pattern 'USER-MANUAL.txt' does not match any files"
+  // (run 36969294905, 2026-10-02). The manual still has to exist before any step that READS it — the
+  // macOS target copies it into the disk image, and a release without it is refused on purpose — so it
+  // goes immediately after the first checkout. An adapter that declares no checkout keeps the old
+  // behaviour (first), because with nothing checking out there is nothing to wipe.
+  //
+  // Deliberately NOT `clean: false` on the checkout: that is the adapter's step, it changes the build's
+  // behaviour far beyond this file, and a workspace that is not cleaned is how stale artifacts get
+  // shipped.
+  const renderedSteps = steps.map(renderStep);
+  const firstCheckout = steps.findIndex((s) => typeof s.uses === 'string' && /^actions\/checkout(@|$)/.test(s.uses));
+  const yamlSteps = (firstCheckout === -1
+    ? [manualStep, ...renderedSteps]
+    : [...renderedSteps.slice(0, firstCheckout + 1), manualStep, ...renderedSteps.slice(firstCheckout + 1)]
+  ).filter(Boolean).join('\n');
 
   // If the adapter declares a verify command, inject it as a step before the release
   const verifySection = artifact.verifyCommand

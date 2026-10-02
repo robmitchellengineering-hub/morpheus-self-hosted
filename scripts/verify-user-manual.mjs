@@ -152,19 +152,45 @@ const attackedWorkflow = renderWorkflow(mac.runners(macFiles), mac.buildSteps(ma
 check('…and the generated workflow has exactly ONE terminator line — the real one',
   attackedWorkflow.split('\n').filter((l) => l.trim() === USER_MANUAL_DELIMITER).length, 1);
 
-console.log('\n6. the manual is written before anything needs it, and published beside the artifact');
+console.log('\n6. the manual is written AFTER the checkout, and published beside the artifact');
+// WHAT THIS REPLACED, and why it is asserted on the RENDERED step order rather than on the renderer's
+// source: the manual step used to be emitted before every adapter step, so `actions/checkout` — which
+// cleans the workspace by default — deleted USER-MANUAL.txt before Release required it. Every macOS
+// compile failed at the last step with "Pattern 'USER-MANUAL.txt' does not match any files"
+// (run 36969294905, 2026-10-02). The old assertion here (`manualStepAt < checkoutAt`) encoded the bug.
 const workflow = renderWorkflow(mac.runners(macFiles), mac.buildSteps(macFiles), mac.artifact, macManual);
 const stepLines = workflow.split('\n');
-const manualStepAt = stepLines.findIndex((l) => l.includes('name: Write the user manual'));
-const checkoutAt = stepLines.findIndex((l) => l.includes('actions/checkout@v4'));
+const indexOf = (re) => stepLines.findIndex((l) => re.test(l));
+const manualStepAt = indexOf(/name: Write the user manual/);
+const checkoutAt = indexOf(/actions\/checkout@v4/);
+const readsManualAt = stepLines.findIndex((l) => l.includes(`cp ${USER_MANUAL_FILE}`)); // into the disk image
+const releaseAt = indexOf(/name: Release/);
 check('the manual step exists', manualStepAt > -1, true);
-check('…and runs before checkout and the build, so the disk image can carry it',
-  manualStepAt < checkoutAt, true);
+check('…and runs AFTER the checkout, so a cleaning checkout cannot delete it',
+  manualStepAt > checkoutAt, true);
+check('…and before the step that copies it into the disk image',
+  manualStepAt < readsManualAt, true);
+check('…and before the release that uploads it', manualStepAt < releaseAt, true);
 check('…and refuses to publish an empty manual',
   workflow.includes(`test -s ${USER_MANUAL_FILE}`), true);
 check('the release uploads the artifact', stepLines.some((l) => l.trim() === mac.artifact.glob), true);
 check('…and the manual as a download of its own',
   stepLines.some((l) => l.trim() === USER_MANUAL_FILE), true);
+check('…and still fails on an unmatched file, so a missing manual is a red release, not a quiet one',
+  workflow.includes('fail_on_unmatched_files: true'), true);
+// The heredoc itself is unchanged: same open line, same terminator, body intact.
+check('…and the manual is still written as the same heredoc',
+  workflow.includes(`cat > ${USER_MANUAL_FILE} <<'${USER_MANUAL_DELIMITER}'`), true);
+check('…with exactly one terminator line, the real one',
+  stepLines.filter((l) => l.trim() === USER_MANUAL_DELIMITER).length, 1);
+check('…and the manual body is in the workflow',
+  workflow.includes(macManual.trim().split('\n')[0]), true);
+// An adapter that declares no checkout has nothing to wipe, so the manual still goes first.
+const noCheckoutLines = renderWorkflow('ubuntu-latest', [{ name: 'Compile the thing', run: 'make' }], { glob: 'app.zip' }, macManual).split('\n');
+const ncManualAt = noCheckoutLines.findIndex((l) => /name: Write the user manual/.test(l));
+const ncBuildAt = noCheckoutLines.findIndex((l) => /name: Compile the thing/.test(l));
+check('an adapter with no checkout still gets the manual first',
+  ncManualAt > -1 && ncManualAt < ncBuildAt, true);
 check('with no manual there is no manual step and no stray asset',
   renderWorkflow('ubuntu-latest', [], { glob: 'app.zip' }, undefined).includes(USER_MANUAL_FILE), false);
 
