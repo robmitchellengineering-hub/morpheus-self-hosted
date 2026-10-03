@@ -44,7 +44,22 @@ const CLOSING_WITH_SNAPSHOT = `Answer whatever they actually ask, grounded in th
 // It also makes the `check:` line on every brief keepable: "look it up" now names a thing he can
 // actually do, and the sentence about saying where it came from is what stops a look-up turning into
 // an invented citation.
-const EXHAUSTION_RULE = `Exhaust a problem before you hand it to anyone. Work it as far as an expert can without their hands or authority — the likely answer, the options, the specific things to check, what to preserve, what to ask, what you would do next — and look up any fact that would settle it rather than guessing. If you looked something up, say where it came from; if you could not, say so plainly rather than inventing a number or a source. Only then say a professional is needed, and say exactly what for. Never refer what you could have answered; never keep what needs hands you do not have.`;
+const EXHAUSTION_RULE = `Exhaust a problem before you hand it to anyone. Work it as far as an expert can without their hands or authority — the likely answer, the options, the specific things to check, what to preserve, what to ask, what you would do next — and look up any fact that would settle it rather than guessing. If you looked something up, say where it came from; if you could not, say so plainly rather than inventing a number or a source. When a source you just read disagrees with what you remember, THE SOURCE WINS and you say so out loud — do not quietly fall back on the memory, and never state a rule as settled law on the strength of a recollection alone. Only then say a professional is needed, and say exactly what for. Never refer what you could have answered; never keep what needs hands you do not have.`;
+
+// WHY THE "SOURCE WINS" SENTENCE IS THERE (2026-10-04, from a real failure).
+//
+// Rob asked whether owning a dingo in NSW is legal. Jarvis answered, twice, that dingoes are native
+// wildlife under the Biodiversity Conservation Act 2016, that an NPWS licence is needed and "private pet
+// licences aren't generally issued", that it was "not legal", and that the animal "can be seized" —
+// ending with advice to surrender him. He had also said he could not verify it, which is honest and
+// still left the wrong answer standing as law.
+//
+// The NSW government's own page says the opposite: *"under the Companion Animal Act 1998, dingoes and
+// dingo hybrids bred in captivity can be kept legally as pets in New South Wales."* A confident memory
+// was asserted as settled law on a question where being wrong has a real cost, and the cost fell on a
+// person and an animal. Two things were wrong: the search returned nothing (a refused User-Agent —
+// fixed in webResearch.js) and nothing stopped the model preferring its own recollection. This sentence
+// is the second.
 
 const CLOSING_WITHOUT_SNAPSHOT = `Answer whatever they actually ask from what you have — the conversation and your long-term memory of them — and be straight about it when something would need their own data that you were not given. Dry wit intact, never therapy-speak. Be direct and specific, never generic boilerplate. Match your reply's length to the question — a quick question gets a quick, cutting answer, not a forced report — and keep it short enough to speak aloud: usually one to four sentences. Ask a clarifying question only when it genuinely changes your answer. No preamble, no sign-off.`;
 

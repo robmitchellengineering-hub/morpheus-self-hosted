@@ -113,6 +113,25 @@ check('…with a reason a human can act on', /searchUnavailableReason/.test(rese
 check('…and it degrades to an empty list, never a throw', /catch \(err\) \{[\s\S]{0,200}return \[\];/.test(researchSrc), true);
 check('the cache is capped in size, so a long-lived process cannot grow it forever', /SEARCH_CACHE_MAX/.test(researchSrc), true);
 
+// ⚠️ THE BUG ROB FOUND, and it produced a wrong answer about the law. This shipped working in a probe and
+// broken in production because the probe used a browser User-Agent and the module sent one calling itself
+// a "bot" — which DuckDuckGo answers with `202 Accepted` and a challenge page. 202 is "ok", so the code
+// parsed nothing and returned an empty list in silence, Jarvis fell through to Wikipedia, and he answered
+// the dingo question from memory with the law the wrong way round.
+//
+// The UA is read out of the source and tested on its OWN, not searched for in the file: the comment above
+// it quotes the refused string, so a whole-file `/bot/i` would fail on its own explanation.
+const userAgent = (researchSrc.match(/const UA = '([^']+)'/) || [, ''])[1];
+check('the User-Agent is set at all', userAgent.length > 0, true);
+check('…and does NOT call itself a bot — the token the endpoint refuses',
+  /bot/i.test(userAgent), false);
+check('…while still identifying us honestly', /Morpheus/i.test(userAgent) && /https?:\/\//.test(userAgent), true);
+check('a 202 challenge page is a FAILURE, not an empty result', /res\.status === 202/.test(researchSrc), true);
+check('…and it says why, so a refused agent is diagnosable',
+  /challenge page \(HTTP 202\)/.test(researchSrc), true);
+check('…and a 200 carrying no results is reported rather than read as "nothing found"',
+  /carried no results/.test(researchSrc), true);
+
 const chatSrc = read('server/src/functions/chatWithJarvis.js');
 check('the reply actually READS the top result, not just its title',
   /PAGE \(from "\$\{query\}"\)/.test(chatSrc), true);
