@@ -381,6 +381,27 @@ export const MUTATIONS = [
     replace: '        // failure swallowed again',
   },
   {
+    guard: 'verify-web-research.mjs',
+    file: 'server/src/lib/searchResults.js',
+    why: 'Stops filtering the adverts. Measured in production: the top TWO results for "2008 RAV4 idle squeal cause" were `duckduckgo.com/y.js?ad_domain=` ads ahead of the real answer, so without this the turn spends its page budget on a shop listing and hands Jarvis an advert as a source.',
+    find: "  if (host === 'duckduckgo.com' && (path.startsWith('/y.js') || path.startsWith('/l/'))) return true;",
+    replace: '  if (false) return true;',
+  },
+  {
+    guard: 'verify-web-research.mjs',
+    file: 'server/src/lib/searchResults.js',
+    why: 'Drops the official-source preference, so a mortgage broker\u2019s summary of the land tax threshold outranks the tax office\u2019s own page — which is the entire reason this search replaced grounding rather than merely being cheaper.',
+    find: '    .sort((a, b) => (a.official - b.official) || (a.index - b.index))',
+    replace: '    .sort((a, b) => a.index - b.index)',
+  },
+  {
+    guard: 'verify-web-research.mjs',
+    file: 'server/src/lib/searchResults.js',
+    why: 'Makes every cached entry count as fresh, so a rate or a deadline cached an hour ago is served as current. A static fact is fine stale; the facts this feature exists to look up are exactly the ones that are not.',
+    find: '  return nowMs - at < ttlMs;',
+    replace: '  return true;',
+  },
+  {
     guard: 'verify-deck-memory.mjs',
     file: 'server/src/lib/deckMemoryText.js',
     why: 'Makes the memory ceiling drop the NEWEST line instead of the oldest — so the thing the user just said is the thing forgotten, which is the opposite of what a memory is for. Nothing about the fold looks broken; it just remembers the wrong end.',

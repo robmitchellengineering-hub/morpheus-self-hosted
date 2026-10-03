@@ -83,6 +83,12 @@ import { runBuildDeckWidget } from './buildDeckWidget.js';
 const MAX_REPLY_TOKENS = 6000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply, and the prompt now carries the full energy log + long-term memory, which makes a longer, pattern-spotting reply more likely. 2026-10-03: NOT lowered to force shorter replies. The length is bounded by the reply's SHAPE (REPLY_SCHEMA + one repair pass, see lib/jarvisReplyBudget.js); a smaller cap only turns verbosity into OUTPUT_TRUNCATED.
 const MAX_REPAIR_TOKENS = 2000; // the shortening pass writes at most ~600 characters; 2000 leaves a flash-class model room for its own reasoning before it does
 
+// The research read budget (2026-10-04). Two pages per turn and ~6,000 characters each: enough for a
+// government page to state the actual figure, and bounded because every fetch is a second the operator
+// spends waiting on a reply. The search itself is capped separately, at two queries.
+const RESEARCH_PAGES_PER_TURN = 2;
+const RESEARCH_PAGE_CHARS = 6000;
+
 // Phase 3 of the Jarvis-built widgets plan (2026-09-18) — a cheap classifier,
 // same pattern as classifyDeckDumpItem.js, run before the full Jarvis reply
 // so an explicit "build me a widget" request routes straight to
@@ -162,6 +168,8 @@ async function researchForReply(userId, message, queries, { emit } = {}) {
   const startedAt = Date.now();
   emit?.({ type: 'stage', stage: JARVIS_RESEARCH_STAGE, status: 'start', label: JARVIS_RESEARCH_LABEL });
   const lines = [];
+  // Shared across every query in the turn, so two searches cannot fetch four pages between them.
+  let pagesRead = 0;
   try {
     for (const url of urls) {
       try {
@@ -181,6 +189,22 @@ async function researchForReply(userId, message, queries, { emit } = {}) {
           for (const r of results) block.push(`- ${r.title} <${r.url}>${r.content ? `\n  ${r.content}` : ''}`);
           if (block.length === 1) block.push('(no results found)');
           lines.push(block.join('\n'));
+
+          // READING THE PAGE IS THE POINT. A title and a URL tell Jarvis a page exists; they do not
+          // tell him the threshold, the deadline or the rule. So the top results are fetched and read
+          // — bounded per TURN, because each fetch is a second the operator waits. The search layer
+          // has already dropped the ads and preferred official domains (lib/searchResults.js), so
+          // "the top result" is the tax office's own page when there is one.
+          while (pagesRead < RESEARCH_PAGES_PER_TURN && results.length) {
+            const next = results.shift();
+            pagesRead += 1;
+            try {
+              const page = await webFetch(next.url, { maxChars: RESEARCH_PAGE_CHARS });
+              lines.push(`PAGE (from "${query}"): ${page.url}\n${page.content}`);
+            } catch (e) {
+              lines.push(`PAGE: ${next.url}\n(could not read this page: ${e.message})`);
+            }
+          }
         } catch (e) {
           lines.push(`SEARCH: ${query}\n(search failed: ${e.message})`);
         }
