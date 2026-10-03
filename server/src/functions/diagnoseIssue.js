@@ -12,6 +12,8 @@ import { isCredentialError, isAuthError, buildCredentialAction, applyFileFixes, 
 import { classifyBuildFailure, ownerIsMorpheus } from '../lib/buildFailureOwner.js';
 import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
+import { assessProjectDivergence } from '../lib/repoDivergence.js';
+import { repoAhead, divergenceNeedsAction } from '../lib/projectDivergence.js';
 
 export default async function handler({ user, body }) {
   const { type, projectId, errorContext, components } = body || {};
@@ -132,6 +134,23 @@ function buildMorpheusAction(ownership) {
     issue: ownership.detail,
     steps: ownership.steps,
     severity: 'morpheus',
+  };
+}
+
+// The action that opens the failing run. Shared by the normal compile path and by
+// the divergence gate below, so warning about a stale construct cannot cost the
+// operator the link to the logs that failed.
+function buildCompileFailedAction(repoUrl, target) {
+  return {
+    component: 'compile', label: target || 'build',
+    issue: 'Build failed on GitHub Actions',
+    steps: [
+      'Open the GitHub Actions run logs (link below)',
+      'Identify the failing step and error message',
+      'Fix the source file causing the failure, or click AI DIAGNOSE to auto-fix',
+      'Click COMPILE again to retry'
+    ],
+    link: repoUrl, severity: 'external'
   };
 }
 
@@ -267,20 +286,49 @@ async function diagnoseCompile(userId, projectId, project, files, errorContext) 
     codeErrors.push({ component: 'compile', service: target, error, logs });
   }
 
+  // DIVERGENCE GATE — the last thing before the AI fix path can spend anything.
+  //
+  // The construct is only the truth about the repo while nothing edited the repo
+  // directly. If something did (a manual push, another tool, a session that fixed
+  // the generated app on the repo side), every file this loop regenerates is based
+  // on a stale baseline, and compileProject's one-way push writes the construct
+  // back over the repo's edits on the next build — so the spend buys a fix that
+  // the next compile discards. Detect that, warn, and spend nothing.
+  //
+  // 'in-sync', 'construct-ahead' and — critically — 'unknown' fall straight
+  // through to today's code. 'unknown' means there is no linked repo, no token, or
+  // the API could not answer: the loop must behave exactly as it did before this
+  // check existed (H17 — never claim divergence without evidence, never narrow what
+  // the loop can do on a check that could not run). The credential branch above
+  // keeps precedence, so an auth error is still answered the way it always was.
+  if (!isAuthError(error)) {
+    const divergence = await assessProjectDivergence({ userId, project, constructFiles: files });
+    if (repoAhead(divergence)) {
+      console.warn(
+        `[diagnoseIssue] compile diagnosis: repo ahead of construct (${divergence.state}, ${divergence.reason}) — `
+        + `${divergence.ahead.length} file(s) changed directly on ${divergence.repoFullName || project.github_repo}; `
+        + `no AI call made, nothing spent. paths=${divergence.ahead.slice(0, 20).join(', ')}`
+        + `${divergence.ahead.length > 20 ? ` …(+${divergence.ahead.length - 20} more)` : ''}`,
+      );
+      const needsUserAction = [divergenceNeedsAction(divergence.ahead.length)];
+      if (repoUrl) needsUserAction.push(buildCompileFailedAction(repoUrl, target));
+      return {
+        summary: `Not fixed: GitHub has ${divergence.ahead.length} file(s) this construct does not. Sync from GitHub, then diagnose again.`,
+        autoFixed: [],
+        needsUserAction,
+        totalErrors: codeErrors.length,
+        allClear: false,
+        divergence: {
+          state: divergence.state, ahead: divergence.ahead, behind: divergence.behind, reason: divergence.reason,
+        },
+      };
+    }
+  }
+
   const autoFixed = await autoFixCodeErrors(userId, projectId, sourceFiles, codeErrors, null, null, 'compile', errorContext);
 
   if (repoUrl && autoFixed.length === 0) {
-    needsUserAction.push({
-      component: 'compile', label: target || 'build',
-      issue: 'Build failed on GitHub Actions',
-      steps: [
-        'Open the GitHub Actions run logs (link below)',
-        'Identify the failing step and error message',
-        'Fix the source file causing the failure, or click AI DIAGNOSE to auto-fix',
-        'Click COMPILE again to retry'
-      ],
-      link: repoUrl, severity: 'external'
-    });
+    needsUserAction.push(buildCompileFailedAction(repoUrl, target));
   }
 
   const allClear = autoFixed.length > 0 && needsUserAction.length === 0;
