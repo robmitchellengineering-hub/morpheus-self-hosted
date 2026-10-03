@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { C } from '../deckConstants';
 import Joystick from './Joystick';
+import { wrapObject } from './wrapAround';
 
 // The play surface is deliberately darker than the deck's walnut — the original used this literal, and
 // the rest of the palette below is the deck's own so the game still looks like part of the Deck.
@@ -43,7 +44,14 @@ export default function Asteroids({ running = true, onScore }) {
     const size = { w: 0, h: 0 };
     const inited = { v: false };
 
-    const ship = { x: 0, y: 0, angle: -Math.PI / 2, vx: 0, vy: 0, alive: true, invUntil: 0 };
+    // The ship's radius is not decoration: `wrapObject` needs it to let the ship leave the screen
+    // completely before it reappears on the other side. Without it the wrap compares against `undefined`,
+    // which is `NaN`, which is always false — the ship flies away for ever, which is the bug Rob hit
+    // ("when you fly off the screen you should apear on the othe side"). 12 matches the drawn hull
+    // (nose at +12, tail at -8, wings at ±7).
+    const SHIP_RADIUS = 12;
+    const BULLET_RADIUS = 3;
+    const ship = { x: 0, y: 0, angle: -Math.PI / 2, vx: 0, vy: 0, r: SHIP_RADIUS, alive: true, invUntil: 0 };
     let bullets = [];
     let asteroids = [];
     let scoreVal = 0;
@@ -87,17 +95,13 @@ export default function Asteroids({ running = true, onScore }) {
     ro.observe(canvas.parentElement);
     resize();
 
-    const wrap = (o) => {
-      const { w, h } = size;
-      if (o.x < -o.r) o.x += w; if (o.x > w + o.r) o.x -= w;
-      if (o.y < -o.r) o.y += h; if (o.y > h + o.r) o.y -= h;
-    };
+    const wrap = (o) => wrapObject(o, size);
 
     const fire = () => {
       const now = performance.now();
       if (now - lastFire < 220) return;
       lastFire = now;
-      bullets.push({ x: ship.x, y: ship.y, vx: Math.cos(ship.angle) * 6, vy: Math.sin(ship.angle) * 6, life: 70 });
+      bullets.push({ x: ship.x, y: ship.y, vx: Math.cos(ship.angle) * 6, vy: Math.sin(ship.angle) * 6, r: BULLET_RADIUS, life: 70 });
     };
 
     const step = (dt) => {

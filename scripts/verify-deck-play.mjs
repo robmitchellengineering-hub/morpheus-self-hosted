@@ -13,6 +13,7 @@ import {
   creditedSeconds, playedSeconds, bankSeconds,
   normalizeInitials, bestPerPlayer, leaderboard, formatClock,
 } from '../src/pages/CommandDeck/game/playBank.js';
+import { wrapAxis, wrapObject } from '../src/pages/CommandDeck/game/wrapAround.js';
 
 let failures = 0;
 let checks = 0;
@@ -97,6 +98,53 @@ const ctx = readFileSync(new URL('../src/contexts/CommandDeckContext.jsx', impor
 check('a task can only pay once, ever', /@@unique\(\[created_by_id, task_id\]\)/.test(schema), true);
 check('the bank is stored, not derived from the task list', /model DeckPlayCredit \{/.test(schema) && /model DeckPlayScore \{/.test(schema), true);
 check('the context credits a completion', /DeckPlayCredit/.test(ctx), true);
+
+console.log('\nwrapping the playfield — the ship leaves one edge and returns on the other');
+// Rob, 2026-10-03: "when you fly off the screen you should apear on the othe side ... like the original".
+// This was BROKEN and invisible: the wrap tested `o.x < -o.r`, and the ship and bullets carry no `r`, so
+// every comparison was against `NaN` and therefore false — the asteroids wrapped and the ship flew away
+// for ever. It could not be tested because it lived inside the component; it is a pure function now.
+const W = 800, H = 600, R = 12, SPAN = W + 2 * R;
+check('an object on screen is untouched', wrapAxis(400, W, R), 400);
+check('…including one resting exactly on the edge', [wrapAxis(0, W, R), wrapAxis(H, H, R)].join(), `0,${H}`);
+check('…and one poking out, but not yet fully off', [wrapAxis(-5, W, R), wrapAxis(W + 5, W, R)].join(), `-5,${W + 5}`);
+check('fully off the right reappears on the LEFT, by the same amount',
+  wrapAxis(W + R + 5, W, R), 5 - R);
+check('fully off the left reappears on the RIGHT, by the same amount',
+  wrapAxis(-R - 1, W, R), W + R - 1);
+check('…and the top and bottom work the same way',
+  [wrapAxis(H + R + 1, H, R), wrapAxis(-R - 1, H, R)].join(), `${1 - R},${H + R - 1}`);
+// A long frame (a backgrounded tab, a slow phone) can move an object more than a whole screen. The old
+// `+= extent` would have left it off screen for ever, which is a worse bug than the one being fixed.
+const far = wrapAxis(W * 3 + R + 5, W, R);
+check('a long frame lands back in play, not off screen', far >= -R && far <= W + R, true);
+// The torus property itself: three laps is where one lap is. (Adding screen-widths is NOT the same
+// thing, because the span an object travels is `extent + 2r`, not `extent` — which is why this is
+// asserted rather than assumed.)
+check('…and many laps land exactly where one lap does',
+  wrapAxis(W + R + 5 + 3 * SPAN, W, R), wrapAxis(W + R + 5, W, R));
+check('no radius wraps on the centre, for a point', [wrapAxis(W + 1, W), wrapAxis(-1, W)].join(), '1,799');
+check('an unmeasured canvas leaves the position alone',
+  [wrapAxis(50, 0, R), wrapAxis(50, NaN, R), wrapAxis(50, -5, R)].join(), '50,50,50');
+check('…and a normal call is never NaN', Number.isFinite(wrapAxis(W + 1, W, R)), true);
+// Documented, because it is the honest choice: a NaN position is already a broken game, and inventing a
+// position for it would hide that rather than pass it on.
+check('a NaN position passes through rather than inventing one', Number.isNaN(wrapAxis(NaN, W, R)), true);
+check('an object with NO radius still wraps rather than vanishing',
+  wrapObject({ x: W + 1, y: H + 1 }, { w: W, h: H }).x, 1);
+check('…and one WITH a radius wraps at its edge, not its centre',
+  wrapObject({ x: W + R + 1, y: 0, r: R }, { w: W, h: H }).x, 1 - R);
+// JSON, not join(): `[null, 7].join()` is ",7", which would hide the null this is checking for.
+check('junk is returned rather than thrown',
+  JSON.stringify([wrapObject(null, { w: W, h: H }), wrapObject(7, { w: W, h: H })]), '[null,7]');
+
+const asteroids = readFileSync(new URL('../src/pages/CommandDeck/game/Asteroids.jsx', import.meta.url), 'utf8');
+check('the game uses the tested wrap, not a private copy',
+  /import \{ wrapObject \} from '\.\/wrapAround'/.test(asteroids) && !/o\.x < -o\.r/.test(asteroids), true);
+// The exact regression: no radius on the ship is what made the wrap silently useless.
+check('the ship carries a radius', /const ship = \{[^}]*\br: SHIP_RADIUS\b/.test(asteroids), true);
+check('…and the bullets do too', /bullets\.push\(\{[^}]*\br: BULLET_RADIUS\b/.test(asteroids), true);
+check('the ship is actually wrapped every step', /ship\.x \+= ship\.vx \* k; ship\.y \+= ship\.vy \* k;[\s\S]{0,40}wrap\(ship\)/.test(asteroids), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
