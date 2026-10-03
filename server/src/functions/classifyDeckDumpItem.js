@@ -14,7 +14,7 @@
 import { invokeAI } from '../ai.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { prisma } from '../db.js';
-import { CLASSIFY_SCHEMA, buildClassifyPrompt, normalizeClassifyResult } from '../lib/deckDumpClassify.js';
+import { CLASSIFY_SCHEMA, buildClassifyPrompt, normalizeClassifyResult, patternClassify } from '../lib/deckDumpClassify.js';
 
 export default async function handler({ user, body }) {
   const text = (body?.text || '').trim();
@@ -22,18 +22,31 @@ export default async function handler({ user, body }) {
 
   const [businessContext, people] = await Promise.all([
     getDeckBusinessContext(user.id),
-    // Only OTHER people — the speaker's own to-dos need no owner hint, and
-    // offering their own name invites the model to assign everything to them.
-    // A failure to list people must not break capture, so this fails open to
-    // "no assignable owners" rather than throwing — but it says so, because a
-    // silently empty list would quietly stop owner assignment forever.
-    prisma.deckPerson.findMany({ where: { created_by_id: user.id, is_self: false }, select: { name: true } })
+    // Names are fetched WITHOUT filtering to other people, because the code fast path needs to
+    // recognise the speaker's own name too ("Rob needs to get bread" said by Rob). The PROMPT still
+    // gets only other people — offering the speaker their own name invites the model to assign
+    // everything to them. A failure to list people must not break capture, so this fails open to
+    // "no assignable owners" rather than throwing — but it says so, because a silently empty list
+    // would quietly stop owner assignment forever.
+    prisma.deckPerson.findMany({ where: { created_by_id: user.id }, select: { name: true, is_self: true } })
       .catch((err) => {
         console.warn('[classifyDeckDumpItem] deck_people lookup failed — items will be filed without owner assignment:', err?.message || err);
         return [];
       }),
   ]);
-  const peopleNames = people.map((p) => p.name);
+  const peopleNames = people.filter((p) => !p.is_self).map((p) => p.name);
+  const selfNames = people.filter((p) => p.is_self).map((p) => p.name);
+
+  // THE EXPLICIT CASES NEVER REACH THE MODEL — see patternClassify. "I need to get cheese" is a task
+  // by the prompt's own rule, and eight measured calls show the model spends its entire output budget
+  // (4000, then 8000) deliberating about exactly that kind of sentence, for 18-34 seconds, before
+  // either falling back or filing it as knowledge. Deciding it here is instant, identical every time
+  // and free; the model keeps the dumps that need judgement.
+  const decided = patternClassify(text, { people: peopleNames, selfNames });
+  if (decided) {
+    console.log(`[classifyDeckDumpItem] decided in code — explicit action phrasing, single thought — no model call (${decided.length} item(s))`);
+    return { items: decided, destination: decided[0].destination, life_stream_key: decided[0].life_stream_key, decidedBy: 'pattern' };
+  }
 
   const prompt = buildClassifyPrompt({ text, businessContext, peopleNames });
 
@@ -59,15 +72,64 @@ export default async function handler({ user, body }) {
   // MEASURED 2026-09-28, AND 4000 WAS NOT ENOUGH: the one `classify` call since the cap was
   // raised (2026-09-27 20:48) ended at `out=4000` from a 962-token prompt after 18.98s — the whole
   // budget, on a 27-character dump. Rob's report ("brain dump is not filing") is that call: it
-  // truncated, threw, and the dump landed in the unsorted pile. Two things follow, and the second
-  // is the fix. (1) Raising the cap again is the move this was already tried with, and a bigger
-  // budget buys the model more *thinking*, not more classification. (2) A truncated LIST is not a
-  // truncated answer: the items already written are complete, so `salvagePartial` recovers them
-  // and `normalizeClassifyResult`'s coverage guard files whatever the answer did not reach. The
-  // call can no longer be destroyed by the reasoning tax — only shortened, and honestly.
-  const { result, truncated } = await invokeAI({
-    userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 4000, salvagePartial: true,
-  });
+  // truncated, threw, and the dump landed in the unsorted pile. (1) Raising the cap again is the
+  // move this was already tried with, and a bigger budget buys the model more *thinking*, not more
+  // classification. (2) A truncated LIST is not a truncated answer: the items already written are
+  // complete, so `salvagePartial` recovers them and `normalizeClassifyResult`'s coverage guard
+  // files whatever the answer did not reach.
+  //
+  // MEASURED 2026-10-01, AND (2) IS NOT ENOUGH ON ITS OWN. Rob again: "the brain dump keeps filing
+  // files to unfiled ... that's a just in case so you can file it manually". The pile is the ONLY
+  // fallback the frontend has, and its only creator is the catch around this call (checked:
+  // CommandDeckContext.jsx has the sole DeckDumpItem.create in the codebase). Reading
+  // `usage_events` for the last four brain-dump calls: **every one of them ended at exactly
+  // out=4000 from a ~961-token prompt after ~18-19s**, and three logged OUTPUT_TRUNCATED *after*
+  // #390 landed. So the model spends the entire budget thinking and sometimes never emits a single
+  // complete item, which leaves `salvageJson` nothing to recover and rethrows — four for four.
+  //
+  // AND THAT, ON A 963-TOKEN PROMPT, IS THE WRONG BUDGET — measured again 2026-10-01 12:41Z and 12:43Z
+  // on two six-word dumps ("I need to get cheese", "Rob needs to get bread"): in=961, out=4000, ~19s,
+  // nothing salvageable, pile. Six for six. So the cost of a failure is not the reason to leave it.
+  //
+  // MODEL-DECISIONS.md records "do not fix a truncating SMALL call by raising its cap — the reasoning
+  // tax was the cause". This is not a small call: it splits a dictation, decides actionable-vs-not per
+  // thought, picks a life stream and resolves an owner. It was swept into the `classify` role, whose
+  // other callers are booleans (~250-token prompts answering in 30-74 output tokens — measured). The
+  // budget is raised from 4000 to 8000 for the same reason `diagnosis` went 1200 -> 8000 and was
+  // recorded as FIXED by it, and with a decision rule declared in advance:
+  //
+  //   * calls now finish at out ≈ 100-500  -> the cap was the problem; leave it.
+  //   * calls still end at exactly 8000    -> the model consumes whatever it is given, the cap is
+  //     hopeless, and the next move is the PROMPT or the design (the instruction block is ~460 of the
+  //     963 tokens) — not another cap.
+  //
+  // A larger cap costs nothing unless it is used: billing is on tokens actually produced.
+  //
+  // NO RETRY. #467 added one, and the very next dump settled it: "I need to get fruit" made TWO
+  // calls 19 seconds apart, in=961, out=4000, out=4000 — the same prompt, two independent draws, the
+  // identical saturation both times. The failure is a property of the prompt, not of the draw, so a
+  // retry buys nothing and costs the operator another ~19 seconds of a capture that is supposed to be
+  // thoughtless. It is gone.
+  //
+  // Whatever the cap does, the outcome is independent of the model: a failure here may NEVER hand the
+  // dump back to the operator as a manual chore. One call, and then the deterministic fallback that
+  // already exists (`normalizeClassifyResult` with no result files the whole dump to Knowledge and
+  // marks it `nothing-classified`, which the card reports as "I could not classify it, so your words
+  // are in there whole"). The pile goes back to meaning what Rob says it means: the last resort for
+  // when Morpheus cannot be reached at all.
+  let result = null;
+  let truncated = false;
+  try {
+    ({ result, truncated } = await invokeAI({
+      userId: user.id, prompt, schema: CLASSIFY_SCHEMA, role: 'classify', maxTokens: 8000, salvagePartial: true,
+    }));
+  } catch (aiErr) {
+    // NOT A THROW. The words are the valuable part and they are still in hand, so the dump is filed
+    // as one unclassified item and the operator is told which it was — never left to file it by hand.
+    console.warn('[classifyDeckDumpItem] classification failed — filing the whole dump as one unclassified item rather than the unsorted pile:', aiErr?.message || aiErr);
+    result = null;
+    truncated = true;
+  }
 
   const items = normalizeClassifyResult(result, text, peopleNames);
 

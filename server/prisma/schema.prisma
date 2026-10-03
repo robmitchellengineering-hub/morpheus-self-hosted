@@ -96,8 +96,11 @@ model User {
   deck_knowledge_notes DeckKnowledgeNote[]
   deck_life_streams  DeckLifeStream[]
   deck_life_stream_notes DeckLifeStreamNote[]
+  deck_life_files DeckLifeFile[]
   deck_energy_log_entries DeckEnergyLogEntry[]
   deck_focus_entries DeckFocusEntry[]
+  deck_play_credits DeckPlayCredit[]
+  deck_play_scores DeckPlayScore[]
   deck_widget_instances DeckWidgetInstance[]
   deck_business_profile DeckBusinessProfile?
   deck_widget_builds DeckWidgetBuild[]
@@ -1287,6 +1290,19 @@ model DeckMurbahOpportunity {
   booking_date     DateTime?
   calendar_event_id String?
 
+  // ── The money half (2026-10-02) ─────────────────────────────────────────
+  // The old base44 deck's Murbah panel was a BOOKINGS LEDGER: price, deposit paid, fully paid, and a
+  // start–end range, with every edit re-pushing the whole booking — payment flags included — into the
+  // Calendar event. The calendar half came across when this was ported; the money half did not, which
+  // is the half that matters.
+  //
+  // booking_date stays the START and the thing Calendar is given, so no existing date is
+  // reinterpreted and nothing needs backfilling; end_date is simply the other end of the range.
+  price        Float?
+  deposit_paid Boolean @default(false)
+  paid         Boolean @default(false)
+  end_date     DateTime?
+
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 
@@ -1363,6 +1379,7 @@ model DeckLifeStream {
   stream_key    String   // health | money | home | people | growth
   status        String   @default("needs_work") // on | needs_work
   notes         DeckLifeStreamNote[]
+  files         DeckLifeFile[]
 
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
@@ -1504,4 +1521,77 @@ model DeckBusinessProfile {
   updated_date     DateTime @updatedAt
 
   @@map("deck_business_profiles")
+}
+
+// ── The play bank (Asteroids reward) ─────────────────────────────────────────────
+// Rob: "when you complete a task i want a pop up window with retro asteroids ... when you
+// complete a task you can play asteroids for 1 min or choose to bank the time to play more
+// later". Ported from the old base44 deck's Play page, which already had the timer and the
+// bank — but stored the bank in a Morpheus settings blob, which the own-data rule rules out
+// for the Deck.
+//
+// The bank is a LEDGER, not a counter. Every completed task writes one credit row and every
+// game writes one score row, and the balance is (sum of credits) - (sum of seconds played).
+// That keeps the full history the own-data rule asks for, makes the balance auditable, and —
+// because of the unique index below — a task can only ever pay once, so un-ticking and
+// re-ticking a task cannot farm play time.
+model DeckPlayCredit {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  // The task that earned it. Nullable so a future source (a streak, a week of focus) can pay in
+  // without a schema change, and because Postgres treats NULLs as distinct it does not collide.
+  task_id       String?
+  seconds       Int      @default(60)
+  reason        String   @default("task") // task | (future sources)
+
+  created_date  DateTime @default(now())
+
+  @@unique([created_by_id, task_id])
+  @@map("deck_play_credits")
+}
+
+// Every game played, in full. The Morpheus-wide board is the best score per account, but nothing
+// is windowed or capped — a later feature can chart progress without a backfill.
+model DeckPlayScore {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  // Three arcade characters, chosen by the player. Rob's call (2026-10-02): the board is
+  // Morpheus-wide, so it must not publish one account's real name to another.
+  initials        String
+  score           Int
+  seconds_played  Int
+
+  created_date    DateTime @default(now())
+
+  @@index([score])
+  @@map("deck_play_scores")
+}
+
+// A file attached to a life stream — a photo of a bill, a scan, a document.
+//
+// The old base44 deck had this (`LifeFile`: stream, url, name, type, is_image, note) and the port kept
+// text notes only, so a stream could hold prose and nothing else. It matters twice: it is how a bill or
+// a lab result actually gets kept, and the synthesis can only reason over what is there — the old
+// synthesis passed stream ATTACHMENT urls to the model, and the new snapshot has none.
+model DeckLifeFile {
+  id             String         @id @default(uuid())
+  life_stream_id String
+  life_stream    DeckLifeStream @relation(fields: [life_stream_id], references: [id], onDelete: Cascade)
+  created_by_id  String
+  user           User           @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  file_url       String
+  file_name      String   @default("")
+  file_type      String   @default("")
+  is_image       Boolean  @default(false)
+  note           String?  @db.Text
+
+  created_date   DateTime @default(now())
+
+  @@index([life_stream_id])
+  @@map("deck_life_files")
 }

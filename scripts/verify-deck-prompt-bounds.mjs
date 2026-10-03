@@ -49,13 +49,17 @@ check('long text is cut and marked', excerpt('x'.repeat(300)).length, 201);
 check('the mark is on the end', excerpt('x'.repeat(300)).endsWith('…'), true);
 
 console.log('\n3. the snapshot and the prompt actually use them');
+// 2026-10-03: the RENDERING moved to lib/deckSnapshotText.js (import-free, so
+// verify-jarvis-snapshot-gate.mjs can assert the capped-list labels with fixture rows).
+// deckSnapshot.js keeps the queries; the render checks below follow the text.
 const snapshot = readFileSync(new URL('../server/src/lib/deckSnapshot.js', import.meta.url), 'utf8');
+const formatter = readFileSync(new URL('../server/src/lib/deckSnapshotText.js', import.meta.url), 'utf8');
 const chat = readFileSync(new URL('../server/src/functions/chatWithJarvis.js', import.meta.url), 'utf8');
 check('the inbox query is bounded', /deckInboxItem\.findMany\(\{ where: \{ \.\.\.where, stage: \{ not: 'done' \} \}, orderBy: \{ created_date: 'desc' \}, take: INBOX_IN_PROMPT \}\)/.test(snapshot), true);
 check('…and the true open count is fetched separately', /deckInboxItem\.count\(\{ where: \{ \.\.\.where, stage: \{ not: 'done' \} \} \}\)/.test(snapshot), true);
 check('…and the rendered line states it, and whether the list is capped',
-  /INBOX \(\$\{inboxOpenTotal\} not yet done\$\{openInbox\.length < inboxOpenTotal \? `, newest \$\{openInbox\.length\} shown` : ''\}\)/.test(snapshot), true);
-check('…and each body is excerpted', /excerpt\(i\.message\)/.test(snapshot), true);
+  /INBOX \(\$\{inbox\.total\} not yet done\$\{truncationNote\(inbox\.rows\.length, inbox\.total\)\}\)/.test(formatter), true);
+check('…and each body is excerpted', /excerpt\(i\.message\)/.test(formatter), true);
 check('the inbox is capped at a real number', INBOX_IN_PROMPT > 0, true);
 check('the reply uses the bounded conversation block', /buildConversationBlock\(history, \{ firstName \}\)/.test(chat), true);
 

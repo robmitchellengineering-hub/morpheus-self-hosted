@@ -122,7 +122,25 @@ jobs:
   render:
     name: render
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # A real Postgres for the backend-generation harness, which runs the ACTUAL generateBackend handler
+    # against a database with the AI provider pointed at a fake. This is what makes that path testable
+    # for zero credits — the alternative was ~824 credits and an hour per question, which is how three
+    # defects got found the expensive way.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: morpheus
+          POSTGRES_PASSWORD: harness
+          POSTGRES_DB: harness
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -137,6 +155,88 @@ jobs:
       # The BUILT app, exactly as it ships — not the dev server. `npm run build`
       # rewrites src/MORPHEUS_DESIGN_PLAN.md (H3); that is build noise and is
       # warned about in the `build` job, not repeated here.
+      # INSTALLS AND BOOTS a real self-contained app, in the shape the generator is asked to produce,
+      # and hits the route that reads from the database. This lives here rather than in the no-install
+      # guards job because it needs the network and a real `npm install` — which is the entire point:
+      # the first command in a self-contained app's README is what failed on 2026-09-29, and a
+      # pre-installed fixture would have proved nothing about it. It exits 2 (not 1) when the registry
+      # is unreachable, so a network blip reports NOT VERIFIED instead of a false red.
+      - name: A self-contained app still installs, starts and answers
+        run: node scripts/smoke-generated-app.mjs
+
+      # server/'s dependencies are installed HERE rather than by the root `npm ci`: there are no npm
+      # workspaces, and prisma lives in server/package.json, so the root install leaves server/node_modules
+      # absent. That is what made the steps below fail twice — `npx prisma` and then `npm exec -- prisma`
+      # each quietly fetched prisma@8.0.0-rc from the registry instead of using a local binary, and v8 has
+      # no `push` command. The review harness needs it too: it imports ai.js, which imports jsonrepair.
+      - name: Install the server workspace the harnesses run against
+        run: cd server && npm install --no-audit --no-fund --no-save
+
+      # The schema has to exist before EITHER harness runs: both go through invokeAI, which reads the
+      # role model settings from platform_settings. The review harness ran before this step existed and
+      # reported "The table public.platform_settings does not exist" on every settings lookup — noisy,
+      # and it meant the run was measuring the no-settings path rather than the real one.
+      - name: Apply the schema to the harness database
+        env:
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+        run: |
+          # The LOCAL binary, by path — no registry lookup can substitute a different major version.
+          cd server && ./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
+
+      # Files are written as they are produced, replaced rather than deleted first, and the stale sweep
+      # runs last — one missing field or one late failure can no longer discard the whole backend.
+      - name: A failed generation keeps the work that succeeded
+        run: node scripts/verify-incremental-persist.mjs
+
+      # A review is a second opinion; ten of them is not ten times the confidence. Measured 2026-09-30:
+      # one backend generation made TWELVE reviewer calls and burned 473 credits with nothing persisted,
+      # because nothing bounded the loop and every re-review covered the whole file set again.
+      - name: A review cannot run away with a build
+        run: node scripts/verify-review-budget.mjs
+
+      # THE ARITHMETIC ABOVE IS NOT THE CLAIM. This runs the REAL reviewAndRetry against a fake that
+      # NEVER approves — the adversarial case that made twelve calls in production — and counts the calls
+      # on the wire. Needs a database for role settings, hence this job.
+      - name: A review that never approves still stops, cheaply
+        env:
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          REVIEW_HARNESS_USER: ''
+        run: node scripts/review-loop-harness.mjs
+
+      # The generator, run for real against the database above with a fake provider answering. Asserts what
+      # the MODEL was actually told (read off the wire), what got PERSISTED, and that the two context
+      # fixes hold end to end — none of which needs a real model, a key, or a credit.
+      #
+      - name: The backend generator runs end to end, offline
+        env:
+          HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+        run: node scripts/backend-generation-harness.mjs
+
+      # A LATER STAGE FAILING MUST NOT ERASE WHAT EARLIER ONES SAVED. With the review rejected, every file
+      # the generation produced must still be in the database. Before incremental persistence this case lost
+      # all of them — that is how a token-cap truncation, a schema echo and a runaway review each turned
+      # into a total write-off of work the operator had already paid ~117-473 credits for.
+      - name: A failure after generation keeps what was generated
+        env:
+          HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          FAKE_FAIL_REVIEW: '1'
+        run: node scripts/backend-generation-harness.mjs
+
+      # THE FAILURE THAT COST ~117 CREDITS, reproduced for nothing. With the provider cutting every
+      # multi-file ask off at the token cap, the generator must retry each file on its own and still
+      # persist the backend. Measured 2026-09-29 on a real run: a chunk returned exactly 24,000 tokens
+      # (the step cap), the throw propagated, and because nothing is persisted until the end, FIVE
+      # successful model calls were discarded and the project kept only its plan. Remove the recovery and
+      # this step does not merely fail — the harness dies on the propagating exception.
+      - name: A truncated step no longer discards the whole backend
+        env:
+          HARNESS_DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          DATABASE_URL: postgresql://morpheus:harness@localhost:5432/harness?schema=public
+          FAKE_TRUNCATE_MULTI: '1'
+        run: node scripts/backend-generation-harness.mjs
+
       - name: Build the frontend
         run: npm run build
 
@@ -204,6 +304,61 @@ jobs:
       - name: Brain-dump filing outcome
         run: node scripts/verify-dump-filing.mjs
 
+      # The Asteroids reward's economy: the play bank is a ledger (credited seconds minus
+      # seconds played) and the board is Morpheus-wide, so an arithmetic slip hands out free
+      # play time and the initials rule is the one place a user string faces other accounts.
+      - name: Asteroids play bank and board
+        run: node scripts/verify-deck-play.mjs
+
+      # The Murbah ledger: a half-typed price must not become NaN or a coerced 0, and an all-day
+      # Calendar event ends EXCLUSIVELY while the booking range is inclusive — an off-by-one there
+      # shifts every booking by a day, silently.
+      - name: Murbah ledger money and range
+        run: node scripts/verify-murbah-money.mjs
+
+      # Life-stream attachments: is_image decides a thumbnail vs a document icon, and the wrong way
+      # round shows a broken image where a plain icon would have done.
+      - name: Life-stream attachments
+        run: node scripts/verify-life-files.mjs
+
+      # Jarvis's voice: the prompt constraints that keep replies speakable (dropped once already, and a
+      # prompt is prose — nothing fails when a rule disappears), and the 1.3x butler playback.
+      - name: Jarvis voice and playback
+        run: node scripts/verify-jarvis-voice.mjs
+
+      # The snapshot gate on every Jarvis message: only an explicit classifier false may drop the
+      # ~2,400-token Deck snapshot (a failed check must INCLUDE it — answering blind is the dangerous
+      # direction), the persona must never claim a snapshot it was not given, every capped list must
+      # say it is capped while a complete one must not, and the manual synthesis must be bounded by
+      # its schema and store nothing when the model was cut off.
+      - name: Jarvis snapshot gate and honest prompts
+        run: node scripts/verify-jarvis-snapshot-gate.mjs
+
+      # How long Jarvis's reply is allowed to be, and how it is bounded: a quick question got a
+      # 743-token (~550-word) answer in 9.0s against a persona that says "one to four sentences".
+      # The fix is the reply's SHAPE — an explicit role, a { reply: string } schema, one bounded
+      # repair pass — NOT a smaller MAX_REPLY_TOKENS (that turns verbosity into OUTPUT_TRUNCATED,
+      # H6). Asserts the overshoot boundary exactly, that a failed/truncated/junk repair keeps the
+      # ORIGINAL reply, that an empty reply is still refused, and that an explicit report, plan or
+      # breakdown request still gets its long answer.
+      - name: Jarvis reply length is bounded by its shape
+        run: node scripts/verify-jarvis-reply-length.mjs
+
+      # Rob: "it doesnt look like its doing anything ... i want to see it earlier and being written
+      # if it can start reading behind the streamed output even better". Asserts the opt-in rule that
+      # keeps every existing caller byte-identical (a `stream: true` body field, never the Accept
+      # header), the SSE framing of a provider stream and of the { reply: string } envelope the
+      # length fix made the reply, EVERY failure falling back to the blocking call rather than
+      # storing a fragment, that both transports still store the same text through the same repair
+      # pass, and the sentence boundary streaming speech is allowed to speak on.
+      - name: Jarvis streams its reply, and speaks behind it
+        run: node scripts/verify-jarvis-stream.mjs
+
+      # Exporting a reply: the filename must survive a downloads folder, a comma inside a cell must not
+      # split the columns, and only a real table should offer a spreadsheet.
+      - name: Document export
+        run: node scripts/verify-doc-export.mjs
+
       # The Deck's long-term memory fold: a valid answer with no memory text must
       # not mark a batch of turns as folded, which would drop them from memory
       # permanently and without a word.
@@ -250,6 +405,146 @@ jobs:
       # is the platform DECISION, exercised for win32/linux/darwin on any host.
       - name: The installer works on all three platforms
         run: node scripts/verify-portable-platform.mjs
+
+      # The operator's whole-stack choice, which is what decides whether what they build is something
+      # they can run without anyone's account. A posture is a COMPLETE stack, and a self-contained one
+      # must arrive with a single command to start it.
+      - name: An operator can run what they built
+        run: node scripts/verify-delivery-posture.mjs
+
+      # A backend is generated a few files per call, so a later chunk used to be written blind to what the
+      # earlier ones produced — measured 2026-09-29 as a backend whose files held three different beliefs
+      # about what `db` was. This asserts the mechanism that makes them visible to each other.
+      - name: Backend files are generated able to agree with each other
+        run: node scripts/verify-backend-chunk-context.mjs
+
+      # Would the app we hand the operator actually run? Two defects were measured on 2026-09-29 by
+      # generating a self-hosted app and running it: a dependency with no prebuilt binary for this Node,
+      # and a module contract that could not hold. verify-server-imports cannot see either — it checks
+      # that imports RESOLVE, not that the shape a module receives is the shape it uses.
+      - name: The app we generate is one that runs
+        run: node scripts/verify-generated-app.mjs
+
+      # "It ships" is only good news if it ships SAFE. ~45% of AI-generated code fails security tests and
+      # ~380,000 AI-built apps sit publicly accessible, so the artifact is examined rather than trusted: a
+      # shipped .env, a hardcoded key, data routes with no auth in front of them. The checks are REPORTED,
+      # not enforced — blocking on them would be a policy decision nobody has made — so what is asserted
+      # here is that they run on both generating paths and that a clean report never claims an audit.
+      - name: A generated app arrives with its dangers named
+        run: node scripts/verify-security-posture.mjs
+
+      # Security is the first posture; this is the second, with the opposite failure mode. An app that
+      # never shows a busy state, swallows a failure with nothing on screen and clears the form on the way
+      # out is not dangerous — it is untrustworthy, and it raises no error anywhere. The ten rules are given
+      # to the planner and the coder, the six mechanically detectable ones are checked over the generated
+      # files, the result is REPORTED and never enforced, and a non-UI app is reported as NOT EXAMINED
+      # rather than clean. What is asserted here is that every check can fire, that comments and string
+      # literals cannot satisfy one, and that both generating paths tell the model and report the result.
+      - name: A generated app is asked to show its work
+        run: node scripts/verify-ui-feedback.mjs
+
+      # Every builder in this category exports SOURCE and leaves the user with a pile of files; the
+      # market's complaint is that they cannot get to a RUNNING system. Morpheus made it worse: the export
+      # invented a package.json (`start: node index.js`) and a README (`npm install && npm start`) when the
+      # project lacked them, so a zip that could not run looked like one that could — and for a Python,
+      # static or compiled target the invented Node manifest was simply false. Asserted here: the export
+      # adds nothing, and it names the command that starts each part or says what is missing.
+      - name: A downloaded app keeps the promise on the button
+        run: node scripts/verify-export-promise.mjs
+
+      # The frontend stopped deploying on 2026-09-30 and NOTHING in this repo could see it: the compile
+      # succeeded, the deploy failed, and no Netlify status reached the merge commit. `VITE_` variables are
+      # inlined into the client bundle BY DESIGN, so `netlify.toml` omits those keys from the secrets scanner
+      # by name. This asserts that list and the code cannot drift apart, that the scanner is NOT switched off,
+      # and that no secret-shaped variable is ever inlined — omitting a key is a claim its value is public,
+      # and a claim needs a check.
+      - name: A new client variable cannot silently stop the frontend deploying
+        run: node scripts/verify-client-env.mjs
+
+      # THE ACTUAL CAUSE of that outage, and it was a test fixture. `verify-security-posture.mjs` needed a
+      # hardcoded-secret fixture and used a Stripe-shaped `sk-live-…` string; smart detection scans REPOSITORY
+      # CODE, so from the moment that guard landed the deploy was refused while the build passed. Netlify's
+      # error template blamed the `VITE_` variables and offered to omit keys, which could not have worked —
+      # the flagged string was not an environment value at all. A fixture is committed code and must never be
+      # shaped like the thing it tests for; this fails the build if any tracked file grows one again.
+      - name: No committed fixture looks like a credential
+        run: node scripts/verify-no-secret-fixtures.mjs
+
+      # H19: "before believing a green check, break its subject and confirm the check goes red. A guard whose
+      # failure cannot be demonstrated is a comment with a console.log." This repo has 86 guards and, until
+      # now, none of them proved it could fail — which cost real time twice in one day, once when a guard was
+      # found to REQUIRE the bug it existed to prevent, and once when a guard's own fixture could never
+      # satisfy its assertion, so no mutation of the subject would have found it.
+      #
+      # Both halves run here. The registry integrity guard is cheap and side-effect free: completeness, no
+      # stale or ambiguous `find`, and a ratchet that makes a new UNPROVEN guard impossible to add quietly.
+      # A FRESH self-host came up missing seventeen columns and said nothing. `manual-supabase-init.sql` is
+      # the bootstrap for a new install, and the selfdev-* migrations were applied to production and never
+      # mirrored into it: synced_sha, the CRM fields (#383), the fee tiers (#394) and the usage-event
+      # observability columns. Nothing broke loudly — readers fall back to the pre-migration shape, so the
+      # features simply did not persist on a fresh install, which is why it went unnoticed.
+      - name: A fresh self-host gets the migrated schema
+        run: node scripts/verify-bootstrap-sql.mjs
+      # Defect 9, from the first real end-to-end backend run: the plan asked for
+      # `migrations/001_initial.sql`, the generator wrote `migrations/0001_init.sql`, and the completeness
+      # check — a literal set difference — reported a file that EXISTS as missing. A false "missing" is
+      # worse than none, because it teaches the operator to ignore the flag.
+      - name: A planned file that was renamed is not reported missing
+        run: node scripts/verify-plan-reconciliation.mjs
+
+      # Defect 4: `appliedOps` is a MIXED list — real writes beside refusals, skips and failures — and
+      # `appliedOps.length` decided NINE things, so a turn where every operation was refused still triggered
+      # the GitHub auto-sync, ran the polish pass, was billed as `chat_build`, and told the workspace which
+      # files had changed. One definition now, published in the payload as `changedPaths`.
+      - name: A refused operation does not read as a change
+        run: node scripts/verify-applied-ops.mjs
+
+      # A desktop app built green on four platforms, downloaded, and died on first launch because
+      # PyInstaller collected a Qt framework twice — and no build machine could have caught it. The machine
+      # that RUNS the app is the only one that can test it, so a generated app must be drivable headlessly
+      # and must report a readable result. This guard WRITES the generated runner beside a real little app
+      # and RUNS it, for the reason the app just taught us: reading a runner proves nothing about a runner.
+      - name: An app can be tested on the machine it is installed on
+        run: node scripts/verify-app-selftest.mjs
+
+      # A compile of a REAL app failed on both macOS jobs inside Morpheus's OWN generated workflow: the
+      # Release step published USER-MANUAL.txt, which the renderer writes in BEFORE actions/checkout@v4,
+      # and the checkout cleans the workspace and deletes it. The diagnosis loop could not fix that and
+      # should not have tried — it writes to the construct's files while Morpheus regenerates the workflow
+      # every compile — yet it spent a full 32,000-token call (40,365 in, OUTPUT_TRUNCATED, recorded
+      # `status: ok`) on it. This guard drives the owner classifier that stops that, and proves the rule
+      # that matters most: only a confident, evidence-backed 'morpheus' verdict skips the AI fix path.
+      # 'app', 'credentials' and 'unknown' keep today's behaviour, because the build pipeline must stay as
+      # free as possible. A miss is acceptable; a false "this is Morpheus's fault" that stops a real fix is not.
+      - name: A Morpheus-owned build failure is not sent to the app
+        run: node scripts/verify-build-failure-owner.mjs
+
+      # compileProject pushes the construct's files one way to GitHub before every build, so anything that
+      # edited the repo directly is silently overwritten by the next compile — and the fix loop was spending
+      # on constructs in exactly that state. This guard pins the content-based divergence check (never a
+      # timestamp), the exclusion of Morpheus's own generated files (`_compiled/*`, the rendered workflow),
+      # the exact warning copy, and the rule that matters most: 'unknown' and 'in-sync' change NOTHING about
+      # today's behaviour, so a check that cannot answer never blocks a build or a fix (H17).
+      - name: Divergence from the repo is detected, warned about, never blocks
+        run: node scripts/verify-project-divergence.mjs
+
+      - name: The guard-mutation registry is honest
+        run: node scripts/verify-guard-mutations.mjs
+
+      # And the proof itself: one sabotage per guard, applied to a real file, with the guard expected to go
+      # red — then restored byte-for-byte and hash-verified. ~6 seconds for the whole set. It fails on a guard
+      # that SURVIVES (a check that cannot fail), a STALE mutation (one that no longer matches, reported
+      # rather than skipped), or a guard that was already red before the sabotage.
+      - name: Every registered guard fails when its subject breaks
+        run: node scripts/mutate-guards.mjs
+
+      # There are TWO copies of the infrastructure registry and nothing kept them in step. That already
+      # cost the posture feature its entire UI once, because BackendPanel.jsx imports the copy the work
+      # had not touched — and every guard passed. This compares them as DATA, by asking both the same
+      # questions, because comparing their text would be defeated by the annotations that legitimately
+      # differ between a .ts and a .js file.
+      - name: The two registry copies are one registry
+        run: node scripts/verify-registry-parity.mjs
 
       # A failed ADVISORY check must not throw away a build the user already paid for. Both directions
       # are asserted: the coder's work survives a reviewer that throws, and the failure can never read
@@ -524,6 +819,31 @@ jobs:
       # both the handler and the CompilePanel keep the failures (no database needed).
       - name: Compile-artifact save is honest about partials
         run: node scripts/verify-compile-artifacts.mjs
+
+      # The save of a real macOS build is ~217 MB, downloaded and re-uploaded. It ran inside
+      # one HTTP request, so Cloudflare's ~100s proxy read timeout cut it before the browser's
+      # own 210s timeout could fire — and a build that had SUCCEEDED was reported as failed,
+      # with "tap RECOMPILE" on an app that already existed. This asserts the save is a
+      # background job with a polled status that survives a reload, that it stays streamed and
+      # resumable, and that a save failure is never a build failure.
+      - name: The artifact save runs in the background and never reads as a failed build
+        run: node scripts/verify-artifact-save-background.mjs
+
+      # A macOS app compiled on macos-latest is Apple-silicon-only, and an Intel Mac answers
+      # "not supported on this Mac" — Rob, holding a disk image Morpheus had just built him.
+      # This asserts the Python path builds on both runners, that each disk image is named for
+      # the Mac it opens on (and that the glob and the verify step agree with that name), and
+      # that a project's own .dmg is never nested inside ours.
+      - name: macOS builds cover both Macs, and say which is which
+        run: node scripts/verify-mac-app-arch.mjs
+
+      # A compiled app is handed to someone who did not build it, and every answer they need — which
+      # download is theirs, how to get past Gatekeeper, where the menu bar went — was somewhere other
+      # than the download. This asserts the manual exists for every target, says only what Morpheus
+      # has read, travels INSIDE the disk image and beside it as its own download, and that a
+      # project's README cannot end the heredoc it is written in.
+      - name: The user manual travels with the build
+        run: node scripts/verify-user-manual.mjs
 
       # A Prisma call naming a column that does not exist fails at runtime, and esbuild, lint
       # and the import guards are all blind to it.

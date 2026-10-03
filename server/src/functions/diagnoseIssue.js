@@ -9,7 +9,11 @@ import { invokeAI } from '../ai.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { getServiceOption } from '../lib/infrastructureComponents.js';
 import { isCredentialError, isAuthError, buildCredentialAction, applyFileFixes, fixResponseSchema } from '../lib/diagnosis.js';
+import { classifyBuildFailure, ownerIsMorpheus } from '../lib/buildFailureOwner.js';
+import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { reviewAndRetry } from '../lib/reviewer.js';
+import { assessProjectDivergence } from '../lib/repoDivergence.js';
+import { repoAhead, divergenceNeedsAction } from '../lib/projectDivergence.js';
 
 export default async function handler({ user, body }) {
   const { type, projectId, errorContext, components } = body || {};
@@ -53,6 +57,10 @@ export default async function handler({ user, body }) {
   await logUsage(user.id, 'diagnosis', projectId, project.name, {
     phase: `diagnose_${type}`,
     diagnosisType: type,
+    // The ownership verdict, when the classifier reached one, so the rate of
+    // Morpheus-owned failures is visible in the usage records rather than only in a
+    // log line (see lib/buildFailureOwner.js).
+    ...(diagnosis.owner ? { buildFailureOwner: diagnosis.owner } : {}),
     summary: diagnosis.summary,
     allClear: diagnosis.allClear,
     autoFixed: diagnosis.autoFixed.map((f) => ({ component: f.component, issue: f.issue, fix: f.fix, fileCount: f.fileCount })),
@@ -114,6 +122,49 @@ function buildDiagnosisLogMessage(type, diagnosis) {
     }
   }
   return lines.join('\n');
+}
+
+// The action plan for a failure the classifier proved belongs to Morpheus. The message
+// is the classifier's plain sentence — deliberately no raw log text, no stack trace, and
+// no "fix your app" instruction, because no app file can fix a generated workflow.
+function buildMorpheusAction(ownership) {
+  return {
+    component: 'morpheus',
+    label: 'Morpheus build pipeline',
+    issue: ownership.detail,
+    steps: ownership.steps,
+    severity: 'morpheus',
+  };
+}
+
+// The action that opens the failing run. Shared by the normal compile path and by
+// the divergence gate below, so warning about a stale construct cannot cost the
+// operator the link to the logs that failed.
+function buildCompileFailedAction(repoUrl, target) {
+  return {
+    component: 'compile', label: target || 'build',
+    issue: 'Build failed on GitHub Actions',
+    steps: [
+      'Open the GitHub Actions run logs (link below)',
+      'Identify the failing step and error message',
+      'Fix the source file causing the failure, or click AI DIAGNOSE to auto-fix',
+      'Click COMPILE again to retry'
+    ],
+    link: repoUrl, severity: 'external'
+  };
+}
+
+// The artifact glob the compile target declares, so the release step failing on it is
+// recognised as Morpheus's own contract rather than an unknown failure. Best-effort: a
+// target id that is missing or not in the registry simply yields no glob, and the
+// classifier then falls through to 'unknown' (today's behaviour) instead of guessing.
+function artifactGlobFor(target) {
+  if (!target) return undefined;
+  try {
+    return getCompileTarget(target)?.artifact?.glob;
+  } catch {
+    return undefined;
+  }
 }
 
 // ─── DEPLOY ──────────────────────────────────────────────────────────────────
@@ -185,6 +236,11 @@ async function diagnoseCompile(userId, projectId, project, files, errorContext) 
   const needsUserAction = [];
   const codeErrors = [];
 
+  // PRECEDENCE, and it is an order the code executes rather than a comment: the caller's
+  // OWN credential class is decided FIRST, before the ownership verdict is even asked.
+  // A credential failure is answered by the branch it always was, and the ownership check
+  // cannot pre-empt it. (lib/buildFailureOwner.js carries no credential vocabulary — this
+  // is ordering, not classification; it decides only morpheus | app | unknown.)
   if (isAuthError(error)) {
     needsUserAction.push({
       component: 'github', label: 'GitHub Connection',
@@ -198,25 +254,81 @@ async function diagnoseCompile(userId, projectId, project, files, errorContext) 
     });
   }
 
+  // 2026-10-01 (measured): classify OWNERSHIP before any AI call, but only when the
+  // caller's own branch above did not already answer the failure. A real app's compile
+  // failed on both macOS jobs inside Morpheus's OWN generated workflow — the Release step
+  // published USER-MANUAL.txt, which the renderer writes before actions/checkout@v4 and
+  // the checkout then deletes — and the loop spent a 32,000-token diagnosis (40,365 in,
+  // OUTPUT_TRUNCATED, recorded `status: ok`) trying to fix something no app file could
+  // fix, on a workflow Morpheus regenerates every compile.
+  //
+  // Only a confident, evidence-backed 'morpheus' verdict returns here. 'app' and
+  // 'unknown' fall through to the code below EXACTLY as it was, because the build
+  // pipeline must stay as free as possible — a miss is acceptable, a false "this is
+  // Morpheus's fault" that stops a real fix is not (lib/buildFailureOwner.js).
+  if (!isAuthError(error)) {
+    const ownership = classifyBuildFailure({ error, logs, target, artifactGlob: artifactGlobFor(target) });
+    if (ownerIsMorpheus(ownership)) {
+      console.warn(`[diagnoseIssue] morpheus-owned compile failure: reason=${ownership.reason} step=${ownership.evidence?.step || '-'} file=${ownership.evidence?.file || '-'} target=${target || '-'} — no AI call made`);
+      return {
+        summary: ownership.headline,
+        autoFixed: [],
+        needsUserAction: [buildMorpheusAction(ownership)],
+        totalErrors: 1,
+        allClear: false,
+        owner: ownership.owner,
+      };
+    }
+  }
+
   // Build/compile errors are code-level — attempt auto-fix
   if (error && !isAuthError(error)) {
     codeErrors.push({ component: 'compile', service: target, error, logs });
   }
 
+  // DIVERGENCE GATE — the last thing before the AI fix path can spend anything.
+  //
+  // The construct is only the truth about the repo while nothing edited the repo
+  // directly. If something did (a manual push, another tool, a session that fixed
+  // the generated app on the repo side), every file this loop regenerates is based
+  // on a stale baseline, and compileProject's one-way push writes the construct
+  // back over the repo's edits on the next build — so the spend buys a fix that
+  // the next compile discards. Detect that, warn, and spend nothing.
+  //
+  // 'in-sync', 'construct-ahead' and — critically — 'unknown' fall straight
+  // through to today's code. 'unknown' means there is no linked repo, no token, or
+  // the API could not answer: the loop must behave exactly as it did before this
+  // check existed (H17 — never claim divergence without evidence, never narrow what
+  // the loop can do on a check that could not run). The credential branch above
+  // keeps precedence, so an auth error is still answered the way it always was.
+  if (!isAuthError(error)) {
+    const divergence = await assessProjectDivergence({ userId, project, constructFiles: files });
+    if (repoAhead(divergence)) {
+      console.warn(
+        `[diagnoseIssue] compile diagnosis: repo ahead of construct (${divergence.state}, ${divergence.reason}) — `
+        + `${divergence.ahead.length} file(s) changed directly on ${divergence.repoFullName || project.github_repo}; `
+        + `no AI call made, nothing spent. paths=${divergence.ahead.slice(0, 20).join(', ')}`
+        + `${divergence.ahead.length > 20 ? ` …(+${divergence.ahead.length - 20} more)` : ''}`,
+      );
+      const needsUserAction = [divergenceNeedsAction(divergence.ahead.length)];
+      if (repoUrl) needsUserAction.push(buildCompileFailedAction(repoUrl, target));
+      return {
+        summary: `Not fixed: GitHub has ${divergence.ahead.length} file(s) this construct does not. Sync from GitHub, then diagnose again.`,
+        autoFixed: [],
+        needsUserAction,
+        totalErrors: codeErrors.length,
+        allClear: false,
+        divergence: {
+          state: divergence.state, ahead: divergence.ahead, behind: divergence.behind, reason: divergence.reason,
+        },
+      };
+    }
+  }
+
   const autoFixed = await autoFixCodeErrors(userId, projectId, sourceFiles, codeErrors, null, null, 'compile', errorContext);
 
   if (repoUrl && autoFixed.length === 0) {
-    needsUserAction.push({
-      component: 'compile', label: target || 'build',
-      issue: 'Build failed on GitHub Actions',
-      steps: [
-        'Open the GitHub Actions run logs (link below)',
-        'Identify the failing step and error message',
-        'Fix the source file causing the failure, or click AI DIAGNOSE to auto-fix',
-        'Click COMPILE again to retry'
-      ],
-      link: repoUrl, severity: 'external'
-    });
+    needsUserAction.push(buildCompileFailedAction(repoUrl, target));
   }
 
   const allClear = autoFixed.length > 0 && needsUserAction.length === 0;
@@ -287,6 +399,23 @@ async function diagnoseGithub(userId, projectId, project, files, errorContext) {
 async function diagnoseBuild(userId, projectId, project, files, errorContext) {
   const { error, step, spec } = errorContext || {};
   const sourceFiles = files.filter((f) => !f.path.startsWith('backend/') && !f.path.startsWith('external/'));
+
+  // The autonomous build shares the auto-fix path with the compile diagnosis, so it gets
+  // the same ownership check. This errorContext carries no GitHub job logs, so a
+  // Morpheus-owned workflow failure is rarely visible here — but the check is cheap, and
+  // like the compile path it changes nothing unless a confident 'morpheus' verdict lands.
+  const ownership = classifyBuildFailure({ error });
+  if (ownerIsMorpheus(ownership)) {
+    console.warn(`[diagnoseIssue] morpheus-owned build failure: reason=${ownership.reason} step=${ownership.evidence?.step || '-'} file=${ownership.evidence?.file || '-'} — no AI call made`);
+    return {
+      summary: ownership.headline,
+      autoFixed: [],
+      needsUserAction: [buildMorpheusAction(ownership)],
+      totalErrors: 1,
+      allClear: false,
+      owner: ownership.owner,
+    };
+  }
 
   const needsUserAction = [];
   const codeErrors = [];

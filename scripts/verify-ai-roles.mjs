@@ -80,6 +80,7 @@ check('researchRepo — real investigation, deliberately still on planner — ha
 // ── the three hot-path classifiers outside the pipeline ─────────────────────
 const OUTSIDE = [
   ['server/src/functions/chatWithJarvis.js', 'WIDGET_BUILD_INTENT_SCHEMA', "the deck's widget-build intent (asked on EVERY message)"],
+  ['server/src/functions/chatWithJarvis.js', 'SNAPSHOT_NEED_SCHEMA', "the deck's snapshot-need gate (asked on EVERY message, 2026-10-03)"],
   ['server/src/functions/classifyDeckDumpItem.js', 'CLASSIFY_SCHEMA', 'the brain-dump classifier'],
   ['server/src/functions/syncDeckGmailInbox.js', 'CLASSIFY_SCHEMA', 'the Gmail inquiry check'],
   ['server/src/functions/classifyAppKind.js', 'APP_KIND_SCHEMA', 'the website/web-app on-ramp decision'],
@@ -152,10 +153,22 @@ const docDraft = code('server/src/functions/createDeckDocument.js');
 check('the document draft names the draft role', /role:\s*'draft'/.test(docDraft));
 
 // The counterpart, pinned so nobody "finishes the job" by moving them: Jarvis's own voice
-// and his scheduled synthesis stay on the platform default on purpose — persona and
-// judgement, Rob's call. They are the only calls left in the Deck that name no role.
-check('Jarvis\u2019s reply is deliberately NOT drafted by the draft role',
-  !/role:\s*'draft'/.test(code('server/src/functions/chatWithJarvis.js')));
+// stays on the platform default on purpose — persona and judgement, Rob's call. The manual
+// synthesis now names `planner`, which resolves to the SAME pro @ 0.7 the default already
+// gave it (runJarvisSynthesis.js explains why), so the persona's model is unchanged and the
+// choice is explicit rather than accidental; the scheduled synthesis is still role-less.
+//
+// 2026-10-03: the reply file now ALSO carries a bounded SHORTENING pass for an over-long reply,
+// which is a mechanical prose rewrite and correctly runs on the cheap `draft` role (flash @ 0.4).
+// The claim here is about the REPLY, so it is asserted on the reply call itself: the persona
+// stays on `planner`, and it is the shortening pass — not the reply — that is drafted.
+// scripts/verify-jarvis-reply-length.mjs owns the repair, its budget and its fallback.
+check('Jarvis\u2019s reply is deliberately NOT drafted by the draft role — it stays on planner',
+  /schema: REPLY_SCHEMA, role: 'planner'/.test(chatSized));
+check('…and the reply call never takes the draft role',
+  !/schema: REPLY_SCHEMA, role: 'draft'/.test(chatSized));
+check('…while the bounded shortening pass is the cheap prose role',
+  /schema: REPAIR_SCHEMA,\s*role: 'draft'/.test(chatSized));
 check('…and neither is the scheduled synthesis',
   !/role:\s*'draft'/.test(code('server/src/functions/runJarvisSynthesis.js')));
 
@@ -164,21 +177,32 @@ check('…and neither is the scheduled synthesis',
 // and it is an optimisation — it recognises "build me a widget" and answers with a
 // canned acknowledgement. `invokeAI` throws on a timeout, a truncation or a bad
 // response; unguarded, that throw left the handler as a 500 and took a perfectly good
-// chat turn with it, on top of the user row already persisted.
+// chat turn with it, on top of the user row already persisted. 2026-10-03: it is now
+// one of two booleans in a single Promise.all, so the guard is the `.catch()` on the
+// call rather than a `try` block — the claim is the same one.
 const chatSrc = code('server/src/functions/chatWithJarvis.js');
 check('the widget-build intent call is guarded, so a classifier failure cannot kill the reply',
-  /try\s*\{[^}]*wantsWidgetBuild = await classifyWidgetBuildIntent/s.test(chatSrc));
+  /classifyWidgetBuildIntent\(user\.id, message\)\.catch\(\(err\) => \{[\s\S]*?return false;/.test(chatSrc));
 check('…and the fallback is ordinary chat, not a build',
-  /let wantsWidgetBuild = false;/.test(chatSrc) && /if \(wantsWidgetBuild\)/.test(chatSrc));
+  /if \(wantsWidgetBuild\)/.test(chatSrc));
+// The snapshot gate is the second boolean on that path, and its failure direction is the
+// opposite one on purpose: a failed check INCLUDES the snapshot (answer blind vs. spend
+// tokens). scripts/verify-jarvis-snapshot-gate.mjs owns that rule; this only asserts the
+// guard is wired here too, so a failure cannot take the turn down.
+check('the snapshot-need gate is guarded too, and fails toward INCLUDING the snapshot',
+  /classifySnapshotNeed\(user\.id, message\)\.catch\(\(err\) => \{[\s\S]*?return true;/.test(chatSrc));
 
 // An empty 200 used to be stored verbatim: a blank Jarvis bubble with no error, and a
 // blank "Suggestions" card — both indistinguishable from "Jarvis had nothing to say".
-// This file's own history records the same silent-empty reply once before.
+// This file's own history records the same silent-empty reply once before. 2026-10-03:
+// the manual synthesis is now schema-bounded, so the refusal covers a DECLINE as well as
+// an empty answer, and it is made by the pure `synthesisMessageToStore` before anything
+// reaches the database.
 const synthFail = code('server/src/functions/runJarvisSynthesis.js');
 check('the chat reply refuses to store an empty reply',
   /if \(!String\(reply \|\| ''\)\.trim\(\)\)/.test(chatSrc));
-check('…and so does the manual synthesis',
-  /if \(!String\(reply \|\| ''\)\.trim\(\)\)/.test(synthFail));
+check('…and the manual synthesis refuses a declined, empty or unusable answer',
+  /const decision = synthesisMessageToStore\(\{ result, truncated \}\)/.test(synthFail) && /if \(!decision\.ok\)/.test(synthFail));
 
 // NOTE: the `classify` role's settings row (`default_classify_model` / `_temperature`) is
 // deliberately NOT asserted here. It lives in the workspace harness, not this repo, and a

@@ -3,6 +3,7 @@
 // Node: @yao-pkg/pkg. Python: PyInstaller with --windowed for .app bundle.
 // Wraps raw binaries in a proper .app bundle with Info.plist.
 
+import { USER_MANUAL_FILE } from '../appUserManual.js';
 import {
   isNodeProject, isPythonProject, isSwiftProject, parsePackageJson, detectPythonEntry,
   detectDataDirs, detectHiddenImports, detectIcon, detectNodeVersion,
@@ -84,18 +85,72 @@ function gatekeeperReadme(appName) {
 // shortcut when the staging dir actually contains a .app bundle (a raw
 // binary, from a project's own non-.app build script, has nothing sensible
 // to drag there).
-function dmgBuildStep(stagingDir, volname) {
+function dmgBuildStep(stagingDir, volname, dmgName) {
+  const dmg = dmgName || 'app.dmg';
   return [
+    // The user manual goes INSIDE the disk image as well as beside it on the release, because the
+    // person who needs it most is the one who has already dragged the app out and is staring at a
+    // window wondering why nothing matches what they expected. Written by the workflow's first step.
+    `if [ -f ${USER_MANUAL_FILE} ]; then cp ${USER_MANUAL_FILE} ${stagingDir}/; fi`,
     `if compgen -G "${stagingDir}/*.app" > /dev/null; then ln -s /Applications "${stagingDir}/Applications"; fi`,
-    `hdiutil create -volname "${volname}" -srcfolder "${stagingDir}" -ov -format UDZO app.dmg`,
-    'test -f app.dmg || { echo "Failed to create .dmg"; exit 1; }'
+    `hdiutil create -volname "${volname}" -srcfolder "${stagingDir}" -ov -format UDZO ${dmg}`,
+    `test -f ${dmg} || { echo "Failed to create .dmg"; exit 1; }`
   ].join('\n');
 }
+
+// Stage the things the download should actually contain.
+//
+// 2026-10-01 (Rob mounted the compiled Wikidata Uploader and found three items in it, one of which was
+// another disk image): the build-script branch used to do `cp -R dist/. dmg_staging/`, so whatever the
+// project's own build script happened to leave in dist/ was copied verbatim into ours. That project's
+// build.py writes a .dmg of its own — the result was a 103 MB disk image nested inside a 301 MB one,
+// next to the raw --onedir folder that is already inside the .app. Nobody wants a disk image inside a
+// disk image, so: when dist/ holds .app bundles, stage exactly those (everything else PyInstaller made
+// is already inside them) plus the README; otherwise stage dist/ minus any archive.
+function stageDist(stagingDir) {
+  return [
+    `mkdir -p ${stagingDir}`,
+    'if compgen -G "dist/*.app" > /dev/null; then',
+    `  cp -R dist/*.app ${stagingDir}/`,
+    `  if [ -f dist/README.txt ]; then cp dist/README.txt ${stagingDir}/; fi`,
+    'else',
+    `  rsync -a --exclude '*.dmg' --exclude '*.zip' dist/ ${stagingDir}/`,
+    'fi'
+  ].join('\n');
+}
+
+// WHICH MACS A BUILD RUNS ON IS DECIDED BY THE RUNNER, NOT BY THE PROJECT — and for Python it takes two.
+//
+// 2026-10-01 (Rob: "This app is not suported on this mac" — holding a DMG Morpheus had just built him):
+// PyInstaller compiles for the machine it runs on, and every runner this target used was macos-latest
+// (Apple Silicon), so every Python/Qt app came out arm64-only and an Intel Mac refused it. There was no
+// Intel download to ask for and nothing in the filename to say so; the previous fix only reported the
+// architecture after the fact. The Swift path genuinely cross-builds (`swift build --arch arm64 --arch
+// x86_64`) and the Node path ships both binaries behind a `uname -m` dispatcher, so both of those are
+// one-runner jobs. Python is not cross-buildable, so it gets one job per architecture and the release
+// carries both disk images, each named for the Mac it opens on — the filename is the only place a person
+// browsing a release or a downloads folder actually looks.
+export function macAppRunners(files) {
+  if (isSwiftProject(files) || isNodeProject(files)) {
+    return [{ runner: 'macos-latest', arch: 'universal' }];
+  }
+  return [
+    { runner: 'macos-15-intel', arch: 'intel' },
+    { runner: 'macos-latest', arch: 'apple-silicon' }
+  ];
+}
+
+// Expanded by GitHub per matrix leg before the shell ever sees it.
+const ARCH_DMG = 'app-macos-${{ matrix.arch }}.dmg';
 
 export const macApp = {
   id: 'mac-app',
   label: 'macOS App',
   runner: 'macos-latest',
+  // Optional per-target hook: a list of runners turns the job into a build matrix. Only this target needs
+  // it, and only for the Python path — see macAppRunners() above. compileProject prefers this over
+  // `runner` when it is present.
+  runners: macAppRunners,
 
   validate(files) {
     const warnings = [];
@@ -235,7 +290,7 @@ export const macApp = {
             'cat > dmg_staging/README.txt <<GATEKEEPER_README',
             gatekeeperReadme(appName),
             'GATEKEEPER_README',
-            dmgBuildStep('dmg_staging', '$APP_NAME')
+            dmgBuildStep('dmg_staging', '$APP_NAME', ARCH_DMG)
           ].join('\n')
         }
       ];
@@ -332,7 +387,7 @@ export const macApp = {
             'cat > dmg_staging/README.txt <<GATEKEEPER_README',
             gatekeeperReadme('MorpheusApp'),
             'GATEKEEPER_README',
-            dmgBuildStep('dmg_staging', 'MorpheusApp')
+            dmgBuildStep('dmg_staging', 'MorpheusApp', ARCH_DMG)
           ].join('\n')
         }
       ];
@@ -386,10 +441,17 @@ export const macApp = {
             // right below in the same run block, not a separate step.
             'VOLNAME=$(basename "$(ls -d dist/*.app 2>/dev/null | head -1)" .app 2>/dev/null)',
             'VOLNAME="${VOLNAME:-App}"',
-            'mkdir -p dmg_staging',
-            'cp -R dist/. dmg_staging/',
+            // Say which Mac this image is for, inside the image — see
+            // macAppRunners() above. A project's own build script has
+            // typically already written a README into dist/, so this is
+            // appended, not overwritten (stageDist copies it across).
+            'APP_BIN=$(ls -d dist/*.app/Contents/MacOS/* 2>/dev/null | head -1)',
+            'ARCHS=$(lipo -archs "$APP_BIN" 2>/dev/null || echo unknown)',
+            'echo "Mach-O architectures produced: $ARCHS (runner: $(uname -m), matrix leg: ${{ matrix.arch }})"',
+            stageDist('dmg_staging'),
             'if [ ! -f dmg_staging/README.txt ]; then cat > dmg_staging/README.txt <<GATEKEEPER_README\n' + gatekeeperReadme('the app') + '\nGATEKEEPER_README\nfi',
-            dmgBuildStep('dmg_staging', '$VOLNAME')
+            'printf "\\nThis build was compiled for: %s (%s)\\n" "${{ matrix.arch }}" "$ARCHS" >> dmg_staging/README.txt',
+            dmgBuildStep('dmg_staging', '$VOLNAME', ARCH_DMG)
           ].join('\n')
         }
       ];
@@ -416,6 +478,13 @@ export const macApp = {
           `pyinstaller ${args.join(' ')}`,
           'ls dist/',
           'test -d "dist/MorpheusApp.app" || test -f "dist/MorpheusApp" || { echo "PyInstaller produced no output"; exit 1; }',
+          // SAY WHICH MACS THIS RUNS ON, because the user cannot find out any other way — see
+          // macAppRunners() above for why this path needs one runner per architecture and the other two
+          // paths need only one. The report is the receipt: it proves which leg produced which image, and
+          // it is copied into the download so the person who hits "not supported on this Mac" can read why.
+          'APP_BIN="dist/MorpheusApp.app/Contents/MacOS/MorpheusApp"; [ -f "$APP_BIN" ] || APP_BIN="dist/MorpheusApp"',
+          'ARCHS=$(lipo -archs "$APP_BIN" 2>/dev/null || echo unknown)',
+          'echo "Mach-O architectures produced: $ARCHS (runner: $(uname -m), matrix leg: ${{ matrix.arch }})"',
           // See the comment above gatekeeperReadme() (mac-app.js) — ad-hoc
           // signing isn't real notarization, but it turns macOS's dead-end
           // "damaged, move to Bin" message into a clickable "Open Anyway"
@@ -426,19 +495,26 @@ export const macApp = {
           'cat > dist/README.txt <<GATEKEEPER_README',
           gatekeeperReadme('MorpheusApp'),
           'GATEKEEPER_README',
-          'mkdir -p dmg_staging',
-          'cp -R dist/. dmg_staging/',
-          dmgBuildStep('dmg_staging', 'MorpheusApp')
+          // AFTER the heredoc terminator — inside it these lines would be written into the README as
+          // literal text instead of running.
+          'printf "\\nThis build was compiled for: %s (%s)\\n" "${{ matrix.arch }}" "$ARCHS" >> dist/README.txt',
+          stageDist('dmg_staging'),
+          dmgBuildStep('dmg_staging', 'MorpheusApp', ARCH_DMG)
         ].join('\n')
       }
     ];
   },
 
   artifact: {
-    glob: 'app.dmg',
+    // The filename carries the architecture, because that is the only thing a user can see when they are
+    // choosing between two downloads — see macAppRunners() above. `${{ matrix.arch }}` is expanded per
+    // matrix leg by the release step, so a Python project publishes app-macos-intel.dmg AND
+    // app-macos-apple-silicon.dmg in one release, while Swift and Node publish one app-macos-universal.dmg.
+    // `artifactName` is deliberately gone: saveCompiledArtifacts renames the FIRST asset to it, which would
+    // have thrown the architecture away on exactly the download that has to keep it.
+    glob: ARCH_DMG,
     isGlob: false,
-    artifactName: 'app-macos.dmg',
-    verifyCommand: 'test -f app.dmg || { echo "No macOS .dmg produced"; exit 1; }'
+    verifyCommand: `test -f ${ARCH_DMG} || { echo "No macOS .dmg produced"; exit 1; }`
   },
 
   errorPatterns: [

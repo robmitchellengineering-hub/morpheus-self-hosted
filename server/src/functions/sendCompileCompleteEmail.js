@@ -16,14 +16,21 @@ export default async function handler({ user, body }) {
   // saveCompiledArtifacts.js). Reading that as ✓ "build complete" is the defect
   // this is here to stop; reading it as ✗ "finished without success" hides
   // every file that did land.
-  const result = ['success', 'partial'].includes(body?.result) ? body.result : 'failed';
+  //
+  // 'save_failed' (2026-10-02) is the same honesty for a save that landed
+  // nothing: the BUILD SUCCEEDED and is downloadable from GitHub. Sending that
+  // as 'failed' told the operator their build needed attention and pointed at a
+  // rebuild of an app that already existed.
+  const result = ['success', 'partial', 'save_failed'].includes(body?.result) ? body.result : 'failed';
   const summary = String(body?.summary || '').slice(0, 400);
 
   const subject = result === 'success'
     ? `✓ Morpheus — ${projectName} build complete`
     : result === 'partial'
       ? `⚠ Morpheus — ${projectName} build finished with missing files`
-      : `✗ Morpheus — ${projectName} build needs attention`;
+      : result === 'save_failed'
+        ? `⚠ Morpheus — ${projectName} built, but the app could not be saved`
+        : `✗ Morpheus — ${projectName} build needs attention`;
 
   const text = result === 'success'
     ? [
@@ -39,19 +46,29 @@ export default async function handler({ user, body }) {
           '',
           summary,
           '',
-          'The files that did save are in your project file tree under _compiled/. Open Morpheus and tap RECOMPILE to retry the rest.',
+          'The files that did save are in your project file tree under _compiled/. The rest are on the GitHub release for this build — download them there. You do not need to rebuild.',
           '',
           '— Morpheus',
         ].join('\n')
-      : [
-          `Your ${target} build for "${projectName}" finished without success.`,
-          '',
-          summary,
-          '',
-          'Open Morpheus and check the COMPILE panel, or ask Morpheus in chat to resolve it.',
-          '',
-          '— Morpheus',
-        ].join('\n');
+      : result === 'save_failed'
+        ? [
+            `Your ${target} build for "${projectName}" succeeded.`,
+            '',
+            `Morpheus could not copy the compiled app into your project files${summary ? `: ${summary}` : '.'}`,
+            '',
+            'The build itself is fine. Download it from the GitHub release for this build, or reopen Morpheus and try saving again — you do not need to rebuild.',
+            '',
+            '— Morpheus',
+          ].join('\n')
+        : [
+            `Your ${target} build for "${projectName}" finished without success.`,
+            '',
+            summary,
+            '',
+            'Open Morpheus and check the COMPILE panel, or ask Morpheus in chat to resolve it.',
+            '',
+            '— Morpheus',
+          ].join('\n');
 
   await sendMail({ to: user.email, subject, text });
 

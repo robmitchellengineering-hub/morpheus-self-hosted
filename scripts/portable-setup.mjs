@@ -26,8 +26,9 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   INSTALL_STEPS, NOT_INSTALLED_YET, GENERATED_ENV, preflight, generateSecrets, envFileContents,
-  localUrl, REQUIRED_NODE_MAJOR,
+  localUrl, REQUIRED_NODE_MAJOR, LOCAL_ENV, PORTABLE_SELFTEST,
 } from '../server/src/lib/portableSetup.js';
+import { SELFTEST_FILE, renderSelfTestRunner, parseSelfTestOutput, isVerified } from '../server/src/lib/appSelfTest.js';
 import { PORTABLE_GATEKEEPER_NOTE, launcherFor } from '../server/src/lib/portableLaunch.js';
 import { platformSteps, PLATFORM_STEPS, setupCommand, pathCommand, spawnOptions } from '../server/src/lib/platformCli.js';
 
@@ -171,14 +172,41 @@ if (SKIP_BUILD) {
   runCli(pathCommand(process.platform, 'npm', ['run', 'build']), ROOT);
 }
 
-say('\n  DONE — everything this install needs on this machine is in place.\n');
+// ── 6. prove it works HERE, before claiming anything ───────────────────────
+step(INSTALL_STEPS.length, INSTALL_STEPS[INSTALL_STEPS.length - 1].title);
+const selfTestPath = join(ROOT, SELFTEST_FILE);
+if (!existsSync(selfTestPath)) {
+  writeFileSync(selfTestPath, renderSelfTestRunner({
+    startCommand: PORTABLE_SELFTEST.command,
+    cwd: PORTABLE_SELFTEST.cwd,
+    path: PORTABLE_SELFTEST.path,
+    port: Number(LOCAL_ENV.PORT),
+    timeoutMs: PORTABLE_SELFTEST.timeoutMs,
+  }));
+  say(`      wrote ${SELFTEST_FILE} — run it any time to check this install`);
+}
+const probe = spawnSync(process.execPath, [selfTestPath], { cwd: ROOT, encoding: 'utf8' });
+const verdict = parseSelfTestOutput(probe.stdout || '');
+say(`      ${(probe.stdout || '').trim().split('\n').filter(Boolean).slice(-1)[0] || '(the self-test printed nothing)'}`);
+if (!isVerified(verdict)) {
+  // NOT DONE, and the difference matters: the install itself may be fine and the SERVER may not start —
+  // which is exactly the case a person cannot see until they open a browser and find nothing there.
+  console.error('\n  ✗ NOT VERIFIED — the install steps ran, but the server did not answer on this machine.\n');
+  console.error(`    ${verdict.status === 'failed' ? 'The app reported a failure' : 'The test could not complete'}: ${verdict.detail || '(no detail)'}`);
+  console.error('    Nothing above this line is undone. Fix that, then run the check on its own:');
+  console.error(`      node ${SELFTEST_FILE}\n`);
+  process.exit(1);
+}
+
+say('\n  DONE — everything this install needs on this machine is in place, and it has been checked.\n');
 say('  TO START IT:');
 say(`    · double-click ${launcherFor(process.platform)?.file || '(no launcher for this platform — use the command below)'}`);
 say('    · or run:  npm run portable:start      (npm run portable:stop stops it)');
 say(`    ${PORTABLE_GATEKEEPER_NOTE}`);
 say('');
-say(`  When it is running it opens ${localUrl()} by itself, and that is the whole check:`);
-say('  the browser shows the Morpheus sign-in page.');
+say(`  VERIFIED ON THIS MACHINE: the server started, answered ${PORTABLE_SELFTEST.path}, and was stopped again.`);
+say(`  That check is a file in this folder — re-run it any time with:  node ${SELFTEST_FILE}`);
+say(`  When it is running it opens ${localUrl()} by itself, and the browser shows the sign-in page.`);
 say('');
 sayPlatformSteps();
 say('');

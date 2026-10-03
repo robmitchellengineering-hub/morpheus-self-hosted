@@ -82,24 +82,34 @@ check('every failed asset is named, in release order', many.failed, ['morpheus-o
 check('saved is the landed count, not the attempted count', many.saved, 1);
 
 console.log('\n4. the handler cannot drop the failures again');
+// 2026-10-02: the save moved off the request (it now runs as a background job —
+// see scripts/verify-artifact-save-background.mjs for that half). The failure
+// accounting itself is unchanged: every asset that does not land is recorded by
+// name into the job record, and the outcome helper still owns the partial shape.
 const handler = read('../server/src/functions/saveCompiledArtifacts.js');
-check('it records each failed asset name', /failed\.push\(name\)/.test(handler), true);
+const jobState = read('../server/src/lib/artifactSaveJob.js');
+const saveStatusFn = read('../server/src/functions/getArtifactSaveStatus.js');
+check('it records each failed asset name', /markArtifactFailed\(record/.test(handler), true);
+check('…and the pure state module appends it by name',
+  /record\.failed = \[\.\.\.record\.failed, name\]/.test(jobState), true);
 check('it returns the outcome helper rather than a bare literal',
-  /return summarizeArtifactSave\(/.test(handler), true);
-check('it passes the failures into it', /failed, errors \}\)/.test(handler), true);
-check('a save where nothing landed is still a hard 500, not a "partial" success',
-  /saved\.length === 0/.test(handler) && /res\.status\(500\)/.test(handler), true);
+  /artifactSaveResponse\(/.test(handler) && /summarizeArtifactSave\(/.test(jobState), true);
+check('…and the status endpoint answers through the same helper',
+  /artifactSaveResponse\(/.test(saveStatusFn), true);
+check('a save where nothing landed is a `failed` phase, not a "partial" success',
+  /fatalError/.test(jobState) && /record\.phase = 'failed'/.test(jobState), true);
 check('the all-saved short-circuit still returns files + artifacts',
-  /return \{\s*saved: alreadySaved\.length/.test(handler) || /alreadyExists: true/.test(handler), true);
+  /alreadyExists: true/.test(handler), true);
 
 console.log('\n5. the UI cannot read a partial save as "Build complete"');
 const panel = read('../src/components/matrix/CompilePanel.jsx');
-check('the panel reads the failures off the save result',
-  /saveResult\?\.partial/.test(panel) && /saveResult\.failed/.test(panel), true);
+check('the panel reads the failures off the save status',
+  /data\.phase === 'partial'/.test(panel) && /data\.failed/.test(panel), true);
 check('the done phase branches on them', /saveFailures\.length > 0/.test(panel), true);
 check('the missing files are named on screen', /saveFailures\.map\(/.test(panel), true);
 check('a partial save does NOT send the success notification',
-  /if \(!saveWasPartial\) notifyComplete\('success'/.test(panel), true);
+  /data\.phase === 'done'\) \{[\s\S]{0,300}notifyComplete\('success'/.test(panel)
+  && !/data\.phase === 'partial'[\s\S]{0,300}notifyComplete\('success'/.test(panel), true);
 check('a partial save sends its own notification', /notifyComplete\('partial'/.test(panel), true);
 check('the partial heading is not the success heading',
   /DID NOT SAVE/.test(panel) && /Build complete!/.test(panel), true);
@@ -178,7 +188,11 @@ try {
   writeFileSync(join(fb, 'styles.css'), 'body{}');
   writeFileSync(join(fb, 'robots.txt'), 'User-agent: *\n');
   writeFileSync(join(fb, 'package.json'), '{"scripts":{"start":"node server.js"}}');
-  writeFileSync(join(fb, '.env'), 'STRIPE_SECRET_KEY=sk_live_not_a_real_key\n');
+  // Not `sk_live_…`: a fixture that looks like a live credential trips Netlify's secret scanner on the
+  // repository itself, which fails the DEPLOY while the build succeeds (2026-09-30). Only the file NAME
+  // matters to this test — the value must never be mistakable for a real key. See
+  // scripts/verify-no-secret-fixtures.mjs.
+  writeFileSync(join(fb, '.env'), 'STRIPE_SECRET_KEY=this-is-not-a-real-secret-0000\n');
   writeFileSync(join(fb, '.env.local'), 'OTHER=1\n');
   writeFileSync(join(fb, 'server-key.pem'), 'not a real key\n');
   mkdirSync(join(fb, 'backend'), { recursive: true });
@@ -261,6 +275,31 @@ const withBuild = webApp.validate([
 ]);
 check('…and neither does a project WITH a build script (the gate is the fallback path)',
   withBuild.warnings.some((w) => /two copies|NO homepage/.test(w)), false);
+
+console.log('4. a build that is still publishing its download is not a failed build');
+// 2026-10-01: Rob, two compiles two minutes apart — "just had a build failded message come up but it
+// still gave me both links to the mac builds". Both runs were green. getCompileStatus asked for
+// `releases/latest`, which with two compiles in flight can answer with a release whose assets are
+// still uploading; it then reported a finished build with no artifact, the panel called
+// saveCompiledArtifacts, and the user was told "Build failed". The workflow tags its release with its
+// own run id, so the lookup is unambiguous and the empty window is a state, not a verdict.
+const statusFn = read('../server/src/functions/getCompileStatus.js');
+const panelSrc = read('../src/components/matrix/CompilePanel.jsx');
+check('the release is looked up by the RUN\'s own tag, not "the latest"',
+  /releases\/tags\/\$\{releaseTag\}/.test(statusFn), true);
+check('…and the tag is built from the run id the workflow names its release with',
+  /const releaseTag = `v\$\{latestRun\.id\}`;/.test(statusFn), true);
+check('an unpopulated release is reported as publishing, not as finished',
+  /result\.artifactsPending = true;/.test(statusFn), true);
+check('…with a message that says so', /publishing the download/.test(statusFn), true);
+check('…and a release that never appears is still distinguished from a failed build',
+  /Build succeeded but no downloadable artifact was published\./.test(statusFn), true);
+check('the panel keeps polling while the download is still publishing',
+  /const stillPublishing = data\.status === 'completed' && data\.artifactsPending;/.test(panelSrc), true);
+check('…and does not stop the poll loop on that state',
+  /if \(data\.status === 'completed' && !stillPublishing\) \{/.test(panelSrc), true);
+check('…and does not show "published no downloadable artifact" while it is publishing',
+  /status\?\.assets\?\.length === 0 && !status\?\.artifactsPending/.test(panelSrc), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

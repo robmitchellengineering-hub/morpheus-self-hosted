@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe, FileJson } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from '@/components/ui/use-toast';
 import { generateManual } from '@/lib/generateManual';
 import BuildStamp from './BuildStamp';
 import HelpToggle from './HelpToggle';
@@ -69,8 +70,20 @@ export default function ProjectBar({ project, onRename, onExport, onNew, onBack,
               </button>
             </HelpHint>
           )}
-          <HelpHint id="zip-export" title="Download ZIP" body="Download your entire project as a ZIP — all source files, package.json, and README. Ready to run locally with zero platform dependency.">
-            <button onClick={onExport} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border">
+          {/* The help text used to promise "Ready to run locally with zero platform dependency" while the
+              export invented a package.json and a README to make that look true. The export now adds
+              nothing, so the button reports the command that starts the app — or what is missing — from
+              what is actually in the ZIP. */}
+          <HelpHint id="zip-export" title="Download ZIP" body="Download your project as a ZIP — your own source files, exactly as they are, with nothing invented for you. You'll be told the command that starts each part, or what is still missing before it can run.">
+            <button onClick={async () => {
+              const verdict = await onExport?.();
+              if (!verdict?.summary) return;
+              toast({
+                title: verdict.ok ? 'Ready to run' : 'Not runnable yet',
+                description: verdict.summary,
+                variant: verdict.ok ? 'default' : 'destructive',
+              });
+            }} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border">
               <Download size={14} /> ZIP
             </button>
           </HelpHint>

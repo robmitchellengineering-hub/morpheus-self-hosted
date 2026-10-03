@@ -6,7 +6,12 @@ import {
   isYou, todayKey, todayISO, randomDeleteConfirmPhrase, commissionFor, feeTiersFromProfile,
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
-import { summarizeFiling } from '@/pages/CommandDeck/dumpFiling';
+import { summarizeFiling, captureFailureMessage } from '@/pages/CommandDeck/dumpFiling';
+import { SECONDS_PER_TASK, bankSeconds } from '@/pages/CommandDeck/game/playBank';
+import { normalizePrice } from '@/pages/CommandDeck/murbahMoney';
+import { initialJarvisLive, reduceJarvisEvent } from '@/lib/jarvisStream';
+import PlayModal from '@/pages/CommandDeck/game/PlayModal';
+import { useAuth } from '@/lib/AuthContext';
 
 // All of Command Deck's shared state, data loading, and CRUD handlers —
 // lifted out of the old single-file CommandDeck.jsx unchanged, so every tab
@@ -31,6 +36,34 @@ export function useCommandDeck() {
   const ctx = useContext(CommandDeckContext);
   if (!ctx) throw new Error('useCommandDeck must be used within CommandDeckProvider');
   return ctx;
+}
+
+// A capture is supposed to be instant — the classifier's own code fast path answers without any
+// model call at all. The global 210s API timeout (base44Client's API_FETCH_TIMEOUT_MS) is right for
+// a compile and wrong here: it left a failed press silent for three and a half minutes, and an
+// operator gives up long before that (measured 2026-10-02).
+//
+// The cap has to sit ABOVE the slow path, not below it. Measured in usage_events: the classify call
+// that reaches the model takes 18-34s, and the 34s one is the last dump that ever filed anything
+// successfully (it wrote the strategy and knowledge notes at 2026-10-01T02:58:38Z). A 20s cap would
+// have thrown that success away and piled it, so the wait is bounded at 45s — past every observed
+// finish, far short of the 210s that made a failure look like a dead button.
+//
+// Abandoning the wait loses nothing that has not already been lost: the server only classifies and
+// every row is written by the caller below, so a request we stop waiting for has filed nothing.
+const CLASSIFY_TIMEOUT_MS = 45_000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => {
+        const err = new Error(`No answer from Morpheus within ${Math.round(ms / 1000)}s.`);
+        err.code = 'CLIENT_TIMEOUT';
+        reject(err);
+      }, ms);
+    }),
+  ]);
 }
 
 export function CommandDeckProvider({ children }) {
@@ -83,6 +116,23 @@ export function CommandDeckProvider({ children }) {
   const [dumpInput, setDumpInput] = useState('');
   const [quickFileMsg, setQuickFileMsg] = useState(null);
   const quickFileTimeout = useRef(null);
+  // Why the last capture filed nothing. Separate from quickFileMsg, which is the green "where it
+  // went" line: a failure and a success must not share a channel, or a failed capture reads as one.
+  const [dumpError, setDumpError] = useState(null);
+
+  // ---- Asteroids reward ---------------------------------------------------
+  // The bank is a ledger read whole (every credit, every game), and the popup is opened by ticking a
+  // task off. See src/pages/CommandDeck/game/.
+  const [playCredits, setPlayCredits] = useState([]);
+  const [playScores, setPlayScores] = useState([]);
+  const [playOpen, setPlayOpen] = useState(false);
+  // The board is Morpheus-wide, so it has to know which row is the viewer's — and the initials the
+  // player last used are their own most recent score, which is why nothing separate stores them.
+  const { user } = useAuth();
+  const meId = user?.id || null;
+  const playInitials = playScores
+    .filter((s) => s.created_by_id === meId)
+    .sort((a, b) => String(b.created_date || '').localeCompare(String(a.created_date || '')))[0]?.initials || '';
 
   const [tasks, setTasks] = useState([]);
   const [taskInput, setTaskInput] = useState('');
@@ -138,6 +188,12 @@ export function CommandDeckProvider({ children }) {
   const [jarvisInput, setJarvisInput] = useState('');
   const [jarvisSending, setJarvisSending] = useState(false);
   const [jarvisErr, setJarvisErr] = useState(false);
+  // 2026-10-04 (Rob: "it doesnt look like its doing anything") — what Jarvis's in-flight turn is
+  // actually doing, and the words it has written so far. Reduced from the events chatWithJarvis streams
+  // by the pure `reduceJarvisEvent` (src/lib/jarvisStream.js), so the same state can be asserted with no
+  // browser. It exists from the moment the message is sent — before the server has said anything — so
+  // the surface is alive from the first frame rather than from the first token (UI feedback rule 1).
+  const [jarvisLive, setJarvisLive] = useState(null);
   const [synthesisBusy, setSynthesisBusy] = useState(false);
   const [synthesisErr, setSynthesisErr] = useState(false);
   const [docBusy, setDocBusy] = useState(false);
@@ -213,6 +269,7 @@ export function CommandDeckProvider({ children }) {
           murbahRows, inboxRows, strategyRows, knowledgeRows, lifeStreamRows,
           lifeStreamNoteRows, energyRows, focusRows, jarvisRows,
           widgetRows, businessProfileRows,
+          playCreditRows, playScoreRows, lifeFileRows,
         ] = await Promise.all([
           base44.entities.DeckDumpItem.list(),
           base44.entities.DeckPerson.list('created_date'),
@@ -231,6 +288,13 @@ export function CommandDeckProvider({ children }) {
           base44.entities.DeckJarvisMessage.list('created_date', 50),
           base44.entities.DeckWidgetInstance.list(),
           base44.entities.DeckBusinessProfile.list(),
+          // The Asteroids reward's ledger. Both are read whole: the bank is a running total over
+          // every credit and score, and the board needs everyone's best — see game/playBank.js.
+          base44.entities.DeckPlayCredit.list(),
+          base44.entities.DeckPlayScore.list(),
+          // Life-stream attachments. `life_stream_id` on each row lets them hang on the stream the
+          // widget already renders, exactly as the notes above do.
+          base44.entities.DeckLifeFile.list(),
         ]);
 
         let peopleList = peopleRows;
@@ -275,12 +339,18 @@ export function CommandDeckProvider({ children }) {
         setKnowledge(knowledgeRows);
         setLifeStreams(Object.fromEntries(lifeStreamRowsFinal.map((ls) => [
           ls.stream_key,
-          { ...ls, notes: lifeStreamNoteRows.filter((n) => n.life_stream_id === ls.id) },
+          {
+            ...ls,
+            notes: lifeStreamNoteRows.filter((n) => n.life_stream_id === ls.id),
+            files: lifeFileRows.filter((f) => f.life_stream_id === ls.id),
+          },
         ])));
         setEnergyHistory(energyRows);
         setJarvisMessages(jarvisRows);
         setWidgetInstances(widgetList);
         setBusinessProfile(businessProfileRows[0] || null);
+        setPlayCredits(playCreditRows);
+        setPlayScores(playScoreRows);
 
         const today = todayKey();
         const todayEnergy = energyRows.find((e) => (e.date || '').slice(0, 10) === today);
@@ -385,6 +455,7 @@ export function CommandDeckProvider({ children }) {
     // Clear immediately, so even a press that slips past the guard finds nothing to submit.
     // Restored in the catch below, so a capture is never lost to a failure.
     setDumpInput('');
+    setDumpError(null);
     // Declared out here so the catch below can tell "nothing landed" from "some landed":
     // restoring the whole dump after a partial success would duplicate the items that
     // already filed. See ./dumpFiling.js.
@@ -400,24 +471,39 @@ export function CommandDeckProvider({ children }) {
       // item, so a dictated dump lands in several places instead of one.
       let items;
       try {
-        const { data } = await base44.functions.invoke('classifyDeckDumpItem', { text });
+        const { data } = await withTimeout(base44.functions.invoke('classifyDeckDumpItem', { text }), CLASSIFY_TIMEOUT_MS);
         items = Array.isArray(data?.items) && data.items.length
           ? data.items
           // A backend still on the previous build (it deploys independently)
           // answers in the single-destination shape.
           : [{ text, destination: data?.destination, life_stream_key: data?.life_stream_key, owner_name: null }];
       } catch {
-        // Classification unavailable — fall back to the name regex, or to the
-        // unsorted pile so nothing is lost; the promote buttons cover it by hand.
+        // Classification unavailable — fall back to the name regex, and otherwise to KNOWLEDGE rather
+        // than straight to the unsorted pile.
+        //
+        // The pile is the last resort for when Morpheus cannot be reached at all, and a failed
+        // classify call does not mean that: measured 2026-10-02, a 108-character reflection —
+        // "I have AuHD and excecutive disfunction issue, i have a hard time keeping track of things
+        // and actioning tasks" — landed in the pile this way while the create itself succeeded, which
+        // proves the API was up. Rob on the pile: "thats a just in case so you can file it manually".
+        // Knowledge is where the server already files a dump it could not classify, so this makes the
+        // two halves agree; the pile is kept as a SECOND fallback, because a create that fails must
+        // still not lose what someone just typed.
         const owner = detectOwner(text);
         if (owner) {
           const created = await base44.entities.DeckTask.create({ text, owner_person_id: owner.id, energy: 'any', done: false });
           setTasks((prev) => [created, ...prev]);
           flagQuickFile(`Filed straight to ${owner.name}'s tasks`);
         } else {
-          const created = await base44.entities.DeckDumpItem.create({ text });
-          setDump((prev) => [created, ...prev]);
-          flagQuickFile('Saved to the unsorted pile');
+          try {
+            const created = await base44.entities.DeckKnowledgeNote.create({ text });
+            setKnowledge((prev) => [created, ...prev]);
+            flagQuickFile('Filed to Knowledge — it would not classify, so your words are in there whole');
+          } catch {
+            const created = await base44.entities.DeckDumpItem.create({ text });
+            setDump((prev) => [created, ...prev]);
+            flagQuickFile('Saved to the unsorted pile');
+          }
         }
         return;
       }
@@ -472,7 +558,11 @@ export function CommandDeckProvider({ children }) {
         flagSaveErr();
       }
       if (outcome.message) flagQuickFile(outcome.message);
-    } catch {
+    } catch (err) {
+      // Say WHY, here, next to the box the operator just typed in. The generic save flag renders
+      // as a suffix elsewhere on the page and was the only signal a failed capture produced — so a
+      // press that filed nothing looked identical to a press that did nothing at all.
+      setDumpError(captureFailureMessage(err));
       flagSaveErr();
       // Put it back: the box was cleared optimistically on the way in, and losing what
       // someone just typed is worse than making them press again — but only when NOTHING
@@ -515,12 +605,37 @@ export function CommandDeckProvider({ children }) {
   const toggleTask = async (id) => {
     const t = tasks.find((x) => x.id === id);
     if (!t) return;
-    setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
-    try { await base44.entities.DeckTask.update(id, { done: !t.done }); } catch { flagSaveErr(); }
+    const nowDone = !t.done;
+    setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, done: nowDone } : x)));
+    try { await base44.entities.DeckTask.update(id, { done: nowDone }); } catch { flagSaveErr(); }
+    // Completing a task earns a minute of Asteroids — "you can play asteroids for 1 min or choose to
+    // bank the time to play more later". The credit is written either way, so the popup's two answers
+    // are really "play now" and "play later"; both are the same bank.
+    //
+    // Un-ticking does NOT take the minute back — the credit is a ledger row, and clawing it back
+    // would let a mis-tap destroy play time that was already earned. Re-ticking cannot earn a SECOND
+    // one: deck_play_credits is unique on (created_by_id, task_id), so the duplicate create is
+    // refused by the database. That refusal is the intended outcome, not an error to show.
+    if (nowDone) {
+      try {
+        const credit = await base44.entities.DeckPlayCredit.create({ task_id: id, seconds: SECONDS_PER_TASK, reason: 'task' });
+        setPlayCredits((prev) => [...prev, credit]);
+      } catch { /* already paid for this task, or offline — the task itself is still done */ }
+      setPlayOpen(true);
+    }
   };
   const removeTask = async (id) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     try { await base44.entities.DeckTask.delete(id); } catch { flagSaveErr(); }
+  };
+
+  // One row per game played. The time was already spent when the session opened, so a failure here
+  // loses the score (flagged) rather than the score being double-counted.
+  const submitPlayScore = async ({ score, seconds_played, initials }) => {
+    try {
+      const created = await base44.entities.DeckPlayScore.create({ score, seconds_played, initials });
+      setPlayScores((prev) => [...prev, created]);
+    } catch { flagSaveErr(); }
   };
 
   // ---- people ----------------------------------------------------------
@@ -725,6 +840,26 @@ export function CommandDeckProvider({ children }) {
       try { await base44.entities.DeckMurbahOpportunity.update(id, { booking_date: date }); } catch { flagSaveErr(); }
     });
   };
+  // The money half — price, deposit paid, fully paid, and the end of the range. One handler, because
+  // they are edited together and share a debounce.
+  //
+  // `price` arrives as the raw input string, so it is normalised here: an empty box means "no price"
+  // (null), never NaN and never 0 — a booking at zero and a booking with no price agreed are
+  // different facts, and only one of them should show as £0. A half-typed number is dropped rather
+  // than stored, so "1e" or "-" mid-keystroke cannot become a value.
+  const updateMurbahMoney = (id, patch) => {
+    const clean = { ...patch };
+    if ('price' in clean) {
+      const { ok, value } = normalizePrice(clean.price);
+      if (!ok) return; // a keystroke in progress, not a value — store nothing
+      clean.price = value;
+    }
+    if ('end_date' in clean) clean.end_date = toIsoDate(clean.end_date);
+    setMurbahOpps((prev) => prev.map((m) => (m.id === id ? { ...m, ...clean } : m)));
+    debouncedSave(`murbah-money-${id}`, async () => {
+      try { await base44.entities.DeckMurbahOpportunity.update(id, clean); } catch { flagSaveErr(); }
+    });
+  };
   const syncMurbahCalendar = async (id) => {
     setMurbahSyncBusy(id);
     setMurbahSyncMsg(null);
@@ -799,6 +934,31 @@ export function CommandDeckProvider({ children }) {
     if (!stream) return;
     setLifeStreams((prev) => ({ ...prev, [streamKey]: { ...stream, notes: stream.notes.filter((n) => n.id !== noteId) } }));
     try { await base44.entities.DeckLifeStreamNote.delete(noteId); } catch { flagSaveErr(); }
+  };
+
+  // Attachments on a stream — a bill, a scan, a photo. The files arrive already uploaded (the widget
+  // uses the same uploadFile() every other Deck photo does), so this only records them, exactly as the
+  // repair files do. `describeUpload` decides is_image, because guessing the other way round shows a
+  // broken <img> where a document icon would have been merely plain.
+  const addLifeFiles = (streamKey, uploadedFiles) => guardAdd(`lifeFiles:${streamKey}`, async () => {
+    const stream = lifeStreams[streamKey];
+    if (!stream || !uploadedFiles?.length) return;
+    try {
+      const created = await Promise.all(uploadedFiles.map((f) => base44.entities.DeckLifeFile.create({
+        life_stream_id: stream.id,
+        file_url: f.file_url,
+        file_name: f.file_name,
+        file_type: f.file_type,
+        is_image: f.is_image,
+      })));
+      setLifeStreams((prev) => ({ ...prev, [streamKey]: { ...stream, files: [...created, ...(stream.files || [])] } }));
+    } catch { flagSaveErr(); }
+  });
+  const removeLifeFile = async (streamKey, fileId) => {
+    const stream = lifeStreams[streamKey];
+    if (!stream) return;
+    setLifeStreams((prev) => ({ ...prev, [streamKey]: { ...stream, files: (stream.files || []).filter((f) => f.id !== fileId) } }));
+    try { await base44.entities.DeckLifeFile.delete(fileId); } catch { flagSaveErr(); }
   };
 
   // ---- inbox -------------------------------------------------------------
@@ -1098,6 +1258,12 @@ export function CommandDeckProvider({ children }) {
   // upload already uses). The optimistic bubble shows the attached filenames
   // the same lightweight way chatWithJarvis.js itself persists them, so the
   // UI and the actual saved history never disagree about what was attached.
+  //
+  // 2026-10-04 — this goes through `invokeStream`, not `invoke`. The body carries `stream: true`, which
+  // is the negotiation chatWithJarvis requires (a caller that sends no such field still gets today's
+  // plain JSON), and the streamed `stage`/`delta` events are reduced into `jarvisLive` as they arrive.
+  // `invokeStream` also resolves a plain JSON body from a server that does not stream, so the frontend
+  // and the backend can deploy in either order.
   const sendJarvisMessage = async (fileUrls = []) => {
     const text = jarvisInput.trim();
     if ((!text && fileUrls.length === 0) || jarvisSending) return;
@@ -1107,11 +1273,33 @@ export function CommandDeckProvider({ children }) {
     setJarvisInput('');
     setJarvisSending(true);
     setJarvisErr(false);
+    const turnId = `local-${Date.now()}-turn`;
+    setJarvisLive(initialJarvisLive(turnId));
     try {
-      const { data } = await base44.functions.invoke('chatWithJarvis', { message: text, fileUrls });
-      setJarvisMessages((prev) => [...prev, { id: `local-${Date.now()}-r`, role: 'jarvis', content: data.reply }]);
-    } catch {
+      const { data } = await base44.functions.invokeStream(
+        'chatWithJarvis',
+        { message: text, fileUrls, stream: true },
+        null,
+        (evt) => setJarvisLive((live) => reduceJarvisEvent(live, evt)),
+      );
+      // The terminal event's reply is the AUTHORITY — it is what was stored, which is not always the
+      // last fragment (the length budget's repair pass can shorten it after it has already streamed).
+      const reply = typeof data?.reply === 'string' ? data.reply : '';
+      const replyId = `local-${Date.now()}-r`;
+      setJarvisMessages((prev) => [...prev, { id: replyId, role: 'jarvis', content: reply }]);
+      // `replyId` is what tells DeckJarvis.jsx this reply was ALREADY spoken sentence by sentence, so the
+      // whole-message auto-speak must not say it a second time.
+      setJarvisLive((live) => ({ ...(live || initialJarvisLive(turnId)), done: true, label: null, etaSeconds: null, text: reply, replyId, error: null }));
+    } catch (err) {
       setJarvisErr(true);
+      // The server's own words when it sent a terminal `error` event (e.g. "Jarvis was cut off…"), and
+      // the old generic line only for a connection that never got that far. A raw provider error is
+      // never what the operator needs to read (UI feedback rule 5).
+      setJarvisLive((live) => ({
+        ...(live || initialJarvisLive(turnId)),
+        done: true, label: null, etaSeconds: null,
+        error: typeof err?.message === 'string' && err.message ? err.message : "Couldn't reach Jarvis that time — give it another go.",
+      }));
     }
     setJarvisSending(false);
   };
@@ -1156,7 +1344,7 @@ export function CommandDeckProvider({ children }) {
   // still in flight".
   const value = {
     loaded, saveErr, addPending,
-    dump, dumpInput, setDumpInput, dumpPending: !!addPending.dump, quickFileMsg, detectOwner, addDump, removeDump, promoteDump,
+    dump, dumpInput, setDumpInput, dumpPending: !!addPending.dump, quickFileMsg, dumpError, detectOwner, addDump, removeDump, promoteDump,
     tasks, taskInput, setTaskInput, taskOwner, setTaskOwner, taskEnergy, setTaskEnergy, openOwner, setOpenOwner,
     addTask, toggleTask, removeTask,
     people, personForm, setPersonForm, managePeople, setManagePeople, addPerson, updatePersonPhone, updatePersonEmail, updatePersonName, removePerson,
@@ -1164,19 +1352,19 @@ export function CommandDeckProvider({ children }) {
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, updateConsignment, removeConsignment,
     rForm, setRForm, addRepair, updateRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
-    cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
+    cycleMurbahStage, updateMurbahNote, updateMurbahDate, updateMurbahMoney, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
     murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
     strategy, knowledge, addStrategy, removeStrategy, addKnowledge, removeKnowledge,
     inbox, iForm, setIForm, addInbox, cycleInboxStage, removeInbox,
     gmailSyncing, gmailSyncMsg, syncGmailInbox,
     replyDraftFor, replyDraftText, setReplyDraftText, replyBusy, replyDraftErr, startReplyDraft, cancelReplyDraft, sendReplyDraft,
-    lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote,
+    lifeStreams, toggleLifeStatus, addLifeNote, removeLifeNote, addLifeFiles, removeLifeFile,
     lightboxImg, setLightboxImg,
     confirmDeleteState, askToDelete, resolveConfirmDelete,
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt, driveBackup, driveRestore,
     vaultStatus, vaultBusy, checkVault,
-    jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
+    jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage, jarvisLive,
     synthesisBusy, synthesisErr, runJarvisSynthesis, lastSynthesis,
     docBusy, docErr, docResult, createDeckDocument,
     uploadFile,
@@ -1186,5 +1374,21 @@ export function CommandDeckProvider({ children }) {
     calendarEvents, calendarLoading, calendarForm, setCalendarForm, calendarBusy, loadCalendarEvents, addCalendarEvent,
   };
 
-  return <CommandDeckContext.Provider value={value}>{children}</CommandDeckContext.Provider>;
+  return (
+    <CommandDeckContext.Provider value={value}>
+      {children}
+      {/* The Asteroids reward, opened by ticking a task off. Rendered by the provider rather than a
+          widget so it survives whichever tab or widget set the account has enabled. */}
+      {playOpen && (
+        <PlayModal
+          seconds={bankSeconds(playCredits, playScores)}
+          initials={playInitials}
+          scores={playScores}
+          meId={meId}
+          onClose={() => setPlayOpen(false)}
+          onSubmitScore={submitPlayScore}
+        />
+      )}
+    </CommandDeckContext.Provider>
+  );
 }

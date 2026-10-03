@@ -293,8 +293,9 @@ export default function Workspace() {
                 )}
                 {!search && (
                   <p className="text-[10px] text-ink-max leading-relaxed max-w-xs mx-auto">
-                    For a WordPress site you already have. Install the free Morpheus plugin on it, connect it, and
-                    Morpheus runs the deploys, the shop, the content and the SEO from here. It opens a construct for it.
+                    For a WordPress site you already have. Give Morpheus its address and it works out what the site
+                    needs — install or update the free Morpheus plugin, then paste the code it asks for. From there
+                    Morpheus runs the deploys, the shop, the pages and the SEO from here. It opens a construct for it.
                   </p>
                 )}
               </div>
@@ -453,7 +454,7 @@ export default function Workspace() {
       <UsagePanel open={showUsage} onClose={() => setShowUsage(false)} />
       <MarketplacePanel open={showMarket} onClose={() => setShowMarket(false)} currentProject={ws.currentProject} onInstalled={async (data) => { await ws.loadProjects(); setShowMarket(false); if (data?.projectId) navigate('/workspace/' + data.projectId); }} />
       <SellerPanel open={showSeller} onClose={() => setShowSeller(false)} />
-      <CompilePanel open={showCompile} onClose={() => setShowCompile(false)} project={ws.currentProject} onCompile={ws.compileProject} onPreview={ws.previewCompile} onCheckStatus={ws.checkCompileStatus} onCompileSuccess={ws.saveCompiledArtifacts} onBuildBackend={() => { setShowCompile(false); setShowBackend(true); }} onAskMorpheus={(diagnosis) => {
+      <CompilePanel open={showCompile} onClose={() => setShowCompile(false)} project={ws.currentProject} onCompile={ws.compileProject} onPreview={ws.previewCompile} onCheckStatus={ws.checkCompileStatus} onCompileSuccess={ws.saveCompiledArtifacts} onCheckSave={ws.getArtifactSaveStatus} onReloadFiles={() => { if (ws.currentProject?.id) ws.loadFiles(ws.currentProject.id); }} onBuildBackend={() => { setShowCompile(false); setShowBackend(true); }} onAskMorpheus={(diagnosis) => {
         // 2026-09-04: the diagnoseIssue backend function now automatically
         // logs a "// SYSTEM — AI DIAGNOSIS ..." message (same summary/
         // autoFixed/needsUserAction detail this used to re-type here) into

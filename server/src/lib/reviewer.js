@@ -18,8 +18,15 @@
 // blocks" philosophy, just more real attempts before giving up.
 
 import { invokeAI } from '../ai.js';
+import {
+  REVIEW_BUDGET, createReviewBudget, canSpendReviewCall, planReviewCalls,
+  canStartReReviewPass, startReReviewPass, reReviewScope, reviewOutcome,
+} from './reviewBudget.js';
 
 const MAX_REVIEW_ATTEMPTS = 3; // real fix-and-recheck attempts, not just one retry
+// 2026-09-30: the attempts above are the LOGICAL limit; REVIEW_BUDGET is the SPEND limit and the one that
+// actually bounds a run. Measured: a 10-file backend generation made twelve reviewer calls and burned 473
+// credits with nothing persisted. See lib/reviewBudget.js.
 
 const REVIEWER_PROMPT = `You are Morpheus, the REVIEW agent in the build pipeline.
 
@@ -107,7 +114,7 @@ export const REVIEW_STEP_MAX_TOKENS = 16000; // generous for up to 3 files' wort
 // args) just gets undefined here and onProgress?.() is a no-op, so nothing
 // else needs to change.
 export async function reviewFileOperations(userId, fileOps, contextBlock, plan, progress) {
-  const { onProgress, stageName = 'reviewer' } = progress || {};
+  const { onProgress, stageName = 'reviewer', budget = null, reserveCalls = 0 } = progress || {};
 
   const chunks = [];
   for (let i = 0; i < fileOps.length; i += REVIEW_CHUNK_SIZE) {
@@ -121,8 +128,14 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
   let approvedAll = true;
   let model, provider;
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
+  // WHICH CALLS THIS PASS WILL MAKE, decided up front by the budget — so the ceiling is arithmetic a test
+  // can count, not a guard clause someone has to notice. Chunks beyond it are recorded as unreviewed, never
+  // treated as reviewed-and-fine.
+  const planned = planReviewCalls(chunks, budget, { reserve: budget ? reserveCalls : 0 });
+  const reviewed = [];
+  const skipped = [...planned.unreviewed];
+  for (let i = 0; i < planned.willReview.length; i++) {
+    const chunk = planned.willReview[i];
     const batchNote = chunks.length > 1
       ? `\n\nReviewing batch of ${chunk.length} file(s) out of ${fileOps.length} total in this build.`
       : '';
@@ -135,6 +148,7 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
       role: 'reviewer',
       maxTokens: REVIEW_STEP_MAX_TOKENS,
     });
+    reviewed.push(...chunk.map((op) => op.path));
     model = review.model;
     provider = review.provider;
     const result = review.result;
@@ -147,10 +161,15 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
   onProgress?.({ stage: stageName, status: 'done' });
 
   const criticalIssues = allIssues.filter((i) => i.severity === 'critical');
+  // A review that stopped early may not claim approval — see reviewBudget.js. `unreviewed` travels with
+  // the result so the caller can say which files were never examined instead of implying they passed.
+  const outcome = reviewOutcome({ reviewedPaths: reviewed, unreviewedPaths: skipped, approved: approvedAll && criticalIssues.length === 0, budget });
   return {
     issues: allIssues,
-    summary: summaries.join(' ') || 'Review complete.',
-    approved: approvedAll && criticalIssues.length === 0,
+    summary: summaries.join(' ') || (outcome.partial ? outcome.note : 'Review complete.'),
+    approved: outcome.approved,
+    partial: outcome.partial,
+    unreviewed: outcome.unreviewedPaths,
     provider,
     model,
   };
@@ -197,12 +216,21 @@ export function buildRetryPrompt(fileOps, review, plan) {
 export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderPrompt, onProgress) {
   if (fileOps.length === 0) return { fileOps, reviewed: false, approved: true, issues: [] };
 
+  // ONE budget for the whole operation, shared by the first pass and every re-review. Per-pass budgets
+  // would let three passes each spend the ceiling, which is exactly how twelve calls happened. Created
+  // BEFORE the first review so that pass can reserve the re-review's call.
+  const budget = createReviewBudget();
+
   // Always deduplicate by path (last wins) — the LLM sometimes returns both
   // "package.json" and "backend/package.json" which map to the same path.
   const byPath = new Map(fileOps.map(op => [op.path, op]));
   let currentOps = Array.from(byPath.values());
 
-  let review = await reviewFileOperations(userId, currentOps, contextBlock, plan, { onProgress, stageName: 'reviewer' });
+  // The FIRST pass reserves the re-review's call. Without it the ceiling is spent before the fix is
+  // checked, and the review's own demand goes unverified — measured 2026-09-30.
+  let review = await reviewFileOperations(userId, currentOps, contextBlock, plan, {
+    onProgress, stageName: 'reviewer', budget, reserveCalls: REVIEW_BUDGET.reserveForReReview,
+  });
 
   const retrySchema = {
     type: 'object',
@@ -228,6 +256,15 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
   let coderFixAttempts = 0;
   const firstReviewHadCritical = review.issues.some((i) => i.severity === 'critical');
   for (let attempt = 1; !review.approved && review.issues.some(i => i.severity === 'critical') && attempt < MAX_REVIEW_ATTEMPTS; attempt++) {
+    const passAllowed = canStartReReviewPass(budget);
+    const callsLeft = canSpendReviewCall(budget);
+    if (!passAllowed.ok || !callsLeft.ok) {
+      // REPORTED, not silent. The loop stops with critical issues outstanding and says so, so the caller
+      // can tell the operator the change was partially fixed rather than implying it converged.
+      review.stoppedBecause = passAllowed.reason || callsLeft.reason;
+      console.log(`[reviewer] stopping the fix/re-review loop: ${review.stoppedBecause}`);
+      break;
+    }
     coderFixAttempts++;
     onProgress?.({ stage: 'retry_coder', status: 'start' });
     const retry = await invokeAI({
@@ -250,9 +287,21 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
       if (c.path) byPath.set(c.path, c);
     }
     currentOps = Array.from(byPath.values());
-    // Re-review after each retry so the loop (and the caller) knows whether
-    // another pass is actually needed, rather than assuming one fix worked.
-    review = await reviewFileOperations(userId, currentOps, contextBlock, plan, { onProgress, stageName: 'retry_reviewer' });
+    startReReviewPass(budget);
+    // Re-review ONLY what the fix could have changed. The retry prompt asks the coder to re-output the
+    // files with issues and nothing else, so every other file is byte-for-byte what the previous review
+    // already saw — re-examining it cannot change its verdict and only buys the same answer twice.
+    // Measured 2026-09-30: the whole-set re-review is what made one generation cost twelve reviewer calls.
+    const scope = reReviewScope(review.issues.filter((i) => i.severity === 'critical'), currentOps.map((op) => op.path));
+    const scopedOps = currentOps.filter((op) => scope.paths.includes(op.path));
+    console.log(`[reviewer] re-reviewing ${scopedOps.length}/${currentOps.length} file(s) — ${scope.reason}`);
+    review = await reviewFileOperations(
+      userId,
+      scopedOps.length > 0 ? scopedOps : currentOps,
+      contextBlock,
+      plan,
+      { onProgress, stageName: 'retry_reviewer', budget },
+    );
   }
 
   return {
@@ -266,6 +315,12 @@ export async function reviewAndRetry(userId, fileOps, contextBlock, plan, coderP
     reviewSummary: review.summary,
     reviewed: true,
     approved: review.approved,
+    // Whether part of the change went UNREVIEWED because the budget stopped the loop. The caller must be
+    // able to say so; silence here would read as "reviewed and fine".
+    partial: Boolean(review.partial),
+    unreviewed: review.unreviewed || [],
+    reviewCalls: budget.callsUsed,
+    stoppedBecause: review.stoppedBecause || null,
     issues: review.issues
   };
 }

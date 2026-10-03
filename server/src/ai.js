@@ -18,7 +18,8 @@ import { salvageJson } from './lib/salvageJson.js';
 import { estimatePreCallCredits, reserveCredits, reconcileCredits, reconcileAgainstActualUsage } from './lib/billing.js';
 import { shouldReserveCredits, isFlatRateCall, FLAT_CALL_CREDITS } from './lib/creditPolicy.js';
 import { shouldUseFallback } from './lib/deepseekBalance.js';
-import { recordCallDuration } from './lib/timingStats.js';
+import { recordCallDuration, PROSE_TIMING_ROLE } from './lib/timingStats.js';
+import { initialStreamState, reduceStreamLine, readJsonStringField } from './lib/aiStream.js';
 import { jsonrepair } from 'jsonrepair';
 
 // 2026-09-04 (Rob: "the ai agent fix in compile seems to just keep running
@@ -625,8 +626,14 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     // maxTokens`. Record the attempt: no tokens (the provider never reported any), the real duration,
     // and status 'error'. Fire-and-forget, because recording a failure must never replace the error
     // the caller needs to see.
+    // `model`, NOT `resolvedModel`. `resolvedModel` is declared BELOW, from the response (`data?.model`),
+    // so in this catch it is in its temporal dead zone — referencing it threw
+    // "Cannot access 'resolvedModel' before initialization" and THAT replaced the provider's error, which
+    // is the precise opposite of what the comment above promises. Found 2026-09-29 by forcing a provider
+    // failure in a harness: the caller saw a reference error instead of "AI endpoint error (500)".
+    // The request's own model is the honest value here anyway — nothing was served, so nothing renamed it.
     recordUsageEvent({
-      userId, role, provider, model: resolvedModel, isExempt, reservedCredits: 0,
+      userId, role, provider, model, isExempt, reservedCredits: 0,
       usage: { input_tokens: 0, output_tokens: 0 }, task, status: 'error', durationMs: Date.now() - callStartedAt,
     }).catch(() => {});
     throw err;
@@ -728,4 +735,256 @@ export async function invokeAI({ userId, prompt, schema, fileUrls, role, maxToke
     }
   }
   return { result: content, provider, model: resolvedModel, usage };
+}
+
+/**
+ * The STREAMING counterpart to invokeAI — additive. `invokeAI` above is not touched by this, and must
+ * not be: it is the blocking call every path in the product shares (planner, coder, reviewer, diagnosis,
+ * SEO, every Deck feature), and changing its transport to serve one surface would put all of them at
+ * risk to make one of them faster.
+ *
+ * WHY IT IS A SEPARATE FUNCTION (2026-10-04, Rob: *"i thought we were trying to get it to instantly
+ * start streaming the output ... i want to see it earlier and being written"*). `invokeAI` waits for the
+ * provider's whole JSON body and can therefore show nothing while it runs. This one asks for
+ * `stream: true`, reads the body as it arrives, and hands each fragment to `onDelta` as it lands, so the
+ * caller can put words on the screen while the model is still writing them.
+ *
+ * WHAT IT DOES NOT DO:
+ *
+ *  - NO MULTI-FIELD STRUCTURED OUTPUT. A schema is supported only as a single-field PROSE ENVELOPE, and
+ *    only when the caller names the field (`deltaField`) whose value is the prose. That is the shape
+ *    Jarvis's reply uses — `{ reply: string }`, the schema that enforces the reply's length (PR #489) —
+ *    and it means streaming and the length fix coexist rather than trading against each other: the
+ *    caller gets the same parsed object the blocking call would return. Everything that makes streaming
+ *    a generic structured call hard (a half-object, `OUTPUT_TRUNCATED` mid-JSON, `salvageJson`) stays
+ *    out, and a schema without a `deltaField` is REFUSED rather than quietly streamed as raw JSON.
+ *  - NO ATTACHMENTS. `fileUrls` is refused for the same reason: invokeAI owns the vision-assist retry,
+ *    the PDF/DOCX/XLSX extraction and each one's degradation rule, and a second, weaker copy of that
+ *    living inside a stream is how one of the two goes stale (H15). The caller falls back to the
+ *    blocking call for those turns — which is why the refusal is a distinct, catchable code.
+ *  - NO DIFFERENT BILLING OR MODEL. The endpoint, the per-user/per-role resolution, the platform
+ *    temperature and the pre-call reservation are the same rules invokeAI applies, in the same order;
+ *    only the transport differs.
+ *
+ * USAGE AND `finish_reason` ARRIVE IN THE FINAL CHUNK, and that is the whole reason this can still be
+ * metered honestly: the token counts are not sent per fragment, so `recordUsageEvent` is called exactly
+ * once, after the body has ended, with what that last chunk carried — never once per chunk (a row of
+ * zeroes) and never not at all. `stream_options: { include_usage: true }` is what asks the provider for
+ * them; a provider that rejects the field answers non-2xx and the caller falls back to the blocking
+ * call, which is the same answer the operator gets today.
+ *
+ * RETURN CONTRACT. It returns even when the stream ended badly — `complete: false` — rather than
+ * throwing, so the caller can decide what to do (chatWithJarvis asks lib/jarvisReplyStream.js) and fall
+ * back to invokeAI with the reason in hand. `complete: false` also covers a reply envelope that never
+ * became valid JSON, which is the truncation case for a schema call. It throws only for the failures
+ * invokeAI throws for: no endpoint configured, an unsupported shape, an HTTP error, a network error, or
+ * a provider that went quiet (AI_PROVIDER_TIMEOUT, measured as an IDLE gap here rather than a
+ * wall-clock cap, so a long reply is never cut off for being long).
+ *
+ * @param {object} opts same shape as invokeAI's, minus `salvagePartial`, plus:
+ * @param {string} [opts.deltaField] the schema's single prose field. Required with `schema`, ignored
+ *   without it (a schema-less stream is prose and its deltas are the content itself).
+ * @param {(text: string) => void} [opts.onDelta] called once per newly revealed fragment, in order
+ * @returns {Promise<{result: any, provider: string, model: string, usage?: object,
+ *   finishReason: string|null, complete: boolean}>}
+ */
+export async function invokeAIStream({ userId, prompt, schema, deltaField, fileUrls, role, maxTokens, task, onDelta }) {
+  const startedAt = Date.now();
+  if (schema && !deltaField) {
+    throw Object.assign(new Error('AI_STREAM_UNSUPPORTED: a schema needs a deltaField naming its prose field — invokeAIStream streams a single-field envelope, not arbitrary structured output.'), { code: 'AI_STREAM_UNSUPPORTED' });
+  }
+  if (Array.isArray(fileUrls) && fileUrls.length > 0) {
+    throw Object.assign(new Error('AI_STREAM_UNSUPPORTED: attachments are answered by the blocking invokeAI call.'), { code: 'AI_STREAM_UNSUPPORTED' });
+  }
+
+  const settings = await getUserSettings(userId);
+  const { provider, baseUrl, apiKey, model } = await resolveEndpoint(settings, role, userId);
+
+  if (!apiKey) {
+    throw new Error(
+      'No AI endpoint configured. Set LLM_API_KEY (+ LLM_BASE_URL/LLM_MODEL) in the server .env for a house default, ' +
+      'set MORPHEUS_BROKER_URL/MORPHEUS_AI_GATEWAY_TOKEN to use the Morpheus Cloud default gateway, ' +
+      'or have the user set a custom endpoint in Settings → AI Provider.'
+    );
+  }
+
+  // Pre-call billing, identical in rule and order to invokeAI's (see lib/creditPolicy.js for the
+  // reservation rule and the flat rate). Kept as its own copy rather than shared with the blocking call
+  // because extracting it would mean editing invokeAI — the one thing this change must not do — and the
+  // two MUST agree: a streamed reply that reserved nothing would be a free call, and one that reserved
+  // twice would bill the operator twice for one answer.
+  let isExempt = true;
+  let reservedCredits = 0;
+  if (userId) {
+    const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, billing_exempt: true } }).catch(() => null);
+    isExempt = !shouldReserveCredits(billingUser);
+    if (!isExempt) {
+      if (isFlatRateCall({ provider, model })) {
+        reservedCredits = FLAT_CALL_CREDITS;
+        await reserveCredits(userId, reservedCredits);
+      } else {
+        reservedCredits = await estimatePreCallCredits(prompt, role, model, maxTokens);
+        await reserveCredits(userId, reservedCredits); // throws InsufficientCreditsError (402) — hard block, no overdraft grace
+      }
+    }
+  }
+
+  const temperature = await resolvePlatformTemperature(role);
+  const messages = [{ role: 'user', content: prompt }];
+  const body = {
+    model,
+    messages,
+    temperature,
+    stream: true,
+    // The token counts arrive ONLY in the final chunk, and only when this is asked for. Without it a
+    // streamed reply would be the one call in the product that is invisible to metering.
+    stream_options: { include_usage: true },
+  };
+  if (maxTokens) body.max_tokens = maxTokens;
+  if (schema) {
+    // The same envelope invokeAI asks for, in the same words — the caller gets the same parsed object
+    // back, so a streamed schema call and a blocking one are interchangeable to whatever consumes them.
+    body.response_format = { type: 'json_object' };
+    messages[0].content += `\n\nRespond with ONLY a valid JSON object (no markdown fences, no extra prose) matching this exact schema:\n${JSON.stringify(schema)}`;
+  }
+
+  const callStartedAt = Date.now();
+  const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
+
+  // An IDLE timeout, not a wall-clock cap: AI_FETCH_TIMEOUT_MS's own words are "the provider did not
+  // respond", and re-arming it on every chunk is the honest streaming version of that — a long reply is
+  // never killed for being long, while a connection that goes quiet still surfaces as AI_PROVIDER_TIMEOUT
+  // instead of hanging the turn forever.
+  const controller = new AbortController();
+  let idleTimer = null;
+  const armIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => controller.abort(), AI_FETCH_TIMEOUT_MS); };
+  armIdle();
+
+  /** What a failed call does with its reservation — the same rule, and the same wording, as invokeAI. */
+  const refundReservation = async () => {
+    if (!isExempt && reservedCredits > 0) {
+      await reconcileCredits(userId, reservedCredits, 0).catch(() => {});
+    }
+  };
+
+  let res;
+  try {
+    res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+  } catch (err) {
+    clearTimeout(idleTimer);
+    await refundReservation();
+    // A call that threw used to leave no trace; invokeAI's catch records one and this mirrors it, so a
+    // streamed call that never connected is visible in usage_events too.
+    recordUsageEvent({
+      userId, role, provider, model, isExempt, reservedCredits: 0,
+      usage: { input_tokens: 0, output_tokens: 0 }, task, status: 'error', durationMs: Date.now() - callStartedAt,
+    }).catch(() => {});
+    if (err?.name === 'AbortError') {
+      throw new Error(`AI_PROVIDER_TIMEOUT: The AI provider did not respond within ${Math.round(AI_FETCH_TIMEOUT_MS / 1000)}s. It may be overloaded or unreachable — please retry.`);
+    }
+    throw err;
+  }
+
+  let state = initialStreamState();
+  try {
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`AI endpoint error (${res.status}): ${errText.slice(0, 300)}`);
+    }
+
+    // One fragment out, in order. Without a `deltaField` the accumulated content IS the reply and every
+    // growth of it is a fragment; with one, the raw text is a JSON envelope and only the named field's
+    // decoded value may be shown (see lib/aiStream.js's readJsonStringField). Either way the delta is
+    // sliced off the previous position, so a chunk that carried a role-only or usage-only delta emits
+    // nothing rather than an empty event.
+    let emittedChars = 0;
+    const feed = (line) => {
+      state = reduceStreamLine(state, line);
+      const shown = deltaField ? readJsonStringField(state.text, deltaField).text : state.text;
+      if (shown.length > emittedChars) {
+        onDelta?.(shown.slice(emittedChars));
+        emittedChars = shown.length;
+      }
+    };
+
+    if (res.body?.getReader) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop
+        const { value, done } = await reader.read();
+        if (done) break;
+        armIdle();
+        // ONE decode per chunk, appended to the buffer: the decoder carries state for a multi-byte
+        // character split across two chunks, so decoding the same bytes twice is not the same string
+        // twice (the same reason base44Client.js's reader decodes each chunk once).
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf('\n')) >= 0) {
+          feed(buffer.slice(0, idx));
+          buffer = buffer.slice(idx + 1);
+        }
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) feed(buffer);
+    } else {
+      // No streaming reader in this runtime: read the whole body and replay it line by line. The reply
+      // is still correct and still metered; it simply arrives in one piece, which is the same
+      // degradation the frontend's own reader makes for the same reason.
+      const text = await res.text();
+      text.split('\n').forEach(feed);
+    }
+  } catch (err) {
+    clearTimeout(idleTimer);
+    // Same accounting as invokeAI's provider catch: the reservation goes back when nothing was billed,
+    // and the attempt leaves a status:'error' row either way.
+    await refundReservation();
+    recordUsageEvent({
+      userId, role, provider, model: state.model || model, isExempt, reservedCredits: 0,
+      usage: state.usage || { input_tokens: 0, output_tokens: 0 }, task, status: 'error', durationMs: Date.now() - callStartedAt,
+    }).catch(() => {});
+    throw err;
+  }
+  clearTimeout(idleTimer);
+
+  const complete = state.done === true;
+  const usage = state.usage || null;
+  const resolvedModel = state.model || model;
+
+  // A schema stream's answer is the PARSED object, exactly as invokeAI returns it — a caller must not
+  // have to know which transport produced the value it is holding. An envelope that never became valid
+  // JSON is NOT complete, whatever the finish_reason said: for a truncated object that is the whole
+  // point (half a JSON object is unusable), and it sends the caller to the blocking call, where the
+  // reply's own prose retry is what keeps a ceiling-cut answer (PR #489).
+  let result = state.text;
+  let parsed = !schema;
+  if (schema && complete) {
+    try { result = JSON.parse(state.text); parsed = true; } catch { parsed = false; }
+  }
+  const settled = complete && parsed;
+
+  if (settled) {
+    // EXACTLY ONCE, and only now — the token counts were in the final chunk.
+    recordUsageEvent({ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits, task, durationMs: Date.now() - startedAt }).catch(() => {});
+    // The timing bucket is the TRANSPORT's, not the role's. invokeAI already feeds `planner` with every
+    // blocking call it makes (including this reply's own fallback), and folding a streamed reply — a
+    // different call shape — into that same average would move the build pipeline's ETA with something
+    // it is not measuring. So a streamed call records into PROSE_TIMING_ROLE whatever role reasoned it,
+    // and the deck's reply ETA reads exactly that bucket (chatWithJarvis.js).
+    recordCallDuration(PROSE_TIMING_ROLE, Date.now() - callStartedAt);
+  } else if (!usage) {
+    // Ended without a usable envelope AND without usage: nothing the provider reported was billed, so
+    // the reservation is refunded exactly as a thrown call's is, and the attempt is recorded as an error.
+    await refundReservation();
+    recordUsageEvent({
+      userId, role, provider, model: resolvedModel, isExempt, reservedCredits: 0,
+      usage: { input_tokens: 0, output_tokens: 0 }, task, status: 'error', durationMs: Date.now() - callStartedAt,
+    }).catch(() => {});
+  } else {
+    recordUsageEvent({ userId, role, provider, model: resolvedModel, usage, isExempt, reservedCredits, task, durationMs: Date.now() - startedAt }).catch(() => {});
+  }
+
+  return { result, provider, model: resolvedModel, usage, finishReason: state.finishReason, complete: settled };
 }

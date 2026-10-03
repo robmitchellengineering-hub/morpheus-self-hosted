@@ -1,0 +1,61 @@
+# Netlify settings, in the repository rather than only in the site UI.
+#
+# ONLY the secrets-scan override is set here. The build command and the publish directory are configured
+# in the Netlify UI and are deliberately NOT repeated — a value written in two places drifts, and Netlify
+# merges this file over the UI for the keys it sets and leaves the rest alone.
+
+
+# 2026-10-01 — AND THE SITE WENT DOWN FOR EXCEEDING A PLAN ALLOWANCE. WHICH IS ABOUT HOW OFTEN THIS SITE
+# IS BUILT, NOT ABOUT ANYTHING IN THIS FILE.
+#
+# morpheus.nz began answering `503 {"error":"usage_exceeded","message":"Usage exceeded"}` on every path,
+# including robots.txt, straight from Netlify's edge (`server: Netlify`) — while api.morpheus.nz on
+# Northflank stayed at 200 the whole time. Rob, from the account: "We used 500 credits in just a few
+# days." Nothing was misconfigured and no deploy failed; the account ran out.
+#
+# The volume is the cause, and it counts easily. GitHub's push events for the three days before are 13,
+# 23 and 18 pushes, and today alone was 15 merges to main plus ~19 PR branches. EVERY PUSH BUILDS: a
+# production build on main, and a DEPLOY PREVIEW on a branch — so a day of landing one small fix per PR
+# is 20-35 full builds of an app whose build runs `npm ci`, `vite build` and the 813-file portable
+# bundle. Two habits, both mine, and neither needs a settings change to fix:
+#   1. batch related changes into ONE pull request instead of one PR per fix;
+#   2. push ONCE per PR, after the gates pass locally, instead of pushing and then pushing the fix.
+# If the previews are not worth a build each, turn deploy previews off in the site's Deploy contexts —
+# that affects pull requests only and cannot make the live site stale.
+#
+# WHAT WAS DELIBERATELY NOT DONE: a `[build] ignore` rule that skips builds for paths the site does not
+# need. It is the obvious saving and it is a trap — an incomplete path list leaves the deployed site
+# SILENTLY stale, which is a worse failure than the bill, and it cannot be tested from a repository. Do
+# not add one without proving that a real frontend change still deploys.
+
+[build.environment]
+  # WHY THIS EXISTS (2026-09-30) — AND WHAT IT DID *NOT* FIX, which is worth more than the setting.
+  #
+  # `VITE_`-prefixed variables are INLINED INTO THE CLIENT BUNDLE BY DESIGN — that is what the prefix means —
+  # so a correct build does put their values in the build output, and Netlify's scanner considers them
+  # candidates. Omitting these keys is therefore right on its own merits and keeps a future genuinely-public
+  # value from tripping the scan.
+  #
+  # But this did NOT fix the outage it was written for, and the deploy log proves it: the run that failed with
+  # this file in place still printed `SECRETS_SCAN_OMIT_KEYS override option set to: …` — the setting was
+  # honoured — and the scan failed anyway. The flagged string was not an environment value at all: it was a
+  # Stripe-shaped test fixture in `scripts/verify-security-posture.mjs`, and smart detection scans REPOSITORY
+  # CODE. Netlify's error template offers this key and `…_OMIT_VALUES` as though the cause were known, which is
+  # how an hour went into plan limits and VITE_ variables. The real fix is that fixtures never look like
+  # credentials (`scripts/verify-no-secret-fixtures.mjs`).
+  #
+  # TWO RULES FOR THIS LIST.
+  #   1. OMIT BY KEY, never by value. Values change, and a stale value stops omitting silently. Keys are
+  #      stable because they are part of the client's contract.
+  #   2. The scanner itself is NOT disabled. `SECRETS_SCAN_SMART_DETECTION_ENABLED` stays unset, because a
+  #      real secret reaching the client bundle must still fail the deploy — that is the whole point of
+  #      the feature. `SECRETS_SCAN_OMIT_VALUES` is not used either. Omitting a key is a claim that the
+  #      value is PUBLIC BY CONSTRUCTION, which is true of these and only these.
+  #
+  # Before this list was written, the shipped bundle was scanned for credential shapes (Google client
+  # secrets, API keys, JWTs, private keys, database URLs with passwords, gateway and widget tokens). It
+  # holds none: the only two matches were decimal.js's `LN10` constant and form-validation copy.
+  #
+  # `scripts/verify-client-env.mjs` fails the build if this list and the code ever drift apart, so a new
+  # `VITE_` variable cannot silently break the deploy the way this one did.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_API_BASE_URL,VITE_GOOGLE_AUTH_ENABLED,VITE_BASE44_APP_ID,VITE_BASE44_APP_BASE_URL,VITE_BASE44_FUNCTIONS_VERSION"

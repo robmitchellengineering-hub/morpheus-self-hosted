@@ -152,13 +152,26 @@ export default function Landing() {
             identifies a button by a category stops identifying it the moment a
             second button joins the category. Rob: "those buttons have changed but
             a blurb there about the right button and wordpress plugin install is
-            helpful we just need to make it right". */}
+            helpful we just need to make it right".
+
+            2026-10-01 — and then it was wrong about the ORDER. Rob: "You dont instal
+            the plugin first do you". He doesn't, and this said he did. SetupTab's own
+            steps are 1) YOUR SITE ADDRESS, which probes the site, 2) whichever of
+            install / update / "get your code from WordPress" that probe asks for, 3)
+            paste the code. The plugin is step TWO, and for a site already running it
+            it is an UPDATE or nothing at all — so "install it first" sends someone
+            into wp-admin before Morpheus has looked at anything. Verify the order in
+            src/components/matrix/website/SetupTab.jsx, not here: the wizard follows
+            what the site says (probeWordPress), and this blurb has to follow the
+            wizard. */}
         {showButtons && (
           <p className="mt-3 text-[11px] text-ink-max font-mono max-w-md mx-auto leading-relaxed">
-            SET UP MY WORDPRESS SITE is for a site you already run: install the free Morpheus plugin on it
-            first, then Morpheus takes over the deploys, the shop, the content and the SEO from here — from
-            your phone if you like. If the site does not exist yet, start with BUILD A WEBSITE OR APP
-            instead: Morpheus builds it and takes it live on your own free hosting.
+            SET UP MY WORDPRESS SITE is for a site you already run: give Morpheus its address and it looks
+            at the site, then asks for exactly what it needs — usually the free Morpheus plugin, installed
+            or updated from the file or the WP-CLI line it hands you, then a short code from wp-admin.
+            After that it runs the deploys, the shop, the pages and the SEO from here — from your phone if
+            you like. If the site does not exist yet, start with BUILD A WEBSITE OR APP instead: Morpheus
+            builds it and takes it live on your own free hosting.
           </p>
         )}
         {/* Command Deck's own entry point — open to every signed-in account

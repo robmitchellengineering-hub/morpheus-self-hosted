@@ -1147,3 +1147,105 @@ ALTER TABLE "deck_widget_builds" ADD CONSTRAINT "deck_widget_builds_created_by_i
 -- AddForeignKey
 ALTER TABLE "deck_business_profiles" ADD CONSTRAINT "deck_business_profiles_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- ═══════════════════════════════════════════════════════════════════════════════════════════════════
+-- COLUMNS ADDED BY THE selfdev-*.sql MIGRATIONS AFTER THIS FILE WAS FIRST WRITTEN (2026-09-30)
+--
+-- This file is the bootstrap for a FRESH self-host. Until this block was added it did not carry these
+-- columns: the sibling migrations were applied to production and never mirrored here, so a new install
+-- came up missing SEVENTEEN of them and said nothing. Nothing broke loudly, because readers fall back to
+-- the pre-migration shape (hazard H11) — the features simply did not persist on a fresh install, which is
+-- exactly why it went unnoticed.
+--
+-- Additive and idempotent throughout, so re-running this file changes nothing. `verify-bootstrap-sql.mjs`
+-- now fails the build if a selfdev migration adds a column this file does not have; that is what stops the
+-- drift rather than a note asking someone to remember.
+-- ═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+-- selfdev-add-file-synced-sha.sql — provenance for self-dev sync, so an upstream change can be told apart
+-- from un-pushed local work instead of both looking like "the sha differs".
+ALTER TABLE project_files ADD COLUMN IF NOT EXISTS synced_sha TEXT;
+COMMENT ON COLUMN project_files.synced_sha IS
+  'git blob sha of the upstream content this row was last synced from. NULL = provenance unknown (pre-dates this column, or a file created locally). Used by self-dev sync to tell an upstream change apart from un-pushed local work.';
+
+-- selfdev-deck-crm-fields.sql — the CRM fields for repair jobs and consignment items.
+alter table deck_consignment_items add column if not exists person_id text;
+alter table deck_consignment_items add column if not exists fee double precision;
+alter table deck_consignment_items add column if not exists sold_price double precision;
+alter table deck_consignment_items add column if not exists sold_date timestamp(3);
+alter table deck_consignment_items add column if not exists paid_out boolean not null default false;
+
+alter table deck_repair_jobs add column if not exists person_id text;
+alter table deck_repair_jobs add column if not exists quote double precision;
+alter table deck_repair_jobs add column if not exists promised_date timestamp(3);
+alter table deck_repair_jobs add column if not exists completed_date timestamp(3);
+alter table deck_repair_jobs add column if not exists paid boolean not null default false;
+
+-- selfdev-deck-fee-tiers.sql — the per-account consignment fee structure (percentages, not fractions).
+alter table deck_business_profiles add column if not exists fee_threshold double precision;
+alter table deck_business_profiles add column if not exists fee_rate_under double precision;
+alter table deck_business_profiles add column if not exists fee_rate_over double precision;
+
+-- selfdev-usage-event-observability.sql — what a brokered call was doing and how it ended.
+alter table usage_events add column if not exists task text;
+alter table usage_events add column if not exists status text;
+alter table usage_events add column if not exists duration_ms integer;
+
+-- add-deck-play.sql — the Asteroids reward: the play bank and the Morpheus-wide scoreboard.
+-- The bank is a ledger (credited seconds minus seconds played), and deck_play_credits is unique on
+-- (created_by_id, task_id) so a completed task can only ever pay once.
+CREATE TABLE "deck_play_credits" (
+    "id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "task_id" TEXT,
+    "seconds" INTEGER NOT NULL DEFAULT 60,
+    "reason" TEXT NOT NULL DEFAULT 'task',
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "deck_play_credits_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "deck_play_scores" (
+    "id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "initials" TEXT NOT NULL,
+    "score" INTEGER NOT NULL,
+    "seconds_played" INTEGER NOT NULL,
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "deck_play_scores_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "deck_play_credits_created_by_id_task_id_key" ON "deck_play_credits"("created_by_id", "task_id");
+
+CREATE INDEX "deck_play_scores_score_idx" ON "deck_play_scores"("score");
+
+ALTER TABLE "deck_play_credits" ADD CONSTRAINT "deck_play_credits_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "deck_play_scores" ADD CONSTRAINT "deck_play_scores_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- add-deck-murbah-money.sql — the money half of the Murbah ledger (see that file for why).
+alter table deck_murbah_opportunities add column if not exists price double precision;
+alter table deck_murbah_opportunities add column if not exists deposit_paid boolean not null default false;
+alter table deck_murbah_opportunities add column if not exists paid boolean not null default false;
+alter table deck_murbah_opportunities add column if not exists end_date timestamp(3);
+
+-- add-deck-life-files.sql — attachments on a life stream (see that file for why).
+CREATE TABLE "deck_life_files" (
+    "id" TEXT NOT NULL,
+    "life_stream_id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "file_url" TEXT NOT NULL,
+    "file_name" TEXT NOT NULL DEFAULT '',
+    "file_type" TEXT NOT NULL DEFAULT '',
+    "is_image" BOOLEAN NOT NULL DEFAULT false,
+    "note" TEXT,
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "deck_life_files_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX "deck_life_files_life_stream_id_idx" ON "deck_life_files"("life_stream_id");
+
+ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_life_stream_id_fkey" FOREIGN KEY ("life_stream_id") REFERENCES "deck_life_streams"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -19,19 +19,21 @@
 // exactly what every competitor already does. synthesizeDeck() now takes a
 // `trigger`:
 //
-//   manual    — unchanged. Prose reply, no schema, exactly as before.
+//   manual    — prose shown in the Deck, and now bounded by the SAME schema the
+//               scheduled path uses. It used to pass no schema at all, so it
+//               rambled to its cap; see the MAX_REPLY_TOKENS note below.
 //   scheduled — deckInsight.js calls it unprompted. Two differences matter:
-//               a schema so the run can DECLINE to raise anything, and a
-//               prompt that doesn't claim the user just pressed a button
+//               a prompt that doesn't claim the user just pressed a button
 //               (they didn't — putting words in Jarvis's mouth about what the
 //               operator did is the kind of small lie that erodes trust in
-//               everything else he says).
+//               everything else he says), and a quiet day is a legitimate
+//               outcome rather than something the caller must refuse.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock } from '../lib/deckMemory.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
-import { interpretScheduledResult } from '../lib/deckInsightPayload.js';
+import { interpretScheduledResult, synthesisMessageToStore } from '../lib/deckInsightPayload.js';
 
 // 2026-09-17: tried capping this at 2000 to bound worst-case generation
 // time (see PR #165) — broke correctness instead: this model burns a real
@@ -39,25 +41,33 @@ import { interpretScheduledResult } from '../lib/deckInsightPayload.js';
 // (same behavior chatWithJarvis.js's own MAX_REPLY_TOKENS comment already
 // flags), and 2000 wasn't enough to get past that, so the call returned a
 // 200 with a silently EMPTY reply. Reverted to match chatWithJarvis's own
-// proven ceiling — this call is genuinely slow (~50s live-tested), but
-// that's a real wait, not a bug; the frontend already shows a loading
-// state for it. Fixing the wait time is a separate problem (a bigger
-// compute plan, or trimming the snapshot/prompt itself), not this cap.
-// The scheduled insight is a batch job, not an interactive reply, so it can afford the
-// tokens a longer answer needs. It shared this 6000 with the conversational reply and
-// hit the ceiling: `[deck-insight] … failed: OUTPUT_TRUNCATED (role=unknown,
-// maxTokens=6000)` appears four times in the week to 2026-09-26 for a single account,
-// and five role-less calls reached 6000 output tokens. `role=unknown` is deliberate —
-// this is the persona path, on the platform default — so the budget is the lever, not
-// the model.
+// proven ceiling.
+//
+// 2026-10-03 — CORRECTION, because this file's own comment used to claim "the budget is
+// the lever, not the model" and that is wrong. The MANUAL path's 61/53/59-second runs on
+// 2026-10-02 were not a budget problem: the path passed no schema, so nothing bounded the
+// answer and it ran to the cap every time. Raising the cap moved the wall, it did not
+// remove it. The fix is the SHAPE (`SCHEDULED_SCHEMA`, which can decline), not the
+// ceiling — the scheduled cap above was raised for a real truncation, but manual was left
+// at 6000 with no schema, which is the opposite of the measured rule (input/shape is the
+// lever; model choice and, on its own, the cap are not).
+//
+// The scheduled cap's own record, kept: it shared 6000 with the conversational reply and hit
+// the ceiling — `[deck-insight] … failed: OUTPUT_TRUNCATED (role=unknown, maxTokens=6000)`
+// appears four times in the week to 2026-09-26 for a single account, and five role-less calls
+// reached 6000 output tokens. That is why the batch job's ceiling is 12000.
 const MAX_SCHEDULED_TOKENS = 12000;
 const MAX_REPLY_TOKENS = 6000;
 
 const SHARED_PERSONA = (firstName, businessContext) =>
   `You are Jarvis — ${firstName}'s butler, and something like a big brother: fiercely on their side, never soft about it. Dry, devilish wit, understated rather than goofy.`;
 
+// "FULL energy log (every day they've ever logged)" was a promise this prompt could not
+// keep once the snapshot capped the log at 3650 days, and a claim like that is exactly what
+// a model will report as fact. The snapshot line itself now says which of how many days it
+// is showing; the persona does not assert completeness at all.
 const SHARED_DATA =
-  `You're looking at a live snapshot of their brain dump, tasks, strategy notes, knowledge/ideas, their business's own operational queues if they use them, their FULL energy log (every day they've ever logged), and their life streams outside work (health, money, home, people, growth).`;
+  `You're looking at a live snapshot of their brain dump, tasks, strategy notes, knowledge/ideas, their business's own operational queues if they use them, their energy log (every day they've logged, most recent first), and their life streams outside work (health, money, home, people, growth).`;
 
 function buildManualPrompt({ firstName, businessContext }) {
   return `${SHARED_PERSONA(firstName, businessContext)}
@@ -155,22 +165,59 @@ Jarvis:`;
     return { reply: insight, createdAt: saved.created_date, trigger };
   }
 
-  // ── manual: unchanged, prose, no schema ───────────────────────────────────
+  // ── manual: prose in the Deck, but bounded by its SHAPE, not by a cap ──────
+  //
+  // Role: `planner`. It is the one role that resolves to exactly what this path already
+  // ran on — `default_planner_model` is deepseek-v4-pro and `default_planner_temperature`
+  // is 0.7, i.e. the platform default the persona deliberately sits on (MODEL-DECISIONS:
+  // persona and judgement stay on pro, Rob's call). Naming it changes the model choice by
+  // NOTHING and makes it visible; and if those settings are ever moved, this path moves
+  // with them, which is the intended coupling between the two persona surfaces. The
+  // SCHEDULED branch keeps its role-less call on purpose — bounding manual's output shape
+  // is this change, moving the batch job's model is not.
   const prompt = `${buildManualPrompt({ firstName, businessContext })}\n${body}`;
-  const { result: reply } = await invokeAI({ userId: user.id, prompt, maxTokens: MAX_REPLY_TOKENS });
+  let result;
+  let truncated = false;
+  try {
+    ({ result, truncated = false } = await invokeAI({
+      userId: user.id,
+      prompt,
+      maxTokens: MAX_REPLY_TOKENS,
+      schema: SCHEDULED_SCHEMA,
+      role: 'planner',
+    }));
+  } catch (err) {
+    // H6: `invokeAI` throws OUTPUT_TRUNCATED on a completion the provider cut off. Nothing
+    // has been written yet and nothing will be — a half-finished insight is worse than none
+    // — and the operator is told which of the two happened rather than a bare provider
+    // error. (This is the failure the manual path used to hit on EVERY press: no schema, so
+    // it rambled to the 6000 cap, got cut off, and stored nothing.)
+    if (/^OUTPUT_TRUNCATED/.test(err?.message || '')) {
+      console.warn(`[deck-synthesis] manual synthesis was truncated for ${user.id} — nothing stored`);
+      throw new Error('Jarvis was cut off before finishing — nothing was stored. Ask again.');
+    }
+    throw err;
+  }
 
-  if (!String(reply || '').trim()) {
+  // One decision, in one place: `synthesisMessageToStore` refuses a truncation, a decline,
+  // an empty answer and an unusable payload, and only ever yields the interpreted text.
+  const decision = synthesisMessageToStore({ result, truncated });
+  if (!decision.ok) {
     // An empty manual synthesis used to be stored as a blank "Suggestions" card with
     // no error on screen — indistinguishable from Jarvis having nothing to say. Refuse
-    // it instead, and let the caller show that the synthesis failed.
-    throw new Error('Jarvis returned an empty synthesis — nothing was stored. Ask again.');
+    // it instead, and let the caller show that the synthesis failed. A decline is the
+    // same refusal: the button asked for an insight, and there is not one to store.
+    console.warn(`[deck-synthesis] manual synthesis produced nothing (${decision.reason}) for ${user.id} — nothing stored`);
+    throw new Error(decision.reason === 'nothing-to-raise'
+      ? 'Jarvis had nothing worth raising this time — nothing was stored.'
+      : 'Jarvis returned an unusable synthesis — nothing was stored. Ask again.');
   }
 
   const saved = await prisma.deckJarvisMessage.create({
-    data: { created_by_id: user.id, role: 'jarvis_synthesis', content: reply },
+    data: { created_by_id: user.id, role: 'jarvis_synthesis', content: decision.content },
   });
 
-  return { reply, createdAt: saved.created_date, trigger };
+  return { reply: decision.content, createdAt: saved.created_date, trigger };
 }
 
 export default async function handler({ user }) {

@@ -161,26 +161,54 @@ export default async function handler({ user, body }) {
     }
   }
 
-  // If completed successfully, fetch the release. Retry a few times — GitHub
-  // sometimes marks a run complete a moment before the release API indexes it.
+  // If completed successfully, fetch the release THIS RUN created.
+  //
+  // 2026-10-01 (Rob, after two compiles two minutes apart: "just had a build failded message come up
+  // but it still gave me both links to the mac builds"). The build was green — both runs were green,
+  // with both disk images on both releases. This block was the liar, in two compounding ways:
+  //
+  //   1. It asked for `releases/latest`. When two compiles are in flight there is no such thing as
+  //      "the" latest release, and GitHub only moves the Latest pointer once the new release is
+  //      created — while its assets are still uploading. `releases/latest` can therefore answer with a
+  //      release that has zero assets, and eight seconds of retries is not enough for a 118 MB disk
+  //      image. The workflow already names its release for its own run (`tag_name: v<run_id>`), so ask
+  //      for that: unambiguous by construction, and it cannot be another compile's release.
+  //   2. It reported that as a finished build with no artifact, so the panel called
+  //      saveCompiledArtifacts, which returned "Release has no downloadable assets" and surfaced to
+  //      the user as "Build failed" on a build that had succeeded.
+  //
+  // A release that exists but has no assets yet is a build still PUBLISHING. Say exactly that, keep
+  // the run's own success conclusion, and let the panel poll again rather than declaring failure.
   if (runStatus === 'completed' && runConclusion === 'success') {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const releaseRes = await fetch(`${GH_API}/repos/${repoFullName}/releases/latest`, { headers: h });
+    const releaseTag = `v${latestRun.id}`;
+    // The save endpoint takes this, so it fetches THIS run's release by tag
+    // instead of `releases/latest` — the same ambiguity fix as the lookup below.
+    result.releaseTag = releaseTag;
+    let releaseBody = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const releaseRes = await fetch(`${GH_API}/repos/${repoFullName}/releases/tags/${releaseTag}`, { headers: h });
       if (releaseRes.ok) {
-        const release = await ghJson(releaseRes);
-        if (release && release.assets && release.assets.length > 0) {
-          result.releaseUrl = release.html_url;
-          result.assets = release.assets.map((a) => ({
-            name: a.name,
-            downloadUrl: a.browser_download_url,
-            size: a.size,
-          }));
-          break;
-        }
+        releaseBody = await ghJson(releaseRes);
+        if (releaseBody && releaseBody.assets && releaseBody.assets.length > 0) break;
       }
-      await new Promise((r) => setTimeout(r, 2000));
+      // A later attempt can 404 (the release then existing); keep whatever an earlier one returned.
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
     }
-    if (!result.assets) {
+    if (releaseBody && releaseBody.assets && releaseBody.assets.length > 0) {
+      result.releaseUrl = releaseBody.html_url;
+      result.assets = releaseBody.assets.map((a) => ({
+        name: a.name,
+        downloadUrl: a.browser_download_url,
+        size: a.size,
+      }));
+    } else if (releaseBody) {
+      // The release exists and is still filling up. Not a failure, and not finished.
+      result.assets = [];
+      result.artifactsPending = true;
+      result.message = 'Build complete - publishing the download...';
+    } else {
+      // No release under this run's tag at all. That IS worth saying plainly, and it is not the same
+      // sentence as a failed build: the run went green and published nothing.
       result.assets = [];
       result.message = 'Build succeeded but no downloadable artifact was published.';
     }

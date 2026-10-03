@@ -10,6 +10,12 @@ import { createSnapshot, applyFileOperations, applyEdits, logUsage, syncProjectF
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { runReviewerFailOpen, reviewFailureNote } from '../lib/reviewFailOpen.js';
+import { securityFindings, securitySummary, SECURITY_PROMPT_BLOCK } from '../lib/securityPosture.js';
+import {
+  uiFeedbackFindings, uiFeedbackSummary, isUiApp, UI_FEEDBACK_PROMPT_BLOCK, UI_FEEDBACK_ACCEPTANCE,
+} from '../lib/uiFeedback.js';
+import { isContentOp, appliedPaths, appliedCount, unresolvedPaths } from '../lib/appliedOps.js';
+import { planSelfTestFile, selfTestEvidence, selfTestEvidenceLine } from '../lib/appSelfTest.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
 import { buildReviewerContext } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
@@ -275,6 +281,7 @@ Keep your reply short — a sentence or two of guidance, maybe a question or a c
 const PLANNER_INSTRUCTIONS = `
 
 You are operating in TWO-PHASE BUILD MODE as the PLANNING agent.
+${UI_FEEDBACK_PROMPT_BLOCK}
 
 Analyze the operator's message carefully:
 - If they are asking you to BUILD, CREATE, or MODIFY something, set needsCode: true and produce a precise build plan — file-by-file, with architecture decisions, implementation notes, and design rationale. Think deeply about reliability, usability, aesthetics, and edge cases. Your plan must be specific enough that a fast coder agent can implement it without ambiguity.
@@ -336,7 +343,8 @@ You are the CODING agent in Morpheus's two-phase build pipeline.
 You receive a build plan from the planning agent. Implement it precisely — write clean, efficient, production-ready code. No placeholders, no TODOs, no pseudo-code. Follow the plan exactly. Every file must have FULL content (never partial).
 
 Apply all the build configuration rules from your system instructions — package.json, README.md, build configs matching the compile target, etc.
-
+${SECURITY_PROMPT_BLOCK}
+${UI_FEEDBACK_PROMPT_BLOCK}
 Return JSON with:
 - fileOperations: an array of file operations.
   - action "create": include the full \`content\` of the new file.
@@ -621,6 +629,30 @@ SCOPED-CONTEXT RULE — YOU ARE EDITING ${where}:
  * an update op into `appliedOps` so the change is snapshotted, auto-synced to
  * GitHub and visible to the rest of this turn like any other write.
  */
+/**
+ * Give the app the one command that proves it works WHERE IT RUNS.
+ *
+ * WHY THIS IS AUTHORED RATHER THAN ASKED FOR. Same reasoning as the portable launcher and the provider
+ * honesty section: one implementation that cannot drift, and no two apps testing themselves differently. The
+ * coder is never asked to invent a test harness — see `lib/appSelfTest.js` for the contract and for why a
+ * run that prints nothing is not a pass.
+ *
+ * The point is the machine the app is installed on. A build machine cannot tell an operator their app works;
+ * the machine they run it on can, and this is the thing that asks it. Returns null when there is nothing
+ * honest to write (no `npm start`, or the app already ships its own).
+ */
+async function writeSelfTestRunner({ userId, projectId, files, appliedOps }) {
+  const plan = planSelfTestFile(files);
+  if (!plan) return null;
+  // Written through applyFileOperations like every other file — NOT a raw upsert. That is the one write path
+  // that snapshots, auto-syncs to GitHub and records the op, and a file Morpheus authored outside it is a
+  // file the next turn cannot see or undo. (The first version used prisma.projectFile.upsert with a
+  // detectLanguage() helper that does not exist in this file; lint caught the second half of that.)
+  appliedOps.push({ action: 'create', path: plan.path });
+  await applyFileOperations(userId, projectId, [{ path: plan.path, content: plan.content, action: 'create' }], []);
+  return { path: plan.path };
+}
+
 async function writeProviderHonestyToReadme({ userId, project, files, appliedOps, declared = [] }) {
   // The app's real deployed origin, when it has one — mode B's steps are useless
   // without it, and "open the app and copy the address bar" is the honest fallback
@@ -1038,6 +1070,14 @@ OPERATOR SAYS: ${message}`;
   // cost the user the coder's work — see the try/catch around reviewAndRetry below for the whole
   // reasoning. This carries the reason into the reply and into the stage record.
   let reviewerFailed = null;
+  // Security findings for the whole project, filled in after the apply so the report describes what
+  // exists rather than what this turn happened to touch. Declared here so the outer catch can still
+  // report what was found (H18: a declaration that must outlive its block goes outside it).
+  let securityReport = null;
+  // The UI feedback posture for the whole project, filled in beside the security report for the same
+  // reason: the summary must describe the app that exists, not only this turn's diff. Declared here so
+  // the outer catch can still report what was found (H18).
+  let uiFeedbackReport = null;
   let deepVerifyCritical = []; // self-dev: still breaks the wider repo after a fix attempt
   const MAX_GATE_ATTEMPTS = 3; // real fix-and-recheck attempts for both gates below, not just one retry
   let a11yNotes = []; // accessibility issues left after a fix attempt (web-app)
@@ -2031,7 +2071,7 @@ OPERATOR SAYS: ${message}`;
       // A second, lightweight coder call that touches ONLY styling files. It
       // runs when project.polish_ui is on and the build produced web-facing
       // files (or the target is web-app). Never runs for pure native/CLI builds.
-      if (project.polish_ui && appliedOps.length > 0 && !isSelfDev) {
+      if (project.polish_ui && appliedCount(appliedOps) > 0 && !isSelfDev) {
         const hasWebFiles = appliedOps.some((op) => /\.(html|css|jsx|tsx|vue|svelte)$/i.test(op.path) || op.path === 'styles.css');
         if ((hasWebFiles || isWebApp) && !isWordPress) {
           // Same fix as the `files` query above -- ProjectFile uniqueness is
@@ -2073,7 +2113,7 @@ OPERATOR SAYS: ${message}`;
             // Count only operations that actually WROTE something. `appliedOps` also carries refusals
             // (`policy_denied`), skips (`skipped_fake_binary`, `skipped_no_content`) and failures
             // (`edit_failed`), and counting those as "refined" made the POLISH line overstate the pass.
-            polishCount = appliedPolish.filter((op) => /^(create|update|delete)$/.test(String(op.action))).length;
+            polishCount = appliedCount(appliedPolish);
           }
         }
       }
@@ -2086,7 +2126,7 @@ OPERATOR SAYS: ${message}`;
       // model produced, and running it through the gates would only be able to
       // fail on our own text. A failure here must never cost the operator the
       // build that already succeeded, so it is caught and reported.
-      if (!isSelfDev && appliedOps.some((op) => /^(create|update)$/.test(String(op.action)))) {
+      if (!isSelfDev && appliedOps.some(isContentOp)) {
         try {
           // The files as they are NOW, read fresh: the in-memory `files` array
           // predates this turn's writes, and mode is decided from the app's real
@@ -2103,6 +2143,23 @@ OPERATOR SAYS: ${message}`;
         } catch (err) {
           console.error('[chatWithMorpheus] provider honesty write failed:', err.message);
         }
+
+        // …and the command that proves the app works on the machine it is installed on. Same failure rule:
+        // never cost the operator a build that already succeeded.
+        try {
+          const withRunner = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+          const written = await writeSelfTestRunner({ userId: user.id, projectId, files: withRunner, appliedOps });
+          if (written) {
+            fullReply += `\n\n// TO PROVE IT RUNS WHERE YOU RUN IT: \`node ${written.path}\` — it starts the app headlessly, asks it something, and tells you plainly whether it answered. It needs nothing but the app and node, so it works on that machine and any later one.`;
+          }
+          // If this app has ALREADY been tested on a machine, say so — the evidence is stored in the app's own
+          // files, so a later build can report what happened rather than only what should. Nothing is said
+          // when there is no record: a build padded with a line about nothing is a build nobody reads.
+          const evidenceLine = selfTestEvidenceLine(selfTestEvidence(withRunner));
+          if (evidenceLine) fullReply += `\n\n${evidenceLine}`;
+        } catch (err) {
+          console.error('[chatWithMorpheus] self-test runner write failed:', err.message);
+        }
       }
 
       // GitHub auto-sync (main + polish passes both land here, so this
@@ -2110,14 +2167,14 @@ OPERATOR SAYS: ${message}`;
       // syncProjectFilesToGithub's own comment for why this is never
       // awaited: a slow/failed GitHub call must never delay or break the
       // chat response.
-      if (appliedOps.length > 0 && project.github_repo) {
+      if (appliedCount(appliedOps) > 0 && project.github_repo) {
         syncProjectFilesToGithub(user.id, project, appliedOps).catch((err) => {
           console.error('[chatWithMorpheus] github auto-sync failed:', err.message);
         });
       }
     }
 
-    const reviewBlock = (reviewSummary || reviewIssues.some((i) => i.severity === 'critical')) && appliedOps.length > 0
+    const reviewBlock = (reviewSummary || reviewIssues.some((i) => i.severity === 'critical')) && appliedCount(appliedOps) > 0
       ? formatReviewChatBlock({ summary: reviewSummary, approved: !reviewIssues.some((i) => i.severity === 'critical'), issues: reviewIssues })
       : '';
     fullReply = reviewBlock ? `${reply}\n\n${reviewBlock}` : reply;
@@ -2143,7 +2200,7 @@ OPERATOR SAYS: ${message}`;
     // knows it's unchanged rather than assuming it was edited.
     const unresolved = [...new Set([
       ...editFailPaths,
-      ...appliedOps.filter((op) => op.action === 'edit_failed' || op.action === 'apply_failed').map((op) => op.path),
+      ...unresolvedPaths(appliedOps),
     ])];
     if (unresolved.length > 0) {
       fullReply += `\n\n// CRITICAL: could not apply changes to ${unresolved.join(', ')} — ${unresolved.length === 1 ? 'that file was' : 'those files were'} left unchanged. Ask again, pinning ${unresolved.length === 1 ? 'that file' : 'those files'}.`;
@@ -2189,13 +2246,73 @@ OPERATOR SAYS: ${message}`;
       fullReply += `\n\n// A11Y: ${a11yNotes.length} accessibility issue${a11yNotes.length === 1 ? '' : 's'} left after a fix pass — ${a11yNotes.join('; ')}. The site still works; ask me to fix ${a11yNotes.length === 1 ? 'it' : 'them'}.`;
     }
 
+    // ── Security posture ──────────────────────────────────────────────────
+    // The reviewer's PROMPT has always asked for secure code; nothing ever EXAMINED what was produced, and
+    // the operator was told nothing either way. This runs the same checks over the project as it now
+    // stands — not just this turn's files, because .env, .gitignore and whether auth exists at all are
+    // properties of the whole app — and says the result out loud.
+    //
+    // Reported, not enforced: a critical finding names the danger and the fix and blocks nothing. Blocking
+    // would be a policy decision about generated apps that nobody has made, and a gate that silently
+    // refuses would be worse than a sentence the operator can act on.
+    try {
+      const projectFiles = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+      const findings = securityFindings(projectFiles);
+      securityReport = { findings, summary: securitySummary(findings, { filesExamined: projectFiles.length }) };
+      const critical = findings.filter((f) => f.severity === 'critical');
+      const high = findings.filter((f) => f.severity === 'high');
+      if (critical.length > 0) {
+        fullReply += `\n\n// SECURITY — DO NOT SHIP AS IS: ${critical.map((f) => `${f.title} (${f.evidence.join(', ')})`).join('; ')}. ${critical.map((f) => f.fix).join(' ')}`;
+      } else if (high.length > 0) {
+        fullReply += `\n\n// SECURITY: ${high.map((f) => f.title).join('; ')}. ${high.map((f) => f.fix).join(' ')}`;
+      }
+    } catch (err) {
+      // A security check that could not run must say so, never read as clean — the repo's own rule for a
+      // check that examined nothing.
+      securityReport = { findings: [], summary: `the security check could not run — ${err.message}`, failed: true };
+      console.error('[chatWithMorpheus] security check failed:', err.message);
+    }
+
+    // ── UI feedback posture ───────────────────────────────────────────────
+    // The planner and the coder are both given the ten UI rules (UI_FEEDBACK_PROMPT_BLOCK); this examines
+    // what came back and tells the operator how the screens behave — the same shape as the security report
+    // above, and run over the whole project for the same reason.
+    //
+    // UI apps only. A project with no UI files has nothing to check and the summary says NOT EXAMINED,
+    // never "clean" — "nothing was found" and "nothing was looked at" are different sentences (H17).
+    // Reported, not enforced: nothing here stops a build or refuses a reply.
+    try {
+      const projectFiles = await prisma.projectFile.findMany({ where: { project_id: projectId }, select: { path: true, content: true } });
+      const uiApp = isUiApp(projectFiles);
+      const findings = uiFeedbackFindings(projectFiles);
+      uiFeedbackReport = {
+        findings,
+        uiApp,
+        acceptance: UI_FEEDBACK_ACCEPTANCE,
+        summary: uiFeedbackSummary(findings, { filesExamined: projectFiles.length, uiApp }),
+      };
+      const high = findings.filter((f) => f.severity === 'high');
+      if (uiApp && high.length > 0) {
+        fullReply += `\n\n// UI FEEDBACK: ${high.map((f) => `${f.title} (${f.path})`).join('; ')}. ${high.map((f) => f.fix).join(' ')}`;
+      }
+      // The checklist travels with the report rather than only when something is wrong: the rules cannot
+      // be verified from the files, so the one thing a person must do by hand is always said out loud —
+      // but ONLY for a turn that actually changed the app. This block is reached on a pure-conversation
+      // turn too, and answering "what does this button do?" with a build checklist is noise, not a report.
+      if (uiApp && appliedCount(appliedOps) > 0) fullReply += `\n\n// UI CHECK: ${UI_FEEDBACK_ACCEPTANCE}`;
+    } catch (err) {
+      // A UI check that could not run must say so, never read as clean.
+      uiFeedbackReport = { findings: [], uiApp: false, acceptance: UI_FEEDBACK_ACCEPTANCE, summary: `the UI feedback check could not run — ${err.message}`, failed: true };
+      console.error('[chatWithMorpheus] UI feedback check failed:', err.message);
+    }
+
     // ── Feature progress ──────────────────────────────────────────────────
     // Escalation turn: announce the plan and advance past step 1 (just built).
     // Ongoing feature turn (non-self-dev): advance the active step when the
     // build changed files — the planner's context said to build that step, so
     // it's done; the operator can reopen it from the FEATURE panel to refine.
     // Self-dev advances its steps manually (on push, from the panel).
-    const buildProgressed = appliedOps.length > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0 && truncatedFiles.length === 0;
+    const buildProgressed = appliedCount(appliedOps) > 0 && unresolved.length === 0 && syntaxCritical.length === 0 && deepVerifyCritical.length === 0 && truncatedFiles.length === 0;
     if (escalatedFeature && escalatedFeature.activeStep) {
       fullReply += `\n\n// FEATURE: "${escalatedFeature.title}" — this needs ${escalatedFeature.totalSteps} steps. Built step 1 (${escalatedFeature.activeStep.title}); the rest are tracked in the FEATURE panel. Ask me to continue for the next step.`;
       // Step 1 having been drafted this turn doesn't mean it actually
@@ -2228,7 +2345,7 @@ OPERATOR SAYS: ${message}`;
 
     await prisma.chatMessage.create({ data: { created_by_id: user.id, project_id: projectId, role: 'morpheus', content: fullReply } });
 
-    if (appliedOps.length > 0) {
+    if (appliedCount(appliedOps) > 0) {
       await prisma.project.update({ where: { id: projectId }, data: { status: 'building' } });
     }
 
@@ -2240,17 +2357,17 @@ OPERATOR SAYS: ${message}`;
       coder: coderModel,
       reviewer: reviewerModel,
     });
-    await logUsage(user.id, appliedOps.length > 0 ? 'chat_build' : 'chat_simple', projectId, project.name, {
+    await logUsage(user.id, appliedCount(appliedOps) > 0 ? 'chat_build' : 'chat_simple', projectId, project.name, {
       messageLength: message.length,
       needsCode,
-      fileCount: appliedOps.length,
+      fileCount: appliedCount(appliedOps),
       reviewed: !!reviewerModel,
       ...toolchain,
     });
 
     // Decisions log: record what this change did + why, so later planning
     // turns build on it. Any project, only when files actually changed.
-    if (appliedOps.length > 0) {
+    if (appliedCount(appliedOps) > 0) {
       await recordDecision(
         user.id, projectId,
         plannerResult.decisionSummary || plannerResult.plan?.split('\n')[0] || reply,
@@ -2263,8 +2380,15 @@ OPERATOR SAYS: ${message}`;
     // most. res.locals is the one channel that outlives the stream without
     // inventing a second write path; the dispatcher reads it in its finally,
     // after res.end(), and only when there was no return value to use.
+    //
+    // The security report is NOT put here: it is not part of the stage detail the dispatcher records, and a
+    // `res.locals` entry nothing reads is a channel that only looks like one. It travels on the `result`
+    // event below, which is the contract the client already receives.
     try { res.locals.morpheusStageDetail = { rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length } }; } catch { /* no locals */ }
-    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedOps.length > 0 && !isSelfDev)) } });
+    emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, // The paths that ACTUALLY changed, so no consumer has to re-derive it from `fileOperations`, which is a
+// mixed list carrying refusals (`policy_denied`), skips and failures alongside real writes. Three
+// consumers had each derived their own answer and two were wrong (defect 4).
+changedPaths: appliedPaths(appliedOps), security: securityReport, uiFeedback: uiFeedbackReport, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedCount(appliedOps) > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // If the build already LANDED, an error event is the worst response available: the files are
@@ -2272,7 +2396,7 @@ OPERATOR SAYS: ${message}`;
     // failure and re-runs the whole turn — a second full build on top of the first, for spend. A
     // throw AFTER apply (the polish pass, the chat row, the project status, usage) must not cost the
     // user their reply. So deliver what we have, and name what failed.
-    if (appliedOps.length > 0) {
+    if (appliedCount(appliedOps) > 0) {
       // Shaped exactly like the success emit below, so the stream reader cannot tell them apart.
       try {
         emit({
@@ -2280,6 +2404,7 @@ OPERATOR SAYS: ${message}`;
           data: {
             reply: `${fullReply || reply}\n\n// NOTE: the build itself landed and everything above is applied, but something after it failed — ${err.message || 'unknown error'}. Ask me to retry the part that did not finish.`,
             fileOperations: appliedOps,
+            changedPaths: appliedPaths(appliedOps),
             rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length },
             featureChanged: false,
           },

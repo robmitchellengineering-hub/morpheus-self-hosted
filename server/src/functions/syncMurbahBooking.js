@@ -6,6 +6,7 @@
 // the rest of Rob's actual calendar — see lib/deckGoogle.js.
 import { prisma } from '../db.js';
 import { getDeckGoogleToken, insertCalendarEvent, updateCalendarEvent, MURBAH_CALENDAR_EXTENDED_PROPERTIES } from '../lib/deckGoogle.js';
+import { exclusiveEndDate, bookingDescription } from '../lib/murbahBooking.js';
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -22,14 +23,16 @@ export default async function handler({ user, body }) {
   const { token } = await getDeckGoogleToken(user.id);
 
   const startDate = opp.booking_date;
-  const endDate = new Date(startDate);
-  endDate.setUTCDate(endDate.getUTCDate() + 1); // Calendar all-day events use an exclusive end date
+  // An all-day Calendar event ends EXCLUSIVELY while the operator's range end is inclusive — and the
+  // arithmetic that turns one into the other lives in lib/murbahBooking.js, where it is guarded, since
+  // getting it wrong shifts every booking by a day in the place Rob actually reads it.
+  const endDate = exclusiveEndDate(startDate, opp.end_date);
 
   const eventFields = {
     summary: `Murbah — ${opp.title}`,
-    description: opp.note || '',
+    description: bookingDescription(opp),
     start: { date: isoDate(startDate) },
-    end: { date: isoDate(endDate) },
+    end: { date: endDate },
   };
 
   let eventId = opp.calendar_event_id;

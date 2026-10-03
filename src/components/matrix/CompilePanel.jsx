@@ -67,7 +67,7 @@ function HeuristicStepList({ steps, elapsedSeconds }) {
   );
 }
 
-export default function CompilePanel({ open, onClose, project, onCompile, onPreview, onCheckStatus, onAskMorpheus, onCompileSuccess, onBuildBackend }) {
+export default function CompilePanel({ open, onClose, project, onCompile, onPreview, onCheckStatus, onAskMorpheus, onCompileSuccess, onCheckSave, onReloadFiles, onBuildBackend }) {
   const [phase, setPhase] = useState('idle');
   const [attempt, setAttempt] = useState(0);
   const [repoFullName, setRepoFullName] = useState(null);
@@ -77,6 +77,13 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   // Compiled artifacts that were part of the release but did NOT save (a
   // partial save). Empty on every complete build.
   const [saveFailures, setSaveFailures] = useState([]);
+  // Progress of the background save: { phase, saved, total, currentAsset, ... }.
+  // The server reconstructs it from the durable record + the `_compiled/` rows,
+  // so a page reload mid-save resumes this state rather than losing it.
+  const [saveState, setSaveState] = useState(null);
+  // A save that did not finish: { phase, message, error }. This is NOT a build
+  // failure and must never render as one.
+  const [saveProblem, setSaveProblem] = useState(null);
   // "Take it live" (2026-09-28) — takes the compiled web app live on the user's
   // OWN Netlify account. Cleared with the rest of the panel when it closes, then
   // HYDRATED from the deploy record on open (see the getFrontendLive effect below):
@@ -98,6 +105,8 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const [showDistroConfig, setShowDistroConfig] = useState(false);
   const [showLinuxDistroConfig, setShowLinuxDistroConfig] = useState(false);
   const pollRef = useRef(null);
+  const savePollRef = useRef(null);
+  const saveErrorCountRef = useRef(0);
   const pollStartRef = useRef(0);
   const stopRef = useRef(false);
   const startTimeRef = useRef(0);
@@ -178,8 +187,15 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
 
+  // The save's own poll loop, separate from the build poll: the build poll ends
+  // the moment the run completes, and the save outlives it.
+  const stopSavePolling = useCallback(() => {
+    if (savePollRef.current) { clearInterval(savePollRef.current); savePollRef.current = null; }
+  }, []);
+
   const reset = useCallback(() => {
     stopPolling();
+    stopSavePolling();
     setPhase('idle');
     setAttempt(0);
     setRepoFullName(null);
@@ -187,6 +203,8 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     setStatus(null);
     setError(null);
     setSaveFailures([]);
+    setSaveState(null);
+    setSaveProblem(null);
     setCompileWarnings([]);
     setLive({ phase: 'idle', url: null, error: null, code: null });
     setLinkCopied(false);
@@ -200,7 +218,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     notifiedRef.current = false;
     stopRef.current = false;
     clearDiagnosis();
-  }, [stopPolling, clearDiagnosis]);
+  }, [stopPolling, stopSavePolling, clearDiagnosis]);
 
   const handleStop = useCallback(() => {
     stopRef.current = true;
@@ -278,6 +296,91 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   };
 
   useEffect(() => () => stopPolling(), [stopPolling]);
+  useEffect(() => () => stopSavePolling(), [stopSavePolling]);
+
+  // Fold a save-status response into the panel. A save problem sets
+  // `saveProblem`; it must NEVER set phase 'error', which renders BUILD FAILED
+  // and offers RECOMPILE for an app that already exists. Artifacts that did land
+  // are kept downloadable, so a partial save is never hidden.
+  const applySaveStatus = useCallback((data) => {
+    if (!data) return;
+    setSaveState(data);
+    if (Array.isArray(data.artifacts) && data.artifacts.length > 0) {
+      setStatus((prev) => ({ ...(prev || {}), savedArtifacts: data.artifacts }));
+    }
+  }, []);
+
+  // Poll the background save. Separate from `poll` because the build poll ends
+  // when the Actions run completes, while the save keeps running server-side.
+  const pollSave = useCallback(async (projectIdForPoll) => {
+    try {
+      const data = await onCheckSave?.(projectIdForPoll || project?.id);
+      if (!data) return;
+      saveErrorCountRef.current = 0;
+      applySaveStatus(data);
+      if (data.phase === 'saving') return; // still running — keep polling
+      stopSavePolling();
+      if (data.phase === 'done') {
+        await onReloadFiles?.();
+        setPhase('done');
+        notifyComplete('success', 'Build complete');
+        return;
+      }
+      if (data.phase === 'partial') {
+        setSaveFailures(Array.isArray(data.failed) ? data.failed : []);
+        await onReloadFiles?.();
+        setPhase('done');
+        notifyComplete('partial', `Build finished with ${(data.failed || []).length} compiled file(s) not saved: ${(data.failed || []).join(', ')}`);
+        return;
+      }
+      // failed / interrupted — the BUILD succeeded and is downloadable from GitHub.
+      setSaveProblem({
+        phase: data.phase,
+        message: data.message || data.error || 'The compiled app could not be saved to your files.',
+        error: data.error || null,
+        failed: Array.isArray(data.failed) ? data.failed : [],
+        errors: Array.isArray(data.errors) ? data.errors : [],
+      });
+      setPhase('save-failed');
+      notifyComplete('save_failed', data.message || data.error || 'Saving the compiled app to your files failed.');
+    } catch (e) {
+      // A failed STATUS CHECK is not a failed save, and neither is a failed build.
+      saveErrorCountRef.current += 1;
+      if (saveErrorCountRef.current >= MAX_ERRORS) {
+        stopSavePolling();
+        setSaveProblem({
+          phase: 'interrupted',
+          message: `The build succeeded, but Morpheus could not check the save after ${MAX_ERRORS} attempts (${e?.message || e}). The app is on the GitHub release below.`,
+          error: e?.message || String(e),
+          failed: [],
+          errors: [],
+        });
+        setPhase('save-failed');
+        notifyComplete('save_failed', `Build succeeded; could not confirm the save: ${e?.message || e}`);
+      }
+    }
+  }, [onCheckSave, onReloadFiles, project?.id, applySaveStatus, stopSavePolling, notifyComplete]);
+
+  // A page reload mid-save must not lose the save. Nothing in this panel's memory
+  // is consulted: the server is asked whether a save is running for this project
+  // and, if it is, the poll loop picks the state back up. A failed lookup changes
+  // nothing — a save we cannot see is not a save we may call failed.
+  useEffect(() => {
+    if (!open || !project?.id) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await onCheckSave?.(project.id);
+        if (cancelled || !data?.active) return;
+        saveErrorCountRef.current = 0;
+        applySaveStatus(data);
+        setPhase('saving');
+        stopSavePolling();
+        savePollRef.current = setInterval(() => pollSave(project.id), 3000);
+      } catch { /* leave the panel exactly as it was */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, project?.id, onCheckSave, applySaveStatus, stopSavePolling, pollSave]);
 
   const poll = useCallback(async (repo) => {
     if (stopRef.current) { stopPolling(); return; }
@@ -307,73 +410,71 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       // Success — reset the error counter
       errorCountRef.current = 0;
       setStatus(data);
-      if (data.status === 'completed') {
+      // A completed run whose release is still uploading its assets is not finished: keep polling
+      // instead of calling saveCompiledArtifacts against a release that has nothing in it yet, which
+      // used to surface as "Build failed" on a build that had succeeded. See getCompileStatus.js.
+      const stillPublishing = data.status === 'completed' && data.artifactsPending;
+      if (data.status === 'completed' && !stillPublishing) {
         stopPolling();
         if (data.conclusion === 'success') {
           setPhase('saving');
-          // Save the compiled artifacts back to the project's file tree.
-          // This downloads the binary from GitHub and re-uploads to storage —
-          // it takes a few seconds. We await it so the user sees a saving
-          // state and any error, instead of a silent failure that leaves them
-          // wondering where their app is.
-          // A partial save is not a failed build — the assets that landed are
-          // kept on screen — but it is not "complete" either, so the success
-          // notification is skipped for it below.
-          let saveWasPartial = false;
+          // Start the save as a BACKGROUND JOB. It returns as soon as the job is
+          // registered; the download + re-upload (~217 MB on a real macOS build)
+          // runs server-side and is polled below. We deliberately do NOT await
+          // the save itself: holding that request open is what Cloudflare's
+          // ~100s proxy read timeout used to cut, and what then read, wrongly,
+          // as a failed build.
           try {
-            const saveResult = await onCompileSuccess?.(repo);
-            if (saveResult?.error) {
-              setPhase('error');
-              setError(`Build succeeded but the compiled app couldn't be saved to your files: ${saveResult.error}. Tap RECOMPILE to retry, or download it directly from GitHub below.`);
-              notifyComplete('failed', `Artifact save failed: ${saveResult.error}`);
-              return;
-            }
-            // Our own re-uploaded (public) URLs — used instead of GitHub's
-            // raw browser_download_url below, which 404s for anyone whose
-            // browser isn't authenticated into the private build repo.
-            if (saveResult?.artifacts?.length > 0) {
-              setStatus((prev) => ({ ...(prev || {}), savedArtifacts: saveResult.artifacts }));
-            }
-            // Some release assets did not land (e.g. the image failed while a
-            // README saved). Name them on screen and in the completion email —
-            // before 2026-09-27 this response carried no failures at all, so a
-            // glob target read as "Build complete" with the image missing.
-            if (saveResult?.partial && saveResult.failed?.length > 0) {
-              saveWasPartial = true;
-              setSaveFailures(saveResult.failed);
-              notifyComplete('partial', `Build finished with ${saveResult.failed.length} compiled file(s) not saved: ${saveResult.failed.join(', ')}`);
-            }
-          } catch (saveErr) {
-            setPhase('error');
-            setError(`Build succeeded but saving the artifact failed: ${saveErr?.message || saveErr}. Tap RECOMPILE to retry.`);
-            notifyComplete('failed', `Artifact save failed: ${saveErr?.message || saveErr}`);
+            const started = await onCompileSuccess?.(repo, {
+              // The tag only — deliberately NOT the asset list. The server looks
+              // the release up by tag through the GitHub API, the same path
+              // getCompileStatus already proved works for a private repo; the
+              // body-assets mode downloads through browser_download_url, which is
+              // not reliable for one.
+              releaseTag: data.releaseTag,
+            });
+            if (started) applySaveStatus(started);
+          } catch (e) {
+            // The BUILD succeeded. A save that cannot even start is a SAVE
+            // problem — never a build failure, and never a reason to RECOMPILE.
+            setSaveProblem({
+              phase: 'failed',
+              message: `The build succeeded but the save could not be started: ${e?.message || e}`,
+              error: e?.message || String(e),
+              failed: [],
+              errors: [],
+            });
+            setPhase('save-failed');
+            notifyComplete('save_failed', `Build succeeded; the save could not be started: ${e?.message || e}`);
             return;
           }
-          setPhase('done');
-          if (!saveWasPartial) notifyComplete('success', 'Build complete');
-        } else {
-          setPhase('error');
-          setError('Build failed. Fetching logs and diagnosing...');
-          // Auto-run diagnosis, then — if the agent fixed files — automatically
-          // recompile to test the fix. The loop runs unattended until the build
-          // passes or the agent can't auto-fix (then it stops and surfaces what
-          // needs manual action).
-          if (data.logs?.length > 0) {
-            const diag = await diagnose({
-              type: 'compile',
-              projectId: project.id,
-              errorContext: { error: 'Build failed on GitHub Actions', repoUrl, target, logs: data.logs }
-            });
-            if (stopRef.current) return;
-            if (diag?.autoFixed?.length > 0) {
-              handleCompile(true);
-              return;
-            }
-            notifyComplete('failed', diag?.needsUserAction?.length ? 'Build needs manual fixes — ask Morpheus in chat' : 'Build failed — AI could not auto-fix');
-          } else {
-            setError('Build failed. Check the run logs on GitHub.');
-            notifyComplete('failed', 'Build failed — no logs available');
+          saveErrorCountRef.current = 0;
+          stopSavePolling();
+          pollSave();
+          savePollRef.current = setInterval(() => pollSave(), 3000);
+          return;
+        }
+        setPhase('error');
+        setError('Build failed. Fetching logs and diagnosing...');
+        // Auto-run diagnosis, then — if the agent fixed files — automatically
+        // recompile to test the fix. The loop runs unattended until the build
+        // passes or the agent can't auto-fix (then it stops and surfaces what
+        // needs manual action).
+        if (data.logs?.length > 0) {
+          const diag = await diagnose({
+            type: 'compile',
+            projectId: project.id,
+            errorContext: { error: 'Build failed on GitHub Actions', repoUrl, target, logs: data.logs }
+          });
+          if (stopRef.current) return;
+          if (diag?.autoFixed?.length > 0) {
+            handleCompile(true);
+            return;
           }
+          notifyComplete('failed', diag?.needsUserAction?.length ? 'Build needs manual fixes — ask Morpheus in chat' : 'Build failed — AI could not auto-fix');
+        } else {
+          setError('Build failed. Check the run logs on GitHub.');
+          notifyComplete('failed', 'Build failed — no logs available');
         }
       }
     } catch (e) {
@@ -414,6 +515,13 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
     setPhase('compiling');
     setError(null);
     clearDiagnosis();
+    // A new build supersedes any previous save's UI: stop its poll loop and clear
+    // the previous outcome rather than letting a stale "saving" or failure ride
+    // along into the new run.
+    stopSavePolling();
+    setSaveState(null);
+    setSaveProblem(null);
+    setSaveFailures([]);
 
     // 2026-09-04 (Rob: "can we automate it from compile with that error",
     // then hit the same error again live even after this was first shipped
@@ -781,8 +889,70 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               <div className="flex items-center gap-2 text-ink text-sm">
                 <Loader2 size={16} className="animate-spin" /> Saving compiled app to your files...
               </div>
+              {saveState?.total > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-ink-strong">
+                    <span className="font-mono">SAVED {saveState.saved}/{saveState.total}</span>
+                    {saveState.currentAsset && (
+                      <span className="text-ink-strong truncate ml-2 text-right">{saveState.currentAsset}</span>
+                    )}
+                  </div>
+                  <div className="h-1.5 bg-primary/10 border border-primary/20 overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-500"
+                      style={{ width: `${saveState.total > 0 ? (saveState.saved / saveState.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               <p className="text-xs text-ink-strong">
-                // Downloading the binary from GitHub and storing it under _compiled/. This takes a few seconds — don't close this panel.
+                // Copying the built app from GitHub into your files. This runs on the server, so you can reload or close this panel — it keeps going.
+              </p>
+            </div>
+          )}
+          {/* A save that did not finish is NOT a failed build. This phase exists so the
+              panel can say what actually happened and point at the release that already
+              exists, without ever offering RECOMPILE for an app that was built fine. */}
+          {phase === 'save-failed' && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-yellow-500 text-sm">
+                <AlertTriangle size={16} /> BUILD SUCCEEDED — THE APP COULDN'T BE SAVED TO YOUR FILES
+              </div>
+              <p className="text-xs text-ink-strong">
+                // Your build finished and its files are on GitHub. Morpheus could not copy them into your file tree, so they are not under _compiled/ yet.
+              </p>
+              {saveProblem?.message && (
+                <p className="text-xs text-ink-strong border border-yellow-500/30 bg-yellow-500/5 px-3 py-2">{saveProblem.message}</p>
+              )}
+              {saveProblem?.failed?.length > 0 && (
+                <div className="space-y-0.5">
+                  <p className="text-xs text-ink-strong">// These did not save:</p>
+                  <ul className="space-y-0.5 pl-4 list-disc text-xs text-ink-strong font-mono">
+                    {saveProblem.failed.map((name) => <li key={name}>{name}</li>)}
+                  </ul>
+                </div>
+              )}
+              {/* The working fallback: the release this build published. Downloading
+                  from here needs no rebuild and no save. */}
+              {status?.savedArtifacts?.length > 0
+                ? status.savedArtifacts.map((a, i) => (
+                    <a key={i} href={a.url} download={a.name} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 py-3 px-4 border-2 border-primary bg-primary/10 hover:bg-primary hover:text-black transition-colors">
+                      <span className="flex items-center gap-2 text-sm font-bold"><Download size={16} /> DOWNLOAD {a.name}</span>
+                      {a.size ? <span className="text-xs font-mono opacity-80">{(a.size / 1024 / 1024).toFixed(1)} MB</span> : null}
+                    </a>
+                  ))
+                : status?.assets?.map((a, i) => (
+                    <a key={i} href={a.downloadUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
+                      <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
+                    </a>
+                  ))}
+              {status?.releaseUrl && (
+                <a href={status.releaseUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary/50 hover:text-primary">
+                  <ExternalLink size={12} /> View release on GitHub (requires GitHub access)
+                </a>
+              )}
+              <p className="text-[11px] text-ink-max leading-relaxed">
+                // The build itself is fine — a rebuild would produce the same app. Reopen COMPILE to try saving it again, or download it from the release above.
               </p>
             </div>
           )}
@@ -805,7 +975,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                     {saveFailures.map((name) => <li key={name}>{name}</li>)}
                   </ul>
                   <p className="text-xs text-ink-strong">
-                    // Everything that did save is available below. Tap RECOMPILE to retry the missing files.
+                    // Everything that did save is available below. The rest is on the GitHub release for this build — download it there; you do not need to rebuild.
                   </p>
                 </>
               ) : (
@@ -813,8 +983,14 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   <div className="flex items-center gap-2 text-ink text-sm">
                     <CheckCircle size={16} /> Build complete!
                   </div>
+                  {/* THE OPERATOR'S APP, WHERE THE BUILD FINISHED. This used to say "Compiled package saved
+                      to your file tree under _compiled/. Switch to the FILES tab to download." — which is a
+                      hunt through a file tree for a folder whose name starts with an underscore, and Rob,
+                      who BUILT the feature, could not find it. The person this is for never would. The
+                      download is right below; this sentence points at it instead of away from it. */}
                   <p className="text-xs text-ink-strong">
-                    // Compiled package saved to your file tree under _compiled/. Switch to the FILES tab to download.
+                    // Your app is ready — download it below, or open the FILES tab and look for _compiled/ if you
+                    {' '}need it again later.
                   </p>
                 </>
               ))}
@@ -908,7 +1084,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   )}
                 </div>
               )}
-              {status?.assets?.length === 0 && (
+              {status?.assets?.length === 0 && !status?.artifactsPending && (
                 <p className="text-xs text-yellow-500/80">
                   // Build succeeded but published no downloadable artifact. Check the release on GitHub.
                 </p>
@@ -921,8 +1097,11 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   link. */}
               {status?.savedArtifacts?.length > 0
                 ? status.savedArtifacts.map((a, i) => (
-                    <a key={i} href={a.url} download={a.name} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2 px-3 border border-primary/40 hover:border-primary hover:bg-primary/10 transition-colors text-sm">
-                      <Download size={14} /> {a.name}{a.size ? ` (${(a.size / 1024 / 1024).toFixed(1)} MB)` : ''}
+                    <a key={i} href={a.url} download={a.name} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 py-3 px-4 border-2 border-primary bg-primary/10 hover:bg-primary hover:text-black transition-colors">
+                      <span className="flex items-center gap-2 text-sm font-bold">
+                        <Download size={16} /> DOWNLOAD {a.name}
+                      </span>
+                      {a.size ? <span className="text-xs font-mono opacity-80">{(a.size / 1024 / 1024).toFixed(1)} MB</span> : null}
                     </a>
                   ))
                 : status?.assets?.map((a, i) => (
@@ -930,6 +1109,19 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                       <Download size={14} /> {a.name} ({(a.size / 1024 / 1024).toFixed(1)} MB)
                     </a>
                   ))}
+              {/* WHICH OF THESE IS MINE? A macOS App compile now publishes one disk image per
+                  architecture, because PyInstaller cannot cross-build and an Apple-silicon-only
+                  image is refused outright by an Intel Mac ("not supported on this Mac"). The
+                  filenames say which is which, but the person reading them may not know which
+                  Mac they are on — macOS 26's own "About This Mac" hides the CPU name — so say
+                  it here rather than let them find out from a refusal. 2026-10-01, Rob. */}
+              {target === 'mac-app' && (
+                <p className="text-xs text-ink-strong">
+                  Pick the one your Mac can open: <span className="font-mono">intel</span> for an
+                  Intel Mac, <span className="font-mono">apple-silicon</span> for an M-series Mac.
+                  Apple menu → About This Mac names the chip.
+                </p>
+              )}
               {status?.releaseUrl && (
                 <a href={status.releaseUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary/50 hover:text-primary">
                   <ExternalLink size={12} /> View release on GitHub (requires GitHub access)

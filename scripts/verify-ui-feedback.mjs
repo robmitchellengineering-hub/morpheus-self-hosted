@@ -1,0 +1,555 @@
+// Does a generated app tell the user what it is doing, and is the operator told how it behaves?
+//
+// WHY THIS EXISTS. Security was the first posture; this is the second, and it is the same shape with the
+// opposite failure mode. An app that never shows a busy state, never says "3 of 12", swallows a failure
+// with nothing on screen and clears the form on the way out is not dangerous — it is UNTRUSTWORTHY, and
+// none of it raises an error anywhere. The planner and the coder are both given the ten rules; this proves
+// the rules are the ones actually checked, and that the checks can fire.
+//
+// The checks are pure functions over a generated file list, so every finding is asserted here without a
+// model, a key or a credit. What this guard is really testing is the CONSERVATISM: a false finding costs
+// the operator's trust, so every check must require a real code shape — and comments and string literals
+// must be stripped before any check runs (H19 records six guards this repo shipped that were satisfied by
+// their own prose).
+//
+// REPORTED, NEVER ENFORCED — AND THAT IS A DECISION MADE MECHANICAL. The posture is a report: no finding
+// blocks a build, refuses a reply or changes whether code lands. That is the product owner's constraint
+// (the pipeline stays free to build), and it is the kind of decision a later change can quietly reverse by
+// wiring a finding into control flow. Section 8 is the tripwire for that reversal.
+//
+// IT IS A TRIPWIRE, NOT A PROOF, the same way `check-not-wired.mjs` in the workspace is. Section 8 reads
+// source SHAPES, and a determined rearrangement that keeps the same gating behaviour can evade it: a helper
+// that returns a boolean and is tested instead, a finding smuggled through a differently-named binding, a
+// gate assembled from pieces on separate lines, or an identifier reached through property access it does
+// not name. It catches the OBVIOUS wiring — `if (findings.length) return`, a `throw` on a report — not the
+// absence of wiring. A pass means "nothing here gates", not "nothing can gate".
+//
+// Run:  node scripts/verify-ui-feedback.mjs
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  UI_FEEDBACK_RULES, UI_FEEDBACK_CHECKS, UI_FEEDBACK_PROMPT_BLOCK, UI_FEEDBACK_ACCEPTANCE,
+  uiFeedbackFindings, uiFeedbackSummary, isUiApp, isUiFile, stripProse, stripComments,
+} from '../server/src/lib/uiFeedback.js';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+const code = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+
+let failures = 0;
+let checks = 0;
+function check(name, actual, expected) {
+  checks++;
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) console.log(`  PASS  ${name}`);
+  else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
+}
+const ids = (files) => uiFeedbackFindings(files).map((f) => f.id);
+const EXPECTED_IDS = ['silent-fetch', 'no-pending-state', 'unconfirmed-destructive', 'input-lost', 'no-empty-state', 'no-progress-surface'];
+
+// A clean UI app: the shape the generator is asked to produce, with every one of the ten rules visibly
+// satisfied. The fixtures are written so no string interpolation is evaluated by THIS file — inside a
+// template literal a `${...}` in the fixture would run here, not in the fixture.
+const GOOD = [
+  { path: 'package.json', content: '{ "name": "good-app", "scripts": { "dev": "vite" } }\n' },
+  { path: 'index.html', content: '<!doctype html>\n<div id="root"></div>\n<script type="module" src="/src/main.jsx"></script>\n' },
+  { path: 'src/main.jsx', content: "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\ncreateRoot(document.getElementById('root')).render(<App />);\n" },
+  { path: 'README.md', content: '# Good app\n\nnpm install && npm run dev\n' },
+  { path: 'src/App.jsx', content: [
+    "import { useState } from 'react';",
+    "import axios from 'axios';",
+    '',
+    'export default function App() {',
+    '  const [items, setItems] = useState([]);',
+    "  const [title, setTitle] = useState('');",
+    '  const [saving, setSaving] = useState(false);',
+    '  const [progress, setProgress] = useState(0);',
+    '  const [error, setError] = useState(null);',
+    '',
+    '  async function handleSave(e) {',
+    '    e.preventDefault();',
+    '    setSaving(true);',
+    '    try {',
+    "      const res = await axios.post('/api/items', { title });",
+    "      setTitle('');",
+    '      setItems([...items, res.data]);',
+    '    } catch (err) {',
+    "      setError('Could not save the item. Try again.');",
+    '    } finally {',
+    '      setSaving(false);',
+    '    }',
+    '  }',
+    '',
+    '  async function handleUpload(file) {',
+    '    const form = new FormData();',
+    "    form.append('file', file);",
+    '    try {',
+    "      await axios.post('/api/upload', form, {",
+    '        onUploadProgress: (e) => setProgress((e.loaded / e.total) * 100),',
+    '      });',
+    '    } catch (err) {',
+    "      setError('Upload failed. Check your connection and try again.');",
+    '    }',
+    '  }',
+    '',
+    '  function handleRemove(id) {',
+    "    if (!window.confirm('Remove this item?')) return;",
+    "    axios.delete('/api/items/' + id).catch(() => setError('Could not remove it.'));",
+    '  }',
+    '',
+    '  return (',
+    '    <main>',
+    '      <form onSubmit={handleSave}>',
+    '        <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />',
+    "        <button disabled={saving}>{saving ? 'Saving' : 'Save'}</button>",
+    '      </form>',
+    '      {error && <p>{error}</p>}',
+    '      <progress value={progress} max="100" />',
+    '      {items.length === 0 ? (',
+    '        <p>Nothing here yet.</p>',
+    '      ) : (',
+    '        <ul>{items.map((i) => <li key={i.id}>{i.name} <button onClick={() => handleRemove(i.id)}>Remove</button></li>)}</ul>',
+    '      )}',
+    '    </main>',
+    '  );',
+    '}',
+  ].join('\n') },
+];
+
+// A bad UI app that trips every one of the six checks, on purpose:
+//   silent-fetch          a bare `fetch` and a bare `axios.post` with no catch and no failure surface
+//   no-pending-state      an async onSubmit handler with no pending/disabled/loading state anywhere
+//   unconfirmed-destructive  `axios.delete` with no confirmation step
+//   input-lost            `setTitle('')` immediately before the `await`
+//   no-empty-state        `items.map(...)` with no length/empty branch
+//   no-progress-surface   `handleUpload` with no count, percentage or elapsed-time reference
+const BAD = [
+  { path: 'src/App.jsx', content: [
+    "import { useState } from 'react';",
+    "import axios from 'axios';",
+    '',
+    'export default function App() {',
+    '  const [items, setItems] = useState([]);',
+    "  const [title, setTitle] = useState('');",
+    '',
+    '  async function handleSubmit(e) {',
+    '    e.preventDefault();',
+    "    setTitle('');",
+    "    await fetch('/api/items', { method: 'POST', body: JSON.stringify({ title }) });",
+    '    setItems([]);',
+    '  }',
+    '',
+    '  function handleUpload(file) {',
+    "    axios.post('/api/upload', file);",
+    '  }',
+    '',
+    '  return (',
+    '    <div>',
+    '      <form onSubmit={handleSubmit}>',
+    '        <input value={title} onChange={(e) => setTitle(e.target.value)} />',
+    '        <button type="submit">Save</button>',
+    '      </form>',
+    '      <ul>{items.map((i) => <li key={i.id}>{i.name}</li>)}</ul>',
+    "      <button onClick={() => axios.delete('/api/items/' + items[0].id)}>Clear all</button>",
+    '      <button onClick={handleUpload}>Upload</button>',
+    '    </div>',
+    '  );',
+    '}',
+  ].join('\n') },
+];
+
+// Not a UI app: a generated Express backend and a non-UI compile target. No screens, so there is nothing
+// to check — which must be reported as NOT EXAMINED, never as a clean bill (H17).
+const NON_UI = [
+  { path: 'server/index.js', content: "const express = require('express');\napp.get('/api/tasks', list);\n" },
+  { path: 'package.json', content: '{ "name": "backend", "scripts": { "start": "node server/index.js" } }\n' },
+  { path: 'firmware.ino', content: 'void setup() { Serial.begin(9600); }\nvoid loop() {}\n' },
+];
+
+// Modelled on a REAL generated app — morpheus-project-web-page-test-e807a4f5-d8fb-48ae-8be7-9213834e4eb1
+// (commit 9209661), a static site plus an Express `server.js`, cloned to /tmp and run through
+// uiFeedbackFindings. Before the scoping fix it produced four findings, all of them noise:
+//   * `unconfirmed-destructive` on `server.js` for `rateLimitMap.delete(ip)` — a Map cache eviction
+//   * `no-progress-surface` on `server.js` — backend code, and the match was `async (` containing `sync`
+//   * `no-empty-state` on `public/privacy.html` and `public/terms.html` — `(site.nav || []).map(...)` and
+//     `(site.footer?.links || []).map(...)`, navigation and footer chrome
+// This is that shape. The server also carries a real API-shaped delete, so a regression in the file
+// scoping cannot hide behind the other suppressions.
+const REAL_APP = [
+  { path: 'server.js', content: [
+    "const express = require('express');",
+    'const app = express();',
+    'const rateLimitMap = new Map();',
+    'setInterval(function () {',
+    '  rateLimitMap.forEach(function (timestamps, ip) {',
+    '    if (timestamps.length === 0) rateLimitMap.delete(ip);',
+    '  });',
+    '}, 300000).unref();',
+    "function emailHtml(name) { return '<h2>New Inquiry</h2><p>' + name + '</p>'; }",
+    "app.post('/api/contact', async function (req, res) {",
+    '  const removed = await db.inquiries.delete({ where: { id: req.body.id } });',
+    '  res.json(removed);',
+    '});',
+  ].join('\n') },
+  { path: 'public/privacy.html', content: [
+    '<!doctype html><html><body>',
+    '<div id="page-content"></div>',
+    '<script>',
+    '  (async function() {',
+    '    try {',
+    '      const site = await fetch("/content/site.json").then(function (r) { return r.json(); });',
+    '      const nav = (site.nav || []).map(function (i) { return i.label; }).join("");',
+    '      const footerLinks = (site.footer && site.footer.links || []).map(function (l) { return l.label; }).join("");',
+    '      document.getElementById("page-content").innerHTML = nav + footerLinks;',
+    '    } catch (err) { console.error(err); }',
+    '  })();',
+    '</script>',
+    '</body></html>',
+  ].join('\n') },
+];
+
+// A collection primitive is not a user-facing delete: a `Map`/`Set`/array/cache eviction has nothing to
+// confirm. This is the shape the real app tripped on.
+const MAP_DELETE_UI = [{ path: 'src/Cache.jsx', content: [
+  "import { useRef } from 'react';",
+  'export default function Cache() {',
+  '  const cache = useRef(new Map());',
+  '  function evict(key) { cache.current.delete(key); }',
+  '  return <button onClick={() => evict("x")}>Evict</button>;',
+  '}',
+].join('\n') }];
+
+// …and the real bug still fires.
+const API_DELETE_UI = [{ path: 'src/Rows.jsx', content: [
+  "import axios from 'axios';",
+  'export default function Rows({ items }) {',
+  '  function remove(id) { return axios.delete("/api/items/" + id); }',
+  '  return <ul>{items.length === 0 ? <li>Nothing</li> : items.map((i) => <li key={i.id} onClick={() => remove(i.id)}>{i.name}</li>)}</ul>;',
+  '}',
+].join('\n') }];
+
+// `async (` is not a long operation — the old keyword regex matched `sync` inside `async`, so EVERY UI
+// file with an async handler and no progress word could be flagged.
+const ASYNC_NOOP_UI = [{ path: 'src/Save.jsx', content: [
+  "import { useState } from 'react';",
+  'export default function Save() {',
+  '  const [busy, setBusy] = useState(false);',
+  '  async function save() { setBusy(true); await Promise.resolve(); setBusy(false); }',
+  '  return <button disabled={busy} onClick={async () => { await save(); }}>{busy ? "Saving" : "Save"}</button>;',
+  '}',
+].join('\n') }];
+
+// A comment that NAMES a DELETE fetch must not read as one — the string-literal half of the method check
+// runs on a comments-stripped copy, so the comment is gone before the string can be seen.
+const COMMENT_DELETE_UI = [{ path: 'src/Note.jsx', content: [
+  "// fetch('/api/items/1', { method: 'DELETE' })",
+  'export default function Note() { return <p>hi</p>; }',
+].join('\n') }];
+
+console.log('\n1. a good UI app is clean, and the report says what that means');
+check('no findings on a well-formed UI app', ids(GOOD), []);
+check('…and the app is recognised as a UI app', isUiApp(GOOD), true);
+// The most important sentence for a UI report: "no findings" is NOT "usable". The ten rules cannot be
+// verified from the files — only the patterns can — so the clean summary must not read as a pass.
+const cleanSummary = uiFeedbackSummary([], { filesExamined: GOOD.length, uiApp: true });
+check('the clean summary refuses to claim the app is usable', /not the same as "usable"/.test(cleanSummary), true);
+check('…and claims nothing of its own while doing so', (cleanSummary.match(/usab/gi) || []).length, 1);
+check('…and does not reach for a synonym either',
+  /\b(fully|completely|thoroughly|all)\s+(verified|checked|usable|tested|covered)\b/i.test(cleanSummary), false);
+check('…and names how much it examined', /across 5 file\(s\)/.test(cleanSummary), true);
+check('a report on NOTHING says nothing is claimed',
+  /Nothing was examined, so nothing is claimed/.test(uiFeedbackSummary([], { filesExamined: 0, uiApp: true })), true);
+
+console.log('\n2. every check fires on the bad app and stays quiet on the good one');
+// And the bad fixture really does contain all six conditions — a fixture that silently loses one would
+// make its assertion green for a reason unrelated to the check (H19, the fixture half).
+check('the bad fixture trips exactly the six checks',
+  ids(BAD).slice().sort(), EXPECTED_IDS.slice().sort());
+check('the checks are exactly the documented six', UI_FEEDBACK_CHECKS.map((c) => c.id), EXPECTED_IDS);
+for (const c of UI_FEEDBACK_CHECKS) {
+  check(`"${c.id}" fires on the bad fixture`, ids(BAD).includes(c.id), true);
+  check(`…and stays quiet on the good one`, ids(GOOD).includes(c.id), false);
+}
+for (const c of UI_FEEDBACK_CHECKS) {
+  check(`"${c.id}" is HIGH or note`, ['high', 'note'].includes(c.severity), true);
+}
+check('silent-fetch is HIGH — it is the failure the user cannot see',
+  uiFeedbackFindings(BAD).find((f) => f.id === 'silent-fetch')?.severity, 'high');
+check('no-progress-surface is a NOTE — a slow screen is not a hole',
+  uiFeedbackFindings(BAD).find((f) => f.id === 'no-progress-surface')?.severity, 'note');
+
+console.log('\n3. prose is not code — comments and string literals cannot create a finding');
+check('a comment is removed before matching', stripProse("// fetch('/api/x')\nconst a = 1;").includes('fetch'), false);
+check('…and a string literal is removed too', stripProse("const s = \"fetch('/api/x')\";").includes('fetch'), false);
+check('…and a template literal is removed too', stripProse('const s = `fetch("/api/x")`;').includes('fetch'), false);
+check('…but real code survives', stripProse("fetch('/api/x');").includes('fetch'), true);
+// The whole point, asserted the way the repo's own H19 demands: a file whose ONLY destructive call, list
+// render, network call, long operation and input clear are inside prose must produce NO findings at all.
+const PROSE_ONLY = [{ path: 'src/Prose.jsx', content: [
+  "// fetch('/api/items') and axios.delete('/api/items/1') and items.map((i) => i)",
+  "/* setTitle('') then await fetch('/api/items') */",
+  'const note = "handleUpload(file) calls sync() and setTitle(\'\')";',
+  'const other = `compileProject() with no progress`;',
+  'export default function Prose() { return <div />; }',
+].join('\n') }];
+check('a UI file whose only shapes are prose produces no findings', ids(PROSE_ONLY), []);
+
+console.log('\n3b. the real-app shapes — quiet on backend and chrome, loud on the real bugs');
+// The whole point of the scoping fix, asserted against a fixture built from a real generated app rather
+// than from a shape the author imagined.
+check('the real-app shape produces no findings at all', ids(REAL_APP), []);
+check('…the Express server is not examined as UI', isUiFile(REAL_APP[0]), false);
+check('…the static page is', isUiFile(REAL_APP[1]), true);
+check('…so the Map eviction never reaches the destructive check',
+  ids(REAL_APP).includes('unconfirmed-destructive'), false);
+check('…and the nav/footer maps never reach the empty-state check',
+  ids(REAL_APP).includes('no-empty-state'), false);
+// Markup inside a STRING is not JSX. The real app's `server.js` builds an email body from `'<h2>…</h2>'`
+// and `public/script.js` builds HTML from template literals; both were classified as UI until the JSX
+// test ran on stripped code.
+check('a .js file whose only markup is HTML in string literals is not UI',
+  isUiFile({ path: 'server.js', content: "const html = '<h2>New Inquiry</h2><p>Hi</p>';\napp.post('/api/x', h);" }), false);
+check('…nor one that builds HTML in a template literal',
+  isUiFile({ path: 'public/script.js', content: 'const html = `<div class="x">${name}</div>`;\nel.innerHTML = html;' }), false);
+check('…nor a nested template with HTML in the inner literal',
+  isUiFile({ path: 'public/script.js', content: 'const h = `${a ? `<b>x</b>` : ""}`;' }), false);
+check('a nested template literal is stripped whole',
+  stripProse('const h = `${a ? `<b>x</b>` : ""}`;').includes('<b>'), false);
+check('…but a real JSX .js file still is UI',
+  isUiFile({ path: 'src/App.js', content: 'export default function App({ items }) { return <ul className="list">{items.map((i) => <li key={i.id}>{i.name}</li>)}</ul>; }' }), true);
+// The two new suppressions, each on its own, so a regression cannot be masked by the other.
+check('a Map/Set/cache eviction is not an unconfirmed delete',
+  ids(MAP_DELETE_UI).includes('unconfirmed-destructive'), false);
+check('an API delete with no confirmation still fires',
+  ids(API_DELETE_UI).includes('unconfirmed-destructive'), true);
+check('`async (` is not a long operation', ids(ASYNC_NOOP_UI), []);
+check('a comment naming a DELETE fetch is not a destructive call', ids(COMMENT_DELETE_UI), []);
+// `stripComments` is the one place strings survive; prove it is still stripping the comments, or the
+// comment fixture above would pass for the wrong reason.
+check('the comments-only stripper keeps strings but drops comments',
+  stripComments("// fetch('/x', { method: 'DELETE' })\nconst s = \"kept\";").includes('DELETE'), false);
+check('…and it does keep a real string literal',
+  stripComments("const s = \"kept\";").includes('kept'), true);
+
+console.log('\n4. a non-UI app is NOT examined — never "clean"');
+check('a backend-only app is not a UI app', isUiApp(NON_UI), false);
+check('…and no check runs over it', ids(NON_UI), []);
+const nonUiSummary = uiFeedbackSummary([], { filesExamined: NON_UI.length, uiApp: false });
+check('…and its summary says NOT examined', /NOT examined/.test(nonUiSummary), true);
+check('…and it denies being a pass', /not a pass/.test(nonUiSummary), true);
+check('…and it never wears the word "clean"', /\bclean\b/i.test(nonUiSummary), false);
+check('a plain .js file with no JSX is not a UI app',
+  isUiApp([{ path: 'server/routes/tasks.js', content: 'router.get("/api/tasks", list);' }]), false);
+check('…and its individual file is not UI either',
+  isUiFile({ path: 'server/routes/tasks.js', content: 'router.get("/api/tasks", list);' }), false);
+check('a .js file that really renders JSX is one',
+  isUiApp([{ path: 'src/widget.js', content: "export default function W() { return <button onClick={go}>Go</button>; }" }]), true);
+check('…as is its individual file',
+  isUiFile({ path: 'src/widget.js', content: "export default function W() { return <button onClick={go}>Go</button>; }" }), true);
+
+console.log('\n5. the report is actionable and its evidence is a path');
+const badFindings = uiFeedbackFindings(BAD);
+check('high findings sort first', badFindings[0].severity, 'high');
+check('every finding says WHY it matters', UI_FEEDBACK_CHECKS.every((c) => typeof c.why === 'string' && c.why.length > 40), true);
+check('every finding comes with a fix, not just a complaint', UI_FEEDBACK_CHECKS.every((c) => typeof c.fix === 'string' && c.fix.length > 20), true);
+check('every finding carries a named reason for THIS hit',
+  badFindings.every((f) => typeof f.detail === 'string' && f.detail.length > 10), true);
+check('every finding carries a path, and it names a real file',
+  badFindings.every((f) => typeof f.path === 'string' && f.path.length > 0 && (BAD.some((b) => b.path === f.path) || f.path === '(check failed to run)')), true);
+check('the evidence is the path, never the file content',
+  badFindings.every((f) => !f.path.includes('import') && !f.path.includes('\n')), true);
+check('the summary names the app as a UI app when it is one',
+  /UI feedback finding|note\(s\)|not the same as/.test(uiFeedbackSummary(badFindings, { filesExamined: BAD.length, uiApp: true })), true);
+check('a malformed file entry does not crash the checker', Array.isArray(uiFeedbackFindings([null, {}, { path: 42 }])), true);
+check('a missing file list is not a crash', Array.isArray(uiFeedbackFindings(undefined)), true);
+// A check that throws must report that it did not run rather than reading as clean (H17). This is
+// exercised BEHAVIOURALLY — a real throwing check is pushed onto the exported list and run — because the
+// security guard's version of this assertion only re-tests that `env-committed` fires, which it does with
+// or without the try/catch, so its name overclaims what it proves.
+UI_FEEDBACK_CHECKS.push({
+  id: 'throws-on-purpose',
+  severity: 'note',
+  title: 'A check injected by the guard to prove the throw path',
+  why: 'Not a real rule — the guard needs a check that throws to prove a failed check never reads as clean.',
+  fix: 'Nothing to fix; this entry exists only inside the guard run.',
+  applies: () => { throw new Error('injected by verify-ui-feedback.mjs'); },
+});
+let thrownFindings;
+try {
+  thrownFindings = uiFeedbackFindings(BAD);
+} finally {
+  UI_FEEDBACK_CHECKS.pop();
+}
+check('a check that throws reports that it did not run rather than reading as clean',
+  thrownFindings.some((f) => f.id === 'throws-on-purpose' && f.path === '(check failed to run)'), true);
+
+console.log('\n6. the rules the app is CHECKED against are the rules it is GIVEN');
+check('the prompt block carries all ten rules', UI_FEEDBACK_RULES.every((r) => UI_FEEDBACK_PROMPT_BLOCK.includes(r.rule)), true);
+check('…one numbered line per rule',
+  UI_FEEDBACK_PROMPT_BLOCK.split('\n').filter((l) => /^\s+\d+\.\s/.test(l)).length, 10);
+check('…and every rule has a distinct id', new Set(UI_FEEDBACK_RULES.map((r) => r.id)).size, 10);
+check('…and ends by saying exactly these are the rules checked',
+  /checked against exactly these/.test(UI_FEEDBACK_PROMPT_BLOCK), true);
+// A cost bound, not a style rule: this block is paid for on every planner and coder call. If it grows
+// past this, the change should say so rather than spend more context quietly.
+check('…and stays inside its context budget', UI_FEEDBACK_PROMPT_BLOCK.length < 1600, true);
+check('the acceptance checklist names the five things to try',
+  ['large upload', 'unplug the network', 'wrong password', 'empty file', 'clicking again']
+    .every((s) => UI_FEEDBACK_ACCEPTANCE.includes(s)), true);
+
+console.log('\n7. both generating paths give the rules to the planner AND the coder, and report the result');
+const rawChat = read('server/src/functions/chatWithMorpheus.js');
+const rawGen = read('server/src/functions/generateBackend.js');
+const rawPlan = read('server/src/functions/planBackend.js');
+const codeChat = code(rawChat);
+const codeGen = code(rawGen);
+// Anchored INSIDE each template literal, so a comment or a different prompt cannot satisfy it. `[^\`]*`
+// stops at the literal's own closing backtick — a lazy `[\s\S]*?` would scan straight out of one literal
+// into the next, which is exactly how a mutation moved the block onto one branch and still passed (H19).
+check('the main build\'s planner is told the rules',
+  /const PLANNER_INSTRUCTIONS = `[^`]*\$\{UI_FEEDBACK_PROMPT_BLOCK\}/.test(rawChat), true);
+check('…and its coder is told them too',
+  /const CODER_INSTRUCTIONS = `[^`]*\$\{UI_FEEDBACK_PROMPT_BLOCK\}/.test(rawChat), true);
+check('…once per prompt, as the one mechanism rather than ad hoc',
+  (rawChat.match(/\$\{UI_FEEDBACK_PROMPT_BLOCK\}/g) || []).length, 2);
+check('the backend architecture planner is told the rules',
+  /const prompt = `[^`]*\$\{UI_FEEDBACK_PROMPT_BLOCK\}/.test(rawPlan), true);
+check('the backend generator\'s planner is told the rules',
+  /const planPrompt = `[^`]*\$\{UI_FEEDBACK_PROMPT_BLOCK\}/.test(rawGen), true);
+check('…and its coder is told them too',
+  /const writePrompt = `[^`]*\$\{UI_FEEDBACK_PROMPT_BLOCK\}/.test(rawGen), true);
+check('…once per prompt there, too',
+  (rawGen.match(/\$\{UI_FEEDBACK_PROMPT_BLOCK\}/g) || []).length, 2);
+// The report itself, over the WHOLE project: the empty states and the long operations are properties of
+// the app, not of this turn's diff.
+check('the main build examines the whole project', /uiFeedbackFindings\(projectFiles\)/.test(codeChat), true);
+check('…and decides what a UI app is from the files', /isUiApp\(projectFiles\)/.test(codeChat), true);
+check('…and reports it in the reply', /UI FEEDBACK:/.test(rawChat), true);
+// RAW, not `code()`: the reply sentence lives inside a template literal, and `code()` strips line
+// comments — which is exactly what the `// UI CHECK:` line looks like.
+check('…and carries the acceptance checklist in the reply',
+  /\/\/ UI CHECK: \$\{UI_FEEDBACK_ACCEPTANCE\}/.test(rawChat), true);
+// Only for a turn that changed the app. The `if (uiApp) ...` version was the first attempt, and it put a
+// build checklist on the end of every conversational reply about a UI project — the block below is reached
+// on a `needsCode:false` turn too.
+check('…and only for a turn that actually changed the app',
+  /appliedCount\(appliedOps\) > 0\) fullReply \+= `\\n\\n\/\/ UI CHECK/.test(rawChat), true);
+check('…and in the result payload', /uiFeedback: uiFeedbackReport/.test(codeChat), true);
+check('…and a failed check is reported, not treated as clean',
+  /the UI feedback check could not run/.test(rawChat), true);
+check('the backend generator examines the whole project too', /uiFeedbackFindings\(projectFiles\)/.test(codeGen), true);
+check('…and returns it', /uiFeedback,/.test(codeGen), true);
+check('…and reports a failed check rather than clean',
+  /the UI feedback check could not run/.test(rawGen), true);
+
+console.log('\n8. the report is never a gate — no export and no call site can refuse, block or require');
+// The report identifiers, plus any local bound directly from `uiFeedbackFindings`, so a rename is followed
+// rather than missed. A finding passed through a DIFFERENT name (a helper's return, a property) is invisible
+// here — that is the limit the header states.
+const FINDING_NAMES = ['uiFeedbackFindings', 'uiFeedbackReport', 'uiFeedback'];
+function findingNamesIn(src) {
+  const names = new Set(FINDING_NAMES);
+  const re = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?uiFeedbackFindings\s*\(/g;
+  let m;
+  while ((m = re.exec(src))) names.add(m[1]);
+  return [...names];
+}
+
+/** Is the character at `idx` inside the parentheses of an `if`/`while`/`for`/`switch` condition? */
+function insideControlCondition(src, idx) {
+  let depth = 0;
+  for (let j = idx - 1; j >= 0; j--) {
+    const c = src[j];
+    if (c === ')') depth++;
+    else if (c === '(') {
+      if (depth > 0) { depth--; continue; }
+      if (/\b(if|while|for|switch)\s*$/.test(src.slice(Math.max(0, j - 12), j))) return true;
+    } else if (depth === 0 && (c === ';' || c === '{' || c === '}')) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Index just past the last statement boundary before `idx`. */
+function statementStart(src, idx) {
+  return Math.max(src.lastIndexOf(';', idx), src.lastIndexOf('{', idx), src.lastIndexOf('}', idx)) + 1;
+}
+
+/** Unmatched `{` between `from` and `idx` — i.e. is `idx` inside an object literal? */
+function objectDepth(src, from, idx) {
+  let depth = 0;
+  for (let j = from; j < idx; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}') depth--;
+  }
+  return depth;
+}
+
+/** Every place a finding/report name decides control flow rather than being reported. Empty is the pass. */
+function controlFlowUses(src, names) {
+  const offenders = [];
+  const re = new RegExp(`\\b(${names.join('|')})\\b`, 'g');
+  let m;
+  while ((m = re.exec(src))) {
+    const idx = m.index;
+    const lineStart = src.lastIndexOf('\n', idx) + 1;
+    const lineEnd = src.indexOf('\n', idx);
+    const line = src.slice(lineStart, lineEnd === -1 ? src.length : lineEnd).trim();
+    if (insideControlCondition(src, idx)) { offenders.push(`conditional: ${line}`); continue; }
+    const start = statementStart(src, idx);
+    const head = src.slice(start, idx);
+    if (/\bthrow\b/.test(head)) { offenders.push(`throw: ${line}`); continue; }
+    // A returned object literal is a report payload. Anything else returned off a finding is a short-circuit.
+    if (/^\s*return\b/.test(head) && objectDepth(src, start, idx) === 0) { offenders.push(`return: ${line}`); continue; }
+    if (/^\s*(break|continue)\b/.test(line)) { offenders.push(`loop control: ${line}`); continue; }
+  }
+  return offenders;
+}
+
+// 8a. The module's API, checked against an explicit allow-list so a new export has to be a deliberate act.
+const EXPORTED = Object.keys(await import('../server/src/lib/uiFeedback.js')).filter((k) => k !== 'default').sort();
+const ALLOWED_EXPORTS = [
+  'UI_FEEDBACK_ACCEPTANCE', 'UI_FEEDBACK_CHECKS', 'UI_FEEDBACK_PROMPT_BLOCK', 'UI_FEEDBACK_RULES',
+  'isUiApp', 'isUiFile', 'stripComments', 'stripProse', 'uiFeedbackFindings', 'uiFeedbackSummary',
+].sort();
+check('the module exports exactly its allow-list', EXPORTED, ALLOWED_EXPORTS);
+check('…and no export is named like a gate — nothing can refuse, block or require',
+  EXPORTED.filter((n) => /(blocking|gate|enforce|must|require|refuse|deny|fail|throw)/i.test(n)), []);
+
+// 8b. Every call site in the three files that carry the report, with prose stripped first.
+const REPORT_FILES = [
+  'server/src/functions/chatWithMorpheus.js',
+  'server/src/functions/generateBackend.js',
+  'server/src/functions/planBackend.js',
+];
+const reportSources = REPORT_FILES.map((f) => stripProse(read(f)));
+for (let i = 0; i < REPORT_FILES.length; i++) {
+  check(`${REPORT_FILES[i]}: a finding is never used as control flow`,
+    controlFlowUses(reportSources[i], findingNamesIn(reportSources[i])), []);
+}
+// The scan is not vacuous: it must actually follow the `findings` binding in the file that has one.
+check('…and the scan followed the report binding, rather than finding nothing to scan',
+  findingNamesIn(reportSources[0]).includes('findings'), true);
+// The detector's own negative tests — a tripwire that cannot trip is a comment with a console.log.
+check('the detector catches an early return on findings',
+  controlFlowUses('if (findings.length > 0) return;', ['findings']).length > 0, true);
+check('…catches a throw on findings',
+  controlFlowUses('if (findings.length > 0) throw new Error("no");', ['findings']).length > 0, true);
+check('…catches a loop skip that changes whether work proceeds',
+  controlFlowUses('for (const f of findings) { if (f.severity) continue; }', ['findings']).length > 0, true);
+check('…catches a boolean returned off a report',
+  controlFlowUses('return uiFeedbackReport.findings.length > 0;', ['uiFeedbackReport']).length > 0, true);
+check('…and allows the three reporting uses',
+  controlFlowUses(
+    'const findings = uiFeedbackFindings(files);\nuiFeedback = { findings, summary: uiFeedbackSummary(findings) };\nreturn { uiFeedback };',
+    ['findings', 'uiFeedback', 'uiFeedbackFindings'],
+  ), []);
+
+console.log(`\n${checks - failures}/${checks} checks passed`);
+if (failures) {
+  console.log('\n✗ a generated app can ship with silent work, lost input or an unconfirmed delete, with nobody told\n');
+  process.exit(1);
+}
+console.log('a generated app is asked to show its work, is checked for the six shapes that hide it, and the operator is told which files to look at\n');

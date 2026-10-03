@@ -6,7 +6,10 @@ import { prisma } from '../db.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { getCompileTarget, listCompileTargets } from '../lib/compile-targets/index.js';
 import { renderWorkflow } from '../lib/compile-targets/workflow-renderer.js';
+import { renderUserManual, manualDownloads } from '../lib/appUserManual.js';
 import { getGithubToken, createRepo, pushFiles, ghHeaders, ghJson } from '../lib/github.js';
+import { assessProjectDivergence } from '../lib/repoDivergence.js';
+import { repoAhead, compileDivergenceWarning } from '../lib/projectDivergence.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -65,8 +68,27 @@ export default async function handler({ user, body, res }) {
   const files = scaffold.files;
 
   // 3. Generate structured build steps → render to workflow YAML
+  //
+  // A target may declare `runners(files)` instead of a single `runner` when one
+  // machine cannot produce everything it has to ship — mac-app's Python path
+  // needs one job per architecture, because PyInstaller cannot cross-build and
+  // an Apple-silicon-only disk image is refused outright by an Intel Mac. See
+  // macAppRunners(). Targets without the hook are unchanged.
+  const runners = typeof adapter.runners === 'function' ? adapter.runners(files) : null;
   const steps = adapter.buildSteps(files);
-  const workflow = renderWorkflow(adapter.runner, steps, adapter.artifact);
+
+  // 4. The user manual that travels with the artifact. Generated here, from the project as it is
+  // being compiled, and written by the workflow — see lib/appUserManual.js for why it exists and
+  // for the rule it is held to (it may not describe anything Morpheus has not read).
+  const manual = renderUserManual({
+    projectName: project.name,
+    target,
+    targetLabel: adapter.label,
+    files,
+    generatedAt: new Date().toISOString().slice(0, 10),
+    downloads: manualDownloads({ artifactGlob: adapter.artifact.glob, runners }),
+  });
+  const workflow = renderWorkflow(runners || adapter.runner, steps, adapter.artifact, manual);
 
   // Dry-run mode: return the build preview (scaffolded files, workflow YAML,
   // artifact spec) without pushing to GitHub. Lets the user catch
@@ -77,6 +99,7 @@ export default async function handler({ user, body, res }) {
       target,
       label: adapter.label,
       runner: adapter.runner,
+      runners,
       validation: { valid: true, warnings: validation.warnings || [] },
       generatedFiles: scaffold.generated,
       totalFiles: files.length,
@@ -152,6 +175,36 @@ export default async function handler({ user, body, res }) {
     await prisma.project.update({ where: { id: projectId }, data: { github_repo: repo.full_name } }).catch(() => {});
   }
 
+  // DIVERGENCE WARNING — detection only, and deliberately NOT a block.
+  //
+  // The push below writes the construct's files over the repo, one way. If
+  // something edited the repo directly since the last sync (a manual push, another
+  // tool, a session that fixed the app on the repo side), this push is about to
+  // overwrite it. Pressing COMPILE is the operator's explicit instruction, so the
+  // build still runs — but the overwrite must never be silent. Whether the push
+  // itself should become pull-then-push, preserving both sides, is Rob's decision
+  // and is named as the follow-up in the PR; this change only reports.
+  //
+  // 'unknown' (no repo, no token, API failure) and 'in-sync' add nothing: the
+  // compile result is exactly what it was before this check existed.
+  let divergenceNote = null;
+  if (project.github_repo) {
+    const divergence = await assessProjectDivergence({ userId: user.id, project, constructFiles: projectFiles });
+    if (repoAhead(divergence)) {
+      divergenceNote = compileDivergenceWarning(divergence.ahead.length);
+      // APPEND, never replace. validation's own warnings keep their place, and the
+      // dispatched response stays the single `warnings: validation.warnings || []`
+      // expression scripts/verify-compile-artifacts.mjs has always asserted.
+      validation.warnings = [...(validation.warnings || []), divergenceNote];
+      console.warn(
+        `[compileProject] repo ahead of construct (${divergence.state}, ${divergence.reason}) — this push overwrites `
+        + `${divergence.ahead.length} file(s) changed directly on ${repo.full_name}: `
+        + `${divergence.ahead.slice(0, 20).join(', ')}`
+        + `${divergence.ahead.length > 20 ? ` …(+${divergence.ahead.length - 20} more)` : ''}`,
+      );
+    }
+  }
+
   // Push project files + workflow using shared helper (has retry logic for tree creation)
   const allFiles = [
     ...files.map((f) => ({ path: f.path, content: f.content })),
@@ -201,7 +254,9 @@ export default async function handler({ user, body, res }) {
     status: 'dispatched',
     // The warnings the dry-run preview has always shown, carried onto the REAL compile. They were
     // computed either way and then dropped here, so the only way to see them was to run a preview
-    // first — which is not what someone does when they are trying to get a site live.
+    // first — which is not what someone does when they are trying to get a site live. The divergence
+    // note is appended to validation.warnings above, so it travels in this same array and the panel
+    // that already renders warnings is where a silent overwrite becomes visible.
     warnings: validation.warnings || [],
   };
 }
