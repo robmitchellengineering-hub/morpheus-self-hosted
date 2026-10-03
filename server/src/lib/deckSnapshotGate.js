@@ -36,6 +36,9 @@ import { CAREER_KEYS } from './jarvisCareers.js';
 /** More than this and the briefs stop being a shorthand and start being the problem again. */
 export const MAX_SELECTED_CAREERS = 3;
 
+/** Two searches is enough to settle a fact; more is latency the operator pays for on every turn. */
+export const MAX_RESEARCH_QUERIES = 2;
+
 export const SNAPSHOT_NEED_SCHEMA = {
   type: 'object',
   properties: {
@@ -48,8 +51,13 @@ export const SNAPSHOT_NEED_SCHEMA = {
       items: { type: 'string' },
       description: `Up to ${MAX_SELECTED_CAREERS} of Jarvis's past careers whose practitioner judgement would change the answer, copied EXACTLY from the list in the prompt. An empty array is the normal answer for a greeting, small talk, a question about the user's own Deck data, or anything general.`,
     },
+    researchQueries: {
+      type: 'array',
+      items: { type: 'string' },
+      description: `Up to ${MAX_RESEARCH_QUERIES} web searches worth running BEFORE answering, when a current or externally-verifiable FACT would settle the question better than Jarvis's memory — a rate, threshold, deadline, fee, price, version, or a rule that has changed. An empty array is the normal answer: most conversation needs no search.`,
+    },
   },
-  required: ['needsSnapshot', 'careers'],
+  required: ['needsSnapshot', 'careers', 'researchQueries'],
 };
 
 /** The classifier's whole prompt: the message, and the questions being asked. */
@@ -70,7 +78,11 @@ Separately: which of his past careers, if any, is this message asking about? Cho
 
 ${CAREER_KEYS.join(', ')}
 
-Choose a career only when a practitioner's judgement would change the answer — someone asking for legal, medical, tax, engineering, safety or similar advice. A greeting, small talk, a question about their own data, or general chat gets an empty list. Fewer is better: one right career beats three approximate ones.`;
+Choose a career only when a practitioner's judgement would change the answer — someone asking for legal, medical, tax, engineering, safety or similar advice. A greeting, small talk, a question about their own data, or general chat gets an empty list. Fewer is better: one right career beats three approximate ones.
+
+Finally: would a CURRENT, externally-verifiable fact settle this better than his memory? Give AT MOST ${MAX_RESEARCH_QUERIES} focused web searches when the answer turns on something that changes or is jurisdiction-specific — a rate, threshold, deadline, fee, price, version, a rule that has been updated, or anything where being out of date would mislead. Otherwise give an empty list, which is the normal answer.
+
+He will look these up before replying, so do not ask for anything a search cannot settle (an opinion, their own data, or general knowledge he already has). Fewer is better here too.`;
 }
 
 /**
@@ -106,4 +118,31 @@ export function selectedCareerKeys(classifierResult) {
     if (chosen.length >= MAX_SELECTED_CAREERS) break;
   }
   return chosen;
+}
+
+/**
+ * Which web searches to run before replying — the third decision from the same call, and it fails
+ * EMPTY like the careers one, for the same reason plus one more: research is LATENCY, paid by the
+ * operator on the turn. Not researching is the status quo and the persona is already forbidden from
+ * asserting a looked-up fact from memory, so a miss costs sharpness rather than truth. Researching
+ * on a bad answer would cost everyone a few seconds on every message.
+ *
+ * Anything unusable yields `[]`; entries are trimmed, blanks dropped, and the list is capped.
+ *
+ * @param {unknown} classifierResult invokeAI's parsed result (or anything else at all)
+ * @returns {string[]} zero to MAX_RESEARCH_QUERIES non-empty queries, in the order given
+ */
+export function researchQueries(classifierResult) {
+  const raw = classifierResult?.researchQueries;
+  if (!Array.isArray(raw)) return [];
+  const queries = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const query = item.trim();
+    if (!query) continue;
+    if (queries.includes(query)) continue;
+    queries.push(query);
+    if (queries.length >= MAX_RESEARCH_QUERIES) break;
+  }
+  return queries;
 }

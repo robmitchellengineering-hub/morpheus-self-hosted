@@ -43,6 +43,12 @@ export const JARVIS_REPLY_LABEL = 'Writing the reply';
 // the terminal event lands.
 export const JARVIS_TRIM_STAGE = 'trim';
 export const JARVIS_TRIM_LABEL = 'Tightening the reply';
+// Looking a fact up (2026-10-04). Rob: *"I would like him to exhast all efforts and reseach if
+// necessary first to get a resolution before off loading to a professional."* Research is the one
+// part of that which happens BEFORE the reply and takes real seconds, so it is announced rather than
+// hidden — otherwise the operator sees a longer pause and no reason for it.
+export const JARVIS_RESEARCH_STAGE = 'research';
+export const JARVIS_RESEARCH_LABEL = 'Checking the current facts';
 
 /**
  * Is this request asking for the streamed reply? Only an explicit boolean `true` turns it on — a string

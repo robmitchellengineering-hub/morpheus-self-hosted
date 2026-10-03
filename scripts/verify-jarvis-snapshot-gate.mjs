@@ -106,6 +106,8 @@ check('the schema requires the boolean field',
 // silently absent and quietly degrades every reply to "no briefs".
 check('…and requires the careers list on the same call',
   SNAPSHOT_NEED_SCHEMA.required.includes('careers'), true);
+check('…and the research queries, so one dead call cannot silently skip the look-up',
+  SNAPSHOT_NEED_SCHEMA.required.includes('researchQueries'), true);
 check('…and the prompt carries the whole register for it to choose from',
   CAREER_KEYS.every((key) => buildSnapshotNeedPrompt('hey').includes(key)), true);
 check('…and says plainly that a wrong false is the dangerous direction',
@@ -213,7 +215,7 @@ check('…with the classify role on the hot path', /schema: SNAPSHOT_NEED_SCHEMA
 // somewhere in the file and pass while the CATCH had been flipped to false. That is exactly the
 // survivor scripts/mutate-guards.mjs caught here. The second clause forbids the flipped form
 // outright rather than relying on the first match being the right one.
-check('…and a failed gate INCLUDES the snapshot', /snapshot-need check failed — including the snapshot/.test(chatSrc) && /return \{ includeSnapshot: true, careers: \[\] \};/.test(chatSrc) && !/return \{ includeSnapshot: false/.test(chatSrc), true);
+check('…and a failed gate INCLUDES the snapshot', /includ(?:ing|es) the snapshot/.test(chatSrc) && /return \{ includeSnapshot: true, careers: \[\], researchQueries: \[\] \};/.test(chatSrc) && !/return \{ includeSnapshot: false/.test(chatSrc), true);
 check('the snapshot is fetched only when the gate says so',
   /const snapshot = includeSnapshot \? await buildDeckSnapshot\(user\.id\) : '';/.test(chatSrc), true);
 check('…and the persona is built from the SAME decision',

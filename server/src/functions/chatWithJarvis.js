@@ -59,7 +59,8 @@ import { buildConversationBlock } from '../lib/promptBounds.js';
 import { getDeckBusinessContext, getDeckOperatingRegions } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 import { buildJarvisSystemPrompt } from '../lib/jarvisPersona.js';
-import { SNAPSHOT_NEED_SCHEMA, buildSnapshotNeedPrompt, shouldIncludeSnapshot, selectedCareerKeys } from '../lib/deckSnapshotGate.js';
+import { SNAPSHOT_NEED_SCHEMA, buildSnapshotNeedPrompt, shouldIncludeSnapshot, selectedCareerKeys, researchQueries } from '../lib/deckSnapshotGate.js';
+import { resolveSearchKey, webSearch, webFetch, URL_RE } from '../lib/webResearch.js';
 import {
   CONVERSATIONAL_REPLY_TARGET_CHARS,
   REPLY_SCHEMA,
@@ -75,6 +76,7 @@ import {
   wantsStreamedReply, streamReplyDecision,
   JARVIS_READING_STAGE, JARVIS_READING_LABEL, JARVIS_REPLY_STAGE, JARVIS_REPLY_LABEL,
   JARVIS_TRIM_STAGE, JARVIS_TRIM_LABEL,
+  JARVIS_RESEARCH_STAGE, JARVIS_RESEARCH_LABEL,
 } from '../lib/jarvisReplyStream.js';
 import { runBuildDeckWidget } from './buildDeckWidget.js';
 
@@ -118,17 +120,81 @@ Say true only for an unambiguous build request ("build me a widget that...", "ca
 }
 
 // The cheap classify call on the same hot path, and the main speed lever of this change: it answers
-// TWO questions about the message — does it need the ~2,400-token Deck snapshot at all, and which of
-// Jarvis's 36 past careers is it asking about (at most three briefs get attached). One call, because
-// the classifier is already reading the message and being paid for it.
+// THREE questions about the message — does it need the ~2,400-token Deck snapshot at all, which of
+// Jarvis's 36 past careers is it asking about (at most three briefs get attached), and whether any
+// fact is worth looking up before he answers. One call, because the classifier is already reading the
+// message and being paid for it.
 //
-// The DECISIONS are not made here: `shouldIncludeSnapshot` and `selectedCareerKeys` own them, and
-// they deliberately fail in OPPOSITE directions — the snapshot fails open (never answer blind), the
-// careers fail empty (there is no token headroom, and the 36 names are always in the persona, so a
-// miss is less sharp rather than wrong). Both rules are testable with fixtures and no model.
+// The DECISIONS are not made here. The snapshot fails OPEN (never answer a real question blind); the
+// careers and the research queries fail EMPTY (no token headroom for the briefs, and research is
+// LATENCY the operator pays on the turn — while not researching only costs sharpness, because the
+// persona is already forbidden from asserting a looked-up fact from memory). All three rules are
+// testable with fixtures and no model.
 async function classifyTurnContext(userId, message) {
   const { result } = await invokeAI({ userId, prompt: buildSnapshotNeedPrompt(message), schema: SNAPSHOT_NEED_SCHEMA, role: 'classify', maxTokens: 1500 });
-  return { includeSnapshot: shouldIncludeSnapshot(result), careers: selectedCareerKeys(result) };
+  return {
+    includeSnapshot: shouldIncludeSnapshot(result),
+    careers: selectedCareerKeys(result),
+    researchQueries: researchQueries(result),
+  };
+}
+
+/**
+ * Look up what the classifier said was worth looking up, BEFORE the reply is written.
+ *
+ * Rob, 2026-10-04: *"I would like him to exhast all efforts and reseach if necessary first to get a
+ * resolution before off loading to a professional."* This is the half of that the briefs could not
+ * deliver on their own — every card says `check:` (look these up, never from memory) and until now
+ * there was nothing in this path that could look anything up.
+ *
+ * Best-effort by construction, exactly like the build pipeline's pass: every failure is caught and
+ * becomes a line in the notes saying what could not be read, because a reply that says "I could not
+ * check that" is honest and a reply that silently answered from memory is not. Returns '' when there
+ * is nothing to do, so a turn with no queries composes the prompt it did before this existed.
+ */
+async function researchForReply(userId, message, queries, { emit } = {}) {
+  const asked = (Array.isArray(queries) ? queries : []).filter(Boolean);
+  // A URL the operator pasted is worth reading whether or not a search was asked for — it is the
+  // one case where the fact they want is already in front of them.
+  const urls = [...new Set((String(message || '').match(URL_RE) || []).map((u) => u.replace(/[.,;:)]+$/, '')))].slice(0, 2);
+  if (!asked.length && !urls.length) return '';
+
+  const startedAt = Date.now();
+  emit?.({ type: 'stage', stage: JARVIS_RESEARCH_STAGE, status: 'start', label: JARVIS_RESEARCH_LABEL });
+  const lines = [];
+  try {
+    for (const url of urls) {
+      try {
+        const page = await webFetch(url);
+        lines.push(`PAGE: ${page.url}\n${page.content}`);
+      } catch (e) {
+        lines.push(`PAGE: ${url}\n(could not read this page: ${e.message})`);
+      }
+    }
+    if (asked.length) {
+      const searchKey = await resolveSearchKey(userId).catch(() => null);
+      for (const query of asked) {
+        try {
+          const { answer, results } = await webSearch(searchKey, query, { maxResults: 4 });
+          const block = [`SEARCH: ${query}`];
+          if (answer) block.push(`Summary: ${answer}`);
+          for (const r of results) block.push(`- ${r.title} <${r.url}>${r.content ? `\n  ${r.content}` : ''}`);
+          if (block.length === 1) block.push('(no results found)');
+          lines.push(block.join('\n'));
+        } catch (e) {
+          lines.push(`SEARCH: ${query}\n(search failed: ${e.message})`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[chatWithJarvis] research failed:', err?.message || err);
+  } finally {
+    emit?.({
+      type: 'stage', stage: JARVIS_RESEARCH_STAGE, status: 'done', label: JARVIS_RESEARCH_LABEL,
+      elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+    });
+  }
+  return lines.length ? lines.join('\n\n') : '';
 }
 
 // Rob, 2026-09-18: the build should get the same grounding a normal Jarvis
@@ -247,13 +313,14 @@ async function runReply({ user, message, fileUrls, emit = null, readingStartedAt
       : false,
     message
       ? classifyTurnContext(user.id, message).catch((err) => {
-          // Both failure directions from one dead call, and they are not the same: the snapshot is
-          // INCLUDED (never answer a real question blind) and the careers are EMPTY (no headroom,
-          // and the 36 names are still in the persona, so this is the pre-feature behaviour).
-          console.warn('[chatWithJarvis] snapshot-need check failed — including the snapshot, attaching no career briefs:', err?.message || err);
-          return { includeSnapshot: true, careers: [] };
+          // Three failure directions from one dead call, and they are not the same: the snapshot is
+          // INCLUDED (never answer a real question blind), the careers are EMPTY (no headroom, and
+          // the 36 names are still in the persona, so that is the pre-feature behaviour) and no
+          // research runs (latency, and the persona will say he could not check rather than guess).
+          console.warn('[chatWithJarvis] turn-context check failed — including the snapshot, no briefs, no research:', err?.message || err);
+          return { includeSnapshot: true, careers: [], researchQueries: [] };
         })
-      : { includeSnapshot: true, careers: [] },
+      : { includeSnapshot: true, careers: [], researchQueries: [] },
     prisma.deckJarvisMessage.findMany({
       where: { created_by_id: user.id },
       orderBy: { created_date: 'desc' },
@@ -265,7 +332,7 @@ async function runReply({ user, message, fileUrls, emit = null, readingStartedAt
     // An empty list is the honest "we were never told" variant — see buildRegionsClaim.
     getDeckOperatingRegions(user.id),
   ]);
-  const { includeSnapshot, careers } = turnContext;
+  const { includeSnapshot, careers, researchQueries: queries } = turnContext;
   history.reverse();
 
   const firstName = (user.full_name || '').trim().split(/\s+/)[0] || 'You';
@@ -304,9 +371,15 @@ async function runReply({ user, message, fileUrls, emit = null, readingStartedAt
   const personaBlock = buildJarvisSystemPrompt({ firstName, businessContext, hasSnapshot: includeSnapshot, regions, careers });
   const memoryBlock = formatMemoryBlock(memory);
   const snapshotBlock = includeSnapshot ? `DATA SNAPSHOT:\n${snapshot}\n` : '';
+  // Look the facts up BEFORE the reply is written, so he answers from what he found rather than
+  // promising to go and look. Runs only when the classifier named something worth checking (or the
+  // operator pasted a URL) — `researchForReply` returns '' otherwise, which leaves the prompt
+  // byte-identical to the one before this existed.
+  const research = await researchForReply(user.id, message, queries, { emit });
+  const researchBlock = research ? `LOOKED UP FOR THIS ANSWER (use it, and name where it came from):\n${research}\n` : '';
   const prompt = `${personaBlock}
 ${memoryBlock}
-${snapshotBlock}
+${snapshotBlock}${researchBlock}
 RECENT CONVERSATION:
 ${conversationBlock}
 
@@ -319,11 +392,11 @@ Jarvis:`;
   // `usage_events` records how many tokens were sent, never what was in them. This is the line
   // that answers it the next time it happens. It is the only change here.
   console.log(`[chatWithJarvis] reply prompt chars: persona=${personaBlock.length} memory=${memoryBlock.length} snapshot=${snapshot.length} conversation=${conversationBlock.length} message=${message.length} total=${prompt.length} fileUrls=${fileUrls?.length || 0}`);
-  // The gate's own decision, on its own line so the composition log above stays lengths-only.
-  // Careers and regions are named because "no brief was attached" and "no region is stored" are the
-  // two silent-degradation paths of this feature: without this line, a selector that never fires
-  // looks exactly like a message that needed nothing.
-  console.log(`[chatWithJarvis] snapshot gate: included=${includeSnapshot} careers=[${careers.join(', ')}] regions=${regions.length}`);
+  // The gate's own decisions, on one line so the composition log above stays lengths-only.
+  // Every selector is named because a selector that never fires looks EXACTLY like a message that
+  // needed nothing — "no brief attached", "no region stored" and "nothing looked up" are the three
+  // silent-degradation paths of this feature, and only this line can tell them apart.
+  console.log(`[chatWithJarvis] turn context: snapshot=${includeSnapshot} careers=[${careers.join(', ')}] regions=${regions.length} queries=${queries.length} researched=${research.length ? 'yes' : 'no'}`);
 
   // A turn that explicitly asks for a report, plan or breakdown keeps the long path: the budget
   // in lib/jarvisReplyBudget.js does not apply to it, and its reply is never sent for repair.
