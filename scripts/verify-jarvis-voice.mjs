@@ -87,6 +87,10 @@ check('…but the ribbing is explicitly dry, never cruel', /Sarcasm and gentle r
 // deliberately not, one copy of the list) is scripts/verify-jarvis-careers.mjs.
 const listed = (builtPrompt.match(/every one of them — ([^.]+)\./) || [, ''])[1].split(', ').map((s) => s.trim());
 check(`all ${CAREER_KEYS.length} careers are present, in order, none quietly trimmed`, listed, CAREER_KEYS);
+// The count is asserted against the NUMBER ROB GAVE, not against the register — otherwise this check
+// compares the register to itself, and deleting an entry would remove it from both sides and still
+// pass. scripts/mutate-guards.mjs caught exactly that: the "drop ninja" mutation survived this file.
+check('…and there are still 36 of them', listed.length, 36);
 check('…and he is told to name the hat he is wearing', /name the hat you're wearing/.test(prompt), true);
 check('…and to wear the odd ones as straight as the sensible ones', /wear the odd ones as straight as the sensible ones/.test(prompt), true);
 check('…and NOT to bluff past the list', /rather than bluffing/.test(prompt), true);

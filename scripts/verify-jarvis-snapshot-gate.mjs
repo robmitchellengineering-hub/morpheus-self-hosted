@@ -208,7 +208,12 @@ check('…with the classify role on the hot path', /schema: SNAPSHOT_NEED_SCHEMA
 // directions at once — they are opposite on purpose. A dead call must still include the snapshot
 // (never answer a real question blind) AND attach no career briefs (no token headroom, and the 36
 // names are in the persona, so that is simply the pre-feature behaviour).
-check('…and a failed gate INCLUDES the snapshot', /snapshot-need check failed — including the snapshot/.test(chatSrc) && /includeSnapshot: true, careers: \[\]/.test(chatSrc), true);
+// Anchored on `return`, deliberately: the same field text also appears on the "no message" branch
+// above (`: { includeSnapshot: true, careers: [] },`), so a loose match would still find a true
+// somewhere in the file and pass while the CATCH had been flipped to false. That is exactly the
+// survivor scripts/mutate-guards.mjs caught here. The second clause forbids the flipped form
+// outright rather than relying on the first match being the right one.
+check('…and a failed gate INCLUDES the snapshot', /snapshot-need check failed — including the snapshot/.test(chatSrc) && /return \{ includeSnapshot: true, careers: \[\] \};/.test(chatSrc) && !/return \{ includeSnapshot: false/.test(chatSrc), true);
 check('the snapshot is fetched only when the gate says so',
   /const snapshot = includeSnapshot \? await buildDeckSnapshot\(user\.id\) : '';/.test(chatSrc), true);
 check('…and the persona is built from the SAME decision',
