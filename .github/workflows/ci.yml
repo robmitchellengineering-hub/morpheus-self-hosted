@@ -326,6 +326,13 @@ jobs:
       - name: Jarvis voice and playback
         run: node scripts/verify-jarvis-voice.mjs
 
+      # The career register: the 36 names are the only copy (the persona renders them), every brief
+      # stays a shorthand inside its size budget, the selector cannot invent a career or overrun its
+      # cap, and the jurisdictional grounding is never silent. All of those fail quietly otherwise —
+      # a prompt is prose and a list is exactly what an edit trims unnoticed.
+      - name: Jarvis careers, briefs and grounding
+        run: node scripts/verify-jarvis-careers.mjs
+
       # The snapshot gate on every Jarvis message: only an explicit classifier false may drop the
       # ~2,400-token Deck snapshot (a failed check must INCLUDE it — answering blind is the dangerous
       # direction), the persona must never claim a snapshot it was not given, every capped list must

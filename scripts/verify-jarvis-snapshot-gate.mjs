@@ -41,6 +41,7 @@ import { readFileSync } from 'node:fs';
 
 import { formatDeckSnapshot, truncationNote, listCount } from '../server/src/lib/deckSnapshotText.js';
 import { SNAPSHOT_NEED_SCHEMA, buildSnapshotNeedPrompt, shouldIncludeSnapshot } from '../server/src/lib/deckSnapshotGate.js';
+import { CAREER_KEYS } from '../server/src/lib/jarvisCareers.js';
 import { buildJarvisSystemPrompt } from '../server/src/lib/jarvisPersona.js';
 import { synthesisMessageToStore } from '../server/src/lib/deckInsightPayload.js';
 
@@ -99,7 +100,14 @@ check('the string "false" keeps it', shouldIncludeSnapshot({ needsSnapshot: 'fal
 check('0 keeps it', shouldIncludeSnapshot({ needsSnapshot: 0 }), true);
 check('an array keeps it', shouldIncludeSnapshot([{ needsSnapshot: false }]), true);
 check('the schema requires the boolean field',
-  SNAPSHOT_NEED_SCHEMA.required, ['needsSnapshot']);
+  SNAPSHOT_NEED_SCHEMA.required.includes('needsSnapshot'), true);
+// 2026-10-04: the same call now also picks the career briefs, and `careers` is REQUIRED too — so a
+// classifier that forgets it is a schema failure the caller handles, rather than a field that is
+// silently absent and quietly degrades every reply to "no briefs".
+check('…and requires the careers list on the same call',
+  SNAPSHOT_NEED_SCHEMA.required.includes('careers'), true);
+check('…and the prompt carries the whole register for it to choose from',
+  CAREER_KEYS.every((key) => buildSnapshotNeedPrompt('hey').includes(key)), true);
 check('…and says plainly that a wrong false is the dangerous direction',
   /wrong "false" leaves you answering blind/.test(buildSnapshotNeedPrompt('hey')), true);
 check('the prompt carries the message it is judging',
@@ -194,13 +202,17 @@ check('a truncation is caught and named for the operator', /OUTPUT_TRUNCATED/.te
 
 console.log('\n5. the handler actually wires the gate, both ways');
 const chatSrc = maskComments(read('server/src/functions/chatWithJarvis.js'));
-check('it asks the snapshot-need gate', /classifySnapshotNeed\(user\.id, message\)/.test(chatSrc), true);
+check('it asks the snapshot-need gate', /classifyTurnContext\(user\.id, message\)/.test(chatSrc), true);
 check('…with the classify role on the hot path', /schema: SNAPSHOT_NEED_SCHEMA, role: 'classify'/.test(chatSrc), true);
-check('…and a failed gate INCLUDES the snapshot', /snapshot-need check failed — including the snapshot/.test(chatSrc) && /return true;/.test(chatSrc), true);
+// 2026-10-04: ONE call now answers both questions, so this check has to hold BOTH failure
+// directions at once — they are opposite on purpose. A dead call must still include the snapshot
+// (never answer a real question blind) AND attach no career briefs (no token headroom, and the 36
+// names are in the persona, so that is simply the pre-feature behaviour).
+check('…and a failed gate INCLUDES the snapshot', /snapshot-need check failed — including the snapshot/.test(chatSrc) && /includeSnapshot: true, careers: \[\]/.test(chatSrc), true);
 check('the snapshot is fetched only when the gate says so',
   /const snapshot = includeSnapshot \? await buildDeckSnapshot\(user\.id\) : '';/.test(chatSrc), true);
 check('…and the persona is built from the SAME decision',
-  /buildJarvisSystemPrompt\(\{ firstName, businessContext, hasSnapshot: includeSnapshot \}\)/.test(chatSrc), true);
+  /buildJarvisSystemPrompt\(\{ firstName, businessContext, hasSnapshot: includeSnapshot, regions, careers \}\)/.test(chatSrc), true);
 check('…so the data and the words about the data cannot disagree',
   /includeSnapshot \? `DATA SNAPSHOT:\\n\$\{snapshot\}\\n` : ''/.test(chatSrc), true);
 

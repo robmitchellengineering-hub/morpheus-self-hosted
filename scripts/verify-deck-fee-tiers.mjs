@@ -145,12 +145,19 @@ check('every DeckBusinessProfile list/filter/get names its columns',
   /readDeckProfile\(\(select\) => delegate\(name\)\.findMany\(\{ \.\.\.query, select \}\)\)/.test(entities)
   && /readDeckProfile\(\(select\) => delegate\(name\)\.findMany\(\{ \.\.\.args, select \}\)\)/.test(entities)
   && /readDeckProfile\(\(select\) => run\(\{ select \}\)\)/.test(entities), true);
-check('…and steps down to the pre-migration columns when Prisma says a column is missing',
-  /isMissingDeckProfileColumn\(err\)/.test(entities) && /deckProfileSelect\(\{ withFee: false \}\)/.test(entities), true);
+check('…and steps down when Prisma says a column is missing',
+  /isMissingDeckProfileColumn\(err\)/.test(entities) && /deckProfileSelectAttempts\(\)/.test(entities), true);
 check('a profile create/update also survives the missing column',
-  /writeDeckProfile\(write, rest\)/.test(entities) && /withoutDeckProfileFeeFields\(data\)/.test(entities), true);
+  /writeDeckProfile\(write, rest\)/.test(entities) && /deckProfileWriteAttempts\(data\)/.test(entities), true);
 check('the AI-context read is protected too',
-  /select: deckProfileSelect\(\)/.test(read('server/src/lib/deckBusinessProfile.js')), true);
+  /deckProfileSelectAttempts\(\)/.test(read('server/src/lib/deckBusinessProfile.js')), true);
+// 2026-10-04: a SECOND optional group (operating_regions) joined the fee tiers, so the order of the
+// step-down is now load-bearing: newest column first, or an environment that has the fee migration
+// but not the newest one would fall all the way back and lose settings it actually has.
+check('…newest optional column first, so one missing column does not cost the others',
+  /deckProfileSelectAttempts\(\)[\s\S]*deckProfileSelect\(\)[\s\S]*withRegions: false[\s\S]*withFee: false/.test(profileColumns), true);
+check('…and the write steps down the same way', 
+  /deckProfileWriteAttempts[\s\S]*droppedFields: \['regions'\][\s\S]*droppedFields: \['regions', 'fee'\]/.test(profileColumns), true);
 check('the fallback is the OLD column set, not an empty one',
   /DECK_PROFILE_BASE_SELECT = \{[\s\S]*business_context: true/.test(profileColumns), true);
 check('the three fee columns are named in exactly one list',
@@ -164,10 +171,10 @@ console.log('\n7b. a dropped fee write is VISIBLE, not a silent success');
 const settings = read('src/pages/CommandDeck/DeckSettings.jsx');
 check('the marker key is what the API sends', DECK_PROFILE_FEE_DROPPED, 'fee_fields_dropped');
 check('a write that dropped the fee fields is flagged',
-  deckProfileWriteResult({ id: 'x', shop_name: 'a' }, { shop_name: 'a', fee_rate_under: 25 }, { droppedFeeFields: true }),
+  deckProfileWriteResult({ id: 'x', shop_name: 'a' }, { shop_name: 'a', fee_rate_under: 25 }, { droppedFields: ['fee'] }),
   { id: 'x', shop_name: 'a', fee_fields_dropped: true });
 check('a write that carried NO fee fields is not flagged',
-  deckProfileWriteResult({ id: 'x' }, { shop_name: 'a' }, { droppedFeeFields: true }), { id: 'x' });
+  deckProfileWriteResult({ id: 'x' }, { shop_name: 'a' }, { droppedFields: ['fee'] }), { id: 'x' });
 check('a write that kept its fee fields is not flagged',
   deckProfileWriteResult({ id: 'x' }, { fee_rate_under: 25 }, {}), { id: 'x' });
 check('a fee field sent as null still counts as "the form asked to store it"',
@@ -175,7 +182,7 @@ check('a fee field sent as null still counts as "the form asked to store it"',
 check('an ordinary profile save carries no fee field',
   hasDeckProfileFeeFields({ shop_name: 'a', business_context: 'b' }), false);
 check('the marker is set by the fallback write path only',
-  /deckProfileWriteResult\(row, data, \{ droppedFeeFields: true \}\)/.test(entities), true);
+  /deckProfileWriteResult\(row, data, \{ droppedFields: attempts\[i\]\.droppedFields \}\)/.test(entities), true);
 check('the context reads the marker and keeps it OUT of the profile state',
   /feeFieldsDropped = saved\?\.fee_fields_dropped === true;/.test(ctx)
   && /delete row\.fee_fields_dropped;/.test(ctx), true);

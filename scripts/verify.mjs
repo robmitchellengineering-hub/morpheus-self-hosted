@@ -36,6 +36,7 @@ const HARD = [
   'verify-murbah-money.mjs',
   'verify-life-files.mjs',
   'verify-jarvis-voice.mjs',
+  'verify-jarvis-careers.mjs',
   'verify-jarvis-snapshot-gate.mjs',
   'verify-jarvis-reply-length.mjs',
   'verify-jarvis-stream.mjs',

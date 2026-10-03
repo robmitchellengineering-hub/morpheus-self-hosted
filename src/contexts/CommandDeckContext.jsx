@@ -1209,21 +1209,27 @@ export function CommandDeckProvider({ children }) {
   const saveBusinessProfile = async (fields) => {
     setBusinessProfileBusy(true);
     let feeFieldsDropped = false;
+    let regionFieldsDropped = false;
     try {
       const saved = businessProfile?.id
         ? await base44.entities.DeckBusinessProfile.update(businessProfile.id, fields)
         : await base44.entities.DeckBusinessProfile.create(fields);
+      // Both markers mean the same thing — "the migration for that column has not been applied in
+      // this environment, so this setting did not persist" — and both must reach the operator,
+      // because "Saved" over a setting that was not stored is worse than a failed save.
       feeFieldsDropped = saved?.fee_fields_dropped === true;
+      regionFieldsDropped = saved?.region_fields_dropped === true;
       if (saved && typeof saved === 'object') {
         const row = { ...saved };
         delete row.fee_fields_dropped;
+        delete row.region_fields_dropped;
         setBusinessProfile(row);
       } else {
         setBusinessProfile(saved);
       }
     } catch { flagSaveErr(); }
     setBusinessProfileBusy(false);
-    return { feeFieldsDropped };
+    return { feeFieldsDropped, regionFieldsDropped };
   };
 
   // ---- calendar widget ------------------------------------------------------

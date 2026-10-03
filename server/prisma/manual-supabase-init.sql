@@ -1185,6 +1185,10 @@ alter table deck_business_profiles add column if not exists fee_threshold double
 alter table deck_business_profiles add column if not exists fee_rate_under double precision;
 alter table deck_business_profiles add column if not exists fee_rate_over double precision;
 
+-- selfdev-deck-operating-regions.sql — where the account operates, so jurisdiction-specific advice
+-- can be grounded instead of assumed (a list; empty means "we were never told").
+alter table deck_business_profiles add column if not exists operating_regions text[] not null default '{}';
+
 -- selfdev-usage-event-observability.sql — what a brokered call was doing and how it ended.
 alter table usage_events add column if not exists task text;
 alter table usage_events add column if not exists status text;

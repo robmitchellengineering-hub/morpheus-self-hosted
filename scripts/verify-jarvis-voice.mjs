@@ -15,6 +15,8 @@
 //
 // Both are the "silently disappears" shape this repo keeps paying for, so both are asserted here.
 import { readFileSync } from 'node:fs';
+import { buildJarvisSystemPrompt } from '../server/src/lib/jarvisPersona.js';
+import { CAREER_KEYS } from '../server/src/lib/jarvisCareers.js';
 
 let failures = 0;
 let checks = 0;
@@ -38,6 +40,15 @@ const prompt = [
   readFileSync(new URL('../server/src/lib/jarvisPersona.js', import.meta.url), 'utf8'),
 ].join('\n');
 const voice = readFileSync(new URL('../src/hooks/useMorpheusVoice.js', import.meta.url), 'utf8');
+// The prompt as the model actually receives it, with the register interpolated and no snapshot and
+// no regions — so a check can assert what a REAL turn is composed of, not just what the source says.
+const builtPrompt = buildJarvisSystemPrompt({
+  firstName: 'Rob',
+  businessContext: 'a vintage guitar shop',
+  hasSnapshot: false,
+  regions: [],
+  careers: [],
+});
 
 console.log('\n1. the persona survives');
 check('Jarvis is the butler', /You are Jarvis/.test(prompt) && /butler/.test(prompt), true);
@@ -68,16 +79,14 @@ check('…but the ribbing is explicitly dry, never cruel', /Sarcasm and gentle r
 // without anyone noticing. Asserting three of thirty-six would let the other thirty-three go in a
 // refactor with every check still green. So the persona's list is PARSED and compared to the full set,
 // in order — which also makes dropping or renaming a single entry a failure, not a judgement call.
-const CAREERS = [
-  'doctor', 'lawyer', 'realtor', 'financial advisor', 'accountant', 'psychologist', 'psychiatrist',
-  'social worker', 'mental-health professional', 'bodyguard', 'Brazilian jiu-jitsu instructor', 'ninja',
-  'combat intelligence specialist', 'engineer', 'scientist', 'physicist', 'stockbroker', 'banker',
-  'workplace health and safety compliance officer', 'general', 'fighter pilot', 'chef', 'animal trainer',
-  'survivalist', 'interior designer', 'software engineer', 'general manager', 'consultant', 'data analyst',
-  'magician', 'strategist', 'lounge singer', 'jazz drummer', 'cowboy', 'astronaut', 'fireman',
-];
-const listed = (prompt.match(/every one of them — ([^.]+)\./) || [, ''])[1].split(', ').map((s) => s.trim());
-check(`all ${CAREERS.length} careers are present, in order, none quietly trimmed`, listed, CAREERS);
+//
+// 2026-10-04: the names are no longer written in the persona. They are rendered from the register in
+// `server/src/lib/jarvisCareers.js`, so this check reads the BUILT prompt rather than the source file
+// — which is the stronger assertion anyway, because it also proves the interpolation still happens.
+// The full set is imported from the register, and the register's own integrity (every key carded or
+// deliberately not, one copy of the list) is scripts/verify-jarvis-careers.mjs.
+const listed = (builtPrompt.match(/every one of them — ([^.]+)\./) || [, ''])[1].split(', ').map((s) => s.trim());
+check(`all ${CAREER_KEYS.length} careers are present, in order, none quietly trimmed`, listed, CAREER_KEYS);
 check('…and he is told to name the hat he is wearing', /name the hat you're wearing/.test(prompt), true);
 check('…and to wear the odd ones as straight as the sensible ones', /wear the odd ones as straight as the sensible ones/.test(prompt), true);
 check('…and NOT to bluff past the list', /rather than bluffing/.test(prompt), true);

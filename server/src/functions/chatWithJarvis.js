@@ -56,10 +56,10 @@ import { prisma } from '../db.js';
 import { invokeAI, invokeAIStream } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock, HISTORY_WINDOW } from '../lib/deckMemory.js';
 import { buildConversationBlock } from '../lib/promptBounds.js';
-import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
+import { getDeckBusinessContext, getDeckOperatingRegions } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 import { buildJarvisSystemPrompt } from '../lib/jarvisPersona.js';
-import { SNAPSHOT_NEED_SCHEMA, buildSnapshotNeedPrompt, shouldIncludeSnapshot } from '../lib/deckSnapshotGate.js';
+import { SNAPSHOT_NEED_SCHEMA, buildSnapshotNeedPrompt, shouldIncludeSnapshot, selectedCareerKeys } from '../lib/deckSnapshotGate.js';
 import {
   CONVERSATIONAL_REPLY_TARGET_CHARS,
   REPLY_SCHEMA,
@@ -117,14 +117,18 @@ Say true only for an unambiguous build request ("build me a widget that...", "ca
   return result?.isWidgetBuildRequest === true;
 }
 
-// The second cheap boolean on the same hot path, and the main speed lever of this change:
-// does this message need the ~2,400-token Deck snapshot at all? Same shape as the widget
-// check above — `classify`, a one-field schema, 1500 tokens. The DECISION is not made here:
-// `shouldIncludeSnapshot` owns the failure direction (only an explicit, usable `false`
-// drops the snapshot), so the rule is testable with fixtures and no model.
-async function classifySnapshotNeed(userId, message) {
+// The cheap classify call on the same hot path, and the main speed lever of this change: it answers
+// TWO questions about the message — does it need the ~2,400-token Deck snapshot at all, and which of
+// Jarvis's 36 past careers is it asking about (at most three briefs get attached). One call, because
+// the classifier is already reading the message and being paid for it.
+//
+// The DECISIONS are not made here: `shouldIncludeSnapshot` and `selectedCareerKeys` own them, and
+// they deliberately fail in OPPOSITE directions — the snapshot fails open (never answer blind), the
+// careers fail empty (there is no token headroom, and the 36 names are always in the persona, so a
+// miss is less sharp rather than wrong). Both rules are testable with fixtures and no model.
+async function classifyTurnContext(userId, message) {
   const { result } = await invokeAI({ userId, prompt: buildSnapshotNeedPrompt(message), schema: SNAPSHOT_NEED_SCHEMA, role: 'classify', maxTokens: 1500 });
-  return shouldIncludeSnapshot(result);
+  return { includeSnapshot: shouldIncludeSnapshot(result), careers: selectedCareerKeys(result) };
 }
 
 // Rob, 2026-09-18: the build should get the same grounding a normal Jarvis
@@ -234,7 +238,7 @@ async function runReply({ user, message, fileUrls, emit = null, readingStartedAt
   //
   // The history is read BEFORE this turn's user row is written below, so the prompt's
   // conversation block is what was said before — not the message being answered.
-  const [wantsWidgetBuild, includeSnapshot, history, memory, businessContext] = await Promise.all([
+  const [wantsWidgetBuild, turnContext, history, memory, businessContext, regions] = await Promise.all([
     message
       ? classifyWidgetBuildIntent(user.id, message).catch((err) => {
           console.warn('[chatWithJarvis] widget-build intent check failed — treating this as an ordinary chat turn:', err?.message || err);
@@ -242,11 +246,14 @@ async function runReply({ user, message, fileUrls, emit = null, readingStartedAt
         })
       : false,
     message
-      ? classifySnapshotNeed(user.id, message).catch((err) => {
-          console.warn('[chatWithJarvis] snapshot-need check failed — including the snapshot:', err?.message || err);
-          return true;
+      ? classifyTurnContext(user.id, message).catch((err) => {
+          // Both failure directions from one dead call, and they are not the same: the snapshot is
+          // INCLUDED (never answer a real question blind) and the careers are EMPTY (no headroom,
+          // and the 36 names are still in the persona, so this is the pre-feature behaviour).
+          console.warn('[chatWithJarvis] snapshot-need check failed — including the snapshot, attaching no career briefs:', err?.message || err);
+          return { includeSnapshot: true, careers: [] };
         })
-      : true,
+      : { includeSnapshot: true, careers: [] },
     prisma.deckJarvisMessage.findMany({
       where: { created_by_id: user.id },
       orderBy: { created_date: 'desc' },
@@ -254,7 +261,11 @@ async function runReply({ user, message, fileUrls, emit = null, readingStartedAt
     }),
     getJarvisMemory(user.id),
     getDeckBusinessContext(user.id),
+    // Where they operate, so jurisdiction-specific advice can be grounded rather than assumed.
+    // An empty list is the honest "we were never told" variant — see buildRegionsClaim.
+    getDeckOperatingRegions(user.id),
   ]);
+  const { includeSnapshot, careers } = turnContext;
   history.reverse();
 
   const firstName = (user.full_name || '').trim().split(/\s+/)[0] || 'You';
@@ -290,7 +301,7 @@ async function runReply({ user, message, fileUrls, emit = null, readingStartedAt
   const conversationBlock = buildConversationBlock(history, { firstName });
 
   // Named so the log lines below can size each block.
-  const personaBlock = buildJarvisSystemPrompt({ firstName, businessContext, hasSnapshot: includeSnapshot });
+  const personaBlock = buildJarvisSystemPrompt({ firstName, businessContext, hasSnapshot: includeSnapshot, regions, careers });
   const memoryBlock = formatMemoryBlock(memory);
   const snapshotBlock = includeSnapshot ? `DATA SNAPSHOT:\n${snapshot}\n` : '';
   const prompt = `${personaBlock}
@@ -309,7 +320,10 @@ Jarvis:`;
   // that answers it the next time it happens. It is the only change here.
   console.log(`[chatWithJarvis] reply prompt chars: persona=${personaBlock.length} memory=${memoryBlock.length} snapshot=${snapshot.length} conversation=${conversationBlock.length} message=${message.length} total=${prompt.length} fileUrls=${fileUrls?.length || 0}`);
   // The gate's own decision, on its own line so the composition log above stays lengths-only.
-  console.log(`[chatWithJarvis] snapshot gate: included=${includeSnapshot}`);
+  // Careers and regions are named because "no brief was attached" and "no region is stored" are the
+  // two silent-degradation paths of this feature: without this line, a selector that never fires
+  // looks exactly like a message that needed nothing.
+  console.log(`[chatWithJarvis] snapshot gate: included=${includeSnapshot} careers=[${careers.join(', ')}] regions=${regions.length}`);
 
   // A turn that explicitly asks for a report, plan or breakdown keeps the long path: the budget
   // in lib/jarvisReplyBudget.js does not apply to it, and its reply is never sent for repair.
