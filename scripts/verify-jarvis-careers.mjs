@@ -24,7 +24,7 @@ import {
   CAREER_KEYS, CARD_SECTIONS, CARD_MAX_CHARS, cardedCareers, careerListText, careerBlock, isKnownCareer,
 } from '../server/src/lib/jarvisCareers.js';
 import { buildJarvisSystemPrompt, buildRegionsClaim } from '../server/src/lib/jarvisPersona.js';
-import { SNAPSHOT_NEED_SCHEMA, MAX_SELECTED_CAREERS, selectedCareerKeys, shouldIncludeSnapshot } from '../server/src/lib/deckSnapshotGate.js';
+import { SNAPSHOT_NEED_SCHEMA, MAX_SELECTED_CAREERS, MAX_RESEARCH_QUERIES, selectedCareerKeys, researchQueries, shouldIncludeSnapshot } from '../server/src/lib/deckSnapshotGate.js';
 
 let failures = 0;
 let checks = 0;
@@ -102,10 +102,22 @@ check('a number is EMPTY', selectedCareerKeys({ careers: 7 }), []);
 check('nothing at all is EMPTY', selectedCareerKeys(undefined), []);
 check('whitespace is trimmed rather than trusted', selectedCareerKeys({ careers: ['  doctor  '] }), ['doctor']);
 
-// The two directions, side by side, in one place — they are the whole reason this call has two
-// decisions in it and one of them is not the other's shape.
-check('the SAME garbage answer keeps the snapshot and attaches no briefs',
-  [shouldIncludeSnapshot({}), selectedCareerKeys({})], [true, []]);
+// The three directions, side by side, in one place — they are the whole reason this call carries
+// three decisions and only one of them fails open.
+check('the SAME garbage answer keeps the snapshot, attaches no briefs and looks nothing up',
+  [shouldIncludeSnapshot({}), selectedCareerKeys({}), researchQueries({})], [true, [], []]);
+
+console.log('\n3b. the research selector is bounded and fails EMPTY');
+
+check('queries pass through, trimmed', researchQueries({ researchQueries: ['  NSW land tax rate  '] }), ['NSW land tax rate']);
+check('blank entries are dropped', researchQueries({ researchQueries: ['', '   ', 'a real query'] }), ['a real query']);
+check('non-strings are dropped', researchQueries({ researchQueries: ['ok', 7, null, {}] }), ['ok']);
+check('duplicates collapse', researchQueries({ researchQueries: ['x', 'x'] }), ['x']);
+check('more than the cap is capped', researchQueries({ researchQueries: ['a', 'b', 'c', 'd'] }).length, MAX_RESEARCH_QUERIES);
+check('…and the cap is the one the schema advertises', MAX_RESEARCH_QUERIES, 2);
+check('a missing field is EMPTY', researchQueries({ needsSnapshot: true }), []);
+check('a bare string is EMPTY', researchQueries({ researchQueries: 'a query' }), []);
+check('nothing at all is EMPTY', researchQueries(undefined), []);
 
 console.log('\n4. it is provably NOT always-on');
 
@@ -157,7 +169,36 @@ check('the handler reads the regions', /getDeckOperatingRegions\(user\.id\)/.tes
 check('…and passes them, with the careers, to the persona',
   /buildJarvisSystemPrompt\(\{ firstName, businessContext, hasSnapshot: includeSnapshot, regions, careers \}\)/.test(chatSrc), true);
 check('…and uses the same selector this guard tests', /selectedCareerKeys\(result\)/.test(chatSrc), true);
-check('the schema asks for both fields', SNAPSHOT_NEED_SCHEMA.required.join(','), 'needsSnapshot,careers');
+check('the schema asks for all three fields', SNAPSHOT_NEED_SCHEMA.required.join(','), 'needsSnapshot,careers,researchQueries');
+
+// Rob, 2026-10-04: *"I would like him to exhast all efforts and reseach if necessary first to get a
+// resolution before off loading to a professional."* Two halves, and both are asserted because both
+// fail silently: a rule that stops being in the prompt changes nothing visible, and research that is
+// never reached looks exactly like a question that needed none.
+check('…and the research selector this guard tests is the one wired in', /researchQueries\(result\)/.test(chatSrc), true);
+check('…and the look-up happens BEFORE the prompt, not promised to the operator',
+  /const research = await researchForReply\(user\.id, message, queries/.test(chatSrc), true);
+check('…and what it found reaches the answer', /LOOKED UP FOR THIS ANSWER/.test(chatSrc), true);
+check('…and the operator is told it is happening, rather than just waiting longer',
+  /stage: JARVIS_RESEARCH_STAGE/.test(chatSrc), true);
+check('…and a failed look-up is named rather than answered from memory',
+  /could not read this page|search failed/.test(chatSrc), true);
+
+// The exhaustion contract itself, asserted as text in the built prompt. It is the behaviour Rob
+// asked for, so it cannot be edited out of the persona without a guard going red.
+check('he must exhaust the problem before handing it over', /Exhaust a problem before you hand it to anyone/.test(promptNoCareers), true);
+check('…working it as far as an expert can WITHOUT their hands or authority',
+  /without their hands or authority/.test(promptNoCareers), true);
+check('…and must say where a looked-up fact came from, or that he could not',
+  /say where it came from; if you could not, say so plainly rather than inventing/.test(promptNoCareers), true);
+check('…and must say exactly what a professional is needed FOR',
+  /say exactly what for/.test(promptNoCareers), true);
+check('…and never refer what he could have answered', /Never refer what you could have answered/.test(promptNoCareers), true);
+check('…and never keep what needs hands he does not have', /never keep what needs hands you do not have/.test(promptNoCareers), true);
+// Every brief's referral trigger must still be a TRIGGER, not an instruction to hand over — the
+// persona owns the exhaustion, the card owns when a human is genuinely required.
+check('every brief names what genuinely needs a human, and the boundary it cannot cross',
+  carded.every((c) => /you cannot (examine|represent|lodge)/.test(careerBlock([c]))), true);
 
 // H8: the migration and the bootstrap are two files, and a fresh self-host reads only the bootstrap.
 const migration = read('server/prisma/selfdev-deck-operating-regions.sql');

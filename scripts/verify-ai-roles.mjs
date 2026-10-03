@@ -191,7 +191,7 @@ check('…and the fallback is ordinary chat, not a build',
 // persona). scripts/verify-jarvis-snapshot-gate.mjs owns that rule; this only asserts the
 // guard is wired here too, so a failure cannot take the turn down.
 check('the snapshot-need gate is guarded too, and fails toward INCLUDING the snapshot',
-  /classifyTurnContext\(user\.id, message\)\.catch\(\(err\) => \{[\s\S]*?includeSnapshot: true, careers: \[\]/.test(chatSrc));
+  /classifyTurnContext\(user\.id, message\)\.catch\(\(err\) => \{[\s\S]*?includeSnapshot: true, careers: \[\], researchQueries: \[\]/.test(chatSrc));
 
 // An empty 200 used to be stored verbatim: a blank Jarvis bubble with no error, and a
 // blank "Suggestions" card — both indistinguishable from "Jarvis had nothing to say".

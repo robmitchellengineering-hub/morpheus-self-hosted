@@ -353,6 +353,20 @@ export const MUTATIONS = [
     replace: '    if (!key) continue;',
   },
   {
+    guard: 'verify-jarvis-careers.mjs',
+    file: 'server/src/lib/jarvisPersona.js',
+    why: 'Replaces the exhaustion contract with permission to hand over — the reflex Rob asked him NOT to have (2026-10-04: "exhast all efforts and reseach if necessary first to get a resolution before off loading to a professional"). Nothing visible breaks: he still answers, still sounds like Jarvis, and just stops working the problem before referring it.',
+    find: 'Exhaust a problem before you hand it to anyone.',
+    replace: 'Answer briefly, and refer anything difficult to a professional.',
+  },
+  {
+    guard: 'verify-jarvis-careers.mjs',
+    file: 'server/src/lib/deckSnapshotGate.js',
+    why: 'Removes the research cap, so the classifier can ask for an unbounded number of web searches before every reply — the latency the cap exists to bound, on the path the operator waits on.',
+    find: '    if (queries.length >= MAX_RESEARCH_QUERIES) break;',
+    replace: '    if (queries.length >= 99) break;',
+  },
+  {
     guard: 'verify-doc-export.mjs',
     file: 'src/pages/CommandDeck/exportDoc.js',
     why: 'Stops a filename falling back when everything was stripped, so exporting a reply with no usable title produces a file called ".pdf" — a real download with a confusing name, which is the case the fallback exists for.',
@@ -425,9 +439,9 @@ export const MUTATIONS = [
   {
     guard: 'verify-jarvis-snapshot-gate.mjs',
     file: 'server/src/functions/chatWithJarvis.js',
-    why: 'Flips the handler\'s snapshot-gate catch to `includeSnapshot: false`, so a failed classifier DROPS the snapshot and Jarvis answers a real question blind — the failure direction the guard asserts in the wiring as well as in the rule. (2026-10-04: the catch now returns both decisions, so it is the field rather than the whole return value.)',
-    find: '          return { includeSnapshot: true, careers: [] };',
-    replace: '          return { includeSnapshot: false, careers: [] };',
+    why: 'Flips the handler\'s turn-context catch to `includeSnapshot: false`, so a failed classifier DROPS the snapshot and Jarvis answers a real question blind — the failure direction the guard asserts in the wiring as well as in the rule. (2026-10-04: the catch returns all three decisions now, so it is the field rather than the whole return value.)',
+    find: '          return { includeSnapshot: true, careers: [], researchQueries: [] };',
+    replace: '          return { includeSnapshot: false, careers: [], researchQueries: [] };',
   },
   {
     guard: 'verify-project-divergence.mjs',
