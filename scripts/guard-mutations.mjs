@@ -265,8 +265,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 67;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 68;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 66;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 67;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -365,6 +365,41 @@ export const MUTATIONS = [
     why: 'Removes the research cap, so the classifier can ask for an unbounded number of web searches before every reply — the latency the cap exists to bound, on the path the operator waits on.',
     find: '    if (queries.length >= MAX_RESEARCH_QUERIES) break;',
     replace: '    if (queries.length >= 99) break;',
+  },
+  {
+    guard: 'verify-jarvis-careers.mjs',
+    file: 'server/src/lib/jarvisCareers.js',
+    why: 'Renames the ninja brief so one of the 36 has none. The persona still names the hat, so Jarvis still says "ninja hat:" and then has nothing to work from — the silent-shrink failure the coverage check exists for, now that every career is supposed to have a brief.',
+    find: '  ninja: `NINJA',
+    replace: '  ninjaaa: `NINJA',
+  },
+  {
+    guard: 'verify-jarvis-careers.mjs',
+    file: 'server/src/lib/webResearch.js',
+    why: 'Puts the grounded-search failure back to silence. This is the exact production state measured 2026-10-04 — a healthy key, every grounded call 429, and research quietly answering from Wikipedia instead. An invisible outage of a capability Jarvis is told to rely on.',
+    find: '        warnGroundedUnavailable(`HTTP ${res.status}${await errorDetail(res)}`);',
+    replace: '        // failure swallowed again',
+  },
+  {
+    guard: 'verify-deck-memory.mjs',
+    file: 'server/src/lib/deckMemoryText.js',
+    why: 'Makes the memory ceiling drop the NEWEST line instead of the oldest — so the thing the user just said is the thing forgotten, which is the opposite of what a memory is for. Nothing about the fold looks broken; it just remembers the wrong end.',
+    find: "  while (lines.length > 1 && memoryWordCount(lines.join('\\n')) > maxWords) lines.shift();",
+    replace: "  while (lines.length > 1 && memoryWordCount(lines.join('\\n')) > maxWords) lines.pop();",
+  },
+  {
+    guard: 'verify-deck-memory.mjs',
+    file: 'server/src/lib/deckMemory.js',
+    why: 'Drops the schema\'s `required`, restoring the reachable `{}` answer that caused the original silent hole in the memory the whole Deck reasons over.',
+    find: "  required: ['additions', 'removals'],",
+    replace: '  required: [],',
+  },
+  {
+    guard: 'verify-deck-memory.mjs',
+    file: 'server/src/lib/deckMemoryText.js',
+    why: 'Makes a removal that does not match still delete the line. The model paraphrases; a near-miss then costs a true memory, which is the direction this deliberately errs away from.',
+    find: '  let lines = memoryLines(existingText).filter((line) => !removalsLower.has(line.toLowerCase()));',
+    replace: '  let lines = removals.length ? [] : memoryLines(existingText);',
   },
   {
     guard: 'verify-doc-export.mjs',
@@ -584,5 +619,10 @@ export const NOT_YET_PROVEN = [
  * The rule it enforces is the one that matters: a NEW guard added without a mutation raises the unproven
  * count and turns CI red, so nobody can quietly add an unproven check again. Add the mutation with the
  * guard — which is the whole point — or raise this number in the same reviewable edit and say why.
+ *
+ * 67 → 66 on 2026-10-04: `verify-deck-memory.mjs` was in the unproven pile — it guarded the silent-hole
+ * incident with no mutation of its own, so nothing proved it could fail. Rewriting it for the memory
+ * stall added mutations (the ceiling dropping the newest line, a loose removal, a dropped `required`),
+ * so the gap shrank by one and the ratchet comes down with it.
  */
-export const UNPROVEN_BASELINE = 67;
+export const UNPROVEN_BASELINE = 66;

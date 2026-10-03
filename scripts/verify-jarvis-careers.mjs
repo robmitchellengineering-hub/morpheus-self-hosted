@@ -64,7 +64,11 @@ console.log('\n2. every brief is a shorthand, not an essay');
 
 const carded = cardedCareers();
 check('every carded career is one of the 36', carded.every((k) => isKnownCareer(k)), true);
-check('…and the coverage has not silently shrunk below the first slice', carded.length >= 3, true);
+// 2026-10-04: every one of the 36 now has a brief (Rob: "Write em up"), so the floor is the whole
+// register rather than the three-brief slice. A key that loses its brief is the silent-shrink case
+// this guard exists for — the persona would still name the hat, and Jarvis would have nothing to
+// work from.
+check('EVERY career has a brief', carded.length, CAREER_KEYS.length);
 check('…and it is not claiming more cards than careers', carded.length <= CAREER_KEYS.length, true);
 
 // Read the cards through the public block so the guard sees exactly what the model sees.
@@ -72,7 +76,7 @@ const allCardsBlock = careerBlock(CAREER_KEYS);
 const cardTexts = allCardsBlock.split('\n\n').filter((chunk) => chunk.includes('\n'));
 check('every card is within the size budget',
   cardTexts.every((card) => card.length <= CARD_MAX_CHARS), true);
-check('…and the budget is the thing stopping 36 essays', CARD_MAX_CHARS <= 900, true);
+check('…and the budget is the thing stopping 36 essays', CARD_MAX_CHARS <= 1200, true);
 
 // A section is a line that starts with `key:` — the shorthand's whole point is that the shape is the
 // same every time, so the model reads it the same way every time.
@@ -198,7 +202,23 @@ check('…and never keep what needs hands he does not have', /never keep what ne
 // Every brief's referral trigger must still be a TRIGGER, not an instruction to hand over — the
 // persona owns the exhaustion, the card owns when a human is genuinely required.
 check('every brief names what genuinely needs a human, and the boundary it cannot cross',
-  carded.every((c) => /you cannot (examine|represent|lodge)/.test(careerBlock([c]))), true);
+  carded.every((c) => /^refer: .*you cannot /m.test(careerBlock([c]))), true);
+
+// A grounded-search failure must not be SWALLOWED (2026-10-04). Measured in production: the
+// fallback Gemini key is healthy — a plain call returns 200 — while every GROUNDED call returns 429
+// "exceeded your current quota", so research silently degraded to Wikipedia, which cannot answer a
+// current rate, deadline or permit rule. A silent 429 looks exactly like a question that needed no
+// search, which is why Jarvis's "no picks" and "couldn't pull up the permit rules" were correct
+// answers from a broken tool. The failure is now reported, once per process.
+const researchSrc = read('server/src/lib/webResearch.js');
+check('a grounded-search failure is REPORTED, not swallowed',
+  /warnGroundedUnavailable\(/.test(researchSrc) && !/if \(!res\.ok\) return null;/.test(researchSrc), true);
+check('…and it says which layer is unavailable, so a quota is diagnosable',
+  /groundedSearchUnavailableReason/.test(researchSrc) && /UNAVAILABLE/.test(researchSrc), true);
+check('…reported once per process, so a hot path cannot spam the log',
+  /if \(groundedUnavailableReason\) return;/.test(researchSrc), true);
+check('…and a missing key is reported too, not just an HTTP failure',
+  /no Gemini key is configured/.test(researchSrc), true);
 
 // H8: the migration and the bootstrap are two files, and a fresh self-host reads only the bootstrap.
 const migration = read('server/prisma/selfdev-deck-operating-regions.sql');

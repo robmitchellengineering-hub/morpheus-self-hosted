@@ -15,7 +15,7 @@
 // still has the Postgres copy.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
-import { usableMemoryText } from './deckMemoryText.js';
+import { memoryLines, applyMemoryEdit } from './deckMemoryText.js';
 import { getDeckGoogleConnection, DECK_BACKUP_FOLDER_NAME } from './deckGoogle.js';
 import { createDriveFolder, listDriveFolderFiles, createDriveFile, updateDriveFileContent } from './googleDrive.js';
 import { getDeckBusinessContext } from './deckBusinessProfile.js';
@@ -28,25 +28,44 @@ const MEMORY_FILE_NAME = 'jarvis-memory.md';
 // 2026-09-17: parameterized (was hardcoded "Rob ... someone with ADHD who
 // runs Valiant Music") so the same memory-folding mechanism works for any
 // account.
+// 2026-10-04 — THE PROMPT NO LONGER ASKS FOR THE WHOLE MEMORY BACK.
+//
+// It asked the model to WRITE OUT the updated memory every time, so the output grew with the memory
+// while a reasoning model's hidden thinking was billed against the same cap: 131 of the last 200
+// folds sat at exactly 4000 tokens, threw on truncation, and stored nothing. The model now SELECTS
+// instead of composes — lines worth adding, and existing lines that are no longer true — and
+// `applyMemoryEdit` does the splice in code where it cannot truncate. The answer is a dozen short
+// strings no matter how large the memory or the batch has become.
 function buildMemoryPrompt({ firstName, businessContext }) {
-  return `You maintain Jarvis's long-term memory of ${firstName}, who runs ${businessContext}. You will be given the EXISTING MEMORY (may be empty, first pass) and a BATCH OF OLDER CONVERSATION TURNS that have just aged out of Jarvis's recent-context window.
+  return `You maintain Jarvis's long-term memory of ${firstName}, who runs ${businessContext}. You will be given the EXISTING MEMORY as numbered lines (may be empty, first pass) and a BATCH OF OLDER CONVERSATION TURNS that have just aged out of Jarvis's recent-context window.
 
-Produce an UPDATED memory that folds the batch into the existing one. Keep ONLY what genuinely helps Jarvis connect dots later that ${firstName} might not connect themself:
+You do NOT rewrite the memory. You return only two lists.
+
+ADDITIONS — new lines worth remembering that the existing memory does not already say. Keep ONLY what genuinely helps Jarvis connect dots later that ${firstName} might not connect themself:
 - Real patterns across time (energy/mood cycles, what they avoid and why, what actually works for them)
 - Recurring people, commitments, and relationships worth remembering
 - Decisions they've made and the reasoning, so Jarvis doesn't re-litigate settled things
 - Things they said they wanted (goals, changes, intentions) and whether they've since acted on them
 - Anything said once that would be genuinely useful to recall weeks later
 
-Drop small talk, anything already fully reflected in the live Deck snapshot (tasks/notes/etc — Jarvis sees that fresh every turn already), and anything superseded by a later turn in the batch. If a turn mentions an attached file (photo, PDF, document — shown as "[attached: filename]"), keep at most a short reference to what it was and why it mattered, never a long description of its contents — Command Deck deliberately keeps this memory small. Be terse — dense notes, no prose padding. Target under ${MAX_MEMORY_WORDS} words total regardless of how large the existing memory or batch is; compress harder, don't just append.
+Write each addition as ONE short, dense line — a fact, not prose. No padding, no restating the batch.
+
+REMOVALS — existing lines that the batch has made false or superseded, copied WORD FOR WORD from the numbered list. A line that is still true stays. When you are unsure, keep it: a stale line costs a little, a deleted true memory costs a lot.
+
+Do NOT add small talk, anything already reflected in the live Deck snapshot (tasks/notes/etc — Jarvis sees that fresh every turn already), or a long description of an attached file's contents; at most note what it was and why it mattered. Keep the total under ${MAX_MEMORY_WORDS} words — the existing lines plus your additions — so remove more if the memory is near its ceiling.
 
 Return JSON with:
-- memory: the complete updated memory text (replaces the existing one entirely)`;
+- additions: array of new lines (empty array if the batch adds nothing worth keeping)
+- removals: array of existing lines to delete, exactly as written above (empty array if none)`;
 }
 
 const MEMORY_SCHEMA = {
   type: 'object',
-  properties: { memory: { type: 'string', description: `Updated long-term memory, under ${MAX_MEMORY_WORDS} words` } },
+  properties: {
+    additions: { type: 'array', items: { type: 'string' }, description: 'New memory lines to append. Empty when the batch adds nothing worth keeping.' },
+    removals: { type: 'array', items: { type: 'string' }, description: 'Existing memory lines to delete, copied exactly from the numbered list. Empty when none.' },
+  },
+  required: ['additions', 'removals'],
 };
 
 async function mirrorToDrive(userId, content) {
@@ -102,29 +121,36 @@ export async function getJarvisMemory(userId) {
   const firstName = (userRow?.full_name || '').trim().split(/\s+/)[0] || 'the account owner';
 
   const batchText = batch.map((m) => `${m.role === 'user' ? firstName : 'Jarvis'}: ${m.content}`).join('\n');
+  // Numbered, because REMOVALS are copied back word for word from this list — the model is choosing
+  // among lines it can see, not recalling them.
+  const existingLines = memoryLines(existingContent);
+  const numbered = existingLines.length
+    ? existingLines.map((line, i) => `${i + 1}. ${line}`).join('\n')
+    : '(none yet — first pass)';
 
   try {
     const { result } = await invokeAI({
       userId,
-      prompt: `${buildMemoryPrompt({ firstName, businessContext })}\n\nEXISTING MEMORY:\n${existingContent || '(none yet — first pass)'}\n\nBATCH OF OLDER TURNS TO FOLD IN:\n${batchText}`,
+      prompt: `${buildMemoryPrompt({ firstName, businessContext })}\n\nEXISTING MEMORY:\n${numbered}\n\nBATCH OF OLDER TURNS TO FOLD IN:\n${batchText}`,
       schema: MEMORY_SCHEMA,
       role: 'diagnosis', // "analyze, don't build" shape — same reuse as contextSummary.js
-      // Deliberately generous even though the target is a compressed 400
-      // words — this deployment's model can burn real budget on hidden
-      // reasoning before the actual JSON (the same lesson chatWithJarvis.js
-      // and syncDeckGmailInbox.js's classifier both learned the hard way).
+      // 2026-10-04: NOT raised, deliberately. The old shape asked the model to compose the whole
+      // memory, so its output grew with the memory while the hidden-reasoning tax ate the same
+      // budget and 65% of folds truncated. A bigger cap is the recorded wrong fix
+      // (MODEL-DECISIONS.md, three instances). The output is now a dozen short strings, so this
+      // budget is the model's thinking room and nothing else.
       maxTokens: 4000,
     });
-    const returned = usableMemoryText(result);
-    if (!returned) {
-      // The schema does not mark `memory` as required, so a valid JSON object with no
-      // usable text is reachable. This used to keep the old content AND advance
-      // `folded_message_count` by the batch size, which marked those turns as folded
-      // when they had never been folded — and the caller skips `alreadyFolded`, so they
-      // were never offered again. A silent, permanent hole in the memory the whole Deck
-      // reasons over. Advance nothing instead, so the batch comes back, and say so —
-      // the same honesty the catch below already has.
-      console.warn(`[deckMemory] the model returned no memory text; leaving folded_message_count at ${alreadyFolded} so this batch is folded again`);
+
+    // An empty edit is a SUCCESSFUL fold that decided the batch added nothing — which must advance
+    // `folded_message_count`, or the same batch comes back forever. Only a throw (below) leaves it
+    // unadvanced, because only a throw means we do not know what the batch contained.
+    const returned = applyMemoryEdit(existingContent, result, { maxWords: MAX_MEMORY_WORDS });
+    if (!returned && existingContent) {
+      // The edit emptied the memory. `applyMemoryEdit` cannot do that on its own (it keeps the last
+      // line), so this means the model asked to remove everything — refuse, and say so rather than
+      // wiping what Jarvis knows on one bad answer.
+      console.warn('[deckMemory] the edit would have emptied the memory; keeping the existing content and leaving folded_message_count alone');
       return existingContent;
     }
 
