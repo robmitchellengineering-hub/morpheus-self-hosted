@@ -56,8 +56,13 @@ check('careerListText renders exactly the register, in order', careerListText(),
 const personaSrc = read('server/src/lib/jarvisPersona.js');
 // The anti-drift check that matters: the names must NOT be written out in the persona any more. If
 // someone pastes the list back in, the two copies can disagree and this notices.
-check('the persona does not carry a second copy of the names',
-  CAREER_KEYS.some((k) => personaSrc.includes(k)), false);
+//
+// It looks for ADJACENT PAIRS from the register, not for a single name. The first version tested each
+// name as a bare substring, and 2026-10-04 a comment mentioning the word "generally" tripped it on
+// `general` — a false positive that would have taught whoever hit it to weaken the check. A pasted
+// list always contains neighbouring pairs; prose containing one career's name never does.
+const PASTED_PAIR = CAREER_KEYS.some((k, i) => i < CAREER_KEYS.length - 1 && personaSrc.includes(`${k}, ${CAREER_KEYS[i + 1]}`));
+check('the persona does not carry a second copy of the names', PASTED_PAIR, false);
 check('…it renders them from the register instead', /careerListText\(\)/.test(personaSrc), true);
 
 console.log('\n2. every brief is a shorthand, not an essay');
@@ -199,6 +204,13 @@ check('…and must say exactly what a professional is needed FOR',
   /say exactly what for/.test(promptNoCareers), true);
 check('…and never refer what he could have answered', /Never refer what you could have answered/.test(promptNoCareers), true);
 check('…and never keep what needs hands he does not have', /never keep what needs hands you do not have/.test(promptNoCareers), true);
+// The dingo failure (2026-10-04): a confident wrong memory was asserted as settled NSW law, and the
+// answer told Rob to surrender his dog — while the NSW government's own page says the opposite.
+// Searching was broken at the time, but nothing stopped the model preferring its recollection to a
+// source, so that is asserted now regardless of whether any search runs.
+check('a source he just read OUTRANKS what he remembers', /THE SOURCE WINS/.test(promptNoCareers), true);
+check('…and he must not state a rule as law from recollection alone',
+  /never state a rule as settled law on the strength of a recollection alone/.test(promptNoCareers), true);
 // Every brief's referral trigger must still be a TRIGGER, not an instruction to hand over — the
 // persona owns the exhaustion, the card owns when a human is genuinely required.
 check('every brief names what genuinely needs a human, and the boundary it cannot cross',

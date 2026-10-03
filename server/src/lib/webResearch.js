@@ -27,7 +27,22 @@ const TIMEOUT_MS = 20_000;
 // Our own search gets a tighter budget than a page read: a search that has not answered in ten seconds
 // is not going to, and the reply is waiting on it.
 const SEARCH_TIMEOUT_MS = 10_000;
-const UA = 'MorpheusResearchBot/1.0 (+https://morpheus.nz)';
+// ⚠️ THE WORD "bot" IN THIS STRING BREAKS SEARCH ENTIRELY. Measured 2026-10-04, after Rob tested
+// Jarvis on dingo law and got an answer that was backwards:
+//
+//   MorpheusResearchBot/1.0  → HTTP 202, a challenge page, 0 results — and 202 is "ok", so the code
+//                              parsed nothing and returned an empty list SILENTLY
+//   MorpheusResearch/1.0     → HTTP 200, 9 results
+//   Mozilla/5.0 (compatible; MorpheusBot/1.0) → HTTP 202
+//   a full Chrome UA         → 200 on a quiet endpoint, 202 once rate-limited
+//
+// So it is the TOKEN, not the shape: DuckDuckGo refuses an agent that calls itself a bot. This string
+// identifies Morpheus and a contact URL honestly — which is the point of a UA — it just does not use
+// the word the endpoint has decided to block. Impersonating Chrome is not required and is not what
+// this is.
+//
+// It is used for every outbound request here, so page reads were being refused in the same way.
+const UA = 'MorpheusResearch/1.0 (+https://morpheus.nz)';
 
 export const URL_RE = /\bhttps?:\/\/[^\s<>"')]+/gi;
 
@@ -383,6 +398,15 @@ export async function duckduckgoSearch(query, { maxResults = 4, fetchImpl = fetc
       headers: { 'User-Agent': UA, Accept: 'text/html' },
       signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
+    // ⚠️ 202 IS A REFUSAL, NOT A SUCCESS. DuckDuckGo answers a bot-shaped User-Agent with
+    // `202 Accepted` and a challenge page — no results, but a perfectly "ok" status. The first version
+    // of this parsed it, found nothing, and returned `[]` in silence, so Jarvis fell through to
+    // Wikipedia and answered Rob's dingo question from memory with the law backwards. It is treated as
+    // the failure it is now, and named.
+    if (res.status === 202) {
+      warnSearchUnavailable('the search endpoint returned its challenge page (HTTP 202) — usually a refused User-Agent or rate limiting');
+      return [];
+    }
     if (!res.ok) {
       warnSearchUnavailable(`HTTP ${res.status}`);
       return [];
@@ -390,6 +414,7 @@ export async function duckduckgoSearch(query, { maxResults = 4, fetchImpl = fetc
     const ranked = rankResults(parseDuckDuckGoResults(await res.text()), { max: maxResults });
     const results = ranked.map((r) => ({ title: r.title || r.url, url: r.url, snippet: r.snippet || '', content: r.snippet || '' }));
     if (results.length) writeSearchCache(cacheKey, results);
+    else warnSearchUnavailable('the endpoint answered but carried no results — treated as a failure rather than as an empty result set, because a challenge page and a genuinely empty search look the same from here');
     return results;
   } catch (err) {
     warnSearchUnavailable(err?.name === 'TimeoutError' ? 'timed out' : (err?.message || 'failed'));

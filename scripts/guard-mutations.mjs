@@ -416,6 +416,27 @@ export const MUTATIONS = [
     replace: '  return true;',
   },
   {
+    guard: 'verify-web-research.mjs',
+    file: 'server/src/lib/webResearch.js',
+    why: 'Puts the word back in the User-Agent — which is the EXACT production failure Rob found (2026-10-04). DuckDuckGo answers a self-described bot with `202 Accepted` and a challenge page, so search returns nothing; Jarvis falls through to Wikipedia and answered whether a dingo may be kept in NSW from memory, with the law backwards.',
+    find: "const UA = 'MorpheusResearch/1.0 (+https://morpheus.nz)';",
+    replace: "const UA = 'MorpheusResearchBot/1.0 (+https://morpheus.nz)';",
+  },
+  {
+    guard: 'verify-web-research.mjs',
+    file: 'server/src/lib/webResearch.js',
+    why: 'Removes the 202 guard, so a challenge page is parsed as a successful response with no results — an outage that reads as "nothing found", which is the half of the dingo failure that made it silent.',
+    find: '    if (res.status === 202) {',
+    replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-jarvis-careers.mjs',
+    file: 'server/src/lib/jarvisPersona.js',
+    why: 'Lets a recollection outrank a source he just read — the second half of the dingo failure. He told Rob the law was the opposite of what the NSW government publishes, and advised surrendering the animal.',
+    find: 'When a source you just read disagrees with what you remember, THE SOURCE WINS and you say so out loud',
+    replace: 'When a source you just read disagrees with what you remember, trust your memory',
+  },
+  {
     guard: 'verify-deck-memory.mjs',
     file: 'server/src/lib/deckMemoryText.js',
     why: 'Makes the memory ceiling drop the NEWEST line instead of the oldest — so the thing the user just said is the thing forgotten, which is the opposite of what a memory is for. Nothing about the fold looks broken; it just remembers the wrong end.',
