@@ -334,6 +334,16 @@ jobs:
       - name: Jarvis snapshot gate and honest prompts
         run: node scripts/verify-jarvis-snapshot-gate.mjs
 
+      # How long Jarvis's reply is allowed to be, and how it is bounded: a quick question got a
+      # 743-token (~550-word) answer in 9.0s against a persona that says "one to four sentences".
+      # The fix is the reply's SHAPE — an explicit role, a { reply: string } schema, one bounded
+      # repair pass — NOT a smaller MAX_REPLY_TOKENS (that turns verbosity into OUTPUT_TRUNCATED,
+      # H6). Asserts the overshoot boundary exactly, that a failed/truncated/junk repair keeps the
+      # ORIGINAL reply, that an empty reply is still refused, and that an explicit report, plan or
+      # breakdown request still gets its long answer.
+      - name: Jarvis reply length is bounded by its shape
+        run: node scripts/verify-jarvis-reply-length.mjs
+
       # Exporting a reply: the filename must survive a downloads folder, a comma inside a cell must not
       # split the columns, and only a real table should offer a spreadsheet.
       - name: Document export

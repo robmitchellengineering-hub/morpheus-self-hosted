@@ -436,6 +436,48 @@ export const MUTATIONS = [
     find: "    if (tree.truncated) return unknownDivergence('tree-truncated');",
     replace: "    if (false) return unknownDivergence('tree-truncated');",
   },
+  {
+    guard: 'verify-jarvis-reply-length.mjs',
+    file: 'server/src/lib/jarvisReplyBudget.js',
+    why: 'Stops an over-long reply from ever being repaired, so the 743-token answer Rob complained about sails through the budget untouched — the boundary claim asserted at exactly the target and one character over it.',
+    find: '  return text.length > targetChars;',
+    replace: '  return false;',
+  },
+  {
+    guard: 'verify-jarvis-reply-length.mjs',
+    file: 'server/src/lib/jarvisReplyBudget.js',
+    why: 'Lets a TRUNCATED rewrite past the decision, so a cut-off JSON object that still parses replaces a complete original — the half-answer H6 forbids, and the exact case the truncation-wins rule exists for.',
+    find: "  if (truncated) return { repaired: false, reply: before, reason: 'truncated' };",
+    replace: "  if (false) return { repaired: false, reply: before, reason: 'truncated' };",
+  },
+  {
+    guard: 'verify-jarvis-reply-length.mjs',
+    file: 'server/src/lib/jarvisReplyBudget.js',
+    why: 'Accepts a bare string as the rewrite again, so a junk payload the schema call should never return is stored as Jarvis\'s reply — the exact bug the strict object-shape check was written for.',
+    find: "  const candidate = result && typeof result === 'object' && typeof result.reply === 'string'\n    ? result.reply.trim()\n    : '';",
+    replace: '  const candidate = extractReply(result);',
+  },
+  {
+    guard: 'verify-jarvis-reply-length.mjs',
+    file: 'server/src/lib/jarvisReplyBudget.js',
+    why: 'Drops the long-form exemption, so a user who explicitly asked for a report or a plan gets their answer shortened — the narrowing the module header and the budget both promise not to do.',
+    find: '  if (longForm) return false;',
+    replace: '  if (false) return false;',
+  },
+  {
+    guard: 'verify-jarvis-reply-length.mjs',
+    file: 'server/src/functions/chatWithJarvis.js',
+    why: 'Moves the persona\'s reply call onto the cheap draft role — the "move Jarvis to flash" decision Rob already made against, and the role-assignment the guard pins as planner (pro @ 0.7, the default it already ran on).',
+    find: "schema: REPLY_SCHEMA, role: 'planner', maxTokens: MAX_REPLY_TOKENS });",
+    replace: "schema: REPLY_SCHEMA, role: 'draft', maxTokens: MAX_REPLY_TOKENS });",
+  },
+  {
+    guard: 'verify-jarvis-reply-length.mjs',
+    file: 'server/src/functions/chatWithJarvis.js',
+    why: 'Logs a zero reply size, so the measurement that proves the loop closed (a shorter stored reply is a smaller conversation block next turn) reads as an empty answer — a length line that lies.',
+    find: 'chars=${reply.length} target=${CONVERSATIONAL_REPLY_TARGET_CHARS}',
+    replace: 'chars=0 target=${CONVERSATIONAL_REPLY_TARGET_CHARS}',
+  },
 ];
 
 /**
