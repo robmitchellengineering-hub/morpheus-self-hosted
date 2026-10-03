@@ -157,8 +157,18 @@ check('the document draft names the draft role', /role:\s*'draft'/.test(docDraft
 // synthesis now names `planner`, which resolves to the SAME pro @ 0.7 the default already
 // gave it (runJarvisSynthesis.js explains why), so the persona's model is unchanged and the
 // choice is explicit rather than accidental; the scheduled synthesis is still role-less.
-check('Jarvis\u2019s reply is deliberately NOT drafted by the draft role',
-  !/role:\s*'draft'/.test(code('server/src/functions/chatWithJarvis.js')));
+//
+// 2026-10-03: the reply file now ALSO carries a bounded SHORTENING pass for an over-long reply,
+// which is a mechanical prose rewrite and correctly runs on the cheap `draft` role (flash @ 0.4).
+// The claim here is about the REPLY, so it is asserted on the reply call itself: the persona
+// stays on `planner`, and it is the shortening pass — not the reply — that is drafted.
+// scripts/verify-jarvis-reply-length.mjs owns the repair, its budget and its fallback.
+check('Jarvis\u2019s reply is deliberately NOT drafted by the draft role — it stays on planner',
+  /schema: REPLY_SCHEMA, role: 'planner'/.test(chatSized));
+check('…and the reply call never takes the draft role',
+  !/schema: REPLY_SCHEMA, role: 'draft'/.test(chatSized));
+check('…while the bounded shortening pass is the cheap prose role',
+  /schema: REPAIR_SCHEMA,\s*role: 'draft'/.test(chatSized));
 check('…and neither is the scheduled synthesis',
   !/role:\s*'draft'/.test(code('server/src/functions/runJarvisSynthesis.js')));
 
