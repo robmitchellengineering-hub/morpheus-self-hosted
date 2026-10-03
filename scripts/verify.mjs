@@ -37,6 +37,7 @@ const HARD = [
   'verify-life-files.mjs',
   'verify-jarvis-voice.mjs',
   'verify-jarvis-snapshot-gate.mjs',
+  'verify-jarvis-reply-length.mjs',
   'verify-doc-export.mjs',
   'verify-gmail-sync.mjs',
   'verify-deck-draft.mjs',

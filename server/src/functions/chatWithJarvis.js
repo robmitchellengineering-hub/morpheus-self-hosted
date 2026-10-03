@@ -15,6 +15,16 @@
 // — the persona has a variant that says plainly it was not given one. See
 // lib/deckSnapshotGate.js (the gate and its load-bearing failure direction),
 // lib/jarvisPersona.js (both variants) and scripts/verify-jarvis-snapshot-gate.mjs.
+//
+// 2026-10-03 — THE REPLY'S LENGTH IS BOUNDED BY ITS SHAPE, NOT BY A CAP. Measured: Rob asked
+// "how much money do you think there is waiting in the emails" and the reply was 743 output
+// tokens (~550 words) in 9.0s, against a persona that already said "usually one to four
+// sentences". The instruction was present and ignored, so the reply call now names its role,
+// carries a `{ reply: string }` schema whose description repeats the length rule, and — if it
+// still overshoots the named budget — gets ONE bounded repair pass that keeps the ORIGINAL on
+// any failure. The budget, the reasoning for its size, the long-form exemption and every
+// decision live in lib/jarvisReplyBudget.js (pure, import-free, asserted with no model).
+// MAX_REPLY_TOKENS is NOT lowered: a smaller cap turns verbosity into OUTPUT_TRUNCATED (H6).
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock, HISTORY_WINDOW } from '../lib/deckMemory.js';
@@ -23,9 +33,20 @@ import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
 import { buildJarvisSystemPrompt } from '../lib/jarvisPersona.js';
 import { SNAPSHOT_NEED_SCHEMA, buildSnapshotNeedPrompt, shouldIncludeSnapshot } from '../lib/deckSnapshotGate.js';
+import {
+  CONVERSATIONAL_REPLY_TARGET_CHARS,
+  REPLY_SCHEMA,
+  REPAIR_SCHEMA,
+  buildRepairPrompt,
+  extractReply,
+  isLongFormRequest,
+  repairDecision,
+  shouldRepairReply,
+} from '../lib/jarvisReplyBudget.js';
 import { runBuildDeckWidget } from './buildDeckWidget.js';
 
-const MAX_REPLY_TOKENS = 6000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply, and the prompt now carries the full energy log + long-term memory, which makes a longer, pattern-spotting reply more likely
+const MAX_REPLY_TOKENS = 6000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply, and the prompt now carries the full energy log + long-term memory, which makes a longer, pattern-spotting reply more likely. 2026-10-03: NOT lowered to force shorter replies. The length is bounded by the reply's SHAPE (REPLY_SCHEMA + one repair pass, see lib/jarvisReplyBudget.js); a smaller cap only turns verbosity into OUTPUT_TRUNCATED.
+const MAX_REPAIR_TOKENS = 2000; // the shortening pass writes at most ~600 characters; 2000 leaves a flash-class model room for its own reasoning before it does
 
 // Phase 3 of the Jarvis-built widgets plan (2026-09-18) — a cheap classifier,
 // same pattern as classifyDeckDumpItem.js, run before the full Jarvis reply
@@ -191,7 +212,36 @@ Jarvis:`;
   // The gate's own decision, on its own line so the composition log above stays lengths-only.
   console.log(`[chatWithJarvis] snapshot gate: included=${includeSnapshot}`);
 
-  const { result: reply } = await invokeAI({ userId: user.id, prompt, fileUrls, maxTokens: MAX_REPLY_TOKENS });
+  // A turn that explicitly asks for a report, plan or breakdown keeps the long path: the budget
+  // in lib/jarvisReplyBudget.js does not apply to it, and its reply is never sent for repair.
+  const longForm = isLongFormRequest(message);
+
+  // The reply call names its own ROLE and carries a `{ reply: string }` SCHEMA. The schema is
+  // what removes the preamble and the markdown wrapper, and it is where the length rule lives a
+  // second time, next to the persona — because the persona is prose and prose does not throw.
+  // The role is `planner`, on purpose: it resolves to deepseek-v4-pro @ 0.7, which is EXACTLY
+  // what this call already got from the platform default (MODEL-DECISIONS: the deck's
+  // conversation stays on pro — persona and judgement, Rob's call). Naming it moves the model by
+  // nothing and makes the choice visible instead of accidental. It is NOT moved to flash.
+  let reply = '';
+  let truncated = false;
+  try {
+    const { result, truncated: wasTruncated = false } = await invokeAI({ userId: user.id, prompt, fileUrls, schema: REPLY_SCHEMA, role: 'planner', maxTokens: MAX_REPLY_TOKENS });
+    reply = extractReply(result);
+    truncated = wasTruncated;
+  } catch (err) {
+    // H6: a SCHEMA call that hits the cap THROWS (the old plain-prose call returned the cut-off
+    // text instead). That is right for a value the caller acts on and wrong here — without this
+    // branch a long-form answer that ran to the ceiling would be LOST, where before this change
+    // it came back readable but cut. So the truncation is answered the way this call always
+    // did: one retry WITHOUT the schema, which returns the prose it managed to write. A verbose
+    // answer beats a lost one, and this is the only reason the cap is still the guard rail it was.
+    if (!/^OUTPUT_TRUNCATED/.test(err?.message || '')) throw err;
+    console.warn('[chatWithJarvis] reply hit the token ceiling as JSON — retrying as plain prose so a long answer is not lost');
+    const { result: prose } = await invokeAI({ userId: user.id, prompt, fileUrls, role: 'planner', maxTokens: MAX_REPLY_TOKENS });
+    reply = extractReply(prose);
+    truncated = true;
+  }
 
   if (!String(reply || '').trim()) {
     // A 200 with an empty body was stored as an empty bubble: the operator saw a blank
@@ -200,6 +250,40 @@ Jarvis:`;
     // produced nothing, rather than being handed a blank Jarvis reply to interpret.
     throw new Error('Jarvis returned an empty reply — nothing was stored. Ask again.');
   }
+
+  // At most ONE bounded repair pass, and only for a conversational turn that overshot the
+  // target. `draft` is this repo's mechanical-prose role (flash @ 0.4) — a rewrite is prose
+  // work, not classification. The DECISION is pure (`repairDecision`): a failed, truncated,
+  // junk or no-shorter rewrite keeps the ORIGINAL reply, because a verbose answer beats a lost
+  // one and nothing is ever stored empty.
+  let repaired = false;
+  if (shouldRepairReply(reply, { longForm })) {
+    try {
+      const { result: repairResult, truncated: repairTruncated = false } = await invokeAI({
+        userId: user.id,
+        prompt: buildRepairPrompt({ reply }),
+        schema: REPAIR_SCHEMA,
+        role: 'draft',
+        maxTokens: MAX_REPAIR_TOKENS,
+      });
+      const decision = repairDecision({ original: reply, result: repairResult, truncated: repairTruncated });
+      if (decision.repaired) {
+        reply = decision.reply;
+        repaired = true;
+      } else {
+        console.warn(`[chatWithJarvis] reply repair kept the original (${decision.reason}) — nothing was lost`);
+      }
+    } catch (err) {
+      // A throw here must never take the turn down: the original reply is already in hand.
+      console.warn('[chatWithJarvis] reply repair failed — keeping the original reply:', err?.message || err);
+    }
+  }
+
+  // The ANSWER's size, LENGTHS ONLY — the same contract as the prompt-composition line above,
+  // and the measurement that makes this fix visible. A reply at or under the target is smaller
+  // than CONVERSATION_PER_MESSAGE_CHARS (1500), so the next turn's conversation block carries it
+  // whole instead of slicing it — and a smaller stored reply is a smaller prompt on the next turn.
+  console.log(`[chatWithJarvis] reply chars: chars=${reply.length} target=${CONVERSATIONAL_REPLY_TARGET_CHARS} repaired=${repaired} longForm=${longForm} truncated=${truncated}`);
 
   await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'jarvis', content: reply } });
 
