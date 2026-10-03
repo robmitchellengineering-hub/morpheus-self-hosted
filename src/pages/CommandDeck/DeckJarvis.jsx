@@ -5,6 +5,7 @@ import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { C } from './deckConstants';
 import { inputStyle, IconButton, pillBtn, ghostBtn, MicField } from './DeckUI';
+import { safeFilename, textToCsv, paragraphs, looksTabular } from './exportDoc';
 
 // Jarvis's own full-screen page (its own bottom tab) — voice input via the
 // browser's SpeechRecognition and voice output via Morpheus's own existing
@@ -19,6 +20,55 @@ export default function DeckJarvis() {
     docBusy, docErr, docResult, createDeckDocument, uploadFile,
   } = useCommandDeck();
   const { speak, stop, speakingId, loadingId } = useMorpheusVoice();
+
+  // ---- exporting a reply --------------------------------------------------
+  // The old base44 Deck's DocumentSheet could emit a PDF, Word and Excel file from any reply; this one
+  // could only produce a Google Doc (audit §4). These are the client-side formats coming back, built on
+  // the pure helpers in ./exportDoc so the deciding is guarded and only the drawing lives here.
+  const docName = (m) => safeFilename(String(m.content || '').split(/\s+/).slice(0, 6).join(' '));
+
+  const download = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked on a delay: revoking immediately can cancel the download in some browsers.
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  const exportCsv = (m) => download(new Blob([textToCsv(m.content)], { type: 'text/csv;charset=utf-8' }), `${docName(m)}.csv`);
+
+  const exportWord = (m) => {
+    const escapeHtml = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const body = paragraphs(m.content).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
+    download(new Blob([`<html><head><meta charset="utf-8"></head><body>${body}</body></html>`], { type: 'application/msword' }), `${docName(m)}.doc`);
+  };
+
+  // jspdf is already a dependency, imported dynamically so it is not in the main bundle for a reply
+  // nobody exports.
+  const exportPdf = async (m) => {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const margin = 48;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const width = pageWidth - margin * 2;
+    let y = margin;
+    doc.setFontSize(11);
+    for (const para of paragraphs(m.content)) {
+      for (const line of doc.splitTextToSize(para, width)) {
+        if (y > pageHeight - margin) { doc.addPage(); y = margin; }
+        doc.text(line, margin, y);
+        y += 15;
+      }
+      y += 8;
+    }
+    doc.save(`${docName(m)}.pdf`);
+  };
+
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [showDocForm, setShowDocForm] = useState(false);
   const [docInstruction, setDocInstruction] = useState('Summarize our conversation');
@@ -161,12 +211,13 @@ export default function DeckJarvis() {
           </div>
         )}
         {jarvisMessages.map((m) => (
-          <button
+          <div
             key={m.id}
+            style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '88%', display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: '0.25rem' }}
+          >
+          <button
             onClick={() => (speakingId === m.id ? stop() : speak(m))}
             style={{
-              alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-              maxWidth: '88%',
               background: m.role === 'user' ? C.brass : 'rgba(246,240,223,0.08)',
               border: m.role === 'user' ? 'none' : `1px solid ${speakingId === m.id ? C.gold : 'rgba(246,240,223,0.15)'}`,
               borderRadius: 10,
@@ -189,6 +240,20 @@ export default function DeckJarvis() {
             {m.content}
             {loadingId === m.id && <span style={{ opacity: 0.6 }}> …</span>}
           </button>
+          {/* Downloads sit OUTSIDE the message button — it is a button already (tap to hear), and a
+              button inside a button is invalid and swallows the tap. */}
+          {m.role !== 'user' && (
+            <div style={{ display: 'flex', gap: '0.3rem' }}>
+              {[['PDF', () => exportPdf(m)], ['Word', () => exportWord(m)]].map(([label, run]) => (
+                <button key={label} onClick={run} style={{ ...ghostBtn, fontSize: '0.66rem', color: 'rgba(246,240,223,0.6)', padding: '0.15rem 0.4rem' }}>{label}</button>
+              ))}
+              {/* A spreadsheet is only offered when the reply actually looks like a table. */}
+              {looksTabular(m.content) && (
+                <button onClick={() => exportCsv(m)} style={{ ...ghostBtn, fontSize: '0.66rem', color: 'rgba(246,240,223,0.6)', padding: '0.15rem 0.4rem' }}>CSV</button>
+              )}
+            </div>
+          )}
+          </div>
         ))}
         {jarvisSending && (
           <div style={{ alignSelf: 'flex-start', fontSize: '0.78rem', color: 'rgba(246,240,223,0.5)' }}>Jarvis is thinking…</div>

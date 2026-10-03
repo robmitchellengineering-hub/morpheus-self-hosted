@@ -54,3 +54,39 @@ export function summarizeFiling({ labels = [], failedTexts = [], originalText = 
 
   return { message, restore, landed, total };
 }
+
+/**
+ * Why a press of + filed nothing, in the operator's words.
+ *
+ * A capture that fails silently is the failure this whole area exists to prevent. Until now the
+ * outer catch in `addDump` restored the text and set the deck's generic save flag, which renders as
+ * a small "· couldn't save last change — try again" suffix on a line elsewhere on the page — so a
+ * press that filed nothing looked exactly like a press that did nothing at all. Measured
+ * 2026-10-02: nothing had been written to ANY deck table for sixteen hours and the only signal was
+ * that suffix. Rob: "just sits there doing nothing when i hit the plus button."
+ *
+ * The causes are worth telling apart, because what the operator does next is different for each —
+ * and in every one of them the speaker's words are still in hand, which is the part that must be
+ * said out loud rather than left to be discovered.
+ */
+export function captureFailureMessage(err) {
+  const safe = 'Your words are still in the box.';
+  const status = Number(err?.status) || 0;
+  const code = String(err?.code || '');
+
+  // Checked before `status`, because apiFetch's timeout sets status 0 and would otherwise be
+  // reported as a connection failure — a different cause with a different next move.
+  if (code === 'CLIENT_TIMEOUT') {
+    return `Morpheus did not answer in time, so nothing was filed. ${safe}`;
+  }
+  if (status === 401 || status === 403) {
+    return `Your sign-in has expired, so nothing was filed. Sign in again and press + once more and it will file. ${safe}`;
+  }
+  if (status >= 500) {
+    return `Morpheus could not file that (server error ${status}), so nothing was filed. ${safe}`;
+  }
+  if (!status) {
+    return `Could not reach Morpheus, so nothing was filed — check the connection and press + again. ${safe}`;
+  }
+  return `Nothing was filed (${status}${err?.message ? `: ${err.message}` : ''}). ${safe}`;
+}

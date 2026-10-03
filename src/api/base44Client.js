@@ -166,8 +166,11 @@ const ENTITY_NAMES = [
   // Command Deck (internal codename "Deck")
   'DeckJarvisMessage', 'DeckDumpItem', 'DeckPerson', 'DeckTask', 'DeckConsignmentItem', 'DeckRepairJob', 'DeckRepairFile',
   'DeckMurbahOpportunity', 'DeckInboxItem', 'DeckStrategyNote', 'DeckKnowledgeNote',
-  'DeckLifeStream', 'DeckLifeStreamNote', 'DeckEnergyLogEntry', 'DeckFocusEntry',
+  'DeckLifeStream', 'DeckLifeStreamNote', 'DeckLifeFile', 'DeckEnergyLogEntry', 'DeckFocusEntry',
   'DeckWidgetInstance', 'DeckBusinessProfile', 'DeckWidgetBuild',
+  // Asteroids reward: the play bank is a ledger of earned credits and played games (see
+  // server/prisma/schema.prisma → DeckPlayCredit / DeckPlayScore).
+  'DeckPlayCredit', 'DeckPlayScore',
 ];
 
 const entities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, makeEntity(name)]));

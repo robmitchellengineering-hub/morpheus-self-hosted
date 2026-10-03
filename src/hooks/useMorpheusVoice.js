@@ -28,6 +28,13 @@ function pickVoice(voices) {
   return pool[0];
 }
 
+// The butler voice plays at 1.3×, which is what the old base44 deck did
+// (`Jarvis.jsx`: `audio.playbackRate = 1.3`). Rob, 2026-10-02: "i remeber javis
+// on the base 44 app being a better experiance ... the chat was super fast". The
+// voice is unchanged; it is simply delivered 30% faster, which is most of what
+// that memory actually is. One constant, so it is one place to tune.
+const PLAYBACK_RATE = 1.3;
+
 export function useMorpheusVoice() {
   const [speakingId, setSpeakingId] = useState(null);
   const [loadingId, setLoadingId] = useState(null);
@@ -82,6 +89,7 @@ export function useMorpheusVoice() {
         const audioUrl = res?.data?.audioUrl;
         if (!audioUrl) throw new Error('No audio URL returned');
         const audio = new Audio(audioUrl);
+        audio.playbackRate = PLAYBACK_RATE;
         audioRef.current = audio;
         audio.onplay = () => { setSpeakingId(message.id); setLoadingId(null); };
         audio.onended = () => { setSpeakingId(prev => prev === message.id ? null : prev); audioRef.current = null; };

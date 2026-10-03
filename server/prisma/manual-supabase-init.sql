@@ -1189,3 +1189,63 @@ alter table deck_business_profiles add column if not exists fee_rate_over double
 alter table usage_events add column if not exists task text;
 alter table usage_events add column if not exists status text;
 alter table usage_events add column if not exists duration_ms integer;
+
+-- add-deck-play.sql — the Asteroids reward: the play bank and the Morpheus-wide scoreboard.
+-- The bank is a ledger (credited seconds minus seconds played), and deck_play_credits is unique on
+-- (created_by_id, task_id) so a completed task can only ever pay once.
+CREATE TABLE "deck_play_credits" (
+    "id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "task_id" TEXT,
+    "seconds" INTEGER NOT NULL DEFAULT 60,
+    "reason" TEXT NOT NULL DEFAULT 'task',
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "deck_play_credits_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "deck_play_scores" (
+    "id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "initials" TEXT NOT NULL,
+    "score" INTEGER NOT NULL,
+    "seconds_played" INTEGER NOT NULL,
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "deck_play_scores_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "deck_play_credits_created_by_id_task_id_key" ON "deck_play_credits"("created_by_id", "task_id");
+
+CREATE INDEX "deck_play_scores_score_idx" ON "deck_play_scores"("score");
+
+ALTER TABLE "deck_play_credits" ADD CONSTRAINT "deck_play_credits_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "deck_play_scores" ADD CONSTRAINT "deck_play_scores_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- add-deck-murbah-money.sql — the money half of the Murbah ledger (see that file for why).
+alter table deck_murbah_opportunities add column if not exists price double precision;
+alter table deck_murbah_opportunities add column if not exists deposit_paid boolean not null default false;
+alter table deck_murbah_opportunities add column if not exists paid boolean not null default false;
+alter table deck_murbah_opportunities add column if not exists end_date timestamp(3);
+
+-- add-deck-life-files.sql — attachments on a life stream (see that file for why).
+CREATE TABLE "deck_life_files" (
+    "id" TEXT NOT NULL,
+    "life_stream_id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "file_url" TEXT NOT NULL,
+    "file_name" TEXT NOT NULL DEFAULT '',
+    "file_type" TEXT NOT NULL DEFAULT '',
+    "is_image" BOOLEAN NOT NULL DEFAULT false,
+    "note" TEXT,
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "deck_life_files_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX "deck_life_files_life_stream_id_idx" ON "deck_life_files"("life_stream_id");
+
+ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_life_stream_id_fkey" FOREIGN KEY ("life_stream_id") REFERENCES "deck_life_streams"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -304,6 +304,33 @@ jobs:
       - name: Brain-dump filing outcome
         run: node scripts/verify-dump-filing.mjs
 
+      # The Asteroids reward's economy: the play bank is a ledger (credited seconds minus
+      # seconds played) and the board is Morpheus-wide, so an arithmetic slip hands out free
+      # play time and the initials rule is the one place a user string faces other accounts.
+      - name: Asteroids play bank and board
+        run: node scripts/verify-deck-play.mjs
+
+      # The Murbah ledger: a half-typed price must not become NaN or a coerced 0, and an all-day
+      # Calendar event ends EXCLUSIVELY while the booking range is inclusive — an off-by-one there
+      # shifts every booking by a day, silently.
+      - name: Murbah ledger money and range
+        run: node scripts/verify-murbah-money.mjs
+
+      # Life-stream attachments: is_image decides a thumbnail vs a document icon, and the wrong way
+      # round shows a broken image where a plain icon would have done.
+      - name: Life-stream attachments
+        run: node scripts/verify-life-files.mjs
+
+      # Jarvis's voice: the prompt constraints that keep replies speakable (dropped once already, and a
+      # prompt is prose — nothing fails when a rule disappears), and the 1.3x butler playback.
+      - name: Jarvis voice and playback
+        run: node scripts/verify-jarvis-voice.mjs
+
+      # Exporting a reply: the filename must survive a downloads folder, a comma inside a cell must not
+      # split the columns, and only a real table should offer a spreadsheet.
+      - name: Document export
+        run: node scripts/verify-doc-export.mjs
+
       # The Deck's long-term memory fold: a valid answer with no memory text must
       # not mark a batch of turns as folded, which would drop them from memory
       # permanently and without a word.
@@ -755,6 +782,15 @@ jobs:
       # both the handler and the CompilePanel keep the failures (no database needed).
       - name: Compile-artifact save is honest about partials
         run: node scripts/verify-compile-artifacts.mjs
+
+      # The save of a real macOS build is ~217 MB, downloaded and re-uploaded. It ran inside
+      # one HTTP request, so Cloudflare's ~100s proxy read timeout cut it before the browser's
+      # own 210s timeout could fire — and a build that had SUCCEEDED was reported as failed,
+      # with "tap RECOMPILE" on an app that already existed. This asserts the save is a
+      # background job with a polled status that survives a reload, that it stays streamed and
+      # resumable, and that a save failure is never a build failure.
+      - name: The artifact save runs in the background and never reads as a failed build
+        run: node scripts/verify-artifact-save-background.mjs
 
       # A macOS app compiled on macos-latest is Apple-silicon-only, and an Intel Mac answers
       # "not supported on this Mac" — Rob, holding a disk image Morpheus had just built him.

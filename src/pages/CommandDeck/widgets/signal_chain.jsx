@@ -369,7 +369,7 @@ function RepairsPanel({ items, form, setForm, onAdd, onUpdate, onCycle, onRemove
 
 function MurbahPanel({
   items, onCycle, onNote, stageLabel,
-  onDate, onSync, syncBusy, syncMsg,
+  onDate, onMoney, onSync, syncBusy, syncMsg,
   calendarEvents, eventsLoading, onRefreshEvents,
 }) {
   const stageColor = { idea: C.walnutSoft, enquired: C.gold, booked: C.sage, active: C.alert };
@@ -405,6 +405,15 @@ function MurbahPanel({
                 onChange={(e) => onDate(m.id, e.target.value)}
                 style={{ ...miniInput, flex: '1 1 140px' }}
               />
+              {/* The other end of the range. The old deck's ledger tracked start AND end; only the
+                  start reaches Calendar, which stays an all-day event on booking_date. */}
+              <input
+                type="date"
+                value={(m.end_date || '').slice(0, 10)}
+                onChange={(e) => onMoney(m.id, { end_date: e.target.value })}
+                title="End date (optional)"
+                style={{ ...miniInput, flex: '1 1 140px' }}
+              />
               <button
                 onClick={() => onSync(m.id)}
                 disabled={!dateValue || syncBusy === m.id}
@@ -413,6 +422,28 @@ function MurbahPanel({
               >
                 {syncBusy === m.id ? <Loader2 size={12} className="animate-spin" /> : <Calendar size={12} />}
                 {m.calendar_event_id ? 'Re-sync' : 'Sync'}
+              </button>
+            </div>
+
+            {/* The money half. In the old deck this re-pushed the whole booking — payment flags
+                included — into the Calendar event on every edit; here the flags live with the
+                booking and the Sync button above carries them across. */}
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={m.price ?? ''}
+                onChange={(e) => onMoney(m.id, { price: e.target.value })}
+                placeholder="Price"
+                style={{ ...miniInput, flex: '1 1 90px' }}
+              />
+              <button onClick={() => onMoney(m.id, { deposit_paid: !m.deposit_paid })} style={{ ...pillBtn(m.deposit_paid ? C.sage : C.walnutSoft), fontSize: '0.68rem', flexShrink: 0 }}>
+                {m.deposit_paid ? 'Deposit paid' : 'No deposit'}
+              </button>
+              <button onClick={() => onMoney(m.id, { paid: !m.paid })} style={{ ...pillBtn(m.paid ? C.sage : C.oxblood), fontSize: '0.68rem', flexShrink: 0 }}>
+                {m.paid ? 'Paid in full' : 'Unpaid'}
               </button>
             </div>
           </div>
@@ -452,7 +483,7 @@ export default function SignalChainWidget() {
     openStream, setOpenStream, consignment, repairs, murbahOpps,
     cForm, setCForm, addConsignment, toggleSold, updateConsignment, removeConsignment,
     rForm, setRForm, addRepair, updateRepair, cycleRepairStage, removeRepair, addFilesToJob, removeFileFromJob,
-    cycleMurbahStage, updateMurbahNote, updateMurbahDate, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
+    cycleMurbahStage, updateMurbahNote, updateMurbahDate, updateMurbahMoney, syncMurbahCalendar, murbahSyncBusy, murbahSyncMsg,
     murbahCalendarEvents, murbahEventsLoading, loadMurbahCalendarEvents,
     setLightboxImg, askToDelete, uploadFile, addPending, feeTiers,
   } = useCommandDeck();
@@ -522,7 +553,7 @@ export default function SignalChainWidget() {
                   {id === 'murbah' && (
                     <MurbahPanel
                       items={murbahOpps} onCycle={cycleMurbahStage} onNote={updateMurbahNote} stageLabel={murbahStageLabel}
-                      onDate={updateMurbahDate} onSync={syncMurbahCalendar} syncBusy={murbahSyncBusy} syncMsg={murbahSyncMsg}
+                      onDate={updateMurbahDate} onMoney={updateMurbahMoney} onSync={syncMurbahCalendar} syncBusy={murbahSyncBusy} syncMsg={murbahSyncMsg}
                       calendarEvents={murbahCalendarEvents} eventsLoading={murbahEventsLoading} onRefreshEvents={loadMurbahCalendarEvents}
                     />
                   )}

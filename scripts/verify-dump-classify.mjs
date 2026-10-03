@@ -348,6 +348,89 @@ check('…against the speaker\'s own name as well as other people\'s',
 check('…while the PROMPT still gets only other people',
   /peopleNames = people\.filter\(\(p\) => !p\.is_self\)/.test(handlerSrc), true);
 
+console.log('\n11. thinking about something is not doing it — the prompt states the rule it was deciding against');
+// Rob, 2026-10-02: "i also just said im thinking about buying murbah music 2 shops maybe and it filled
+// that to tasks too, thats clearly strategy type stuff". Measured in usage_events: the classify call
+// ran (in=976, out=4201, 20s) and returned task, against the prompt's own rule that a task reads as
+// "I need to X" / an instruction to do something. The prompt named no test for a possibility being
+// turned over, so the model had only the ACTIONABLE-vs-NOT question to go on and "buying two shops"
+// answered it.
+//
+// This can only assert the RULE IS IN THE PROMPT — the model's obedience is not reachable from here
+// (this Mac's server/.env is the dock-rig mock). What it prevents is the rule silently falling out
+// again, which is how the gap appeared in the first place.
+const considerationPrompt = buildClassifyPrompt({ text: 'i think I might look at buying murbah music its upforsale 2 shops maybe', businessContext: 'a music shop' });
+check('the prompt says a consideration is not an action',
+  /THINKING ABOUT something is not DOING it/.test(considerationPrompt), true);
+check('…and names the hedging language that makes it one',
+  ['thinking about', 'might', 'maybe', 'considering', 'what if we'].every((w) => considerationPrompt.includes(w)), true);
+check('…and routes it to strategy, not task',
+  /is STRATEGY when it concerns the business/.test(considerationPrompt), true);
+check('…with a worked example of the business case',
+  /buying two more shops, maybe" is strategy/.test(considerationPrompt), true);
+check('…while still keeping the everyday action case as a task',
+  /"I need to get milk" is a task/.test(considerationPrompt) && /If it reads as "I need to X"/.test(considerationPrompt), true);
+check('the strategy bucket now covers an opportunity or direction, not only a plan',
+  /strategy, plan, approach, opportunity or direction worth tracking/.test(considerationPrompt), true);
+
+console.log('\n11b. a statement about how the speaker IS is a reflection, not a task about the tasks');
+// Rob, 2026-10-02. The dump — "I have AuHD and excecutive disfunction issue, i have a hard time keeping
+// track of things and actioning tasks" — made flash burn 6277 and then 8000 output tokens across two
+// attempts (28s, 35s), and the words ended up in the unsorted pile. The life_stream bullet described an
+// area of life going badly but said nothing about the speaker describing THEMSELVES, and the trailing
+// "actioning tasks" is the trap: it reads as work not getting done, which invites the task bucket and a
+// long argument with itself.
+const selfDescription = buildClassifyPrompt({ text: 'I have AuHD and excecutive disfunction issue, i have a hard time keeping track of things and actioning tasks', businessContext: 'a music shop' });
+check('the prompt covers the speaker describing themselves',
+  /statement about how the SPEAKER IS/.test(selfDescription), true);
+check('…and says it is life_stream even when it mentions tasks',
+  /always life_stream, even when it mentions tasks or things not getting done/.test(selfDescription), true);
+check('…with the real case as its worked example',
+  /I have ADHD and executive dysfunction/.test(selfDescription), true);
+check('…and tells the model not to deliberate on it, which is the cost being fixed',
+  /Do not deliberate over this one/.test(selfDescription), true);
+
+console.log('\n12. an open-ended intention about a life area is not an errand');
+// Rob, 2026-10-02: "i need to do more exercise, that just went to tasks too". Confirmed in production:
+// no usage_events row at all, so this was NEVER the model — the code fast path owns every "I need to
+// X" and claimed this one as a task. The prompt\'s rule has two halves ("a STATUS UPDATE or REFLECTION
+// about health... If it names a specific thing to go do, it\'s a task instead") and the fast path had
+// only encoded the first. The negatives below matter as much as the positives: the whole risk of a
+// fast path is claiming an errand it should have left alone.
+const lifeIntent = (t) => {
+  const r = patternClassify(t, { people: [], selfNames: ['Rob'] });
+  return r && r.length ? `${r[0].destination}${r[0].life_stream_key ? '/' + r[0].life_stream_key : ''}` : null;
+};
+check('more exercise is the health stream', lifeIntent('I need to do more exercise'), 'life_stream/health');
+check('eating better likewise', lifeIntent('I need to eat better'), 'life_stream/health');
+check('saving more is the money stream', lifeIntent('I need to save more money'), 'life_stream/money');
+check('seeing the kids more is the people stream', lifeIntent('I need to see the kids more'), 'life_stream/people');
+check('reading more is growth', lifeIntent('I need to read more'), 'life_stream/growth');
+
+console.log('\n13. …and the errands it already handled are untouched');
+// Each of these contains the same words the new rule keys on, and each is still something to go and
+// do. If a future tweak to OPEN_ENDED/LIFE_AREA starts claiming these, that is the regression.
+check('"get milk" is still a task — the case #469 was built for', lifeIntent('I need to get milk'), 'task');
+check('"get MORE milk" is a quantity of an errand, not an intention', lifeIntent('I need to get more milk'), 'task');
+check('paying the gym is a payment, not a health intention', lifeIntent('I need to pay the gym membership'), 'task');
+check('booking the dentist is a specific thing to do', lifeIntent('I need to book a dentist appointment'), 'task');
+check('"call the bank" is still a task', lifeIntent('I need to call the bank'), 'task');
+// The distinction Rob called "perfect differentiation", verified in production 2026-10-02 and locked here so
+// a future edit to OPEN_ENDED cannot quietly lose it. Same subject, same activity, different KIND: a direction
+// to move in versus an instance to do. Note this is NOT a rule about the word "today" — the open-ended marker
+// is the only thing that routes to a life stream, so anything time-bound or specific falls to the errand
+// default. That is why the pair separates without either phrase being enumerated.
+check('"MORE exercise" is the health stream (the direction)',
+  lifeIntent('I need to do more exercise'), 'life_stream/health');
+check('"some exercises TODAY" is a task (the instance)',
+  lifeIntent('I need to do some exercises today'), 'task');
+check('…and a bare instance is a task too, with no marker at all',
+  lifeIntent('I need to exercise today'), 'task');
+check('the other #469 cases still hold',
+  lifeIntent('I need to get cheese') === 'task' && lifeIntent('Rob needs to get bread') === 'task', true);
+check('two thoughts are still the model\'s job, whatever the words',
+  lifeIntent('I need to do more exercise and eat better'), null);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
