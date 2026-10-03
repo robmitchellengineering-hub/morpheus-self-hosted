@@ -31,7 +31,12 @@ function check(name, actual, expected) {
   }
 }
 
-const prompt = readFileSync(new URL('../server/src/functions/chatWithJarvis.js', import.meta.url), 'utf8');
+const prompt = [
+  readFileSync(new URL('../server/src/functions/chatWithJarvis.js', import.meta.url), 'utf8'),
+  // 2026-10-03: the persona text moved to its own import-free module (so the snapshot
+  // gate's guard can build both variants with no Prisma). The voice checks follow it.
+  readFileSync(new URL('../server/src/lib/jarvisPersona.js', import.meta.url), 'utf8'),
+].join('\n');
 const voice = readFileSync(new URL('../src/hooks/useMorpheusVoice.js', import.meta.url), 'utf8');
 
 console.log('\n1. the persona survives');

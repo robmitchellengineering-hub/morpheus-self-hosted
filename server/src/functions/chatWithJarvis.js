@@ -6,12 +6,23 @@
 // low-level plumbing (invokeAI) and returns a plain JSON { reply }, same as
 // any other simple function (see functions.routes.js — a handler that just
 // returns a value gets `res.json(result)` for free).
+//
+// 2026-10-03 — THE SNAPSHOT IS GATED ON THE QUESTION. Measured: persona + rules ≈ 690
+// tokens, the live snapshot ≈ 2,400, so the snapshot was 78% of every prompt including
+// "say hello to my sister". A cheap `classify` boolean now decides whether the snapshot
+// is fetched and interpolated at all, and — because dropping the data while the persona
+// still said "You're looking at a live snapshot of…" would build a hallucination machine
+// — the persona has a variant that says plainly it was not given one. See
+// lib/deckSnapshotGate.js (the gate and its load-bearing failure direction),
+// lib/jarvisPersona.js (both variants) and scripts/verify-jarvis-snapshot-gate.mjs.
 import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getJarvisMemory, formatMemoryBlock, HISTORY_WINDOW } from '../lib/deckMemory.js';
 import { buildConversationBlock } from '../lib/promptBounds.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
 import { buildDeckSnapshot } from '../lib/deckSnapshot.js';
+import { buildJarvisSystemPrompt } from '../lib/jarvisPersona.js';
+import { SNAPSHOT_NEED_SCHEMA, buildSnapshotNeedPrompt, shouldIncludeSnapshot } from '../lib/deckSnapshotGate.js';
 import { runBuildDeckWidget } from './buildDeckWidget.js';
 
 const MAX_REPLY_TOKENS = 6000; // generous — this deployment's model can burn a chunk of the budget on reasoning before the actual reply, and the prompt now carries the full energy log + long-term memory, which makes a longer, pattern-spotting reply more likely
@@ -52,6 +63,16 @@ Say true only for an unambiguous build request ("build me a widget that...", "ca
   return result?.isWidgetBuildRequest === true;
 }
 
+// The second cheap boolean on the same hot path, and the main speed lever of this change:
+// does this message need the ~2,400-token Deck snapshot at all? Same shape as the widget
+// check above — `classify`, a one-field schema, 1500 tokens. The DECISION is not made here:
+// `shouldIncludeSnapshot` owns the failure direction (only an explicit, usable `false`
+// drops the snapshot), so the rule is testable with fixtures and no model.
+async function classifySnapshotNeed(userId, message) {
+  const { result } = await invokeAI({ userId, prompt: buildSnapshotNeedPrompt(message), schema: SNAPSHOT_NEED_SCHEMA, role: 'classify', maxTokens: 1500 });
+  return shouldIncludeSnapshot(result);
+}
+
 // Rob, 2026-09-18: the build should get the same grounding a normal Jarvis
 // reply does (what business/person this is for), not just the bare
 // sentence the user typed — so the planner writes a widget that actually
@@ -63,29 +84,6 @@ Say true only for an unambiguous build request ("build me a widget that...", "ca
 // widgetAuthoringContext in buildDeckWidget.js).
 function widgetBuildGoal(message, { firstName, businessContext }) {
   return `${message}\n\n(For context: this is for ${firstName}, who runs ${businessContext}.)`;
-}
-
-// 2026-09-17: parameterized (was a fixed const hardcoding "Rob"/"Valiant
-// Music"/his exact $100k-on-30hrs goal/his ADHD) so the same persona
-// structure — butler + big brother, dry cutting wit, cross-domain expert
-// framing, holistic-life worldview — works for any account, not just Rob's.
-// He was the only account this ever ran for, so nothing about his own
-// experience changes: his DeckBusinessProfile is backfilled with exactly
-// this prompt's old hardcoded facts (see this feature's migration SQL).
-function buildJarvisSystemPrompt({ firstName, businessContext }) {
-  return `You are Jarvis — ${firstName}'s butler, and something like a big brother: fiercely on their side, never soft about it. Dry, devilish wit, understated rather than goofy. Your encouragement can be cutting — you'll rib them for sitting on something obvious in the same breath as pushing them to just do it, and it lands because they know you mean it.
-
-You've had a string of careers, genuinely top of your field in every one of them — call on whichever fits what they're actually asking (finance, strategy, hospitality, leadership, whatever the moment calls for), name the hat you're wearing, and give real expert-grade advice, not generic life-coach platitudes, always tied back to what they're actually trying to build.
-
-Your worldview: a successful life isn't just the business turning a profit. It's work, money, relationships, family, fun, real growth, actual strategy, and genuine downtime, all in balance — not one traded off against the rest indefinitely. ${firstName} runs ${businessContext} — but you notice just as fast when they're neglecting the people around them, haven't had a real day off, or are white-knuckling something that isn't actually moving them toward any of it.
-
-Blunt beats gentle with this person — say the thing plainly instead of burying it in caveats.
-
-You're looking at a live snapshot of their brain dump, tasks, strategy notes, knowledge/ideas, their business's own operational queues if they use them, their FULL energy log (every day they've ever logged, not just a recent window), and their life streams outside work (health, money, home, people, growth).
-
-The energy log is one of your sharpest tools precisely because it's the whole history — actually scan it for real patterns (day-of-week dips, a slide over the last month, a level that never really recovered after something), not just today's number. When you spot one worth naming, don't just name it: either suggest tasks that actually work with the pattern (heavy stuff scheduled for when they're reliably sharp, not fought against a known slump), or give a real strategy to address it if it looks like something worth fixing rather than just working around.
-
-Answer whatever they actually ask, grounded in that snapshot — connect the dots across business and life where it's relevant, flag anything stale or that could make money fast, and if the energy log shows a real pattern worth naming, name it plainly, dry wit intact, never therapy-speak. Be direct and specific, never generic boilerplate. Match your reply's length to the question — a quick question gets a quick, cutting answer, not a forced report — and keep it short enough to speak aloud: usually one to four sentences. Ask a clarifying question only when it genuinely changes your answer. No preamble, no sign-off.`;
 }
 
 // Photo/PDF/Word/Excel attachments (Rob, 2026-09-17: "javis needs to be
@@ -108,8 +106,27 @@ export default async function handler({ user, body }) {
   const fileUrls = Array.isArray(body?.fileUrls) ? body.fileUrls.filter((u) => typeof u === 'string' && u) : [];
   if (!message && fileUrls.length === 0) throw Object.assign(new Error('message is required'), { status: 400 });
 
-  const [snapshot, history, memory, businessContext] = await Promise.all([
-    buildDeckSnapshot(user.id),
+  // Both cheap booleans run together with the data fetches, so the two extra round-trips
+  // are not serial. Each one FAILS OPEN in the direction that cannot hurt the operator:
+  // a failed widget check is ordinary chat, a failed snapshot check INCLUDES the snapshot
+  // (a false "no deck needed" answers a real question blind; a false "deck needed" costs
+  // tokens — prefer the tokens).
+  //
+  // The history is read BEFORE this turn's user row is written below, so the prompt's
+  // conversation block is what was said before — not the message being answered.
+  const [wantsWidgetBuild, includeSnapshot, history, memory, businessContext] = await Promise.all([
+    message
+      ? classifyWidgetBuildIntent(user.id, message).catch((err) => {
+          console.warn('[chatWithJarvis] widget-build intent check failed — treating this as an ordinary chat turn:', err?.message || err);
+          return false;
+        })
+      : false,
+    message
+      ? classifySnapshotNeed(user.id, message).catch((err) => {
+          console.warn('[chatWithJarvis] snapshot-need check failed — including the snapshot:', err?.message || err);
+          return true;
+        })
+      : true,
     prisma.deckJarvisMessage.findMany({
       where: { created_by_id: user.id },
       orderBy: { created_date: 'desc' },
@@ -132,22 +149,6 @@ export default async function handler({ user, body }) {
   // javis can just tell you where to watch the build that's better cause
   // then you can still chat and use him while it's working in the
   // background"), not streamed into this reply.
-  // This classifier runs on EVERY message, before the reply, and it is an
-  // optimisation: it recognises "build me a widget" and answers with a canned
-  // acknowledgement instead of a chat reply. `invokeAI` throws on a timeout, a
-  // truncation or a bad response, and a throw here used to propagate out of the
-  // handler as a 500 — so an AI hiccup on a non-essential boolean cost the operator
-  // the whole turn ("Couldn't reach Jarvis that time"), on top of an orphaned user
-  // row, because the message is persisted above. A failure means "treat this as
-  // ordinary chat", loudly logged; the build can simply be asked for again.
-  let wantsWidgetBuild = false;
-  if (message) {
-    try {
-      wantsWidgetBuild = await classifyWidgetBuildIntent(user.id, message);
-    } catch (err) {
-      console.warn('[chatWithJarvis] widget-build intent check failed — treating this as an ordinary chat turn:', err?.message || err);
-    }
-  }
   if (wantsWidgetBuild) {
     const reply = `Already building it — plan, code, review, ship, the whole thing, properly. That's a good fifteen minutes, not a parlour trick. Watch it happen in Settings → Widgets if you're itching to look, or just carry on talking to me while it cooks.`;
     await prisma.deckJarvisMessage.create({ data: { created_by_id: user.id, role: 'jarvis', content: reply } });
@@ -157,21 +158,24 @@ export default async function handler({ user, body }) {
     return { reply };
   }
 
+  // The snapshot is FETCHED only when the gate said so — a greeting should not pay for the
+  // queries either — and the persona is built from the SAME boolean, so the data and the
+  // words about the data cannot disagree.
+  const snapshot = includeSnapshot ? await buildDeckSnapshot(user.id) : '';
+
   // Bounded by characters, not only by message count: the count bound was right, the size bound
   // was missing (~60k tokens worst case, and it has already grown to 6,927 characters in
   // production through Jarvis's own verbosity). The last exchange stays verbatim and any omission
   // is named — see lib/promptBounds.js.
   const conversationBlock = buildConversationBlock(history, { firstName });
 
-  // Named so the log line below can size each block. The assembled prompt is byte-identical
-  // to what this was before — the same strings, in the same order.
-  const personaBlock = buildJarvisSystemPrompt({ firstName, businessContext });
+  // Named so the log lines below can size each block.
+  const personaBlock = buildJarvisSystemPrompt({ firstName, businessContext, hasSnapshot: includeSnapshot });
   const memoryBlock = formatMemoryBlock(memory);
+  const snapshotBlock = includeSnapshot ? `DATA SNAPSHOT:\n${snapshot}\n` : '';
   const prompt = `${personaBlock}
 ${memoryBlock}
-DATA SNAPSHOT:
-${snapshot}
-
+${snapshotBlock}
 RECENT CONVERSATION:
 ${conversationBlock}
 
@@ -184,6 +188,8 @@ Jarvis:`;
   // `usage_events` records how many tokens were sent, never what was in them. This is the line
   // that answers it the next time it happens. It is the only change here.
   console.log(`[chatWithJarvis] reply prompt chars: persona=${personaBlock.length} memory=${memoryBlock.length} snapshot=${snapshot.length} conversation=${conversationBlock.length} message=${message.length} total=${prompt.length} fileUrls=${fileUrls?.length || 0}`);
+  // The gate's own decision, on its own line so the composition log above stays lengths-only.
+  console.log(`[chatWithJarvis] snapshot gate: included=${includeSnapshot}`);
 
   const { result: reply } = await invokeAI({ userId: user.id, prompt, fileUrls, maxTokens: MAX_REPLY_TOKENS });
 

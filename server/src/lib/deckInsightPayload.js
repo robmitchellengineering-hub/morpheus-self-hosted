@@ -41,3 +41,28 @@ export function interpretScheduledResult(result) {
   if (!payload.worthRaising || !insight) return { ok: true, raise: false };
   return { ok: true, raise: true, insight };
 }
+
+// What a synthesis turn STORES, if anything — the single decision between the model's
+// response and `deckJarvisMessage.create`.
+//
+// The manual path used to pass no schema at all, so it rambled until it hit the cap:
+// three presses on 2026-10-02 (15:39/15:41/15:42) took 61s, 53s and 59s, every one
+// saturated at 6000 output tokens, and NONE stored anything. Bounding the answer by its
+// SHAPE instead of by a cap lets it decline (worthRaising false) rather than fill the
+// budget. This function makes the storage decision explicit and testable:
+//
+//   * `truncated` wins over a valid-looking result. A cut-off JSON object can still
+//     parse, so "the payload looks fine" is not evidence that the answer finished —
+//     H6's OUTPUT_TRUNCATED (and invokeAI's own salvage path) must store NOTHING.
+//   * a decline, an empty insight, or an unusable payload stores NOTHING: a blank
+//     "Suggestions" card is indistinguishable from Jarvis having nothing to say.
+//   * what is stored is the INTERPRETED text, never the raw payload.
+//
+// @returns {{ok: true, content: string} | {ok: false, reason: string}}
+export function synthesisMessageToStore({ result, truncated = false } = {}) {
+  if (truncated) return { ok: false, reason: 'truncated' };
+  const outcome = interpretScheduledResult(result);
+  if (!outcome.ok) return outcome;
+  if (!outcome.raise) return { ok: false, reason: 'nothing-to-raise' };
+  return { ok: true, content: outcome.insight };
+}
