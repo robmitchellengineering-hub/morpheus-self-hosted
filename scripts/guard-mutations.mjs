@@ -304,6 +304,20 @@ export const MUTATIONS = [
     replace: '  return Math.max(0, creditedSeconds(credits));',
   },
   {
+    guard: 'verify-deck-play.mjs',
+    file: 'src/pages/CommandDeck/game/Asteroids.jsx',
+    why: 'Takes the radius back off the ship — which is THE bug Rob reported (2026-10-03: "when you fly off the screen you should apear on the othe side"). Without it the wrap compares a position against `undefined`, every comparison is NaN-false, and the ship flies away for ever while the asteroids keep wrapping correctly, so nothing looks broken until you fly off an edge.',
+    find: 'r: SHIP_RADIUS, alive: true',
+    replace: 'alive: true',
+  },
+  {
+    guard: 'verify-deck-play.mjs',
+    file: 'src/pages/CommandDeck/game/wrapAround.js',
+    why: 'Makes the wrap a no-op, so leaving an edge is still leaving the game — the behaviour Rob asked for, removed, with the function still present and plausible. This is also the state the ship was unknowingly in for every object without a radius.',
+    find: '  if (value >= -radius && value <= span + radius) return value;',
+    replace: '  return value;',
+  },
+  {
     guard: 'verify-murbah-money.mjs',
     file: 'server/src/lib/murbahBooking.js',
     why: 'Drops the exclusive-end off-by-one, so a booking that ends on the 5th ends on the 5th in Calendar — every Murbah booking silently a day short, in the place Rob actually reads it.',
