@@ -46,7 +46,7 @@ import { getAnalytics, analyticsPromptBlock } from '../lib/projectAnalytics.js';
 import { recentDecisionsBlock, recordDecision } from '../lib/selfDevDecisions.js';
 import { getWpConnection, wpStore } from '../lib/wpPlugin.js';
 import { wordpressPromptBlock, ensureWpFiles } from '../lib/projectWordpress.js';
-import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE } from '../lib/webResearch.js';
+import { webResearchConfigured, resolveSearchKey, webSearch, webFetch, fetchLlmsTxt, URL_RE, searchUnavailableReason } from '../lib/webResearch.js';
 
 // 2026-09-03 (Rob: "lets stream the progress with an eta time and what its
 // doin step by step in the chat window") — this handler streams
@@ -493,7 +493,16 @@ Return JSON: { "queries": ["...", "..."] } — 0 to 3 focused search queries. Re
         const lines = [`SEARCH: ${q}`];
         if (answer) lines.push(`Summary: ${answer}`);
         for (const r of results) { lines.push(`- ${r.title} <${r.url}>${r.content ? `\n  ${r.content}` : ''}`); note(r.url); }
-        if (lines.length === 1) lines.push('(no results found)');
+        // ⚠️ "no results found" AND "the search was refused" LOOK IDENTICAL, and for a while they were
+        // the same line. The search tier can be down — a refused User-Agent, a rate limit, a network
+        // wall — and this said the web had nothing, so a build silently researched less and the stage
+        // still reported ✓. That is the same shape as the truncation this comment block already
+        // records: the caller falls back, so a research failure is invisible. The reason is named now,
+        // because "I could not look" and "there is nothing to find" are different facts.
+        if (lines.length === 1) {
+          const why = searchUnavailableReason();
+          lines.push(why ? `(search unavailable: ${why} — this build researched without it)` : '(no results found)');
+        }
         blocks.push(lines.join('\n'));
       } catch (e) {
         blocks.push(`SEARCH: ${q}\n(search failed: ${e.message})`);
