@@ -332,6 +332,13 @@ export const MUTATIONS = [
     replace: 'because they know you mean it',
   },
   {
+    guard: 'verify-jarvis-voice.mjs',
+    file: 'server/src/lib/jarvisPersona.js',
+    why: 'Drops "ninja" from the careers list. Rob gave a FIXED set of 36 (2026-10-03) and named it as the thing Jarvis draws on; a list is exactly what an edit trims without anyone noticing, and a single missing entry changes who he is rather than breaking anything visible. This is the one-entry version of that failure.',
+    find: 'ninja, combat intelligence specialist',
+    replace: 'combat intelligence specialist',
+  },
+  {
     guard: 'verify-doc-export.mjs',
     file: 'src/pages/CommandDeck/exportDoc.js',
     why: 'Stops a filename falling back when everything was stripped, so exporting a reply with no usable title produces a file called ".pdf" — a real download with a confusing name, which is the case the fallback exists for.',
