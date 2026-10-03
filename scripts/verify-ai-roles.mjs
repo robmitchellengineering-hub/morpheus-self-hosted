@@ -187,10 +187,11 @@ check('…and the fallback is ordinary chat, not a build',
   /if \(wantsWidgetBuild\)/.test(chatSrc));
 // The snapshot gate is the second boolean on that path, and its failure direction is the
 // opposite one on purpose: a failed check INCLUDES the snapshot (answer blind vs. spend
-// tokens). scripts/verify-jarvis-snapshot-gate.mjs owns that rule; this only asserts the
+// tokens) while attaching NO career briefs (no headroom, and the names are always in the
+// persona). scripts/verify-jarvis-snapshot-gate.mjs owns that rule; this only asserts the
 // guard is wired here too, so a failure cannot take the turn down.
 check('the snapshot-need gate is guarded too, and fails toward INCLUDING the snapshot',
-  /classifySnapshotNeed\(user\.id, message\)\.catch\(\(err\) => \{[\s\S]*?return true;/.test(chatSrc));
+  /classifyTurnContext\(user\.id, message\)\.catch\(\(err\) => \{[\s\S]*?includeSnapshot: true, careers: \[\]/.test(chatSrc));
 
 // An empty 200 used to be stored verbatim: a blank Jarvis bubble with no error, and a
 // blank "Suggestions" card — both indistinguishable from "Jarvis had nothing to say".

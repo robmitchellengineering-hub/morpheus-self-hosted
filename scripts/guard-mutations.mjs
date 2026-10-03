@@ -333,10 +333,24 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-jarvis-voice.mjs',
-    file: 'server/src/lib/jarvisPersona.js',
-    why: 'Drops "ninja" from the careers list. Rob gave a FIXED set of 36 (2026-10-03) and named it as the thing Jarvis draws on; a list is exactly what an edit trims without anyone noticing, and a single missing entry changes who he is rather than breaking anything visible. This is the one-entry version of that failure.',
-    find: 'ninja, combat intelligence specialist',
-    replace: 'combat intelligence specialist',
+    file: 'server/src/lib/jarvisCareers.js',
+    why: 'Drops "ninja" from the careers list. Rob gave a FIXED set of 36 (2026-10-03) and named it as the thing Jarvis draws on; a list is exactly what an edit trims without anyone noticing, and a single missing entry changes who he is rather than breaking anything visible. This is the one-entry version of that failure. (2026-10-04: retargeted from jarvisPersona.js to the register, which is now the only copy of the names.)',
+    find: "'Brazilian jiu-jitsu instructor', 'ninja',",
+    replace: "'Brazilian jiu-jitsu instructor',",
+  },
+  {
+    guard: 'verify-jarvis-careers.mjs',
+    file: 'server/src/lib/jarvisCareers.js',
+    why: 'Turns the doctor\'s `check:` line into a note. That section is the one that stops a card asserting doses and interactions from memory — the facts most worth having and the ones a hand-written brief gets wrong within a year. Without it the card still reads perfectly well and is quietly more dangerous, which is why the section set is asserted rather than trusted.',
+    find: 'check: doses, interactions and guidelines change',
+    replace: 'note: doses, interactions and guidelines change',
+  },
+  {
+    guard: 'verify-jarvis-careers.mjs',
+    file: 'server/src/lib/deckSnapshotGate.js',
+    why: 'Lets the selector trust a career name the register does not have. The classifier would then be able to put arbitrary text into the prompt through a field the persona interpolates — the register must be the only thing that decides what a career is called.',
+    find: '    if (!CAREER_KEYS.includes(key)) continue;',
+    replace: '    if (!key) continue;',
   },
   {
     guard: 'verify-doc-export.mjs',
@@ -411,9 +425,9 @@ export const MUTATIONS = [
   {
     guard: 'verify-jarvis-snapshot-gate.mjs',
     file: 'server/src/functions/chatWithJarvis.js',
-    why: 'Flips the handler\'s snapshot-gate catch to `return false`, so a failed classifier DROPS the snapshot and Jarvis answers a real question blind — the failure direction the guard asserts in the wiring as well as in the rule.',
-    find: '          return true;',
-    replace: '          return false;',
+    why: 'Flips the handler\'s snapshot-gate catch to `includeSnapshot: false`, so a failed classifier DROPS the snapshot and Jarvis answers a real question blind — the failure direction the guard asserts in the wiring as well as in the rule. (2026-10-04: the catch now returns both decisions, so it is the field rather than the whole return value.)',
+    find: '          return { includeSnapshot: true, careers: [] };',
+    replace: '          return { includeSnapshot: false, careers: [] };',
   },
   {
     guard: 'verify-project-divergence.mjs',

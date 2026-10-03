@@ -15,7 +15,7 @@
 // `asServiceRole` to intentionally bypass RLS for public listings.
 import { prisma } from './db.js';
 import { decodeConnections, encodeConnections } from './lib/connectionSecrets.js';
-import { deckProfileSelect, isMissingDeckProfileColumn, withoutDeckProfileFeeFields, deckProfileWriteResult } from './lib/deckProfileColumns.js';
+import { deckProfileSelectAttempts, deckProfileWriteAttempts, isMissingDeckProfileColumn, deckProfileWriteResult } from './lib/deckProfileColumns.js';
 import { reconcileStaleWidgetBuilds } from './lib/deckWidgetBuildReconcile.js';
 
 // Map REST entity name (PascalCase, matches base44 entity name / Prisma model name)
@@ -119,22 +119,37 @@ function writeUserSettingsSecrets(data) {
   return { ...data, connections: encodeConnections(data.connections) };
 }
 
-function readDeckProfile(run) {
-  return run(deckProfileSelect()).catch((err) => {
-    if (!isMissingDeckProfileColumn(err)) throw err;
-    return run(deckProfileSelect({ withFee: false }));
-  });
+// Both of these step down NEWEST COLUMNS FIRST (operating_regions, then the fee tiers, then the
+// pre-2026-09-28 shape), so an environment missing only the newest migration keeps the settings it
+// does have. One shared attempt list, so the read here and the read in lib/deckBusinessProfile.js
+// cannot step down differently.
+async function readDeckProfile(run) {
+  const attempts = deckProfileSelectAttempts();
+  for (let i = 0; i < attempts.length; i += 1) {
+    try {
+      return await run(attempts[i]);
+    } catch (err) {
+      if (!isMissingDeckProfileColumn(err) || i + 1 >= attempts.length) throw err;
+    }
+  }
+  return null;
 }
 
-function writeDeckProfile(run, data) {
-  return run(data).catch((err) => {
-    if (!isMissingDeckProfileColumn(err)) throw err;
-    // The retry stores everything BUT the fee structure, so it must not come back looking like a
-    // plain success: deckProfileWriteResult adds fee_fields_dropped:true when (and only when) this
-    // fallback was used for a write that carried fee fields. Settings says so in words.
-    return run(withoutDeckProfileFeeFields(data))
-      .then((row) => deckProfileWriteResult(row, data, { droppedFeeFields: true }));
-  });
+async function writeDeckProfile(run, data) {
+  const attempts = deckProfileWriteAttempts(data);
+  for (let i = 0; i < attempts.length; i += 1) {
+    try {
+      const row = await run(attempts[i].data);
+      // A retry stores everything BUT the fields that could not be written, so it must not come
+      // back looking like a plain success: deckProfileWriteResult adds fee_fields_dropped /
+      // region_fields_dropped when (and only when) a fallback was used for a write that carried
+      // them. Settings says so in words.
+      return deckProfileWriteResult(row, data, { droppedFields: attempts[i].droppedFields });
+    } catch (err) {
+      if (!isMissingDeckProfileColumn(err) || i + 1 >= attempts.length) throw err;
+    }
+  }
+  return null;
 }
 
 export async function listEntities(name, user, { sort, limit } = {}) {

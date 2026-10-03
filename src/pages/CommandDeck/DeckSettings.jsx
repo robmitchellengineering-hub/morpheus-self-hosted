@@ -8,6 +8,7 @@ import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
 import { startTokenCheckout } from '@/lib/purchaseCredits';
 import { DECK_WIDGETS } from './deckWidgets';
 import { C, money, DEFAULT_FEE_TIERS, formatFeeRate, parseFeeTierInput, feeTiersFromProfile, commissionFor, consignorProceeds, feeRateLabel } from './deckConstants';
+import { parseOperatingRegions, formatOperatingRegions } from './operatingRegions';
 import { Card, pillBtn, miniInput, MicField, MicTextarea } from './DeckUI';
 
 // Install card, the Connections section (Google today, built to grow),
@@ -328,6 +329,9 @@ function BusinessProfileForm() {
   const [form, setForm] = useState({
     shop_name: '', tagline: '', contact_email: '', business_context: '',
     fee_threshold: '', fee_rate_under: '', fee_rate_over: '',
+    // The places they operate, kept as the raw text the operator typed and parsed on save — so a
+    // half-typed comma is never rewritten under their cursor.
+    operating_regions_text: '',
   });
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -335,6 +339,8 @@ function BusinessProfileForm() {
   // applied in this environment yet). Kept past the 2s tick, because "Saved" over a setting that
   // was not stored is worse than a failed save — the operator has to see it and know what to do.
   const [feeDropped, setFeeDropped] = useState(false);
+  // Same rule, same reason, for the operating-regions column (2026-10-04).
+  const [regionsDropped, setRegionsDropped] = useState(false);
   const [samplePrice, setSamplePrice] = useState('2500');
 
   useEffect(() => {
@@ -349,6 +355,7 @@ function BusinessProfileForm() {
         fee_threshold: businessProfile.fee_threshold ?? '',
         fee_rate_under: businessProfile.fee_rate_under ?? '',
         fee_rate_over: businessProfile.fee_rate_over ?? '',
+        operating_regions_text: formatOperatingRegions(businessProfile.operating_regions),
       });
     }
   }, [businessProfile, dirty]);
@@ -365,11 +372,19 @@ function BusinessProfileForm() {
   const save = async () => {
     if (!parsed.ok) return;
     // The text fields go as typed; the fee columns are replaced by the parsed numbers (or null
-    // for blank) so the API never receives "30" as a string where a Float column is expected.
-    const { feeFieldsDropped } = await saveBusinessProfile({ ...form, ...parsed.fields });
+    // for blank) so the API never receives "30" as a string where a Float column is expected; and
+    // the regions field is replaced by the parsed list, because the column is a text[] and the raw
+    // text is not a value it can hold.
+    const { operating_regions_text: _regionsText, ...rest } = form;
+    const { feeFieldsDropped, regionFieldsDropped } = await saveBusinessProfile({
+      ...rest,
+      ...parsed.fields,
+      operating_regions: parseOperatingRegions(form.operating_regions_text),
+    });
     setDirty(false);
     setSaved(true);
     setFeeDropped(feeFieldsDropped);
+    setRegionsDropped(regionFieldsDropped);
     window.setTimeout(() => setSaved(false), 2000);
   };
 
@@ -386,6 +401,23 @@ function BusinessProfileForm() {
           rows={4}
           style={miniInput}
         />
+        {/* Where they operate. Jarvis has "done all these careers globally", so tax, property,
+            licensing, employment, safety and health rules all differ by place — this is what his
+            advice gets grounded in, and what he asks about when it is empty. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <input
+            placeholder="Where you operate — e.g. Gold Coast, QLD, Australia"
+            value={form.operating_regions_text}
+            onChange={update('operating_regions_text')}
+            style={{ ...miniInput, width: '100%', boxSizing: 'border-box' }}
+            aria-label="Where you operate"
+          />
+          <span style={{ fontSize: '0.7rem', color: C.walnutSoft, lineHeight: 1.4 }}>
+            Comma-separated, and add every place you operate in — the law, tax and licensing rules differ
+            between them, so Jarvis says which one he is answering for. Leave it blank and he will tell you
+            he does not know rather than assume a country.
+          </span>
+        </div>
         <div style={feeBlockStyle}>
           <div style={{ fontSize: '0.75rem', fontWeight: 600, color: C.brass }}>Consignment fee</div>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -416,10 +448,16 @@ function BusinessProfileForm() {
         <button onClick={save} disabled={businessProfileBusy || !dirty || !parsed.ok} style={{ ...pillBtn(C.brass), opacity: businessProfileBusy || !dirty || !parsed.ok ? 0.6 : 1 }}>
           {businessProfileBusy ? 'Saving…' : 'Save'}
         </button>
-        {saved && !feeDropped && <span style={{ fontSize: '0.75rem', color: C.sage, fontWeight: 600 }}>✓ Saved</span>}
+        {saved && !feeDropped && !regionsDropped && <span style={{ fontSize: '0.75rem', color: C.sage, fontWeight: 600 }}>✓ Saved</span>}
         {feeDropped && (
           <span style={{ fontSize: '0.72rem', color: C.alert }}>
             Saved, except the fee structure — that needs a database update before it can be stored.
+          </span>
+        )}
+        {regionsDropped && (
+          <span style={{ fontSize: '0.72rem', color: C.alert }}>
+            Saved, except where you operate — that needs a database update before it can be stored, so
+            Jarvis still does not know your regions.
           </span>
         )}
       </div>

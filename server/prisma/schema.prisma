@@ -1517,6 +1517,20 @@ model DeckBusinessProfile {
   fee_rate_under   Float?
   fee_rate_over    Float?
 
+  // Where the user actually operates (2026-10-04). Rob: "lets assume hes done all these carres
+  // globally so he does need to make sure hes giving the right advice and sugestions relevant to
+  // the users operating territories, ie realestate advice on greenland os differnt to the gold
+  // coast" — so jurisdiction-specific advice has to be LOCATED before it is given.
+  //
+  // A LIST, because he said "multiple places they operate", and FREE TEXT per entry ("Gold Coast,
+  // QLD, Australia") because that is what a human types and what the model reads correctly.
+  //
+  // Deliberately NOT derived from `business_context` prose: inferring a jurisdiction and then
+  // answering with it is a guess presented as a fact, and the whole point of the field is to stop
+  // that. Empty array means "we were never told", which the persona states honestly rather than
+  // filling in — the same two-variant discipline as the Deck snapshot claim.
+  operating_regions String[] @default([])
+
   created_date     DateTime @default(now())
   updated_date     DateTime @updatedAt
 
