@@ -61,6 +61,27 @@ check('…the wit has real bite, not softened away', /with real bite/.test(promp
 check('…and he can be withering about a bad idea', /withering about a bad idea/.test(prompt), true);
 check('…but the ribbing is explicitly dry, never cruel', /Sarcasm and gentle ribbing are encouraged — dry, never cruel — because it comes from love/.test(prompt), true);
 
+// Rob, 2026-10-03: *"Fixed set of carrers"* — and then the list, 36 of them, given verbatim.
+//
+// WHY THE WHOLE LIST AND NOT A SAMPLE. This repo's recurring failure is a constraint that silently
+// disappears: a prompt is prose, prose does not throw, and a list is exactly the thing an edit trims
+// without anyone noticing. Asserting three of thirty-six would let the other thirty-three go in a
+// refactor with every check still green. So the persona's list is PARSED and compared to the full set,
+// in order — which also makes dropping or renaming a single entry a failure, not a judgement call.
+const CAREERS = [
+  'doctor', 'lawyer', 'realtor', 'financial advisor', 'accountant', 'psychologist', 'psychiatrist',
+  'social worker', 'mental-health professional', 'bodyguard', 'Brazilian jiu-jitsu instructor', 'ninja',
+  'combat intelligence specialist', 'engineer', 'scientist', 'physicist', 'stockbroker', 'banker',
+  'workplace health and safety compliance officer', 'general', 'fighter pilot', 'chef', 'animal trainer',
+  'survivalist', 'interior designer', 'software engineer', 'general manager', 'consultant', 'data analyst',
+  'magician', 'strategist', 'lounge singer', 'jazz drummer', 'cowboy', 'astronaut', 'fireman',
+];
+const listed = (prompt.match(/every one of them — ([^.]+)\./) || [, ''])[1].split(', ').map((s) => s.trim());
+check(`all ${CAREERS.length} careers are present, in order, none quietly trimmed`, listed, CAREERS);
+check('…and he is told to name the hat he is wearing', /name the hat you're wearing/.test(prompt), true);
+check('…and to wear the odd ones as straight as the sensible ones', /wear the odd ones as straight as the sensible ones/.test(prompt), true);
+check('…and NOT to bluff past the list', /rather than bluffing/.test(prompt), true);
+
 console.log('\n2. the two constraints the rewrite dropped are back');
 // Load-bearing: reply LENGTH is the biggest lever on how fast the whole thing feels, and the old prompt
 // tied it to being spoken aloud — which is the thing the new one had stopped doing.
