@@ -430,6 +430,13 @@ export const MUTATIONS = [
     replace: '    if (false) {',
   },
   {
+    guard: 'verify-web-research.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    why: 'Puts the build pipeline back to reporting a REFUSED search as "no results found" — so a build that could not look researches less and the stage still shows a tick. Same shape as the truncation that file\u2019s own comment records, and the exact defect the Jarvis path was just cured of.',
+    find: "lines.push(why ? `(search unavailable: ${why} — this build researched without it)` : '(no results found)');",
+    replace: "lines.push('(no results found)');",
+  },
+  {
     guard: 'verify-jarvis-careers.mjs',
     file: 'server/src/lib/jarvisPersona.js',
     why: 'Lets a recollection outrank a source he just read — the second half of the dingo failure. He told Rob the law was the opposite of what the NSW government publishes, and advised surrendering the animal.',

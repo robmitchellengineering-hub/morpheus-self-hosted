@@ -138,6 +138,17 @@ check('the reply actually READS the top result, not just its title',
 check('…bounded per TURN, so two searches cannot fetch four pages',
   /pagesRead < RESEARCH_PAGES_PER_TURN/.test(chatSrc) && /let pagesRead = 0;/.test(chatSrc), true);
 
+// The second caller, and it had the same defect the Jarvis path was just cured of: it reported a REFUSED
+// search as "no results found", so a build silently researched less and the stage still showed ✓ — the
+// same shape as the truncation its own comment block records.
+const buildSrc = read('server/src/functions/chatWithMorpheus.js');
+check('the build pipeline reads the search layer\u2019s failure reason too',
+  /searchUnavailableReason/.test(buildSrc), true);
+check('…so a refused search is never reported as "no results found"',
+  /search unavailable: \$\{why\}[\s\S]{0,90}\(no results found\)/.test(buildSrc), true);
+check('…and it says what that meant for the build, not just why',
+  /this build researched without it/.test(buildSrc), true);
+
 console.log('\n7. it degrades to no results rather than throwing');
 // Asserted from the SOURCE, not by calling it: `webResearch.js` imports Prisma and the AI gateway, so
 // importing it here would drag those into CI's no-install job and this guard could never run. The
