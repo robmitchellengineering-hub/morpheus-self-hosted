@@ -56,6 +56,37 @@ export async function resolveSearchKey(userId) {
   return null;
 }
 
+// ── Why grounded search is off, when it is ───────────────────────────────────────────────────────
+//
+// A 429, a revoked key or a network wall each take grounded search away completely, and the caller
+// then answers from Wikipedia — which cannot settle a current rate, deadline or permit rule. That
+// degradation was invisible: `return null` with no log, so it looked exactly like a question that
+// needed no search. Logged ONCE per process (a research turn would otherwise write the same line on
+// every message), and exposed so a caller or an admin surface can say why.
+let groundedUnavailableReason = null;
+
+/** null when grounded search is working; otherwise why it was last found unavailable. */
+export function groundedSearchUnavailableReason() {
+  return groundedUnavailableReason;
+}
+
+function warnGroundedUnavailable(reason) {
+  if (groundedUnavailableReason) return; // once per process is enough to diagnose it
+  groundedUnavailableReason = reason;
+  console.warn(
+    `[webResearch] Gemini grounded search is UNAVAILABLE (${reason}) — research falls back to `
+    + 'Wikipedia/arXiv, which cannot answer current or jurisdiction-specific facts. Logged once per process.',
+  );
+}
+
+async function errorDetail(res) {
+  try {
+    const body = await res.json();
+    const msg = body?.error?.message || body?.message;
+    return msg ? ` — ${String(msg).slice(0, 160)}` : '';
+  } catch { return ''; }
+}
+
 async function fetchWithTimeout(url, opts = {}) {
   return fetch(url, {
     ...opts,
@@ -74,7 +105,10 @@ async function fetchJson(url, opts) {
 // { answer, sources: [{ title, url }] } or null. Newer Gemini models take
 // `google_search`; older ones want `google_search_retrieval` — try both.
 export async function geminiGroundedSearch(searchKey, query) {
-  if (!searchKey?.key) return null;
+  if (!searchKey?.key) {
+    warnGroundedUnavailable('no Gemini key is configured for this deployment (FALLBACK_LLM_* or the account\'s own Gemini connection)');
+    return null;
+  }
   const endpoint = `https://${GEMINI_HOST}/v1beta/models/${encodeURIComponent(searchKey.model)}:generateContent?key=${searchKey.key}`;
   for (const tool of [{ google_search: {} }, { google_search_retrieval: {} }]) {
     try {
@@ -84,7 +118,16 @@ export async function geminiGroundedSearch(searchKey, query) {
         body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: query }] }], tools: [tool] }),
       });
       if (res.status === 400) continue; // wrong tool name for this model
-      if (!res.ok) return null;
+      if (!res.ok) {
+        // ⚠️ NOT SILENT (2026-10-04). This used to `return null` and say nothing, so the caller fell
+        // back to Wikipedia with no way for anyone to tell that grounded search was off. Measured in
+        // production: the fallback Gemini key is configured and healthy — a PLAIN call returns 200 —
+        // while every GROUNDED call returns 429 "You exceeded your current quota", which is why
+        // Jarvis reported Wikipedia-shaped results for "best stocks" and could not pull up current
+        // permit rules. A silent 429 looks exactly like a question that needed no search.
+        warnGroundedUnavailable(`HTTP ${res.status}${await errorDetail(res)}`);
+        return null;
+      }
       const d = await res.json();
       const cand = d?.candidates?.[0];
       const answer = (cand?.content?.parts || []).map((p) => p.text || '').join('').trim();
