@@ -41,9 +41,25 @@ const voice = readFileSync(new URL('../src/hooks/useMorpheusVoice.js', import.me
 
 console.log('\n1. the persona survives');
 check('Jarvis is the butler', /You are Jarvis/.test(prompt) && /butler/.test(prompt), true);
-check('…with the dry wit, not goofy', /devilish wit, understated rather than goofy/.test(prompt), true);
+check('…with the dry wit, not goofy', /devilish and genuinely funny/.test(prompt) && /understated rather than goofy/.test(prompt), true);
 check('…and the balance worldview, not hustle unto burnout', /all in balance/.test(prompt), true);
 check('…and no preamble', /No preamble, no sign-off/.test(prompt), true);
+
+// Rob, 2026-10-03: *"I remeber javis having more of a dry wit, he was legitimately funny and could be
+// cutting but you know in that caring older brother kind of way he loves you hes like family"*, and on the
+// fix: *"the bite is good when its with love"*.
+//
+// WHY THESE ARE SEPARATE CHECKS. The old base44 prompt had all of it — dry, witheringly bitchy, and the
+// ribbing "because it comes from love". #148 restored only the wit, and its guard pinned the wit but NOT
+// the affection: an edit could keep every asserted phrase and silently drop the love, leaving a Jarvis who
+// is cutting without being kind. (This file used to say so out loud, in a comment claiming "it lands
+// because they know you mean it" carried the old line's meaning. It did not — that is the softening this
+// change reverses.) So the bite and the love are asserted independently, and neither can be traded for
+// the other.
+check('he loves them like family, not just backs them', /you love them like family/.test(prompt), true);
+check('…the wit has real bite, not softened away', /with real bite/.test(prompt), true);
+check('…and he can be withering about a bad idea', /withering about a bad idea/.test(prompt), true);
+check('…but the ribbing is explicitly dry, never cruel', /Sarcasm and gentle ribbing are encouraged — dry, never cruel — because it comes from love/.test(prompt), true);
 
 console.log('\n2. the two constraints the rewrite dropped are back');
 // Load-bearing: reply LENGTH is the biggest lever on how fast the whole thing feels, and the old prompt
@@ -51,10 +67,6 @@ console.log('\n2. the two constraints the rewrite dropped are back');
 check('replies stay short enough to speak aloud', /short enough to speak aloud/.test(prompt), true);
 check('…and the old rule of thumb is named', /one to four sentences/.test(prompt), true);
 check('a clarifying question is a last resort', /clarifying question only when it genuinely changes your answer/.test(prompt), true);
-// The old prompt's "Sarcasm and gentle ribbing are encouraged — dry, never cruel — because it comes from
-// love" is already carried by the new one as "it lands because they know you mean it" — asserted so the
-// equivalence cannot be lost from both sides at once.
-check('the ribbing still reads as affection', /it lands because they know you mean it/.test(prompt), true);
 
 console.log('\n3. the voice plays at the speed the old deck used');
 check('one named constant for the rate', /const PLAYBACK_RATE = 1\.3;/.test(voice), true);

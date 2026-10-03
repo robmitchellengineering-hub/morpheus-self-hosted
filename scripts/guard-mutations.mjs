@@ -325,6 +325,13 @@ export const MUTATIONS = [
     replace: '  audio.playbackRate = 1;',
   },
   {
+    guard: 'verify-jarvis-voice.mjs',
+    file: 'server/src/lib/jarvisPersona.js',
+    why: 'Softens the ribbing back to "it lands because they know you mean it" — the EXACT drift that happened before. Rob, 2026-10-03: "the bite is good when its with love"; the guard then pinned the wit but not the affection, so a Jarvis who is cutting without being kind could ship with every check green. This mutation is that history, made to fail on purpose.',
+    find: 'because it comes from love',
+    replace: 'because they know you mean it',
+  },
+  {
     guard: 'verify-doc-export.mjs',
     file: 'src/pages/CommandDeck/exportDoc.js',
     why: 'Stops a filename falling back when everything was stripped, so exporting a reply with no usable title produces a file called ".pdf" — a real download with a confusing name, which is the case the fallback exists for.',
