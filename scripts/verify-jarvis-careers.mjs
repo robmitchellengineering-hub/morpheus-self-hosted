@@ -211,8 +211,14 @@ check('every brief names what genuinely needs a human, and the boundary it canno
 // search, which is why Jarvis's "no picks" and "couldn't pull up the permit rules" were correct
 // answers from a broken tool. The failure is now reported, once per process.
 const researchSrc = read('server/src/lib/webResearch.js');
+// Anchored BETWEEN the failed-status branch and its `return null`, deliberately: a bare
+// `/warnGroundedUnavailable\(/` also matches the function's own definition and the missing-key
+// branch, so deleting this one call still passed — which is exactly the survivor
+// scripts/mutate-guards.mjs caught here (the same over-loose-match mistake as the earlier
+// snapshot-gate catch check).
 check('a grounded-search failure is REPORTED, not swallowed',
-  /warnGroundedUnavailable\(/.test(researchSrc) && !/if \(!res\.ok\) return null;/.test(researchSrc), true);
+  /if \(!res\.ok\) \{[\s\S]{0,1200}?warnGroundedUnavailable\([\s\S]{0,400}?return null;/.test(researchSrc)
+  && !/if \(!res\.ok\) return null;/.test(researchSrc), true);
 check('…and it says which layer is unavailable, so a quota is diagnosable',
   /groundedSearchUnavailableReason/.test(researchSrc) && /UNAVAILABLE/.test(researchSrc), true);
 check('…reported once per process, so a hot path cannot spam the log',
