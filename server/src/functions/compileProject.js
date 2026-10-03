@@ -8,6 +8,8 @@ import { getCompileTarget, listCompileTargets } from '../lib/compile-targets/ind
 import { renderWorkflow } from '../lib/compile-targets/workflow-renderer.js';
 import { renderUserManual, manualDownloads } from '../lib/appUserManual.js';
 import { getGithubToken, createRepo, pushFiles, ghHeaders, ghJson } from '../lib/github.js';
+import { assessProjectDivergence } from '../lib/repoDivergence.js';
+import { repoAhead, compileDivergenceWarning } from '../lib/projectDivergence.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -173,6 +175,36 @@ export default async function handler({ user, body, res }) {
     await prisma.project.update({ where: { id: projectId }, data: { github_repo: repo.full_name } }).catch(() => {});
   }
 
+  // DIVERGENCE WARNING — detection only, and deliberately NOT a block.
+  //
+  // The push below writes the construct's files over the repo, one way. If
+  // something edited the repo directly since the last sync (a manual push, another
+  // tool, a session that fixed the app on the repo side), this push is about to
+  // overwrite it. Pressing COMPILE is the operator's explicit instruction, so the
+  // build still runs — but the overwrite must never be silent. Whether the push
+  // itself should become pull-then-push, preserving both sides, is Rob's decision
+  // and is named as the follow-up in the PR; this change only reports.
+  //
+  // 'unknown' (no repo, no token, API failure) and 'in-sync' add nothing: the
+  // compile result is exactly what it was before this check existed.
+  let divergenceNote = null;
+  if (project.github_repo) {
+    const divergence = await assessProjectDivergence({ userId: user.id, project, constructFiles: projectFiles });
+    if (repoAhead(divergence)) {
+      divergenceNote = compileDivergenceWarning(divergence.ahead.length);
+      // APPEND, never replace. validation's own warnings keep their place, and the
+      // dispatched response stays the single `warnings: validation.warnings || []`
+      // expression scripts/verify-compile-artifacts.mjs has always asserted.
+      validation.warnings = [...(validation.warnings || []), divergenceNote];
+      console.warn(
+        `[compileProject] repo ahead of construct (${divergence.state}, ${divergence.reason}) — this push overwrites `
+        + `${divergence.ahead.length} file(s) changed directly on ${repo.full_name}: `
+        + `${divergence.ahead.slice(0, 20).join(', ')}`
+        + `${divergence.ahead.length > 20 ? ` …(+${divergence.ahead.length - 20} more)` : ''}`,
+      );
+    }
+  }
+
   // Push project files + workflow using shared helper (has retry logic for tree creation)
   const allFiles = [
     ...files.map((f) => ({ path: f.path, content: f.content })),
@@ -222,7 +254,9 @@ export default async function handler({ user, body, res }) {
     status: 'dispatched',
     // The warnings the dry-run preview has always shown, carried onto the REAL compile. They were
     // computed either way and then dropped here, so the only way to see them was to run a preview
-    // first — which is not what someone does when they are trying to get a site live.
+    // first — which is not what someone does when they are trying to get a site live. The divergence
+    // note is appended to validation.warnings above, so it travels in this same array and the panel
+    // that already renders warnings is where a silent overwrite becomes visible.
     warnings: validation.warnings || [],
   };
 }

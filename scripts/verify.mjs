@@ -115,6 +115,7 @@ const HARD = [
   'verify-client-env.mjs',
   'verify-no-secret-fixtures.mjs',
   'verify-build-failure-owner.mjs',
+  'verify-project-divergence.mjs',
   'verify-guard-mutations.mjs',
   'verify-app-selftest.mjs',
   'verify-bootstrap-sql.mjs',
