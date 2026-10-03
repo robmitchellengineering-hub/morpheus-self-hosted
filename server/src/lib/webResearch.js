@@ -20,9 +20,13 @@
 // tiers 2–5, so `webResearchConfigured()` is always true.
 import { getUserSettings } from '../ai.js';
 import { decrypt } from '../crypto.js';
+import { rankResults, searchCacheKey, isCacheFresh, parseDuckDuckGoResults } from './searchResults.js';
 
 const GEMINI_HOST = 'generativelanguage.googleapis.com';
 const TIMEOUT_MS = 20_000;
+// Our own search gets a tighter budget than a page read: a search that has not answered in ten seconds
+// is not going to, and the reply is waiting on it.
+const SEARCH_TIMEOUT_MS = 10_000;
 const UA = 'MorpheusResearchBot/1.0 (+https://morpheus.nz)';
 
 export const URL_RE = /\bhttps?:\/\/[^\s<>"')]+/gi;
@@ -77,6 +81,22 @@ function warnGroundedUnavailable(reason) {
     `[webResearch] Gemini grounded search is UNAVAILABLE (${reason}) — research falls back to `
     + 'Wikipedia/arXiv, which cannot answer current or jurisdiction-specific facts. Logged once per process.',
   );
+}
+
+// Our own search is a scraped HTML endpoint with no contract, so it can go quiet in ways a real API
+// cannot. Reported once per process, for the same reason as the grounded one: a search tier that has
+// stopped answering looks exactly like a question with no results.
+let ownSearchUnavailableReason = null;
+
+/** null when our own search is answering; otherwise why it was last found unavailable. */
+export function searchUnavailableReason() {
+  return ownSearchUnavailableReason;
+}
+
+function warnSearchUnavailable(reason) {
+  if (ownSearchUnavailableReason === reason) return;
+  ownSearchUnavailableReason = reason;
+  console.warn(`[webResearch] our own web search is unavailable (${reason}) — falling back to Wikipedia/arXiv. Logged once per distinct reason.`);
 }
 
 async function errorDetail(res) {
@@ -292,10 +312,87 @@ export async function webSearch(searchKey, query, { maxResults = 4 } = {}) {
     }
   }
 
+  // OUR OWN SEARCH (2026-10-04). Every hosted grounding option is closed to this account, and this is
+  // what replaced them: a real, keyless web search, measured against the two questions Jarvis had
+  // failed on — it put revenue.nsw.gov.au and environment.nsw.gov.au first for both. It runs BEFORE
+  // Wikipedia because it can answer a current, jurisdiction-specific question and Wikipedia cannot.
+  results.push(...await duckduckgoSearch(query, { maxResults }));
+
   results.push(...await wikipediaSearch(query, { max: 2 }));
   if (ACADEMIC_RE.test(query)) results.push(...await arxivSearch(query, { max: 2 }));
 
   const seen = new Set();
   const deduped = results.filter((r) => r.url && !seen.has(r.url) && seen.add(r.url));
   return { answer, results: deduped.slice(0, maxResults + 2) };
+}
+
+// ── Our own search: DuckDuckGo's HTML endpoint ────────────────────────────────────────────────────
+//
+// NOT an official API. It is a public HTML page that this parses, with no key, no quota and no
+// contract — which is the whole reason it is here, and also its main risk: it can rate-limit, change
+// shape, or stop answering. Three things keep that honest:
+//
+//   · the results are RANKED AND FILTERED in `lib/searchResults.js`, because the raw list carries ads
+//     (measured: the top two for "2008 RAV4 idle squeal cause" were `y.js?ad_domain=` adverts) and
+//     several pages from one host;
+//   · a short TTL CACHE means asking the same thing twice in a session does not ask twice;
+//   · it is ONE tier among several, and a failure returns `[]` rather than throwing — the caller keeps
+//     Wikipedia, and the reply says plainly that it could not check if nothing comes back.
+const SEARCH_CACHE_TTL_MS = 15 * 60 * 1000;
+const SEARCH_CACHE_MAX = 100;
+const searchCache = new Map();
+
+/** Testing seam, and a way for a long-lived process to drop its cache. */
+export function clearSearchCache() {
+  searchCache.clear();
+}
+
+function readSearchCache(key, nowMs = Date.now()) {
+  const entry = searchCache.get(key);
+  if (!entry) return null;
+  if (!isCacheFresh(entry, nowMs, SEARCH_CACHE_TTL_MS)) { searchCache.delete(key); return null; }
+  return entry.results;
+}
+
+function writeSearchCache(key, results, nowMs = Date.now()) {
+  // Oldest-out, so a long-lived process cannot grow the map without bound.
+  if (searchCache.size >= SEARCH_CACHE_MAX) {
+    const oldest = searchCache.keys().next().value;
+    if (oldest !== undefined) searchCache.delete(oldest);
+  }
+  searchCache.set(key, { at: nowMs, results });
+}
+
+
+/**
+ * Search the web with no key and no quota.
+ *
+ * @param {string} query
+ * @param {{maxResults?: number, fetchImpl?: Function}} [options]
+ * @returns {Promise<Array<{title: string, url: string, snippet: string, content: string}>>}
+ */
+export async function duckduckgoSearch(query, { maxResults = 4, fetchImpl = fetch } = {}) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  const cacheKey = searchCacheKey(q);
+  const cached = readSearchCache(cacheKey);
+  if (cached) return cached.slice(0, maxResults);
+
+  try {
+    const res = await fetchImpl(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
+      headers: { 'User-Agent': UA, Accept: 'text/html' },
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      warnSearchUnavailable(`HTTP ${res.status}`);
+      return [];
+    }
+    const ranked = rankResults(parseDuckDuckGoResults(await res.text()), { max: maxResults });
+    const results = ranked.map((r) => ({ title: r.title || r.url, url: r.url, snippet: r.snippet || '', content: r.snippet || '' }));
+    if (results.length) writeSearchCache(cacheKey, results);
+    return results;
+  } catch (err) {
+    warnSearchUnavailable(err?.name === 'TimeoutError' ? 'timed out' : (err?.message || 'failed'));
+    return [];
+  }
 }

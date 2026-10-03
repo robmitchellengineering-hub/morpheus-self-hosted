@@ -37,6 +37,7 @@ const HARD = [
   'verify-life-files.mjs',
   'verify-jarvis-voice.mjs',
   'verify-jarvis-careers.mjs',
+  'verify-web-research.mjs',
   'verify-jarvis-snapshot-gate.mjs',
   'verify-jarvis-reply-length.mjs',
   'verify-jarvis-stream.mjs',

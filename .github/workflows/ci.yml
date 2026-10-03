@@ -333,6 +333,11 @@ jobs:
       - name: Jarvis careers, briefs and grounding
         run: node scripts/verify-jarvis-careers.mjs
 
+      # Our own web search: the ad filtering, the host dedupe, the official-source preference and the
+      # cache freshness — plus the wiring that puts it ahead of Wikipedia and reads the top page.
+      - name: Our own web search
+        run: node scripts/verify-web-research.mjs
+
       # The snapshot gate on every Jarvis message: only an explicit classifier false may drop the
       # ~2,400-token Deck snapshot (a failed check must INCLUDE it — answering blind is the dangerous
       # direction), the persona must never claim a snapshot it was not given, every capped list must
