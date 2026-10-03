@@ -499,6 +499,15 @@ jobs:
       - name: A Morpheus-owned build failure is not sent to the app
         run: node scripts/verify-build-failure-owner.mjs
 
+      # compileProject pushes the construct's files one way to GitHub before every build, so anything that
+      # edited the repo directly is silently overwritten by the next compile — and the fix loop was spending
+      # on constructs in exactly that state. This guard pins the content-based divergence check (never a
+      # timestamp), the exclusion of Morpheus's own generated files (`_compiled/*`, the rendered workflow),
+      # the exact warning copy, and the rule that matters most: 'unknown' and 'in-sync' change NOTHING about
+      # today's behaviour, so a check that cannot answer never blocks a build or a fix (H17).
+      - name: Divergence from the repo is detected, warned about, never blocks
+        run: node scripts/verify-project-divergence.mjs
+
       - name: The guard-mutation registry is honest
         run: node scripts/verify-guard-mutations.mjs
 
