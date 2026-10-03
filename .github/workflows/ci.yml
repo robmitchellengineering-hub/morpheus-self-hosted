@@ -326,6 +326,14 @@ jobs:
       - name: Jarvis voice and playback
         run: node scripts/verify-jarvis-voice.mjs
 
+      # The snapshot gate on every Jarvis message: only an explicit classifier false may drop the
+      # ~2,400-token Deck snapshot (a failed check must INCLUDE it — answering blind is the dangerous
+      # direction), the persona must never claim a snapshot it was not given, every capped list must
+      # say it is capped while a complete one must not, and the manual synthesis must be bounded by
+      # its schema and store nothing when the model was cut off.
+      - name: Jarvis snapshot gate and honest prompts
+        run: node scripts/verify-jarvis-snapshot-gate.mjs
+
       # Exporting a reply: the filename must survive a downloads folder, a comma inside a cell must not
       # split the columns, and only a real table should offer a spreadsheet.
       - name: Document export

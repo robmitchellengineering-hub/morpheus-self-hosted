@@ -214,33 +214,14 @@ async function diagnoseCompile(userId, projectId, project, files, errorContext) 
   const { error, logs, repoUrl, target } = errorContext || {};
   const sourceFiles = files.filter((f) => !f.path.startsWith('backend/') && !f.path.startsWith('external/'));
 
-  // 2026-10-01 (measured): classify OWNERSHIP before anything else, and before any AI
-  // call. A real app's compile failed on both macOS jobs inside Morpheus's OWN generated
-  // workflow — the Release step published USER-MANUAL.txt, which the renderer writes
-  // before actions/checkout@v4 and the checkout then deletes — and the loop spent a
-  // 32,000-token diagnosis (40,365 in, OUTPUT_TRUNCATED, recorded `status: ok`) trying to
-  // fix something no app file could fix, on a workflow Morpheus regenerates every compile.
-  //
-  // Only a confident, evidence-backed 'morpheus' verdict returns here. 'app',
-  // 'credentials' and 'unknown' fall through to the code below EXACTLY as it was, because
-  // the build pipeline must stay as free as possible — a miss is acceptable, a false
-  // "this is Morpheus's fault" that stops a real fix is not (lib/buildFailureOwner.js).
-  const ownership = classifyBuildFailure({ error, logs, target, artifactGlob: artifactGlobFor(target) });
-  if (ownerIsMorpheus(ownership)) {
-    console.warn(`[diagnoseIssue] morpheus-owned compile failure: reason=${ownership.reason} step=${ownership.evidence?.step || '-'} file=${ownership.evidence?.file || '-'} target=${target || '-'} — no AI call made`);
-    return {
-      summary: ownership.headline,
-      autoFixed: [],
-      needsUserAction: [buildMorpheusAction(ownership)],
-      totalErrors: 1,
-      allClear: false,
-      owner: ownership.owner,
-    };
-  }
-
   const needsUserAction = [];
   const codeErrors = [];
 
+  // PRECEDENCE, and it is an order the code executes rather than a comment: the caller's
+  // OWN credential class is decided FIRST, before the ownership verdict is even asked.
+  // A credential failure is answered by the branch it always was, and the ownership check
+  // cannot pre-empt it. (lib/buildFailureOwner.js carries no credential vocabulary — this
+  // is ordering, not classification; it decides only morpheus | app | unknown.)
   if (isAuthError(error)) {
     needsUserAction.push({
       component: 'github', label: 'GitHub Connection',
@@ -252,6 +233,33 @@ async function diagnoseCompile(userId, projectId, project, files, errorContext) 
       ],
       link: '/settings', severity: 'credentials'
     });
+  }
+
+  // 2026-10-01 (measured): classify OWNERSHIP before any AI call, but only when the
+  // caller's own branch above did not already answer the failure. A real app's compile
+  // failed on both macOS jobs inside Morpheus's OWN generated workflow — the Release step
+  // published USER-MANUAL.txt, which the renderer writes before actions/checkout@v4 and
+  // the checkout then deletes — and the loop spent a 32,000-token diagnosis (40,365 in,
+  // OUTPUT_TRUNCATED, recorded `status: ok`) trying to fix something no app file could
+  // fix, on a workflow Morpheus regenerates every compile.
+  //
+  // Only a confident, evidence-backed 'morpheus' verdict returns here. 'app' and
+  // 'unknown' fall through to the code below EXACTLY as it was, because the build
+  // pipeline must stay as free as possible — a miss is acceptable, a false "this is
+  // Morpheus's fault" that stops a real fix is not (lib/buildFailureOwner.js).
+  if (!isAuthError(error)) {
+    const ownership = classifyBuildFailure({ error, logs, target, artifactGlob: artifactGlobFor(target) });
+    if (ownerIsMorpheus(ownership)) {
+      console.warn(`[diagnoseIssue] morpheus-owned compile failure: reason=${ownership.reason} step=${ownership.evidence?.step || '-'} file=${ownership.evidence?.file || '-'} target=${target || '-'} — no AI call made`);
+      return {
+        summary: ownership.headline,
+        autoFixed: [],
+        needsUserAction: [buildMorpheusAction(ownership)],
+        totalErrors: 1,
+        allClear: false,
+        owner: ownership.owner,
+      };
+    }
   }
 
   // Build/compile errors are code-level — attempt auto-fix

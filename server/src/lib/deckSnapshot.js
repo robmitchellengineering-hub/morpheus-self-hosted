@@ -4,12 +4,15 @@
 // runJarvisSynthesis.js's one-shot "connect the dots" card ground themselves
 // in. Pulled out of chatWithJarvis.js so the two never drift into building
 // their own, slightly different pictures of the same data.
+//
+// 2026-10-03: the RENDERING moved to lib/deckSnapshotText.js, which is import-free so
+// scripts/verify-jarvis-snapshot-gate.mjs can assert the capped-list labels with fixture
+// rows and no database. This file keeps the queries and passes the rows through. Every
+// capped list now fetches its true total alongside the rows, so the heading can say how
+// much of it is being shown — a capped list that reads as complete is a lie to the model.
 import { prisma } from '../db.js';
-import { excerpt, INBOX_IN_PROMPT, REPAIRS_IN_PROMPT } from './promptBounds.js';
-
-const REPAIR_STAGE_LABEL = { waiting: 'Waiting', in_progress: 'In progress', done: 'Done' };
-const MURBAH_STAGE_LABEL = { idea: 'Idea', enquired: 'Enquired', booked: 'Booked', active: 'Active' };
-const INBOX_STAGE_LABEL = { new: 'New', replied: 'Replied', done: 'Done' };
+import { INBOX_IN_PROMPT, REPAIRS_IN_PROMPT } from './promptBounds.js';
+import { formatDeckSnapshot } from './deckSnapshotText.js';
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -18,10 +21,12 @@ function todayKey() {
 export async function buildDeckSnapshot(userId) {
   const where = { created_by_id: userId };
   const [
-    dump, people, tasks, unsoldConsignCount, consignAgg, repairs, repairsOpenTotal, owedCount, owedAgg, owedIncomplete, murbah, inbox, inboxOpenTotal,
-    strategy, knowledge, lifeStreams, lifeStreamNotes, energyLog, focusEntries,
+    dump, dumpTotal, people, tasks, unsoldConsignCount, consignAgg, repairs, repairsOpenTotal, owedCount, owedAgg, owedIncomplete, murbah,
+    inbox, inboxOpenTotal, strategy, strategyTotal, knowledge, knowledgeTotal, lifeStreams, lifeStreamNotes, lifeStreamNotesTotal,
+    energyLog, energyLogTotal, focusEntries,
   ] = await Promise.all([
     prisma.deckDumpItem.findMany({ where, orderBy: { created_date: 'desc' }, take: 20 }),
+    prisma.deckDumpItem.count({ where }),
     prisma.deckPerson.findMany({ where }),
     prisma.deckTask.findMany({ where }),
     // Two numbers are all the snapshot renders from this table — "N unsold items worth $X".
@@ -66,55 +71,48 @@ export async function buildDeckSnapshot(userId) {
     // count stays, and only the length of each body is bounded. See lib/promptBounds.js.
     prisma.deckInboxItem.findMany({ where: { ...where, stage: { not: 'done' } }, orderBy: { created_date: 'desc' }, take: INBOX_IN_PROMPT }),
     prisma.deckInboxItem.count({ where: { ...where, stage: { not: 'done' } } }),
-    prisma.deckStrategyNote.findMany({ where, take: 20 }),
-    prisma.deckKnowledgeNote.findMany({ where, take: 20 }),
+    // The three note lists are capped with the same voice as repairs/inbox: newest N, and the
+    // true total fetched so the heading says how many are not shown. Ordering is explicit
+    // because "newest N shown" has to be true of the N that were fetched.
+    prisma.deckStrategyNote.findMany({ where, orderBy: { created_date: 'desc' }, take: 20 }),
+    prisma.deckStrategyNote.count({ where }),
+    prisma.deckKnowledgeNote.findMany({ where, orderBy: { created_date: 'desc' }, take: 20 }),
+    prisma.deckKnowledgeNote.count({ where }),
     prisma.deckLifeStream.findMany({ where }),
-    prisma.deckLifeStreamNote.findMany({ where, take: 40 }),
-    // One row per day (created_by_id+date is unique) — genuinely cheap to
-    // keep forever, so Jarvis can actually spot week/season-scale patterns
-    // instead of just the last two weeks. 3650 is a defensive cap (10
-    // years), not a real-world ceiling.
+    prisma.deckLifeStreamNote.findMany({ where, orderBy: { created_date: 'desc' }, take: 40 }),
+    prisma.deckLifeStreamNote.count({ where }),
+    // One row per day (created_by_id+date is unique) — cheap, so the log goes back a long way and
+    // Jarvis can spot week/season-scale patterns. 3650 is a defensive cap (10 years), not a
+    // real-world ceiling, and the line now says so when it bites instead of claiming "FULL".
     prisma.deckEnergyLogEntry.findMany({ where, orderBy: { date: 'desc' }, take: 3650 }),
+    prisma.deckEnergyLogEntry.count({ where }),
     prisma.deckFocusEntry.findMany({ where, orderBy: { date: 'desc' }, take: 1 }),
   ]);
 
-  const personName = (id) => people.find((p) => p.id === id)?.name || 'unassigned';
-  const openTasks = tasks.filter((t) => !t.done);
-  const unsoldConsign = unsoldConsignCount;
-  const consignValue = consignAgg._sum.price || 0;
-  const openRepairs = repairs; // already filtered to open by the bounded query above
-  const owedToConsignors = (owedAgg._sum.sold_price || 0) - (owedAgg._sum.fee || 0);
-  const shortDate = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
-  const openInbox = inbox; // already filtered to open by the bounded query above
+  const ownerName = (id) => people.find((p) => p.id === id)?.name || 'unassigned';
   const today = todayKey();
   const todayEnergy = energyLog.find((e) => (e.date?.toISOString?.() || '').slice(0, 10) === today);
   const focusToday = focusEntries.find((f) => (f.date?.toISOString?.() || '').slice(0, 10) === today);
-  const recentEnergy = energyLog
-    .map((e) => `${(e.date?.toISOString?.() || '').slice(0, 10)}:${e.level}`)
-    .join(', ');
 
-  const lifeStreamsText = lifeStreams.map((s) => {
-    const notes = lifeStreamNotes.filter((n) => n.life_stream_id === s.id).slice(0, 3).map((n) => n.text).join(' / ') || 'no notes';
-    return `${s.stream_key} [${s.status === 'needs_work' ? 'NEEDS WORK' : 'ON'}]: ${notes}`;
-  }).join('; ') || 'none tracked yet';
-
-  return `
-TODAY'S ENERGY: ${todayEnergy?.level || 'not set'}
-FULL ENERGY LOG, ${energyLog.length} DAYS LOGGED (most recent first): ${recentEnergy || 'no history yet'}
-TODAY'S ONE THING: ${focusToday?.text || 'not set'}
-
-OPEN TASKS (${openTasks.length}): ${openTasks.map((t) => `[${personName(t.owner_person_id)}${t.energy && t.energy !== 'any' ? `, fits ${t.energy}` : ''}] ${t.text}`).join('; ') || 'none'}
-
-STRATEGY NOTES (${strategy.length}): ${strategy.map((s) => s.text).join('; ') || 'none'}
-
-KNOWLEDGE / IDEAS (${knowledge.length}): ${knowledge.map((k) => k.text).join('; ') || 'none'}
-
-CONSIGNMENT: ${unsoldConsign} unsold items worth $${consignValue} on the floor${owedCount ? `; $${owedToConsignors} owed to consignors on ${owedCount} sold item${owedCount === 1 ? '' : 's'}${owedIncomplete ? ` (${owedIncomplete} with no sale price or fee recorded, so that amount is short)` : ''}` : ''}
-REPAIRS QUEUE: ${repairsOpenTotal} open${openRepairs.length < repairsOpenTotal ? ` (newest ${openRepairs.length} shown)` : ''}: ${openRepairs.map((r) => `${r.item} [${REPAIR_STAGE_LABEL[r.stage] || r.stage}]${r.quote ? ` quote $${r.quote}` : ''}${r.promised_date ? ` promised ${shortDate(r.promised_date)}` : ''}`).join('; ') || 'none'}
-MURBAH OPPORTUNITIES: ${murbah.map((m) => `${m.title} — ${MURBAH_STAGE_LABEL[m.stage] || m.stage}`).join('; ') || 'none'}
-INBOX (${inboxOpenTotal} not yet done${openInbox.length < inboxOpenTotal ? `, newest ${openInbox.length} shown` : ''}): ${openInbox.map((i) => `[${i.channel}] ${i.from_name}: ${excerpt(i.message)} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}
-UNSORTED BRAIN DUMP (${dump.length}): ${dump.map((d) => d.text).join('; ') || 'none'}
-
-LIFE STREAMS (outside the shop): ${lifeStreamsText}
-`.trim();
+  return formatDeckSnapshot({
+    todayEnergyLevel: todayEnergy?.level || null,
+    focusTodayText: focusToday?.text || null,
+    energyLog: { rows: energyLog, total: energyLogTotal },
+    openTasks: tasks.filter((t) => !t.done).map((t) => ({ text: t.text, ownerName: ownerName(t.owner_person_id), energy: t.energy })),
+    strategy: { rows: strategy, total: strategyTotal },
+    knowledge: { rows: knowledge, total: knowledgeTotal },
+    consignment: {
+      unsoldCount: unsoldConsignCount,
+      value: consignAgg._sum.price || 0,
+      owedToConsignors: (owedAgg._sum.sold_price || 0) - (owedAgg._sum.fee || 0),
+      owedCount,
+      owedIncomplete,
+    },
+    repairs: { rows: repairs, total: repairsOpenTotal },
+    murbah,
+    inbox: { rows: inbox, total: inboxOpenTotal },
+    dump: { rows: dump, total: dumpTotal },
+    lifeStreams,
+    lifeStreamNotes: { rows: lifeStreamNotes, total: lifeStreamNotesTotal },
+  });
 }
