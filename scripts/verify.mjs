@@ -38,6 +38,7 @@ const HARD = [
   'verify-jarvis-voice.mjs',
   'verify-jarvis-snapshot-gate.mjs',
   'verify-jarvis-reply-length.mjs',
+  'verify-jarvis-stream.mjs',
   'verify-doc-export.mjs',
   'verify-gmail-sync.mjs',
   'verify-deck-draft.mjs',
