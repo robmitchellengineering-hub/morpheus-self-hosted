@@ -9,6 +9,7 @@ import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
 import { summarizeFiling, captureFailureMessage } from '@/pages/CommandDeck/dumpFiling';
 import { SECONDS_PER_TASK, bankSeconds } from '@/pages/CommandDeck/game/playBank';
 import { normalizePrice } from '@/pages/CommandDeck/murbahMoney';
+import { initialJarvisLive, reduceJarvisEvent } from '@/lib/jarvisStream';
 import PlayModal from '@/pages/CommandDeck/game/PlayModal';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -187,6 +188,12 @@ export function CommandDeckProvider({ children }) {
   const [jarvisInput, setJarvisInput] = useState('');
   const [jarvisSending, setJarvisSending] = useState(false);
   const [jarvisErr, setJarvisErr] = useState(false);
+  // 2026-10-04 (Rob: "it doesnt look like its doing anything") — what Jarvis's in-flight turn is
+  // actually doing, and the words it has written so far. Reduced from the events chatWithJarvis streams
+  // by the pure `reduceJarvisEvent` (src/lib/jarvisStream.js), so the same state can be asserted with no
+  // browser. It exists from the moment the message is sent — before the server has said anything — so
+  // the surface is alive from the first frame rather than from the first token (UI feedback rule 1).
+  const [jarvisLive, setJarvisLive] = useState(null);
   const [synthesisBusy, setSynthesisBusy] = useState(false);
   const [synthesisErr, setSynthesisErr] = useState(false);
   const [docBusy, setDocBusy] = useState(false);
@@ -1251,6 +1258,12 @@ export function CommandDeckProvider({ children }) {
   // upload already uses). The optimistic bubble shows the attached filenames
   // the same lightweight way chatWithJarvis.js itself persists them, so the
   // UI and the actual saved history never disagree about what was attached.
+  //
+  // 2026-10-04 — this goes through `invokeStream`, not `invoke`. The body carries `stream: true`, which
+  // is the negotiation chatWithJarvis requires (a caller that sends no such field still gets today's
+  // plain JSON), and the streamed `stage`/`delta` events are reduced into `jarvisLive` as they arrive.
+  // `invokeStream` also resolves a plain JSON body from a server that does not stream, so the frontend
+  // and the backend can deploy in either order.
   const sendJarvisMessage = async (fileUrls = []) => {
     const text = jarvisInput.trim();
     if ((!text && fileUrls.length === 0) || jarvisSending) return;
@@ -1260,11 +1273,33 @@ export function CommandDeckProvider({ children }) {
     setJarvisInput('');
     setJarvisSending(true);
     setJarvisErr(false);
+    const turnId = `local-${Date.now()}-turn`;
+    setJarvisLive(initialJarvisLive(turnId));
     try {
-      const { data } = await base44.functions.invoke('chatWithJarvis', { message: text, fileUrls });
-      setJarvisMessages((prev) => [...prev, { id: `local-${Date.now()}-r`, role: 'jarvis', content: data.reply }]);
-    } catch {
+      const { data } = await base44.functions.invokeStream(
+        'chatWithJarvis',
+        { message: text, fileUrls, stream: true },
+        null,
+        (evt) => setJarvisLive((live) => reduceJarvisEvent(live, evt)),
+      );
+      // The terminal event's reply is the AUTHORITY — it is what was stored, which is not always the
+      // last fragment (the length budget's repair pass can shorten it after it has already streamed).
+      const reply = typeof data?.reply === 'string' ? data.reply : '';
+      const replyId = `local-${Date.now()}-r`;
+      setJarvisMessages((prev) => [...prev, { id: replyId, role: 'jarvis', content: reply }]);
+      // `replyId` is what tells DeckJarvis.jsx this reply was ALREADY spoken sentence by sentence, so the
+      // whole-message auto-speak must not say it a second time.
+      setJarvisLive((live) => ({ ...(live || initialJarvisLive(turnId)), done: true, label: null, etaSeconds: null, text: reply, replyId, error: null }));
+    } catch (err) {
       setJarvisErr(true);
+      // The server's own words when it sent a terminal `error` event (e.g. "Jarvis was cut off…"), and
+      // the old generic line only for a connection that never got that far. A raw provider error is
+      // never what the operator needs to read (UI feedback rule 5).
+      setJarvisLive((live) => ({
+        ...(live || initialJarvisLive(turnId)),
+        done: true, label: null, etaSeconds: null,
+        error: typeof err?.message === 'string' && err.message ? err.message : "Couldn't reach Jarvis that time — give it another go.",
+      }));
     }
     setJarvisSending(false);
   };
@@ -1329,7 +1364,7 @@ export function CommandDeckProvider({ children }) {
     backupText, backupBusy, backupMsg, runExport, copyBackup, downloadBackup,
     driveBackupBusy, driveBackupMsg, driveRestoreBusy, driveRestoreMsg, lastBackupAt, driveBackup, driveRestore,
     vaultStatus, vaultBusy, checkVault,
-    jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
+    jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage, jarvisLive,
     synthesisBusy, synthesisErr, runJarvisSynthesis, lastSynthesis,
     docBusy, docErr, docResult, createDeckDocument,
     uploadFile,

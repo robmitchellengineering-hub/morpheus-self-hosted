@@ -344,6 +344,16 @@ jobs:
       - name: Jarvis reply length is bounded by its shape
         run: node scripts/verify-jarvis-reply-length.mjs
 
+      # Rob: "it doesnt look like its doing anything ... i want to see it earlier and being written
+      # if it can start reading behind the streamed output even better". Asserts the opt-in rule that
+      # keeps every existing caller byte-identical (a `stream: true` body field, never the Accept
+      # header), the SSE framing of a provider stream and of the { reply: string } envelope the
+      # length fix made the reply, EVERY failure falling back to the blocking call rather than
+      # storing a fragment, that both transports still store the same text through the same repair
+      # pass, and the sentence boundary streaming speech is allowed to speak on.
+      - name: Jarvis streams its reply, and speaks behind it
+        run: node scripts/verify-jarvis-stream.mjs
+
       # Exporting a reply: the filename must survive a downloads folder, a comma inside a cell must not
       # split the columns, and only a real table should offer a spreadsheet.
       - name: Document export

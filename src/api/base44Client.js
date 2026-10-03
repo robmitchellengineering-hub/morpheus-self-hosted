@@ -190,11 +190,17 @@ function safeParseJsonLine(line) {
 // same `{ data }` shape functions.invoke returns (or rejects, matching
 // apiFetch's error contract) once the terminal line is read.
 //
+// 2026-10-04: an optional 4th argument, `onEvent`, receives EVERY parsed
+// event as it arrives — added so chatWithJarvis's streamed reply can render
+// `{type:'delta', text}` fragments as they are written. `onStage` is
+// unchanged and still fires only for stage events, so every existing caller
+// (useWorkspace.js, SeoTab.jsx, EmbedChat.jsx) behaves exactly as before.
+//
 // A failure BEFORE the handler starts streaming (bad auth, validation,
 // project not found — see functions.routes.js) never reaches the NDJSON
 // path at all: it's a normal non-200 JSON error response, handled the same
 // way apiFetch handles one.
-async function invokeStream(name, body, onStage) {
+async function invokeStream(name, body, onStage, onEvent) {
   const token = getToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -226,6 +232,10 @@ async function invokeStream(name, body, onStage) {
     if (!trimmed) return;
     const evt = safeParseJsonLine(trimmed);
     if (!evt) return;
+    // Every caller-supplied handler runs AFTER the parse and BEFORE the type switch, so an event that
+    // is neither a stage nor terminal (a delta, a ping, something a newer server sends) is delivered
+    // rather than dropped — and a handler that throws cannot take the final line down with it.
+    try { onEvent?.(evt); } catch { /* a UI handler must never break the reader */ }
     if (evt.type === 'stage') onStage?.(evt);
     else if (evt.type === 'result' || evt.type === 'error') finalEvent = evt;
   };

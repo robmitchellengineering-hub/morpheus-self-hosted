@@ -3,6 +3,7 @@ import { Mic, Volume2, VolumeX, Send, FileText, Loader2, ExternalLink, X, Paperc
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
 import { useMorpheusVoice } from '@/hooks/useMorpheusVoice';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { jarvisElapsedSeconds, jarvisRemainingSeconds, formatElapsed } from '@/lib/jarvisStream';
 import { C } from './deckConstants';
 import { inputStyle, IconButton, pillBtn, ghostBtn, MicField } from './DeckUI';
 import { safeFilename, textToCsv, paragraphs, looksTabular } from './exportDoc';
@@ -14,12 +15,18 @@ import { safeFilename, textToCsv, paragraphs, looksTabular } from './exportDoc';
 // "connect the dots" one-shot synthesis and brain-dump auto-filing are a
 // later phase (see the Command Deck Phase 2 plan) — this page is the full
 // voice+text conversation.
+//
+// 2026-10-04 (Rob: *"i think the problem is it doesnt look like its doing anything ... i want to see it
+// earlier and being written"*) — the turn in flight is now VISIBLE twice over: a labelled step with a
+// live clock and the server's own ETA (JarvisLiveStatus below, where "Jarvis is thinking…" used to sit
+// unchanged for a minute), and the reply itself, word by word, in a bubble that updates as it is
+// written. Both come from the events chatWithJarvis streams (see CommandDeckContext.sendJarvisMessage).
 export default function DeckJarvis() {
   const {
-    jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage,
+    jarvisMessages, jarvisInput, setJarvisInput, jarvisSending, jarvisErr, sendJarvisMessage, jarvisLive,
     docBusy, docErr, docResult, createDeckDocument, uploadFile,
   } = useCommandDeck();
-  const { speak, stop, speakingId, loadingId } = useMorpheusVoice();
+  const { speak, stop, speakStreamStart, speakStreamText, speakStreamEnd, speakingId, loadingId } = useMorpheusVoice();
 
   // ---- exporting a reply --------------------------------------------------
   // The old base44 Deck's DocumentSheet could emit a PDF, Word and Excel file from any reply; this one
@@ -112,16 +119,44 @@ export default function DeckJarvis() {
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
-  }, [jarvisMessages, jarvisSending]);
+  }, [jarvisMessages, jarvisSending, jarvisLive?.text]);
 
-  // Auto-speak Jarvis's own newest reply when the speaker is unmuted.
+  // ---- speaking, behind the stream ----------------------------------------
+  // Rob, 2026-10-04: *"if it can start reading behind the streamed output even better"*. With the
+  // speaker unmuted, the reply is spoken SENTENCE BY SENTENCE as it is written rather than after it
+  // finishes. Where a sentence ends is the pure `nextSpeakableSegment` (src/lib/jarvisSpeech.js) and the
+  // playing is `useMorpheusVoice`'s own queue, so nothing here decides either.
+  //
+  // The whole-message effect below still matters: suggestions (`jarvis_synthesis`) are not streamed, and
+  // a reply that WAS streamed must not be read out twice. `lastSpokenId` is set from the streamed
+  // reply's own id the moment it exists, which is what suppresses the second reading.
+  const spokenStreamRef = useRef(null);
+  useEffect(() => {
+    if (!autoSpeak || !jarvisLive?.turnId) return;
+    if (jarvisLive.replyId) lastSpokenId.current = jarvisLive.replyId;
+    if (spokenStreamRef.current === jarvisLive.turnId) return;
+    spokenStreamRef.current = jarvisLive.turnId;
+    speakStreamStart(jarvisLive.turnId);
+  }, [autoSpeak, jarvisLive?.turnId, jarvisLive?.replyId, speakStreamStart]);
+
+  useEffect(() => {
+    if (!autoSpeak || !jarvisLive?.turnId) return;
+    speakStreamText(jarvisLive.turnId, jarvisLive.text || '');
+  }, [autoSpeak, jarvisLive?.turnId, jarvisLive?.text, speakStreamText]);
+
+  useEffect(() => {
+    if (!autoSpeak || !jarvisLive?.turnId || !jarvisLive.done) return;
+    speakStreamEnd(jarvisLive.turnId, jarvisLive.text || '');
+  }, [autoSpeak, jarvisLive?.turnId, jarvisLive?.done, jarvisLive?.text, speakStreamEnd]);
+
+  // Auto-speak a reply that arrived whole — a suggestion, or a turn where streaming was not used.
   useEffect(() => {
     if (!autoSpeak) return;
     const last = jarvisMessages[jarvisMessages.length - 1];
-    if (last?.role === 'jarvis' && last.id !== lastSpokenId.current) {
-      lastSpokenId.current = last.id;
-      speak(last);
-    }
+    if (!last || last.role === 'user') return;
+    if (last.id === lastSpokenId.current) return;
+    lastSpokenId.current = last.id;
+    speak(last);
   }, [jarvisMessages, autoSpeak, speak]);
 
   const handleMicClick = () => {
@@ -255,14 +290,29 @@ export default function DeckJarvis() {
           )}
           </div>
         ))}
-        {jarvisSending && (
-          <div style={{ alignSelf: 'flex-start', fontSize: '0.78rem', color: 'rgba(246,240,223,0.5)' }}>Jarvis is thinking…</div>
+        {jarvisSending && <JarvisLiveStatus live={jarvisLive} />}
+        {/* The words, as they are written. It is not a `<button>` like a finished reply: there is
+            nothing to play yet and nothing to export, and the whole reply replaces this bubble the
+            moment the terminal event lands — including a length-budget repair, which is why what is
+            shown here is a draft and what ends up in the list is the stored text. */}
+        {jarvisSending && jarvisLive?.text && (
+          <div
+            style={{
+              alignSelf: 'flex-start', maxWidth: '88%', background: 'rgba(246,240,223,0.08)',
+              border: '1px solid rgba(246,240,223,0.15)', borderRadius: 10, padding: '0.55rem 0.7rem',
+              fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', color: C.paper,
+              textAlign: 'left', fontFamily: "'Lexend', sans-serif",
+            }}
+          >
+            {jarvisLive.text}
+            <span style={{ opacity: 0.55 }}>▍</span>
+          </div>
         )}
       </div>
 
       {jarvisErr && (
         <p style={{ fontSize: '0.75rem', color: C.alert, marginTop: '0.5rem', marginBottom: 0 }}>
-          Couldn't reach Jarvis that time — give it another go.
+          {jarvisLive?.error || "Couldn't reach Jarvis that time — give it another go."}
         </p>
       )}
 
@@ -312,6 +362,43 @@ export default function DeckJarvis() {
           <Send size={17} color={C.paper} />
         </IconButton>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The turn in flight, named and timed.
+ *
+ * WHY THIS IS A COMPONENT AND NOT ONE LINE OF TEXT. It used to be the constant string "Jarvis is
+ * thinking…", which is indistinguishable from a hung page: the operator had no step name, no clock and
+ * no evidence anything was happening for as long as the model took. That is UI feedback rule 1 (no
+ * silent work) and rule 10 (a long wait must look alive) broken by Morpheus's own surface.
+ *
+ * Everything shown is something the server actually said or a clock: `label` is the current stage event,
+ * `remaining` is the deployment's own measured ETA for that step (lib/timingStats.js), and `elapsed` is
+ * real seconds. The 1s interval exists only to move the clock — a number that never changes is not
+ * evidence of life.
+ */
+function JarvisLiveStatus({ live }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const elapsed = jarvisElapsedSeconds(live);
+  const remaining = jarvisRemainingSeconds(live);
+
+  return (
+    <div style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: C.gold }}>
+      <Loader2 size={13} className="animate-spin" />
+      <span>{live?.label || 'Sending…'}</span>
+      <span style={{ color: 'rgba(246,240,223,0.55)', fontVariantNumeric: 'tabular-nums' }}>{formatElapsed(elapsed)}</span>
+      {remaining != null && (
+        <span style={{ color: 'rgba(246,240,223,0.45)', fontVariantNumeric: 'tabular-nums' }}>
+          {remaining > 0 ? `~${formatElapsed(remaining)} left` : 'finishing…'}
+        </span>
+      )}
     </div>
   );
 }

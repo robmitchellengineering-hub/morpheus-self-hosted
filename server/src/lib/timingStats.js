@@ -31,7 +31,18 @@ const SEED_MS = {
   // seoCallMaxTokens(5) = 8000 output tokens — the same order as coder/reviewer);
   // the rolling average over the last 20 real SEO calls replaces it immediately.
   seo: 45000,
+  // The STREAMED prose call — the Jarvis reply (ai.js's `invokeAIStream`, used by chatWithJarvis). It is
+  // a bucket of its own because the bucket belongs to the TRANSPORT, not the role: invokeAI already
+  // feeds `planner` with every blocking call it makes, and a streamed reply is a different call shape
+  // whose duration would quietly move the build pipeline's ETA. The seed is the one measurement the repo
+  // has for it: five role-less Deck reply calls in the six hours to 2026-10-03 averaged 41s, worst 61s —
+  // all before the snapshot gate landed, which is most of why this placeholder is lower. The rolling
+  // average over the last 20 real streamed replies replaces it immediately.
+  prose: 30000,
 };
+
+/** The timing bucket for a streamed prose call (the Jarvis reply). Read by chatWithJarvis's stage ETA. */
+export const PROSE_TIMING_ROLE = 'prose';
 const DEFAULT_SEED_MS = 60000;
 
 export function recordCallDuration(role, ms) {

@@ -320,9 +320,9 @@ export const MUTATIONS = [
   {
     guard: 'verify-jarvis-voice.mjs',
     file: 'src/hooks/useMorpheusVoice.js',
-    why: 'Plays the butler voice at normal speed again — the 23%-slower delivery that made the old deck feel faster, and a change no test would otherwise notice.',
-    find: '        audio.playbackRate = PLAYBACK_RATE;',
-    replace: '        audio.playbackRate = 1;',
+    why: 'Plays the butler voice at normal speed again — the 23%-slower delivery that made the old deck feel faster, and a change no test would otherwise notice. (2026-10-04: the assignment moved into `startAudio`, the ONE place both the whole-message path and the streamed one get their audio, so its indentation changed with it.)',
+    find: '  audio.playbackRate = PLAYBACK_RATE;',
+    replace: '  audio.playbackRate = 1;',
   },
   {
     guard: 'verify-doc-export.mjs',
@@ -477,6 +477,48 @@ export const MUTATIONS = [
     why: 'Logs a zero reply size, so the measurement that proves the loop closed (a shorter stored reply is a smaller conversation block next turn) reads as an empty answer — a length line that lies.',
     find: 'chars=${reply.length} target=${CONVERSATIONAL_REPLY_TARGET_CHARS}',
     replace: 'chars=0 target=${CONVERSATIONAL_REPLY_TARGET_CHARS}',
+  },
+  {
+    guard: 'verify-jarvis-stream.mjs',
+    file: 'server/src/lib/jarvisReplyStream.js',
+    why: 'Makes the stream opt-in unconditional, so EVERY caller — an older deployed bundle, curl, a script that sends no `stream` field — suddenly gets NDJSON it never asked for, which is the one guarantee the whole change rests on.',
+    find: '  return body?.stream === true;',
+    replace: '  return true;',
+  },
+  {
+    guard: 'verify-jarvis-stream.mjs',
+    file: 'server/src/lib/jarvisReplyStream.js',
+    why: 'Lets a TRUNCATED STREAM store its fragment, so a body that died mid-sentence is written down as Jarvis\'s answer instead of falling back to the blocking call — H6, seen from the transport.',
+    find: "  if (!complete) return { action: 'fallback', reason: 'stream-truncated' };",
+    replace: "  if (false) return { action: 'fallback', reason: 'stream-truncated' };",
+  },
+  {
+    guard: 'verify-jarvis-stream.mjs',
+    file: 'server/src/lib/aiStream.js',
+    why: 'Stops the `[DONE]` sentinel from terminating the stream, so a body that ended properly reads as truncated and every reply is re-asked for — the framing rule that decides which streams are complete at all.',
+    find: "  if (payload === '[DONE]') return { ...s, done: true };",
+    replace: "  if (payload === '[DONE]') return s;",
+  },
+  {
+    guard: 'verify-jarvis-stream.mjs',
+    file: 'server/src/lib/aiStream.js',
+    why: 'Stops the reply envelope\'s value from ever closing, so the decoded prose swallows the rest of the JSON and streams `Done."}` to the operator — the one field extraction the whole visible-words path depends on.',
+    find: '    if (c === \'"\') return { text: out, complete: true, found: true };',
+    replace: '    if (false) return { text: out, complete: true, found: true };',
+  },
+  {
+    guard: 'verify-jarvis-stream.mjs',
+    file: 'src/lib/jarvisSpeech.js',
+    why: 'Speaks a half-written sentence, so the voice reads a fragment aloud and then continues with text the listener already heard — the boundary that makes "speak behind the stream" safe rather than gibberish.',
+    find: "  if (!m) return { segment: '', spokenChars: from };",
+    replace: '  if (!m) return { segment: rest.trim(), spokenChars: full.length };',
+  },
+  {
+    guard: 'verify-jarvis-stream.mjs',
+    file: 'src/lib/jarvisStream.js',
+    why: 'Drops the streamed fragments, so the deck shows an empty bubble with a live clock while the words never appear — the exact complaint ("it doesnt look like its doing anything") this reducer exists to answer.',
+    find: '    return { ...live, text: live.text + evt.text };',
+    replace: '    return live;',
   },
 ];
 
