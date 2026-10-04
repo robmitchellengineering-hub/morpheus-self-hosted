@@ -58,13 +58,20 @@ console.log('\n3. a dismissed widget-build card stays dismissed');
 // finished — but the X only cleared component state while the effect re-reads the NEWEST row on every
 // mount, so the card returned on every reload. A dismissal nobody can make stick reads exactly like a
 // stuck build, which is why this is pinned rather than left to a comment.
+//
+// That rule has since moved OUT of the context and into `src/lib/deckWidgetBuildCard.js`, which also
+// gives a finished card a 24-hour expiry (Rob, 2026-10-04: "we still have that failed widget in my
+// settings"). So these assertions check the context DELEGATES, and the suppression and expiry rules
+// themselves are pinned — with their own instances and boundary cases — in
+// `scripts/verify-deck-widget-build.mjs`, sections 7 and 8.
 check('the dismissed build id is remembered, not just dropped from state',
   /localStorage\.setItem\(DISMISSED_WIDGET_BUILD_KEY/.test(deckCtx), true);
 check('…and read back before the newest row is shown',
   /localStorage\.getItem\(DISMISSED_WIDGET_BUILD_KEY\)/.test(deckCtx), true);
-check('…so only a SETTLED build can be suppressed by it',
-  /const settled = latest \? \['done', 'failed'\]\.includes\(latest\.status\) : false/.test(deckCtx)
-  && /settled && latest\.id === dismissedId \? null : latest/.test(deckCtx), true);
+check('the show/hide decision is delegated to the one shared rule',
+  /shouldShowWidgetBuildCard\(latest, \{ dismissedId \}\)/.test(deckCtx), true);
+check('…and the context no longer decides it inline (the rule owns it now)',
+  /settled && latest\.id === dismissedId \? null : latest/.test(deckCtx), false);
 check('…and an unfinished build still shows and keeps polling',
   /if \(latest && !settled\)/.test(deckCtx), true);
 check('the key is namespaced to the deck, not a bare word',

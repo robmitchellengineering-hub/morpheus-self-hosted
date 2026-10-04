@@ -7,6 +7,8 @@ import { base44 } from '@/api/base44Client';
 import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
 import { startTokenCheckout } from '@/lib/purchaseCredits';
 import { DECK_WIDGETS } from './deckWidgets';
+import { canReorderWidget } from './deckWidgetOrder';
+import { isTerminalBuildStatus } from '@/lib/deckWidgetBuildCard';
 import { C, money, DEFAULT_FEE_TIERS, formatFeeRate, parseFeeTierInput, feeTiersFromProfile, commissionFor, consignorProceeds, feeRateLabel } from './deckConstants';
 import { parseOperatingRegions, formatOperatingRegions } from './operatingRegions';
 import { Card, pillBtn, miniInput, MicField, MicTextarea } from './DeckUI';
@@ -194,8 +196,10 @@ export default function DeckSettings() {
 // buildDeckWidget.js) — Rob, 2026-09-17, after first seeing this land as
 // chat messages instead: "wait not in the chat it should be a progress bar
 // with details running in the widgets card." Polled by CommandDeckContext
-// (widgetBuild) while a build is running; stays visible once done/failed
-// until dismissed so a failure isn't missed by someone who stepped away.
+// (widgetBuild) while a build is running; a finished one stays visible until
+// dismissed so a failure isn't missed by someone who stepped away — and now
+// also EXPIRES after a day if nobody dismisses it, so a card cannot become
+// permanent (see src/lib/deckWidgetBuildCard.js).
 const BUILD_STAGE_LABEL = {
   planning: 'Planning', building: 'Building', pushing: 'Pushing',
   merging: 'Waiting on checks', deploying: 'Deploying', verifying: 'Verifying', done: 'Done', failed: 'Failed',
@@ -221,7 +225,7 @@ function WidgetBuildProgress() {
   const fraction = stepCount > 0
     ? Math.min(1, Math.max(0.05, stepIndex / stepCount))
     : (BUILD_STAGE_FLOOR[status] ?? 0.05);
-  const isTerminal = status === 'done' || status === 'failed';
+  const isTerminal = isTerminalBuildStatus(status);
   const barColor = status === 'failed' ? C.alert : status === 'done' ? C.sage : C.brass;
 
   return (
@@ -257,7 +261,12 @@ function WidgetBuildProgress() {
 // lazy-seed finishes — same load-order every other Deck list already has.
 function WidgetManager() {
   const { widgetInstances, toggleWidget, moveWidget, deleteWidget, askToDelete } = useCommandDeck();
-  const sorted = [...widgetInstances].sort((a, b) => a.sort_order - b.sort_order);
+  // The same read-time order the Deck itself uses, so this list cannot disagree with the page it configures.
+  const sorted = orderDeckWidgets(widgetInstances);
+  // The first row that is allowed to move up. Normally 1 — brain dump holds row 0 — but an account that
+  // predates the pinned widget may have no brain dump instance at all, and hardcoding 1 would then disable
+  // the up arrow on a widget that sits at the top for no reason the user can see.
+  const firstMovableIndex = sorted.length && !canReorderWidget(sorted[0].widget_key) ? 1 : 0;
   // Same base44.auth.me() call UsageMeter() below already uses to know who's
   // asking — needed here only to gate the delete button's VISIBILITY
   // (hide a button that would just fail server-side). deleteDeckWidget.js
@@ -275,20 +284,31 @@ function WidgetManager() {
           const meta = DECK_WIDGETS.find((d) => d.key === w.widget_key);
           if (!meta) return null;
           const isMine = meta.createdBy && meta.createdBy === currentUserId;
+          // Brain dump is pinned to the top of the Deck and cannot be moved — so it gets no arrows at all,
+          // rather than two buttons that would silently do nothing (Rob, 2026-10-04: "braindump is always
+          // locked at the top of the command deck"). Everything else reorders as before.
+          const pinned = !canReorderWidget(w.widget_key);
           return (
             <div key={w.widget_key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: C.paper, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0.5rem 0.6rem' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.83rem', fontWeight: 600, opacity: w.enabled ? 1 : 0.5 }}>{meta.label}</div>
+                <div style={{ fontSize: '0.83rem', fontWeight: 600, opacity: w.enabled ? 1 : 0.5 }}>
+                  {meta.label}
+                  {pinned && <span style={{ marginLeft: 6, fontSize: '0.66rem', fontWeight: 500, color: C.walnutSoft }}>· always first</span>}
+                </div>
                 {meta.note && (
                   <div style={{ fontSize: '0.7rem', color: C.walnutSoft, marginTop: '0.15rem', lineHeight: 1.4 }}>{meta.note}</div>
                 )}
               </div>
-              <button onClick={() => moveWidget(w.widget_key, -1)} disabled={i === 0} style={{ ...pillBtn(C.walnutSoft), padding: '0.3rem', opacity: i === 0 ? 0.3 : 1 }}>
-                <ChevronUp size={13} />
-              </button>
-              <button onClick={() => moveWidget(w.widget_key, 1)} disabled={i === sorted.length - 1} style={{ ...pillBtn(C.walnutSoft), padding: '0.3rem', opacity: i === sorted.length - 1 ? 0.3 : 1 }}>
-                <ChevronDown size={13} />
-              </button>
+              {!pinned && (
+                <>
+                  <button onClick={() => moveWidget(w.widget_key, -1)} disabled={i === firstMovableIndex} style={{ ...pillBtn(C.walnutSoft), padding: '0.3rem', opacity: i === firstMovableIndex ? 0.3 : 1 }}>
+                    <ChevronUp size={13} />
+                  </button>
+                  <button onClick={() => moveWidget(w.widget_key, 1)} disabled={i === sorted.length - 1} style={{ ...pillBtn(C.walnutSoft), padding: '0.3rem', opacity: i === sorted.length - 1 ? 0.3 : 1 }}>
+                    <ChevronDown size={13} />
+                  </button>
+                </>
+              )}
               <button onClick={() => toggleWidget(w.widget_key)} style={{ ...pillBtn(w.enabled ? C.sage : C.walnutSoft), minWidth: 62 }}>
                 {w.enabled ? 'On' : 'Off'}
               </button>

@@ -390,6 +390,13 @@ jobs:
       - name: Deck widget build survives its own deploy
         run: node scripts/verify-deck-widget-build.mjs
 
+      # Rob, 2026-10-04: brain dump is locked to the top of the Command Deck and everything else moves.
+      # A new user's first widget was Jarvis's suggestions, because the registry order is what seeding
+      # numbers from — this asserts the pin, the move that cannot pass it, and that all four surfaces
+      # (registry, deck, context, settings) go through the one rule.
+      - name: Brain dump is pinned to the top of the deck
+        run: node scripts/verify-deck-widget-order.mjs
+
       # The portable download used to be a hand-run mirror that shipped a tree a month out of
       # date. This asserts it is generated during the build, selects the real product, and says
       # what it does NOT contain.

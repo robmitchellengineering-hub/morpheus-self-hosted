@@ -19,12 +19,18 @@
 // every widget (including these two) enabled by the migration that
 // introduced this table, so nothing on his existing Deck changes.
 export const DECK_WIDGETS = [
+  // ⚠️ BRAIN DUMP IS FIRST, AND THE POSITION IS LOAD-BEARING. Rob, 2026-10-04: "braindump is meant to be
+  // locked at the top of the page and i saw on a new users account that suggestions was coming up first for
+  // them". A new account seeds one instance per entry here with `sort_order: i`, so whatever sits at index 0
+  // is what a new user sees first — and it was Jarvis's suggestions. `deckWidgetOrder.js` pins it on READ as
+  // well, so this is belt and braces: this line is right for new accounts, and that module keeps it right for
+  // every account that already stored the old order. Do not reorder this entry.
+  { key: 'brain_dump', label: 'Brain dump', defaultEnabled: true },
   // `note` is shown under the label in Deck Settings → Widgets. This one is
   // load-bearing copy, not decoration: switching this widget off is also the
   // per-account opt-out from proactive insight (server/src/lib/
   // deckInsightGate.js), and nobody would guess that from the label alone.
   { key: 'jarvis_suggestions', label: "Jarvis's suggestions", defaultEnabled: true, note: 'Off = no proactive insights — Jarvis stops reading across your Deck unprompted, and no AI credit is spent on it.' },
-  { key: 'brain_dump', label: 'Brain dump', defaultEnabled: true },
   { key: 'today_charge', label: "Today's charge", defaultEnabled: true },
   { key: 'today_one_thing', label: "Today's one thing", defaultEnabled: true },
   { key: 'inbox', label: 'Inbox', defaultEnabled: true },

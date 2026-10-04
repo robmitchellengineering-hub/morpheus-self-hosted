@@ -1,4 +1,5 @@
 import { useCommandDeck } from '@/contexts/CommandDeckContext';
+import { orderDeckWidgets } from './deckWidgetOrder';
 
 // The "Deck" home tab. Each widget lives in its own file under ./widgets/,
 // named exactly `<widget_key>.jsx` — this loader just maps that filename to
@@ -14,9 +15,9 @@ const widgetComponents = Object.fromEntries(
 
 export default function DeckHome() {
   const { widgetInstances } = useCommandDeck();
-  const orderedWidgets = [...widgetInstances]
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .filter((w) => w.enabled);
+  // ORDERED ON READ, not trusted from storage: brain dump is pinned to the top for every account, including
+  // the ones whose stored `sort_order` already puts something else first (see deckWidgetOrder.js).
+  const orderedWidgets = orderDeckWidgets(widgetInstances).filter((w) => w.enabled);
 
   return (
     <>

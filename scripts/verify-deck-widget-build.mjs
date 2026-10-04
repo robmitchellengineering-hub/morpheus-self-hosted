@@ -137,6 +137,69 @@ console.log('\n6. the rule is import-free, so this runs in the no-install CI job
 const state = read('server/src/lib/deckWidgetBuildState.js');
 check('no imports at all in the rule module', /^\s*import\s/m.test(state), false);
 
+console.log('\n7. a FINISHED card cannot become permanent furniture in Settings');
+// Rob, 2026-10-04: "we still have that failed widget in my settings". The dismissal only ever lived in
+// localStorage, so it did not survive another device or a cleared cache, and with no dismissal a failed
+// card stayed until the end of time. The card now expires on its own.
+const {
+  TERMINAL_BUILD_VISIBLE_MS, shouldShowWidgetBuildCard,
+  TERMINAL_BUILD_STATUSES: TERMINAL_BUILD_CARD_STATUSES,
+  isTerminalBuildStatus: isTerminalOnClient,
+} = await import('../src/lib/deckWidgetBuildCard.js');
+
+check('the card rule and the server rule agree on what "finished" means',
+  TERMINAL_BUILD_STATUSES.join(','), TERMINAL_BUILD_CARD_STATUSES.join(','));
+check('…and answer the question the same way for every status',
+  ['done', 'failed', 'building', 'planning', 'weird', ''].map((s) => [isTerminalBuildStatus(s), isTerminalOnClient(s)].join('')).join('|'),
+  'truetrue|truetrue|falsefalse|falsefalse|falsefalse|falsefalse');
+check('a finished card is shown for a day', TERMINAL_BUILD_VISIBLE_MS, 24 * 60 * 60 * 1000);
+
+const settled = (status, ageMs, extra = {}) => ({
+  id: 'row-1', status, updated_date: new Date(NOW - ageMs), created_date: new Date(NOW - ageMs), ...extra,
+});
+check('no row means no card', shouldShowWidgetBuildCard(null, { nowMs: NOW }), false);
+check('a running build is ALWAYS shown',
+  shouldShowWidgetBuildCard(settled('building', 30 * 86_400_000), { nowMs: NOW }), true);
+check('…even when its row is ancient, because progress is progress',
+  shouldShowWidgetBuildCard({ id: 'r', status: 'verifying' }, { nowMs: NOW }), true);
+check('a build that just finished is shown', shouldShowWidgetBuildCard(settled('failed', 60_000), { nowMs: NOW }), true);
+check('…and is still shown a few hours later, so stepping away does not miss it',
+  shouldShowWidgetBuildCard(settled('done', 6 * 3_600_000), { nowMs: NOW }), true);
+check('…right at the boundary it is still shown',
+  shouldShowWidgetBuildCard(settled('failed', TERMINAL_BUILD_VISIBLE_MS), { nowMs: NOW }), true);
+check("yesterday's failed build is gone", shouldShowWidgetBuildCard(settled('failed', 25 * 3_600_000), { nowMs: NOW }), false);
+check('…and an old success is gone too', shouldShowWidgetBuildCard(settled('done', 3 * 86_400_000), { nowMs: NOW }), false);
+check('a dismissal hides a settled row', shouldShowWidgetBuildCard(settled('failed', 60_000), { nowMs: NOW, dismissedId: 'row-1' }), false);
+// The dismissal must not be able to hide a build that is still running: the X only renders on a settled
+// card, but a stored id from an earlier page must not swallow live progress if it ever did.
+check('…but never hides one that is still running',
+  shouldShowWidgetBuildCard({ id: 'row-1', status: 'building' }, { nowMs: NOW, dismissedId: 'row-1' }), true);
+check('…and cannot hide a DIFFERENT, newer build',
+  shouldShowWidgetBuildCard({ ...settled('failed', 60_000), id: 'row-2' }, { nowMs: NOW, dismissedId: 'row-1' }), true);
+check('an unreadable age keeps the card rather than guessing',
+  [shouldShowWidgetBuildCard({ id: 'r', status: 'failed' }, { nowMs: NOW }),
+    shouldShowWidgetBuildCard({ id: 'r', status: 'failed', updated_date: 'not-a-date' }, { nowMs: NOW })].join(','),
+  'true,true');
+check('a created_date is enough when updated_date is missing',
+  shouldShowWidgetBuildCard({ id: 'r', status: 'failed', created_date: new Date(NOW - 60_000) }, { nowMs: NOW }), true);
+
+console.log('\n8. Settings renders that rule, and polling is not tied to the card being visible');
+const ctx = read('src/contexts/CommandDeckContext.jsx');
+check('the poll path asks the rule instead of deciding inline',
+  /setWidgetBuild\(shouldShowWidgetBuildCard\(latest, \{ dismissedId \}\) \? latest : null\)/.test(ctx), true);
+check('…the old settled-and-dismissed comparison is gone',
+  /settled && latest\.id === dismissedId \? null : latest/.test(ctx), false);
+check('…and polling still follows any build that has not finished',
+  /if \(latest && !settled\) \{\s*\n\s*widgetBuildPollTimer\.current = window\.setTimeout\(pollWidgetBuild, 5000\);/.test(ctx), true);
+const settings = read('src/pages/CommandDeck/DeckSettings.jsx');
+check('the card renders from the same terminal test as the rule',
+  /const isTerminal = isTerminalBuildStatus\(status\);/.test(settings), true);
+check('the expiry lives in ONE place the browser can import',
+  /^import \{ isTerminalBuildStatus, shouldShowWidgetBuildCard \} from '@\/lib\/deckWidgetBuildCard';$/m.test(ctx), true);
+
+const card = read('src/lib/deckWidgetBuildCard.js');
+check('the card rule is import-free too', /^\s*import\s/m.test(card), false);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ a widget build can still be cut off by its own deploy\n');
