@@ -262,7 +262,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/compile-targets/audio-plugin-template.js',
+    file: 'server/src/lib/audioPluginTemplate.js',
     // Without this the standalone's Objective-C++ shell cannot be generated and configuration fails with
     // an error naming CMake rather than the missing language.
     why: 'Drops the Objective-C++ language from the generated CMakeLists, so the standalone target cannot be configured and the failure names CMake instead of the missing language.',
