@@ -75,8 +75,11 @@ const empty = [{ path: 'README.md', content: '# empty\n' }];
 const v = audioPlugin.validate(empty);
 check('an empty workspace is valid (Morpheus scaffolds the whole plugin)', v.valid, true);
 const s = audioPlugin.scaffold(empty);
-check('it generates exactly the four files the build needs',
-  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', PLUGIN_MANIFEST]);
+// Six rather than four since models landed: `ModelData.{h,cpp}` are generated for EVERY project, including
+// one with no model, because the plugin includes the header unconditionally and branches on
+// MORPHEUS_HAS_MODEL inside it. That is what keeps Source/Plugin.cpp the same text either way.
+check('it generates exactly the six files the build needs',
+  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/ModelData.cpp', 'Source/ModelData.h', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', PLUGIN_MANIFEST]);
 check('…and no warnings for a clean generate', s.warnings, []);
 
 console.log('\n3. identity is derived, valid, and cannot silently collide');
@@ -552,6 +555,130 @@ check('…and reading e_machine out of the ELF header itself, not asking readelf
   /readUInt16LE\(0x12\)/.test(linuxRunner) && /0xb7/.test(linuxRunner), true);
 check('…and refusing when a format was not produced',
   /no \$\{format\} binary was produced[\s\S]{0,200}process\.exit\(1\)/.test(linuxRunner), true);
+
+console.log('\n16. a project carrying a .nam runs the model — and one that does not is the plugin it always was');
+// THE STATE WITHOUT A MODEL IS NOT A DEGRADED MODE, it is the plugin that shipped before models existed, and
+// every proof taken of it — three runner builds, the test bench, the measured +5.92 dB — stays valid only if
+// this stays true. So it is asserted first, and asserted against the shape of the files rather than a summary.
+const MODEL_FILES = ['Source/ModelData.h', 'Source/ModelData.cpp'];
+const nam = await import('../server/src/lib/namPlugin.js');
+const namCli = read('scripts/audio-quantize.mjs');
+const LINEAR = '{\n "version": "0.5.4",\n "architecture": "Linear",\n "config": {"receptive_field": 1, "bias": false},\n "weights": [1.0],\n "sample_rate": 48000\n}';
+const withModel = [...empty, { path: 'models/amp.nam', content: LINEAR }];
+
+check('a .nam in the project is found, and its architecture is read',
+  nam.resolveModel(withModel, { name: 'X' }).info?.architecture, 'Linear');
+check('…a project without one resolves to NO model rather than an error',
+  nam.resolveModel(empty, { name: 'X' }).info, null);
+check('…a model named in the manifest wins over the search',
+  nam.resolveModel([...empty, { path: 'models/a.nam', content: LINEAR }, { path: 'other/b.nam', content: LINEAR }], { model: 'other/b.nam' }).path, 'other/b.nam');
+// `models/` beats a deeper path, and ties break alphabetically — so a project with two models builds the
+// same plugin twice rather than whatever order the file array happened to be in.
+check('…and the search is deterministic: models/ first, then the shallowest, then alphabetical',
+  nam.resolveModel([...empty, { path: 'src/zz.nam', content: LINEAR }, { path: 'models/aa.nam', content: LINEAR }], {}).path, 'models/aa.nam');
+// Scaffolds rather than refuses, like everything else here — but it SAYS so, because a gain plugin with no
+// explanation is how a user concludes the feature does not work.
+const broken = nam.resolveModel([...empty, { path: 'models/bad.nam', content: '{"architecture":"Linear","weights":[1,null]}' }], { name: 'X' });
+check('…a corrupt .nam does not fail the build, it warns and builds the gain stage',
+  broken.info === null && broken.warnings.length === 1 && /weight 1 is not a finite number/.test(broken.warnings[0]), true);
+check('…and a named model that is not in the project falls back rather than throwing',
+  nam.resolveModel(empty, { model: 'models/absent.nam' }).path, null);
+
+for (const withIt of [false, true]) {
+  const seed = withIt ? withModel : empty;
+  const files = audioPlugin.scaffold(seed).files;
+  const header = generated({ files }, 'Source/ModelData.h');
+  const data = generated({ files }, 'Source/ModelData.cpp');
+  const label = withIt ? 'with a model' : 'without one';
+  check(`${label}: both ModelData files are generated`, header.length > 0 && data.length > 0, true);
+  check(`${label}: MORPHEUS_HAS_MODEL says ${withIt ? 1 : 0}`,
+    header.includes(`#define MORPHEUS_HAS_MODEL ${withIt ? 1 : 0}`), true);
+  if (withIt) {
+    // ⚠️ THE DECLARATION, NOT ONLY THE DEFINITION. The first version of this pair defined the macros and not
+    // the symbols, so the plugin compiled to "use of undeclared identifier 'morpheus_model_data'". Found
+    // locally with clang -fsyntax-only before it cost a runner build; asserted here so it cannot come back.
+    check('…the header DECLARES the bytes the .cpp defines',
+      /extern const unsigned char morpheus_model_data\[\];/.test(header)
+      && /const unsigned char morpheus_model_data\[\] = \{/.test(data), true);
+    check('…and the model is embedded as the file\'s own bytes, not re-serialised',
+      data.includes('0x7b, 0x0a, 0x20, 0x22, 0x76'), true);   // `{\n "v` — the raw .nam text
+    check('…with the weight count and byte count in the header',
+      /#define MORPHEUS_MODEL_WEIGHTS 1\b/.test(header) && /#define MORPHEUS_MODEL_BYTES \d+/.test(header), true);
+  } else {
+    check('…and nothing is embedded', /morpheus_model_data\[\] = \{/.test(data), false);
+  }
+}
+// ⭐ THE REASON THE PLUGIN SOURCE IS GENERATED FROM ONE CODE PATH. scripts/audio-testbench.mjs patches the
+// gain application out of Source/Plugin.cpp to prove its own checks can fail; if that file's text changed
+// shape when a model was present, that proof would depend on what happened to be in the workspace.
+check('⭐ the plugin source is byte-identical with a model and without one',
+  generated(audioPlugin.scaffold(withModel), 'Source/Plugin.cpp') === generated(audioPlugin.scaffold(empty), 'Source/Plugin.cpp'), true);
+check('…it includes ModelData.h unconditionally and every NAM include behind the flag',
+  /#include "ModelData.h"/.test(src) && /#if MORPHEUS_HAS_MODEL\n\/\/[\s\S]{0,400}#endif/.test(src)
+  && src.indexOf('#include "ModelData.h"') < src.indexOf('get_dsp.h'), true);
+check('…and the gain multiply the test bench patches is still written on in_l/in_r',
+  (src.match(/in_[lr] \* p->smoothed/g) || []).length >= 2, true);
+// The model is per channel because a .nam is mono and the port declaration promises two channels — running
+// one instance and copying it would silently collapse a stereo source.
+check('…with one model instance PER CHANNEL, so a stereo source is not collapsed to mono',
+  /nam::DSP \*model\[2\];/.test(src) && /p->model\[0\]->process/.test(src) && /p->model\[1\]->process/.test(src), true);
+// calloc/free runs no destructors, so a smart-pointer member would leak the model every time a host unloads.
+check('…released in destroy(), because free() runs no destructors',
+  /for \(int c = 0; c < 2; \+\+c\) \{ delete p->model\[c\]; p->model\[c\] = NULL; \}/.test(src), true);
+// Reset may allocate and is explicitly not for the audio thread; process() is one frame at a time so the
+// per-sample parameter ramp keeps working.
+check('…Reset() in activate() and never in process()',
+  /plug_activate[\s\S]{0,600}->Reset\(sr, max_buffer\)/.test(src) && /plug_process[\s\S]{0,2000}->Reset\(/.test(src), false);
+check('…and a model that will not load degrades to a gain stage with a line in the log',
+  /could not load the NAM model from/.test(src), true);
+
+const cmakeWith = generated(audioPlugin.scaffold(withModel), 'CMakeLists.txt');
+const cmakeWithout = generated(audioPlugin.scaffold(empty), 'CMakeLists.txt');
+check('the CMake compiles the model data either way',
+  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin.cpp Source\/ModelData\.cpp\)/.test(cmakeWithout), true);
+check('…without a model it mentions no engine at all, so nothing extra is fetched or compiled',
+  /MORPHEUS_NAM_DIR|NAM_SAMPLE_FLOAT/.test(cmakeWithout), false);
+check('…with one it requires a checkout, globs the engine\u2019s sources and adds both header-only deps',
+  /if \(NOT DEFINED MORPHEUS_NAM_DIR\)/.test(cmakeWith)
+  && /file\(GLOB MORPHEUS_NAM_SOURCES/.test(cmakeWith)
+  && /Dependencies\/eigen/.test(cmakeWith) && /Dependencies\/nlohmann/.test(cmakeWith), true);
+// The sample type is chosen by a macro INSIDE the library, so a target that defined it and a library that did
+// not would disagree about the signature of the very function the plugin calls.
+check('…and pins NAM_SAMPLE_FLOAT, which changes the signature of process() itself',
+  /target_compile_definitions\(morpheus_plugin-impl PRIVATE NAM_SAMPLE_FLOAT\)/.test(cmakeWith), true);
+// The glob is not a search path: NAMCore's own CMakeLists builds four tools we do not want, and add_subdirectory
+// would configure them here.
+check('…and does NOT add_subdirectory the engine, which would build its tools',
+  /add_subdirectory\(\$\{MORPHEUS_NAM_DIR\}/.test(cmakeWith), false);
+// ⭐ ONE ENGINE, BOTH SIDES: the CLI that renders the reference WAV and the plugin that plays the model must
+// build the same commit, or the comparison that proves the plugin is between two implementations.
+check('⭐ the engine pin is the SAME COMMIT the measurement CLI builds',
+  namCli.includes(nam.NAMCORE_REF) && namCli.includes(nam.NAMCORE_REPO.replace(/\.git$/, '')), true);
+
+for (const [route, target] of [['macOS', audioPlugin], ['Windows', audioPluginWindows], ['Linux ARM', audioPluginLinux]]) {
+  const off = target.buildSteps(target.scaffold(empty).files);
+  const on = target.buildSteps(target.scaffold(withModel).files);
+  check(`${route}: nothing is fetched for a model when there is none`,
+    !/neural engine/i.test(JSON.stringify(off)) && !/MORPHEUS_NAM_DIR/.test(JSON.stringify(off)), true);
+  const step = on.find((s) => /neural engine/i.test(s.name || ''));
+  check(`${route}: with one, the pinned engine and its submodules are fetched`,
+    Boolean(step) && step.run.includes(nam.NAMCORE_REF) && step.run.includes(nam.NAMCORE_REPO) && /submodule update --init/.test(step.run), true);
+  check(`${route}: …and the configure is pointed at that checkout`,
+    /MORPHEUS_NAM_DIR=/.test(JSON.stringify(on)), true);
+}
+
+const linuxNamRunner = read('scripts/audio-plugin-linux-arm-runner-build.mjs');
+check('the runner can build WITH a model, so the model path is proven on hardware and not only in a guard',
+  /AUDIO_PLUGIN_MODEL/.test(linuxNamRunner) && /models\/\$\{basename\(modelArg\)\}/.test(linuxNamRunner), true);
+check('…and refuses a model path that does not exist rather than spending a build on it',
+  /does not exist — refusing to spend a build on it/.test(linuxNamRunner), true);
+const linuxNamWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
+check('the ARM workflow fetches the example models and builds BOTH shapes',
+  /--model \.cache\/models\/linear_1\.nam/.test(linuxNamWf)
+  && /AUDIO_PLUGIN_MODEL|--model/.test(linuxNamWf)
+  && /audio-plugin-linux-arm-nam-build/.test(linuxNamWf), true);
+check('…keeping the no-model artifacts too, so the earlier proof is not replaced by the new one',
+  /audio-plugin-linux-arm-build\/build\/assets\/\*\.zip/.test(linuxNamWf), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

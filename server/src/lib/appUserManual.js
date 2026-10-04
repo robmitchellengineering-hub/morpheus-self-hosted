@@ -174,6 +174,10 @@ const PLATFORM_GUIDES = {
       'above without the trailing slash, and create it.'
     ],
     firstRun: [
+      'A MODEL MAKES IT AN AMP. Put a .nam file in the project — models/ is the usual place, or name one in',
+      'morpheus.plugin.json as "model" — and rebuild. The model is baked into this download, so there is',
+      'nothing to install beside it. Without one the plugin is a stereo gain stage, which is what you have if',
+      'you are reading this and expected an amp sim.',
       'A DAW scans its plugin folders at startup, so QUIT AND REOPEN IT — a plugin installed while',
       'it was running usually will not appear.',
       'Ableton, Reaper, Bitwig and Cubase take the VST3. LOGIC, GARAGEBAND AND MAIN STAGE TAKE ONLY',
@@ -215,6 +219,10 @@ const PLATFORM_GUIDES = {
       'path and not for the file.'
     ],
     firstRun: [
+      'A MODEL MAKES IT AN AMP. Put a .nam file in the project — models/ is the usual place, or name one in',
+      'morpheus.plugin.json as "model" — and rebuild. The model is baked into this download, so there is',
+      'nothing to install beside it. Without one the plugin is a stereo gain stage, which is what you have if',
+      'you are reading this and expected an amp sim.',
       'A DAW scans its plugin folders at startup, so QUIT AND REOPEN IT — a plugin installed while it was',
       'running usually will not appear.',
       'Ableton, Reaper, Bitwig, Cubase and Studio One take the VST3. CLAP is supported by Reaper, Bitwig',
@@ -258,6 +266,10 @@ const PLATFORM_GUIDES = {
       'If a folder does not exist, create it:  mkdir -p ~/.vst3 ~/.clap'
     ],
     firstRun: [
+      'A MODEL MAKES IT AN AMP. Put a .nam file in the project — models/ is the usual place, or name one in',
+      'morpheus.plugin.json as "model" — and rebuild. The model is baked into this download, so there is',
+      'nothing to install beside it. Without one the plugin is a stereo gain stage, which is what you have if',
+      'you are reading this and expected an amp sim.',
       'A host scans its plugin folders at startup, so RESTART IT — a plugin installed while it was running',
       'usually will not appear.',
       'THE STANDALONE NEEDS A DESKTOP. Its window is X11, so it runs on Raspberry Pi OS with the desktop,',

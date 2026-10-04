@@ -52,8 +52,30 @@ jobs:
       # Everything else — the apt packages, the wrapper clone, configure, the three builds, the ELF and
       # AArch64 assertions and the packaging — is the target's own step list, executed by this script. See
       # its header for why it does not re-type a single command.
-      - name: Build and verify every format the target emits
+      - name: Build and verify every format the target emits (no model — the gain stage)
         run: node scripts/audio-plugin-linux-arm-runner-build.mjs
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-build
+
+      # The models are MIT and are FETCHED rather than committed — the same two the measurement workflow uses,
+      # and the same engine builds them. Nothing third-party is stored in this repository.
+      - name: Fetch the example models (MIT)
+        run: |
+          mkdir -p .cache/models
+          base=https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/main/example_models
+          curl -sSfL -o .cache/models/wavenet_a1_standard.nam "$base/wavenet_a1_standard.nam"
+          curl -sSfL -o .cache/models/linear_1.nam \
+            https://raw.githubusercontent.com/sdatkinson/neural-amp-modeler/main/tests/resources/models/identity/linear_1.nam
+          ls -la .cache/models
+
+      # ⭐ THE PROOF THIS WORKFLOW EXISTS FOR NOW. A project carrying a `.nam` fetches NeuralAmpModelerCore,
+      # compiles it into the plugin and embeds the model — on aarch64, which is the only place the Pi claim
+      # can be tested. It is a SECOND, separate build directory so the no-model artifact above keeps its
+      # evidence: the same target, the same runner, two different plugin shapes.
+      - name: Build and verify with a real NAM model embedded
+        run: node scripts/audio-plugin-linux-arm-runner-build.mjs --model .cache/models/linear_1.nam
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-nam-build
 
       # `if-no-files-found: error` is the second half of the check: if any of the three archives is missing,
       # the run fails here rather than passing with two of three artifacts.
@@ -61,6 +83,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: audio-plugin-linux-arm
-          path: ${{ runner.temp }}/audio-plugin-linux-arm-build/build/assets/*.zip
+          path: |
+            ${{ runner.temp }}/audio-plugin-linux-arm-build/build/assets/*.zip
+            ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/build/assets/*.zip
           if-no-files-found: error
           retention-days: 7

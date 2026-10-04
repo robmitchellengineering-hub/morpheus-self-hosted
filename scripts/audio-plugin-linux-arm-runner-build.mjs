@@ -21,7 +21,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
@@ -47,7 +47,27 @@ mkdirSync(OUT, { recursive: true });
 log(`platform ${process.platform}/${process.arch} · building in ${OUT}`);
 
 // ── 1. Materialise exactly what the target generates ────────────────────────────────────────────────────
+// A MODEL IS OPT-IN, and the default is unchanged. With no `AUDIO_PLUGIN_MODEL` this script builds the gain
+// plugin exactly as it did before models existed, which is what keeps the earlier proof valid; with one it
+// builds the amp plugin, which fetches and compiles the reference engine as well. `--model` is the same
+// switch spelled for a hand-run.
+const modelArg = (() => {
+  const at = process.argv.indexOf('--model');
+  return process.env.AUDIO_PLUGIN_MODEL || (at !== -1 ? process.argv[at + 1] : '') || '';
+})();
 const seed = [{ path: 'README.md', content: '# audio-plugin-linux-arm runner build\n' }];
+if (modelArg) {
+  if (!existsSync(modelArg)) {
+    console.error(`[audio-plugin-linux-arm] the model ${modelArg} does not exist — refusing to spend a build on it.`);
+    process.exit(1);
+  }
+  // `models/` is the conventional place and what lib/namPlugin.js looks in first; the basename is kept so a
+  // failure message names the file the user recognises rather than a temp path.
+  seed.push({ path: `models/${basename(modelArg)}`, content: readFileSync(modelArg, 'utf8') });
+  log(`building with a model: ${basename(modelArg)}`);
+} else {
+  log('building WITHOUT a model (the gain stage) — set AUDIO_PLUGIN_MODEL=/path/to/model.nam to build the amp');
+}
 const validation = audioPlugin.validate(seed);
 if (!validation.valid) {
   console.error(`[audio-plugin-linux-arm] the target rejected an empty workspace: ${JSON.stringify(validation)}`);
