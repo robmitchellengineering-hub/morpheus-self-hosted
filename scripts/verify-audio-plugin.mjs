@@ -498,6 +498,11 @@ check('…and asserts the real entry points of the two formats that have them',
 check('the artifact spec names the Linux ARM downloads, one per format',
   ['vst3', 'clap', 'standalone'].every((k) => (audioPluginLinux.artifact.glob || '').includes(`plugin-linux-arm-${k}`))
   || ['vst3', 'clap', 'standalone'].every((k) => audioPluginLinux.artifact.verifyCommand.includes(`plugin-linux-arm-${k}`)), true);
+// `zip` stores the path it is handed, so archiving the path `find` returned puts `build/assets/<name>.vst3/…`
+// in the archive and a player who unzips it gets a `build/` tree to dig through rather than a plugin folder
+// to drag. Both forms were unzipped and compared before this line was written.
+check('…and archives the VST3 from inside its own directory, so the archive root is the plugin folder',
+  /\( cd build\/assets && zip -qr plugin-linux-arm-vst3\.zip/.test(linuxRun), true);
 
 const linuxWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
 check('there is a workflow that builds it on a real ARM64 Linux runner', linuxWf.length > 0, true);

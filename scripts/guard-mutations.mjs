@@ -461,6 +461,15 @@ export const MUTATIONS = [
     replace: '.github/workflows/audio-plugin-linux-build.yml',
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-linux-arm.js',
+    // Packaging, not building — and it is the difference between a download a musician can use and one they
+    // have to work out. `zip` stores the path it is handed, so this ships `build/assets/<name>.vst3/…`.
+    why: 'Goes back to zipping the path find returned, so the VST3 archive contains a build/ tree instead of a plugin folder.',
+    find: '( cd ${LINUX_ASSETS} && zip -qr plugin-linux-arm-vst3.zip ${qVst3Dir} )',
+    replace: 'zip -qr ${LINUX_ASSETS}/plugin-linux-arm-vst3.zip "$vst3"',
+  },
+  {
     guard: 'verify-audio-measure.mjs',
     file: 'server/src/lib/audio/analysis.js',
     // THE CLASSIC WINDOWING BUG, as a mutation: dropping the window's coherent gain makes every amplitude read

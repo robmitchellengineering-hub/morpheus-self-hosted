@@ -209,9 +209,16 @@ export const audioPlugin = {
 
       {
         name: 'Package',
-        // One archive per format, because they go to different folders on the player's machine. The VST3 is
-        // a FOLDER here (unlike Windows, where it is a single file), so it is archived recursively and the
-        // user gets the bundle rather than the bare `.so` inside it.
+        // One archive per format, because they go to different folders on the player's machine.
+        //
+        // ⚠️ THE VST3 IS ARCHIVED FROM INSIDE ITS OWN DIRECTORY, and that is not tidiness. `zip` stores the
+        // path it was handed, so zipping `build/assets/YourPlugin.vst3` — the path `find` returns — puts
+        // `build/assets/YourPlugin.vst3/…` in the archive, and a player who unzips it gets a `build/` tree
+        // to dig through instead of a plugin folder to drag. `cd`-ing first and zipping the folder NAME is
+        // the difference between the two, and it was checked by unzipping both.
+        //
+        // The VST3 is a FOLDER here (unlike Windows, where it is a single file), so it is archived
+        // recursively; the two single files use `-j` so their archive holds just the file.
         run: [
           'set -euo pipefail',
           'command -v zip >/dev/null || sudo apt-get install -y --no-install-recommends zip',
@@ -219,7 +226,7 @@ export const audioPlugin = {
           `clap=$(find ${LINUX_ASSETS} -type f -name ${qClap} -print -quit)`,
           `sa=$(find ${LINUX_ASSETS} -type f -name ${qName} -print -quit)`,
           '[ -n "$vst3" ] && [ -n "$clap" ] && [ -n "$sa" ] || { echo "cannot package: a format is missing"; exit 1; }',
-          `zip -qr ${LINUX_ASSETS}/plugin-linux-arm-vst3.zip "$vst3"`,
+          `( cd ${LINUX_ASSETS} && zip -qr plugin-linux-arm-vst3.zip ${qVst3Dir} )`,
           `zip -qj ${LINUX_ASSETS}/plugin-linux-arm-clap.zip "$clap"`,
           `zip -qj ${LINUX_ASSETS}/plugin-linux-arm-standalone.zip "$sa"`,
           `ls -l ${LINUX_ASSETS}/plugin-linux-arm-*.zip`,
