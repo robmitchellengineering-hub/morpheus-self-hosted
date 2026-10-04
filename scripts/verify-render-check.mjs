@@ -76,7 +76,12 @@ check('it notices a page that rendered nothing', /blank/.test(script), true);
 // and `/deck/settings` cheerfully rendered "SET UP YOUR BUSINESS". Prove it is still fatal.
 check('it fails on an API 5xx, not only on a blank page',
   /page\.on\('response'/.test(scriptCode) && /res\.status\(\) < 500/.test(scriptCode), true);
-check('…and it is wired into the verdict, not just collected',
+// BOTH ENDS OF THE CHAIN, and the reason is a survived mutation: emptying the `serverErrors.push`
+// inside the response handler left every line this guard looked for in place — the listener, the
+// `status() < 500` test and the verdict — so a check that only read the verdict passed while nothing
+// was ever collected. "Collected" and "counted" are two facts and each needs its own assertion.
+check('…the response handler actually COLLECTS them', /serverErrors\.push\(/.test(scriptCode), true);
+check('…and the verdict counts what was collected',
   /problems\.push\(`\$\{uniqueServerErrors\.length\} API 5xx/.test(scriptCode), true);
 // Read from the RAW file, not the comment-stripped copy, and the reason is a small lesson of its own:
 // the guard clause being asserted is a regex literal containing `\/`, and the naive comment stripper
