@@ -148,8 +148,14 @@ if (flag('--self-test')) {
   mkdirSync(join(broken, 'Source'), { recursive: true });
   const srcPath = join(projectDir, 'Source', 'Plugin.cpp');
   const original = readFileSync(srcPath, 'utf8');
-  const uses = (str) => (str.match(/in_[lr] \* p->smoothed/g) || []).length;
-  const patched = original.replace(/in_l \* p->smoothed/g, 'in_l * 1.0').replace(/in_r \* p->smoothed/g, 'in_r * 1.0');
+  // ⚠️ THE PATTERN IS THE PLUGIN'S SHAPE, and it changed when the parameter list became a table: the output
+  // level is now one entry in `smoothed[]`, so the line reads `in_l * db_to_linear(p->smoothed[IDX_OUTPUT])`.
+  // The count below is what tells you the shape moved again rather than silently patching nothing.
+  const APPLIED_GAIN = /in_[lr] \* db_to_linear\(p->smoothed\[IDX_[A-Z_]+\)\)/g;
+  const uses = (str) => (str.match(APPLIED_GAIN) || []).length;
+  const patched = original
+    .replace(/in_l \* db_to_linear\(p->smoothed\[IDX_[A-Z_]+\]\)/g, 'in_l * 1.0')
+    .replace(/in_r \* db_to_linear\(p->smoothed\[IDX_[A-Z_]+\]\)/g, 'in_r * 1.0');
   // Count the APPLIED-gain lines specifically: `p->smoothed` appears elsewhere (it is stepped toward its
   // target), so a whole-file check for it fails on a patch that worked perfectly — which is what happened.
   if (uses(original) < 2 || uses(patched) !== 0) {

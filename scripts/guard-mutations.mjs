@@ -625,6 +625,70 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // 0.001 dB of coefficient error measured as -55 dB of residual against the design; 1e-6 measures -140.
+    why: 'Puts the tone coefficients back on a thousandth-of-a-decibel update threshold, which the measurement showed leaves the filter visibly wrong.',
+    find: '#define MORPHEUS_TONE_EPS 0.000001',
+    replace: '#define MORPHEUS_TONE_EPS 0.001',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // An unknown chain that becomes the amp is a project silently building a plugin nobody asked for.
+    why: 'Makes every project the amp chain, so a manifest asking for something this version does not have gets it anyway.',
+    find: "if (asked === 'amp') return AMP_CHAIN;",
+    replace: 'return AMP_CHAIN;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    why: 'Gives the tone stack one filter state instead of two, so the two channels share it and bleed into each other.',
+    find: 'biquad_t tone[2][',
+    replace: 'biquad_t tone[1][',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // The source has to stay the same text with and without a model, or the test bench's self-test patch
+    // depends on the workspace.
+    why: 'Takes the model out from behind MORPHEUS_HAS_MODEL, so the plugin source changes shape when a project carries one.',
+    find: "    '#if MORPHEUS_HAS_MODEL',",
+    replace: "    '#if 1',",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // `IDX_OUTPUT` is the name the test bench's patch and the output multiply both rely on.
+    why: 'Renames the plain plugin\u2019s parameter key, so the emitted C++ indexes an identifier that does not exist and the bench stops matching the output line.',
+    find: "return [{ key: 'output', name: String(manifest.paramName || 'Gain'), min: -60, max: 12, def: 0, role: 'output' }];",
+    replace: "return [{ key: 'gain', name: String(manifest.paramName || 'Gain'), min: -60, max: 12, def: 0, role: 'output' }];",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // The drift this check exists for: a corner frequency that is right in the design and wrong in the build.
+    why: 'Hardcodes a band\u2019s corner frequency instead of emitting it from the design, so the filters that run and the design the measurement checks against disagree.',
+    find: '${num(b.freq)}, ${num(b.q)}, p->tone_last',
+    replace: '120.0, ${num(b.q)}, p->tone_last',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-testbench.mjs',
+    why: 'Puts the bench\u2019s self-test patch back on the plugin shape that no longer exists, so it would silently patch nothing and pass a broken plugin.',
+    find: 'const APPLIED_GAIN = ',
+    replace: 'const APPLIED_GAIN_UNUSED = ',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // The mistake the test bench caught on its first local run: the output level emitted both inside the
+    // channel loop and on the final line, so a +6 dB setting measured +11.85 dB.
+    why: 'Applies the output level twice, which is exactly the defect that measured a +6 dB setting as +11.85 dB.',
+    find: 'process->audio_outputs[0].data32[0][i] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]));',
+    replace: 'process->audio_outputs[0].data32[0][i] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]) * db_to_linear(p->smoothed[IDX_OUTPUT]));',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
     // ⭐ The check that stops the whole exercise being vacuous: a model that does nothing nulls perfectly
     // against a reference that also does nothing.
