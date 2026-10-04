@@ -71,6 +71,20 @@ check('it collects console errors', /msg\.type\(\) === 'error'/.test(script), tr
 check('it names the error-boundary screen', /Something broke on this screen/.test(script), true);
 check('it notices a bounce to /login (a rejected session)', /bouncedToLogin/.test(script), true);
 check('it notices a page that rendered nothing', /blank/.test(script), true);
+// The degradation that hides best: a 5xx still renders a page, so every other assertion passes while
+// the content is an empty state. Observed for real — a stale Prisma client 500'd the deck-profile read
+// and `/deck/settings` cheerfully rendered "SET UP YOUR BUSINESS". Prove it is still fatal.
+check('it fails on an API 5xx, not only on a blank page',
+  /page\.on\('response'/.test(scriptCode) && /res\.status\(\) < 500/.test(scriptCode), true);
+check('…and it is wired into the verdict, not just collected',
+  /problems\.push\(`\$\{uniqueServerErrors\.length\} API 5xx/.test(scriptCode), true);
+// Read from the RAW file, not the comment-stripped copy, and the reason is a small lesson of its own:
+// the guard clause being asserted is a regex literal containing `\/`, and the naive comment stripper
+// sees the `//` in `...api\//.test(url)` and truncates the line there — so the stripped text cannot
+// contain what this check looks for. The string below appears in no comment, so matching the raw source
+// is exactly as safe here.
+check('…while a third-party asset 5xx is NOT this app\'s verdict',
+  script.includes('if (!/\\/api\\//.test(url)) return;'), true);
 check('it fails the run when a route does not render', /process\.exit\(1\)/.test(script), true);
 
 console.log('\n4. the session is a LOCAL one, and no credential is printed');
