@@ -185,6 +185,15 @@ catalog is the source of truth for what exists; the table below is the map, and
   `/settings` and `/workspace` in a real browser, failing on any uncaught error, the
   error-boundary screen, a bounce to `/login`, or a page that rendered nothing. Pass routes of
   your own to check just those: `npm run render:check -- /deck/settings`.
+- **A compile target is proven by running it, never by reading the adapter** (`morpheus-build-library`
+  → `compile-targets`). Most targets are smoke-tested on a runner by `scripts/compile-smoke.mjs`. The
+  **`audio-plugin`** target has its own manual workflow, because one of its four formats cannot be built
+  here: the standalone's macOS shell needs full Xcode, and this machine has only the Command Line Tools.
+  **After changing anything under `server/src/lib/compile-targets/audio-plugin.js` or
+  `server/src/lib/audioPluginTemplate.js`, dispatch**
+  `.github/workflows/audio-plugin-build.yml` (`gh workflow run audio-plugin-build.yml --ref main`). It
+  materialises what the target generates and runs the target's own steps on `macos-latest`, then uploads
+  the packaged plugins. It is `workflow_dispatch`-only on purpose: macOS runner minutes bill at 10x.
 - **Revert build noise.** `npm run build` rewrites `src/MORPHEUS_DESIGN_PLAN.md`
   (H3) — `git checkout` it if you didn't mean to change it.
 

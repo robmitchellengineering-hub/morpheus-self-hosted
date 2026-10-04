@@ -230,6 +230,61 @@ check('the release uploads the zips AND the user manual',
   /files: \|\n\s*build\/assets\/plugin-macos-\*\.zip\n\s*USER-MANUAL\.txt/.test(yaml), true);
 check('…and refuses to publish if the glob matches nothing', /fail_on_unmatched_files: true/.test(yaml), true);
 
+console.log('\n11. the target is built for real on a runner, and only when it is asked for');
+// ⚠️ THE GAP THIS CLOSES. Everything above proves the target GENERATES a project and renders a workflow.
+// Nothing built the plugin: the required checks run on ubuntu with no compiler, no Xcode and no network
+// build, and the plugin itself is only built when a user compiles, in their own repo. The standalone cannot
+// be built on the development machine at all — its shell is compiled by `ibtool`, which needs full Xcode.
+// So a workflow that materialises the target and runs its steps on a macOS runner is the only evidence
+// that the fourth format exists, and this is where that has to stay true.
+const wf = read('.github/workflows/audio-plugin-build.yml');
+check('there is a workflow that builds the target on a real macOS runner', wf.length > 0, true);
+check('…dispatched by hand, not on a push or a pull request',
+  /on:\s*\n\s+workflow_dispatch:/.test(wf), true);
+// The cost rule, as an assertion: macOS minutes bill at 10x, so an accidental trigger here is a bill, not
+// a slower build. `pull_request` and `push` are the two ways it could start running unasked.
+check('…and nothing in it can start a macOS bill on every branch',
+  /pull_request|^\s*push:/m.test(wf), false);
+check('…on macOS, where full Xcode exists — the only place the standalone can be built',
+  /runs-on: macos-latest/.test(wf), true);
+check('…bounded by a timeout, because configure downloads the SDKs',
+  /timeout-minutes: \d+/.test(wf), true);
+check('…running the target\'s own steps through the runner script',
+  /node scripts\/audio-plugin-runner-build\.mjs/.test(wf), true);
+check('…keeping the packaged plugins, so a run can be inspected rather than believed',
+  /upload-artifact@v\d/.test(wf) && /assets\/\*\.zip/.test(wf), true);
+check('…and failing rather than passing with three formats of four',
+  /^\s+if-no-files-found: error$/m.test(wf), true);
+
+// The script must build the TARGET, not a transcription of what the target happens to emit today. A copy
+// of the commands is the failure mode this whole job exists to avoid: it would keep passing after the
+// target changed, and prove something nobody ships.
+const runner = read('scripts/audio-plugin-runner-build.mjs');
+check('the runner script imports the target and calls its buildSteps',
+  /from '\.\.\/server\/src\/lib\/compile-targets\/audio-plugin\.js'/.test(runner) && /audioPlugin\.buildSteps\(/.test(runner), true);
+check('…and no build command is written out a second time, where it could drift',
+  /cmake --build|ditto -c -k|CLAP_WRAPPER_REF|wrapAsAUV2/.test(runner), false);
+check('…skipping the `uses:` steps it cannot run and executing every shell step',
+  /step\.uses/.test(runner) && /step\.run/.test(runner), true);
+check('…providing RUNNER_TEMP, which the clone and configure steps read',
+  /RUNNER_TEMP/.test(runner), true);
+check('…failing the job on the first step that fails',
+  /result\.status !== 0[\s\S]{0,160}process\.exit\(1\)/.test(runner), true);
+check('…refusing to run anywhere but macOS, rather than failing obscurely later',
+  /process\.platform !== 'darwin'/.test(runner), true);
+// The one format no local machine has ever built, so a green run that quietly lacked it must be impossible.
+// Asserted as a REFUSAL THAT EXITS, not as the wording of its message — the message alone is a check
+// satisfied by a string, which is the failure this file has already been caught by once (see above): the
+// workflow's own comment quotes `if-no-files-found: error`, so a plain search for the setting matched its
+// own explanation and stayed green with the setting deleted.
+check('…and refusing when no standalone was produced, rather than summarising three formats of four',
+  /if \(!standalone\) \{[\s\S]{0,240}process\.exit\(1\)/.test(runner), true);
+check('…and refusing a standalone bundle that exists with no binary in it',
+  /if \(!existsSync\(standaloneBin\)\) \{[\s\S]{0,240}process\.exit\(1\)/.test(runner), true);
+// A manual job nobody knows about is the same as no job (H17). It is named where a session will see it.
+check('…and the manual job is named in AGENTS.md, so a session that changes the target dispatches it',
+  /audio-plugin-build\.yml/.test(read('AGENTS.md')), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');
