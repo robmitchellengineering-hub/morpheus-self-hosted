@@ -155,8 +155,12 @@ const PLATFORM_GUIDES = {
     firstRun: ['Most boards need a reset (or a double-tap of the reset button) to enter the bootloader for flashing.'],
     trouble: ['A board that reports no port is usually a missing USB serial driver, not the firmware.']
   },
-  'audio-plugin': {
+  'audio-plugin-macos': {
     install: [
+      'THIS PLUGIN IS FOR MACOS ONLY. It will not load on Windows or Linux — there is no Audio Unit',
+      'outside Apple\'s platforms, and the .vst3 and .clap in this download are macOS bundles. If you',
+      'or your collaborators are on Windows, this is not the build for them.',
+      '',
       'You downloaded FOUR zips because a plugin is four files in four different places, and a DAW',
       'only looks in its own. Unzip them and move each one to its folder — the USER one only needs',
       'your account, the SYSTEM one needs your password and is shared by everyone on the Mac.',

@@ -187,13 +187,20 @@ catalog is the source of truth for what exists; the table below is the map, and
   your own to check just those: `npm run render:check -- /deck/settings`.
 - **A compile target is proven by running it, never by reading the adapter** (`morpheus-build-library`
   → `compile-targets`). Most targets are smoke-tested on a runner by `scripts/compile-smoke.mjs`. The
-  **`audio-plugin`** target has its own manual workflow, because one of its four formats cannot be built
-  here: the standalone's macOS shell needs full Xcode, and this machine has only the Command Line Tools.
-  **After changing anything under `server/src/lib/compile-targets/audio-plugin.js` or
+  **`audio-plugin-macos`** target has its own manual workflow, because one of its four formats cannot be
+  built here: the standalone's macOS shell needs full Xcode, and this machine has only the Command Line
+  Tools. **After changing anything under `server/src/lib/compile-targets/audio-plugin-macos.js` or
   `server/src/lib/audioPluginTemplate.js`, dispatch**
-  `.github/workflows/audio-plugin-build.yml` (`gh workflow run audio-plugin-build.yml --ref main`). It
+  `.github/workflows/audio-plugin-macos-build.yml` (`gh workflow run audio-plugin-macos-build.yml --ref main`). It
   materialises what the target generates and runs the target's own steps on `macos-latest`, then uploads
   the packaged plugins. It is `workflow_dispatch`-only on purpose: macOS runner minutes bill at 10x.
+- **A route that builds for one machine says so — in the id, the label, the downloads and the manual.**
+  Rob, 2026-10-04: *"It needs to be clear that that's a macOS only audio plugin route, same for the
+  Windows one."* A plugin is the case that makes this load-bearing, because `VST3` exists on more than one
+  platform, so a label naming only formats reads as "builds for whatever you are on". **A target in
+  `server/src/lib/compile-targets/` is not real until it is in the picker** (`src/lib/compileTargets.js`):
+  `audio-plugin` shipped in the registry, absent from the picker and therefore unchoosable, while every
+  guard stayed green. `verify-onramp.mjs` now compares the two lists.
 - **Revert build noise.** `npm run build` rewrites `src/MORPHEUS_DESIGN_PLAN.md`
   (H3) — `git checkout` it if you didn't mean to change it.
 

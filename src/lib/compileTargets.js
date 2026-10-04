@@ -36,6 +36,11 @@ export const COMPILE_TARGETS = [
   { value: 'source', create: 'Source code only', import: 'Source code only', bar: 'source' },
   { value: 'windows-exe', create: 'Windows .exe (build locally)', import: 'Windows .exe', bar: 'win .exe' },
   { value: 'mac-app', create: 'macOS .app (build locally)', import: 'macOS .app', bar: 'mac .app' },
+  // THE OS IS IN THE LABEL, because a plugin is not like the other targets: a VST3 is a format that exists
+  // on more than one machine, so "Audio Plugin (VST3 · AU · CLAP)" reads as though it builds for whatever
+  // the reader is on. It does not — Audio Units are an Apple format and these bundles load on macOS only.
+  // When the Windows route lands it gets its own entry (`audio-plugin-windows`), beside `Windows .exe`.
+  { value: 'audio-plugin-macos', create: 'macOS audio plugin — VST3, AU or CLAP (build locally)', import: 'macOS audio plugin — VST3, AU or CLAP', bar: 'mac audio plugin' },
   { value: 'linux-binary', create: 'Linux binary (build locally)', import: 'Linux binary', bar: 'linux bin' },
   { value: 'android-apk', create: 'Android APK (build locally)', import: 'Android APK', bar: 'android apk' },
   { value: 'ios-app', create: 'iOS app (build locally)', import: 'iOS app', bar: 'ios app' },

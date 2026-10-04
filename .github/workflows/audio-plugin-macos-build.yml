@@ -16,11 +16,11 @@
 # MANUAL ONLY, DELIBERATELY. macOS runner minutes bill at 10x, so this must never run on a pull request or
 # a push: it is dispatched by hand when the target changes, from the Actions tab or
 #
-#   gh workflow run audio-plugin-build.yml --ref main
+#   gh workflow run audio-plugin-macos-build.yml --ref main
 #
 # and it uploads the packaged plugins, so a run can be inspected (and a real plugin loaded in a DAW)
 # rather than taken on trust.
-name: Audio plugin build
+name: Audio plugin build (macOS)
 
 on:
   workflow_dispatch:
@@ -46,7 +46,7 @@ jobs:
       # packaging — is the target's own step list, executed by this script. See its header for why it does
       # not re-type a single command.
       - name: Build and verify every format the target emits
-        run: node scripts/audio-plugin-runner-build.mjs
+        run: node scripts/audio-plugin-macos-runner-build.mjs
 
       # `if-no-files-found: error` is the second half of the check: if the standalone's zip is missing, the
       # run fails here rather than passing with three of four artifacts.

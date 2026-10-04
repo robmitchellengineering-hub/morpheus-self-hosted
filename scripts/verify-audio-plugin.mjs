@@ -20,7 +20,7 @@
 // Run:  node scripts/verify-audio-plugin.mjs
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin.js';
+import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
 import { getCompileTarget, listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 
 const REPO = new URL('..', import.meta.url).pathname;
@@ -37,15 +37,31 @@ function check(name, actual, expected) {
 const generated = (result, path) => result.files.find((f) => f.path === path)?.content || '';
 
 console.log('\n1. the target is registered, and the published surface knows about it');
-check('the registry returns it by id', getCompileTarget('audio-plugin')?.id, 'audio-plugin');
-check('…and lists it', listCompileTargets().includes('audio-plugin'), true);
+check('the registry returns it by id', getCompileTarget('audio-plugin-macos')?.id, 'audio-plugin-macos');
+check('…and lists it', listCompileTargets().includes('audio-plugin-macos'), true);
 // morpheusCapabilities.json is not UI copy — it feeds search engines and AI answer engines, and
 // verify-seo-static pins buildTargets to the compile-targets directory. A target missing here makes the
 // published list lie about what Morpheus can build.
 const caps = JSON.parse(read('src/lib/morpheusCapabilities.json'));
-check('…and the PUBLISHED capability list includes it', caps.buildTargets.includes('audio-plugin'), true);
+check('…and the PUBLISHED capability list includes it', caps.buildTargets.includes('audio-plugin-macos'), true);
 check('…and that list still names the other ten', caps.buildTargets.length, 11);
 check('the label names the formats a musician gets', /VST3/.test(audioPlugin.label) && /AU/.test(audioPlugin.label) && /CLAP/.test(audioPlugin.label), true);
+// ⚠️ THE PLATFORM WAS THE MISSING WORD, and it is a product problem rather than a wording one: a VST3
+// exists on more than one machine, so a label naming only the formats reads as "builds for whatever you are
+// on". Someone on Windows picks it, waits for a compile, and receives files that cannot load — and the AU
+// in it cannot exist on their machine at all. So the id, the label and the manual all carry the OS.
+check('the label names the PLATFORM, not only the formats', /macOS/i.test(audioPlugin.label), true);
+check('…and the id does too, so the published target list is unambiguous', audioPlugin.id, 'audio-plugin-macos');
+
+// The manual is where a user finds out what they cannot do, so the first thing it says is the platform.
+const manualSrc = read('server/src/lib/appUserManual.js');
+const macManual = /'audio-plugin-macos': \{[\s\S]*?install: \[([\s\S]*?)\],/.exec(manualSrc)?.[1] || '';
+check('the manual has a section under the route\'s id', macManual.length > 0, true);
+check('…which opens by saying it is macOS only', /MACOS ONLY/i.test(macManual), true);
+check('…and names the reason a user cannot argue with', /Audio Unit/i.test(macManual), true);
+// The picker is how a user chooses a route at all; a target missing from it cannot be chosen, whatever the
+// registry says. See verify-onramp.mjs, which compares the two lists in full.
+check('…and the route is offered in the picker', read('src/lib/compileTargets.js').includes(`value: '${audioPlugin.id}'`), true);
 
 console.log('\n2. it generates a complete project from nothing');
 const empty = [{ path: 'README.md', content: '# empty\n' }];
@@ -237,7 +253,7 @@ console.log('\n11. the target is built for real on a runner, and only when it is
 // be built on the development machine at all — its shell is compiled by `ibtool`, which needs full Xcode.
 // So a workflow that materialises the target and runs its steps on a macOS runner is the only evidence
 // that the fourth format exists, and this is where that has to stay true.
-const wf = read('.github/workflows/audio-plugin-build.yml');
+const wf = read('.github/workflows/audio-plugin-macos-build.yml');
 check('there is a workflow that builds the target on a real macOS runner', wf.length > 0, true);
 check('…dispatched by hand, not on a push or a pull request',
   /on:\s*\n\s+workflow_dispatch:/.test(wf), true);
@@ -250,7 +266,7 @@ check('…on macOS, where full Xcode exists — the only place the standalone ca
 check('…bounded by a timeout, because configure downloads the SDKs',
   /timeout-minutes: \d+/.test(wf), true);
 check('…running the target\'s own steps through the runner script',
-  /node scripts\/audio-plugin-runner-build\.mjs/.test(wf), true);
+  /node scripts\/audio-plugin-macos-runner-build\.mjs/.test(wf), true);
 check('…keeping the packaged plugins, so a run can be inspected rather than believed',
   /upload-artifact@v\d/.test(wf) && /assets\/\*\.zip/.test(wf), true);
 check('…and failing rather than passing with three formats of four',
@@ -259,9 +275,9 @@ check('…and failing rather than passing with three formats of four',
 // The script must build the TARGET, not a transcription of what the target happens to emit today. A copy
 // of the commands is the failure mode this whole job exists to avoid: it would keep passing after the
 // target changed, and prove something nobody ships.
-const runner = read('scripts/audio-plugin-runner-build.mjs');
+const runner = read('scripts/audio-plugin-macos-runner-build.mjs');
 check('the runner script imports the target and calls its buildSteps',
-  /from '\.\.\/server\/src\/lib\/compile-targets\/audio-plugin\.js'/.test(runner) && /audioPlugin\.buildSteps\(/.test(runner), true);
+  /from '\.\.\/server\/src\/lib\/compile-targets\/audio-plugin-macos\.js'/.test(runner) && /audioPlugin\.buildSteps\(/.test(runner), true);
 check('…and no build command is written out a second time, where it could drift',
   /cmake --build|ditto -c -k|CLAP_WRAPPER_REF|wrapAsAUV2/.test(runner), false);
 check('…skipping the `uses:` steps it cannot run and executing every shell step',
@@ -283,7 +299,7 @@ check('…and refusing a standalone bundle that exists with no binary in it',
   /if \(!existsSync\(standaloneBin\)\) \{[\s\S]{0,240}process\.exit\(1\)/.test(runner), true);
 // A manual job nobody knows about is the same as no job (H17). It is named where a session will see it.
 check('…and the manual job is named in AGENTS.md, so a session that changes the target dispatches it',
-  /audio-plugin-build\.yml/.test(read('AGENTS.md')), true);
+  /audio-plugin-macos-build\.yml/.test(read('AGENTS.md')), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

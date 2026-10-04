@@ -107,7 +107,7 @@ const PLATFORM_PROOF = {
   'linux-distro': 'balenaEtcher',
   'arduino-firmware': 'avrdude',
   // Where a plugin has to be moved for a DAW to find it — the one fact a musician cannot guess.
-  'audio-plugin': 'Audio/Plug-Ins'
+  'audio-plugin-macos': 'Audio/Plug-Ins'
 };
 for (const id of listCompileTargets()) {
   const adapter = getCompileTarget(id);
