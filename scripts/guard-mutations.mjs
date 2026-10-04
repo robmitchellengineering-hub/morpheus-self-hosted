@@ -551,7 +551,7 @@ export const MUTATIONS = [
     file: '.github/workflows/audio-plugin-linux-arm-build.yml',
     // And without the dispatch step above it, the same thing: a guard-only proof.
     why: 'Drops the modelled build from the ARM workflow, so a project with a model is never compiled for a Pi.',
-    find: '--model .cache/models/linear_1.nam',
+    find: '--model .cache/models/wavenet_a1_standard.nam',
     replace: '--model .cache/models/absent.nam',
   },
   {
@@ -562,6 +562,49 @@ export const MUTATIONS = [
     why: 'Stops clearing the previous build\u2019s third-party checkouts, so a second build in the same job dies on a clone that already exists.',
     find: "for (const dir of ['clap-wrapper', 'namcore']) {",
     replace: 'for (const dir of []) {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // The block size is the one difference between the two signal paths that has nothing to do with the
+    // plugin: ours ramps per sample, `render` uses 64. Move it and the comparison measures the block size.
+    why: 'Stops the plugin render from using the reference renderer\u2019s block size, so the null test measures the difference between two block sizes instead of the plugin.',
+    find: 'export const REFERENCE_BLOCK_SIZE = 64;',
+    replace: 'export const REFERENCE_BLOCK_SIZE = 512;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // The comparison arithmetic itself. `+` instead of `-` is the shape of an implementation that would find
+    // two copies of the same signal different and two different signals equal.
+    why: 'Subtracts the two signals with the wrong sign, so the null test no longer measures their difference.',
+    find: 'const d = reference[i] - candidate[i];',
+    replace: 'const d = reference[i] + candidate[i];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // Interleaving is the part that goes wrong quietly: a wrong frame count gives a reader that runs off the
+    // end of one channel into the next and reports two plausible signals.
+    why: 'Writes the wrong frame count into the MRAW header, so every reader de-interleaves across the wrong boundary.',
+    find: 'head.writeUInt32LE(interleaved.length / channels, 16);',
+    replace: 'head.writeUInt32LE(interleaved.length, 16);',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    why: 'Passes a different block size to the host than the reference renderer uses, which is exactly the difference the constant exists to remove.',
+    find: "'--blocksize', String(REFERENCE_BLOCK_SIZE)",
+    replace: "'--blocksize', String(256)",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
+    // ⭐ The check that stops the whole exercise being vacuous: a model that does nothing nulls perfectly
+    // against a reference that also does nothing.
+    why: 'Disables the check that the model actually changes the signal, so a comparison between two copies of the dry file would pass as a perfect null.',
+    find: 'if (Number.isFinite(expectEffectDb) && !(result.dryVsReference.nullDb > expectEffectDb)) {',
+    replace: 'if (false) {',
   },
   {
     guard: 'verify-audio-measure.mjs',

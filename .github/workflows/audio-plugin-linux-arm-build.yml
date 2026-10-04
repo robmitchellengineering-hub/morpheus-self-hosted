@@ -68,12 +68,23 @@ jobs:
             https://raw.githubusercontent.com/sdatkinson/neural-amp-modeler/main/tests/resources/models/identity/linear_1.nam
           ls -la .cache/models
 
-      # ⭐ THE PROOF THIS WORKFLOW EXISTS FOR NOW. A project carrying a `.nam` fetches NeuralAmpModelerCore,
-      # compiles it into the plugin and embeds the model — on aarch64, which is the only place the Pi claim
-      # can be tested. It is a SECOND, separate build directory so the no-model artifact above keeps its
-      # evidence: the same target, the same runner, two different plugin shapes.
-      - name: Build and verify with a real NAM model embedded
-        run: node scripts/audio-plugin-linux-arm-runner-build.mjs --model .cache/models/linear_1.nam
+      # ⭐ THE PROOF THIS WORKFLOW EXISTS FOR. A project carrying a `.nam` fetches NeuralAmpModelerCore,
+      # compiles it into the plugin and embeds the model — on aarch64, which is the only place the Pi claim can
+      # be tested. It is a SECOND, separate build directory so the no-model artifact above keeps its evidence:
+      # the same target, the same runner, two different plugin shapes.
+      #
+      # `--render-check` is the part that says the plugin PLAYS the model rather than merely carrying it: the
+      # same dry signal through the plugin's own CLAP entry point and through NAMCore's `render`, built from
+      # the same checkout, compared sample by sample. The model here is the real WAVENET, not the identity —
+      # an identity model would null against the dry signal perfectly and prove nothing about the engine. And
+      # `--expect-model-effect-db -20` fails the run if the reference render is itself almost identical to the
+      # dry signal, which is what a vacuous comparison looks like.
+      - name: Build with a real NAM model, then prove the plugin plays it
+        run: |
+          node scripts/audio-plugin-linux-arm-runner-build.mjs \
+            --model .cache/models/wavenet_a1_standard.nam \
+            --render-check \
+            --expect-model-effect-db -20
         env:
           AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-nam-build
 

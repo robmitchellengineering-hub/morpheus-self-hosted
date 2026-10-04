@@ -18,8 +18,9 @@
 // runs in CI's no-install guards job.
 //
 // Run:  node scripts/verify-audio-plugin.mjs
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
 import audioPluginWindows from '../server/src/lib/compile-targets/audio-plugin-windows.js';
 import audioPluginLinux from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
@@ -681,11 +682,83 @@ check('…and clears the previous run\'s checkouts, because the steps refuse an 
   && /rmSync\(stale, \{ recursive: true, force: true \}\)/.test(linuxNamRunner), true);
 const linuxNamWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
 check('the ARM workflow fetches the example models and builds BOTH shapes',
-  /--model \.cache\/models\/linear_1\.nam/.test(linuxNamWf)
-  && /AUDIO_PLUGIN_MODEL|--model/.test(linuxNamWf)
+  /curl[^\n]*\.cache\/models\/[a-z0-9_]+\.nam/.test(linuxNamWf)
+  && /--model \.cache\/models\/[a-z0-9_]+\.nam/.test(linuxNamWf)
   && /audio-plugin-linux-arm-nam-build/.test(linuxNamWf), true);
 check('…keeping the no-model artifacts too, so the earlier proof is not replaced by the new one',
   /audio-plugin-linux-arm-build\/build\/assets\/\*\.zip/.test(linuxNamWf), true);
+
+console.log('\n17. and the plugin PLAYS the model — the only claim a musician cares about');
+// Everything above proves the model is embedded, the engine is linked and the CPU is right. None of it says
+// the plugin's OUTPUT is the model's output, so this section covers the render comparison's own machinery:
+// the arithmetic, the container, and the two things that would make it compare the wrong pair of signals.
+const render = await import('../scripts/audio-nam-render-check.mjs');
+
+const sig = new Float64Array([0.1, -0.2, 0.3, -0.4, 0.5, -0.6]);
+check('two identical signals null exactly', render.compareToReference(sig, sig).identical, true);
+check('…and report -Infinity, not a number that reads like a floor',
+  render.compareToReference(sig, sig).nullDb, -Infinity);
+// A 0.1 % amplitude error is -60 dB, so the arithmetic can be checked against a figure worked out by hand
+// rather than against whatever the function happens to return.
+const scaled = Float64Array.from(sig, (v) => v * 1.001);
+check('…a 0.1 % amplitude error measures as -60 dB',
+  Math.abs(render.compareToReference(sig, scaled).nullDb + 60) < 0.05, true);
+check('…a silent candidate is 0 dB from the reference, not a pass',
+  render.compareToReference(sig, new Float64Array(sig.length)).nullDb, 0);
+check('…and a shorter candidate is flagged rather than compared over its own length',
+  render.compareToReference(sig, sig.subarray(0, 3)).lengthMismatch, true);
+// The container. Interleaving is the part that is silently wrong rather than loud: a reader that de-interleaves
+// wrongly gives two channels that look plausible and are each other's samples.
+const mrawPath = join(tmpdir(), `nam-render-guard-${process.pid}.mraw`);
+render.writeMraw(mrawPath, 48000, 2, new Float32Array([1, 2, 3, 4, 5, 6]));
+const back = render.readMraw(mrawPath);
+check('the MRAW container round-trips rate, channels and frames',
+  [back.sampleRate, back.channels, back.frames], [48000, 2, 3]);
+check('…and de-interleaves, so left is 1,3,5 and right is 2,4,6',
+  [Array.from(back.data[0]), Array.from(back.data[1])], [[1, 3, 5], [2, 4, 6]]);
+unlinkSync(mrawPath);
+
+// ⚠️ LIKE FOR LIKE, OR THE COMPARISON MEASURES THE WRONG THING. The plugin pins NAM_SAMPLE_FLOAT; NAMCore's
+// own render tool defaults to double. A float plugin against a double reference would report the precision
+// choice as though it were a wiring bug, so BOTH compile lines carry the flag.
+const renderSrc = read('scripts/audio-nam-render-check.mjs');
+check('both sides are built with the SAME sample type the plugin pins',
+  (renderSrc.match(/-DNAM_SAMPLE_FLOAT/g) || []).length, 2);
+check('…and the reference is built from the SAME engine checkout the plugin uses, not a second copy',
+  /join\(namcore, 'tools', 'render\.cpp'\)/.test(renderSrc) && /!\[Gg\]et 'render' from anywhere else/.test(renderSrc) === false
+  && /join\(namcore, 'Dependencies', 'AudioDSPTools', 'dsp', 'wav\.cpp'\)/.test(renderSrc), true);
+// The plugin processes one frame at a time and `render` processes blocks. Pinning both to the same block size
+// removes the one difference between the two paths that has nothing to do with the plugin's correctness.
+check('…and the two paths are told to use the same block size',
+  render.REFERENCE_BLOCK_SIZE, 64);
+check('…which the host is actually given',
+  /'--blocksize', String\(REFERENCE_BLOCK_SIZE\)/.test(renderSrc), true);
+// The dry signal is written as a WAV for the reference tool and as a stereo MRAW for the host, from ONE array.
+check('…and both renders are of the same samples, written twice rather than generated twice',
+  /const dry = withFades\(logSweep/.test(renderSrc)
+  && /writeFileSync\(dryWav, encodeWav\(\{ sampleRate, data: dry/.test(renderSrc)
+  && /writeMraw\(dryMraw, sampleRate, 2, stereo\)/.test(renderSrc), true);
+// The headers are pinned, for the same reason the test bench pins them.
+check('the CLAP headers are pinned, fetched once into .cache, and can be overridden',
+  render.CLAP_REF.length === 40 && /CLAP_INCLUDE/.test(renderSrc) && /\.cache/.test(renderSrc), true);
+
+const armRunnerSrc = read('scripts/audio-plugin-linux-arm-runner-build.mjs');
+check('the ARM runner runs the comparison when asked, and only with a model',
+  /if \(renderCheck\) \{/.test(armRunnerSrc) && /--render-check needs a model/.test(armRunnerSrc), true);
+check('…refusing when the engine checkout is missing rather than silently skipping the proof',
+  /--render-check needs the engine checkout/.test(armRunnerSrc), true);
+// ⭐ A MODEL THAT DOES NOTHING WOULD PASS EVERY NULL TEST. The reference render is compared to the DRY signal
+// as well: if the model barely changes it, the two renders agree because they are two copies of the same file.
+// Asserted as the CONDITION, not as the words: the first version checked only that `expect-model-effect-db`
+// and the message appeared somewhere in the file, and the mutation that replaced the condition with `if
+// (false)` left both of them in place — so it survived, which is the mutation harness doing its job.
+check('⭐ the comparison is refused when the model does not actually change the signal',
+  /if \(Number\.isFinite\(expectEffectDb\) && !\(result\.dryVsReference\.nullDb > expectEffectDb\)\) \{/.test(armRunnerSrc)
+  && /a null test against it would prove nothing/.test(armRunnerSrc), true);
+check('…and the workflow renders the real WAVENET, not the identity model that would prove nothing about the engine',
+  /--model \.cache\/models\/wavenet_a1_standard\.nam/.test(linuxNamWf)
+  && /--render-check/.test(linuxNamWf)
+  && /--expect-model-effect-db/.test(linuxNamWf), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

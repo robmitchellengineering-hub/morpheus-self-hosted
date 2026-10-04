@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
+import { namRenderCheck } from './audio-nam-render-check.mjs';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
 
@@ -73,6 +74,18 @@ const modelArg = (() => {
   const at = process.argv.indexOf('--model');
   return process.env.AUDIO_PLUGIN_MODEL || (at !== -1 ? process.argv[at + 1] : '') || '';
 })();
+// `--render-check` turns on the proof that the plugin PLAYS the model rather than merely carrying it; the two
+// thresholds are the caller's because they depend on the model being checked.
+const flagOn = (name) => process.argv.includes(`--${name}`);
+const renderCheck = flagOn('render-check');
+const numArg = (name, fallback) => {
+  const at = process.argv.indexOf(`--${name}`);
+  return at !== -1 && process.argv[at + 1] ? Number(process.argv[at + 1]) : fallback;
+};
+const maxNullDb = numArg('max-null-db', -60);
+// Not asserted unless the caller names it: an identity model is a legitimate thing to render, and it would
+// fail a "must change the signal" assertion for the right reason and the wrong conclusion.
+const expectEffectDb = numArg('expect-model-effect-db', Number.NaN);
 const seed = [{ path: 'README.md', content: '# audio-plugin-linux-arm runner build\n' }];
 if (modelArg) {
   if (!existsSync(modelArg)) {
@@ -188,3 +201,47 @@ for (const [format, match] of expected) {
   log(`ok ${format}: ${hit[0].slice(OUT.length + 1)} (${statSync(hit[0]).size} bytes, AArch64)`);
 }
 log('all three formats built, each an AArch64 ELF');
+
+// ── 4. Does it PLAY the model? ────────────────────────────────────────────────────────────────────────────
+// Everything above proves the model is embedded and the engine is linked. This is the only check that says
+// the plugin's OUTPUT is the model's output: the same dry signal through the plugin's own CLAP entry point
+// and through the reference engine built from the same checkout, compared sample by sample. See
+// scripts/audio-nam-render-check.mjs for why both sides are built with the same sample type and block size.
+if (renderCheck) {
+  if (!modelArg) {
+    console.error('[audio-plugin-linux-arm] x --render-check needs a model: there is nothing to compare against without one.');
+    process.exit(1);
+  }
+  const namcore = join(RUNNER_TEMP, 'namcore');
+  if (!existsSync(namcore)) {
+    console.error(`[audio-plugin-linux-arm] x --render-check needs the engine checkout at ${namcore} — it is fetched by the model build's own steps, so this must run after a build that embedded a model.`);
+    process.exit(1);
+  }
+  console.log('\n[audio-plugin-linux-arm] > the plugin must play the model the reference engine plays');
+  const result = namRenderCheck({ pluginDir: OUT, modelPath: modelArg, namcore, work: join(OUT, 'render-check') });
+  const fmt = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical (exact)');
+  log(`  plugin vs reference : ${fmt(result.vsReference.nullDb)}  (peak error ${result.vsReference.peakError.toExponential(2)})`);
+  log(`  dry vs reference    : ${fmt(result.dryVsReference.nullDb)}  (what the model does to the signal)`);
+  log(`  left vs right       : ${fmt(result.leftVsRight.nullDb)}  (the two model instances must agree)`);
+
+  if (result.vsReference.lengthMismatch) {
+    console.error('[audio-plugin-linux-arm] x the plugin produced a different number of frames than the reference.');
+    process.exit(1);
+  }
+  // ⚠️ A MODEL THAT DOES NOTHING WOULD PASS EVERY NULL TEST. If the caller says what the model is supposed to
+  // do to the signal and the reference shows it doing nothing, the comparison is between two copies of the
+  // dry file and proves nothing — so that case fails rather than reading as a perfect match.
+  if (Number.isFinite(expectEffectDb) && !(result.dryVsReference.nullDb > expectEffectDb)) {
+    console.error(`[audio-plugin-linux-arm] x the reference render is ${fmt(result.dryVsReference.nullDb)} from the dry signal, so this model barely changes it — a null test against it would prove nothing. Expected more than ${expectEffectDb} dB.`);
+    process.exit(1);
+  }
+  const worst = Math.max(
+    Number.isFinite(result.vsReference.nullDb) ? result.vsReference.nullDb : -Infinity,
+    Number.isFinite(result.leftVsRight.nullDb) ? result.leftVsRight.nullDb : -Infinity,
+  );
+  if (worst > maxNullDb) {
+    console.error(`[audio-plugin-linux-arm] x the plugin is ${worst.toFixed(1)} dB from the reference, worse than the ${maxNullDb} dB this check requires.`);
+    process.exit(1);
+  }
+  log(`the plugin plays the model: within ${fmt(worst)} of the reference engine`);
+}
