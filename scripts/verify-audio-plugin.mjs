@@ -80,6 +80,13 @@ check('an existing Source/Plugin.cpp is untouched',
   s2.files.find((f) => f.path === 'Source/Plugin.cpp').content, mine[0].content);
 check('…and an existing CMakeLists.txt is untouched',
   s2.files.find((f) => f.path === 'CMakeLists.txt').content, mine[1].content);
+// `find()` returns the FIRST match, so "the original is still first" passed even when the scaffold
+// appended a second copy of the same path — a mutation survived on exactly that. The property is about
+// the WHOLE list: a path that already existed must not be generated, and no path may appear twice.
+check('…and no pre-existing path is generated at all',
+  s2.generated.filter((g) => mine.some((f) => f.path === g)), []);
+check('…and no path appears twice in the result',
+  s2.files.length - new Set(s2.files.map((f) => f.path)).size, 0);
 check('…and it warns that the generated entry file must match their source',
   s2.warnings.some((w) => /must export morpheus_plugin_init/.test(w)), true);
 check('validate() warns that it is using the project as-is', audioPlugin.validate(mine).warnings.length > 0, true);

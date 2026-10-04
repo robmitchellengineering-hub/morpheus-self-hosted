@@ -1,5 +1,10 @@
 // The CLAP plugin source Morpheus generates, as text.
 //
+// IT LIVES OUTSIDE server/src/lib/compile-targets/ ON PURPOSE. That directory's contents ARE the target
+// list — scripts/verify-seo-static.mjs derives the published buildTargets by listing the .js files in it —
+// so a helper sitting there is counted as an eleventh target and the published list disagrees with the
+// code. A template is not a target, so it does not live with them.
+//
 // WHY THIS IS A SEPARATE MODULE. `audio-plugin.js` is the target's logic — validate, scaffold, build
 // steps — and the other nine targets keep that logic readable by not burying a few hundred lines of
 // generated source inside it. The templates live here as plain exported functions, so both modules stay

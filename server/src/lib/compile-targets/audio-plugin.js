@@ -27,7 +27,7 @@
 // macOS first. Windows is a matrix leg to be added once this one is proven in CI.
 import {
   auSubtypeCode, cmakeLists, entrySource, pluginSource, pluginId, fourCharCode,
-} from './audio-plugin-template.js';
+} from '../audioPluginTemplate.js';
 import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './utils.js';
 
 /**
