@@ -555,6 +555,15 @@ export const MUTATIONS = [
     replace: '--model .cache/models/absent.nam',
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
+    // The first modelled build died on `git clone ... already exists` because one job now builds twice. The
+    // fix clears the checkouts rather than weakening the clone, so the mutation removes the clearing.
+    why: 'Stops clearing the previous build\u2019s third-party checkouts, so a second build in the same job dies on a clone that already exists.',
+    find: "for (const dir of ['clap-wrapper', 'namcore']) {",
+    replace: 'for (const dir of []) {',
+  },
+  {
     guard: 'verify-audio-measure.mjs',
     file: 'server/src/lib/audio/analysis.js',
     // THE CLASSIC WINDOWING BUG, as a mutation: dropping the window's coherent gain makes every amplitude read
