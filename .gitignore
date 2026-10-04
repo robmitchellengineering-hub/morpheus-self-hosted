@@ -66,3 +66,6 @@ public/plugin-manifest.json
 
 # The operator CLI's last PR-mode push — what a later `merge` forwards.
 .morpheus-push
+
+# Wrapper/header checkouts fetched at build time (never committed)
+.cache/
