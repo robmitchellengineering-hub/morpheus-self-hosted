@@ -369,8 +369,14 @@ to swallow was thrown again from the `catch` itself.
 **Rule:** a declaration that must outlive its block belongs outside it. Before
 reading a name in a `catch`, in a `finally`, or anywhere after a `try`, check
 that it is not declared inside that block. `no-undef` decides this exactly, which
-is why `server/src/**` now has a lint block in `eslint.config.js` — the frontend
-had one all along. Note what could not see it: `node --check` passes (valid
+is why `server/src/**` now has a lint block in `eslint.config.js`.
+
+**⚠️ CORRECTION (2026-10-04): this paragraph used to end "— the frontend had one all
+along", and that sentence was false in the way that matters.** The frontend had a
+config *block*; it did not have the *rule*. See H22 for the incident that sentence
+helped cause, and do not restore it.
+
+Note what could not see it: `node --check` passes (valid
 syntax), the import resolver passes (the names are local), and the boot smoke
 passes because loading a module never calls the function that contains the bug.
 Only running the code, or `no-undef`, finds it.
@@ -537,3 +543,61 @@ phase that offers a rebuild. `scripts/verify-artifact-save-background.mjs` asser
 background job that stays streamed and resumable, and that a failed or interrupted save renders as
 `BUILD SUCCEEDED — THE APP COULDN'T BE SAVED TO YOUR FILES` with the release links and no RECOMPILE.
 
+
+## H22 — a file can match a lint block and still be checked by no rules; and no gate renders a logged-in page
+
+**Incident (2026-10-04, PRs #502 → #503).** `/deck/settings` showed Rob a blank
+**"Something broke on this screen. orderDeckWidgets is not defined."** `#502` had added
+`orderDeckWidgets(widgetInstances)` to `DeckSettings.jsx` and never added it to that file's import
+list. Every gate was green: lint, build, the full guard suite, `mutate-guards`, and the CI job named
+`render`.
+
+**Two causes, and each one is the hazard on its own.**
+
+1. **The frontend lint config spread two whole configs in a row:**
+
+   ```js
+   ...pluginJs.configs.recommended,
+   ...pluginReact.configs.flat.recommended,   // both define `rules`
+   ```
+
+   Object spread means the second silently **replaced** the first, so every `@eslint/js` recommended
+   rule — `no-undef` above all — was discarded for all of `src/**`, and the hand-written `rules:`
+   object below started from nothing. `scripts/verify-lint-coverage.mjs` asked only whether each file
+   *matched* a block, and it did. A file that matches a block is not a file that is checked.
+   `server/src/**` never had this bug because its block re-spreads `.rules` explicitly — which is
+   exactly why H18 records the same mistake as *caught* there. **Turning the rule on cost one real
+   error in all of `src/`** (`timerFor`, below), which is how you can tell it was unenforced rather
+   than the tree being clean.
+
+2. **Nothing rendered a logged-in page — anywhere, ever.** Every protected page sits behind
+   `ProtectedRoute`, so an unauthenticated render never even fetches the page's chunk. The CI `render`
+   job renders without a session, so the whole logged-in surface was never rendered by any gate. A
+   page could be dead and the deploy still read as healthy from outside.
+
+Two real defects fell out of switching the rules on, immediately: `SeoTab.jsx` called
+`{timerFor('blog')}` — a function that **exists nowhere in the repo**, a leftover from a per-tab timer
+design that was deliberately replaced by the task-runner strip, which threw and took the whole blog
+view of the SEO tab down — and `TaskRunner.jsx` ended a `finally` with `if (!alive.current) return;`,
+where a `return` inside `finally` **overrides whatever `try`/`catch` returned**, so a task that failed
+while the panel was unmounted reported `undefined` instead of its error.
+
+**Rules:**
+
+- **Every `rules:` block re-spreads the recommended set explicitly.** A config that is spread into a
+  block is worth nothing if the next spread overwrites it. `verify-lint-coverage.mjs` asserts the
+  counts match, so this cannot be quietly undone.
+- **A call is not wiring.** Referencing an imported name is not the same as importing it, and nothing
+  in the build resolves the difference. Guard it where it matters (see the "a call is not wiring"
+  checks in `verify-deck-widget-order.mjs` / `verify-deck-widget-build.mjs`), and treat `no-undef` as
+  the general net it is.
+- **A user-visible change is verified by rendering it as a logged-in user.** `scripts/dev-app-render.mjs`
+  does exactly that against the local rig: it seeds a real account, mints a **local** session, loads the
+  real routes in a real browser and fails on any uncaught error, the error-boundary screen, a bounce to
+  `/login`, or a page that rendered nothing. **Run it before pushing anything that touches the UI.**
+  It reproduces this incident exactly — reintroduce the missing import and it reports
+  `the error boundary is on screen · uncaught: orderDeckWidgets is not defined`.
+- **An un-minified identifier in a minified bundle is an UNRESOLVED one.** Rollup renames everything it
+  resolves. The broken chunk contained `o=orderDeckWidgets(s)` where every other local was `s`, `d`,
+  `r`, `n`, `i`; the fixed one contains `o=Q(s)`. That is a way to check a *deployed* artifact for this
+  class of bug without a login.

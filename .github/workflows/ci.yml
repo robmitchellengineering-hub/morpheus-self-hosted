@@ -397,6 +397,14 @@ jobs:
       - name: Brain dump is pinned to the top of the deck
         run: node scripts/verify-deck-widget-order.mjs
 
+      # The signed-in surface is rendered by NO other gate: every protected route is behind
+      # ProtectedRoute, so the `render` job below — which has no session — never fetches those chunks.
+      # `#502` put a blank /deck/settings through a fully green pipeline that way (H22). The render
+      # check itself needs Postgres and a browser and cannot run here; this asserts it exists, that its
+      # safety interlocks are intact, and that it is documented where the next person will look.
+      - name: The logged-in render check exists and is safe to run
+        run: node scripts/verify-render-check.mjs
+
       # The portable download used to be a hand-run mirror that shipped a tree a month out of
       # date. This asserts it is generated during the build, selects the real product, and says
       # what it does NOT contain.

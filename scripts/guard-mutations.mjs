@@ -242,6 +242,17 @@ export const MUTATIONS = [
     replace: '      "no-unused-vars": "off",',
   },
   {
+    guard: 'verify-render-check.mjs',
+    file: 'scripts/dev-app-render.mjs',
+    // A SAFETY INTERLOCK, as a mutation — the class of edit a guard is really for. Nothing about the
+    // render check stops working when this line goes; it simply stops refusing to seed an account into
+    // a database that is not the rig's. That is the failure where everything downstream still looks
+    // fine, which is why the removal has to be loud.
+    why: 'Drops the loopback refusal from the render check, so it would seed an account onto whatever database host server/.env names rather than refusing anything that is not local.',
+    find: "  if (!['localhost', '127.0.0.1', '::1'].includes(host)) fail(`refusing to run: database host \"${host}\" is not loopback.`);",
+    replace: '',
+  },
+  {
     guard: 'verify-deck-widget-order.mjs',
     file: 'src/pages/CommandDeck/deckWidgets.js',
     why: "Takes brain dump back out of the top of the registry, which is the position a brand-new account seeds its first widget from — the exact thing Rob saw on a new user's deck.",
