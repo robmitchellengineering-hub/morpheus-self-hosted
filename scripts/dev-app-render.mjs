@@ -131,11 +131,15 @@ async function anyPortOpen(port) { return (await portOpen(port)) || portOpen(por
  * Bring the rig up if it is not already running. Deliberately a child process rather than a copy of
  * its logic: `dev-dock-rig.mjs` owns the embedded Postgres, the schema push, the mocks and the two
  * servers, and duplicating that here would be a second thing to keep in step.
+ *
+ * Returns whether THIS run started the rig, because it must stop what it started: the rig's mock LLM
+ * holds :4599, which `scripts/boot-smoke.mjs` also wants, so leaving it up turns a green `verify.mjs`
+ * into a red one for the next person. A rig a human already had running is left alone.
  */
 async function ensureRig() {
   if (await anyPortOpen(FRONTEND_PORT) && await anyPortOpen(BACKEND_PORT)) {
-    log(`rig already up (frontend :${FRONTEND_PORT}, backend :${BACKEND_PORT})`);
-    return true;
+    log(`rig already up (frontend :${FRONTEND_PORT}, backend :${BACKEND_PORT}) — leaving it as it was`);
+    return false;
   }
   log('rig is not up — starting it (this can take a minute the first time)');
   const r = spawnSync(process.execPath, [join(REPO, 'scripts', 'dev-dock-rig.mjs'), 'up'], { stdio: 'inherit' });
@@ -300,7 +304,7 @@ async function renderAll(token) {
 // ── main ───────────────────────────────────────────────────────────────────
 console.log('\nMorpheus render check — the real pages, in a real browser, locally\n');
 preflight();
-await ensureRig();
+const startedRig = await ensureRig();
 const db = rigDatabaseUrl();
 log(`target database: ${db.database} on ${db.host}:${db.port}`);
 const user = await seed();
@@ -337,7 +341,16 @@ for (const r of results) {
 }
 
 console.log(`\n${results.length - failures}/${results.length} route(s) rendered cleanly`);
-if (!keep) console.log('  (the rig is still running — `node scripts/dev-dock-rig.mjs down` stops it)');
+
+// Tidy up after OURSELVES, and only ourselves. The rig's mock LLM holds :4599, which
+// scripts/boot-smoke.mjs also wants, so a run that started the rig and walked away would turn a green
+// `npm run verify` into a red one for whoever runs it next. `--keep` is for iterating on a page.
+if (startedRig && !keep) {
+  spawnSync(process.execPath, [join(REPO, 'scripts', 'dev-dock-rig.mjs'), 'down'], { stdio: 'inherit' });
+} else if (keep) {
+  log('--keep: leaving the rig up (`node scripts/dev-dock-rig.mjs down` stops it)');
+}
+
 if (failures) {
   console.log('\n  ✗ a page does not render — this is exactly what shipped to production once.\n');
   process.exit(1);
