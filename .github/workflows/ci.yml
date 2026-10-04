@@ -420,6 +420,11 @@ jobs:
       - name: Audio measurement library
         run: node scripts/verify-audio-measure.mjs
 
+      # The .nam quantizer and the deployment container: pure arithmetic and pure format, so it needs no
+      # engine, no model and no network — which is why it can live in the no-install guards job.
+      - name: NAM quantization and the deployment format
+        run: node scripts/verify-nam-quantize.mjs
+
       # The portable download used to be a hand-run mirror that shipped a tree a month out of
       # date. This asserts it is generated during the build, selects the real product, and says
       # what it does NOT contain.

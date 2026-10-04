@@ -345,6 +345,61 @@ export function quantize(x, bits, { scale = null, symmetric = true } = {}) {
   return { samples: q, step, bits, levels };
 }
 
+/**
+ * Quantize a TENSOR of weights, with one scale per channel (or one for the whole tensor when `perChannel` is 0).
+ *
+ * This is the operation the whole FPGA argument rests on, and the difference from `quantize` above is the
+ * SCALE: a signal can share one scale because it is bounded by full scale, while a weight tensor cannot — its
+ * loudest channel would force every other channel onto a coarse grid, which is exactly what makes low bit widths
+ * expensive. `perChannel` is how a caller asks for the scales that avoid it (an output row, a block of weights,
+ * a whole layer — the arithmetic is the same).
+ *
+ * Symmetric two's complement, so the code range is [-2^(b-1)+1, 2^(b-1)-1] and no zero-point has to be added
+ * back on every multiply in a fixed-point datapath.
+ */
+export function quantizeTensor(values, { bits, perChannel = 0 }) {
+  if (!(bits >= 2 && bits <= 32)) throw new Error(`quantizeTensor: bits must be 2..32, got ${bits}`);
+  const maxCode = 2 ** bits / 2 - 1;
+  const codes = new Int32Array(values.length);
+  const out = new Float64Array(values.length);
+  const channels = perChannel > 0 ? perChannel : 1;
+  if (values.length % channels !== 0) {
+    throw new Error(`quantizeTensor: ${values.length} values do not divide into ${channels} channels`);
+  }
+  const per = values.length / channels;
+  const scales = new Float64Array(channels);
+  let err = 0;
+  let sig = 0;
+  let maxError = 0;
+  for (let c = 0; c < channels; c++) {
+    let maxAbs = 0;
+    for (let i = c * per; i < (c + 1) * per; i++) maxAbs = Math.max(maxAbs, Math.abs(values[i]));
+    // An all-zero channel has no scale; 1.0 keeps its codes at zero instead of producing a NaN scale, which
+    // would then spread into every downstream comparison as NaN rather than as a failure.
+    const scale = maxAbs > 0 ? maxAbs / maxCode : 1;
+    scales[c] = scale;
+    for (let i = c * per; i < (c + 1) * per; i++) {
+      const code = Math.max(-maxCode, Math.min(maxCode, Math.round(values[i] / scale)));
+      codes[i] = code;
+      const back = code * scale;
+      out[i] = back;
+      const d = values[i] - back;
+      err += d * d;
+      sig += values[i] * values[i];
+      maxError = Math.max(maxError, Math.abs(d));
+    }
+  }
+  return {
+    codes,
+    scales,
+    perChannel: channels > 1,
+    values: out,
+    sqnrDb: err === 0 ? Infinity : 10 * Math.log10(sig / err),
+    maxError,
+    bits,
+  };
+}
+
 /** Signal-to-quantization-noise ratio in dB, for a quantized copy of `x`. */
 export function sqnrDb(original, quantized) {
   let sig = 0;

@@ -123,6 +123,13 @@ switch (cmd) {
     console.log(`  latency      ${fmt(nulled.latencySamples, 2)} samples · ${fmt(nulled.latencyMs, 3)} ms`);
     console.log(`  correlation  ${fmt(nulled.correlation, 4)}`);
     console.log(`  gain match   ${sign(nulled.gainDb)} dB (applied to the second file)`);
+    if (flags.json) {
+      console.log(JSON.stringify({
+        fileA: aPath, fileB: bPath, nullDepthDb: nulled.residualDb, gainDb: nulled.gainDb,
+        latencySamples: nulled.latencySamples, correlation: nulled.correlation,
+      }));
+      break;
+    }
     console.log(`  NULL DEPTH   ${sign(nulled.residualDb)} dB   ← how much of the first signal survives`);
     if (lat.correlation < 0.5) console.log('  ⚠ the two files are barely correlated: this null is meaningless, not impressive');
     break;
