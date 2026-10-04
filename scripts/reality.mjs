@@ -157,6 +157,84 @@ claims.push({
   verdict: !live ? 'UNVERIFIABLE' : live.accountsNegativeBalance.n > 0 ? 'VIOLATED — an account spent past zero' : 'HOLDS',
 });
 
+// ── The nouns on the published surface (2026-10-04) ──────────────────────────
+// Rob asked an external Gemini about morpheus.nz and it could not say what the plugin, the
+// personal assistant or the "digital possibility engine" were. The generated surfaces were
+// accurate about the builder and silent about all three, because the capability JSON —
+// their only source — never contained the words. These check that the nouns are now
+// published AND that what is published is true, which is the part that matters: anyone can
+// put "Jarvis" on a page.
+const appSrc = srcFile('src/App.jsx');
+const publishedCaps = (() => {
+  try { return JSON.parse(srcFile('src/lib/morpheusCapabilities.json')); } catch { return null; }
+})();
+const publishedText = publishedCaps ? JSON.stringify(publishedCaps) : '';
+
+const deckBuilt = [
+  ['a /deck route', appSrc.includes('path="/deck"')],
+  ['a /deck/jarvis route', appSrc.includes('path="jarvis"')],
+  ['brain-dump auto-filing', existsSync(join(SERVER, 'src/lib/deckDumpClassify.js'))],
+  ['long-term memory', existsSync(join(SERVER, 'src/lib/deckMemory.js'))],
+  ['cross-deck synthesis', existsSync(join(SERVER, 'src/functions/runJarvisSynthesis.js'))],
+  // The own-data rule, which is the claim "his own memory ... rather than a view onto
+  // Morpheus's": a Deck/Jarvis message store separate from the builder's ChatMessage.
+  ['Jarvis\'s own message store (not the builder\'s)', /model\s+DeckJarvisMessage/.test(srcFile('server/prisma/schema.prisma'))],
+];
+const deckMissing = deckBuilt.filter(([, ok]) => !ok).map(([what]) => what);
+
+claims.push({
+  claim: 'The published surface calls Jarvis a personal assistant, a second product at /deck, with his own memory.',
+  evidence: deckBuilt.map(([what, ok]) => `${ok ? '✓' : '✗'} ${what}`).join(', '),
+  verdict: deckMissing.length ? `PARTLY BUILT — missing: ${deckMissing.join(', ')}` : 'BUILT',
+});
+
+const dockBuilt = [
+  ['the dock loader', srcFile('public/plugin.js').includes('data-dock')],
+  // The plugin SOURCE, not the packed zip: public/morpheus-wordpress-plugin.zip and
+  // plugin-manifest.json are gitignored build artifacts produced by prebuild, so checking for
+  // them here reports a false gap in any tree that has not been built — which is exactly what
+  // this reported the first time it ran.
+  ['the WordPress plugin source', existsSync(join(REPO, 'wp-plugin/morpheus/morpheus.php'))],
+  ['the dock the plugin prints for an admin', existsSync(join(REPO, 'wp-plugin/morpheus/includes/class-dock.php'))],
+  ['the embed surface it frames', appSrc.includes('path="/embed"')],
+];
+const dockMissing = dockBuilt.filter(([, ok]) => !ok).map(([what]) => what);
+
+claims.push({
+  claim: 'The published surface describes a Dock you paste onto your own site, with a WordPress plugin that ships it.',
+  evidence: dockBuilt.map(([what, ok]) => `${ok ? '✓' : '✗'} ${what}`).join(', '),
+  verdict: dockMissing.length ? `PARTLY BUILT — missing: ${dockMissing.join(', ')}` : 'BUILT',
+});
+
+// The count is the one number on the published surface that can rot silently, so it is read
+// from the registry that defines the widgets and compared to the sentence that quotes it.
+const publishedWidgetCount = (() => {
+  const m = publishedText.match(/with (\d+) widgets/);
+  return m ? Number(m[1]) : null;
+})();
+const realWidgetCount = out.built && !out.built.error ? out.built.deck?.widgetCount ?? null : null;
+
+claims.push({
+  claim: `The published Command Deck copy says "${publishedWidgetCount ?? 'no number'} widgets".`,
+  evidence: `src/pages/CommandDeck/deckWidgets.js defines ${realWidgetCount ?? '—'} widgets`,
+  verdict: realWidgetCount == null || publishedWidgetCount == null ? 'UNVERIFIABLE'
+    : publishedWidgetCount === realWidgetCount ? 'MATCHES'
+      : `DRIFTED — the registry has ${realWidgetCount}`,
+});
+
+// The framing is aspirational, and the one thing that would make it a false claim is the copy
+// presenting it as shipped. It says the opposite, out loud, and that is asserted rather than
+// assumed — an aspirational line is exactly the kind that gets quietly upgraded to a feature.
+claims.push({
+  claim: 'The published "digital possibility engine" framing is a direction, not a shipped feature.',
+  evidence: publishedCaps?.possibility ? `"${publishedCaps.possibility.body.slice(0, 80)}…"` : 'not published',
+  verdict: !publishedCaps?.possibility ? 'UNVERIFIABLE'
+    : /destination rather than a shipped feature/i.test(publishedCaps.possibility.body)
+      && publishedCaps.capabilities.every((c) => !/digital possibility engine/i.test(c.title))
+      ? 'HONEST — published as a destination, and it is not in the capability list'
+      : 'OVERSTATED — the copy reads as a delivered feature',
+});
+
 // ── Roadmap items the docs flag as UNVERIFIED ────────────────────────────────
 // ROADMAP.md's own recommendation: "confirm Phase 2 (diagnosis/auto-fix) and
 // Help mode toggle status directly against the live codebase, since these are
