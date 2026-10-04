@@ -130,14 +130,20 @@ export function compareToReference(reference, candidate) {
 
 const log = (m) => console.log(`[nam-render] ${m}`);
 
-function compile(args, label) {
+function compile(args, label, cwd = ROOT) {
   const cxx = process.env.CXX ?? 'c++';
-  const run = spawnSync(cxx, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const run = spawnSync(cxx, args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (run.status !== 0) {
     console.error(`[nam-render] x ${label} failed to compile:\n${(run.stderr || run.stdout || '').slice(-4000)}`);
     process.exit(1);
   }
 }
+
+/**
+ * Every C++ compile in this file carries these. One definition, spread into each invocation, so a build that
+ * quietly used a different sample type would be a visible edit rather than a missing argument.
+ */
+const SAMPLE_FLAGS = ['-DNAM_SAMPLE_FLOAT'];
 
 /** Every C++ source under the engine's NAM directory, the way its own CMakeLists globs them. */
 function namSources(namcore) {
@@ -189,7 +195,7 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
   // that ships beside it is the same object file.
   const hostBin = join(work, 'clap_offline');
   compile([
-    '-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT',
+    '-std=c++20', '-O2', '-w', ...SAMPLE_FLAGS,
     `-I${clap}`, `-I${join(pluginDir, 'Source')}`, ...namIncludes,
     join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'),
     join(pluginDir, 'Source', 'Plugin.cpp'),
@@ -201,17 +207,27 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
   log('built the offline host against the plugin\'s own CLAP sources');
 
   // ── 3. The reference, built from the same engine checkout ─────────────────────────────────────────────
+  // ⚠️ COMPILED IN TWO STEPS, AND THE INCLUDE ORDER IS WHY. TWO FILES IN THIS TREE ARE CALLED `wav.h`:
+  // `NAM/wav.h` (namespace `nam::detail`, used by the engine) and `AudioDSPTools/dsp/wav.h` (namespace
+  // `dsp::wav`, used by the tool). One `-I` order cannot serve both — the first version of this compiled
+  // render.cpp in the same invocation as the engine sources and the reference failed with
+  // "`dsp` has not been declared", because `#include "wav.h"` had resolved to the engine's. So the engine's
+  // translation units are compiled with the engine's include order, the tool's with the tool's, and the
+  // objects are linked after.
+  const objDir = join(work, 'nam-obj');
+  mkdirSync(objDir, { recursive: true });
+  const adt = join(namcore, 'Dependencies', 'AudioDSPTools', 'dsp');
+  compile([...SAMPLE_FLAGS, ...namIncludes, '-c', ...nam], 'the engine sources', objDir);
+  compile([...SAMPLE_FLAGS, `-I${adt}`, ...namIncludes, '-c',
+    join(namcore, 'tools', 'render.cpp'), join(adt, 'wav.cpp')], 'the reference tool', objDir);
   const refBin = join(work, 'nam_render');
-  compile([
-    '-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT',
-    ...namIncludes,
-    `-I${join(namcore, 'Dependencies', 'AudioDSPTools', 'dsp')}`,
-    join(namcore, 'tools', 'render.cpp'),
-    join(namcore, 'Dependencies', 'AudioDSPTools', 'dsp', 'wav.cpp'),
-    ...nam,
-    '-o', refBin,
-  ], 'the reference renderer');
-  log('built the reference renderer from the same engine checkout');
+  const objects = readdirSync(objDir).filter((f) => f.endsWith('.o')).map((f) => join(objDir, f));
+  if (!objects.length) {
+    console.error(`[nam-render] nothing was compiled into ${objDir}`);
+    process.exit(1);
+  }
+  compile([...objects, '-o', refBin], 'the reference renderer');
+  log(`built the reference renderer from the same engine checkout (${objects.length} objects)`);
 
   // ── 4. Two renders of one signal ──────────────────────────────────────────────────────────────────────
   const refWav = join(work, 'reference.wav');

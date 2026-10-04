@@ -599,6 +599,15 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ THE BUG THE FIRST RUN OF THIS CHECK ACTUALLY HIT: `wav.h` exists twice in that tree, so compiling the
+    // tool with the engine's include order makes `dsp::wav` undeclared. The fix is the tool's own order first.
+    why: 'Puts the reference tool back on the engine\u2019s include order, where `#include "wav.h"` resolves to the engine\u2019s file and render.cpp fails to compile.',
+    find: "`-I${adt}`, ...namIncludes, '-c',",
+    replace: "...namIncludes, '-c',",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
     // ⭐ The check that stops the whole exercise being vacuous: a model that does nothing nulls perfectly
     // against a reference that also does nothing.

@@ -722,11 +722,19 @@ unlinkSync(mrawPath);
 // own render tool defaults to double. A float plugin against a double reference would report the precision
 // choice as though it were a wiring bug, so BOTH compile lines carry the flag.
 const renderSrc = read('scripts/audio-nam-render-check.mjs');
-check('both sides are built with the SAME sample type the plugin pins',
-  (renderSrc.match(/-DNAM_SAMPLE_FLOAT/g) || []).length, 2);
+check('every side is built with the SAME sample type the plugin pins',
+  /const SAMPLE_FLAGS = \['-DNAM_SAMPLE_FLOAT'\];/.test(renderSrc)
+  && (renderSrc.match(/\.\.\.SAMPLE_FLAGS/g) || []).length, 3);
 check('…and the reference is built from the SAME engine checkout the plugin uses, not a second copy',
-  /join\(namcore, 'tools', 'render\.cpp'\)/.test(renderSrc) && /!\[Gg\]et 'render' from anywhere else/.test(renderSrc) === false
-  && /join\(namcore, 'Dependencies', 'AudioDSPTools', 'dsp', 'wav\.cpp'\)/.test(renderSrc), true);
+  /join\(namcore, 'tools', 'render\.cpp'\)/.test(renderSrc), true);
+// ⚠️ TWO FILES IN THAT TREE ARE CALLED `wav.h`: the engine's (`nam::detail`) and the tool's (`dsp::wav`). One
+// include order cannot serve both, and the first version of this file compiled them together and failed with
+// "`dsp` has not been declared" — so the engine's translation units and the tool's are compiled separately,
+// each with its own order, and the objects are linked after.
+check('…with its OWN include order, because two files in that tree are called wav.h',
+  /join\(adt, 'wav\.cpp'\)/.test(renderSrc) && /`-I\$\{adt\}`/.test(renderSrc), true);
+check('…compiled to objects and linked, rather than compiled in one invocation',
+  /readdirSync\(objDir\)\.filter\(\(f\) => f\.endsWith\('\.o'\)\)/.test(renderSrc), true);
 // The plugin processes one frame at a time and `render` processes blocks. Pinning both to the same block size
 // removes the one difference between the two paths that has nothing to do with the plugin's correctness.
 check('…and the two paths are told to use the same block size',
