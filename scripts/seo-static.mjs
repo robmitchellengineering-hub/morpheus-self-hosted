@@ -32,6 +32,10 @@
 //   node scripts/seo-static.mjs
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+// The manual is generated from the SAME module the app uses to write USER-MANUAL.txt into a build. That is the
+// point: the published manual cannot drift from the one a user actually receives, because there is only one.
+import { renderUserManual } from '../server/src/lib/appUserManual.js';
+import { getCompileTarget, listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -170,6 +174,72 @@ ${capabilities.map((c) => `          <li><h3>${esc(c.title)}</h3><p>${esc(c.body
       </section>
       <!-- seo-static:end -->`;
 
+// ── 2b. the user manual, published — the same text a download carries ────────────────
+// WHY THIS IS PUBLIC AND THE ENGINEERING DOCS ARE NOT: every build already ships USER-MANUAL.txt, so this
+// publishes claims the product ALREADY makes rather than new copy — and "how do I install this on a Mac?" is
+// exactly the question someone asks a machine. AGENTS.md, KNOWN-HAZARDS.md and the session logs stay private:
+// they carry incident records, security items and internal decisions, and none of that belongs in a crawler.
+const manualTargets = listCompileTargets().map((id) => ({ id, label: getCompileTarget(id)?.label || id }));
+// No project name and no files: this is the generic guide for each target, which is what a stranger needs.
+const manualText = (t) => renderUserManual({ projectName: 'Your project', target: t.id, targetLabel: t.label, files: [] });
+
+const manualHtml = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Morpheus user manual — installing and running what you build</title>
+<meta name="description" content="How to install and run what Morpheus builds: ${manualTargets.length} targets, from a Windows .exe to a Raspberry Pi image, including the unsigned-software warnings each platform puts in your way." />
+<link rel="canonical" href="${SITE}/manual" />
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 2rem 1rem 5rem; background: #050705; color: #b9ffc4;
+         font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main { max-width: 82ch; margin: 0 auto; }
+  h1 { color: #7dff9b; font-size: 1.4rem; letter-spacing: .08em; text-transform: uppercase; }
+  h2 { color: #7dff9b; font-size: 1rem; margin: 2.5rem 0 .5rem; letter-spacing: .06em; }
+  p.lede { color: #86c993; }
+  nav a { color: #7dff9b; margin-right: .75rem; white-space: nowrap; }
+  pre { white-space: pre-wrap; background: #0a0f0a; border-left: 2px solid #1f5c2c; padding: 1rem; overflow-x: auto; }
+  a { color: #9effb5; }
+  footer { margin-top: 3rem; color: #6f9c78; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Morpheus user manual</h1>
+  <p class="lede">This is the manual that ships with a build, for every target Morpheus can compile to. It covers
+  installing what you made, starting it, and the warnings each platform puts in front of unsigned software —
+  because that is the part that looks like a broken download and is not.</p>
+  <nav>${manualTargets.map((t) => `<a href="#${esc(t.id)}">${esc(t.label)}</a>`).join('')}</nav>
+${manualTargets.map((t) => `  <h2 id="${esc(t.id)}">${esc(t.label)}</h2>
+  <pre>${esc(manualText(t))}</pre>`).join('\n')}
+  <footer>
+    <p>Morpheus is a chat-driven software builder — describe it, and it writes the code, compiles a native
+    build and puts it in a repository you own. <a href="${SITE}/">${SITE.replace('https://', '')}</a></p>
+    <p>Machine-readable: <a href="/llms.txt">/llms.txt</a> · <a href="/llms-full.txt">/llms-full.txt</a></p>
+  </footer>
+</main>
+</body>
+</html>
+`;
+
+// The llms.txt convention's "full" companion: everything in one file, so a tool that fetches one URL has the
+// whole manual rather than an index it has to follow links from.
+const llmsFull = `# Morpheus — full reference
+
+> ${principle}
+
+${intro}
+
+## User manual
+
+The manual that ships with a build, for every target. Each section covers installing it, starting it, and the
+unsigned-software warnings that platform puts in your way.
+
+${manualTargets.map((t) => `### ${t.label}\n\nTarget id: \`${t.id}\`\n\n${manualText(t)}`).join('\n\n')}
+`;
+
 // ── 3. llms.txt — the plain-text brief AI tools look for ─────────────────────────────
 const llms = `# Morpheus
 
@@ -205,6 +275,14 @@ ${PRICING}
 Every file is written into your own project and pushed to your own GitHub repository.
 There is no runtime dependency on Morpheus, and nothing stops working if you stop paying.
 
+## Manual
+
+Every build ships a user manual covering installing it, starting it, and the unsigned-software warnings each
+platform puts in your way. The whole thing, for all ${targets.length} targets:
+
+- Read it: ${SITE}/manual
+- One file for a machine: ${SITE}/llms-full.txt
+
 ## Links
 
 - Home: ${SITE}/
@@ -226,6 +304,9 @@ const PUBLIC_ROUTES = [
   ['/terms', '0.3'],
   ['/privacy', '0.3'],
   ['/refund-policy', '0.3'],
+  // A real page with real content for every target, linked visibly from the landing page — not a text file
+  // only crawlers are told about, which is the line between publishing and cloaking.
+  ['/manual', '0.8'],
 ];
 const today = new Date().toISOString().slice(0, 10);
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
@@ -258,8 +339,11 @@ if (html.includes('seo-static:start')) {
 }
 
 writeFileSync(join(DIST, 'llms.txt'), llms);
+writeFileSync(join(DIST, 'llms-full.txt'), llmsFull);
+writeFileSync(join(DIST, 'manual.html'), manualHtml);
 writeFileSync(join(DIST, 'sitemap.xml'), sitemap);
 
 const kb = (s) => `${(Buffer.byteLength(s) / 1024).toFixed(1)} KB`;
 console.log(`  seo-static: index.html ${kb(html)} · JSON-LD ${kb(JSON.stringify(jsonLd))} · llms.txt ${kb(llms)} · sitemap.xml ${kb(sitemap)}`);
 console.log(`  seo-static: ${capabilities.length} capabilities, ${targets.length} build targets, ${PUBLIC_ROUTES.length} public routes`);
+console.log(`  seo-static: manual.html ${kb(manualHtml)} · llms-full.txt ${kb(llmsFull)} · ${manualTargets.length} target guides`);
