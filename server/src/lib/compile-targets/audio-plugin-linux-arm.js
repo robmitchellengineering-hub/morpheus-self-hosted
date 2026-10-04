@@ -39,7 +39,7 @@
 // same identity file, and one CMakeLists that configures on all three platforms.
 import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO, PLUGIN_MANIFEST, readManifest, scaffoldPlugin, validatePlugin } from '../audioPluginProject.js';
 import { namPlan } from '../namPlugin.js';
-import { BUILD_PROOF_FILE, proofBash, proofHeaderBash } from '../buildProof.js';
+import { BUILD_PROOF_FILE, proofBash, proofHeaderBash, proofShowBash } from '../buildProof.js';
 
 export { PLUGIN_MANIFEST, readManifest };
 
@@ -227,6 +227,7 @@ export const audioPlugin = {
           // publish a proof file with the line missing. That is why there is no "n/a" in this format.
           proofHeaderBash({ target: 'audio-plugin-linux-arm', targetLabel: 'Audio Plugin — Linux ARM (VST3 · CLAP)' }),
           proofBash({ formats: LINUX_ARM_FORMATS.map((f) => [f, f]) }),
+          proofShowBash,
           'echo "all three formats produced, each an AArch64 ELF with its real entry point"',
           `echo "wrote ${BUILD_PROOF_FILE}: what this build verified, for the download beside it"`,
         ].join('\n'),
