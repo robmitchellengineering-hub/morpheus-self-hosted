@@ -141,6 +141,14 @@ check('the project declares C++20, because the source uses designated initialize
 // line above is decoration. This is the kind of ordering nothing else would notice.
 check('…and it is declared before clap-wrapper is added, or the wrapper overrides it',
   cmake.indexOf('set(CMAKE_CXX_STANDARD 20)') < cmake.indexOf('add_subdirectory('), true);
+// ⚠️ THE SECOND WINDOWS BUILD, TURNED INTO AN ASSERTION. clap-wrapper sets the static MSVC runtime for its
+// OWN targets, and that setting does not reach the targets created in THIS file — so the VST3 SDK's static
+// libraries met our DLL-runtime wrapper object and the link died with LNK2038 (MT_StaticRelease vs
+// MD_DynamicRelease). Ordering is the whole claim again: it must be set before anything is created.
+check('the MSVC runtime is pinned to the static one, so it cannot mix with the SDK\'s',
+  /if \(MSVC\)\s*\n\s*set\(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded\$<\$<CONFIG:Debug>:Debug>"/.test(cmake), true);
+check('…and pinned BEFORE clap-wrapper is added, for the same ordering reason',
+  cmake.indexOf('set(CMAKE_MSVC_RUNTIME_LIBRARY') < cmake.indexOf('add_subdirectory('), true);
 // plugin_data and calloc() are void*, so C++ requires casts. Without them the generated project does not
 // compile — which is at least loud, but it is the first thing to break on an edit.
 check('every read of plugin_data is cast out of void*',
