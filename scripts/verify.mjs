@@ -97,6 +97,7 @@ const HARD = [
   'verify-workspace-search.mjs',
   'verify-onramp.mjs',
   'verify-deck-widget-build.mjs',
+  'verify-deck-widget-order.mjs',
   'verify-portable-bundle.mjs',
   'verify-portable-setup.mjs',
   'verify-portable-remote.mjs',

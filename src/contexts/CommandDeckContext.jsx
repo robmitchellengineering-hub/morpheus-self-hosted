@@ -6,10 +6,12 @@ import {
   isYou, todayKey, todayISO, randomDeleteConfirmPhrase, commissionFor, feeTiersFromProfile,
 } from '@/pages/CommandDeck/deckConstants';
 import { DECK_WIDGETS } from '@/pages/CommandDeck/deckWidgets';
+import { reorderWidgets } from '@/pages/CommandDeck/deckWidgetOrder';
 import { summarizeFiling, captureFailureMessage } from '@/pages/CommandDeck/dumpFiling';
 import { SECONDS_PER_TASK, bankSeconds } from '@/pages/CommandDeck/game/playBank';
 import { normalizePrice } from '@/pages/CommandDeck/murbahMoney';
 import { initialJarvisLive, reduceJarvisEvent } from '@/lib/jarvisStream';
+import { isTerminalBuildStatus, shouldShowWidgetBuildCard } from '@/lib/deckWidgetBuildCard';
 import PlayModal from '@/pages/CommandDeck/game/PlayModal';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -400,8 +402,11 @@ export function CommandDeckProvider({ children }) {
       // new build carries a new id, so an old dismissal can never hide live progress.
       let dismissedId = null;
       try { dismissedId = window.localStorage.getItem(DISMISSED_WIDGET_BUILD_KEY); } catch { /* private mode */ }
-      const settled = latest ? ['done', 'failed'].includes(latest.status) : false;
-      setWidgetBuild(settled && latest.id === dismissedId ? null : latest);
+      const settled = latest ? isTerminalBuildStatus(latest.status) : false;
+      // A finished card also EXPIRES, so a build nobody dismissed cannot live in Settings forever (see
+      // src/lib/deckWidgetBuildCard.js — Rob's "we still have that failed widget in my settings").
+      // Polling is unaffected: it keeps following any non-terminal row whether or not the card shows.
+      setWidgetBuild(shouldShowWidgetBuildCard(latest, { dismissedId }) ? latest : null);
       if (latest && !settled) {
         widgetBuildPollTimer.current = window.setTimeout(pollWidgetBuild, 5000);
       }
@@ -1168,14 +1173,12 @@ export function CommandDeckProvider({ children }) {
     setWidgetInstances((prev) => prev.map((w) => (w.widget_key === key ? { ...w, enabled: next } : w)));
     try { await base44.entities.DeckWidgetInstance.update(row.id, { enabled: next }); } catch { flagSaveErr(); }
   };
-  // direction: -1 (move earlier) or 1 (move later) in sort_order.
+  // direction: -1 (move earlier) or 1 (move later). Brain dump is PINNED — `reorderWidgets` leaves it out of
+  // the list it swaps, so it cannot be moved AND nothing can be moved above it, and both hold for accounts
+  // whose stored order already disagrees (see deckWidgetOrder.js).
   const moveWidget = async (key, direction) => {
-    const sorted = [...widgetInstances].sort((a, b) => a.sort_order - b.sort_order);
-    const idx = sorted.findIndex((w) => w.widget_key === key);
-    const swapIdx = idx + direction;
-    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
-    [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
-    const updated = sorted.map((w, i) => ({ ...w, sort_order: i }));
+    const updated = reorderWidgets(widgetInstances, key, direction);
+    if (!updated) return;
     setWidgetInstances(updated);
     try {
       await Promise.all(updated.map((w) => base44.entities.DeckWidgetInstance.update(w.id, { sort_order: w.sort_order })));
