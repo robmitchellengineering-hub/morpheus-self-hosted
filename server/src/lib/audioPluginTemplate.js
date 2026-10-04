@@ -21,6 +21,14 @@
 //   3. The SDK's own `plugin-template.c` ships with `// TODO: add support to CLAP_EXT_PARAMS`. Parameters
 //      are the part that is genuinely ours, and a plugin without them is not a usable starting point.
 
+import {
+  PLAIN_CHAIN, chainParams, chainSampleCpp, eventCpp, initCpp, paramsCpp, smoothCpp, stateCpp,
+  toneCpp, toneUpdateCpp,
+} from './ampChain.js';
+// The band count only, for the two loops that reset filter state. The filters themselves are emitted by
+// ampChain.js, which reads this same module so the design and the build cannot disagree.
+import { TONE_KEYS } from './audio/toneStack.js';
+
 /** Four printable ASCII characters, no spaces — the AU 'subtype'/'manufacturer' code format. */
 export function fourCharCode(input, fallback = 'Morp') {
   const clean = String(input || '').replace(/[^A-Za-z0-9]/g, '');
@@ -64,12 +72,15 @@ export function auSubtypeCode(name) {
 }
 
 /** The CLAP implementation: one stereo gain stage with one real parameter. */
-export function pluginSource({ name, vendor, id, paramName = 'Gain', description = '' }) {
+export function pluginSource({ name, vendor, id, description = '', chain = PLAIN_CHAIN, params = null }) {
   const safeName = JSON.stringify(String(name));
   const safeVendor = JSON.stringify(String(vendor));
   const safeId = JSON.stringify(String(id));
   const safeDesc = JSON.stringify(String(description || `${name} — built with Morpheus.`));
-  const safeParam = String(paramName).replace(/"/g, '\\"');
+  // The chain decides which parameters exist and what the signal path does with them. A project that did not
+  // ask for one gets the single-Gain plugin, unchanged — see lib/ampChain.js for why that matters.
+  const list = params || chainParams(chain, { paramName: 'Gain' });
+  const hasTone = Boolean(chain.tone);
 
   return `// ${name} — a CLAP audio effect.
 //
@@ -126,25 +137,15 @@ static const clap_plugin_descriptor_t s_desc = {
 };
 
 // ── parameters ───────────────────────────────────────────────────────────────────────────────────────
-// The id must not be 0: CLAP_INVALID_ID means "no parameter", so a host treats an event carrying id 0 as
-// malformed. Add parameters by extending this enum and the three functions below.
-enum { PARAM_${safeParam.toUpperCase().replace(/[^A-Z0-9]/g, '_') || 'GAIN'} = 1 };
-
-static const double PARAM_MIN = -60.0;
-static const double PARAM_MAX = 12.0;
-static const double PARAM_DEFAULT = 0.0;
+${paramsCpp(list)}
 
 static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
-
+${hasTone ? `\n${toneCpp()}\n` : ''}
 typedef struct {
    clap_plugin_t plugin;
    const clap_host_t *host;
 
-   // The value the host and the user see, in dB.
-   double value;
-   // What process() actually applies, moved one step per sample. Keeping these apart is what stops a
-   // parameter jump from clicking, which is the first audible bug in almost every new plugin.
-   double smoothed;
+${stateCpp(chain, list)}
 
 #if MORPHEUS_HAS_MODEL
    // ONE MODEL INSTANCE PER CHANNEL, and it is a real decision rather than symmetry. A .nam is mono in and
@@ -182,56 +183,62 @@ static const clap_plugin_audio_ports_t s_audio_ports = {
 };
 
 // ── the params extension (what the SDK's own template leaves as a TODO) ──────────────────────────────
-static uint32_t params_count(const clap_plugin_t *plugin) { return 1; }
+static int param_index(clap_id id) {
+   for (uint32_t i = 0; i < MORPHEUS_NUM_PARAMS; ++i) if (kParams[i].id == id) return (int)i;
+   return -1;
+}
+
+static uint32_t params_count(const clap_plugin_t *plugin) { (void)plugin; return MORPHEUS_NUM_PARAMS; }
 
 static bool params_get_info(const clap_plugin_t *plugin, uint32_t index, clap_param_info_t *info) {
-   if (index != 0) return false;
+   (void)plugin;
+   if (index >= MORPHEUS_NUM_PARAMS) return false;
    memset(info, 0, sizeof(*info));
-   info->id = 1;
+   info->id = kParams[index].id;
    info->flags = CLAP_PARAM_IS_AUTOMATABLE;
-   snprintf(info->name, sizeof(info->name), "%s", "${safeParam}");
+   snprintf(info->name, sizeof(info->name), "%s", kParams[index].name);
    snprintf(info->module, sizeof(info->module), "%s", "");
-   info->min_value = PARAM_MIN;
-   info->max_value = PARAM_MAX;
-   info->default_value = PARAM_DEFAULT;
+   info->min_value = kParams[index].min;
+   info->max_value = kParams[index].max;
+   info->default_value = kParams[index].def;
    return true;
 }
 
 static bool params_get_value(const clap_plugin_t *plugin, clap_id id, double *out) {
    // plugin_data is void*, so C++ needs the cast spelled out. This is the most common first compile error.
-   const ${'plugin_t'} *p = (const ${'plugin_t'} *)plugin->plugin_data;
-   if (id != 1) return false;
-   *out = p->value;
+   const plugin_t *p = (const plugin_t *)plugin->plugin_data;
+   const int ix = param_index(id);
+   if (ix < 0) return false;
+   *out = p->value[ix];
    return true;
 }
 
 static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double value, char *out,
                                  uint32_t capacity) {
-   if (id != 1) return false;
+   (void)plugin;
+   if (param_index(id) < 0) return false;
    snprintf(out, capacity, "%.2f dB", value);
    return true;
 }
 
 static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const char *text,
                                  double *out) {
-   if (id != 1) return false;
+   (void)plugin;
+   const int ix = param_index(id);
+   if (ix < 0) return false;
    char *end = NULL;
    const double v = strtod(text, &end);
    if (end == text) return false;  // nothing numeric was typed
    // Clamp rather than reject: a host that receives false here shows the user an error for typing "100",
    // which is an ordinary thing to type.
-   *out = v < PARAM_MIN ? PARAM_MIN : (v > PARAM_MAX ? PARAM_MAX : v);
+   *out = v < kParams[ix].min ? kParams[ix].min : (v > kParams[ix].max ? kParams[ix].max : v);
    return true;
 }
 
-static void apply_param_event(${'plugin_t'} *p, const clap_event_header_t *hdr) {
+static void apply_param_event(plugin_t *p, const clap_event_header_t *hdr) {
    // THERE IS NO PARAM EVENT SPACE. Parameter changes arrive in the CORE event space and are identified by
    // their type; assuming a dedicated space is a compile error, which is the good outcome.
-   if (hdr->space_id != CLAP_CORE_EVENT_SPACE_ID || hdr->type != CLAP_EVENT_PARAM_VALUE) return;
-   const clap_event_param_value_t *ev = (const clap_event_param_value_t *)hdr;
-   if (ev->param_id != 1) return;
-   const double v = ev->value;
-   p->value = v < PARAM_MIN ? PARAM_MIN : (v > PARAM_MAX ? PARAM_MAX : v);
+${eventCpp()}
 }
 
 static void params_flush(const clap_plugin_t *plugin, const clap_input_events_t *in,
@@ -253,9 +260,13 @@ static const clap_plugin_params_t s_params = {
 // ── the plugin ───────────────────────────────────────────────────────────────────────────────────────
 static bool plug_init(const clap_plugin_t *plugin) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
-   p->value = PARAM_DEFAULT;
-   p->smoothed = db_to_linear(PARAM_DEFAULT);
-#if MORPHEUS_HAS_MODEL
+${initCpp(list)}
+   p->fs = 48000.0;
+${hasTone ? `   // A sentinel rather than a value: the first frame recomputes every coefficient, so a plugin that starts
+   // at 0 dB is not silent because its filters were never configured. calloc leaves these at zero, and a
+   // zero-coefficient biquad passes nothing.
+   for (int i = 0; i < ${TONE_KEYS.length}; ++i) p->tone_last[i] = 1e9;
+` : ''}#if MORPHEUS_HAS_MODEL
    p->sample_rate = 48000.0;
    try {
       // THE SAME BYTES THE FILE HOLDS, handed to the reference engine. Not a re-serialised model and not a
@@ -288,8 +299,10 @@ static void plug_destroy(const clap_plugin_t *plugin) {
 
 static bool plug_activate(const clap_plugin_t *plugin, double sr, uint32_t min_frames,
                           uint32_t max_frames) {
-   ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
+   plugin_t *p = (plugin_t *)plugin->plugin_data;
    (void)min_frames;
+   // The sample rate is needed by the tone stack as well as the model, so it is stored either way.
+   p->fs = sr;
 #if MORPHEUS_HAS_MODEL
    p->sample_rate = sr;
    // Reset() may ALLOCATE and it settles the model's initial conditions, so it belongs here and never in
@@ -306,9 +319,15 @@ static void plug_deactivate(const clap_plugin_t *plugin) {}
 static bool plug_start_processing(const clap_plugin_t *plugin) { return true; }
 static void plug_stop_processing(const clap_plugin_t *plugin) {}
 static void plug_reset(const clap_plugin_t *plugin) {
-   ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
-   p->smoothed = db_to_linear(p->value);
-}
+   plugin_t *p = (plugin_t *)plugin->plugin_data;
+   // Snap the smoothers to their targets and drop the filters' history: a transport reset is the one moment
+   // a jump is expected, and a filter holding the last bar's state is a click.
+   for (uint32_t k = 0; k < MORPHEUS_NUM_PARAMS; ++k) p->smoothed[k] = p->value[k];
+${hasTone ? `   for (int c = 0; c < 2; ++c) for (int b = 0; b < ${TONE_KEYS.length}; ++b) {
+      p->tone[c][b].x1 = p->tone[c][b].x2 = p->tone[c][b].y1 = p->tone[c][b].y2 = 0.0;
+   }
+   for (int b = 0; b < ${TONE_KEYS.length}; ++b) p->tone_last[b] = 1e9;
+` : ''}}
 static void plug_on_main_thread(const clap_plugin_t *plugin) {}
 
 static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_process_t *process) {
@@ -329,39 +348,21 @@ static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_
       }
 
       for (; i < next_ev_frame; ++i) {
-         const double target = db_to_linear(p->value);
-         // NOT const any more: with a model in the chain these become the model's output before the gain
-         // below is applied. The multiply stays written on \`in_l\`/\`in_r\` because that line is what
-         // scripts/audio-testbench.mjs patches to prove its own checks can fail.
-         double in_l = process->audio_inputs[0].data32[0][i];
+${smoothCpp()}
+${hasTone ? `${toneUpdateCpp()}\n` : ''}         double in_l = process->audio_inputs[0].data32[0][i];
          double in_r = process->audio_inputs[0].data32[1][i];
-         // One smoothing step per sample. A production plugin would ramp over a fixed time; this is the
-         // minimum that cannot click, and it is the right place to start.
-         p->smoothed += (target - p->smoothed) * 0.001;
-#if MORPHEUS_HAS_MODEL
-         // ONE FRAME AT A TIME. NAMCore's process() is written for blocks, but a one-frame block is what a
-         // per-sample parameter ramp needs, and it keeps this loop the same shape with a model and without
-         // one. The model is the DRY-through-wet amp: its output replaces the dry sample, and Gain is the
-         // output level after it.
-         if (p->model[0]) {
-            NAM_SAMPLE x[1] = {(NAM_SAMPLE)in_l};
-            NAM_SAMPLE y[1] = {0};
-            NAM_SAMPLE *ip[1] = {x};
-            NAM_SAMPLE *op[1] = {y};
-            p->model[0]->process(ip, op, 1);
-            in_l = (double)y[0];
+         // ONE CHANNEL AT A TIME through the same chain, so the two paths cannot drift: a channel that took
+         // a different route would be a stereo image that moves when a control does.
+         for (int c = 0; c < 2; ++c) {
+            double x = (c == 0) ? in_l : in_r;
+${chainSampleCpp(chain, list)}
+            if (c == 0) in_l = x; else in_r = x;
          }
-         if (p->model[1]) {
-            NAM_SAMPLE x[1] = {(NAM_SAMPLE)in_r};
-            NAM_SAMPLE y[1] = {0};
-            NAM_SAMPLE *ip[1] = {x};
-            NAM_SAMPLE *op[1] = {y};
-            p->model[1]->process(ip, op, 1);
-            in_r = (double)y[0];
-         }
-#endif
-         process->audio_outputs[0].data32[0][i] = (float)(in_l * p->smoothed);
-         process->audio_outputs[0].data32[1][i] = (float)(in_r * p->smoothed);
+         // The output level is applied last, so moving it changes how loud the plugin is and NOT how hard
+         // the model is driven — the difference between an output control and a drive control. This line is
+         // what scripts/audio-testbench.mjs patches to prove its own checks can fail.
+         process->audio_outputs[0].data32[0][i] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]));
+         process->audio_outputs[0].data32[1][i] = (float)(in_r * db_to_linear(p->smoothed[IDX_OUTPUT]));
       }
    }
    return CLAP_PROCESS_CONTINUE;

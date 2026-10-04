@@ -18,6 +18,7 @@ import {
 import {
   MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
 } from './namPlugin.js';
+import { PLAIN_CHAIN, chainFor, chainParams } from './ampChain.js';
 import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './compile-targets/utils.js';
 
 /**
@@ -85,6 +86,9 @@ export function readManifest(files) {
     // The `.nam` this plugin runs, when one is named. Empty means "find one in the project", which is what
     // most projects want; naming it is how a project carrying two models picks between them.
     model: parsed.model == null ? '' : String(parsed.model),
+    // Which signal path this plugin is. Empty is the plugin every project got before chains existed, and an
+    // unrecognised value is treated the same way rather than guessed at — see lib/ampChain.js.
+    chain: parsed.chain == null ? '' : String(parsed.chain),
   };
 }
 
@@ -159,9 +163,15 @@ export function scaffoldPlugin(files) {
     // Carried through so the choice survives a re-scaffold. Empty rather than absent keeps the file's shape
     // stable, which is what makes the generated manifest diffable between two builds.
     model: manifest.model || '',
+    chain: manifest.chain || '',
   }, null, 2)}\n`);
 
-  add(PLUGIN_SOURCE, pluginSource(manifest));
+  // An unknown chain is a WARNING rather than a refusal — Morpheus scaffolds, and the plugin still builds —
+  // but it must be said, because the user asked for something and got the default.
+  if (manifest.chain && chainFor(manifest) === PLAIN_CHAIN) {
+    warnings.push(`morpheus.plugin.json asks for chain "${manifest.chain}", which this version does not have; building the single-parameter plugin instead. The chain this version knows is "amp".`);
+  }
+  add(PLUGIN_SOURCE, pluginSource({ ...manifest, chain: chainFor(manifest), params: chainParams(chainFor(manifest), manifest) }));
   add(PLUGIN_ENTRY, entrySource());
   add('CMakeLists.txt', cmakeLists({
     name: manifest.name,

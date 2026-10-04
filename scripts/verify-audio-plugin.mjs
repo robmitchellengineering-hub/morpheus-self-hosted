@@ -617,12 +617,19 @@ check('⭐ the plugin source is byte-identical with a model and without one',
 check('…it includes ModelData.h unconditionally and every NAM include behind the flag',
   /#include "ModelData.h"/.test(src) && /#if MORPHEUS_HAS_MODEL\n\/\/[\s\S]{0,400}#endif/.test(src)
   && src.indexOf('#include "ModelData.h"') < src.indexOf('get_dsp.h'), true);
+// The line scripts/audio-testbench.mjs patches to prove its own checks can fail. It moved when the
+// parameter list became a table — the output level is now one entry in `smoothed[]` — and the test bench's
+// own count is what catches that, but this asserts the shape too so the two cannot drift apart quietly.
 check('…and the gain multiply the test bench patches is still written on in_l/in_r',
-  (src.match(/in_[lr] \* p->smoothed/g) || []).length >= 2, true);
+  (src.match(/in_[lr] \* db_to_linear\(p->smoothed\[IDX_OUTPUT\]\)/g) || []).length >= 2, true);
 // The model is per channel because a .nam is mono and the port declaration promises two channels — running
 // one instance and copying it would silently collapse a stereo source.
+// The chain runs one channel at a time through the same code, indexed by the loop variable — so it is
+// structurally impossible to send both channels through one instance, which is what a stereo image that
+// moves when a control does looks like.
 check('…with one model instance PER CHANNEL, so a stereo source is not collapsed to mono',
-  /nam::DSP \*model\[2\];/.test(src) && /p->model\[0\]->process/.test(src) && /p->model\[1\]->process/.test(src), true);
+  /nam::DSP \*model\[2\];/.test(src) && /for \(int c = 0; c < 2; \+\+c\) \{/.test(src)
+  && /p->model\[c\]->process/.test(src), true);
 // calloc/free runs no destructors, so a smart-pointer member would leak the model every time a host unloads.
 check('…released in destroy(), because free() runs no destructors',
   /for \(int c = 0; c < 2; \+\+c\) \{ delete p->model\[c\]; p->model\[c\] = NULL; \}/.test(src), true);
@@ -776,6 +783,97 @@ check('…and the workflow renders the real WAVENET, not the identity model that
   /--model \.cache\/models\/wavenet_a1_standard\.nam/.test(linuxNamWf)
   && /--render-check/.test(linuxNamWf)
   && /--expect-model-effect-db/.test(linuxNamWf), true);
+
+console.log('\n18. the amp chain: a table of parameters, and a tone stack measured against its design');
+const chainMod = await import('../server/src/lib/ampChain.js');
+const tone = await import('../server/src/lib/audio/toneStack.js');
+
+// ── the design, which is what the plugin is measured against ───────────────────────────────────────────
+const SR = 48000;
+const flat = tone.toneDesign({ gains: {}, sampleRate: SR });
+check('a flat tone stack is 0 dB at every probe frequency',
+  [20, 100, 800, 3000, 15000].every((f) => Math.abs(tone.toneResponseDb(flat, f, SR)) < 0.01), true);
+// Worked out from the RBJ formulas rather than read back off the implementation: a low shelf at +12 dB with
+// its corner at 100 Hz is a little over +11 dB at 50 Hz, not +12 — that is what a shelf does, and a check
+// asserting "+12" would have been asserting the wrong thing.
+const bassUp = tone.toneDesign({ gains: { bass: 12 }, sampleRate: SR });
+const bassAt50 = tone.toneResponseDb(bassUp, 50, SR);
+check('a +12 dB bass shelf raises 50 Hz by a little over 11 dB, and leaves 6 kHz alone',
+  bassAt50 > 10.5 && bassAt50 < 11.5 && Math.abs(tone.toneResponseDb(bassUp, 6000, SR)) < 0.05, true);
+const trebleUp = tone.toneDesign({ gains: { treble: 12 }, sampleRate: SR });
+check('…and the treble shelf does the mirror image',
+  tone.toneResponseDb(trebleUp, 6000, SR) > 10.5 && Math.abs(tone.toneResponseDb(trebleUp, 50, SR)) < 0.05, true);
+check('the bands are the ones the plugin is generated from — same keys, same order',
+  tone.TONE_KEYS.join(','), chainMod.AMP_CHAIN.params.filter((p) => p.role === 'tone').map((p) => p.key).join(','));
+
+// ── what the plugin asks for ───────────────────────────────────────────────────────────────────────────
+check('a project that asks for nothing gets the single-parameter plugin', chainMod.chainFor({}).name, 'plain');
+check('…an unknown chain is not silently the amp', chainMod.chainFor({ chain: 'marshall' }).name, 'plain');
+check('…and "amp" is the chain this version knows, case-insensitively', chainMod.chainFor({ chain: ' AMP ' }).name, 'amp');
+const ampSeed = [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) }];
+const ampFiles = audioPlugin.scaffold(ampSeed).files;
+const ampSrc = generated({ files: ampFiles }, 'Source/Plugin.cpp');
+const plainSrc = src;
+check('the amp chain has five parameters, input first and output last',
+  (ampSrc.match(/PARAM_\w+ = \d+/g) || []).join(' '),
+  'PARAM_INPUT = 1 PARAM_BASS = 2 PARAM_MID = 3 PARAM_TREBLE = 4 PARAM_OUTPUT = 5');
+check('…and the plain plugin still has exactly one, so nothing that predates this changed',
+  (plainSrc.match(/PARAM_\w+ = \d+/g) || []).join(' '), 'PARAM_OUTPUT = 1');
+check('…and the plain plugin carries no tone code at all', /biquad_process/.test(plainSrc), false);
+check('…and the amp plugin does', /biquad_process/.test(ampSrc) && /biquad_set/.test(ampSrc), true);
+// The corner frequencies and Q values are emitted FROM the design, so a change to one is a change to both.
+check('every band\u2019s frequency, Q and filter type is emitted from the design',
+  tone.TONE_BANDS.every((b) => ampSrc.includes(`${Number(b.freq)}.0, ${Number(b.q)}`))
+  && /TONE_LOWSHELF/.test(ampSrc) && /TONE_PEAK/.test(ampSrc) && /TONE_HIGHSHELF/.test(ampSrc), true);
+// ⚠️ The threshold is 1e-6 because 0.001 dB of coefficient error measured as -55 dB of residual against the
+// design. That number is why it is where it is, and it is asserted so it cannot drift back.
+check('the coefficients are recomputed on a millionth of a decibel, not on a thousandth',
+  /#define MORPHEUS_TONE_EPS 0\.000001/.test(ampSrc), true);
+check('…and the filter state is per channel, so the two channels cannot bleed',
+  /biquad_t tone\[2\]\[/.test(ampSrc) && /biquad_process\(&p->tone\[c\]/.test(ampSrc), true);
+// The chain's ORDER is the musical one and it is easy to get backwards: output last means the level control
+// does not change how hard the model is driven.
+// Compared INSIDE the process function, not across the whole file: `IDX_OUTPUT` is also a #define near the
+// top, so a whole-file index comparison passes with the multiply wherever it happens to be — which is how
+// the first version of this check passed on the wrong code.
+const ampLoop = ampSrc.slice(ampSrc.indexOf('static clap_process_status plug_process'));
+const ampLoopTail = ampLoop.slice(0, ampLoop.indexOf('static const void *plug_get_extension'));
+check('the output level is applied AFTER the model, so it cannot act as a drive control',
+  ampLoopTail.indexOf('p->model[c]->process') < ampLoopTail.lastIndexOf('IDX_OUTPUT'), true);
+check('…and the input trim BEFORE it', ampLoopTail.indexOf('IDX_INPUT') < ampLoopTail.indexOf('p->model[c]->process'), true);
+// ⚠️ AND APPLIED EXACTLY ONCE. It was emitted twice — once inside the channel loop and once on the final
+// line — and a +6 dB setting measured +11.85 dB. An existing check in the test bench caught it, which is the
+// argument for the bench; this asserts the count so the generator cannot reintroduce it.
+check('…and exactly ONCE, which is the mistake that measured a +6 dB setting as +11.85 dB',
+  (ampLoopTail.match(/db_to_linear\(p->smoothed\[IDX_OUTPUT\]\)/g) || []).length, 2);
+// A guard on the guard: the model block is still behind the flag, so the source stays identical with and
+// without one — the property the test bench's self-test depends on.
+// ⚠️ ANCHORED ON THE CHAIN'S OWN COMMENT, not on `#if MORPHEUS_HAS_MODEL` followed somewhere by
+// `if (p->model[c])` — the first version of this check was the loose form, and it PASSED with the chain's
+// flag removed, because plug_activate has the same two strings within 400 characters of each other. The
+// mutation survived, which is how the check was found to be measuring the wrong region.
+check('…and the model is still behind the flag, so the source does not change with one',
+  /#if MORPHEUS_HAS_MODEL\n\s*\/\/ The model is the amp:/.test(ampSrc), true);
+check('an unknown chain warns instead of quietly building something else',
+  audioPlugin.scaffold([...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'X', chain: 'marshall' }) }])
+    .warnings.some((w) => /does not have/.test(w)), true);
+
+// ── and the check that measures it ─────────────────────────────────────────────────────────────────────
+const chainCheckSrc = read('scripts/audio-amp-chain-check.mjs');
+check('there is a check that renders the chain and compares it to the design', chainCheckSrc.length > 1500, true);
+check('…it exercises each band on its own, so two filters wired to one band cannot pass',
+  ['bass', 'mid', 'treble'].every((k) => chainCheckSrc.includes(k)), true);
+// The parameters ramp, so the comparison reads the SETTLED tail — comparing the whole file measures the ramp
+// (that was -55 dB) rather than the filters (which is better than -140 dB).
+check('…and it compares the settled tail, not the ramp', /SETTLE_FRACTION = 0\.75/.test(chainCheckSrc), true);
+const chainThreshold = chainCheckSrc.match(/arg\('max-null-db', '(-?\d+)'\)/);
+check('…with a threshold the measured numbers actually clear',
+  Boolean(chainThreshold) && Number(chainThreshold[1]) <= -120, true);
+// The bench's self-test proves the bench can fail by breaking the plugin's output gain. It finds that line by
+// shape, so if the plugin's shape moves and the bench's pattern does not, the self-test silently stops
+// patching anything — the bench would then pass a broken plugin and report that as proof it works.
+check('…and the test bench patches that same shape as the plugin now emits',
+  /APPLIED_GAIN = \/in_\[lr\] \\\* db_to_linear\\\(p->smoothed\\\[IDX_/.test(read('scripts/audio-testbench.mjs')), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
