@@ -551,7 +551,7 @@ export const MUTATIONS = [
     file: '.github/workflows/audio-plugin-linux-arm-build.yml',
     // And without the dispatch step above it, the same thing: a guard-only proof.
     why: 'Drops the modelled build from the ARM workflow, so a project with a model is never compiled for a Pi.',
-    find: '--model .cache/models/linear_1.nam',
+    find: '--model .cache/models/wavenet_a1_standard.nam',
     replace: '--model .cache/models/absent.nam',
   },
   {

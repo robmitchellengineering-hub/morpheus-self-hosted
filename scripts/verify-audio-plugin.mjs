@@ -749,8 +749,12 @@ check('…refusing when the engine checkout is missing rather than silently skip
   /--render-check needs the engine checkout/.test(armRunnerSrc), true);
 // ⭐ A MODEL THAT DOES NOTHING WOULD PASS EVERY NULL TEST. The reference render is compared to the DRY signal
 // as well: if the model barely changes it, the two renders agree because they are two copies of the same file.
+// Asserted as the CONDITION, not as the words: the first version checked only that `expect-model-effect-db`
+// and the message appeared somewhere in the file, and the mutation that replaced the condition with `if
+// (false)` left both of them in place — so it survived, which is the mutation harness doing its job.
 check('⭐ the comparison is refused when the model does not actually change the signal',
-  /expect-model-effect-db/.test(armRunnerSrc) && /a null test against it would prove nothing/.test(armRunnerSrc), true);
+  /if \(Number\.isFinite\(expectEffectDb\) && !\(result\.dryVsReference\.nullDb > expectEffectDb\)\) \{/.test(armRunnerSrc)
+  && /a null test against it would prove nothing/.test(armRunnerSrc), true);
 check('…and the workflow renders the real WAVENET, not the identity model that would prove nothing about the engine',
   /--model \.cache\/models\/wavenet_a1_standard\.nam/.test(linuxNamWf)
   && /--render-check/.test(linuxNamWf)
