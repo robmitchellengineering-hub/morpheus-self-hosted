@@ -39,6 +39,7 @@
 // same identity file, and one CMakeLists that configures on all three platforms.
 import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO, PLUGIN_MANIFEST, readManifest, scaffoldPlugin, validatePlugin } from '../audioPluginProject.js';
 import { namPlan } from '../namPlugin.js';
+import { BUILD_PROOF_FILE, proofBash, proofHeaderBash } from '../buildProof.js';
 
 export { PLUGIN_MANIFEST, readManifest };
 
@@ -55,6 +56,9 @@ export const LINUX_ASSETS = 'build/assets';
  * label — and it would produce an artefact nobody had ever run the toolchain for.
  */
 export const LINUX_ARM_RUNNER = 'ubuntu-24.04-arm';
+
+/** The formats this route promises, in the order it promises them. Used by the verify step and the proof. */
+export const LINUX_ARM_FORMATS = ['CLAP', 'VST3', 'standalone'];
 
 export const audioPlugin = {
   id: 'audio-plugin-linux-arm',
@@ -211,12 +215,20 @@ export const audioPlugin = {
           '    fi',
           '  fi',
           '  echo "  $fmt: $hit ($size bytes, $machine)"',
+          // Kept for the proof file, from the SAME values the assertions above used — so a format cannot be
+          // verified and then reported differently, or reported at all when its check failed.
+          '  printf -v "proof_$(echo "$fmt" | tr "A-Z" "a-z")" "%s (%s bytes, %s)" "$hit" "$size" "$machine"',
           '}',
           `check CLAP ${qClap} clap_entry`,
           `check VST3 ${qVst3So} GetPluginFactory`,
           `check standalone ${qName} ""`,
           'if [ "$bad" -gt 0 ]; then echo "the build did not produce usable plugins"; exit 1; fi',
+          // ⚠️ WRITTEN AFTER THE CHECK, NOT BEFORE. A build that cannot verify something fails; it does not
+          // publish a proof file with the line missing. That is why there is no "n/a" in this format.
+          proofHeaderBash({ target: 'audio-plugin-linux-arm', targetLabel: 'Audio Plugin — Linux ARM (VST3 · CLAP)' }),
+          proofBash({ formats: LINUX_ARM_FORMATS.map((f) => [f, f]) }),
           'echo "all three formats produced, each an AArch64 ELF with its real entry point"',
+          `echo "wrote ${BUILD_PROOF_FILE}: what this build verified, for the download beside it"`,
         ].join('\n'),
       },
 
@@ -255,6 +267,9 @@ export const audioPlugin = {
     glob: `${LINUX_ASSETS}/plugin-linux-arm-*.zip`,
     isGlob: true,
     verifyCommand: `ls -l ${LINUX_ASSETS}/plugin-linux-arm-vst3.zip ${LINUX_ASSETS}/plugin-linux-arm-clap.zip ${LINUX_ASSETS}/plugin-linux-arm-standalone.zip`,
+    // Published beside the downloads, so it lands in the user's _compiled/ as a file they can open — the
+    // whole point being that the evidence is somewhere they already look.
+    proofFile: BUILD_PROOF_FILE,
   },
 
   errorPatterns: [

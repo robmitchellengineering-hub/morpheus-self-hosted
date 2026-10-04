@@ -689,6 +689,33 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-linux-arm.js',
+    // A proof that is written and never published is a file nobody receives — the defect this whole feature
+    // exists to fix, reintroduced one line at a time.
+    why: 'Stops declaring the proof file for release, so the build writes it and the download does not carry it.',
+    find: '    proofFile: BUILD_PROOF_FILE,',
+    replace: '    proofFile: null,',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/workflow-renderer.js',
+    why: 'Stops the workflow publishing any proof file, so every route builds one and none of them reaches a user.',
+    find: '  const proofSection = artifact.proofFile ?',
+    replace: '  const proofSection = false ?',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/buildProof.js',
+    // The header must carry no facts: a template that says "AArch64" would say it for a build that produced
+    // an x86-64 plugin, which is the difference between evidence and a claim.
+    why: 'Puts a fact into the header the generator writes, so the proof states something the build never checked.',
+    // Anchored on the RETURN line: the title also appears inside the `=`-repeat expression directly below it,
+    // so the bare string matches twice and the harness refuses an ambiguous mutation — which is what happened.
+    find: '  return `MORPHEUS BUILD PROOF — ${target}',
+    replace: '  return `MORPHEUS BUILD PROOF — ${target} (AArch64)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
     // ⭐ The check that stops the whole exercise being vacuous: a model that does nothing nulls perfectly
     // against a reference that also does nothing.

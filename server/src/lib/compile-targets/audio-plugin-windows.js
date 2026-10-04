@@ -29,6 +29,7 @@
 // commands and the packaging differ.
 import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO, PLUGIN_MANIFEST, readManifest, scaffoldPlugin, validatePlugin } from '../audioPluginProject.js';
 import { namPlan } from '../namPlugin.js';
+import { BUILD_PROOF_FILE, proofHeaderPowerShell, proofPowerShell } from '../buildProof.js';
 
 export { PLUGIN_MANIFEST, readManifest };
 
@@ -180,9 +181,16 @@ export const audioPlugin = {
           '    if ($exports -notmatch "\\b$($t.symbol)\\b") { Write-Host "MISSING ENTRY POINT $($t.symbol) IN ($($t.format)): $p"; $bad += $t.format; continue }',
           '  }',
           '  Write-Host ("  {0,-11} {1,10:N0} bytes  {2}" -f $t.format, $size, $p)',
+          // Kept for the proof file, from the same values the assertions above used.
+          '  Set-Variable -Name ("proof_" + $t.format.ToLower()) -Value ("$p ($size bytes, PE image)") -Scope Script',
           '}',
           'if ($bad.Count -gt 0) { throw "the build did not produce usable plugins: $($bad -join \', \')" }',
+          // ⚠️ AFTER THE CHECKS, so a build that could not verify a format fails rather than publishing a
+          // proof file with the line missing.
+          proofHeaderPowerShell({ target: 'audio-plugin-windows', targetLabel: 'Audio Plugin — Windows (VST3 · CLAP)' }),
+          proofPowerShell({ formats: [['CLAP', ''], ['VST3', ''], ['standalone', '']] }),
           'Write-Host "all three formats produced, each a PE image with its real entry point"',
+          `Write-Host "wrote ${BUILD_PROOF_FILE}: what this build verified, for the download beside it"`,
         ].join('\n'),
       },
 
@@ -217,6 +225,8 @@ export const audioPlugin = {
     // filename must say which machine an artifact runs on.
     glob: `${WINDOWS_ASSETS}/plugin-windows-*.zip`,
     isGlob: true,
+    // Published beside the downloads, so it lands in the user's _compiled/ where they already look.
+    proofFile: BUILD_PROOF_FILE,
     verifyCommand: `dir build\\assets\\plugin-windows-vst3.zip build\\assets\\plugin-windows-clap.zip build\\assets\\plugin-windows-standalone.zip`,
   },
 

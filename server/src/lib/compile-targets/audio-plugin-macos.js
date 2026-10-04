@@ -43,6 +43,7 @@ import {
   PLUGIN_ENTRY, PLUGIN_MANIFEST, PLUGIN_SOURCE, readManifest, scaffoldPlugin, validatePlugin,
 } from '../audioPluginProject.js';
 import { namPlan } from '../namPlugin.js';
+import { BUILD_PROOF_FILE, proofBash, proofHeaderBash } from '../buildProof.js';
 
 // Re-exported because this module's id is where the shared project is reached from, and the guard reads
 // the identity file's name out of here.
@@ -142,7 +143,7 @@ export const audioPlugin = {
         run: [
           'set -e',
           'check() {',
-          '  b="$1"; sym="$2"',
+          '  label="$1"; b="$2"; sym="$3"',
           '  test -d "$b" || { echo "MISSING BUNDLE: $b"; exit 1; }',
           '  bin="$b/Contents/MacOS/$(basename "$b" | sed \'s/\\.[^.]*$//\')"',
           '  test -f "$bin" || { echo "BUNDLE HAS NO BINARY: $b"; exit 1; }',
@@ -150,16 +151,24 @@ export const audioPlugin = {
           '  if [ "$sym" != "-" ]; then',
           '    nm -gU "$bin" 2>/dev/null | grep -q " _$sym$" || { echo "MISSING ENTRY POINT $sym IN: $b"; exit 1; }',
           '  fi',
-          '  echo "  $b $(lipo -archs "$bin")"',
+          '  archs="$(lipo -archs "$bin")"',
+          '  echo "  $b $archs"',
+          // Kept for the proof file, from the same values the assertions above used.
+          '  printf -v "proof_$(echo "$label" | tr "A-Z" "a-z")" "%s (%s)" "$b" "$archs"',
           '}',
           'echo "Format                Architectures"',
-          `check "${bundle('.clap')}" clap_entry`,
-          `check "${bundle('.vst3')}" GetPluginFactory`,
-          `check "${bundle('.component')}" wrapAsAUV2_inst0Factory`,
+          `check CLAP "${bundle('.clap')}" clap_entry`,
+          `check VST3 "${bundle('.vst3')}" GetPluginFactory`,
+          `check AU "${bundle('.component')}" wrapAsAUV2_inst0Factory`,
           // The standalone is checked for its binary like the rest; `-` skips the symbol assertion because
           // its entry is the ordinary `main` of an executable, not a plugin entry point.
-          `check "${bundle('.app')}" -`,
+          `check standalone "${bundle('.app')}" -`,
+          // ⚠️ AFTER THE CHECKS, so a build that could not verify a format fails rather than publishing a
+          // proof file with the line missing.
+          proofHeaderBash({ target: 'audio-plugin-macos', targetLabel: 'Audio Plugin — macOS (VST3 · AU · CLAP)' }),
+          proofBash({ formats: [['CLAP', ''], ['VST3', ''], ['AU', ''], ['standalone', '']] }),
           'echo "all four formats produced, each with a binary and a real entry point"',
+          `echo "wrote ${BUILD_PROOF_FILE}: what this build verified, for the download beside it"`,
         ].join('\n'),
       },
 
@@ -187,6 +196,8 @@ export const audioPlugin = {
     // machine an artifact runs on.
     glob: `${'build/assets'}/plugin-macos-*.zip`,
     isGlob: true,
+    // Published beside the downloads, so it lands in the user's _compiled/ where they already look.
+    proofFile: BUILD_PROOF_FILE,
     verifyCommand: `ls build/assets/plugin-macos-vst3.zip build/assets/plugin-macos-au.zip build/assets/plugin-macos-clap.zip build/assets/plugin-macos-standalone.zip`,
   },
 
