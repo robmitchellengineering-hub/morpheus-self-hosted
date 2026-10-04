@@ -254,7 +254,7 @@ check('…running the target\'s own steps through the runner script',
 check('…keeping the packaged plugins, so a run can be inspected rather than believed',
   /upload-artifact@v\d/.test(wf) && /assets\/\*\.zip/.test(wf), true);
 check('…and failing rather than passing with three formats of four',
-  /if-no-files-found: error/.test(wf), true);
+  /^\s+if-no-files-found: error$/m.test(wf), true);
 
 // The script must build the TARGET, not a transcription of what the target happens to emit today. A copy
 // of the commands is the failure mode this whole job exists to avoid: it would keep passing after the
@@ -273,8 +273,14 @@ check('…failing the job on the first step that fails',
 check('…refusing to run anywhere but macOS, rather than failing obscurely later',
   /process\.platform !== 'darwin'/.test(runner), true);
 // The one format no local machine has ever built, so a green run that quietly lacked it must be impossible.
-check('…and insisting on the standalone\'s binary, not just its bundle',
-  /no standalone \.app was produced/.test(runner) && /standalone binary present/.test(runner), true);
+// Asserted as a REFUSAL THAT EXITS, not as the wording of its message — the message alone is a check
+// satisfied by a string, which is the failure this file has already been caught by once (see above): the
+// workflow's own comment quotes `if-no-files-found: error`, so a plain search for the setting matched its
+// own explanation and stayed green with the setting deleted.
+check('…and refusing when no standalone was produced, rather than summarising three formats of four',
+  /if \(!standalone\) \{[\s\S]{0,240}process\.exit\(1\)/.test(runner), true);
+check('…and refusing a standalone bundle that exists with no binary in it',
+  /if \(!existsSync\(standaloneBin\)\) \{[\s\S]{0,240}process\.exit\(1\)/.test(runner), true);
 // A manual job nobody knows about is the same as no job (H17). It is named where a session will see it.
 check('…and the manual job is named in AGENTS.md, so a session that changes the target dispatches it',
   /audio-plugin-build\.yml/.test(read('AGENTS.md')), true);

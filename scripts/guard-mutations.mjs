@@ -317,6 +317,17 @@ export const MUTATIONS = [
     replace: "['-c', 'cmake --build build --target morpheus_plugin_clap -j4']",
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-runner-build.mjs',
+    // The refusal that makes the job mean anything. Left in place with the condition defeated, the script
+    // still prints its summary and exits 0 on a machine that produced three formats — which is exactly the
+    // green run this job exists to make impossible. Note this is why the assertion is on the CONDITION and
+    // the exit, not on the message text: a message-shaped check survived this very mutation.
+    why: 'Defeats the standalone refusal, so a run that produced no standalone still reports success instead of failing.',
+    find: 'if (!standalone) {',
+    replace: 'if (false) {',
+  },
+  {
     guard: 'verify-render-check.mjs',
     file: 'scripts/dev-app-render.mjs',
     // A SAFETY INTERLOCK, as a mutation — the class of edit a guard is really for. Nothing about the
