@@ -723,6 +723,13 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/buildProof.js',
+    why: 'Removes the no-model line, so a build without a model prints a heading and then nothing — which reads as a fact that went missing.',
+    find: "else echo '        (none: this is the gain plugin, which is a supported state and not a failure)'",
+    replace: "else echo ''",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
     // ⭐ The check that stops the whole exercise being vacuous: a model that does nothing nulls perfectly
     // against a reference that also does nothing.
