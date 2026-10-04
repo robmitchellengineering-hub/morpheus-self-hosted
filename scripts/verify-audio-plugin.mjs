@@ -22,6 +22,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
 import audioPluginWindows from '../server/src/lib/compile-targets/audio-plugin-windows.js';
+import audioPluginLinux from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { getCompileTarget, listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 
 const REPO = new URL('..', import.meta.url).pathname;
@@ -48,8 +49,9 @@ check('…and the PUBLISHED capability list includes it', caps.buildTargets.incl
 // One entry per target, counted against the registry rather than a number written here: the published list
 // is what search engines and AI answer engines read, and this target count has already changed once.
 check('…and every registered target is published', caps.buildTargets.length, listCompileTargets().length);
-check('…including both audio plugin routes',
-  caps.buildTargets.includes('audio-plugin-macos') && caps.buildTargets.includes('audio-plugin-windows'), true);
+check('…including all three audio plugin routes',
+  caps.buildTargets.includes('audio-plugin-macos') && caps.buildTargets.includes('audio-plugin-windows')
+  && caps.buildTargets.includes('audio-plugin-linux-arm'), true);
 check('the label names the formats a musician gets', /VST3/.test(audioPlugin.label) && /AU/.test(audioPlugin.label) && /CLAP/.test(audioPlugin.label), true);
 // ⚠️ THE PLATFORM WAS THE MISSING WORD, and it is a product problem rather than a wording one: a VST3
 // exists on more than one machine, so a label naming only the formats reads as "builds for whatever you are
@@ -417,9 +419,11 @@ check('…running the target\'s own steps through its runner script',
   /node scripts\/audio-plugin-windows-runner-build\.mjs/.test(winWf), true);
 check('…and failing rather than passing with two formats of three', /if-no-files-found: error/.test(winWf), true);
 // A manual job nobody knows about is the same as no job (H17) — and with a SHARED project, one dispatch is
-// not enough to cover a change: both routes have to be built or one of them is proven against stale code.
-check('…and both manual jobs are named in AGENTS.md, so a shared change dispatches both',
-  /audio-plugin-macos-build\.yml/.test(read('AGENTS.md')) && /audio-plugin-windows-build\.yml/.test(read('AGENTS.md')), true);
+// not enough to cover a change: every route has to be built or one of them is proven against stale code.
+check('…and every manual audio-plugin job is named in AGENTS.md, so a shared change dispatches all of them',
+  /audio-plugin-macos-build\.yml/.test(read('AGENTS.md'))
+  && /audio-plugin-windows-build\.yml/.test(read('AGENTS.md'))
+  && /audio-plugin-linux-arm-build\.yml/.test(read('AGENTS.md')), true);
 
 const winRunner = read('scripts/audio-plugin-windows-runner-build.mjs');
 check('the Windows runner script imports the target and calls its buildSteps',
@@ -429,6 +433,103 @@ check('…drives PowerShell, one shell invocation per step',
 check('…refusing to run anywhere but Windows', /process\.platform !== 'win32'/.test(winRunner), true);
 check('…and refusing when the standalone was not produced',
   /no \$\{format\} binary was produced[\s\S]{0,200}process\.exit\(1\)/.test(winRunner), true);
+
+console.log('\n15. the LINUX ARM route — the Raspberry Pi, and the one claim only an ARM build can prove');
+// WHY THIS ROUTE EXISTS AT ALL. `linux-binary` already builds for Linux; a PLUGIN is different, because it
+// is compiled for one instruction set and shipped as a folder. A Pi needs aarch64, and an x86-64 desktop
+// needs x86-64 — two different downloads that both say "Linux" on them unless the label says otherwise.
+check('it is registered by id and listed', getCompileTarget('audio-plugin-linux-arm')?.id, 'audio-plugin-linux-arm');
+check('…and listed in the registry', listCompileTargets().includes('audio-plugin-linux-arm'), true);
+check('the label names the PLATFORM and the CPU, not only the formats',
+  /Linux/i.test(audioPluginLinux.label) && /ARM/i.test(audioPluginLinux.label), true);
+check('…and does NOT promise an Audio Unit, which cannot exist off Apple',
+  /AU\b|Audio Unit/i.test(audioPluginLinux.label), false);
+check('…and the route is offered in the picker',
+  read('src/lib/compileTargets.js').includes(`value: '${audioPluginLinux.id}'`), true);
+// ⭐ ONE GENERATOR, THREE ROUTES. This is the anti-drift claim at its widest: if the Linux route generated
+// a different project from the macOS one, this guard could pass on both while the Linux build compiled
+// something nobody tested.
+check('all three routes generate byte-identical projects from one generator',
+  JSON.stringify(audioPluginLinux.scaffold(empty).files), JSON.stringify(audioPlugin.scaffold(empty).files));
+
+// The manual's `install` array is the FIRST block a user reads, but the Pi's two surprises are in
+// `firstRun` — so this route's section is captured whole rather than only its first list.
+const linuxManual = /'audio-plugin-linux-arm': \{[\s\S]*?\n  \},/.exec(manualSrc)?.[0] || '';
+check('its manual opens by saying it is Linux ARM only', /LINUX ON ARM \(aarch64\) ONLY/i.test(linuxManual), true);
+check('…says why there is no Audio Unit in it', /Audio Unit/i.test(linuxManual), true);
+check('…names the install folder a player cannot guess', /\.vst3/.test(linuxManual) && /\.clap/.test(linuxManual), true);
+// The two things a Pi user hits that no other platform does, and both look like a broken build.
+check('…warns that the standalone needs a desktop, so a headless Pi runs the VST3 or CLAP instead',
+  /headless/i.test(linuxManual) && /X11|desktop/i.test(linuxManual), true);
+check('…and warns that an x86-64 Linux desktop cannot load it', /x86-64|Intel or AMD/i.test(linuxManual), true);
+
+const linuxSteps = audioPluginLinux.buildSteps(audioPluginLinux.scaffold(empty).files);
+const linuxRun = linuxSteps.filter((s) => s.run).map((s) => s.run).join('\n');
+check('the build runs in bash and fails fast', /set -euo pipefail/.test(linuxRun), true);
+check('…and carries no PowerShell or macOS-only command from the other two routes',
+  /\$ErrorActionPreference|sysctl|ditto -c -k|\blipo\b|nm -gU/.test(linuxRun), false);
+check('…installing exactly the two packages Linux needs, and no more',
+  /libasound2-dev/.test(linuxRun) && /libx11-dev/.test(linuxRun) && /gtkmm|cairo|fontconfig/.test(linuxRun), false);
+check('…configured Release, because a Linux generator is single-config',
+  /-DCMAKE_BUILD_TYPE=Release/.test(linuxRun), true);
+check('each format is built as its own target, so one failure cannot strand the others',
+  /for t in morpheus_plugin_clap morpheus_plugin_vst3/.test(linuxRun) && /morpheus_plugin_standalone/.test(linuxRun), true);
+// The Linux layout is neither of the other two, which is the mistake this step exists to prevent.
+check('the verification SEARCHES for each artefact rather than building its path',
+  /find build\/assets -type f -name "\$file" -print -quit/.test(linuxRun), true);
+// ⚠️ TWO TRAPS, BOTH OF WHICH MAKE THIS SCRIPT REPORT THE OPPOSITE OF THE TRUTH, and both are guarded here
+// because they are invisible in a green run:
+//   * `find | head -n 1` under `set -o pipefail`: head closes the pipe, find takes SIGPIPE, the pipeline is
+//     non-zero and `set -e` aborts a search that SUCCEEDED.
+//   * `nm ... | grep -q`: grep exits at the first match, nm takes SIGPIPE, the pipeline is non-zero, and the
+//     `!` turns a symbol that WAS found into "MISSING ENTRY POINT".
+check('…using find -print -quit, not find | head, which trips pipefail when the search succeeds',
+  /\| head -n 1/.test(linuxRun), false);
+check('…and capturing the symbols once instead of piping nm into grep -q, which does the same in reverse',
+  /grep -qw "\$sym" <<< "\$syms"/.test(linuxRun) && /nm -D --defined-only "\$hit" 2>\/dev\/null \| grep/.test(linuxRun), false);
+check('…and asserts the file is an ELF image rather than trusting the extension',
+  /7f454c46/.test(linuxRun), true);
+// ⭐ THE ASSERTION THE WHOLE ROUTE EXISTS FOR. "This runs on a Raspberry Pi" is only true if the artefact
+// was compiled for aarch64, and the likeliest way to break it is to build on the wrong machine.
+check('…⭐ and reads the CPU out of the artefact, so a build for the wrong machine cannot pass',
+  /readelf -h/.test(linuxRun) && /AArch64/.test(linuxRun) && /WRONG ARCHITECTURE/.test(linuxRun), true);
+check('…and asserts the real entry points of the two formats that have them',
+  /clap_entry/.test(linuxRun) && /GetPluginFactory/.test(linuxRun), true);
+check('the artifact spec names the Linux ARM downloads, one per format',
+  ['vst3', 'clap', 'standalone'].every((k) => (audioPluginLinux.artifact.glob || '').includes(`plugin-linux-arm-${k}`))
+  || ['vst3', 'clap', 'standalone'].every((k) => audioPluginLinux.artifact.verifyCommand.includes(`plugin-linux-arm-${k}`)), true);
+
+const linuxWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
+check('there is a workflow that builds it on a real ARM64 Linux runner', linuxWf.length > 0, true);
+check('…dispatched by hand, not on a push or a pull request',
+  /on:\s*\n\s+workflow_dispatch:/.test(linuxWf), true);
+check('…and nothing in it can start a bill on every branch',
+  /pull_request|^\s*push:/m.test(linuxWf), false);
+// An x86-64 runner here would build a plugin for the wrong machine and every file-exists check would pass.
+check('…on an ARM64 runner, which is the only kind that can prove this route',
+  /runs-on: ubuntu-24\.04-arm/.test(linuxWf) && /runs-on: ubuntu-latest/.test(linuxWf), false);
+check('…bounded by a timeout, because configure downloads the SDKs', /timeout-minutes: \d+/.test(linuxWf), true);
+check('…running the target\'s own steps through its runner script',
+  /node scripts\/audio-plugin-linux-arm-runner-build\.mjs/.test(linuxWf), true);
+check('…and failing rather than passing with two formats of three', /if-no-files-found: error/.test(linuxWf), true);
+check('…and saying in the workflow itself that all three routes must be dispatched after a shared change',
+  /ALL THREE/.test(linuxWf) && /audio-plugin-macos/.test(linuxWf) && /audio-plugin-windows/.test(linuxWf), true);
+
+const linuxRunner = read('scripts/audio-plugin-linux-arm-runner-build.mjs');
+check('the Linux runner script imports the target and calls its buildSteps',
+  /from '\.\.\/server\/src\/lib\/compile-targets\/audio-plugin-linux-arm\.js'/.test(linuxRunner) && /audioPlugin\.buildSteps\(/.test(linuxRunner), true);
+check('…drives bash, one shell invocation per step',
+  /spawnSync\('bash', \['-c', step\.run\]/.test(linuxRunner), true);
+// Both halves of the platform are refused, separately: "wrong OS" and "wrong CPU" are different mistakes,
+// and on x86-64 Linux every step would succeed and produce a plugin for the wrong machine.
+check('…refusing to run anywhere but Linux', /process\.platform !== 'linux'/.test(linuxRunner), true);
+check('…and refusing to run anywhere but ARM64', /process\.arch !== 'arm64'/.test(linuxRunner), true);
+// A second, independent read of the same claim: this one reads e_machine out of the ELF header in JS, so a
+// `readelf` whose output format changed cannot make the build look correct.
+check('…and reading e_machine out of the ELF header itself, not asking readelf again',
+  /readUInt16LE\(0x12\)/.test(linuxRunner) && /0xb7/.test(linuxRunner), true);
+check('…and refusing when a format was not produced',
+  /no \$\{format\} binary was produced[\s\S]{0,200}process\.exit\(1\)/.test(linuxRunner), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

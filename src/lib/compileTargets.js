@@ -43,9 +43,13 @@ export const COMPILE_TARGETS = [
   // THE OS IS IN THE LABEL, because a plugin is not like the other targets: a VST3 is a format that exists
   // on more than one machine, so "Audio Plugin (VST3 · AU · CLAP)" reads as though it builds for whatever
   // the reader is on. It does not — Audio Units are an Apple format and these bundles load on macOS only.
-  // When the Windows route lands it gets its own entry (`audio-plugin-windows`), beside `Windows .exe`.
+  // Each route gets its own entry beside the matching binary target: Windows above, Linux ARM below.
   { value: 'audio-plugin-macos', create: 'macOS audio plugin — VST3, AU or CLAP (build locally)', import: 'macOS audio plugin — VST3, AU or CLAP', bar: 'mac audio plugin' },
   { value: 'linux-binary', create: 'Linux binary (build locally)', import: 'Linux binary', bar: 'linux bin' },
+  // THE RASPBERRY PI ROUTE. Not a leg of `linux-binary`: a plugin is compiled for one instruction set and
+  // shipped as a folder, so a Pi needs a build that says aarch64 — and the CPU is as much of the answer as
+  // the OS is, which is why the label names both.
+  { value: 'audio-plugin-linux-arm', create: 'Linux ARM audio plugin — for a Raspberry Pi, VST3 or CLAP (build locally)', import: 'Linux ARM audio plugin — VST3 or CLAP', bar: 'pi audio plugin' },
   { value: 'android-apk', create: 'Android APK (build locally)', import: 'Android APK', bar: 'android apk' },
   { value: 'ios-app', create: 'iOS app (build locally)', import: 'iOS app', bar: 'ios app' },
   { value: 'python-package', create: 'Python package (build locally)', import: 'Python package', bar: 'py pkg' },

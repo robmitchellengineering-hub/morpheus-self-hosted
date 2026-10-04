@@ -414,6 +414,53 @@ export const MUTATIONS = [
     replace: "      'This plugin is for macOS. It will not load on Windows or Linux — there is no Audio Unit',",
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-linux-arm.js',
+    // The CPU is as much of the answer as the OS is: an x86-64 Linux desktop and a Raspberry Pi are both
+    // "Linux", and this route produces a plugin for exactly one of them. Dropping ARM from the label is how
+    // someone downloads a plugin their machine cannot load and has nothing to point at.
+    why: 'Removes the CPU from the Linux route\'s label, so a Pi build reads as a plugin for any Linux machine.',
+    find: "  label: 'Audio Plugin — Linux ARM (VST3 · CLAP)',",
+    replace: "  label: 'Audio Plugin — Linux (VST3 · CLAP)',",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-linux-arm.js',
+    // ⭐ THE ASSERTION THIS WHOLE ROUTE EXISTS FOR, removed the way it would really be removed: not deleted
+    // loudly, but simplified until it always agrees — which is what a green build looks like when the
+    // artefact was compiled for the wrong machine.
+    why: 'Replaces the readelf architecture check with a constant, so a plugin built for the wrong CPU passes every assertion.',
+    find: 'machine=$(readelf -h "$hit" | sed -n "s/^ *Machine: *//p")',
+    replace: 'machine=AArch64',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-linux-arm.js',
+    // The pipefail trap, reintroduced: `head` closes the pipe, `find` takes SIGPIPE, and `set -e` aborts a
+    // search that found exactly what it was looking for. It looks like a missing artifact.
+    why: 'Goes back to `find | head -n 1`, which trips pipefail on a successful search and reports a format that was built as missing.',
+    find: 'find ${LINUX_ASSETS} -type f -name "$file" -print -quit',
+    replace: 'find ${LINUX_ASSETS} -type f -name "$file" | head -n 1',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-linux-arm-build.yml',
+    // An x86-64 runner would build a plugin for the wrong machine and every file-exists check would pass —
+    // the single most likely way this route ships something that cannot load on the hardware it names.
+    why: 'Points the Linux ARM build at an x86-64 runner, where it would produce a plugin no Raspberry Pi can load and still go green.',
+    find: '    runs-on: ubuntu-24.04-arm',
+    replace: '    runs-on: ubuntu-latest',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'AGENTS.md',
+    // With one shared generator, a change to it invalidates all three routes' evidence at once. The one
+    // place that says so is where a session reads it before dispatching.
+    why: 'Drops the Linux ARM job from the list of workflows AGENTS.md says must all be dispatched after a shared change, so a shared edit leaves one route proven against code that no longer exists.',
+    find: '.github/workflows/audio-plugin-linux-arm-build.yml',
+    replace: '.github/workflows/audio-plugin-linux-build.yml',
+  },
+  {
     guard: 'verify-audio-measure.mjs',
     file: 'server/src/lib/audio/analysis.js',
     // THE CLASSIC WINDOWING BUG, as a mutation: dropping the window's coherent gain makes every amplitude read
