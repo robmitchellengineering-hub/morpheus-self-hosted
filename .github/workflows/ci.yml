@@ -413,6 +413,13 @@ jobs:
       - name: The audio-plugin target generates a project that builds
         run: node scripts/verify-audio-plugin.mjs
 
+      # The measurement library: every assertion is a signal whose answer is known independently (a coherent
+      # sine's FFT peak is N/2; a pure sine's THD is zero; 8-bit SQNR is 6.02N + 1.76). It is the engine the
+      # plugin test bench, the capture rig and the quantization playground all stand on, so it is checked on
+      # every pull request rather than when someone remembers.
+      - name: Audio measurement library
+        run: node scripts/verify-audio-measure.mjs
+
       # The portable download used to be a hand-run mirror that shipped a tree a month out of
       # date. This asserts it is generated during the build, selects the real product, and says
       # what it does NOT contain.

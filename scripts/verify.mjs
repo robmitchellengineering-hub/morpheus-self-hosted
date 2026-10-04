@@ -100,6 +100,7 @@ const HARD = [
   'verify-deck-widget-order.mjs',
   'verify-render-check.mjs',
   'verify-audio-plugin.mjs',
+  'verify-audio-measure.mjs',
   'verify-portable-bundle.mjs',
   'verify-portable-setup.mjs',
   'verify-portable-remote.mjs',
