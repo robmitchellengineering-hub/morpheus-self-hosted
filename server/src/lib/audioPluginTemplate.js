@@ -459,6 +459,20 @@ endif()
 if (UNIX AND NOT APPLE)
   set(RTAUDIO_API_JACK FALSE CACHE BOOL "no JACK — ALSA only" FORCE)
   set(RTMIDI_API_JACK FALSE CACHE BOOL "no JACK — the plugin opens no MIDI ports" FORCE)
+
+  # ⚠️ AND THE SAME LESSON, LEARNED FROM THE FIRST LINUX BUILD. The VST3 SDK is compiled into a STATIC
+  # library (base-sdk-vst3), and CMake does not build static libraries position-independent by default. The
+  # VST3 wrapper here is a SHARED OBJECT, so the link failed on the runner:
+  #
+  #   /usr/bin/ld: libbase-sdk-vst3.a(vstparameters.cpp.o): relocation R_AARCH64_ADR_PREL_PG_HI21 against
+  #   symbol '_ZSt19piecewise_construct' ... can not be used when making a shared object; recompile with -fPIC
+  #
+  # It is not an ARM problem — x86-64 Linux fails the same way with R_X86_64_32S, and the two platforms
+  # this project built on before do not have it because MSVC and clang compile position-independent code by
+  # default. So it is set for the WHOLE subtree here, before add_subdirectory, where it reaches the SDK's
+  # static libraries as well as our own targets; setting it on our target alone would not help, because the
+  # relocations that fail are inside the SDK's objects.
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Linux plugins are shared objects" FORCE)
 endif()
 
 add_subdirectory(\${CLAP_WRAPPER_DIR} clap-wrapper)
