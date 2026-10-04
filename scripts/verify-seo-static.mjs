@@ -168,7 +168,39 @@ if (generated) {
     check('the FAQ states the real target count', answers.includes(String(caps.buildTargets.length)));
     check('the FAQ does not repeat either false claim',
       !/no free tier/i.test(answers) && !/not stored on Morpheus/i.test(answers));
+    check('the FAQ answers what the "digital possibility engine" framing means, in the JSON\'s own words',
+      Boolean(caps.possibility) && answers.includes(caps.possibility.body));
   }
+
+  // ── A machine reading morpheus.nz must learn the PRODUCT'S OWN NOUNS ──────────────
+  // Rob, 2026-10-04: talking to an external Gemini about morpheus.nz, it *"cant tell me anything
+  // about the plugin or the personal assistant or talk about it as a digital possibility engine"*.
+  // It could not, and the reason was measurable: every machine surface was generated from a
+  // capability list whose 16 entries named none of them — "Voice" was Jarvis with his name filed
+  // off. So the nouns are pinned here, against the JSON, on the two surfaces a model actually
+  // reads. A rename in the JSON that never reaches the generated files fails this.
+  const NOUNS = ['Jarvis', 'Command Deck', 'dock', 'WordPress', 'digital possibility engine'];
+  for (const [what, text] of [['the static HTML', html], ['llms.txt', llms], ['llms-full.txt', llmsFull]]) {
+    check(`${what} names the assistant, the Deck, the dock and the possibility engine`,
+      Boolean(text) && NOUNS.every((n) => text.includes(n)),
+      NOUNS.filter((n) => !text || !text.includes(n)).join(', '));
+  }
+  const appSrc = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  check('the Deck and Jarvis are real routes in the app, not only words in copy',
+    appSrc.includes('path="/deck"') && appSrc.includes('path="jarvis"'));
+  check('the dock script the copy promises is the one that ships',
+    existsSync(join(ROOT, 'public/plugin.js'))
+    && /data-dock/.test(readFileSync(join(ROOT, 'public/plugin.js'), 'utf8')));
+  // A count in published copy is the "6 platforms" failure waiting to happen, so it is read
+  // from the registry that defines the widgets and asserted against the sentence that quotes it.
+  const widgetCount = (readFileSync(join(ROOT, 'src/pages/CommandDeck/deckWidgets.js'), 'utf8').match(/key:\s*'/g) || []).length;
+  check(`the published widget count is the registry's (${widgetCount})`,
+    widgetCount > 0 && caps.capabilities.some((c) => c.body.includes(`${widgetCount} widgets`)),
+    `deckWidgets.js has ${widgetCount}`);
+  check('the possibility paragraph is in the prerender and in llms.txt, verbatim from the JSON',
+    Boolean(caps.possibility)
+    && html.includes(caps.possibility.title) && html.includes(caps.possibility.body.slice(0, 60))
+    && llms.includes(caps.possibility.title) && llms.includes(caps.possibility.body.slice(0, 60)));
 
   // ── CLOAKING: the prerendered block must not be hidden from people ────────────────
   const section = (html.match(/<section id="seo-landing"[\s\S]*?<\/section>/) || [''])[0];
@@ -182,6 +214,8 @@ if (generated) {
   // The decisive check: a prerender mirrors what the page renders. A bot-only block does
   // not, and this is the line between the two.
   const landingSrc = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
+  check('the page itself renders the possibility paragraph too (it is not in the prerender only)',
+    /MORPHEUS_POSSIBILITY\.title/.test(landingSrc) && /MORPHEUS_POSSIBILITY\.body/.test(landingSrc));
   check('the page itself renders the same capability list (a prerender, not a bot-only block)',
     /MORPHEUS_CAPABILITIES\.map/.test(landingSrc) && /MORPHEUS_BUILD_TARGETS\.map/.test(landingSrc));
   check('the landing page shows all capabilities, not a scroll box',

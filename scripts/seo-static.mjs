@@ -52,7 +52,7 @@ if (!existsSync(DIST)) {
 }
 
 const caps = JSON.parse(readFileSync(join(ROOT, 'src/lib/morpheusCapabilities.json'), 'utf8'));
-const { principle, intro, closing, capabilities = [], examples = [] } = caps;
+const { principle, intro, closing, possibility, capabilities = [], examples = [] } = caps;
 
 // Read the build targets from the code, so a new adapter cannot be forgotten here — the
 // same list reality.mjs reports. "6 platforms" was the explainer docs understating ten.
@@ -121,6 +121,15 @@ const jsonLd = {
           },
         },
         {
+          // The framing Rob uses for the direction of the product, published verbatim from the
+          // capabilities JSON so a model asked "what is Morpheus's digital possibility engine?"
+          // has an answer rather than a guess. `possibility.body` says plainly that it is a
+          // destination and not a shipped feature, so this cannot be read as a claim.
+          '@type': 'Question',
+          name: `What is "${possibility.title}"?`,
+          acceptedAnswer: { '@type': 'Answer', text: possibility.body },
+        },
+        {
           '@type': 'Question',
           name: 'Which platforms can Morpheus build for?',
           acceptedAnswer: {
@@ -161,6 +170,8 @@ const landingSection = `
         <h1>Morpheus — full-stack software, built by chat</h1>
         <p>${esc(principle)}</p>
         <p>${esc(intro)}</p>
+        <h2>${esc(possibility.title)}</h2>
+        <p>${esc(possibility.body)}</p>
         <h2>What Morpheus does</h2>
         <ul>
 ${capabilities.map((c) => `          <li><h3>${esc(c.title)}</h3><p>${esc(c.body)}</p>${c.workflow ? `<p>${esc(c.workflow)}</p>` : ''}</li>`).join('\n')}
@@ -232,6 +243,14 @@ const llmsFull = `# Morpheus — full reference
 
 ${intro}
 
+## ${possibility.title}
+
+${possibility.body}
+
+## What Morpheus does
+
+${capabilities.map((c) => `### ${c.title}\n\n${c.body}${c.workflow ? `\n\nWorkflow: ${c.workflow}` : ''}`).join('\n\n')}
+
 ## User manual
 
 The manual that ships with a build, for every target. Each section covers installing it, starting it, and the
@@ -251,6 +270,10 @@ Morpheus is a chat-driven software builder. You describe an application in plain
 language and it writes the real files — frontend, backend, database schema — reviews
 them, pins them to a GitHub repository you own, and compiles a native build. It runs
 from a phone as well as a desktop.
+
+## ${possibility.title}
+
+${possibility.body}
 
 ## What Morpheus does
 

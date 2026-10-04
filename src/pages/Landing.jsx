@@ -8,7 +8,7 @@ import DonationThankYouModal from '@/components/matrix/DonationThankYouModal';
 import SuggestionBox from '@/components/matrix/SuggestionBox';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useAuth } from '@/lib/AuthContext';
-import { MORPHEUS_PRINCIPLE, MORPHEUS_CAPABILITIES, MORPHEUS_BUILD_TARGETS } from '@/lib/morpheusCapabilities';
+import { MORPHEUS_PRINCIPLE, MORPHEUS_CAPABILITIES, MORPHEUS_BUILD_TARGETS, MORPHEUS_POSSIBILITY } from '@/lib/morpheusCapabilities';
 
 const BOOT_TEXT = 'Wake up. The Construct has you. Follow the white rabbit.';
 
@@ -203,12 +203,26 @@ export default function Landing() {
             <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// CORE PRINCIPLE</p>
             <p className="text-ink font-display tracking-wide neon-glow text-sm mt-1">{MORPHEUS_PRINCIPLE}</p>
           </div>
+          {/* Where this is going, as opposed to what ships today. It is rendered here, in
+              the open, because the same sentence is in the build-time prerender and in
+              llms.txt — a prerender has to mirror what a human can see or it is cloaking,
+              and scripts/verify-seo-static.mjs fails the build if it does not. Read by a
+              machine, it answers "what is Morpheus's digital possibility engine?" with the
+              product's own words; read by a person, it says where this is headed before the
+              feature list starts. `possibility.body` states outright that it is a
+              destination rather than a shipped feature, so it claims nothing it cannot. */}
+          <div className="border-b border-primary/30 pb-2 mb-3">
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// {MORPHEUS_POSSIBILITY.title}</p>
+            <p className="text-xs text-ink-strong leading-snug mt-1">{MORPHEUS_POSSIBILITY.body}</p>
+          </div>
           <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// CAPABILITIES</p>
-          {/* Was `max-h-44 overflow-y-auto` — a 16-item list behind a scrollbar inside a
+          {/* Was `max-h-44 overflow-y-auto` — the whole list behind a scrollbar inside a
               card, on a page whose whole point is telling a first-time visitor what this
               is. Showing the list in full is also what the build-time prerender in
               scripts/seo-static.mjs mirrors, so the static HTML and the rendered page say
-              the same thing. */}
+              the same thing. (This comment used to name the count; the count is in the JSON
+              and guarded against the widget registry, so repeating it here was just one
+              more place for it to go stale.) */}
           <ul className="space-y-1.5">
             {MORPHEUS_CAPABILITIES.map((c) => (
               <li key={c.title} className="text-xs leading-snug">

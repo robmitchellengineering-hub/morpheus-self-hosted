@@ -484,6 +484,20 @@ export const MUTATIONS = [
     replace: '"ios-app", "linux-binary-x", "linux-distro"',
   },
   {
+    guard: 'verify-seo-static.mjs',
+    file: 'src/lib/morpheusCapabilities.json',
+    why: 'Renames the assistant to an unnamed one, which is the state the surface was actually in: every machine-readable file was generated from a capability list that never said "Jarvis", so an AI asked about the personal assistant could not answer.',
+    find: '{ "title": "Jarvis — the personal assistant"',
+    replace: '{ "title": "The personal assistant"',
+  },
+  {
+    guard: 'verify-seo-static.mjs',
+    file: 'src/lib/morpheusCapabilities.json',
+    why: 'Changes the published widget count so the landing page and llms.txt quote a number the widget registry does not have — the "6 platforms" drift, one number smaller. (The count is read from src/pages/CommandDeck/deckWidgets.js, so a widget added without updating the copy fails the same check.)',
+    find: 'with 15 widgets across business',
+    replace: 'with 16 widgets across business',
+  },
+  {
     guard: 'verify-bootstrap-sql.mjs',
     file: 'server/prisma/manual-supabase-init.sql',
     why: 'Removes a column the migrations add — exactly the drift that shipped: a fresh self-host came up missing seventeen columns and said nothing, because readers fall back to the pre-migration shape (H11).',

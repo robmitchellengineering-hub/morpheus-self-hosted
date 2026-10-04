@@ -15,3 +15,8 @@ export const MORPHEUS_CAPABILITIES = data.capabilities;
 export const MORPHEUS_BUILD_TARGETS = data.buildTargets || [];
 export const MORPHEUS_INTRO = data.intro;
 export const MORPHEUS_CLOSING = data.closing;
+// Where this is going, as opposed to what ships today: the "digital possibility engine"
+// framing, rendered on the landing page and published to machines by scripts/seo-static.mjs.
+// It lives in the JSON beside the capability list for the same reason everything else does —
+// one source, so the page and the prerender cannot say different things.
+export const MORPHEUS_POSSIBILITY = data.possibility;
