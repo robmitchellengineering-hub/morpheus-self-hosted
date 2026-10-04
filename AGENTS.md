@@ -186,14 +186,16 @@ catalog is the source of truth for what exists; the table below is the map, and
   error-boundary screen, a bounce to `/login`, or a page that rendered nothing. Pass routes of
   your own to check just those: `npm run render:check -- /deck/settings`.
 - **A compile target is proven by running it, never by reading the adapter** (`morpheus-build-library`
-  → `compile-targets`). Most targets are smoke-tested on a runner by `scripts/compile-smoke.mjs`. The
-  **`audio-plugin-macos`** target has its own manual workflow, because one of its four formats cannot be
-  built here: the standalone's macOS shell needs full Xcode, and this machine has only the Command Line
-  Tools. **After changing anything under `server/src/lib/compile-targets/audio-plugin-macos.js` or
-  `server/src/lib/audioPluginTemplate.js`, dispatch**
-  `.github/workflows/audio-plugin-macos-build.yml` (`gh workflow run audio-plugin-macos-build.yml --ref main`). It
-  materialises what the target generates and runs the target's own steps on `macos-latest`, then uploads
-  the packaged plugins. It is `workflow_dispatch`-only on purpose: macOS runner minutes bill at 10x.
+  → `compile-targets`). Most targets are smoke-tested on a runner by `scripts/compile-smoke.mjs`. The two
+  **audio plugin** routes have their own manual workflows, because neither can be built here: the macOS
+  standalone's shell needs full Xcode and this machine has only the Command Line Tools, and the Windows
+  route needs MSVC. **The project is SHARED between those routes** (`server/src/lib/audioPluginProject.js`
+  generates it, `…/audioPluginTemplate.js` holds the sources), so **after changing either target, the shared
+  module or the template, dispatch BOTH:**
+  `.github/workflows/audio-plugin-macos-build.yml` and `.github/workflows/audio-plugin-windows-build.yml`
+  (`gh workflow run <file> --ref main`). Each materialises what its own target generates and runs that
+  target's own steps, then uploads the packaged plugins. They are `workflow_dispatch`-only on purpose:
+  macOS runner minutes bill at 10x and Windows at 2x.
 - **A route that builds for one machine says so — in the id, the label, the downloads and the manual.**
   Rob, 2026-10-04: *"It needs to be clear that that's a macOS only audio plugin route, same for the
   Windows one."* A plugin is the case that makes this load-bearing, because `VST3` exists on more than one

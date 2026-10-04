@@ -4,7 +4,7 @@
 // `.component` cannot exist on any other machine, and none of these bundles load on Windows. A user must
 // know which machine their plugin is for *before* they build it — so the id is `audio-plugin-macos`, the
 // picker entry says macOS, every download is `plugin-macos-*.zip`, and the manual opens by saying it.
-// Windows is a separate route, not a second leg of this one.
+// Windows is a separate route (`audio-plugin-windows`), not a second leg of this one.
 //
 // WHY THIS TARGET EXISTS, and why it is not "another like the other nine".
 //
@@ -30,74 +30,22 @@
 //      A "did we produce a plugin file?" check passes on that. So the build verifies the BINARY inside
 //      every bundle, and builds each format as its own target so one failure cannot strand another.
 //
-// macOS only, and the route is named for it rather than for the format. Windows will be a SEPARATE target
+// macOS only, and the route is named for it rather than for the format. Windows is a SEPARATE target
 // (`audio-plugin-windows`) rather than a second leg of this one: an OS is not a build-matrix detail the
 // user can be left to infer from a filename, and what a Windows plugin can even contain is different
 // (VST3 + CLAP + standalone — there is no Audio Unit outside Apple's platforms).
+//
+// The PROJECT both routes generate — identity, validation, the four files — is in lib/audioPluginProject.js,
+// shared deliberately: two copies of a generator is how two routes come to build different plugins while
+// both look correct.
+import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO } from '../audioPluginProject.js';
 import {
-  auSubtypeCode, cmakeLists, entrySource, pluginSource, pluginId, fourCharCode,
-} from '../audioPluginTemplate.js';
-import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './utils.js';
+  PLUGIN_ENTRY, PLUGIN_MANIFEST, PLUGIN_SOURCE, readManifest, scaffoldPlugin, validatePlugin,
+} from '../audioPluginProject.js';
 
-/**
- * PINNED TO A TAG, NOT A BRANCH, and it is not cosmetic.
- *
- * clap-wrapper is fetched from GitHub and compiled as part of every user's build, so `main` would mean the
- * same project builds differently on two different days, and an upstream force-push could change what
- * somebody ships without a line of this repository moving. A tag is also what makes a failure reproducible:
- * "it worked yesterday" is only a useful sentence if yesterday is a fixed commit.
- *
- * IT IS A COMMIT, NOT A TAG, AND THAT IS FORCED ON US. The newest release, v0.9.1, does not provide
- * `make_clapfirst_plugins` at all — the command this target is built on — so pinning to a tag means the
- * build cannot configure. Verified by trying it: v0.9.1 fails with `Unknown CMake command
- * "make_clapfirst_plugins"`, and its `shared_prologue.cmake` also evaluates an unquoted
- * `CMAKE_OSX_DEPLOYMENT_TARGET`, which CMake leaves EMPTY because the cache entry already exists (see the
- * Configure step, which now passes it explicitly). This commit is the one that was built, wrapped and
- * loaded through the real harness. Move it only onto a release that has the command.
- */
-const CLAP_WRAPPER_REPO = 'https://github.com/free-audio/clap-wrapper.git';
-const CLAP_WRAPPER_REF = '1cca996e96f29ab2be7ae9f8cfe532bbc92e1dd6';
-
-/** The identity file the scaffold writes, and the one place a plugin's name/ID/codes are edited. */
-export const PLUGIN_MANIFEST = 'morpheus.plugin.json';
-
-/** Where a hand-written project keeps its source, if the user brought one. */
-export const PLUGIN_SOURCE = 'Source/Plugin.cpp';
-export const PLUGIN_ENTRY = 'Source/PluginEntry.cpp';
-
-const DEFAULTS = { name: 'Morpheus Plugin', version: '1.0.0', paramName: 'Gain' };
-
-/**
- * The plugin's identity, from the manifest if there is one.
- *
- * The manifest exists because `scaffold(files)` is given the project's FILES and nothing else — not the
- * project name — so the identity has to live in the files or be lost. It also happens to be the right
- * design: the name, bundle id and AU codes are what the user sees in their DAW, so they should be a file
- * they can read and edit rather than something buried in a generator.
- */
-export function readManifest(files) {
-  const raw = getFileContent(files, PLUGIN_MANIFEST);
-  let parsed = {};
-  if (raw) {
-    try { parsed = JSON.parse(raw) || {}; } catch { parsed = {}; }
-  }
-  const pkg = parsePackageJson(files);
-  const name = String(parsed.name || pkg?.name || DEFAULTS.name).trim() || DEFAULTS.name;
-  const vendor = String(parsed.vendor || 'Morpheus').trim() || 'Morpheus';
-  return {
-    name,
-    vendor,
-    version: String(parsed.version || DEFAULTS.version),
-    id: String(parsed.id || pluginId(name)),
-    paramName: String(parsed.parameter || DEFAULTS.paramName),
-    description: parsed.description ? String(parsed.description) : '',
-    // `aufx` = audio effect, `augn` = instrument. The generator sets this from the request; a plugin with
-    // the wrong one is filed under the wrong heading in Logic and cannot be found.
-    auType: String(parsed.auType || 'aufx'),
-    auSubtype: String(parsed.auSubtype || auSubtypeCode(name)),
-    auManufacturer: String(parsed.auManufacturer || fourCharCode(vendor, 'Morp')),
-  };
-}
+// Re-exported because this module's id is where the shared project is reached from, and the guard reads
+// the identity file's name out of here.
+export { PLUGIN_ENTRY, PLUGIN_MANIFEST, PLUGIN_SOURCE, readManifest };
 
 export const audioPlugin = {
   id: 'audio-plugin-macos',
@@ -107,82 +55,8 @@ export const audioPlugin = {
   label: 'Audio Plugin — macOS (VST3 · AU · CLAP)',
   runner: 'macos-latest',
 
-  validate(files) {
-    const warnings = [];
-    const manifest = readManifest(files);
-    const hasSource = hasFile(files, PLUGIN_SOURCE);
-    const hasCmake = hasFile(files, 'CMakeLists.txt');
-
-    // A project that brought its own CLAP source is compiled as-is. That is a supported path — it is how
-    // someone continues work on a plugin Morpheus generated earlier — so it is a note, not an error.
-    if (hasSource && hasCmake) {
-      warnings.push('Using the CLAP project already in this workspace; Morpheus will not overwrite Source/Plugin.cpp.');
-    }
-    if (hasSource && !hasCmake) {
-      warnings.push('Source/Plugin.cpp is present but there is no CMakeLists.txt — one will be generated around it.');
-    }
-    // The AU codes are four characters and are how Logic names and finds the plugin. Two plugins sharing
-    // a subtype shadow each other, which is invisible until one goes missing.
-    if (manifest.auSubtype.length !== 4 || manifest.auManufacturer.length !== 4) {
-      warnings.push('AU registration codes are not four characters; Logic may not list this plugin correctly.');
-    }
-    if (!/^[a-z0-9]+(\.[a-z0-9-]+)+$/.test(manifest.id)) {
-      warnings.push(`Plugin id "${manifest.id}" does not look like a reverse-domain identifier.`);
-    }
-    return { valid: true, warnings };
-  },
-
-  /**
-   * Generate the plugin project. Anything already present is left alone, so this is safe to run over a
-   * project someone has edited — regenerating a user's DSP would be the worst possible behaviour here.
-   */
-  scaffold(files) {
-    const warnings = [];
-    const generated = [];
-    const out = cloneFiles(files);
-    const manifest = readManifest(files);
-
-    const add = (path, content) => {
-      if (hasFile(out, path)) return;
-      out.push({ path, content });
-      generated.push(path);
-    };
-
-    add(PLUGIN_MANIFEST, `${JSON.stringify({
-      name: manifest.name,
-      vendor: manifest.vendor,
-      version: manifest.version,
-      id: manifest.id,
-      parameter: manifest.paramName,
-      description: manifest.description,
-      auType: manifest.auType,
-      auSubtype: manifest.auSubtype,
-      auManufacturer: manifest.auManufacturer,
-    }, null, 2)}\n`);
-
-    add(PLUGIN_SOURCE, pluginSource(manifest));
-    add(PLUGIN_ENTRY, entrySource());
-    add('CMakeLists.txt', cmakeLists({
-      name: manifest.name,
-      id: manifest.id,
-      version: manifest.version,
-      auType: manifest.auType,
-      auSubtype: manifest.auSubtype,
-      auManufacturer: manifest.auManufacturer,
-      auManufacturerName: manifest.vendor,
-    }));
-
-    // The entry file exports three symbols that our Plugin.cpp defines. Over somebody else's source that
-    // is a link error with no explanation, so say it here rather than in a build log they will not read.
-    if (hasFile(files, PLUGIN_SOURCE) && generated.includes(PLUGIN_ENTRY)) {
-      warnings.push(
-        `${PLUGIN_ENTRY} was generated to match Morpheus's own source, so your ${PLUGIN_SOURCE} must export `
-        + 'morpheus_plugin_init, morpheus_plugin_deinit and morpheus_plugin_get_factory — or supply your own '
-        + `${PLUGIN_ENTRY}.`,
-      );
-    }
-    return { files: out, generated, warnings };
-  },
+  validate: validatePlugin,
+  scaffold: scaffoldPlugin,
 
   buildSteps(files) {
     const manifest = readManifest(files);
@@ -196,8 +70,8 @@ export const audioPlugin = {
       {
         name: 'Fetch the plugin wrappers',
         // Shallow and pinned: this is third-party code executed as part of the user's build, so the ref is
-        // a constant in this file rather than whatever main happens to be.
-        // `--branch` accepts a tag OR a commit, and a commit is what the pin is (see CLAP_WRAPPER_REF).
+        // a constant rather than whatever main happens to be. `--branch` accepts a tag OR a commit, and a
+        // commit is what the pin is (see CLAP_WRAPPER_REF).
         run: `git clone ${CLAP_WRAPPER_REPO} "$RUNNER_TEMP/clap-wrapper" && git -C "$RUNNER_TEMP/clap-wrapper" checkout ${CLAP_WRAPPER_REF}`,
       },
 

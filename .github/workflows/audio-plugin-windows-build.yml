@@ -1,0 +1,58 @@
+# Build the audio-plugin-windows target for real, on a Windows runner.
+#
+# WHY THIS EXISTS
+#
+# `audio-plugin-windows` emits VST3 + CLAP + a standalone .exe from one CLAP source, and none of it can be
+# built anywhere but Windows: the generated project uses the Visual Studio generator and MSVC, and a plugin
+# that fails to load produces no error message at all — it simply never appears in the DAW.
+#
+# The rest of CI does not cover this. The required checks prove the GUARDS — that the target generates the
+# right project and that its steps are the ones a user's workflow would run — on ubuntu, with no MSVC and no
+# Windows. The plugin itself is only built when a user compiles, in their own repo. This workflow is the
+# cheapest thing that closes that gap: it materialises what the target generates and runs the target's OWN
+# steps, so a command changed in the target changes here too.
+#
+# MANUAL ONLY, DELIBERATELY. Windows runner minutes bill at 2x, and this builds third-party SDKs, so it must
+# never run on a pull request or a push. Dispatch it by hand when the target or the shared template changes:
+#
+#   gh workflow run audio-plugin-windows-build.yml --ref main
+#
+# It uploads the packaged plugins, so a run can be inspected — and a real plugin loaded in a DAW — rather
+# than taken on trust. The macOS route has its own workflow, for the same reason and the same shape.
+name: Audio plugin build (Windows)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audio-plugin-windows:
+    name: audio-plugin-windows (all three formats)
+    runs-on: windows-latest
+    # Configure downloads the VST3 SDK, RtAudio, RtMidi and the Windows Implementation Library, then builds
+    # three formats with MSVC. Generous, but a hang must not sit on a runner for an hour.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Everything else — the wrapper clone, configure, the three builds, the PE/entry-point verification and
+      # the packaging — is the target's own step list, executed by this script. See its header for why it
+      # does not re-type a single command.
+      - name: Build and verify every format the target emits
+        run: node scripts/audio-plugin-windows-runner-build.mjs
+
+      # `if-no-files-found: error` is the second half of the check: if a format's zip is missing, the run
+      # fails here rather than passing with two of three artifacts.
+      - name: Keep the packaged plugins, so the run can be inspected rather than believed
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-plugin-windows
+          path: ${{ runner.temp }}/audio-plugin-windows-build/build/assets/*.zip
+          if-no-files-found: error
+          retention-days: 7
