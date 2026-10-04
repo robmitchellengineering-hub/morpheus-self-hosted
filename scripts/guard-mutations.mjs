@@ -716,6 +716,13 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/buildProof.js',
+    why: 'Stops printing the proof into the build log, so the evidence exists only as a file nobody has downloaded yet.',
+    find: 'export const proofShowBash = `cat ${BUILD_PROOF_FILE}`;',
+    replace: 'export const proofShowBash = `true`;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
     // ⭐ The check that stops the whole exercise being vacuous: a model that does nothing nulls perfectly
     // against a reference that also does nothing.

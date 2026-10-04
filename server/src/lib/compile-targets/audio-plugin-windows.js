@@ -29,7 +29,7 @@
 // commands and the packaging differ.
 import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO, PLUGIN_MANIFEST, readManifest, scaffoldPlugin, validatePlugin } from '../audioPluginProject.js';
 import { namPlan } from '../namPlugin.js';
-import { BUILD_PROOF_FILE, proofHeaderPowerShell, proofPowerShell } from '../buildProof.js';
+import { BUILD_PROOF_FILE, proofHeaderPowerShell, proofPowerShell, proofShowPowerShell } from '../buildProof.js';
 
 export { PLUGIN_MANIFEST, readManifest };
 
@@ -189,6 +189,7 @@ export const audioPlugin = {
           // proof file with the line missing.
           proofHeaderPowerShell({ target: 'audio-plugin-windows', targetLabel: 'Audio Plugin — Windows (VST3 · CLAP)' }),
           proofPowerShell({ formats: [['CLAP', ''], ['VST3', ''], ['standalone', '']] }),
+          proofShowPowerShell,
           'Write-Host "all three formats produced, each a PE image with its real entry point"',
           `Write-Host "wrote ${BUILD_PROOF_FILE}: what this build verified, for the download beside it"`,
         ].join('\n'),

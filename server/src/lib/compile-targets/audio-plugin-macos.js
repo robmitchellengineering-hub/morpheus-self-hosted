@@ -43,7 +43,7 @@ import {
   PLUGIN_ENTRY, PLUGIN_MANIFEST, PLUGIN_SOURCE, readManifest, scaffoldPlugin, validatePlugin,
 } from '../audioPluginProject.js';
 import { namPlan } from '../namPlugin.js';
-import { BUILD_PROOF_FILE, proofBash, proofHeaderBash } from '../buildProof.js';
+import { BUILD_PROOF_FILE, proofBash, proofHeaderBash, proofShowBash } from '../buildProof.js';
 
 // Re-exported because this module's id is where the shared project is reached from, and the guard reads
 // the identity file's name out of here.
@@ -167,6 +167,7 @@ export const audioPlugin = {
           // proof file with the line missing.
           proofHeaderBash({ target: 'audio-plugin-macos', targetLabel: 'Audio Plugin — macOS (VST3 · AU · CLAP)' }),
           proofBash({ formats: [['CLAP', ''], ['VST3', ''], ['AU', ''], ['standalone', '']] }),
+          proofShowBash,
           'echo "all four formats produced, each with a binary and a real entry point"',
           `echo "wrote ${BUILD_PROOF_FILE}: what this build verified, for the download beside it"`,
         ].join('\n'),

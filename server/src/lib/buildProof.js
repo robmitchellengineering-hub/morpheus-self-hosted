@@ -113,6 +113,18 @@ export function proofPowerShell({ formats }) {
   ].join('\n');
 }
 
+/**
+ * Print the finished file to the job's log.
+ *
+ * Not decoration: the file lands in the user's `_compiled/`, and a build's own log is the other place someone
+ * looks. Printing it also means the evidence is in the run record, so a run that produced it can be read
+ * without downloading anything.
+ */
+export const proofShowBash = `cat ${BUILD_PROOF_FILE}`;
+
+/** The same, in PowerShell. */
+export const proofShowPowerShell = `Get-Content -Path '${BUILD_PROOF_FILE}'`;
+
 /** How a route writes the fixed header, before the facts are appended. Bash. */
 export function proofHeaderBash({ target, targetLabel }) {
   return `cat > ${BUILD_PROOF_FILE} <<'${PROOF_DELIMITER}'

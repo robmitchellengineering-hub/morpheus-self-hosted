@@ -913,6 +913,9 @@ for (const [route, target, stepName] of proofTargets) {
     guarded && verify.indexOf(proof.BUILD_PROOF_FILE) > verify.search(/did not produce usable plugins|MISSING BUNDLE/), true);
   check(`${route}: …from the same values the assertions used, not from a second look`,
     /proof_/.test(verify) && verify.split('\n').length > 20, true);
+  // Printed to the job log as well as published: a run's own record is the other place someone looks, and a
+  // proof that only exists as a download is one you have to go and fetch before you can read it.
+  check(`${route}: …and echoed into the run's log`, /cat BUILD-PROOF\.txt|Get-Content/.test(verify), true);
 }
 check('every format the Linux route promises is named in its proof',
   audioPluginLinux.buildSteps(audioPluginLinux.scaffold(empty).files)

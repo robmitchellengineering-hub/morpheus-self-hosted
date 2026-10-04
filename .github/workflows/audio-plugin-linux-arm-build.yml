@@ -97,5 +97,7 @@ jobs:
           path: |
             ${{ runner.temp }}/audio-plugin-linux-arm-build/build/assets/*.zip
             ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/build/assets/*.zip
+            ${{ runner.temp }}/audio-plugin-linux-arm-build/BUILD-PROOF.txt
+            ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/BUILD-PROOF.txt
           if-no-files-found: error
           retention-days: 7
