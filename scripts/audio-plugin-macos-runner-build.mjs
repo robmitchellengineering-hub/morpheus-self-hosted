@@ -16,8 +16,8 @@
 //
 // USAGE
 //
-//   node scripts/audio-plugin-runner-build.mjs
-//   AUDIO_PLUGIN_BUILD_DIR=/tmp/ap node scripts/audio-plugin-runner-build.mjs
+//   node scripts/audio-plugin-macos-runner-build.mjs
+//   AUDIO_PLUGIN_BUILD_DIR=/tmp/ap node scripts/audio-plugin-macos-runner-build.mjs
 //
 // Exits non-zero on the first step that fails, and again if the standalone was not produced. macOS only:
 // the steps use `sysctl`, `nm`, `lipo` and `ditto`, and the standalone needs Xcode. Actions bills macOS at
@@ -26,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import audioPlugin from '../server/src/lib/compile-targets/audio-plugin.js';
+import audioPlugin from '../server/src/lib/compile-targets/audio-plugin-macos.js';
 
 const log = (m) => console.log(`[audio-plugin] ${m}`);
 

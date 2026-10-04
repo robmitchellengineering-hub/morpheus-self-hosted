@@ -19,6 +19,7 @@
 // next row cannot reintroduce it").
 import { readFileSync } from 'node:fs';
 import { COMPILE_TARGETS, targetOptions } from '../src/lib/compileTargets.js';
+import { listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 import { checklistRows, isOptionalRow, remainingCount } from '../src/lib/onrampChecklist.js';
 import { APP_KINDS, APP_KIND_SCHEMA, needsFor, normalizeAppKind } from '../server/src/lib/appKind.js';
 
@@ -50,14 +51,46 @@ for (const style of ['create', 'import', 'bar']) {
   check(`every target has a "${style}" label`, missing.join(','), '');
 }
 
+console.log('\n2b. the picker offers every target the server can actually build');
+// ⚠️ THIS IS HOW THE AUDIO PLUGIN ROUTE SHIPPED INVISIBLE (2026-10-04). There are TWO lists — the server
+// registry that knows how to build each target, and this picker that lets a user choose one — and nothing
+// compared them. `audio-plugin` was in the registry, absent here, and therefore unchoosable: zero of the
+// 17 projects in production had ever used it, against a target with a 89-check guard suite, a green
+// `mutate-guards` run and a proven build on a runner. **A target nobody can pick is a target that does not
+// exist**, and this is one line because both lists are data — the same shape as the SEO guard that pins the
+// published target list to the compile-targets directory, which is why THAT drift could not happen.
+const serverTargets = listCompileTargets();
+check('no server target is missing from the picker', serverTargets.filter((id) => !values.includes(id)).join(','), '');
+// `source` is deliberate: "Source code only" is a choice about what you receive, not a compiler that runs.
+const PSEUDO = ['source'];
+check('…and the picker offers nothing the server cannot build',
+  values.filter((v) => !PSEUDO.includes(v) && !serverTargets.includes(v)).join(','), '');
+
+console.log('\n2c. a route bound to one machine says so in the words a user reads');
+// An id is not what a user sees — the label is. Every route whose id names a platform must say that
+// platform in the label, because `VST3` (unlike `.dmg` or `.exe`) exists on more than one machine, so a
+// label naming only formats reads as "builds for whatever you are on". The audio plugin route shipped
+// exactly like that: `Audio Plugin (VST3 · AU · CLAP)`, on a target that can only emit macOS bundles.
+const OS_WORDS = { macos: /mac/i, windows: /windows/i, linux: /linux/i, ios: /ios/i, android: /android/i, rpi: /raspberry|rpi/i };
+const OS_ROUTES = values
+  .map((v) => [v, Object.keys(OS_WORDS).find((w) => v.includes(w))])
+  .filter(([, w]) => w);
+check('there are OS-bound routes to check at all', OS_ROUTES.length >= 5, true);
+check('…and each one\'s label names that machine', OS_ROUTES.filter(([v, w]) => {
+  const t = COMPILE_TARGETS.find((x) => x.value === v);
+  return !OS_WORDS[w].test(`${t.create} ${t.import} ${t.bar}`);
+}).join(','), '');
+
 console.log('\n3. every surface renders from that one list, in that one order');
 const SURFACES = [
   ['src/components/matrix/NewProjectDialog.jsx', 'create'],
   ['src/components/matrix/ProjectBar.jsx', 'bar'],
   ['src/components/matrix/ImportGithubDialog.jsx', 'import'],
 ];
-// Any of these literals in a surface means it went back to its own copy of the list.
-const HARDCODED = /\{\s*value:\s*'(source|windows-exe|mac-app|linux-binary|android-apk|ios-app|python-package|web-app|rpi-distro|linux-distro|arduino-firmware)'/g;
+// Any of these literals in a surface means it went back to its own copy of the list. Built from `values`
+// rather than written out: the hardcoded copy of this list was itself a drift site, and it had already
+// missed a target by the time anyone looked.
+const HARDCODED = new RegExp(`\\{\\s*value:\\s*'(${values.join('|')})'`, 'g');
 for (const [file, style] of SURFACES) {
   const src = read(file);
   check(`${file} renders targetOptions('${style}')`, src.includes(`targetOptions('${style}')`), true);

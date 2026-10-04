@@ -174,6 +174,25 @@ export const MUTATIONS = [
     replace: "export const WORDPRESS_ROWS = ['site'];",
   },
   {
+    guard: 'verify-onramp.mjs',
+    file: 'src/lib/compileTargets.js',
+    // THE INVISIBLE-TARGET FAILURE, as a mutation. This is not hypothetical: the audio plugin route shipped
+    // exactly like this — in the server registry, absent from the picker, unchoosable — and every other
+    // guard stayed green, because a target that cannot be selected is only visible by comparing two lists.
+    why: 'Removes the macOS audio plugin route from the picker, so a target the server can build cannot be chosen — the state the route actually shipped in.',
+    find: "  { value: 'audio-plugin-macos', create: 'macOS audio plugin — VST3, AU or CLAP (build locally)', import: 'macOS audio plugin — VST3, AU or CLAP', bar: 'mac audio plugin' },\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-onramp.mjs',
+    file: 'src/lib/compileTargets.js',
+    // The wording claim on its own: the route is still pickable, but a musician on Windows can no longer
+    // tell it is not for them until after they have built it.
+    why: 'Drops the platform from the audio plugin route\'s label, so a macOS-only plugin is advertised as though it were built for whatever machine the reader is on.',
+    find: "create: 'macOS audio plugin — VST3, AU or CLAP (build locally)', import: 'macOS audio plugin — VST3, AU or CLAP', bar: 'mac audio plugin' },",
+    replace: "create: 'Audio plugin (build locally)', import: 'Audio plugin', bar: 'audio plugin' },",
+  },
+  {
     guard: 'verify-google-reconnect.mjs',
     file: 'server/src/lib/googleReconnect.js',
     why: 'Removes the revoked-token reason, so the one failure that means "reconnect Google" stops being distinguishable from the others.',
@@ -243,7 +262,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/compile-targets/audio-plugin.js',
+    file: 'server/src/lib/compile-targets/audio-plugin-macos.js',
     // THE COLLAPSED-SCRIPT BUG. A literal backslash-n instead of a newline turns the whole verification
     // shell script into ONE LINE carrying escape sequences — so the check that exists to catch an empty
     // plugin bundle cannot run at all, which is worse than not having it.
@@ -253,7 +272,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/compile-targets/audio-plugin.js',
+    file: 'server/src/lib/compile-targets/audio-plugin-macos.js',
     // A moving ref is the quiet one: the build keeps working, and two people building the same project
     // on different days get different binaries from a dependency they did not choose and cannot see.
     why: 'Un-pins the plugin wrappers from a fixed commit to a branch, so the same project builds differently over time and an upstream force-push changes what a user ships.',
@@ -262,7 +281,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/compile-targets/audio-plugin.js',
+    file: 'server/src/lib/compile-targets/audio-plugin-macos.js',
     // THE empty-bundle failure, as a mutation: the check degrades from "there is a Mach-O inside this
     // bundle" to "this directory exists", which is exactly the check that passed while a 4 KB VST3 shell
     // sat on disk where a 1.3 MB plugin should have been.
@@ -281,7 +300,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/compile-targets/audio-plugin.js',
+    file: 'server/src/lib/compile-targets/audio-plugin-macos.js',
     // Regenerating over somebody's DSP is the worst thing this target could do, so the guard asserts it
     // cannot happen. This mutation makes the scaffold overwrite whatever is already there.
     why: 'Lets the scaffold overwrite files that already exist, so compiling a project Morpheus generated earlier would silently replace the edits the user made to their own plugin.',
@@ -290,7 +309,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: '.github/workflows/audio-plugin-build.yml',
+    file: '.github/workflows/audio-plugin-macos-build.yml',
     // THE COST GATE, as a mutation. Nothing about the build stops working when this line appears — it just
     // starts running on every pull request, on a runner that bills at 10x, which is a bill rather than a
     // failure. That is exactly the kind of edit a guard has to catch, because nothing else would notice.
@@ -300,7 +319,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: '.github/workflows/audio-plugin-build.yml',
+    file: '.github/workflows/audio-plugin-macos-build.yml',
     // The run would still be green while shipping three formats of four: the standalone is the one format no
     // local machine has ever built, so a missing zip has to fail the job rather than quietly not be there.
     why: 'Drops the failure-on-missing-artifact setting, so a run that produced no standalone still uploads three plugins and passes.',
@@ -309,7 +328,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'scripts/audio-plugin-runner-build.mjs',
+    file: 'scripts/audio-plugin-macos-runner-build.mjs',
     // THE DRIFT FAILURE, as a mutation: a transcribed command keeps the runner green after the target has
     // moved on, so the job proves a build nobody ships. The claim is that the commands come from the target.
     why: 'Replaces the target\'s own step with a hand-written command, so the runner build can drift from what the target generates and still pass.',
@@ -318,7 +337,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'scripts/audio-plugin-runner-build.mjs',
+    file: 'scripts/audio-plugin-macos-runner-build.mjs',
     // The refusal that makes the job mean anything. Left in place with the condition defeated, the script
     // still prints its summary and exits 0 on a machine that produced three formats — which is exactly the
     // green run this job exists to make impossible. Note this is why the assertion is on the CONDITION and
@@ -326,6 +345,24 @@ export const MUTATIONS = [
     why: 'Defeats the standalone refusal, so a run that produced no standalone still reports success instead of failing.',
     find: 'if (!standalone) {',
     replace: 'if (false) {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-macos.js',
+    // The label a user reads in the picker and the workspace. Dropping the OS is the whole product defect:
+    // the route still builds macOS-only bundles, and now nothing says so until the downloads arrive.
+    why: 'Removes the platform from the target\'s own label, so the route reads as a plugin for whatever machine the user is on.',
+    find: "  label: 'Audio Plugin — macOS (VST3 · AU · CLAP)',",
+    replace: "  label: 'Audio Plugin (VST3 · AU · CLAP)',",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/appUserManual.js',
+    // The manual is the last place a user finds out, and the first line is the one that has to be
+    // unmissable — a Windows user reading three paragraphs down has already downloaded the wrong thing.
+    why: 'Softens the manual\'s opening line so it no longer says the plugin is macOS only, which is the one fact a Windows user needs before downloading.',
+    find: "      'THIS PLUGIN IS FOR MACOS ONLY. It will not load on Windows or Linux — there is no Audio Unit',",
+    replace: "      'This plugin is for macOS. It will not load on Windows or Linux — there is no Audio Unit',",
   },
   {
     guard: 'verify-render-check.mjs',

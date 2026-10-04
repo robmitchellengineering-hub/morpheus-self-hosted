@@ -1,4 +1,10 @@
-// Audio Plugin compile target — one CLAP source in, VST3 + AU + standalone + CLAP out.
+// Audio Plugin compile target — **macOS only** — one CLAP source in, VST3 + AU + standalone + CLAP out.
+//
+// THE PLATFORM IS PART OF THE NAME, THE LABEL AND THE ARTIFACTS. Audio Units are an Apple format, so the
+// `.component` cannot exist on any other machine, and none of these bundles load on Windows. A user must
+// know which machine their plugin is for *before* they build it — so the id is `audio-plugin-macos`, the
+// picker entry says macOS, every download is `plugin-macos-*.zip`, and the manual opens by saying it.
+// Windows is a separate route, not a second leg of this one.
 //
 // WHY THIS TARGET EXISTS, and why it is not "another like the other nine".
 //
@@ -24,7 +30,10 @@
 //      A "did we produce a plugin file?" check passes on that. So the build verifies the BINARY inside
 //      every bundle, and builds each format as its own target so one failure cannot strand another.
 //
-// macOS first. Windows is a matrix leg to be added once this one is proven in CI.
+// macOS only, and the route is named for it rather than for the format. Windows will be a SEPARATE target
+// (`audio-plugin-windows`) rather than a second leg of this one: an OS is not a build-matrix detail the
+// user can be left to infer from a filename, and what a Windows plugin can even contain is different
+// (VST3 + CLAP + standalone — there is no Audio Unit outside Apple's platforms).
 import {
   auSubtypeCode, cmakeLists, entrySource, pluginSource, pluginId, fourCharCode,
 } from '../audioPluginTemplate.js';
@@ -91,8 +100,11 @@ export function readManifest(files) {
 }
 
 export const audioPlugin = {
-  id: 'audio-plugin',
-  label: 'Audio Plugin (VST3 · AU · CLAP)',
+  id: 'audio-plugin-macos',
+  // The OS is in the label, not only in the downloads. This string is what a user reads in the picker and
+  // in the workspace, and "Audio Plugin (VST3 · AU · CLAP)" reads as though it builds for whatever machine
+  // they happen to be on — which is how someone on Windows ends up expecting a plugin they cannot load.
+  label: 'Audio Plugin — macOS (VST3 · AU · CLAP)',
   runner: 'macos-latest',
 
   validate(files) {
