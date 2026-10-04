@@ -72,7 +72,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
         const s = await checkRef.current(repoFullName);
         if (s.stepProgress) setCompileProgress(s.stepProgress);
         if (s.status === 'completed') return s;
-      } catch {}
+      } catch { /* ignore */ }
     }
     return null;
   };
@@ -141,7 +141,7 @@ export default function PipelineRunner({ project, sendMessage, compileProject, c
         }
 
         // Reload files after diagnosis applied fixes to the database
-        try { await loadFilesRef.current?.(project.id); } catch {}
+        try { await loadFilesRef.current?.(project.id); } catch { /* ignore */ }
 
         // ── ASK MORPHEUS ──
         addLog(`[${i + 1}] AI fixed ${diag.autoFixed.length} item(s). Sending to Morpheus chat...`);

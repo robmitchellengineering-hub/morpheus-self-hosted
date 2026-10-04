@@ -33,7 +33,7 @@ export function Card({ title, sub, children, style = {}, titleColor = C.walnut, 
   const toggle = () => {
     setOpen((prev) => {
       const next = !prev;
-      try { localStorage.setItem(collapseKey(title), next ? '1' : '0'); } catch {}
+      try { localStorage.setItem(collapseKey(title), next ? '1' : '0'); } catch { /* ignore */ }
       return next;
     });
   };

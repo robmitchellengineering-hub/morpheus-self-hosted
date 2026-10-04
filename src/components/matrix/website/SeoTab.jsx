@@ -1270,7 +1270,12 @@ export default function SeoTab({ projectId, store, widget = false }) {
             </Btn>
           )}
         </div>
-        {timerFor('blog')}
+        {/* No timer here either, for the same reason as the audit tab below: the runner's strip above
+            the tab switch is the one timer, and a timer this component draws stops existing the moment
+            the operator leaves the tab. This line is what was left behind when that was decided — a call
+            to a `timerFor` that no longer exists, which threw `ReferenceError: timerFor is not defined`
+            and took the whole blog view down. `no-undef` found it on 2026-10-04, the first day the
+            frontend lint config actually ran eslint's recommended rules. */}
       </div>
     );
   }

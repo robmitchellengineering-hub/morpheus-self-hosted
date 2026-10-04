@@ -127,7 +127,7 @@ export default function BackendPanel({ open, onClose, project }) {
       if (rows[0]?.connections) {
         setUserConnections(JSON.parse(rows[0].connections));
       }
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   const loadBackendState = async () => {

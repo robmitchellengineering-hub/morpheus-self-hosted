@@ -55,13 +55,13 @@ export function ThemeProvider({ children }) {
   const setTheme = useCallback((next) => {
     const value = VALID_THEMES.includes(next) ? next : 'clear';
     setThemeState(value);
-    try { localStorage.setItem(STORAGE_KEY, value); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, value); } catch { /* ignore */ }
   }, []);
 
   const setBoringMode = useCallback((next) => {
     const value = VALID_BORING_MODES.includes(next) ? next : 'dark';
     setBoringModeState(value);
-    try { localStorage.setItem(BORING_MODE_KEY, value); } catch {}
+    try { localStorage.setItem(BORING_MODE_KEY, value); } catch { /* ignore */ }
   }, []);
 
   return (

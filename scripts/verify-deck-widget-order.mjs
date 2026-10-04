@@ -172,6 +172,32 @@ check('the pinned widget is kept OUT of the list the swap operates on',
 check('…and is put back in front, so nothing can precede it',
   /return \[\.\.\.pinned, \.\.\.movable\]\.map\(\(w, i\) => \(\{ \.\.\.w, sort_order: i \}\)\);/.test(ruleSrc), true);
 
+// ⚠️ THE CALL IS NOT THE WIRING — and this check exists because that distinction cost an outage.
+// `#502` added `orderDeckWidgets(widgetInstances)` to DeckSettings.jsx WITHOUT adding it to that
+// file's import list. Every assertion above still passed: the call was there, spelled correctly, on
+// the right line. The page threw `ReferenceError: orderDeckWidgets is not defined` and showed a blank
+// error screen in production — because `vite build` does not resolve identifiers, and `no-undef` was
+// not switched on for `src/**` (see eslint.config.js and verify-lint-coverage.mjs).
+//
+// So each consumer must be shown to IMPORT every name it uses. Comments are stripped first: this
+// rule's own name appears in prose in several of these files, and a name mentioned in a comment is
+// not a usage.
+const codeOnly = (src) => src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+function importedFrom(src, moduleName) {
+  const re = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*['"][^'"]*${moduleName}['"]`, 'g');
+  return [...src.matchAll(re)]
+    .flatMap((m) => m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop()).filter(Boolean));
+}
+const RULE_EXPORTS = ['PINNED_WIDGET_KEY', 'canReorderWidget', 'orderDeckWidgets', 'reorderWidgets'];
+for (const [label, src] of [['DeckHome.jsx', home], ['CommandDeckContext.jsx', ctx], ['DeckSettings.jsx', settings]]) {
+  const body = codeOnly(src);
+  const imported = importedFrom(body, 'deckWidgetOrder');
+  const used = RULE_EXPORTS.filter((n) => new RegExp(`\\b${n}\\b`).test(body));
+  check(`${label} imports every name it uses from the rule (a call is not wiring)`,
+    `${used.filter((n) => !imported.includes(n)).join(',')} | used ${used.length} imported ${imported.length}`,
+    ` | used ${used.length} imported ${used.length}`);
+}
+
 console.log('\n7. the rule is import-free, so this runs in the no-install CI job');
 const rule = read('src/pages/CommandDeck/deckWidgetOrder.js');
 check('no imports at all in the rule module', /^\s*import\s/m.test(rule), false);

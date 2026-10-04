@@ -66,9 +66,6 @@ export function TaskRunner({ children }) {
   const [tasks, setTasks] = useState({});
   const [interrupted, setInterrupted] = useState([]);
   const cancels = useRef(new Map());
-  const alive = useRef(true);
-
-  useEffect(() => () => { alive.current = false; }, []);
 
   // Any marker left behind by a previous page load is a run that was cut off.
   // Reported once, then cleared — a marker that outlives its report would nag
@@ -133,8 +130,13 @@ export function TaskRunner({ children }) {
       set({ status: 'error', error: message });
       return { status: 'error', result: null, error: message };
     } finally {
+      // ONLY cleanup here. This block used to end with `if (!alive.current) return;`, and a `return`
+      // inside `finally` OVERRIDES whatever the `try` or `catch` returned — so a task that failed
+      // while the panel was unmounted reported `undefined` instead of its error, and the operator saw
+      // nothing. `no-unsafe-finally` found it the moment the frontend lint config started running
+      // eslint's recommended set (2026-10-04); React 18 does not warn about a state update on an
+      // unmounted component, so the guard it was meant to be had nothing to do anyway.
       cancels.current.delete(key);
-      if (!alive.current) return; // the whole panel is gone; nothing left to update
     }
   }, []);
 

@@ -26,17 +26,17 @@ export function useSpeechRecognition({ onResult, lang = 'en-US' } = {}) {
     recognition.onend = () => { setListening(false); };
 
     recognitionRef.current = recognition;
-    return () => { try { recognition.abort(); } catch (e) {} };
+    return () => { try { recognition.abort(); } catch (e) { /* ignore */ } };
   }, [supported, lang]);
 
   const start = useCallback(() => {
     if (!recognitionRef.current) return;
-    try { recognitionRef.current.start(); setListening(true); } catch (e) {}
+    try { recognitionRef.current.start(); setListening(true); } catch (e) { /* ignore */ }
   }, []);
 
   const stop = useCallback(() => {
     if (!recognitionRef.current) return;
-    try { recognitionRef.current.stop(); } catch (e) {}
+    try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
     setListening(false);
   }, []);
 

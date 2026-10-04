@@ -127,7 +127,7 @@ export function useMorpheusVoice() {
     utter.onerror = () => { setSpeakingId(prev => prev === message.id ? null : prev); utterRef.current = null; };
     utterRef.current = utter;
     setLoadingId(null);
-    try { window.speechSynthesis.speak(utter); } catch {}
+    try { window.speechSynthesis.speak(utter); } catch { /* ignore */ }
   }, [browserSupported]);
 
   const speak = useCallback((message) => {

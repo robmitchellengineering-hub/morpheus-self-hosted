@@ -130,7 +130,7 @@ export default function ConnectionsDialog({ open, onClose }) {
         if (cancelled) return;
         if (rows[0]) {
           setSettings(rows[0]);
-          try { setConnections(JSON.parse(rows[0].connections || '{}')); } catch {}
+          try { setConnections(JSON.parse(rows[0].connections || '{}')); } catch { /* ignore */ }
         }
       })
       .catch(() => {})

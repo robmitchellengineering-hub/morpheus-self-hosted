@@ -95,7 +95,7 @@ export default function Settings() {
           setTtsEndpoint(rows[0].tts_endpoint || '');
           setPersonalityEnabled(rows[0].personality_enabled !== false);
           if (rows[0].connections) {
-            try { setConnections(JSON.parse(rows[0].connections)); } catch {}
+            try { setConnections(JSON.parse(rows[0].connections)); } catch { /* ignore */ }
           }
         }
       })

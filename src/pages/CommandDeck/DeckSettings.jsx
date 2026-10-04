@@ -7,7 +7,7 @@ import { base44 } from '@/api/base44Client';
 import { TOKEN_BLOCKS } from '@/lib/tokenBlocks';
 import { startTokenCheckout } from '@/lib/purchaseCredits';
 import { DECK_WIDGETS } from './deckWidgets';
-import { canReorderWidget } from './deckWidgetOrder';
+import { canReorderWidget, orderDeckWidgets } from './deckWidgetOrder';
 import { isTerminalBuildStatus } from '@/lib/deckWidgetBuildCard';
 import { C, money, DEFAULT_FEE_TIERS, formatFeeRate, parseFeeTierInput, feeTiersFromProfile, commissionFor, consignorProceeds, feeRateLabel } from './deckConstants';
 import { parseOperatingRegions, formatOperatingRegions } from './operatingRegions';
