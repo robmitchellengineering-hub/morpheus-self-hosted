@@ -244,6 +244,16 @@ export const MUTATIONS = [
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/compile-targets/audio-plugin.js',
+    // THE COLLAPSED-SCRIPT BUG. A literal backslash-n instead of a newline turns the whole verification
+    // shell script into ONE LINE carrying escape sequences — so the check that exists to catch an empty
+    // plugin bundle cannot run at all, which is worse than not having it.
+    why: 'Turns the verification script into one line of escape sequences, so the check that catches an empty plugin bundle cannot run.',
+    find: "        ].join('\\n'),\n      },\n\n      {\n        name: 'Package',",
+    replace: "        ].join('\\\\n'),\n      },\n\n      {\n        name: 'Package',",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin.js',
     // A moving ref is the quiet one: the build keeps working, and two people building the same project
     // on different days get different binaries from a dependency they did not choose and cannot see.
     why: 'Un-pins the plugin wrappers from a fixed commit to a branch, so the same project builds differently over time and an upstream force-push changes what a user ships.',
@@ -257,7 +267,7 @@ export const MUTATIONS = [
     // bundle" to "this directory exists", which is exactly the check that passed while a 4 KB VST3 shell
     // sat on disk where a 1.3 MB plugin should have been.
     why: 'Weakens the artifact check from the binary inside the bundle to the bundle directory, which is the check that would have passed on the empty .vst3 the spike actually produced.',
-    find: '          `  test -f "$bin" || { echo "BUNDLE HAS NO BINARY: $b"; exit 1; }`,',
+    find: "          '  test -f \"$bin\" || { echo \"BUNDLE HAS NO BINARY: $b\"; exit 1; }',",
     replace: '          `  test -d "$b" || { echo "no bundle"; exit 1; }`,',
   },
   {

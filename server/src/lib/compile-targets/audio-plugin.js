@@ -236,22 +236,29 @@ export const audioPlugin = {
         name: 'Verify every bundle contains its binary',
         // THE CHECK THAT WOULD HAVE CAUGHT AN EMPTY PLUGIN. A `.vst3` with no Mach-O inside it is a
         // directory that exists, uploads, downloads, and fails to load — with nothing anywhere saying so.
+        // The entry-point symbol is asserted too, because a Mach-O that is not the plugin passes every
+        // other check here and fails in the host instead.
         run: [
           'set -e',
-          `check() {`,
-          `  b="$1"; sym="$2"`,
-          `  test -d "$b" || { echo "MISSING BUNDLE: $b"; exit 1; }`,
-          `  bin="$b/Contents/MacOS/$(basename "$b" | sed 's/\\.[^.]*$//')"`,
-          `  test -f "$bin" || { echo "BUNDLE HAS NO BINARY: $b"; exit 1; }`,
-          `  file "$bin" | grep -q "Mach-O" || { echo "NOT A MACH-O: $bin"; exit 1; }`,
-          `  echo "  $b $(lipo -archs "$bin")"`,
-          `}`,
-          `echo "Format                Architectures"`,
+          'check() {',
+          '  b="$1"; sym="$2"',
+          '  test -d "$b" || { echo "MISSING BUNDLE: $b"; exit 1; }',
+          '  bin="$b/Contents/MacOS/$(basename "$b" | sed \'s/\\.[^.]*$//\')"',
+          '  test -f "$bin" || { echo "BUNDLE HAS NO BINARY: $b"; exit 1; }',
+          '  file "$bin" | grep -q "Mach-O" || { echo "NOT A MACH-O: $bin"; exit 1; }',
+          '  if [ "$sym" != "-" ]; then',
+          '    nm -gU "$bin" 2>/dev/null | grep -q " _$sym$" || { echo "MISSING ENTRY POINT $sym IN: $b"; exit 1; }',
+          '  fi',
+          '  echo "  $b $(lipo -archs "$bin")"',
+          '}',
+          'echo "Format                Architectures"',
           `check "${bundle('.clap')}" clap_entry`,
           `check "${bundle('.vst3')}" GetPluginFactory`,
           `check "${bundle('.component')}" wrapAsAUV2_inst0Factory`,
-          `test -d "${bundle('.app')}" || { echo "MISSING: the standalone app was not produced"; exit 1; }`,
-          `echo "all four formats produced with a binary inside each"`,
+          // The standalone is checked for its binary like the rest; `-` skips the symbol assertion because
+          // its entry is the ordinary `main` of an executable, not a plugin entry point.
+          `check "${bundle('.app')}" -`,
+          'echo "all four formats produced, each with a binary and a real entry point"',
         ].join('\n'),
       },
 

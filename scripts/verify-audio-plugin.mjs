@@ -180,6 +180,56 @@ check('failure patterns cover the errors this build actually produces',
   audioPlugin.errorPatterns.some((r) => r.test('CMake Error at CMakeLists.txt')),
   true);
 
+console.log('\n10. the steps render into a workflow that would actually run');
+
+// WHY THIS SECTION EXISTS. Everything above checks the steps as DATA; nothing checked what they become.
+// Rendering them for the first time found two bugs that reading the diff never would have:
+//
+//   * `.join('\\n')` — a literal backslash-n — collapsed the whole verification shell script onto ONE
+//     LINE, so the check that exists to catch an empty plugin bundle would itself have been broken;
+//   * the bundle paths emitted the literal text `${bundle('.clap')}` instead of a filename.
+//
+// A generated workflow is the artifact a user's build actually runs, so it is rendered here and asserted
+// like any other output.
+const { renderWorkflow } = await import('../server/src/lib/compile-targets/workflow-renderer.js');
+const yaml = renderWorkflow('macos-latest', steps, audioPlugin.artifact, 'INSTALLING IT\n- test\n');
+
+check('it renders without throwing and produces a workflow', yaml.length > 500, true);
+check('the workflow is dispatched manually, not on every push',
+  /on:\s*\n\s*workflow_dispatch:/.test(yaml), true);
+check('…and it runs on a macOS runner', /runs-on: macos-latest/.test(yaml), true);
+check('…and it can attach files to a release', /permissions:\s*\n\s*contents: write/.test(yaml), true);
+
+// The collapsed-script bug: a `run:` block must be a YAML BLOCK SCALAR (a `|` then indented lines), not a
+// single line carrying escape sequences. This is the assertion that would have caught it.
+const runLines = yaml.split('\n').filter((l) => /^\s+run: /.test(l));
+check('there are run steps at all', runLines.length >= 6, true);
+check('…and at least one is a multi-line block scalar', runLines.some((l) => l.trim() === 'run: |'), true);
+// A single-line command renders on one line, which is correct. What must never appear is an escape
+// sequence standing in for a newline — that collapsed the whole verification script onto one line.
+//
+// THE ESCAPING HERE WAS WRONG ONCE and it mattered: this line used to hold four backslashes, which is a
+// regex for TWO literal backslashes followed by an `n` — so it passed with the bug present. Two
+// backslashes match the single escape sequence a collapsed `join` actually produces. Verified by
+// reintroducing the bug and watching this go red.
+check('no escape sequence leaked into the YAML', /\\n/.test(yaml), false);
+// …and the specific step that was collapsed, named, so a failure says where to look.
+check('the verification step is a real multi-line script, not one line',
+  /name: Verify every bundle contains its binary\n\s+run: \|/.test(yaml), true);
+// An uninterpolated template literal renders as the code that was supposed to run.
+check('no unresolved template expression leaked into the YAML', /\$\{[a-zA-Z]/.test(yaml.replace(/\$\{\{[^}]*\}\}/g, '')), false);
+// The build must name the files it verifies, not the code that computes them.
+check('the verification names the real bundle paths',
+  yaml.includes('"build/assets/Morpheus Plugin.clap"') && yaml.includes('"build/assets/Morpheus Plugin.vst3"'), true);
+check('…and asserts each format\'s own entry point',
+  ['clap_entry', 'GetPluginFactory', 'wrapAsAUV2_inst0Factory'].every((sym) => yaml.includes(sym)), true);
+check('…and the symbol is actually USED inside the check function, not just passed',
+  /nm -gU "\$bin"[\s\S]{0,80}_\$sym\$/.test(yaml), true);
+check('the pinned commit appears in the clone step', /checkout [0-9a-f]{40}\b/.test(yaml), true);
+check('the release uploads the zips AND the user manual',
+  /files: \|\n\s*build\/assets\/plugin-macos-\*\.zip\n\s*USER-MANUAL\.txt/.test(yaml), true);
+check('…and refuses to publish if the glob matches nothing', /fail_on_unmatched_files: true/.test(yaml), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');
