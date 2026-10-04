@@ -599,6 +599,32 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ THE BUG THE FIRST RUN OF THIS CHECK ACTUALLY HIT: `wav.h` exists twice in that tree, so compiling the
+    // tool with the engine's include order makes `dsp::wav` undeclared. The fix is the tool's own order first.
+    why: 'Puts the reference tool back on the engine\u2019s include order, where `#include "wav.h"` resolves to the engine\u2019s file and render.cpp fails to compile.',
+    find: "`-I${adt}`, ...namIncludes, '-c',",
+    replace: "...namIncludes, '-c',",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // The engine's wav.cpp and the tool's wav.cpp produce the same object filename, so one shared directory
+    // silently loses one of them and the link fails on a missing engine symbol.
+    why: 'Compiles both groups into one object directory, where the two wav.cpp files write the same wav.o and the link loses the engine\u2019s.',
+    find: "const objTool = join(work, 'obj-tool');",
+    replace: "const objTool = join(work, 'obj-nam');",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // The standard belongs in the shared flag list: leaving it out compiles the engine as C++17.
+    why: 'Drops the C++ standard from the shared compile flags, so the engine\u2019s sources are compiled as C++17 and do not build.',
+    find: "const COMPILE_FLAGS = ['-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT'];",
+    replace: "const COMPILE_FLAGS = ['-O2', '-w', '-DNAM_SAMPLE_FLOAT'];",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
     // ⭐ The check that stops the whole exercise being vacuous: a model that does nothing nulls perfectly
     // against a reference that also does nothing.

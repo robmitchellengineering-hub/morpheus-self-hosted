@@ -722,11 +722,28 @@ unlinkSync(mrawPath);
 // own render tool defaults to double. A float plugin against a double reference would report the precision
 // choice as though it were a wiring bug, so BOTH compile lines carry the flag.
 const renderSrc = read('scripts/audio-nam-render-check.mjs');
-check('both sides are built with the SAME sample type the plugin pins',
-  (renderSrc.match(/-DNAM_SAMPLE_FLOAT/g) || []).length, 2);
+// One shared flag list, spread into every compile — so a build that dropped the standard or the sample type
+// would be a visible edit rather than a missing argument. Both omissions happened: the two-step compile was
+// first written with the sample flag alone, and clang answered "no template named 'optional' in namespace
+// 'std'" seventeen times.
+check('every side is built with the SAME standard and the SAME sample type the plugin pins',
+  /const COMPILE_FLAGS = \['-std=c\+\+20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT'\];/.test(renderSrc)
+  && (renderSrc.match(/\.\.\.COMPILE_FLAGS/g) || []).length, 3);
 check('…and the reference is built from the SAME engine checkout the plugin uses, not a second copy',
-  /join\(namcore, 'tools', 'render\.cpp'\)/.test(renderSrc) && /!\[Gg\]et 'render' from anywhere else/.test(renderSrc) === false
-  && /join\(namcore, 'Dependencies', 'AudioDSPTools', 'dsp', 'wav\.cpp'\)/.test(renderSrc), true);
+  /join\(namcore, 'tools', 'render\.cpp'\)/.test(renderSrc), true);
+// ⚠️ TWO FILES IN THAT TREE ARE CALLED `wav.h`: the engine's (`nam::detail`) and the tool's (`dsp::wav`). One
+// include order cannot serve both, and the first version of this file compiled them together and failed with
+// "`dsp` has not been declared" — so the engine's translation units and the tool's are compiled separately,
+// each with its own order, and the objects are linked after.
+check('…with its OWN include order, because two files in that tree are called wav.h',
+  /join\(adt, 'wav\.cpp'\)/.test(renderSrc) && /`-I\$\{adt\}`/.test(renderSrc), true);
+// BOTH GROUPS CONTAIN A FILE CALLED wav.cpp, so a shared object directory writes one `wav.o` over the
+// other's and the link fails on `nam::detail::load_wav_ir` — a missing engine symbol caused by a filename
+// collision. The two groups compile into separate directories and the objects are linked after.
+check('…into SEPARATE object directories, because both groups contain a wav.cpp',
+  /const objNam = join\(work, 'obj-nam'\);/.test(renderSrc)
+  && /const objTool = join\(work, 'obj-tool'\);/.test(renderSrc)
+  && /\[objNam, objTool\]\.flatMap/.test(renderSrc), true);
 // The plugin processes one frame at a time and `render` processes blocks. Pinning both to the same block size
 // removes the one difference between the two paths that has nothing to do with the plugin's correctness.
 check('…and the two paths are told to use the same block size',
