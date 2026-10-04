@@ -137,8 +137,22 @@ export const audioPlugin = {
           `  'VST3'       = @{ path = '${vst3}';  symbol = 'GetPluginFactory' }`,
           `  'standalone' = @{ path = '${standalone}'; symbol = $null }`,
           '}',
-          '$dumpbin = Get-Command dumpbin -ErrorAction SilentlyContinue',
-          'if (-not $dumpbin) { throw "dumpbin is not on PATH, so the entry-point assertions cannot run. Wiring the MSVC developer environment is part of this step — do not let it pass (H17)." }',
+          // dumpbin IS NOT ON PATH ON A WINDOWS RUNNER, and the first run proved it: the build finished and
+          // this step refused to pass, which is what it is for. CMake finds the MSVC toolchain through the
+          // registry; the DEVELOPER environment is never entered, so the tools are installed and absent from
+          // PATH at the same time. Located with vswhere rather than by adding a third-party action to the
+          // supply chain, and rather than weakening the check — the entry-point assertion is what separates a
+          // real plugin from a DLL with the right name.
+          '$dumpbin = $null',
+          "$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'",
+          'if (Test-Path $vswhere) {',
+          '  $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath',
+          '  if ($vsPath) {',
+          "    $dumpbin = Get-ChildItem -Path (Join-Path $vsPath 'VC\\Tools\\MSVC') -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'Hostx64\\\\x64' } | Select-Object -First 1",
+          '  }',
+          '}',
+          'if (-not $dumpbin) { throw "dumpbin could not be located (looked with vswhere at $vswhere), so the entry-point assertions cannot run. Do not let this step pass (H17)." }',
+          'Write-Host "using $($dumpbin.FullName)"',
           '$bad = @()',
           'foreach ($f in $formats.Keys) {',
           '  $p = $formats[$f].path',
@@ -148,7 +162,7 @@ export const audioPlugin = {
           '  if (-not (Test-PE $p)) { Write-Host "NOT A PE IMAGE ($f): $p"; $bad += $f; continue }',
           '  $sym = $formats[$f].symbol',
           '  if ($sym) {',
-          '    $exports = & dumpbin /nologo /exports $p | Out-String',
+          '    $exports = & $dumpbin.FullName /nologo /exports $p | Out-String',
           '    if ($exports -notmatch "\\b$sym\\b") { Write-Host "MISSING ENTRY POINT $sym IN ($f): $p"; $bad += $f; continue }',
           '  }',
           '  Write-Host ("  {0,-11} {1,10:N0} bytes  {2}" -f $f, $size, $p)',

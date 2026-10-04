@@ -384,8 +384,13 @@ check('the verification looks where clap-wrapper actually puts these on Windows'
   /build\/assets\/CLAP\//.test(winRun) && /build\/assets\/VST3\//.test(winRun) && /Standalone-morpheus_plugin_standalone/.test(winRun), true);
 check('…and asserts the file is a PE image rather than trusting the extension',
   /0x5A4D/.test(winRun) && /0x00004550/.test(winRun), true);
-check('…and refuses to pass when it cannot check the entry points',
-  /dumpbin is not on PATH[\s\S]{0,120}do not let it pass/.test(winRun), true);
+// ⚠️ dumpbin IS NOT ON PATH ON A WINDOWS RUNNER. The build finished and this step refused to pass, which is
+// the behaviour that matters (a check that silently does not run reads as one that passed — H17). It now
+// locates the tool with vswhere, so the assertion actually executes rather than being skipped.
+check('…and locates dumpbin with vswhere rather than assuming it is on PATH',
+  /vswhere/.test(winRun) && /dumpbin could not be located[\s\S]{0,140}Do not let this step pass/.test(winRun), true);
+check('…and invokes it by full path, because it is not on PATH to be found by name',
+  /&\s*\$dumpbin\.FullName\s+\/nologo\s+\/exports/.test(winRun) && /&\s+dumpbin\s/.test(winRun), false);
 check('the artifact spec names the Windows downloads, one per format',
   ['vst3', 'clap', 'standalone'].every((k) => (audioPluginWindows.artifact.glob || '').includes(`plugin-windows-${k}`))
   || ['vst3', 'clap', 'standalone'].every((k) => audioPluginWindows.artifact.verifyCommand.includes(`plugin-windows-${k}`)), true);
