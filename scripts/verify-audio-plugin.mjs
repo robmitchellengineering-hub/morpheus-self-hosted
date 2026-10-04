@@ -122,6 +122,25 @@ console.log('\n6. the generated C++ keeps the things that were hard to get right
 const src = generated(s, 'Source/Plugin.cpp');
 const entry = generated(s, 'Source/PluginEntry.cpp');
 const cmake = generated(s, 'CMakeLists.txt');
+// ⚠️ THESE TWO ARE THE FIRST WINDOWS BUILD, TURNED INTO ASSERTIONS — and neither is visible without a second
+// compiler, which is exactly why they survived a day of green macOS runs. Clang accepts a C99 COMPOUND
+// LITERAL inside C++ as an extension, and accepts designated initializers (a C++20 feature) while the
+// project declared C++17. MSVC refuses both: `error C4576` and `error C7555`. The plugin source is the one
+// place in this repo where the compiler is not clang, so the portability of what we GENERATE is asserted
+// here rather than discovered on a runner.
+const compoundLiteral = (s2) => /\([A-Za-z_][A-Za-z0-9_ ]*\[\]\)\s*\{|= \([A-Za-z_][A-Za-z0-9_]*\)\s*\{/.test(s2);
+check('the feature list is a named array, not a C99 compound literal',
+  /static const char \*const kFeatures\[\] = \{/.test(src), true);
+check('…and the descriptor points at it rather than building one inline',
+  /\.features = kFeatures,/.test(src), true);
+check('no compound literal survives anywhere in the generated C++ (MSVC: C4576)',
+  compoundLiteral(src) || compoundLiteral(entry), false);
+check('the project declares C++20, because the source uses designated initializers (MSVC: C7555)',
+  /set\(CMAKE_CXX_STANDARD 20\)/.test(cmake), true);
+// …and the standard must be set BEFORE the wrappers are added, or clap-wrapper defaults it to 17 and the
+// line above is decoration. This is the kind of ordering nothing else would notice.
+check('…and it is declared before clap-wrapper is added, or the wrapper overrides it',
+  cmake.indexOf('set(CMAKE_CXX_STANDARD 20)') < cmake.indexOf('add_subdirectory('), true);
 // plugin_data and calloc() are void*, so C++ requires casts. Without them the generated project does not
 // compile — which is at least loud, but it is the first thing to break on an edit.
 check('every read of plugin_data is cast out of void*',
