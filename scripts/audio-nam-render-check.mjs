@@ -140,10 +140,14 @@ function compile(args, label, cwd = ROOT) {
 }
 
 /**
- * Every C++ compile in this file carries these. One definition, spread into each invocation, so a build that
- * quietly used a different sample type would be a visible edit rather than a missing argument.
+ * Every C++ compile in this file carries these. One definition, spread into each invocation.
+ *
+ * ⚠️ THE STANDARD AND THE SAMPLE TYPE BELONG TOGETHER HERE, and leaving them out of the shared list is a
+ * mistake this file already made: the two-step compile for the reference tool was written with only the
+ * sample flag, so the engine's sources were compiled as C++17 and clang answered `no template named
+ * 'optional' in namespace 'std'` seventeen times. Found by running the check locally rather than on a runner.
  */
-const SAMPLE_FLAGS = ['-DNAM_SAMPLE_FLOAT'];
+const COMPILE_FLAGS = ['-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT'];
 
 /** Every C++ source under the engine's NAM directory, the way its own CMakeLists globs them. */
 function namSources(namcore) {
@@ -195,7 +199,7 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
   // that ships beside it is the same object file.
   const hostBin = join(work, 'clap_offline');
   compile([
-    '-std=c++20', '-O2', '-w', ...SAMPLE_FLAGS,
+    ...COMPILE_FLAGS,
     `-I${clap}`, `-I${join(pluginDir, 'Source')}`, ...namIncludes,
     join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'),
     join(pluginDir, 'Source', 'Plugin.cpp'),
@@ -214,16 +218,22 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
   // "`dsp` has not been declared", because `#include "wav.h"` had resolved to the engine's. So the engine's
   // translation units are compiled with the engine's include order, the tool's with the tool's, and the
   // objects are linked after.
-  const objDir = join(work, 'nam-obj');
-  mkdirSync(objDir, { recursive: true });
+  // ⚠️ AND IN SEPARATE OBJECT DIRECTORIES, which is the second half of the same problem: BOTH GROUPS CONTAIN
+  // A FILE CALLED wav.cpp, so one `-c` run would write `wav.o` over the other's and the link would fail on
+  // `nam::detail::load_wav_ir` — a missing engine symbol caused by an object filename collision. Also found
+  // by running this locally rather than on a runner.
+  const objNam = join(work, 'obj-nam');
+  const objTool = join(work, 'obj-tool');
+  mkdirSync(objNam, { recursive: true });
+  mkdirSync(objTool, { recursive: true });
   const adt = join(namcore, 'Dependencies', 'AudioDSPTools', 'dsp');
-  compile([...SAMPLE_FLAGS, ...namIncludes, '-c', ...nam], 'the engine sources', objDir);
-  compile([...SAMPLE_FLAGS, `-I${adt}`, ...namIncludes, '-c',
-    join(namcore, 'tools', 'render.cpp'), join(adt, 'wav.cpp')], 'the reference tool', objDir);
+  compile([...COMPILE_FLAGS, ...namIncludes, '-c', ...nam], 'the engine sources', objNam);
+  compile([...COMPILE_FLAGS, `-I${adt}`, ...namIncludes, '-c',
+    join(namcore, 'tools', 'render.cpp'), join(adt, 'wav.cpp')], 'the reference tool', objTool);
   const refBin = join(work, 'nam_render');
-  const objects = readdirSync(objDir).filter((f) => f.endsWith('.o')).map((f) => join(objDir, f));
+  const objects = [objNam, objTool].flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.o')).map((f) => join(dir, f)));
   if (!objects.length) {
-    console.error(`[nam-render] nothing was compiled into ${objDir}`);
+    console.error(`[nam-render] nothing was compiled into ${objNam} or ${objTool}`);
     process.exit(1);
   }
   compile([...objects, '-o', refBin], 'the reference renderer');
