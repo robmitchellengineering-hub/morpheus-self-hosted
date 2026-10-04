@@ -15,7 +15,7 @@ preserve existing conventions (the doc-comment style at the top of most
 `server/src/` files in particular — match it).
 
 **Read `KNOWN-HAZARDS.md` before changing anything, and again before writing a
-guard.** It is self-inflicted breakage that has already happened here (H1–H21), each with
+guard.** It is self-inflicted breakage that has already happened here (H1–H22), each with
 the incident and the rule. It was only *mentioned* in passing below until 2026-09-30, and
 a session consequently re-derived **H18 by hand** — the temporal-dead-zone catch in
 `ai.js` — as though it were new, four days after H18 documented it. The reviewer is given
@@ -156,7 +156,7 @@ catalog is the source of truth for what exists; the table below is the map, and
 | Skill | Load it when |
 |---|---|
 | `morpheus-dev-protocol` | Before **any** change — branch/PR workflow, never-push-`main`, resync rules |
-| `morpheus-hazards` | Before writing or reviewing a change — the H1–H21 checklist of self-inflicted breakage |
+| `morpheus-hazards` | Before writing or reviewing a change — the H1–H22 checklist of self-inflicted breakage |
 | `morpheus-stack` | When you need the stack map, commands, or verification steps |
 | `morpheus-architecture` | When you need to know how a request reaches a handler, or how the build loop and self-dev engine work |
 | `morpheus-deck` | Before touching anything under `/deck` — own-data architecture, additive migrations, Jarvis persona |
@@ -176,6 +176,15 @@ catalog is the source of truth for what exists; the table below is the map, and
 - **Start every task from a fresh `origin/main`:** `scripts/dsh-new-task.sh <slug>`.
 - **Verify before claiming done.** `npm run lint` + `npm run build` for code, and
   load user-visible changes in a real browser: `scripts/pw open http://localhost:5173`.
+- **For any change a logged-in user can see, run `npm run render:check` BEFORE pushing.**
+  It is the only gate that renders the signed-in surface: every protected page sits behind
+  `ProtectedRoute`, so the CI `render` job — which has no session — never even fetches those
+  chunks. A blank `/deck/settings` shipped through a fully green pipeline on 2026-10-04 for
+  exactly that reason (H22). The script brings up the local rig, seeds a real account, mints a
+  **local** session, and loads `/deck`, `/deck/settings`, `/deck/tools`, `/deck/jarvis`,
+  `/settings` and `/workspace` in a real browser, failing on any uncaught error, the
+  error-boundary screen, a bounce to `/login`, or a page that rendered nothing. Pass routes of
+  your own to check just those: `npm run render:check -- /deck/settings`.
 - **Revert build noise.** `npm run build` rewrites `src/MORPHEUS_DESIGN_PLAN.md`
   (H3) — `git checkout` it if you didn't mean to change it.
 

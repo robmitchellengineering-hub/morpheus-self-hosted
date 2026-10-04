@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "render:check": "node scripts/dev-app-render.mjs",
     "sync:capabilities": "node scripts/sync-capabilities.mjs",
     "prebuild": "node scripts/sync-capabilities.mjs && node scripts/pack-wp-plugin.mjs",
     "build": "vite build",
