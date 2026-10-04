@@ -292,10 +292,17 @@ check('…and at least one is a multi-line block scalar', runLines.some((l) => l
 // regex for TWO literal backslashes followed by an `n` — so it passed with the bug present. Two
 // backslashes match the single escape sequence a collapsed `join` actually produces. Verified by
 // reintroducing the bug and watching this go red.
-check('no escape sequence leaked into the YAML', /\\n/.test(yaml), false);
-// …and the specific step that was collapsed, named, so a failure says where to look.
-check('the verification step is a real multi-line script, not one line',
-  /name: Verify every bundle contains its binary\n\s+run: \|/.test(yaml), true);
+// ⚠️ NO LINE MAY HOLD MORE THAN ONE ESCAPE SEQUENCE. The blanket form of this check — "no `\\n` anywhere" —
+// was right about the bug and wrong about shell: `tr '\\n' ' '` inside the parameters line is a deliberate
+// newline translation, and a text check cannot tell it from a collapsed script. What a collapse actually
+// produces is MANY escapes on ONE line, which this catches, and the line count below is the direct assertion.
+check('no rendered line collapsed a script into escape sequences',
+  yaml.split('\n').every((l) => (l.match(/\\n/g) || []).length <= 1), true);
+// …and the specific step that was collapsed, named, so a failure says where to look. Counted rather than
+// pattern-matched: `run: |` alone is satisfied by a block scalar holding one enormous line.
+const verifyBlock = yaml.slice(yaml.indexOf('name: Verify every bundle'), yaml.indexOf('name: Package'));
+check(`the verification step is a real multi-line script, not one line (${verifyBlock.split('\n').length} lines)`,
+  /name: Verify every bundle contains its binary\n\s+run: \|/.test(yaml) && verifyBlock.split('\n').length >= 25, true);
 // An uninterpolated template literal renders as the code that was supposed to run.
 check('no unresolved template expression leaked into the YAML', /\$\{[a-zA-Z]/.test(yaml.replace(/\$\{\{[^}]*\}\}/g, '')), false);
 // The build must name the files it verifies, not the code that computes them.
@@ -874,6 +881,50 @@ check('…with a threshold the measured numbers actually clear',
 // patching anything — the bench would then pass a broken plugin and report that as proof it works.
 check('…and the test bench patches that same shape as the plugin now emits',
   /APPLIED_GAIN = \/in_\[lr\] \\\* db_to_linear\\\(p->smoothed\\\[IDX_/.test(read('scripts/audio-testbench.mjs')), true);
+
+console.log('\n19. the build explains itself: a proof file, written by the build, shipped with the download');
+// Rob, 2026-10-05: *"I can see any of the things we've done, have they landed, where are they?"* The evidence
+// all existed and none of it could be seen — it lived in an Actions log. This file puts it beside the
+// artifact, in the one place a user already looks.
+const proof = await import('../server/src/lib/buildProof.js');
+check('the proof file has one name, from one constant',
+  proof.BUILD_PROOF_FILE, 'BUILD-PROOF.txt');
+// ⚠️ THE FIXED PART MUST CARRY NO FACTS. A header written from the generator's template would say "AArch64"
+// for a build that produced an x86-64 plugin, and say it convincingly — the whole value of the file is that
+// every line under "verified" was measured by the step that checked it.
+const proofHeaderText = proof.proofHeader({ target: 'audio-plugin-linux-arm', targetLabel: 'X' });
+check('its header describes the file and claims nothing about the build',
+  /written by the build/i.test(proofHeaderText)
+  && !/AArch64|x86_64|PE image|bytes/.test(proofHeaderText), true);
+// The facts are appended, and the append comes AFTER the failure check in every route — a build that cannot
+// verify a format fails instead of publishing a proof with the line missing.
+const proofTargets = [
+  ['Linux ARM', audioPluginLinux, 'Verify every format is a real plugin binary for this machine'],
+  ['macOS', audioPlugin, 'Verify every bundle contains its binary'],
+  ['Windows', audioPluginWindows, 'Verify every format is a real plugin binary'],
+];
+for (const [route, target, stepName] of proofTargets) {
+  const steps = target.buildSteps(target.scaffold(empty).files);
+  const verify = (steps.find((x) => x.name === stepName) || {}).run || '';
+  check(`${route}: the proof file is declared for release`, target.artifact.proofFile, proof.BUILD_PROOF_FILE);
+  check(`${route}: …and the step writes it`, verify.includes(proof.BUILD_PROOF_FILE), true);
+  const guarded = /did not produce usable plugins|MISSING BUNDLE/.test(verify);
+  check(`${route}: …AFTER the failure check, so an unverified build publishes nothing`,
+    guarded && verify.indexOf(proof.BUILD_PROOF_FILE) > verify.search(/did not produce usable plugins|MISSING BUNDLE/), true);
+  check(`${route}: …from the same values the assertions used, not from a second look`,
+    /proof_/.test(verify) && verify.split('\n').length > 20, true);
+}
+check('every format the Linux route promises is named in its proof',
+  audioPluginLinux.buildSteps(audioPluginLinux.scaffold(empty).files)
+    .filter((x) => x.run).map((x) => x.run).join('\n')
+    .match(/check (CLAP|VST3|standalone)/g).length >= 3, true);
+// And it has to reach the user: the release publishes it, with fail_on_unmatched_files already asserting it
+// exists, so a target that declares a proof and does not write one fails the release.
+for (const [route, target] of [['Linux ARM', audioPluginLinux], ['macOS', audioPlugin], ['Windows', audioPluginWindows]]) {
+  const files = renderWorkflow(target.runner, target.buildSteps(target.scaffold(empty).files), target.artifact, 'MANUAL');
+  const list = files.slice(files.indexOf('files: |'), files.indexOf('fail_on_unmatched_files'));
+  check(`${route}: the workflow publishes the proof beside the downloads`, list.includes(proof.BUILD_PROOF_FILE), true);
+}
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
