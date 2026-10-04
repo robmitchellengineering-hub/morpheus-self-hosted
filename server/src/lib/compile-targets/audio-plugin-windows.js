@@ -28,6 +28,7 @@
 // identity file, and one CMakeLists that configures correctly on either platform. Only the runner, the
 // commands and the packaging differ.
 import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO, PLUGIN_MANIFEST, readManifest, scaffoldPlugin, validatePlugin } from '../audioPluginProject.js';
+import { namPlan } from '../namPlugin.js';
 
 export { PLUGIN_MANIFEST, readManifest };
 
@@ -45,6 +46,8 @@ export const audioPlugin = {
   buildSteps(files) {
     const manifest = readManifest(files);
     const name = manifest.name;
+    // Shared with the other two routes — see lib/namPlugin.js. Empty unless the project carries a model.
+    const nam = namPlan(files, manifest);
     // WHERE clap-wrapper PUTS THEM ON WINDOWS — the DIRECTORY, not the path. The file is not at
     // `<dir>/<name>.vst3` and assuming it was is a mistake this target already made once on a runner: the
     // Visual Studio generator is MULTI-CONFIG, so CMake appends the configuration to every output directory
@@ -73,6 +76,13 @@ export const audioPlugin = {
         ].join('\n'),
       },
 
+      // Only when the project carries a model — see lib/namPlugin.js. The submodule update is the part that
+      // matters: Eigen is a submodule, and a plain clone leaves the include directory empty.
+      ...(nam.hasModel ? [{
+        name: 'Fetch the neural engine',
+        run: nam.clone.powershell.join('\n'),
+      }] : []),
+
       {
         name: 'Configure',
         // NO -DCMAKE_BUILD_TYPE: the default generator on a Windows runner is Visual Studio, which is
@@ -80,7 +90,7 @@ export const audioPlugin = {
         // time with --config Release, in every build step below.
         run: [
           '$ErrorActionPreference = "Stop"',
-          'cmake -B build -DCLAP_WRAPPER_DIR="$env:RUNNER_TEMP/clap-wrapper"',
+          `cmake -B build -DCLAP_WRAPPER_DIR="$env:RUNNER_TEMP/clap-wrapper"${nam.hasModel ? ` ${nam.configure.powershell}` : ''}`,
           'if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }',
         ].join('\n'),
       },

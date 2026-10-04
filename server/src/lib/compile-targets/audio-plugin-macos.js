@@ -42,6 +42,7 @@ import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO } from '../audioPluginProject.js';
 import {
   PLUGIN_ENTRY, PLUGIN_MANIFEST, PLUGIN_SOURCE, readManifest, scaffoldPlugin, validatePlugin,
 } from '../audioPluginProject.js';
+import { namPlan } from '../namPlugin.js';
 
 // Re-exported because this module's id is where the shared project is reached from, and the guard reads
 // the identity file's name out of here.
@@ -63,6 +64,9 @@ export const audioPlugin = {
     const assets = 'build/assets';
     // Quoted because a plugin name contains spaces, and every one of these paths is built from the name.
     const bundle = (ext) => `${assets}/${manifest.name}${ext}`;
+    // A model makes this build fetch a second third-party repository and compile it in. Nothing about that
+    // is macOS-specific, so the plan comes from lib/namPlugin.js and all three routes ask the same question.
+    const nam = namPlan(files, manifest);
 
     return [
       { uses: 'actions/checkout@v4' },
@@ -75,6 +79,16 @@ export const audioPlugin = {
         run: `git clone ${CLAP_WRAPPER_REPO} "$RUNNER_TEMP/clap-wrapper" && git -C "$RUNNER_TEMP/clap-wrapper" checkout ${CLAP_WRAPPER_REF}`,
       },
 
+      // Only when the project carries a model. A build with none is the gain stage it always was, so it does
+      // not pay for a second clone or a second third-party compile it will not use.
+      ...(nam.hasModel ? [{
+        name: 'Fetch the neural engine',
+        // The engine the plugin runs the model on — NeuralAmpModelerCore (MIT), the reference implementation
+        // of the .nam format, pinned to the same commit the measurement CLI builds. The submodules matter:
+        // Eigen is one, and a plain clone leaves the include directory empty.
+        run: nam.clone.bash.join('\n'),
+      }] : []),
+
       {
         name: 'Configure',
         // Universal on purpose. An Apple-silicon-only plugin is refused outright by an Intel Mac and a
@@ -82,6 +96,7 @@ export const audioPlugin = {
         run: [
           'cmake -B build -DCMAKE_BUILD_TYPE=Release \\',
           `  -DCLAP_WRAPPER_DIR="$RUNNER_TEMP/clap-wrapper" \\`,
+          ...(nam.hasModel ? [`  ${nam.configure.bash} \\`] : []),
           '  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \\',
           // PASSED EXPLICITLY, because setting it in CMakeLists is silently ignored: CMake already has
           // CMAKE_OSX_DEPLOYMENT_TARGET in its cache (empty), and a plain `set(... CACHE ...)` does not

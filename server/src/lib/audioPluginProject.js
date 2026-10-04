@@ -15,6 +15,9 @@
 import {
   auSubtypeCode, cmakeLists, entrySource, pluginSource, pluginId, fourCharCode,
 } from './audioPluginTemplate.js';
+import {
+  MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
+} from './namPlugin.js';
 import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './compile-targets/utils.js';
 
 /**
@@ -33,6 +36,9 @@ import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './compile
  */
 export const CLAP_WRAPPER_REPO = 'https://github.com/free-audio/clap-wrapper.git';
 export const CLAP_WRAPPER_REF = '1cca996e96f29ab2be7ae9f8cfe532bbc92e1dd6';
+//
+// The neural engine's pin lives in `namPlugin.js` instead — it is the module that knows what a model is, and
+// putting it here would make the two modules import each other in a cycle. See NAMCORE_REPO / NAMCORE_REF.
 
 /** The identity file the scaffold writes, and the one place a plugin's name/ID/codes are edited. */
 export const PLUGIN_MANIFEST = 'morpheus.plugin.json';
@@ -76,6 +82,9 @@ export function readManifest(files) {
     auType: String(parsed.auType || 'aufx'),
     auSubtype: String(parsed.auSubtype || auSubtypeCode(name)),
     auManufacturer: String(parsed.auManufacturer || fourCharCode(vendor, 'Morp')),
+    // The `.nam` this plugin runs, when one is named. Empty means "find one in the project", which is what
+    // most projects want; naming it is how a project carrying two models picks between them.
+    model: parsed.model == null ? '' : String(parsed.model),
   };
 }
 
@@ -121,6 +130,22 @@ export function scaffoldPlugin(files) {
     generated.push(path);
   };
 
+  // ⚠️ THE ONE GENERATED FILE THAT IS ALWAYS REWRITTEN, and it has to be. Everything else in this list is a
+  // starting point a user is expected to edit, so it is written once and left alone. The model is not a
+  // starting point — it is DERIVED from the `.nam` in the project, and leaving it alone would mean replacing
+  // `models/amp.nam` and rebuilding produced the old amp. Its own header says it is generated, for the same
+  // reason: a user who edits it should know before they lose it, not after.
+  const model = resolveModel(files, manifest);
+  for (const w of model.warnings) warnings.push(w);
+  const replace = (path, content) => {
+    const at = out.findIndex((f) => f.path === path);
+    if (at === -1) out.push({ path, content });
+    else out[at] = { path, content };
+    if (!generated.includes(path)) generated.push(path);
+  };
+  replace(MODEL_DATA_HEADER, modelHeader(model.info));
+  replace(MODEL_DATA_SOURCE, modelDataSource(model.info, model.text));
+
   add(PLUGIN_MANIFEST, `${JSON.stringify({
     name: manifest.name,
     vendor: manifest.vendor,
@@ -131,6 +156,9 @@ export function scaffoldPlugin(files) {
     auType: manifest.auType,
     auSubtype: manifest.auSubtype,
     auManufacturer: manifest.auManufacturer,
+    // Carried through so the choice survives a re-scaffold. Empty rather than absent keeps the file's shape
+    // stable, which is what makes the generated manifest diffable between two builds.
+    model: manifest.model || '',
   }, null, 2)}\n`);
 
   add(PLUGIN_SOURCE, pluginSource(manifest));
@@ -143,6 +171,12 @@ export function scaffoldPlugin(files) {
     auSubtype: manifest.auSubtype,
     auManufacturer: manifest.auManufacturer,
     auManufacturerName: manifest.vendor,
+    // The CMakeLists is the one generated file that DOES differ with and without a model: with one it compiles
+    // the reference engine into the plugin, without one there is nothing to compile. The plugin source itself
+    // does not differ — see namPlugin.js's note on why that matters for the test bench.
+    hasModel: Boolean(model.info),
+    modelPath: model.info ? model.info.path : null,
+    modelArchitecture: model.info ? model.info.architecture : null,
   }));
 
   // The entry file exports three symbols that our Plugin.cpp defines. Over somebody else's source that

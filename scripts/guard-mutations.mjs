@@ -479,6 +479,82 @@ export const MUTATIONS = [
     replace: 'set(CMAKE_POSITION_INDEPENDENT_CODE OFF CACHE BOOL "Linux plugins are shared objects" FORCE)',
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // ⚠️ THE BUG THE LOCAL clang -fsyntax-only CAUGHT: macros in the header, no declaration of the symbols.
+    why: 'Drops the extern declaration of the embedded model bytes, leaving the plugin referencing symbols only the .cpp defines — a compile error in every project that has a model.',
+    find: 'extern const unsigned char morpheus_model_data[];',
+    replace: '/* declaration removed */',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // Two engines, one comparison: the CLI renders the reference WAV and the plugin plays the model. Move one
+    // pin and the offline proof is measuring two different implementations.
+    why: 'Moves the plugin\u2019s engine pin off the commit the measurement CLI builds, so the reference render and the plugin are no longer the same code.',
+    find: "export const NAMCORE_REF = '0b3d3c9';",
+    replace: "export const NAMCORE_REF = 'deadbee';",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // Eigen is a submodule. Without this line the build fails on a missing header inside a library the user
+    // has never heard of, several minutes in.
+    why: 'Skips the submodule update, so Eigen is never fetched and the engine cannot compile.',
+    find: 'git -C "$RUNNER_TEMP/namcore" submodule update --init --depth 1',
+    replace: 'echo "skipping the engine submodules"',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // The model data is a translation unit; leaving it out of the library links nothing that defines it.
+    why: 'Leaves ModelData.cpp out of the plugin library, so the embedded model is never compiled in.',
+    find: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp)',
+    replace: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // NAM_SAMPLE lives in a macro INSIDE the library, so it decides the signature of the function the plugin
+    // calls. A target that disagrees does not get a warning; it gets a link error naming a mangled symbol.
+    why: 'Stops pinning the sample type, so the plugin and the engine can disagree about process()\u2019s signature.',
+    find: 'target_compile_definitions(morpheus_plugin-impl PRIVATE NAM_SAMPLE_FLOAT)',
+    replace: 'target_compile_definitions(morpheus_plugin-impl PRIVATE MORPHEUS_NO_SAMPLE_TYPE)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // One instance per channel, because a .nam is mono and the port declaration promises two channels.
+    why: 'Reduces the plugin to a single model instance, which silently collapses every stereo source to mono while the descriptor still advertises two channels.',
+    find: 'nam::DSP *model[2];',
+    replace: 'nam::DSP *model[1];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // A model that will not load must not take the plugin with it — but a silent fallback is the worse failure.
+    why: 'Removes the message a host\u2019s log gets when a model fails to load, leaving a gain stage and no reason for it.',
+    find: 'could not load the NAM model from',
+    replace: 'running without the model',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
+    // Without this the runner cannot build the modelled project at all, so the model path is proven only by a
+    // guard that reads text.
+    why: 'Stops the ARM runner seeding a model into the workspace, so the model path is never built on hardware.',
+    find: 'path: `models/${basename(modelArg)}`',
+    replace: 'path: `models/unused.nam`',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-linux-arm-build.yml',
+    // And without the dispatch step above it, the same thing: a guard-only proof.
+    why: 'Drops the modelled build from the ARM workflow, so a project with a model is never compiled for a Pi.',
+    find: '--model .cache/models/linear_1.nam',
+    replace: '--model .cache/models/absent.nam',
+  },
+  {
     guard: 'verify-audio-measure.mjs',
     file: 'server/src/lib/audio/analysis.js',
     // THE CLASSIC WINDOWING BUG, as a mutation: dropping the window's coherent gain makes every amplitude read

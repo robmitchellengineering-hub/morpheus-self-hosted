@@ -38,6 +38,7 @@
 // The plugin PROJECT is shared with the macOS and Windows routes (lib/audioPluginProject.js): same sources,
 // same identity file, and one CMakeLists that configures on all three platforms.
 import { CLAP_WRAPPER_REF, CLAP_WRAPPER_REPO, PLUGIN_MANIFEST, readManifest, scaffoldPlugin, validatePlugin } from '../audioPluginProject.js';
+import { namPlan } from '../namPlugin.js';
 
 export { PLUGIN_MANIFEST, readManifest };
 
@@ -73,6 +74,8 @@ export const audioPlugin = {
     const qClap = JSON.stringify(`${name}.clap`);
     const qVst3So = JSON.stringify(`${name}.so`);
     const qVst3Dir = JSON.stringify(`${name}.vst3`);
+    // Shared with the other two routes — see lib/namPlugin.js. Empty unless the project carries a model.
+    const nam = namPlan(files, manifest);
 
     return [
       { uses: 'actions/checkout@v4' },
@@ -104,6 +107,16 @@ export const audioPlugin = {
         ].join('\n'),
       },
 
+      // Only when the project carries a model. The build with none is the gain stage it always was, so it pays
+      // nothing for an engine it will not use — and every runner proof taken before this existed stays valid.
+      ...(nam.hasModel ? [{
+        name: 'Fetch the neural engine',
+        // NeuralAmpModelerCore (MIT), the reference implementation of the .nam format, pinned to the same
+        // commit the measurement CLI builds. The submodule line is load-bearing: Eigen is a submodule, and a
+        // plain clone leaves the include directory empty.
+        run: ['set -euo pipefail', ...nam.clone.bash].join('\n'),
+      }] : []),
+
       {
         name: 'Configure',
         // `-DCMAKE_BUILD_TYPE=Release` because a Linux runner's default generator is SINGLE-config — the
@@ -112,7 +125,7 @@ export const audioPlugin = {
         // build type CMake configures an unoptimised plugin and says nothing about it.
         run: [
           'set -euo pipefail',
-          'cmake -B build -DCMAKE_BUILD_TYPE=Release -DCLAP_WRAPPER_DIR="$RUNNER_TEMP/clap-wrapper"',
+          `cmake -B build -DCMAKE_BUILD_TYPE=Release -DCLAP_WRAPPER_DIR="$RUNNER_TEMP/clap-wrapper"${nam.hasModel ? ` ${nam.configure.bash}` : ''}`,
         ].join('\n'),
       },
 
