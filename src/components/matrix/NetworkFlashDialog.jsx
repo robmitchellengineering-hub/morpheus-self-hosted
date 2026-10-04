@@ -55,7 +55,7 @@ export default function NetworkFlashDialog({ open, onClose, projectId, target })
       await navigator.clipboard.writeText(command);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   const downloadScript = () => {

@@ -200,6 +200,26 @@ check('the expiry lives in ONE place the browser can import',
 const card = read('src/lib/deckWidgetBuildCard.js');
 check('the card rule is import-free too', /^\s*import\s/m.test(card), false);
 
+// ⚠️ A CALL IS NOT WIRING — the same check the order rule gained, for the same outage. `#502` shipped
+// `orderDeckWidgets is not defined` to production because a call was added without its import, and no
+// gate resolves identifiers. Every consumer of this module is checked the same way: it must import
+// each name it uses. Comments are stripped so a name mentioned in prose is not read as a usage.
+const codeOnly = (src) => src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+function importedFrom(src, moduleName) {
+  const re = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*['"][^'"]*${moduleName}['"]`, 'g');
+  return [...src.matchAll(re)]
+    .flatMap((m) => m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop()).filter(Boolean));
+}
+const CARD_EXPORTS = ['TERMINAL_BUILD_STATUSES', 'TERMINAL_BUILD_VISIBLE_MS', 'isTerminalBuildStatus', 'shouldShowWidgetBuildCard'];
+for (const [label, src] of [['CommandDeckContext.jsx', ctx], ['DeckSettings.jsx', settings]]) {
+  const body = codeOnly(src);
+  const imported = importedFrom(body, 'deckWidgetBuildCard');
+  const used = CARD_EXPORTS.filter((n) => new RegExp(`\\b${n}\\b`).test(body));
+  check(`${label} imports every name it uses from the card rule`,
+    `${used.filter((n) => !imported.includes(n)).join(',')} | used ${used.length} imported ${imported.length}`,
+    ` | used ${used.length} imported ${used.length}`);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ a widget build can still be cut off by its own deploy\n');

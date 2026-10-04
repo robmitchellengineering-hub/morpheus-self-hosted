@@ -78,7 +78,7 @@ export default function DistroConfigDialog({ open, onClose, projectId }) {
             setSshPublicKey(cfg.sshPublicKey || '');
             setExtraPackages(Array.isArray(cfg.extraPackages) ? cfg.extraPackages.join(', ') : '');
             setExtraRunCommands(Array.isArray(cfg.extraRunCommands) ? cfg.extraRunCommands.join('\n') : '');
-          } catch {}
+          } catch { /* ignore */ }
         }
       })
       .catch(() => {})

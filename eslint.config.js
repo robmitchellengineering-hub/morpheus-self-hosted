@@ -54,6 +54,25 @@ export default [
       "unused-imports": pluginUnusedImports,
     },
     rules: {
+      // ⚠️ THE RECOMMENDED SET IS RE-SPREAD HERE ON PURPOSE — DO NOT DELETE THIS LINE.
+      //
+      // Both `pluginJs.configs.recommended` and `pluginReact.configs.flat.recommended` define a
+      // `rules` key, and this block spreads them one after the other. **Object spread means the
+      // SECOND silently REPLACES the first**, so every rule from `@eslint/js` recommended —
+      // `no-undef` above all — was thrown away for all of `src/**`, and the `rules` object below
+      // started from nothing. A file that matches a config block was therefore still not checked
+      // for the one thing `node --check` cannot see either: a name that is never declared.
+      //
+      // Found 2026-10-04, the hard way: `#502` shipped `orderDeckWidgets is not defined` to
+      // `/deck/settings` — a blank error screen — through a fully green CI run, because lint had
+      // no opinion and `vite build` does not resolve identifiers either. `server/src/**` never had
+      // this bug: its block re-spreads `.rules` explicitly (see below), which is exactly why the
+      // `chunkOps is not defined` incident is documented as caught there and not here.
+      //
+      // Enabling it cost ONE existing error in all of src/ (`timerFor` in SeoTab.jsx — a leftover
+      // from a removed design), which is the evidence that this was an unenforced rule rather than
+      // a clean tree. `scripts/verify-lint-coverage.mjs` now fails the build if this spread goes.
+      ...pluginJs.configs.recommended.rules,
       "no-unused-vars": "off",
       "react/jsx-uses-vars": "error",
       "react/jsx-uses-react": "error",

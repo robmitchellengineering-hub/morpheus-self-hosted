@@ -79,7 +79,7 @@ export default function Screenshots() {
           return;
         }
         // afterLoad runs once content has settled (e.g. expanding a platform)
-        if (afterLoad) { try { await afterLoad(doc, win); } catch {} }
+        if (afterLoad) { try { await afterLoad(doc, win); } catch { /* ignore */ } }
         if (win) win.scrollTo(0, 0);
         await new Promise(r => setTimeout(r, 300));
         const captureHeight = fullHeight ? Math.max(doc.body.scrollHeight, height) : height;
@@ -246,7 +246,7 @@ export default function Screenshots() {
     if (captured > 0) {
       // Try auto-download, but also provide a manual download button —
       // programmatic downloads are often blocked inside preview iframes.
-      try { pdf.save('morpheus-screenshots.pdf'); } catch (e) {}
+      try { pdf.save('morpheus-screenshots.pdf'); } catch (e) { /* ignore */ }
       setPdfUrl(pdf.output('bloburl'));
       setStatus(`Done — ${captured} pages captured`);
     } else {

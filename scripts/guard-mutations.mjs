@@ -224,6 +224,25 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-deck-widget-order.mjs',
+    file: 'src/pages/CommandDeck/DeckSettings.jsx',
+    // THE ACTUAL OUTAGE, as a mutation. This is precisely what shipped in #502: the call is present
+    // and correct, and the name is simply not imported — `ReferenceError` in production, on a page
+    // that then renders nothing, with every other gate green.
+    why: 'Removes the imported name while leaving the call in place — the exact shape of the production break (#502): a correct call to a function that was never imported, which no other gate resolves.',
+    find: "import { canReorderWidget, orderDeckWidgets } from './deckWidgetOrder';",
+    replace: "import { canReorderWidget } from './deckWidgetOrder';",
+  },
+  {
+    guard: 'verify-lint-coverage.mjs',
+    file: 'eslint.config.js',
+    // The root cause, as a mutation: the frontend block stops re-spreading the recommended rules, so
+    // `no-undef` silently stops applying to all of src/** while every file still "matches a block".
+    why: 'Drops the recommended-rules re-spread from the frontend block, which is how src/** silently lost no-undef (and every other eslint-recommended rule) to the React config spread that replaced it.',
+    find: '      ...pluginJs.configs.recommended.rules,\n      "no-unused-vars": "off",',
+    replace: '      "no-unused-vars": "off",',
+  },
+  {
+    guard: 'verify-deck-widget-order.mjs',
     file: 'src/pages/CommandDeck/deckWidgets.js',
     why: "Takes brain dump back out of the top of the registry, which is the position a brand-new account seeds its first widget from — the exact thing Rob saw on a new user's deck.",
     find: "  { key: 'brain_dump', label: 'Brain dump', defaultEnabled: true },\n",
@@ -307,8 +326,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 66;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 67;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 65;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 66;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -713,7 +732,6 @@ export const NOT_YET_PROVEN = [
   { guard: 'boot-smoke.mjs', why: 'needs server/node_modules, so it cannot run in the no-install guards job and a mutation could not be demonstrated there' },
   { guard: 'verify-context.mjs', why: 'asserts that every verify-*.mjs is registered in verify.mjs and ci.yml; falsifying it needs a new FILE, which the find/replace shape does not express' },
   { guard: 'verify-guards-no-install.mjs', why: 'reads the CI workflow and the guards\' real import graph; falsifying it needs a broken import, not a text edit' },
-  { guard: 'verify-lint-coverage.mjs', why: 'walks eslint.config.js against the tree; falsifying it needs a new directory or a new file, not a text edit' },
   { guard: 'verify-server-imports.mjs', why: 'resolves the real import graph; a text edit that leaves the graph valid proves nothing about it' },
   { guard: 'verify-prisma-fields.mjs', why: 'reads prisma/schema.prisma and the query sites; the honest falsification is a removed field, which changes the schema\'s meaning rather than a line' },
 ];
@@ -729,5 +747,12 @@ export const NOT_YET_PROVEN = [
  * incident with no mutation of its own, so nothing proved it could fail. Rewriting it for the memory
  * stall added mutations (the ceiling dropping the newest line, a loose removal, a dropped `required`),
  * so the gap shrank by one and the ratchet comes down with it.
+ *
+ * 66 → 65 on 2026-10-04 (same day, later): `verify-lint-coverage.mjs` was recorded as "falsifying it
+ * needs a new directory or a new file, not a text edit". That was wrong, and believing it cost an
+ * outage — `#502` reached production with `orderDeckWidgets is not defined`, because the guard checked
+ * that every file MATCHES a lint block and never that the block's rules were still switched on. It now
+ * also asserts each `rules:` block re-spreads the recommended set, so the falsification is a plain
+ * text edit (drop the spread) and the guard joins the proven pile.
  */
-export const UNPROVEN_BASELINE = 66;
+export const UNPROVEN_BASELINE = 65;

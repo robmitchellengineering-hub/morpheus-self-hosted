@@ -105,6 +105,40 @@ check('the ignore list is exactly the generated UI kit',
   [...new Set(ignored.map((f) => f.split('/').slice(0, 3).join('/')))].join(', '),
   'src/components/ui');
 
+console.log('\n5. a file that matches a block is checked for more than punctuation');
+// ⚠️ WHICH BLOCK A FILE MATCHES IS ONLY HALF OF "LINTED". The other half is which RULES that block
+// ends up with — and this config spread two whole shared configs in a row:
+//
+//     ...pluginJs.configs.recommended,
+//     ...pluginReact.configs.flat.recommended,
+//
+// Both define `rules`, and object spread means the SECOND replaces the first. So every rule from
+// `@eslint/js` recommended — `no-undef` above all — was discarded for all of `src/**`, and the
+// hand-written `rules:` object below started from nothing. Matching a block looked identical to
+// being checked.
+//
+// It shipped a blank error screen: `#502` put `orderDeckWidgets is not defined` into
+// /deck/settings through a fully green CI run, because `vite build` does not resolve identifiers
+// either and `node --check` only ever saw syntax. `server/src/**` was never affected — its block
+// re-spreads `.rules` explicitly — which is why `chunkOps is not defined` is recorded as caught
+// there and the same mistake was invisible here for months.
+//
+// The assertion is deliberately crude and total: EVERY `rules:` block must re-spread the
+// recommended set. A rule block that relies on a whole-config spread above it is the bug, so the
+// counts have to match rather than "at least one does".
+const ruleBlocks = config.match(/rules:\s*\{/g) || [];
+const recommendedSpreads = config.match(/\.\.\.pluginJs\.configs\.recommended\.rules,/g) || [];
+check('the config still has the rule blocks this check is about', ruleBlocks.length >= 2, true);
+check('every rules block re-spreads the recommended rules (a whole-config spread does NOT survive the next one)',
+  `${recommendedSpreads.length} spreads / ${ruleBlocks.length} blocks`,
+  `${ruleBlocks.length} spreads / ${ruleBlocks.length} blocks`);
+
+// And the consequence, stated directly: nothing may switch the rule back off. `no-undef` is the one
+// rule here that can only ever find a defect, so a hand-written `"off"` for it is a decision that has
+// to be argued for rather than typed.
+check('…and nothing turns no-undef off by hand (it can only ever find a defect)',
+  /["']no-undef["']\s*:\s*["']off["']/.test(config), false);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');

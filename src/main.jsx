@@ -36,7 +36,7 @@ try {
   }
   const savedBoringMode = localStorage.getItem('morpheus_boring_mode');
   document.documentElement.setAttribute('data-boring-mode', savedBoringMode === 'light' ? 'light' : 'dark');
-} catch {}
+} catch { /* ignore */ }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <App />

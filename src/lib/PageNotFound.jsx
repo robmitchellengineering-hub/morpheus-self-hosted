@@ -3,7 +3,10 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 
 
-export default function PageNotFound({}) {
+// No parameter at all: `({})` destructured nothing and only told a reader that props were expected —
+// `no-empty-pattern` says the same thing, and it started being enforced 2026-10-04 when the frontend
+// lint config began running eslint's recommended set.
+export default function PageNotFound() {
     const location = useLocation();
     const pageName = location.pathname.substring(1);
 

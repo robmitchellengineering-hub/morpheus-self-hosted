@@ -157,7 +157,7 @@ export function generateManual() {
     doc.addPage(); bg(); y = MT;
     const p = pages();
     chapters.push({ num, title, page: p });
-    try { doc.outline.add(null, (num != null ? num + '. ' : '') + title, { pageNumber: p }); } catch (e) {}
+    try { doc.outline.add(null, (num != null ? num + '. ' : '') + title, { pageNumber: p }); } catch (e) { /* ignore */ }
     // number badge
     if (num != null) {
       doc.setFillColor(...ACCENT); doc.circle(ML + 11, y + 9, 11, 'F');

@@ -12,7 +12,7 @@ function getBuildTime() {
       // eslint-disable-next-line no-undef
       return __APP_BUILD_TIME__;
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
   return new Date().toISOString();
 }
 
