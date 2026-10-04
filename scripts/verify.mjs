@@ -99,6 +99,7 @@ const HARD = [
   'verify-deck-widget-build.mjs',
   'verify-deck-widget-order.mjs',
   'verify-render-check.mjs',
+  'verify-audio-plugin.mjs',
   'verify-portable-bundle.mjs',
   'verify-portable-setup.mjs',
   'verify-portable-remote.mjs',

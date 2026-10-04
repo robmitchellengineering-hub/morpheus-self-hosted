@@ -405,6 +405,14 @@ jobs:
       - name: The logged-in render check exists and is safe to run
         run: node scripts/verify-render-check.mjs
 
+      # One CLAP source in, VST3 + AU + standalone + CLAP out. This target GENERATES the project as
+      # well as building it, so the guard checks the generated C++/CMake for the settings that are not
+      # optional, and the build steps for the decisions a spike had to pay for — most importantly that
+      # the verification looks INSIDE each bundle, because a bundle directory with no binary in it
+      # uploads, downloads and fails to load with nothing saying so.
+      - name: The audio-plugin target generates a project that builds
+        run: node scripts/verify-audio-plugin.mjs
+
       # The portable download used to be a hand-run mirror that shipped a tree a month out of
       # date. This asserts it is generated during the build, selects the real product, and says
       # what it does NOT contain.
