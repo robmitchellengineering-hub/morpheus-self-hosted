@@ -469,7 +469,7 @@ check('the build runs in bash and fails fast', /set -euo pipefail/.test(linuxRun
 check('…and carries no PowerShell or macOS-only command from the other two routes',
   /\$ErrorActionPreference|sysctl|ditto -c -k|\blipo\b|nm -gU/.test(linuxRun), false);
 check('…installing exactly the two packages Linux needs, and no more',
-  /libasound2-dev/.test(linuxRun) && /libx11-dev/.test(linuxRun) && /gtkmm|cairo|fontconfig/.test(linuxRun), false);
+  /libasound2-dev/.test(linuxRun) && /libx11-dev/.test(linuxRun) && !/gtkmm|cairo|fontconfig/.test(linuxRun), true);
 check('…configured Release, because a Linux generator is single-config',
   /-DCMAKE_BUILD_TYPE=Release/.test(linuxRun), true);
 check('each format is built as its own target, so one failure cannot strand the others',
@@ -486,7 +486,7 @@ check('the verification SEARCHES for each artefact rather than building its path
 check('…using find -print -quit, not find | head, which trips pipefail when the search succeeds',
   /\| head -n 1/.test(linuxRun), false);
 check('…and capturing the symbols once instead of piping nm into grep -q, which does the same in reverse',
-  /grep -qw "\$sym" <<< "\$syms"/.test(linuxRun) && /nm -D --defined-only "\$hit" 2>\/dev\/null \| grep/.test(linuxRun), false);
+  /grep -qw "\$sym" <<< "\$syms"/.test(linuxRun) && !/nm -D --defined-only "\$hit" 2>\/dev\/null \| grep/.test(linuxRun), true);
 check('…and asserts the file is an ELF image rather than trusting the extension',
   /7f454c46/.test(linuxRun), true);
 // ⭐ THE ASSERTION THE WHOLE ROUTE EXISTS FOR. "This runs on a Raspberry Pi" is only true if the artefact
@@ -506,8 +506,11 @@ check('…dispatched by hand, not on a push or a pull request',
 check('…and nothing in it can start a bill on every branch',
   /pull_request|^\s*push:/m.test(linuxWf), false);
 // An x86-64 runner here would build a plugin for the wrong machine and every file-exists check would pass.
+// Written as "IS the ARM runner AND is not a generic one", because the first version asserted the two
+// together against `false` — so setting the runner to `ubuntu-latest` made the first half false and the
+// whole check pass. The mutation survived and is what found it.
 check('…on an ARM64 runner, which is the only kind that can prove this route',
-  /runs-on: ubuntu-24\.04-arm/.test(linuxWf) && /runs-on: ubuntu-latest/.test(linuxWf), false);
+  /runs-on: ubuntu-24\.04-arm/.test(linuxWf) && !/runs-on: ubuntu-latest/.test(linuxWf), true);
 check('…bounded by a timeout, because configure downloads the SDKs', /timeout-minutes: \d+/.test(linuxWf), true);
 check('…running the target\'s own steps through its runner script',
   /node scripts\/audio-plugin-linux-arm-runner-build\.mjs/.test(linuxWf), true);
