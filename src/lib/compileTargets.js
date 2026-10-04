@@ -35,6 +35,10 @@ export const COMPILE_TARGETS = [
   { value: 'web-app', create: 'Web app or website (build locally)', import: 'Web app or website', bar: 'web app / site' },
   { value: 'source', create: 'Source code only', import: 'Source code only', bar: 'source' },
   { value: 'windows-exe', create: 'Windows .exe (build locally)', import: 'Windows .exe', bar: 'win .exe' },
+  // The Windows half of the audio plugin pair. Two routes rather than one with two OS legs, because the
+  // user chooses before they build and the two produce DIFFERENT things: a Windows plugin cannot contain an
+  // Audio Unit at all, so this one is VST3 + CLAP + standalone.
+  { value: 'audio-plugin-windows', create: 'Windows audio plugin — VST3 or CLAP (build locally)', import: 'Windows audio plugin — VST3 or CLAP', bar: 'win audio plugin' },
   { value: 'mac-app', create: 'macOS .app (build locally)', import: 'macOS .app', bar: 'mac .app' },
   // THE OS IS IN THE LABEL, because a plugin is not like the other targets: a VST3 is a format that exists
   // on more than one machine, so "Audio Plugin (VST3 · AU · CLAP)" reads as though it builds for whatever

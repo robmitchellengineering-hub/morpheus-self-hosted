@@ -272,9 +272,10 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/compile-targets/audio-plugin-macos.js',
+    file: 'server/src/lib/audioPluginProject.js',
     // A moving ref is the quiet one: the build keeps working, and two people building the same project
     // on different days get different binaries from a dependency they did not choose and cannot see.
+    // (Repointed when the pin moved into the shared module the two audio routes generate from.)
     why: 'Un-pins the plugin wrappers from a fixed commit to a branch, so the same project builds differently over time and an upstream force-push changes what a user ships.',
     find: "const CLAP_WRAPPER_REF = '1cca996e96f29ab2be7ae9f8cfe532bbc92e1dd6';",
     replace: "const CLAP_WRAPPER_REF = 'main';",
@@ -300,11 +301,13 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/compile-targets/audio-plugin-macos.js',
+    file: 'server/src/lib/audioPluginProject.js',
     // Regenerating over somebody's DSP is the worst thing this target could do, so the guard asserts it
     // cannot happen. This mutation makes the scaffold overwrite whatever is already there.
+    // (Repointed when the scaffold moved into the shared module the two audio routes generate from — and
+    // the indentation with it: it is a top-level function there, not a method on the target object.)
     why: 'Lets the scaffold overwrite files that already exist, so compiling a project Morpheus generated earlier would silently replace the edits the user made to their own plugin.',
-    find: '      if (hasFile(out, path)) return;\n',
+    find: '    if (hasFile(out, path)) return;\n',
     replace: '',
   },
   {
@@ -334,6 +337,52 @@ export const MUTATIONS = [
     why: 'Replaces the target\'s own step with a hand-written command, so the runner build can drift from what the target generates and still pass.',
     find: "['-c', step.run]",
     replace: "['-c', 'cmake --build build --target morpheus_plugin_clap -j4']",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-windows.js',
+    // ⭐ THE ANTI-DRIFT CLAIM, and the reason the generator is shared rather than copied. Both routes must
+    // generate the same project; the moment one of them adds a file of its own, that route is building a
+    // plugin the other route's evidence does not cover — and both guards still pass.
+    why: 'Gives the Windows route a scaffold that generates one extra file, so the two routes stop building the same plugin while every other check stays green.',
+    find: '  validate: validatePlugin,\n  scaffold: scaffoldPlugin,',
+    replace: "  validate: validatePlugin,\n  scaffold: (files) => { const r = scaffoldPlugin(files); return { ...r, files: [...r.files, { path: 'Source/WindowsOnly.cpp', content: '// windows only\\n' }] }; },",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-windows.js',
+    // THE macOS LAYOUT ON A WINDOWS BUILD. This is the mistake the verify step exists to prevent: looking
+    // for the flat `assets/<name>.clap` that macOS produces finds nothing on Windows, and a check written
+    // that way reports every format missing — or, worse, passes because it never looks.
+    why: 'Points the Windows verification at the flat macOS assets path, so it checks a layout Windows does not produce.',
+    find: 'const clap = `${WINDOWS_ASSETS}/CLAP/${name}.clap`;',
+    replace: 'const clap = `${WINDOWS_ASSETS}/${name}.clap`;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-windows.js',
+    // Trusting the file extension is how a 0-byte or wrongly-linked artifact passes. The MZ/PE read is the
+    // whole content of the claim that this is a plugin binary rather than a file with the right name.
+    why: 'Stops reading the PE signature, so any file with the right extension satisfies the verification.',
+    find: 'if ($br.ReadUInt16() -ne 0x5A4D) { return $false }   # MZ',
+    replace: 'if ($false) { return $false }   # MZ',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/compile-targets/audio-plugin-windows.js',
+    // The platform in the words a user reads, on the half of the pair where a VST3 is a format the reader's
+    // own machine might also take — so the label is the only thing telling them which route is theirs.
+    why: 'Removes the platform from the Windows route\'s label, so a Windows-only plugin is advertised as a plugin for whatever machine the user is on.',
+    find: "  label: 'Audio Plugin — Windows (VST3 · CLAP)',",
+    replace: "  label: 'Audio Plugin (VST3 · CLAP)',",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-windows-build.yml',
+    // The cost gate on the other OS — 2x rather than 10x, and still a bill rather than a slow build.
+    why: 'Adds a pull_request trigger to the manual-only Windows audio plugin build, so a Windows bill starts on every branch instead of when someone dispatches it.',
+    find: 'on:\n  workflow_dispatch:',
+    replace: 'on:\n  pull_request:\n  workflow_dispatch:',
   },
   {
     guard: 'verify-audio-plugin.mjs',

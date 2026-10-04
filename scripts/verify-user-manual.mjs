@@ -106,8 +106,10 @@ const PLATFORM_PROOF = {
   'rpi-distro': 'Raspberry Pi Imager',
   'linux-distro': 'balenaEtcher',
   'arduino-firmware': 'avrdude',
-  // Where a plugin has to be moved for a DAW to find it — the one fact a musician cannot guess.
-  'audio-plugin-macos': 'Audio/Plug-Ins'
+  // Where a plugin has to be moved for a DAW to find it — the one fact a musician cannot guess, and it is
+  // a different directory on each platform (and a single FILE rather than a bundle on Windows).
+  'audio-plugin-macos': 'Audio/Plug-Ins',
+  'audio-plugin-windows': 'Common Files'
 };
 for (const id of listCompileTargets()) {
   const adapter = getCompileTarget(id);

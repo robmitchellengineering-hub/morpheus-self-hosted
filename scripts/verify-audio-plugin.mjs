@@ -21,6 +21,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
+import audioPluginWindows from '../server/src/lib/compile-targets/audio-plugin-windows.js';
 import { getCompileTarget, listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 
 const REPO = new URL('..', import.meta.url).pathname;
@@ -44,7 +45,11 @@ check('…and lists it', listCompileTargets().includes('audio-plugin-macos'), tr
 // published list lie about what Morpheus can build.
 const caps = JSON.parse(read('src/lib/morpheusCapabilities.json'));
 check('…and the PUBLISHED capability list includes it', caps.buildTargets.includes('audio-plugin-macos'), true);
-check('…and that list still names the other ten', caps.buildTargets.length, 11);
+// One entry per target, counted against the registry rather than a number written here: the published list
+// is what search engines and AI answer engines read, and this target count has already changed once.
+check('…and every registered target is published', caps.buildTargets.length, listCompileTargets().length);
+check('…including both audio plugin routes',
+  caps.buildTargets.includes('audio-plugin-macos') && caps.buildTargets.includes('audio-plugin-windows'), true);
 check('the label names the formats a musician gets', /VST3/.test(audioPlugin.label) && /AU/.test(audioPlugin.label) && /CLAP/.test(audioPlugin.label), true);
 // ⚠️ THE PLATFORM WAS THE MISSING WORD, and it is a product problem rather than a wording one: a VST3
 // exists on more than one machine, so a label naming only the formats reads as "builds for whatever you are
@@ -142,8 +147,20 @@ check('Objective-C++ is enabled for the standalone shell', /enable_language\(OBJ
 // and no complaint.
 check('the standalone is actually requested, not just enabled',
   /CLAP_WRAPPER_BUILD_STANDALONE ON/.test(cmake) && /STANDALONE_CONFIGURATIONS/.test(cmake), true);
-check('AUv2 is requested', /CLAP_WRAPPER_BUILD_AUV2 ON/.test(cmake), true);
-check('all four formats are listed', /PLUGIN_FORMATS CLAP VST3 AUV2 WCLAP/.test(cmake), true);
+check('AUv2 is requested where an AU exists', /CLAP_WRAPPER_BUILD_AUV2 ON/.test(cmake), true);
+// ⚠️ THE AU IS APPLE-ONLY, AND THE FLAG MATTERS AS MUCH AS THE LIST. Both routes generate this SAME
+// project — that is the point of lib/audioPluginProject.js — so the generated CMakeLists has to configure
+// correctly on whichever platform builds it. Two separate mistakes live here, and the second is the quiet
+// one: leaving AUV2 in the format list is merely skipped by clap-wrapper (`if (APPLE AND …)`), but leaving
+// `CLAP_WRAPPER_BUILD_AUV2` ON makes a WINDOWS configure fetch Apple's AudioUnitSDK.
+check('the base format list is the three that exist everywhere',
+  /set\(PLUGIN_FORMATS CLAP VST3 WCLAP\)/.test(cmake), true);
+check('…with the AU appended only on Apple',
+  /if \(APPLE\)\s*\n\s*list\(APPEND PLUGIN_FORMATS AUV2\)/.test(cmake), true);
+check('…and the AU wrapper flag turned OFF off-Apple, so no AudioUnitSDK is fetched',
+  /else\(\)\s*\n\s*set\(CLAP_WRAPPER_BUILD_AUV2 OFF/.test(cmake), true);
+check('…and the AU registration arguments are passed only where an AU is built',
+  /set\(AU_ARGS ""\)/.test(cmake) && /\$\{AU_ARGS\}/.test(cmake), true);
 check('the AU registration codes are passed through', /AUV2_SUBTYPE_CODE/.test(cmake) && /AUV2_INSTRUMENT_TYPE/.test(cmake), true);
 check('a missing CLAP_WRAPPER_DIR is a loud failure, not a strange one',
   /CLAP_WRAPPER_DIR is not set/.test(cmake), true);
@@ -300,6 +317,76 @@ check('…and refusing a standalone bundle that exists with no binary in it',
 // A manual job nobody knows about is the same as no job (H17). It is named where a session will see it.
 check('…and the manual job is named in AGENTS.md, so a session that changes the target dispatches it',
   /audio-plugin-macos-build\.yml/.test(read('AGENTS.md')), true);
+
+console.log('\n12. the WINDOWS route is a Windows route, and builds the same plugin');
+// The second half of Rob's requirement: "…same for the windows one your about to build." Everything section
+// 11 asserts about the macOS route's reachability and labelling applies here, plus the things that are
+// genuinely different about building a plugin on Windows — and one that must NOT be different, which is the
+// plugin itself.
+check('the registry returns it by id', getCompileTarget('audio-plugin-windows')?.id, 'audio-plugin-windows');
+check('…and lists it', listCompileTargets().includes('audio-plugin-windows'), true);
+check('the label names the platform, not only the formats', /Windows/i.test(audioPluginWindows.label), true);
+check('…and does NOT promise an Audio Unit, which cannot exist off Apple',
+  /AU\b|Audio Unit/i.test(audioPluginWindows.label), false);
+check('…and the route is offered in the picker',
+  read('src/lib/compileTargets.js').includes(`value: '${audioPluginWindows.id}'`), true);
+const winManual = /'audio-plugin-windows': \{[\s\S]*?install: \[([\s\S]*?)\],/.exec(manualSrc)?.[1] || '';
+check('its manual opens by saying it is Windows only', /WINDOWS ONLY/i.test(winManual), true);
+check('…and says why there is no Audio Unit in it', /Audio Unit/i.test(winManual), true);
+check('…and names the install folder a musician cannot guess', /Common Files/i.test(winManual), true);
+
+// ⭐ THE ANTI-DRIFT CLAIM, and the reason the generator was extracted rather than copied: the two routes
+// must generate the SAME project. If they ever diverge, one of them silently builds a different plugin than
+// the one its guard tested — with both green.
+check('both routes generate byte-identical projects from one generator',
+  JSON.stringify(audioPluginWindows.scaffold(empty).files), JSON.stringify(audioPlugin.scaffold(empty).files));
+
+const winSteps = audioPluginWindows.buildSteps(audioPluginWindows.scaffold(empty).files);
+const winRun = winSteps.filter((s) => s.run).map((s) => s.run).join('\n');
+check('the build runs in PowerShell, like the runner does',
+  /\$ErrorActionPreference/.test(winRun) && /if \(\$LASTEXITCODE -ne 0\)/.test(winRun), true);
+// A POSIX command in a Windows step does not fail loudly — it fails as "not recognized", after the step has
+// already done half its work, or on GitHub it fails as a syntax error naming nothing useful.
+check('…and carries no POSIX-only command from the macOS route',
+  /sysctl|ditto -c -k|\blipo\b|set -e\b|nm -gU/.test(winRun), false);
+check('each format is built as its own target, so one failure cannot strand the others',
+  /--target \$t/.test(winRun) && /morpheus_plugin_clap/.test(winRun) && /morpheus_plugin_standalone/.test(winRun), true);
+// The Windows layout is NOT the macOS one, which is the mistake this step exists to prevent: a check written
+// for `Contents/MacOS/<name>` finds nothing here and reports every format missing.
+check('the verification looks where clap-wrapper actually puts these on Windows',
+  /build\/assets\/CLAP\//.test(winRun) && /build\/assets\/VST3\//.test(winRun) && /Standalone-morpheus_plugin_standalone/.test(winRun), true);
+check('…and asserts the file is a PE image rather than trusting the extension',
+  /0x5A4D/.test(winRun) && /0x00004550/.test(winRun), true);
+check('…and refuses to pass when it cannot check the entry points',
+  /dumpbin is not on PATH[\s\S]{0,120}do not let it pass/.test(winRun), true);
+check('the artifact spec names the Windows downloads, one per format',
+  ['vst3', 'clap', 'standalone'].every((k) => (audioPluginWindows.artifact.glob || '').includes(`plugin-windows-${k}`))
+  || ['vst3', 'clap', 'standalone'].every((k) => audioPluginWindows.artifact.verifyCommand.includes(`plugin-windows-${k}`)), true);
+
+const winWf = read('.github/workflows/audio-plugin-windows-build.yml');
+check('there is a workflow that builds it on a real Windows runner', winWf.length > 0, true);
+check('…dispatched by hand, not on a push or a pull request',
+  /on:\s*\n\s+workflow_dispatch:/.test(winWf), true);
+check('…and nothing in it can start a Windows bill on every branch',
+  /pull_request|^\s*push:/m.test(winWf), false);
+check('…on Windows, where MSVC exists', /runs-on: windows-latest/.test(winWf), true);
+check('…bounded by a timeout, because configure downloads the SDKs', /timeout-minutes: \d+/.test(winWf), true);
+check('…running the target\'s own steps through its runner script',
+  /node scripts\/audio-plugin-windows-runner-build\.mjs/.test(winWf), true);
+check('…and failing rather than passing with two formats of three', /if-no-files-found: error/.test(winWf), true);
+// A manual job nobody knows about is the same as no job (H17) — and with a SHARED project, one dispatch is
+// not enough to cover a change: both routes have to be built or one of them is proven against stale code.
+check('…and both manual jobs are named in AGENTS.md, so a shared change dispatches both',
+  /audio-plugin-macos-build\.yml/.test(read('AGENTS.md')) && /audio-plugin-windows-build\.yml/.test(read('AGENTS.md')), true);
+
+const winRunner = read('scripts/audio-plugin-windows-runner-build.mjs');
+check('the Windows runner script imports the target and calls its buildSteps',
+  /from '\.\.\/server\/src\/lib\/compile-targets\/audio-plugin-windows\.js'/.test(winRunner) && /audioPlugin\.buildSteps\(/.test(winRunner), true);
+check('…drives PowerShell, one shell invocation per step',
+  /spawnSync\('pwsh', \['-NoProfile', '-Command', step\.run\]/.test(winRunner), true);
+check('…refusing to run anywhere but Windows', /process\.platform !== 'win32'/.test(winRunner), true);
+check('…and refusing when the standalone was not produced',
+  /no \$\{format\} binary was produced[\s\S]{0,200}process\.exit\(1\)/.test(winRunner), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

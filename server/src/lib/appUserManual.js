@@ -197,6 +197,46 @@ const PLATFORM_GUIDES = {
       'should load on either. If an older copy is still installed, delete it before installing this one.'
     ]
   },
+  'audio-plugin-windows': {
+    install: [
+      'THIS PLUGIN IS FOR WINDOWS ONLY. It will not load on macOS or Linux. There is also no Audio Unit in',
+      'it — only Apple has those — which is why this download has three files where the macOS one has',
+      'four. If you are on a Mac, build the MACOS AUDIO PLUGIN route instead.',
+      '',
+      'You downloaded THREE zips because a plugin is three files in two different places, and a DAW only',
+      'looks in its own. Unzip them and move each one to its folder — the "Common Files" folders are',
+      'shared, so copying into them needs administrator rights.',
+      '',
+      '  VST3        ->  C:\\Program Files\\Common Files\\VST3\\',
+      '  CLAP        ->  C:\\Program Files\\Common Files\\CLAP\\',
+      '  standalone  ->  anywhere you like; it is an ordinary .exe, double-click it.',
+      '',
+      'If a folder does not exist, create it. The name must match exactly, because the host looks for the',
+      'path and not for the file.'
+    ],
+    firstRun: [
+      'A DAW scans its plugin folders at startup, so QUIT AND REOPEN IT — a plugin installed while it was',
+      'running usually will not appear.',
+      'Ableton, Reaper, Bitwig, Cubase and Studio One take the VST3. CLAP is supported by Reaper, Bitwig',
+      'and a growing list of hosts; if your DAW does not list it, install the VST3 as well.',
+      'The plugin is listed under the vendor name from its manifest, not under "Morpheus", unless that is',
+      'what you put there.',
+      '64-BIT ONLY: this build is x64. A 32-bit DAW cannot load it, and that is the most common reason a',
+      'plugin installs and never appears.'
+    ],
+    trouble: [
+      'NOT SIGNED, AND ON WINDOWS THAT MATTERS LESS THAN YOU WOULD THINK: plugins load unsigned in every',
+      'DAW, so a VST3 or CLAP that does not appear is almost always in the wrong folder or was skipped by',
+      'the scan — check the path above first.',
+      'SMARTSCREEN: the standalone .exe is unsigned, so Windows may show "Windows protected your PC" the',
+      'first time you run it. Choose "More info" and then "Run anyway". That is the unsigned-file warning,',
+      'not a detection.',
+      'NOT LISTED: check that the .vst3 is directly in the VST3 folder and not inside a subfolder created',
+      'by unzipping. A VST3 on Windows is a single FILE, so a folder containing one is not installed.',
+      'TWO PLUGINS WITH THE SAME NAME: the id in morpheus.plugin.json is what hosts key on, and two plugins',
+      'sharing one shadow each other. Change the id and rebuild.'
+    ]
+  },
   _default: {
     install: ['This build produced the file(s) named above. The project\'s own notes below say what to do with them.'],
     firstRun: [],

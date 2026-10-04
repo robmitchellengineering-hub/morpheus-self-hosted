@@ -358,8 +358,11 @@ const CLAP_EXPORT struct clap_plugin_entry clap_entry = {
 export function cmakeLists({ name, id, version, auType, auSubtype, auManufacturer, auManufacturerName }) {
   return `# ${name} — built with Morpheus.
 #
-# ONE SOURCE, FOUR FORMATS. \`make_clapfirst_plugins\` takes the CLAP implementation in Source/ and produces
-# a CLAP bundle, a VST3 bundle, an Audio Unit component and a standalone app from it. Everything it pulls
+# ONE SOURCE, FOUR FORMATS ON APPLE — THREE EVERYWHERE ELSE. \`make_clapfirst_plugins\` takes the CLAP implementation in Source/ and produces
+# a CLAP bundle, a VST3 bundle, an Audio Unit component and a standalone app from it. THE AU IS APPLE-ONLY
+# — there is no Audio Unit on Windows or Linux — so the format list, the wrapper flag and the AU arguments
+# are all gated on APPLE rather than left to the wrapper to skip. Gating the FLAG matters as much as the
+# list: leaving the AU wrapper on makes a Windows configure fetch Apple's AudioUnitSDK. Everything it pulls
 # in — clap-wrapper, the CLAP SDK, the VST3 SDK, Apple's AudioUnitSDK, RtAudio/RtMidi — is permissively
 # licensed, so the plugin you build carries no licence obligation.
 #
@@ -406,7 +409,13 @@ if (NOT DEFINED CLAP_WRAPPER_DIR)
   message(FATAL_ERROR "CLAP_WRAPPER_DIR is not set — point it at a clap-wrapper checkout.")
 endif()
 set(CLAP_WRAPPER_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
-set(CLAP_WRAPPER_BUILD_AUV2 ON CACHE BOOL "" FORCE)
+# APPLE ONLY. On Windows this must be OFF, not merely unused: the flag makes configure fetch Apple's
+# AudioUnitSDK, which is an Apple framework and has no business in a Windows build.
+if (APPLE)
+  set(CLAP_WRAPPER_BUILD_AUV2 ON CACHE BOOL "" FORCE)
+else()
+  set(CLAP_WRAPPER_BUILD_AUV2 OFF CACHE BOOL "" FORCE)
+endif()
 set(CLAP_WRAPPER_BUILD_STANDALONE ON CACHE BOOL "" FORCE)
 set(CLAP_WRAPPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(CLAP_WRAPPER_BUILD_AAX OFF CACHE BOOL "" FORCE)
@@ -417,9 +426,25 @@ add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp)
 target_include_directories(morpheus_plugin-impl PRIVATE Source)
 target_link_libraries(morpheus_plugin-impl PUBLIC clap clap-wrapper-extensions)
 
-set(PLUGIN_FORMATS CLAP VST3 AUV2 WCLAP)
+# The AU is APPLE ONLY — there is no Audio Unit on Windows, so a Windows build that names it here gets the
+# wrapper skipped by clap-wrapper and, worse, could still fetch Apple's AudioUnitSDK.
+set(PLUGIN_FORMATS CLAP VST3 WCLAP)
+if (APPLE)
+  list(APPEND PLUGIN_FORMATS AUV2)
+endif()
 if (APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
     list(APPEND PLUGIN_FORMATS AUV3)
+endif()
+
+# The AU arguments are passed ONLY where an AU is built. Handing them to a Windows configure is noise at
+# best — and the list is built rather than written out so the same function call serves both platforms.
+set(AU_ARGS "")
+if (APPLE)
+  set(AU_ARGS
+        AUV2_MANUFACTURER_NAME "\${AUV2_MANUFACTURER_NAME}"
+        AUV2_MANUFACTURER_CODE "\${AUV2_MANUFACTURER}"
+        AUV2_SUBTYPE_CODE "\${AUV2_SUBTYPE}"
+        AUV2_INSTRUMENT_TYPE "\${AUV2_TYPE}")
 endif()
 
 # STANDALONE_CONFIGURATIONS is not optional: CLAP_WRAPPER_BUILD_STANDALONE enables the machinery, and this
@@ -435,10 +460,7 @@ make_clapfirst_plugins(
         COPY_AFTER_BUILD FALSE
         PLUGIN_FORMATS \${PLUGIN_FORMATS}
         ASSET_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/assets
-        AUV2_MANUFACTURER_NAME "\${AUV2_MANUFACTURER_NAME}"
-        AUV2_MANUFACTURER_CODE "\${AUV2_MANUFACTURER}"
-        AUV2_SUBTYPE_CODE "\${AUV2_SUBTYPE}"
-        AUV2_INSTRUMENT_TYPE "\${AUV2_TYPE}"
+        \${AU_ARGS}
         STANDALONE_CONFIGURATIONS
         standalone "\${PRODUCT_NAME}" "\${BUNDLE_ID}"
 )
