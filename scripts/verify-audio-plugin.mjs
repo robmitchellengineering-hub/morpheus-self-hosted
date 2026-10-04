@@ -151,6 +151,20 @@ check('the MSVC runtime is pinned to the static one, so it cannot mix with the S
   /if \(MSVC\)\s*\n\s*set\(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded\$<\$<CONFIG:Debug>:Debug>"/.test(cmake), true);
 check('…and pinned BEFORE clap-wrapper is added, for the same ordering reason',
   cmake.indexOf('set(CMAKE_MSVC_RUNTIME_LIBRARY') < cmake.indexOf('add_subdirectory('), true);
+// ⚠️ THE FIRST LINUX BUILD, TURNED INTO AN ASSERTION, and it is the same shape as the Windows one: a
+// library built for one configuration meeting an object built for another. The VST3 SDK is a STATIC library
+// and CMake does not build static libraries position-independent by default; a VST3 on Linux is a SHARED
+// OBJECT, so the link died with
+//   R_AARCH64_ADR_PREL_PG_HI21 against '_ZSt19piecewise_construct' ... recompile with -fPIC
+// It is not an ARM problem — x86-64 fails the same way with R_X86_64_32S — and the two platforms this
+// project built on before do not have it because MSVC and clang default to PIC. Setting it per-target
+// would not help: the offending relocations are inside the SDK's own objects, which is why it belongs
+// before add_subdirectory and why the ordering is asserted rather than assumed.
+check('…the whole Linux subtree is built position-independent, without which the VST3 link cannot succeed',
+  /if \(UNIX AND NOT APPLE\)[\s\S]*?set\(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL/.test(cmake), true);
+check('…and set BEFORE clap-wrapper is added, so it reaches the SDK\'s static libraries too',
+  cmake.indexOf('set(CMAKE_POSITION_INDEPENDENT_CODE') > 0
+  && cmake.indexOf('set(CMAKE_POSITION_INDEPENDENT_CODE') < cmake.indexOf('add_subdirectory('), true);
 // plugin_data and calloc() are void*, so C++ requires casts. Without them the generated project does not
 // compile — which is at least loud, but it is the first thing to break on an edit.
 check('every read of plugin_data is cast out of void*',
@@ -498,6 +512,11 @@ check('…and asserts the real entry points of the two formats that have them',
 check('the artifact spec names the Linux ARM downloads, one per format',
   ['vst3', 'clap', 'standalone'].every((k) => (audioPluginLinux.artifact.glob || '').includes(`plugin-linux-arm-${k}`))
   || ['vst3', 'clap', 'standalone'].every((k) => audioPluginLinux.artifact.verifyCommand.includes(`plugin-linux-arm-${k}`)), true);
+// `zip` stores the path it is handed, so archiving the path `find` returned puts `build/assets/<name>.vst3/…`
+// in the archive and a player who unzips it gets a `build/` tree to dig through rather than a plugin folder
+// to drag. Both forms were unzipped and compared before this line was written.
+check('…and archives the VST3 from inside its own directory, so the archive root is the plugin folder',
+  /\( cd build\/assets && zip -qr plugin-linux-arm-vst3\.zip/.test(linuxRun), true);
 
 const linuxWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
 check('there is a workflow that builds it on a real ARM64 Linux runner', linuxWf.length > 0, true);
