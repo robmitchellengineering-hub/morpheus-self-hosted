@@ -1,0 +1,59 @@
+# Build the audio-plugin target for real, on a runner that has Xcode.
+#
+# WHY THIS EXISTS
+#
+# `audio-plugin` emits four formats from one CLAP source, and one of them cannot be built on the machine
+# this repo is developed on: the standalone's macOS shell is compiled by `ibtool`, which needs full Xcode,
+# and that machine has only the Command Line Tools. Three formats were built and verified there; the
+# standalone has never been built anywhere, so it is "expected to work" and nothing more.
+#
+# The rest of CI does not cover this. The required checks prove the GUARDS — that the target generates the
+# right project and renders the right workflow — and they run on ubuntu with no compiler, no Xcode and no
+# network build. The plugin itself is only built when a user compiles, in their own repo. That is a real
+# hole in the evidence, and this workflow is the cheapest thing that closes it: it materialises what the
+# target generates and runs the target's OWN steps, so a command changed in the target changes here too.
+#
+# MANUAL ONLY, DELIBERATELY. macOS runner minutes bill at 10x, so this must never run on a pull request or
+# a push: it is dispatched by hand when the target changes, from the Actions tab or
+#
+#   gh workflow run audio-plugin-build.yml --ref main
+#
+# and it uploads the packaged plugins, so a run can be inspected (and a real plugin loaded in a DAW)
+# rather than taken on trust.
+name: Audio plugin build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audio-plugin:
+    name: audio-plugin (macOS, all four formats)
+    runs-on: macos-latest
+    # The configure step downloads the VST3 SDK, AudioUnitSDK, RtAudio and RtMidi (~102s measured), then
+    # builds four formats. Well inside this, but a hang must not sit on a runner for an hour.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Everything else — the wrapper clone, configure, the four builds, the binary-in-bundle check and the
+      # packaging — is the target's own step list, executed by this script. See its header for why it does
+      # not re-type a single command.
+      - name: Build and verify every format the target emits
+        run: node scripts/audio-plugin-runner-build.mjs
+
+      # `if-no-files-found: error` is the second half of the check: if the standalone's zip is missing, the
+      # run fails here rather than passing with three of four artifacts.
+      - name: Keep the packaged plugins, so the run can be inspected rather than believed
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-plugin-macos
+          path: ${{ runner.temp }}/audio-plugin-build/build/assets/*.zip
+          if-no-files-found: error
+          retention-days: 7

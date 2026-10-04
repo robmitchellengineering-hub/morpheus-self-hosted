@@ -289,6 +289,34 @@ export const MUTATIONS = [
     replace: '',
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-build.yml',
+    // THE COST GATE, as a mutation. Nothing about the build stops working when this line appears — it just
+    // starts running on every pull request, on a runner that bills at 10x, which is a bill rather than a
+    // failure. That is exactly the kind of edit a guard has to catch, because nothing else would notice.
+    why: 'Adds a pull_request trigger to the manual-only audio-plugin build, so a macOS bill at 10x starts on every branch instead of when someone dispatches it.',
+    find: 'on:\n  workflow_dispatch:',
+    replace: 'on:\n  pull_request:\n  workflow_dispatch:',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-build.yml',
+    // The run would still be green while shipping three formats of four: the standalone is the one format no
+    // local machine has ever built, so a missing zip has to fail the job rather than quietly not be there.
+    why: 'Drops the failure-on-missing-artifact setting, so a run that produced no standalone still uploads three plugins and passes.',
+    find: '          if-no-files-found: error\n',
+    replace: '',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-runner-build.mjs',
+    // THE DRIFT FAILURE, as a mutation: a transcribed command keeps the runner green after the target has
+    // moved on, so the job proves a build nobody ships. The claim is that the commands come from the target.
+    why: 'Replaces the target\'s own step with a hand-written command, so the runner build can drift from what the target generates and still pass.',
+    find: "['-c', step.run]",
+    replace: "['-c', 'cmake --build build --target morpheus_plugin_clap -j4']",
+  },
+  {
     guard: 'verify-render-check.mjs',
     file: 'scripts/dev-app-render.mjs',
     // A SAFETY INTERLOCK, as a mutation — the class of edit a guard is really for. Nothing about the
