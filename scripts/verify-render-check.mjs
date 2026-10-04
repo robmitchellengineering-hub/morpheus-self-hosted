@@ -54,8 +54,12 @@ check('it refuses NODE_ENV=production', /NODE_ENV=production/.test(script) && /r
 check('it refuses a database whose name does not end in _dock_rig',
   /endsWith\('_dock_rig'\)/.test(script), true);
 check('…and says so rather than failing silently', /does not end in "_dock_rig"/.test(script), true);
-check('it refuses a non-loopback database host',
-  /\['localhost', '127\.0\.0\.1', '::1'\]\.includes\(host\)/.test(script), true);
+// COUNTED, not just "present". The first version of this assertion was `/[...].includes(host)/` and the
+// mutation that removes the refusal SURVIVED it — because the same idiom appears twice, once in the
+// pre-flight and once after the rig has chosen the database, and the mutation only deleted the second.
+// A check satisfied by a different line than the one it names is exactly H19, so both are counted now.
+check('it refuses a non-loopback database host, in BOTH places it can be handed one',
+  (scriptCode.match(/\['localhost', '127\.0\.0\.1', '::1'\]\.includes\(host\)/g) || []).length, 2);
 check('it only ever READS server/.env, never a production env file',
   /\.env\.prodsql|\.env\.northflank/.test(scriptCode), false);
 check('it forces the AI at the local mock, so a render cannot spend money',
