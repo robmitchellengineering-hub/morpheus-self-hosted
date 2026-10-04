@@ -51,8 +51,14 @@ const [cmd, ...rest] = process.argv.slice(2);
 const flags = {};
 const positional = [];
 for (let i = 0; i < rest.length; i++) {
-  if (rest[i].startsWith('--')) { flags[rest[i].slice(2)] = rest[i + 1]?.startsWith('--') ? true : rest[++i]; }
-  else positional.push(rest[i]);
+  if (rest[i].startsWith('--')) {
+    const next = rest[i + 1];
+    // ⚠️ A TRAILING BOOLEAN FLAG IS `true`, NOT `undefined`. The first version read `rest[i+1]` and, when there
+    // was nothing after it, assigned `undefined` — so `--json` at the end of a command line was falsy and the
+    // tool printed prose. It went unnoticed until a workflow parsed the output as JSON and got a syntax error.
+    if (next === undefined || next.startsWith('--')) flags[rest[i].slice(2)] = true;
+    else { flags[rest[i].slice(2)] = next; i++; }
+  } else positional.push(rest[i]);
 }
 if (!cmd || flags.help) usage(cmd ? 0 : 2);
 
@@ -119,17 +125,21 @@ switch (cmd) {
     if (a.sampleRate !== b.sampleRate) console.log(`  ⚠ different sample rates (${a.sampleRate} vs ${b.sampleRate}) — the numbers below assume they are the same signal`);
     const nulled = nullDepth(a.mono, b.mono, { sampleRate: a.sampleRate });
     const lat = estimateLatency(a.mono, b.mono, { sampleRate: a.sampleRate });
+    // ⚠️ THE JSON GOES FIRST, before a single line of prose. Placing it after the pretty block produced a
+    // document that was four lines of English followed by JSON — which is not JSON, and a caller parsing it gets
+    // a syntax error that says nothing about the CLI. The guard now runs the real command with the flag LAST,
+    // which is exactly where the first version of the argument parser also broke.
+    if (flags.json) {
+      console.log(JSON.stringify({
+        fileA: aPath, fileB: bPath, nullDepthDb: nulled.residualDb, gainDb: nulled.gainDb,
+        latencySamples: nulled.latencySamples, nullDepthMs: nulled.latencyMs, correlation: nulled.correlation,
+      }));
+      break;
+    }
     console.log(`${aPath}  vs  ${bPath}`);
     console.log(`  latency      ${fmt(nulled.latencySamples, 2)} samples · ${fmt(nulled.latencyMs, 3)} ms`);
     console.log(`  correlation  ${fmt(nulled.correlation, 4)}`);
     console.log(`  gain match   ${sign(nulled.gainDb)} dB (applied to the second file)`);
-    if (flags.json) {
-      console.log(JSON.stringify({
-        fileA: aPath, fileB: bPath, nullDepthDb: nulled.residualDb, gainDb: nulled.gainDb,
-        latencySamples: nulled.latencySamples, correlation: nulled.correlation,
-      }));
-      break;
-    }
     console.log(`  NULL DEPTH   ${sign(nulled.residualDb)} dB   ← how much of the first signal survives`);
     if (lat.correlation < 0.5) console.log('  ⚠ the two files are barely correlated: this null is meaningless, not impressive');
     break;
