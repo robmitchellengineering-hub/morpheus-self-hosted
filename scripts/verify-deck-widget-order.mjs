@@ -162,6 +162,16 @@ check('…which is what the up arrow actually reads', /disabled=\{i === firstMov
 check('…so an account with no brain dump row is not stuck with a dead up arrow',
   /disabled=\{i === 0\}/.test(settings), false);
 
+// Two independent refusals, and BOTH are deliberate. The `canReorderWidget` check at the top of
+// `reorderWidgets` is the statement of the rule; excluding the pinned row from the list that gets swapped is
+// what makes it structurally impossible to get wrong. Removing either alone still behaves — which is exactly
+// why the one that DECIDES is pinned here, and why the mutation for it attacks this line.
+const ruleSrc = read('src/pages/CommandDeck/deckWidgetOrder.js');
+check('the pinned widget is kept OUT of the list the swap operates on',
+  /const movable = ordered\.filter\(\(w\) => w\.widget_key !== PINNED_WIDGET_KEY\);/.test(ruleSrc), true);
+check('…and is put back in front, so nothing can precede it',
+  /return \[\.\.\.pinned, \.\.\.movable\]\.map\(\(w, i\) => \(\{ \.\.\.w, sort_order: i \}\)\);/.test(ruleSrc), true);
+
 console.log('\n7. the rule is import-free, so this runs in the no-install CI job');
 const rule = read('src/pages/CommandDeck/deckWidgetOrder.js');
 check('no imports at all in the rule module', /^\s*import\s/m.test(rule), false);

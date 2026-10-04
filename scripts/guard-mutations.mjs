@@ -218,9 +218,9 @@ export const MUTATIONS = [
   {
     guard: 'verify-deck-widget-order.mjs',
     file: 'src/pages/CommandDeck/deckWidgetOrder.js',
-    why: 'Lets the move helper place a widget above the pin by dropping its refusal, so the arrows could push brain dump down the deck.',
-    find: '  if (!canReorderWidget(key)) return null;',
-    replace: '  if (direction === -2) return null;',
+    why: 'Lets the pinned widget back into the list the swap operates on, so a widget below can trade places with it and the arrows can move brain dump off the top. NOTE: breaking the `canReorderWidget` refusal on its own does NOT change the behaviour — the pinned row is excluded from the swapped list as well, deliberately, so the two refusals are independent. This mutation attacks the one that decides.',
+    find: '  const movable = ordered.filter((w) => w.widget_key !== PINNED_WIDGET_KEY);',
+    replace: '  const movable = ordered.filter((w) => w.widget_key !== "__never_matches__");',
   },
   {
     guard: 'verify-deck-widget-order.mjs',
