@@ -271,8 +271,20 @@ async function renderAll(token) {
       const page = await context.newPage();
       const consoleErrors = [];
       const pageErrors = [];
+      const serverErrors = [];
       page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
       page.on('pageerror', (err) => pageErrors.push(err?.message || String(err)));
+      // A 5xx from the API is a defect in its own right, and it is the one that hides best: the page
+      // still renders, so every other assertion here passes while the content is a degraded empty
+      // state. Found by running this check from the shared checkout, where a stale Prisma client 500'd
+      // the deck-profile read and `/deck/settings` cheerfully rendered "SET UP YOUR BUSINESS" — a
+      // green result over a page that had lost its data.
+      page.on('response', (res) => {
+        if (res.status() < 500) return;
+        const url = res.url();
+        if (!/\/api\//.test(url)) return; // a third-party asset's 5xx is not this app's verdict
+        serverErrors.push(`${res.status()} ${url.replace(BASE, '').split('?')[0]}`);
+      });
 
       let navigationError = null;
       try {
@@ -292,7 +304,7 @@ async function renderAll(token) {
       // the console as well as re-throwing it — both are collected, and both fail the route.
       const fatal = [...pageErrors, ...consoleErrors].filter((m) => /is not defined|Cannot read|is not a function|Maximum update depth|Minified React error/.test(m));
 
-      results.push({ route, landedOn, boundary, blank, bouncedToLogin, pageErrors, consoleErrors, fatal, navigationError, body });
+      results.push({ route, landedOn, boundary, blank, bouncedToLogin, pageErrors, consoleErrors, fatal, navigationError, serverErrors, body });
       await context.close();
     }
   } finally {
@@ -321,6 +333,12 @@ for (const r of results) {
   if (r.fatal.length) problems.push(`uncaught: ${r.fatal[0].split('\n')[0]}`);
   if (r.blank) problems.push('the page rendered nothing');
   if (r.bouncedToLogin) problems.push('bounced to /login — the session was not accepted');
+  // Deduped: one failing query seen by three components is one defect, not three. And the count is
+  // printed, because "5 errors" and "1 error" are different amounts of wrong.
+  const uniqueServerErrors = [...new Set(r.serverErrors)];
+  if (uniqueServerErrors.length) {
+    problems.push(`${uniqueServerErrors.length} API 5xx response(s): ${uniqueServerErrors.slice(0, 2).join(' | ')}`);
+  }
   if (problems.length) {
     failures++;
     console.log(`  ✗ ${r.route}`);

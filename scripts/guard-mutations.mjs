@@ -253,6 +253,16 @@ export const MUTATIONS = [
     replace: '',
   },
   {
+    guard: 'verify-render-check.mjs',
+    file: 'scripts/dev-app-render.mjs',
+    // The silent-degradation mutation. Collecting 5xx responses and never using them is the shape this
+    // check was in for its first hour: it listed the failures among "not fatal" while `/deck/settings`
+    // rendered an empty state over a backend that was 500ing on every read.
+    why: 'Stops an API 5xx from failing the render check, so a page that renders an empty state over a broken backend reads as a pass.',
+    find: '        serverErrors.push(`${res.status()} ${url.replace(BASE, \'\').split(\'?\')[0]}`);',
+    replace: '        void res.status();',
+  },
+  {
     guard: 'verify-deck-widget-order.mjs',
     file: 'src/pages/CommandDeck/deckWidgets.js',
     why: "Takes brain dump back out of the top of the registry, which is the position a brand-new account seeds its first widget from — the exact thing Rob saw on a new user's deck.",
