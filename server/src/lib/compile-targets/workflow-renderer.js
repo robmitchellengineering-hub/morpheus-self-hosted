@@ -111,6 +111,12 @@ export function renderWorkflow(runner, steps, artifact, manual) {
     : [...renderedSteps.slice(0, firstCheckout + 1), manualStep, ...renderedSteps.slice(firstCheckout + 1)]
   ).filter(Boolean).join('\n');
 
+  // A BUILD PROOF IS PUBLISHED WHEN A TARGET PRODUCES ONE, and it is listed here rather than in the target's
+  // own steps because this is the one place that knows what the release publishes. `fail_on_unmatched_files`
+  // below then makes it a hard requirement: a target that declares a proof and does not write one fails the
+  // release instead of shipping a download whose evidence is silently absent.
+  const proofSection = artifact.proofFile ? `\n            ${artifact.proofFile}` : '';
+
   // If the adapter declares a verify command, inject it as a step before the release
   const verifySection = artifact.verifyCommand
     ? `\n      - name: Verify artifact\n        run: |\n${artifact.verifyCommand.split('\n').map(l => '          ' + l).join('\n')}`
@@ -153,7 +159,7 @@ ${yamlSteps}${verifySection}
         with:
           tag_name: v\${{ github.run_id }}
           files: |
-            ${artifact.glob}${manual ? `\n            ${USER_MANUAL_FILE}` : ''}
+            ${artifact.glob}${manual ? `\n            ${USER_MANUAL_FILE}` : ''}${proofSection}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
