@@ -381,7 +381,17 @@ check('each format is built as its own target, so one failure cannot strand the 
 // The Windows layout is NOT the macOS one, which is the mistake this step exists to prevent: a check written
 // for `Contents/MacOS/<name>` finds nothing here and reports every format missing.
 check('the verification looks where clap-wrapper actually puts these on Windows',
-  /build\/assets\/CLAP\//.test(winRun) && /build\/assets\/VST3\//.test(winRun) && /Standalone-morpheus_plugin_standalone/.test(winRun), true);
+  /build\/assets\/CLAP/.test(winRun) && /build\/assets\/VST3/.test(winRun) && /Standalone-morpheus_plugin_standalone/.test(winRun), true);
+// ⚠️ RUN FOUR, TURNED INTO AN ASSERTION. Knowing the DIRECTORY was not enough: the Visual Studio generator
+// is MULTI-CONFIG, so CMake appends the configuration to every output directory and the artifact sits one
+// level deeper than reading the CMake suggests — `…/VST3/Release/<name>.vst3`. The check reported all three
+// formats MISSING on a build that had worked. It founds its own directory now, and `Release` is never
+// written down: a Debug build would put them somewhere else again.
+check('…and FINDS each artifact rather than hardcoding a path the generator owns',
+  /Get-ChildItem -Path \$t\.dir -Recurse -Filter \$t\.file/.test(winRun), true);
+check('…and never assumes the configuration subdirectory', /Release\//.test(winRun), false);
+check('…and packaging finds the files the same way, so the two cannot disagree',
+  /Get-ChildItem -Path 'build\/assets' -Recurse -Filter \$z\.file/.test(winRun), true);
 check('…and asserts the file is a PE image rather than trusting the extension',
   /0x5A4D/.test(winRun) && /0x00004550/.test(winRun), true);
 // ⚠️ dumpbin IS NOT ON PATH ON A WINDOWS RUNNER. The build finished and this step refused to pass, which is
