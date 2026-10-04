@@ -435,6 +435,21 @@ endif()
 set(CLAP_WRAPPER_BUILD_STANDALONE ON CACHE BOOL "" FORCE)
 set(CLAP_WRAPPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(CLAP_WRAPPER_BUILD_AAX OFF CACHE BOOL "" FORCE)
+# MSVC's C++ RUNTIME MUST BE CHOSEN ONCE, FOR THE WHOLE BUILD — and this line exists because the first
+# Windows build failed without it:
+#
+#   error LNK2038: mismatch detected for 'RuntimeLibrary': value 'MT_StaticRelease' doesn't match value
+#                  'MD_DynamicRelease' in wrapasvst3_export_entry.obj
+#
+# clap-wrapper sets the static runtime (and says so: "Setting to static link"), but a \`set()\` inside its
+# directory scope does not reach the targets created HERE — so the VST3 SDK's libraries were static while our
+# own wrapper entry object took CMake's MSVC default of the DLL runtime, and the link mixed the two C++
+# runtimes. Static also means the plugin does not need the Visual C++ redistributable on the user's machine,
+# which is what clap-wrapper intends for a plugin anyway. No effect off MSVC.
+if (MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "MSVC runtime" FORCE)
+endif()
+
 add_subdirectory(\${CLAP_WRAPPER_DIR} clap-wrapper)
 
 # ── the plugin ───────────────────────────────────────────────────────────────────────────────────────
