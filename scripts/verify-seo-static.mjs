@@ -32,6 +32,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { renderUserManual } from '../server/src/lib/appUserManual.js';
+import { getCompileTarget } from '../server/src/lib/compile-targets/index.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -71,6 +73,8 @@ try {
       html: readFileSync(join(tmp, 'index.html'), 'utf8'),
       llms: existsSync(join(tmp, 'llms.txt')) ? readFileSync(join(tmp, 'llms.txt'), 'utf8') : null,
       sitemap: existsSync(join(tmp, 'sitemap.xml')) ? readFileSync(join(tmp, 'sitemap.xml'), 'utf8') : null,
+      manual: existsSync(join(tmp, 'manual.html')) ? readFileSync(join(tmp, 'manual.html'), 'utf8') : null,
+      llmsFull: existsSync(join(tmp, 'llms-full.txt')) ? readFileSync(join(tmp, 'llms-full.txt'), 'utf8') : null,
     };
   }
 } finally {
@@ -78,7 +82,7 @@ try {
 }
 
 if (generated) {
-  const { html, llms, sitemap } = generated;
+  const { html, llms, sitemap, manual, llmsFull } = generated;
 
   // ── The prerender is complete: everything a reader needs is in the HTML ────────────
   const missing = [];
@@ -96,6 +100,56 @@ if (generated) {
     caps.buildTargets.every((t) => html.includes(t)));
   check('the pricing line is in the static HTML (and promises no subscription, not "no free tier")',
     /200 free credits/.test(html) && !/no free tier/i.test(html));
+
+  // ── The user manual is published, for machines AND people ─────────────────────────
+  // It is generated from the same module that writes USER-MANUAL.txt into a build, so the published manual
+  // cannot drift from the one a user receives. Asserting that equivalence is the whole point of these checks:
+  // a hand-maintained copy of the manual would pass a "does it mention installing" test and still be wrong.
+  check('a manual page is published', Boolean(manual) && manual.length > 5000);
+  if (manual) {
+    check('…with a section for every registered target',
+      codeTargets.every((t) => manual.includes(`id="${t}"`)),
+      codeTargets.filter((t) => !manual.includes(`id="${t}"`)).join(', '));
+    check('…carrying each target\'s install steps, not just its name',
+      (manual.match(/INSTALLING IT/g) || []).length >= codeTargets.length);
+    // Recompute the guide here and look for a contiguous chunk of it in the page. The page is HTML-escaped, so
+    // the comparison is made against the unescaped text — otherwise a phrase containing an em dash could never
+    // match and the check would fail for the wrong reason (or, worse, pass on a shorter coincidental string).
+    const unescapeHtml = (v) => v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+    // Exactly what the generator does, label included: passing the id as the label produced "a web-app build"
+    // where the page says "a Web App build", and the check failed one word in — which is the check doing its job
+    // on a mismatch that was mine, not the generator's.
+    const guideFor = renderUserManual({
+      projectName: 'Your project', target: codeTargets[0],
+      targetLabel: getCompileTarget(codeTargets[0])?.label || codeTargets[0], files: [],
+    });
+    // A CONTIGUOUS slice, blank lines included: filtering the blanks out — the obvious "tidy" move — breaks the
+    // match at the first blank line and the check fails on a page that is perfectly correct.
+    const chunk = guideFor.split('\n').slice(2, 9).join('\n');
+    check('…and its text IS the renderer\'s output, recomputed here rather than trusted',
+      chunk.length > 120 && unescapeHtml(manual).includes(chunk),
+      chunk.slice(0, 60));
+    check('…visible, with no hiding style anywhere in it',
+      !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(manual));
+    check('…and it says it is the manual, in the title a reader and a crawler both see',
+      /<title>[^<]*manual/i.test(manual));
+  }
+  check('a full-text file is published for a tool that fetches one URL',
+    Boolean(llmsFull) && codeTargets.every((t) => llmsFull.includes(t)));
+  check('llms.txt points at both', Boolean(llms) && llms.includes('/manual') && llms.includes('/llms-full.txt'));
+  check('the sitemap lists the manual as a real page', Boolean(sitemap) && sitemap.includes('/manual'));
+  // ORDERING, and it is the difference between a page and a 404: Netlify takes the FIRST matching rule, so the
+  // manual rewrite has to come before the SPA catch-all or the clean URL serves index.html.
+  const redirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
+  const manualRule = redirects.indexOf('/manual  /manual.html');
+  const catchAll = redirects.indexOf('/*  /index.html');
+  check('the /manual rewrite comes BEFORE the SPA catch-all', manualRule >= 0 && catchAll > manualRule);
+  // A page no human can reach is a page only crawlers see, which is the line this file exists to hold.
+  // (named apart from the later `landingSrc`, which reads the same file for the capability checks)
+  const landingForManualLink = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
+  check('the landing page links to it visibly, with a real <a> (it is not an SPA route)',
+    landingForManualLink.includes('href="/manual"'));
 
   // ── Structured data parses and says the right things ──────────────────────────────
   const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
