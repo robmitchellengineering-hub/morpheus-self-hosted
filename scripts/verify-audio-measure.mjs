@@ -19,6 +19,11 @@
 //   * and 8-bit quantization must land within a couple of dB of the textbook 6.02N + 1.76.
 //
 // Run:  node scripts/verify-audio-measure.mjs
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   biquadCoefficients, biquadProcess, biquadResponseDb, coherentGain, convolveDirect, convolveFft,
   dbToLinear, fftInPlace, fftReal, hann, ifftInPlace, linearToDb, quantize, rms, sqnrDb,
@@ -33,6 +38,7 @@ import {
 import { decodeWav, encodeWav } from '../server/src/lib/audio/wav.js';
 
 const SR = 48000;
+const CLI = join(dirname(fileURLToPath(import.meta.url)), 'audio-measure.mjs');
 let failures = 0;
 let checks = 0;
 const show = (v) => (typeof v === 'number' ? (Number.isFinite(v) ? Number(v.toFixed(6)) : String(v)) : JSON.stringify(v));
@@ -350,6 +356,27 @@ console.log('\n8. aliasing is detected, and clean signals are not accused');
   above('a clipped 15 kHz tone DOES show aliases', check1.strongestAliasDb, -60);
   const strongest = check1.aliases[0];
   near('…and the strongest sits where the 3rd harmonic folds to', strongest.freq, SR - 3 * high.freq, 300);
+}
+
+
+// ── 9. the command line's machine-readable output is machine-readable ─────────────────────────────────────
+// The library can be perfect and the CLI still unusable by anything but a human. This spawns the real command
+// with a flag at the END of the line, which is exactly where the first version of its argument parser broke —
+// it assigned `undefined` instead of `true` and printed prose where a script expected JSON.
+console.log('\n9. the CLI prints JSON when asked, including with the flag last');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'audio-measure-guard-'));
+  const a = join(dir, 'a.wav');
+  const b = join(dir, 'b.wav');
+  const tone = sine({ freq: 1000, sampleRate: SR, length: 4096, amplitude: 0.5 });
+  writeFileSync(a, encodeWav({ sampleRate: SR, data: [tone], format: 'float32' }));
+  writeFileSync(b, encodeWav({ sampleRate: SR, data: [tone], format: 'float32' }));
+  const run = spawnSync(process.execPath, [CLI, 'compare', a, b, '--json'], { encoding: 'utf8' });
+  check('the CLI exits cleanly', run.status, 0);
+  let parsed = null;
+  try { parsed = JSON.parse((run.stdout || '').trim()); } catch { parsed = null; }
+  check('…and its output parses as JSON with the flag LAST', parsed !== null, true);
+  check('…carrying the measurement, not a summary', typeof parsed?.nullDepthDb, 'number');
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
