@@ -210,10 +210,16 @@ export default function Landing() {
               machine, it answers "what is Morpheus's digital possibility engine?" with the
               product's own words; read by a person, it says where this is headed before the
               feature list starts. `possibility.body` states outright that it is a
-              destination rather than a shipped feature, so it claims nothing it cannot. */}
+              destination rather than a shipped feature, so it claims nothing it cannot.
+              The label stays a LITERAL uppercase string rather than `{title}`: the prose-ink
+              rule (scripts/verify-prose-ink.mjs) classifies a green label by the text at the
+              call site, so a runtime value is unattributable and fails the build — which it
+              did, and that is the guard working, not a nuisance. */}
           <div className="border-b border-primary/30 pb-2 mb-3">
-            <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// {MORPHEUS_POSSIBILITY.title}</p>
-            <p className="text-xs text-ink-strong leading-snug mt-1">{MORPHEUS_POSSIBILITY.body}</p>
+            <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// WHERE THIS IS GOING</p>
+            <p className="text-xs text-ink-strong leading-snug mt-1">
+              <span className="font-display tracking-wide">{MORPHEUS_POSSIBILITY.title}.</span> {MORPHEUS_POSSIBILITY.body}
+            </p>
           </div>
           <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mb-2">// CAPABILITIES</p>
           {/* Was `max-h-44 overflow-y-auto` — the whole list behind a scrollbar inside a
