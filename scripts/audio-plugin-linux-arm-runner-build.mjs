@@ -19,7 +19,7 @@
 // Exits non-zero on the first step that fails, and again if any of the three formats is missing, is not an
 // ELF image, or was compiled for a different CPU than the route names.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
@@ -45,6 +45,24 @@ const RUNNER_TEMP = process.env.RUNNER_TEMP || mkdtempSync(join(tmpdir(), 'audio
 const OUT = process.env.AUDIO_PLUGIN_BUILD_DIR || join(RUNNER_TEMP, 'audio-plugin-linux-arm-build');
 mkdirSync(OUT, { recursive: true });
 log(`platform ${process.platform}/${process.arch} · building in ${OUT}`);
+
+// ── 0. Make the job look like a fresh runner ────────────────────────────────────────────────────────────
+// THE STEPS CLONE INTO $RUNNER_TEMP AND `git clone` REFUSES A DIRECTORY THAT EXISTS — deliberately, and that
+// refusal is worth keeping: a clone that reused whatever was already there would silently build against a
+// different revision than the pin. But this script is run TWICE in one job now (once for the gain stage, once
+// with a model), and the second run died on
+//
+//   fatal: destination path '/home/runner/work/_temp/clap-wrapper' already exists and is not an empty directory
+//
+// which is my workflow's fault rather than the steps'. So the two third-party checkouts are cleared here and
+// said out loud, which keeps the refusal and still lets one job prove both shapes.
+for (const dir of ['clap-wrapper', 'namcore']) {
+  const stale = join(RUNNER_TEMP, dir);
+  if (existsSync(stale)) {
+    log(`clearing ${stale} so the steps behave as they would on a fresh runner`);
+    rmSync(stale, { recursive: true, force: true });
+  }
+}
 
 // ── 1. Materialise exactly what the target generates ────────────────────────────────────────────────────
 // A MODEL IS OPT-IN, and the default is unchanged. With no `AUDIO_PLUGIN_MODEL` this script builds the gain

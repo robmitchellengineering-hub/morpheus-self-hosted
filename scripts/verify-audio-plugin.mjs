@@ -672,6 +672,13 @@ check('the runner can build WITH a model, so the model path is proven on hardwar
   /AUDIO_PLUGIN_MODEL/.test(linuxNamRunner) && /models\/\$\{basename\(modelArg\)\}/.test(linuxNamRunner), true);
 check('…and refuses a model path that does not exist rather than spending a build on it',
   /does not exist — refusing to spend a build on it/.test(linuxNamRunner), true);
+// ⚠️ ONE JOB, TWO BUILDS, AND `git clone` REFUSES AN EXISTING DIRECTORY. The first run of the modelled build
+// died with "destination path .../clap-wrapper already exists" — the workflow's fault, not the steps'. The fix
+// keeps the refusal (a clone that reused a stale checkout would build against a different revision than the
+// pin) and clears the two checkouts instead, which is what makes the job look like a fresh runner.
+check('…and clears the previous run\'s checkouts, because the steps refuse an existing clone and a job now runs twice',
+  /for \(const dir of \['clap-wrapper', 'namcore'\]\)/.test(linuxNamRunner)
+  && /rmSync\(stale, \{ recursive: true, force: true \}\)/.test(linuxNamRunner), true);
 const linuxNamWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
 check('the ARM workflow fetches the example models and builds BOTH shapes',
   /--model \.cache\/models\/linear_1\.nam/.test(linuxNamWf)
