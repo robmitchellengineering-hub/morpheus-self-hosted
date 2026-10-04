@@ -346,7 +346,7 @@ export const MUTATIONS = [
     // plugin the other route's evidence does not cover — and both guards still pass.
     why: 'Gives the Windows route a scaffold that generates one extra file, so the two routes stop building the same plugin while every other check stays green.',
     find: '  validate: validatePlugin,\n  scaffold: scaffoldPlugin,',
-    replace: "  validate: validatePlugin,\n  scaffold: (files) => { const r = scaffoldPlugin(files); return { ...r, generated: [...r.generated, 'EXTRA'] }; },",
+    replace: "  validate: validatePlugin,\n  scaffold: (files) => { const r = scaffoldPlugin(files); return { ...r, files: [...r.files, { path: 'Source/WindowsOnly.cpp', content: '// windows only\\n' }] }; },",
   },
   {
     guard: 'verify-audio-plugin.mjs',
