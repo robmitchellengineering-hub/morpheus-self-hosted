@@ -424,6 +424,24 @@ export const MUTATIONS = [
     replace: 'const scale = (k === 0 || k === half ? 1 : 2) / n;',
   },
   {
+    guard: 'verify-nam-quantize.mjs',
+    file: 'server/src/lib/audio/namModel.js',
+    // THE BLOCKING CLAIM, as a mutation: stepping by the whole array means one scale covers everything, which is
+    // the thing block scales exist to avoid — and it leaves every weight past the first block unquantized.
+    why: 'Quantizes the whole weight array as a single block, so the per-block scales that make low bit widths usable stop existing.',
+    find: '  for (let start = 0; start < values.length; start += blockSize) {',
+    replace: '  for (let start = 0; start < values.length; start += values.length) {',
+  },
+  {
+    guard: 'verify-nam-quantize.mjs',
+    file: 'server/src/lib/audio/namModel.js',
+    // A CONTAINER WITH NO SCALE IS NOT A MODEL. Dropping the scales leaves integers that cannot be turned back
+    // into numbers, and the failure would surface as "the audio is wrong" rather than as a parse error.
+    why: 'Drops the scales from the deployment container, leaving codes that cannot be dequantized.',
+    find: '        scales: Array.from(q.scales),',
+    replace: '        scales: undefined,',
+  },
+  {
     guard: 'verify-render-check.mjs',
     file: 'scripts/dev-app-render.mjs',
     // A SAFETY INTERLOCK, as a mutation — the class of edit a guard is really for. Nothing about the
