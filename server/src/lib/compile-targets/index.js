@@ -12,6 +12,7 @@ import iosApp from './ios-app.js';
 import rpiDistro from './rpi-distro.js';
 import linuxDistro from './linux-distro.js';
 import arduinoFirmware from './arduino-firmware.js';
+import audioPlugin from './audio-plugin.js';
 
 const registry = {
   'web-app': webApp,
@@ -24,6 +25,7 @@ const registry = {
   'rpi-distro': rpiDistro,
   'linux-distro': linuxDistro,
   'arduino-firmware': arduinoFirmware,
+  'audio-plugin': audioPlugin,
 };
 
 export function getCompileTarget(id) {

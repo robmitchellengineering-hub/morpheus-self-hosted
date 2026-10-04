@@ -155,6 +155,44 @@ const PLATFORM_GUIDES = {
     firstRun: ['Most boards need a reset (or a double-tap of the reset button) to enter the bootloader for flashing.'],
     trouble: ['A board that reports no port is usually a missing USB serial driver, not the firmware.']
   },
+  'audio-plugin': {
+    install: [
+      'You downloaded FOUR zips because a plugin is four files in four different places, and a DAW',
+      'only looks in its own. Unzip them and move each one to its folder — the USER one only needs',
+      'your account, the SYSTEM one needs your password and is shared by everyone on the Mac.',
+      '',
+      '  VST3      ->  ~/Library/Audio/Plug-Ins/VST3/',
+      '  AU        ->  ~/Library/Audio/Plug-Ins/Components/',
+      '  CLAP      ->  ~/Library/Audio/Plug-Ins/CLAP/',
+      '  standalone ->  anywhere you like; it is an ordinary app, double-click it.',
+      '',
+      'If the folder does not exist, make it: open Finder, press Shift-Command-G, paste the line',
+      'above without the trailing slash, and create it.'
+    ],
+    firstRun: [
+      'A DAW scans its plugin folders at startup, so QUIT AND REOPEN IT — a plugin installed while',
+      'it was running usually will not appear.',
+      'Ableton, Reaper, Bitwig and Cubase take the VST3. LOGIC, GARAGEBAND AND MAIN STAGE TAKE ONLY',
+      'THE AU — they cannot load a VST3 at all, so install the .component for those.',
+      'The plugin is listed under the vendor name from its manifest, not under "Morpheus", unless',
+      'that is what you put there.'
+    ],
+    trouble: [
+      'NOT SIGNED: this plugin has no paid Apple Developer certificate, so macOS may quarantine it',
+      'and the DAW will not see it even though the file is there. That is not a broken plugin.',
+      '  Fix: open Terminal (Applications -> Utilities) and run, with the path to YOUR plugin:',
+      '      xattr -cr ~/Library/Audio/Plug-Ins/VST3/"Your Plugin.vst3"',
+      '  Do the same for the .component, then reopen the DAW.',
+      'NOT LISTED IN LOGIC: Logic only reads Audio Units. If you installed the .vst3 only, install',
+      'the .component as well. If it is installed and still missing, run',
+      '      auval -v aufx SUBT MANU',
+      'with the four-character codes from morpheus.plugin.json — it reports what Logic objects to.',
+      'TWO PLUGINS WITH THE SAME NAME: the AU registration codes in morpheus.plugin.json must be',
+      'unique. Change auSubtype, rebuild, and reinstall — a duplicate makes one of them invisible.',
+      'INSTALLED THE WRONG ARCHITECTURE: this build is universal (Intel and Apple silicon), so it',
+      'should load on either. If an older copy is still installed, delete it before installing this one.'
+    ]
+  },
   _default: {
     install: ['This build produced the file(s) named above. The project\'s own notes below say what to do with them.'],
     firstRun: [],

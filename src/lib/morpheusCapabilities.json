@@ -2,7 +2,7 @@
   "principle": "Full-stack software, built by chat. Shipped from your pocket.",
   "intro": "Morpheus turns a phone into a complete software studio. Describe what you want in plain language; Morpheus writes the real code, builds the backend, compiles a native binary, and deploys it — no laptop, no lock-in, no illusions. You own every file.",
   "closing": "Morpheus is not a no-code toy. It's a real dev team in your pocket — one that ships standalone, deployable software you fully own.",
-  "buildTargets": ["android-apk", "arduino-firmware", "ios-app", "linux-binary", "linux-distro", "mac-app", "python-package", "rpi-distro", "web-app", "windows-exe"],
+  "buildTargets": ["android-apk", "arduino-firmware", "ios-app", "linux-binary", "linux-distro", "mac-app", "python-package", "rpi-distro", "web-app", "windows-exe", "audio-plugin"],
   "capabilities": [
     { "title": "Chat-to-code", "body": "Describe an app in a sentence; Morpheus writes production-ready frontend and backend code you can read, edit, and own. No pseudo-code, no placeholders.", "workflow": "Type your request in the chat bar → Morpheus plans the file structure → writes each file in full → runs a review pass → saves to the file tree. Tap REVERT beneath your message to undo that prompt." },
     { "title": "Autonomous build pipeline", "body": "A self-correcting loop: compile → run → on failure, an AI agent reads the logs, writes a fix, and recompiles — only escalating to you when it's truly stuck.", "workflow": "Tap the bot icon in the chat bar → describe the full scope → watch the multi-step log in real time → STOP anytime. On a failed step it reads the error logs, writes a fix, and recompiles automatically." },
