@@ -916,6 +916,11 @@ for (const [route, target, stepName] of proofTargets) {
   // Printed to the job log as well as published: a run's own record is the other place someone looks, and a
   // proof that only exists as a download is one you have to go and fetch before you can read it.
   check(`${route}: …and echoed into the run's log`, /cat BUILD-PROOF\.txt|Get-Content/.test(verify), true);
+  // A BUILD WITH NO MODEL IS A SUPPORTED STATE, and the file has to say so. The first version printed the
+  // heading and then nothing, because `sed` exits 0 when it matches nothing — an empty line under a heading
+  // reads as a fact that went missing. Seen in the real ARM run's proof.
+  check(`${route}: …and says so explicitly when the plugin carries no model`,
+    /this is the gain plugin/.test(verify), true);
 }
 check('every format the Linux route promises is named in its proof',
   audioPluginLinux.buildSteps(audioPluginLinux.scaffold(empty).files)

@@ -87,7 +87,12 @@ export function proofBash({ formats }) {
       ];
     }),
     'proof_fact "the model embedded in it, read out of the header the build generated:"',
-    `sed -n 's/^#define MORPHEUS_MODEL_/        /p' Source/ModelData.h >> ${BUILD_PROOF_FILE} 2>/dev/null || echo '        (none: this is the gain plugin, which is a supported state and not a failure)' >> ${BUILD_PROOF_FILE}`,
+    // ⚠️ THE FALLBACK HAS TO TEST THE OUTPUT, NOT THE EXIT STATUS. The first version was a `sed ... || echo`,
+    // and `sed` exits 0 when it simply matched nothing — so the no-model build printed the heading and then
+    // an empty line, which reads as a fact that went missing rather than as the plugin that has no model.
+    // Seen in the real ARM run's proof, which is why the file is printed to the log.
+    `proof_model="$(sed -n 's/^#define MORPHEUS_MODEL_/        /p' Source/ModelData.h 2>/dev/null)"`,
+    `if [ -n "$proof_model" ]; then echo "$proof_model" >> ${BUILD_PROOF_FILE}; else echo '        (none: this is the gain plugin, which is a supported state and not a failure)' >> ${BUILD_PROOF_FILE}; fi`,
     'proof_fact "the parameters a host will offer, read out of the source that was compiled:"',
     `printf '        %s' "$(sed -n '/kParams\\[\\] = {/,/};/p' Source/Plugin.cpp | grep -o '"[^"]*"' | tr '\\n' ' ')" >> ${BUILD_PROOF_FILE}`,
     `echo "" >> ${BUILD_PROOF_FILE}`,
@@ -106,7 +111,10 @@ export function proofPowerShell({ formats }) {
     `Add-Content -Path '${BUILD_PROOF_FILE}' -Value ("  - every format below was produced and is a real PE image for " + $env:PROCESSOR_ARCHITECTURE + ", not a stub:")`,
     ...formats.map(([label]) => `Add-Content -Path '${BUILD_PROOF_FILE}' -Value ('        ${esc(label).padEnd(11)}' + $proof_${label.replace(/[^A-Za-z0-9]/g, '_').toLowerCase()})`),
     `Add-Content -Path '${BUILD_PROOF_FILE}' -Value '  - the model embedded in it, read out of the header the build generated:'`,
-    `Select-String -Path 'Source/ModelData.h' -Pattern '^#define MORPHEUS_MODEL_' | ForEach-Object { Add-Content -Path '${BUILD_PROOF_FILE}' -Value ('        ' + $_.Line) }`,
+    // The same fallback as the bash side, for the same reason: `Select-String` finds nothing and says nothing,
+    // and a heading with an empty line under it reads as a fact that went missing.
+    `$proofModel = @(Select-String -Path 'Source/ModelData.h' -Pattern '^#define MORPHEUS_MODEL_')`,
+    `if ($proofModel.Count -gt 0) { $proofModel | ForEach-Object { Add-Content -Path '${BUILD_PROOF_FILE}' -Value ('        ' + $_.Line) } } else { Add-Content -Path '${BUILD_PROOF_FILE}' -Value '        (none: this is the gain plugin, which is a supported state and not a failure)' }`,
     `Add-Content -Path '${BUILD_PROOF_FILE}' -Value '  - the parameters a host will offer, read out of the source that was compiled:'`,
     `Add-Content -Path '${BUILD_PROOF_FILE}' -Value ('        ' + (((Select-String -Path 'Source/Plugin.cpp' -Pattern '\\{[^}]*\\},' | Select-Object -First 12).Line) -join ' '))`,
     `Add-Content -Path '${BUILD_PROOF_FILE}' -Value ''`,
