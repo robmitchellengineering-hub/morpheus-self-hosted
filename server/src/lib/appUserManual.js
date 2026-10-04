@@ -237,6 +237,51 @@ const PLATFORM_GUIDES = {
       'sharing one shadow each other. Change the id and rebuild.'
     ]
   },
+  'audio-plugin-linux-arm': {
+    install: [
+      'THIS PLUGIN IS FOR LINUX ON ARM (aarch64) ONLY — a Raspberry Pi 4, Pi 5, or another ARM64 Linux',
+      'machine. It will NOT load on an ordinary Intel or AMD Linux desktop: a plugin is compiled for one',
+      'instruction set, so a build for a Pi and a build for a laptop are different files even though both',
+      'are "Linux". If you are on an x86-64 Linux desktop, this is not the build for you.',
+      '',
+      'There is also no Audio Unit in it — only Apple has those — so this download has three files where',
+      'the macOS one has four.',
+      '',
+      'You downloaded THREE zips because a plugin is three files in different places, and a host only looks',
+      'in its own. Unzip them and move each one to its folder:',
+      '',
+      '  VST3        ->  ~/.vst3/          (just you)   or  /usr/lib/vst3/   (everyone, needs sudo)',
+      '  CLAP        ->  ~/.clap/          (just you)   or  /usr/lib/clap/   (everyone, needs sudo)',
+      '  standalone  ->  anywhere you like, but make it executable:  chmod +x <name>',
+      '',
+      'The VST3 is a FOLDER, not a file — copy the whole <name>.vst3 directory, not the .so inside it.',
+      'If a folder does not exist, create it:  mkdir -p ~/.vst3 ~/.clap'
+    ],
+    firstRun: [
+      'A host scans its plugin folders at startup, so RESTART IT — a plugin installed while it was running',
+      'usually will not appear.',
+      'THE STANDALONE NEEDS A DESKTOP. Its window is X11, so it runs on Raspberry Pi OS with the desktop,',
+      'and it does NOT run on a headless Pi OS Lite image — there it fails with a display error, which is',
+      'not a broken build. On a headless Pi the format to use is the VST3 or the CLAP, loaded by a host.',
+      'The plugin is listed under the vendor name from its manifest, not under "Morpheus", unless that is',
+      'what you put there.',
+      'THE PI NEEDS ENOUGH OF IT: a Pi 4 or 5 runs the plugin comfortably; a Pi Zero or a Pi 3 will load it',
+      'and may not keep up, which sounds like crackling and dropouts rather than an error.'
+    ],
+    trouble: [
+      'NOT LISTED: almost always the folder. Check that the .vst3 FOLDER (not the .so inside it) is directly',
+      'in ~/.vst3, and remember that a host launched from a different user account sees a different home.',
+      'WRONG MACHINE: if you copied this to an Intel or AMD Linux box it will not load, and the error names',
+      'the file rather than the reason. Build the LINUX ARM route for a Pi and use a Linux x86 route for a',
+      'desktop — they are different downloads on purpose.',
+      'NOT SIGNED, AND ON LINUX THAT BARELY EXISTS AS A CONCEPT: plugins load unsigned here. A plugin that',
+      'does not appear is in the wrong folder or was skipped by the scan — not blocked by the system.',
+      'A HOST THAT LOADS NEITHER FORMAT: LV2 is the other common plugin format on Linux, and this build does',
+      'not produce it. Check that what you are loading into takes VST3 or CLAP before rebuilding anything.',
+      'TWO PLUGINS WITH THE SAME NAME: the id in morpheus.plugin.json is what hosts key on, and two plugins',
+      'sharing one shadow each other. Change the id and rebuild.'
+    ]
+  },
   _default: {
     install: ['This build produced the file(s) named above. The project\'s own notes below say what to do with them.'],
     firstRun: [],

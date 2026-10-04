@@ -450,6 +450,17 @@ if (MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "MSVC runtime" FORCE)
 endif()
 
+# LINUX ONLY, AND PINNED FOR THE SAME REASON THE MSVC LINE IS. RtMidi's own default on Linux is to probe
+# for JACK and build against it when it finds one, and a build that changes shape depending on what happens
+# to be installed on the machine is not a build anyone can reproduce. This plugin opens no MIDI ports and
+# no audio device of its own — the STANDALONE does, and on Linux that is RtAudio over ALSA, which is what a
+# Raspberry Pi image has. Setting it in the cache with FORCE before add_subdirectory means the wrapper's own
+# \`set(... CACHE ...)\` cannot overwrite it, which is exactly how the MSVC runtime fix above works.
+if (UNIX AND NOT APPLE)
+  set(RTAUDIO_API_JACK FALSE CACHE BOOL "no JACK — ALSA only" FORCE)
+  set(RTMIDI_API_JACK FALSE CACHE BOOL "no JACK — the plugin opens no MIDI ports" FORCE)
+endif()
+
 add_subdirectory(\${CLAP_WRAPPER_DIR} clap-wrapper)
 
 # ── the plugin ───────────────────────────────────────────────────────────────────────────────────────

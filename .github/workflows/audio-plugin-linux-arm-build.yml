@@ -1,0 +1,66 @@
+# Build the audio-plugin-linux-arm target for real, on a runner that is an ARM64 Linux machine.
+#
+# WHY THIS EXISTS
+#
+# This route's entire claim is "the plugin this produces runs on a Raspberry Pi", and the only way to know
+# that is to compile it on an aarch64 Linux machine and read the architecture back out of the artefact. A
+# plugin built for the wrong instruction set is the quietest failure in this whole target family: the file
+# exists, the name says linux-arm, the folder is in the right place, and the host that loads it simply never
+# sees it. Nothing else in CI can catch that — the required checks prove the GUARDS, on a runner with no
+# aarch64 CPU, and the plugin itself is only built when a user compiles, in their own repo.
+#
+# This materialises what the target generates and runs the target's OWN steps, so a command changed in the
+# target changes here too. It does not re-type a single one.
+#
+# MANUAL ONLY, DELIBERATELY. Every dispatch spends Actions minutes, and this one downloads the VST3 SDK and
+# builds four third-party projects before it gets to ours. It is dispatched by hand when the target or the
+# shared plugin project changes, from the Actions tab or
+#
+#   gh workflow run audio-plugin-linux-arm-build.yml --ref main
+#
+# ⚠️ THE PLUGIN PROJECT IS SHARED WITH THE macOS AND WINDOWS ROUTES (lib/audioPluginProject.js and
+# lib/audioPluginTemplate.js), so a change to either one must be dispatched on ALL THREE —
+# `.github/workflows/audio-plugin-macos-build.yml`, `.github/workflows/audio-plugin-windows-build.yml` and
+# this one. A single green run proves one route, and the other two were built from code that no longer
+# exists. This is the one place a compile target's evidence goes stale silently.
+name: Audio plugin build (Linux ARM)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audio-plugin:
+    name: audio-plugin (Linux ARM, all three formats)
+    # A standard GitHub-hosted ARM64 runner (aarch64), available to private repositories and billed against
+    # the plan's included minutes. NATIVE, not cross-compiled: cross-building clap-wrapper would mean
+    # cross-building the VST3 SDK and finding aarch64 X11/ALSA development packages, which is a great deal
+    # of machinery to avoid one runner label — and it would prove a toolchain nobody ships with.
+    runs-on: ubuntu-24.04-arm
+    # Configure downloads the VST3 SDK, RtAudio and RtMidi; the build then compiles all of it plus three
+    # formats of our plugin on two vCPUs. Well inside this, but a hang must not sit on a runner for an hour.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Everything else — the apt packages, the wrapper clone, configure, the three builds, the ELF and
+      # AArch64 assertions and the packaging — is the target's own step list, executed by this script. See
+      # its header for why it does not re-type a single command.
+      - name: Build and verify every format the target emits
+        run: node scripts/audio-plugin-linux-arm-runner-build.mjs
+
+      # `if-no-files-found: error` is the second half of the check: if any of the three archives is missing,
+      # the run fails here rather than passing with two of three artifacts.
+      - name: Keep the packaged plugins, so the run can be inspected rather than believed
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-plugin-linux-arm
+          path: ${{ runner.temp }}/audio-plugin-linux-arm-build/build/assets/*.zip
+          if-no-files-found: error
+          retention-days: 7

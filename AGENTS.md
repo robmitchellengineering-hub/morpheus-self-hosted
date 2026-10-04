@@ -186,13 +186,16 @@ catalog is the source of truth for what exists; the table below is the map, and
   error-boundary screen, a bounce to `/login`, or a page that rendered nothing. Pass routes of
   your own to check just those: `npm run render:check -- /deck/settings`.
 - **A compile target is proven by running it, never by reading the adapter** (`morpheus-build-library`
-  → `compile-targets`). Most targets are smoke-tested on a runner by `scripts/compile-smoke.mjs`. The two
-  **audio plugin** routes have their own manual workflows, because neither can be built here: the macOS
-  standalone's shell needs full Xcode and this machine has only the Command Line Tools, and the Windows
-  route needs MSVC. **The project is SHARED between those routes** (`server/src/lib/audioPluginProject.js`
-  generates it, `…/audioPluginTemplate.js` holds the sources), so **after changing either target, the shared
-  module or the template, dispatch BOTH:**
-  `.github/workflows/audio-plugin-macos-build.yml` and `.github/workflows/audio-plugin-windows-build.yml`
+  → `compile-targets`). Most targets are smoke-tested on a runner by `scripts/compile-smoke.mjs`. The three
+  **audio plugin** routes have their own manual workflows, because none of them can be built here: the macOS
+  standalone's shell needs full Xcode and this machine has only the Command Line Tools, the Windows route
+  needs MSVC, and the Linux ARM route needs an aarch64 Linux machine (a plugin compiled for the wrong CPU
+  loads nowhere and says nothing). **The project is SHARED between those routes**
+  (`server/src/lib/audioPluginProject.js` generates it, `…/audioPluginTemplate.js` holds the sources), so
+  **after changing any target, the shared module or the template, dispatch ALL THREE:**
+  `.github/workflows/audio-plugin-macos-build.yml`,
+  `.github/workflows/audio-plugin-windows-build.yml` and
+  `.github/workflows/audio-plugin-linux-arm-build.yml`
   (`gh workflow run <file> --ref main`). Each materialises what its own target generates and runs that
   target's own steps, then uploads the packaged plugins. They are `workflow_dispatch`-only on purpose:
   macOS runner minutes bill at 10x and Windows at 2x.

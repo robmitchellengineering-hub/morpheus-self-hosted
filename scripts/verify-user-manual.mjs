@@ -109,7 +109,11 @@ const PLATFORM_PROOF = {
   // Where a plugin has to be moved for a DAW to find it — the one fact a musician cannot guess, and it is
   // a different directory on each platform (and a single FILE rather than a bundle on Windows).
   'audio-plugin-macos': 'Audio/Plug-Ins',
-  'audio-plugin-windows': 'Common Files'
+  'audio-plugin-windows': 'Common Files',
+  // Linux has no shared "Common Files": a plugin goes in the user's own home, and the Pi route's VST3 is a
+  // FOLDER rather than the single file Windows takes — two facts a player cannot guess and the reason this
+  // entry exists rather than the route being waved through.
+  'audio-plugin-linux-arm': '~/.vst3'
 };
 for (const id of listCompileTargets()) {
   const adapter = getCompileTarget(id);

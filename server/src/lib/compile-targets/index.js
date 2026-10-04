@@ -14,6 +14,7 @@ import linuxDistro from './linux-distro.js';
 import arduinoFirmware from './arduino-firmware.js';
 import audioPlugin from './audio-plugin-macos.js';
 import audioPluginWindows from './audio-plugin-windows.js';
+import audioPluginLinuxArm from './audio-plugin-linux-arm.js';
 
 const registry = {
   'web-app': webApp,
@@ -28,6 +29,7 @@ const registry = {
   'arduino-firmware': arduinoFirmware,
   'audio-plugin-macos': audioPlugin,
   'audio-plugin-windows': audioPluginWindows,
+  'audio-plugin-linux-arm': audioPluginLinuxArm,
 };
 
 export function getCompileTarget(id) {
