@@ -86,6 +86,17 @@ export function pluginSource({ name, vendor, id, paramName = 'Gain', description
 
 #include <clap/clap.h>
 
+// HOISTED OUT OF THE DESCRIPTOR, and this line is a portability fix rather than style. It used to read
+// \`.features = (const char *[]){...}\` — a COMPOUND LITERAL, which is C99 and not C++ at all. Clang accepts
+// it as an extension, so the macOS build never complained; MSVC refuses it outright with
+// \`error C4576: a parenthesized type followed by an initializer list is a non-standard explicit type
+// conversion syntax\`. A named array is the portable spelling and costs nothing.
+static const char *const kFeatures[] = {
+   CLAP_PLUGIN_FEATURE_AUDIO_EFFECT,
+   CLAP_PLUGIN_FEATURE_STEREO,
+   nullptr,
+};
+
 static const clap_plugin_descriptor_t s_desc = {
    .clap_version = CLAP_VERSION_INIT,
    .id = ${safeId},
@@ -96,7 +107,7 @@ static const clap_plugin_descriptor_t s_desc = {
    .support_url = "https://morpheus.nz",
    .version = "1.0.0",
    .description = ${safeDesc},
-   .features = (const char *[]){CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_STEREO, NULL},
+   .features = kFeatures,
 };
 
 // ── parameters ───────────────────────────────────────────────────────────────────────────────────────
@@ -379,7 +390,12 @@ if (APPLE)
   enable_language(OBJCXX)
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
+# ⚠️ C++20, AND IT IS NOT A PREFERENCE. The plugin source below initialises its CLAP structs with DESIGNATED
+# INITIALIZERS (\`.id = ...\`), which is a C++20 feature. The standard used to say 17 here, and the macOS build
+# worked anyway because clang accepts them as an extension — so the first Windows build was the first time
+# anything checked, and MSVC answered \`error C7555: use of designated initializers requires at least
+# '/std:c++20'\`. Declaring 20 is the accurate statement of what this source is written in.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
   # FORCE, and the guard, are both load-bearing: CMake already puts CMAKE_OSX_DEPLOYMENT_TARGET in its
