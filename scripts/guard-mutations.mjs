@@ -351,12 +351,12 @@ export const MUTATIONS = [
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/compile-targets/audio-plugin-windows.js',
-    // THE macOS LAYOUT ON A WINDOWS BUILD. This is the mistake the verify step exists to prevent: looking
-    // for the flat `assets/<name>.clap` that macOS produces finds nothing on Windows, and a check written
-    // that way reports every format missing — or, worse, passes because it never looks.
-    why: 'Points the Windows verification at the flat macOS assets path, so it checks a layout Windows does not produce.',
-    find: 'const clap = `${WINDOWS_ASSETS}/CLAP/${name}.clap`;',
-    replace: 'const clap = `${WINDOWS_ASSETS}/${name}.clap`;',
+    // THE LAYOUT THE GENERATOR OWNS. Run four looked for `<dir>/<name>.vst3` and found nothing, because the
+    // Visual Studio generator is multi-config and appends `Release/`. Widen the search to the whole assets
+    // directory and the check is no longer looking where the artifacts are expected.
+    why: 'Points the Windows verification at the whole assets directory instead of each format\'s own folder, so it checks somewhere the artifacts are not expected.',
+    find: 'const clapDir = `${WINDOWS_ASSETS}/CLAP`;',
+    replace: 'const clapDir = `${WINDOWS_ASSETS}`;',
   },
   {
     guard: 'verify-audio-plugin.mjs',

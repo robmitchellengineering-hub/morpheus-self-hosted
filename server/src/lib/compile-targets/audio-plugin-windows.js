@@ -45,11 +45,15 @@ export const audioPlugin = {
   buildSteps(files) {
     const manifest = readManifest(files);
     const name = manifest.name;
-    // WHERE clap-wrapper ACTUALLY PUTS THEM ON WINDOWS. These three paths are the ones the verify step
-    // asserts, so they are built once here rather than written out at both ends.
-    const clap = `${WINDOWS_ASSETS}/CLAP/${name}.clap`;
-    const vst3 = `${WINDOWS_ASSETS}/VST3/${name}.vst3`;
-    const standalone = `${WINDOWS_ASSETS}/Standalone-morpheus_plugin_standalone/${name}.exe`;
+    // WHERE clap-wrapper PUTS THEM ON WINDOWS — the DIRECTORY, not the path. The file is not at
+    // `<dir>/<name>.vst3` and assuming it was is a mistake this target already made once on a runner: the
+    // Visual Studio generator is MULTI-CONFIG, so CMake appends the configuration to every output directory
+    // and the artifact is one level deeper (`…/VST3/Release/<name>.vst3`). The build had worked; the check
+    // looked in the wrong place. So these are the directories the artifacts are searched in, and `Release`
+    // is never written down — a Debug build would put them somewhere else again.
+    const clapDir = `${WINDOWS_ASSETS}/CLAP`;
+    const vst3Dir = `${WINDOWS_ASSETS}/VST3`;
+    const standaloneDir = `${WINDOWS_ASSETS}/Standalone-morpheus_plugin_standalone`;
 
     return [
       { uses: 'actions/checkout@v4' },
@@ -132,11 +136,11 @@ export const audioPlugin = {
           '    return ($br.ReadUInt32() -eq 0x00004550)             # PE\\0\\0',
           '  } finally { $fs.Dispose() }',
           '}',
-          `$formats = [ordered]@{`,
-          `  'CLAP'       = @{ path = '${clap}';  symbol = 'clap_entry' }`,
-          `  'VST3'       = @{ path = '${vst3}';  symbol = 'GetPluginFactory' }`,
-          `  'standalone' = @{ path = '${standalone}'; symbol = $null }`,
-          '}',
+          `$formats = @(`,
+          `  @{ format = 'CLAP';       dir = '${clapDir}';       file = '${name}.clap'; symbol = 'clap_entry' }`,
+          `  @{ format = 'VST3';       dir = '${vst3Dir}';       file = '${name}.vst3'; symbol = 'GetPluginFactory' }`,
+          `  @{ format = 'standalone'; dir = '${standaloneDir}'; file = '${name}.exe';  symbol = $null }`,
+          ')',
           // dumpbin IS NOT ON PATH ON A WINDOWS RUNNER, and the first run proved it: the build finished and
           // this step refused to pass, which is what it is for. CMake finds the MSVC toolchain through the
           // registry; the DEVELOPER environment is never entered, so the tools are installed and absent from
@@ -154,18 +158,18 @@ export const audioPlugin = {
           'if (-not $dumpbin) { throw "dumpbin could not be located (looked with vswhere at $vswhere), so the entry-point assertions cannot run. Do not let this step pass (H17)." }',
           'Write-Host "using $($dumpbin.FullName)"',
           '$bad = @()',
-          'foreach ($f in $formats.Keys) {',
-          '  $p = $formats[$f].path',
-          '  if (-not (Test-Path $p)) { Write-Host "MISSING ($f): $p"; $bad += $f; continue }',
-          '  $size = (Get-Item $p).Length',
-          '  if ($size -lt 8192) { Write-Host "TOO SMALL TO BE A PLUGIN ($f): $p ($size bytes)"; $bad += $f; continue }',
-          '  if (-not (Test-PE $p)) { Write-Host "NOT A PE IMAGE ($f): $p"; $bad += $f; continue }',
-          '  $sym = $formats[$f].symbol',
-          '  if ($sym) {',
+          'foreach ($t in $formats) {',
+          '  $hit = Get-ChildItem -Path $t.dir -Recurse -Filter $t.file -ErrorAction SilentlyContinue | Select-Object -First 1',
+          '  if (-not $hit) { Write-Host "MISSING ($($t.format)): no $($t.file) anywhere under $($t.dir)"; $bad += $t.format; continue }',
+          '  $p = $hit.FullName',
+          '  $size = $hit.Length',
+          '  if ($size -lt 8192) { Write-Host "TOO SMALL TO BE A PLUGIN ($($t.format)): $p ($size bytes)"; $bad += $t.format; continue }',
+          '  if (-not (Test-PE $p)) { Write-Host "NOT A PE IMAGE ($($t.format)): $p"; $bad += $t.format; continue }',
+          '  if ($t.symbol) {',
           '    $exports = & $dumpbin.FullName /nologo /exports $p | Out-String',
-          '    if ($exports -notmatch "\\b$sym\\b") { Write-Host "MISSING ENTRY POINT $sym IN ($f): $p"; $bad += $f; continue }',
+          '    if ($exports -notmatch "\\b$($t.symbol)\\b") { Write-Host "MISSING ENTRY POINT $($t.symbol) IN ($($t.format)): $p"; $bad += $t.format; continue }',
           '  }',
-          '  Write-Host ("  {0,-11} {1,10:N0} bytes  {2}" -f $f, $size, $p)',
+          '  Write-Host ("  {0,-11} {1,10:N0} bytes  {2}" -f $t.format, $size, $p)',
           '}',
           'if ($bad.Count -gt 0) { throw "the build did not produce usable plugins: $($bad -join \', \')" }',
           'Write-Host "all three formats produced, each a PE image with its real entry point"',
@@ -179,9 +183,18 @@ export const audioPlugin = {
         // a VST3 here is a single file, not a folder bundle, so there is no structure to preserve.
         run: [
           '$ErrorActionPreference = "Stop"',
-          `Compress-Archive -Path '${vst3}' -DestinationPath '${WINDOWS_ASSETS}/plugin-windows-vst3.zip' -Force`,
-          `Compress-Archive -Path '${clap}' -DestinationPath '${WINDOWS_ASSETS}/plugin-windows-clap.zip' -Force`,
-          `Compress-Archive -Path '${standalone}' -DestinationPath '${WINDOWS_ASSETS}/plugin-windows-standalone.zip' -Force`,
+          // Searched for the same reason the verification searches: the configuration subdirectory is the
+          // generator's business, not something to hardcode here.
+          '$zips = @(',
+          `  @{ file = '${name}.vst3'; out = 'plugin-windows-vst3.zip' }`,
+          `  @{ file = '${name}.clap'; out = 'plugin-windows-clap.zip' }`,
+          `  @{ file = '${name}.exe';  out = 'plugin-windows-standalone.zip' }`,
+          ')',
+          'foreach ($z in $zips) {',
+          `  $hit = Get-ChildItem -Path '${WINDOWS_ASSETS}' -Recurse -Filter $z.file -ErrorAction SilentlyContinue | Select-Object -First 1`,
+          '  if (-not $hit) { throw "cannot package $($z.file): it was not produced" }',
+          `  Compress-Archive -Path $hit.FullName -DestinationPath (Join-Path '${WINDOWS_ASSETS}' $z.out) -Force`,
+          '}',
           `Get-ChildItem '${WINDOWS_ASSETS}/plugin-windows-*.zip' | Select-Object Name, Length`,
         ].join('\n'),
       },
