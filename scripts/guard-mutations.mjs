@@ -414,6 +414,16 @@ export const MUTATIONS = [
     replace: "      'This plugin is for macOS. It will not load on Windows or Linux — there is no Audio Unit',",
   },
   {
+    guard: 'verify-audio-measure.mjs',
+    file: 'server/src/lib/audio/analysis.js',
+    // THE CLASSIC WINDOWING BUG, as a mutation: dropping the window's coherent gain makes every amplitude read
+    // low by exactly that factor (a Hann window halves it), so a -6 dBFS tone reports as -12. Nothing throws,
+    // and every level in the report is wrong by a constant — which is the worst kind of wrong for a meter.
+    why: 'Drops the coherent-gain correction from the amplitude spectrum, so every level the instrument reports is low by the window factor.',
+    find: 'const scale = (k === 0 || k === half ? 1 : 2) / (n * gain);',
+    replace: 'const scale = (k === 0 || k === half ? 1 : 2) / n;',
+  },
+  {
     guard: 'verify-render-check.mjs',
     file: 'scripts/dev-app-render.mjs',
     // A SAFETY INTERLOCK, as a mutation — the class of edit a guard is really for. Nothing about the
