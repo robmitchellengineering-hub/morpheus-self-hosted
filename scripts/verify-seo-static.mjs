@@ -186,6 +186,13 @@ if (generated) {
       NOUNS.filter((n) => !text || !text.includes(n)).join(', '));
   }
   const appSrc = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  // The nouns must be CAPABILITIES, not only prose. This is the specific shape of the original
+  // failure: "Voice" was in the list and Jarvis was not, so the feature list a model reads named
+  // the ability and never the assistant. A title rename that drops the name fails here even
+  // though the word survives in the intro and in Jarvis's own capability body.
+  check('the capability list names the assistant, the Deck and the Dock in its own titles',
+    ['Jarvis', 'Command Deck', 'Dock'].every((n) => caps.capabilities.some((c) => c.title.includes(n))),
+    caps.capabilities.map((c) => c.title).join(' | '));
   check('the Deck and Jarvis are real routes in the app, not only words in copy',
     appSrc.includes('path="/deck"') && appSrc.includes('path="jarvis"'));
   check('the dock script the copy promises is the one that ships',
