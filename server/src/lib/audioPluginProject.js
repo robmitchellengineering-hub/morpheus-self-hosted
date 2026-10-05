@@ -19,6 +19,9 @@ import {
   MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
 } from './namPlugin.js';
 import { PLAIN_CHAIN, chainFor, chainParams } from './ampChain.js';
+import {
+  CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSource, cabHeader, resolveCab,
+} from './cabIr.js';
 import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './compile-targets/utils.js';
 
 /**
@@ -89,6 +92,9 @@ export function readManifest(files) {
     // Which signal path this plugin is. Empty is the plugin every project got before chains existed, and an
     // unrecognised value is treated the same way rather than guessed at — see lib/ampChain.js.
     chain: parsed.chain == null ? '' : String(parsed.chain),
+    // The cabinet impulse response this plugin convolves, when one is named. Empty means "find a .wav in the
+    // project", the same rule as the model.
+    cab: parsed.cab == null ? '' : String(parsed.cab),
   };
 }
 
@@ -150,6 +156,13 @@ export function scaffoldPlugin(files) {
   replace(MODEL_DATA_HEADER, modelHeader(model.info));
   replace(MODEL_DATA_SOURCE, modelDataSource(model.info, model.text));
 
+  // The cabinet is DERIVED from the `.wav` in the project, exactly like the model, so it is rewritten for the
+  // same reason: replacing `models/cab.wav` and rebuilding has to produce the new speaker.
+  const cab = resolveCab(files, manifest);
+  for (const w of cab.warnings) warnings.push(w);
+  replace(CAB_DATA_HEADER, cabHeader(cab.info));
+  replace(CAB_DATA_SOURCE, cabDataSource(cab.info, cab.channels));
+
   add(PLUGIN_MANIFEST, `${JSON.stringify({
     name: manifest.name,
     vendor: manifest.vendor,
@@ -164,7 +177,15 @@ export function scaffoldPlugin(files) {
     // stable, which is what makes the generated manifest diffable between two builds.
     model: manifest.model || '',
     chain: manifest.chain || '',
+    cab: manifest.cab || '',
   }, null, 2)}\n`);
+
+  // A cabinet only means anything inside a chain — it is a stage in the signal path, and the plain plugin has
+  // no path to put it in. Said out loud rather than silently ignored: a user who added a .wav and heard no
+  // change deserves to know why.
+  if (cab.info && !chainFor(manifest).tone) {
+    warnings.push(`${cab.path} was found, but a cabinet is a stage in the amp chain and this project uses the plain plugin — add 'chain': 'amp' to morpheus.plugin.json to convolve it.`);
+  }
 
   // An unknown chain is a WARNING rather than a refusal — Morpheus scaffolds, and the plugin still builds —
   // but it must be said, because the user asked for something and got the default.
@@ -185,6 +206,7 @@ export function scaffoldPlugin(files) {
     // the reference engine into the plugin, without one there is nothing to compile. The plugin source itself
     // does not differ — see namPlugin.js's note on why that matters for the test bench.
     hasModel: Boolean(model.info),
+    hasCab: Boolean(cab.info),
     modelPath: model.info ? model.info.path : null,
     modelArchitecture: model.info ? model.info.architecture : null,
   }));

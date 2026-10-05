@@ -28,6 +28,9 @@ import {
 // The band count only, for the two loops that reset filter state. The filters themselves are emitted by
 // ampChain.js, which reads this same module so the design and the build cannot disagree.
 import { TONE_KEYS } from './audio/toneStack.js';
+// The cabinet's DSP text lives with the cabinet, the way the model's does. Both are processors that exist
+// when a file does, not parameters of the chain.
+import { cabDestroyCpp, cabDspCpp, cabInitCpp, cabStageCpp, cabStateCpp } from './cabIr.js';
 
 /** Four printable ASCII characters, no spaces — the AU 'subtype'/'manufacturer' code format. */
 export function fourCharCode(input, fallback = 'Morp') {
@@ -104,6 +107,11 @@ export function pluginSource({ name, vendor, id, description = '', chain = PLAIN
 // changed shape when a model was present would make that proof depend on what was in the workspace.
 #include "ModelData.h"
 
+// ── the cabinet, when there is one ───────────────────────────────────────────────────────────────────
+// ALWAYS INCLUDED, whether or not there is a cabinet, for the same reason as the model's header: the plugin
+// source stays the same text either way.
+#include "CabIr.h"
+
 #if MORPHEUS_HAS_MODEL
 // NeuralAmpModelerCore (MIT) — the reference implementation of the .nam format, and deliberately not a
 // second implementation of WaveNet. See server/src/lib/namPlugin.js for why the engine is theirs.
@@ -140,12 +148,19 @@ static const clap_plugin_descriptor_t s_desc = {
 ${paramsCpp(list)}
 
 static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
+
+#if MORPHEUS_HAS_CAB
+${cabDspCpp}
+#endif
 ${hasTone ? `\n${toneCpp()}\n` : ''}
 typedef struct {
    clap_plugin_t plugin;
    const clap_host_t *host;
 
 ${stateCpp(chain, list)}
+#if MORPHEUS_HAS_CAB
+${cabStateCpp}
+#endif
 
 #if MORPHEUS_HAS_MODEL
    // ONE MODEL INSTANCE PER CHANNEL, and it is a real decision rather than symmetry. A .nam is mono in and
@@ -262,6 +277,7 @@ static bool plug_init(const clap_plugin_t *plugin) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
 ${initCpp(list)}
    p->fs = 48000.0;
+${cabInitCpp}
 ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes every coefficient, so a plugin that starts
    // at 0 dB is not silent because its filters were never configured. calloc leaves these at zero, and a
    // zero-coefficient biquad passes nothing.
@@ -294,6 +310,7 @@ static void plug_destroy(const clap_plugin_t *plugin) {
    // \`free\` runs no destructors, so the models are released here or not at all.
    for (int c = 0; c < 2; ++c) { delete p->model[c]; p->model[c] = NULL; }
 #endif
+${cabDestroyCpp}
    free(plugin->plugin_data);
 }
 
@@ -355,7 +372,7 @@ ${hasTone ? `${toneUpdateCpp()}\n` : ''}         double in_l = process->audio_in
          // a different route would be a stereo image that moves when a control does.
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${chainSampleCpp(chain, list)}
+${chainSampleCpp(chain, list).replace('__CAB_STAGE__', cabStageCpp)}
             if (c == 0) in_l = x; else in_r = x;
          }
          // The output level is applied last, so moving it changes how loud the plugin is and NOT how hard
@@ -461,7 +478,7 @@ const CLAP_EXPORT struct clap_plugin_entry clap_entry = {
 }
 
 /** The CMake project: one CLAP source in, four formats out. */
-export function cmakeLists({ name, id, version, auType, auSubtype, auManufacturer, auManufacturerName, hasModel = false, modelPath = null, modelArchitecture = null }) {
+export function cmakeLists({ name, id, version, auType, auSubtype, auManufacturer, auManufacturerName, hasModel = false, modelPath = null, modelArchitecture = null, hasCab = false }) {
   return `# ${name} — built with Morpheus.
 #
 # ONE SOURCE, FOUR FORMATS ON APPLE — THREE EVERYWHERE ELSE. \`make_clapfirst_plugins\` takes the CLAP implementation in Source/ and produces
@@ -573,13 +590,19 @@ endif()
 add_subdirectory(\${CLAP_WRAPPER_DIR} clap-wrapper)
 
 # ── the plugin ───────────────────────────────────────────────────────────────────────────────────────
-# ModelData.cpp ALWAYS EXISTS, whether or not it holds a model: the plugin includes ModelData.h
-# unconditionally and branches on MORPHEUS_HAS_MODEL, so there is no configuration in which one of the pair
-# is present and the other is not.
-add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp)
+# ModelData.cpp and CabIr.cpp ALWAYS EXIST, whether or not they hold anything: the plugin includes their
+# headers unconditionally and branches on the flags inside, so there is no configuration in which one of a
+# pair is present and the other is not.
+add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp)
 target_include_directories(morpheus_plugin-impl PRIVATE Source)
 target_link_libraries(morpheus_plugin-impl PUBLIC clap clap-wrapper-extensions)
-${hasModel ? `
+${hasCab ? `
+# The cabinet needs nothing fetched — the taps are compiled in. This line exists so the configure cannot
+# quietly build a project whose CabIr.cpp was generated without a cabinet.
+if (NOT EXISTS "\${CMAKE_CURRENT_SOURCE_DIR}/Source/CabIr.cpp")
+  message(FATAL_ERROR "Source/CabIr.cpp is missing; the scaffold did not run.")
+endif()
+` : ''}${hasModel ? `
 # ── the neural model ─────────────────────────────────────────────────────────────────────────────────
 # ${JSON.stringify(modelPath)} — a ${JSON.stringify(modelArchitecture || 'NAM')} model, embedded in Source/ModelData.cpp and
 # run by NeuralAmpModelerCore (MIT), the reference implementation of the .nam format. The engine is NOT

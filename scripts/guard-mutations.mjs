@@ -509,8 +509,11 @@ export const MUTATIONS = [
     file: 'server/src/lib/audioPluginTemplate.js',
     // The model data is a translation unit; leaving it out of the library links nothing that defines it.
     why: 'Leaves ModelData.cpp out of the plugin library, so the embedded model is never compiled in.',
-    find: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp)',
-    replace: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp)',
+    // ⚠️ THE LINE GREW A FILE when the cabinet landed, and this mutation went STALE — a find that matches
+    // nothing is a guard that is no longer proven, and the harness is right to refuse it. It now drops only
+    // ModelData.cpp, which is still the thing it is about, while the cabinet's own mutation drops CabIr.cpp.
+    find: 'Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp)',
+    replace: 'Source/Plugin.cpp Source/CabIr.cpp)',
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -728,6 +731,40 @@ export const MUTATIONS = [
     find: "else echo '        (none: this is the gain plugin, which is a supported state and not a failure)'",
     replace: "else echo ''",
   },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/cabIr.js',
+    // ⚠️ MEASURED, NOT PREFERRED: summing 4096 float products into a float nulled against the JavaScript
+    // reference at -116 dB; in double it is -148 dB. The whole of that residual was accumulation.
+    why: 'Accumulates the convolution in float again, which the measurement showed leaves -116 dB of residual that is arithmetic rather than filtering.',
+    find: '  double y = 0.0;',
+    replace: '  float y = 0.0f;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/cabIr.js',
+    // ⚠️ A `${...}` inside a C++ `#if` is not guarded — the JavaScript runs first. This is the line that
+    // crashed the generator on a MONO cabinet with `undefined.length`.
+    why: 'Emits the right channel even for a mono cabinet, which crashed the generator before any C++ existed.',
+    find: '  const right = channels[1]',
+    replace: '  const right = true',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    why: 'Leaves CabIr.cpp out of the plugin library, so nothing defines the taps the plugin links against.',
+    find: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp)',
+    replace: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/cabIr.js',
+    // A silent WAV is not a cabinet. Convolving it is a plugin that outputs nothing, with no explanation.
+    why: 'Accepts a silent impulse response, which is a plugin that produces silence and says nothing about why.',
+    find: "  if (!(peak > 0)) return { ok: false, reason: 'is silent (every sample is zero)' };",
+    replace: '  if (false) return { ok: false, reason: "is silent" };',
+  },
+
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
