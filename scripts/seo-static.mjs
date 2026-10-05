@@ -305,6 +305,16 @@ ${possibility.body}
 
 ${capabilities.map((c) => `### ${c.title}\n\n${c.body}${c.workflow ? `\n\nWorkflow: ${c.workflow}` : ''}`).join('\n\n')}
 
+## Downloads
+
+${caps.downloads ? caps.downloads.intro : ''}
+
+${caps.downloads ? caps.downloads.items.map((it) => `- **${it.name}** (${it.platform}) — ${it.what} ${it.note}`).join('\n') : ''}
+
+### ${caps.downloads ? caps.downloads.ownHeading : ''}
+
+${caps.downloads ? caps.downloads.own : ''}
+
 ${audioMd}## User manual
 
 The manual that ships with a build, for every target. Each section covers installing it, starting it, and the
@@ -347,6 +357,12 @@ merges a pull request once the checks pass. "Revert last push" undoes it in one 
 
 ${PRICING}
 
+## Downloads
+
+${caps.downloads ? caps.downloads.items.map((it) => `- **${it.name}** (${it.platform}) — ${it.what}`).join('\n') : ''}
+
+Most of what Morpheus produces is not a download from us: it is built inside your own GitHub repository and lands in _compiled/ in your own project.
+
 ${audioMd}## Ownership
 
 Every file is written into your own project and pushed to your own GitHub repository.
@@ -376,6 +392,8 @@ const PUBLIC_ROUTES = [
   ['/start', '0.9'],
   ['/market', '0.8'],
   ['/portable-morpheus', '0.8'],
+  // Everything downloadable, in one place — and linked from the landing page, not only from here.
+  ['/downloads', '0.8'],
   ['/register', '0.7'],
   ['/login', '0.5'],
   ['/terms', '0.3'],

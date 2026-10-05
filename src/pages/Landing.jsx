@@ -195,6 +195,18 @@ export default function Landing() {
         )}
         {bluePillLine && <p className="mt-4 text-ink-strong text-xs italic max-w-md mx-auto leading-relaxed">"{bluePillLine}"</p>}
 
+        {/* DOWNLOADS — above the capability list, because a visitor who has decided they are interested
+            asks "what can I get?" before they read a feature list. Rob, 2026-10-05: "add a downloads page
+            linked from a button above core capabilities on the home page with all the things you can
+            download in morpheus in one spot."
+            One button rather than a row: it is a door, and the page behind it does the explaining —
+            including the distinction that most of what Morpheus makes is NOT a download from us. */}
+        {showButtons && <div className="mt-10 flex justify-center">
+          <Link to="/downloads" className="inline-flex items-center gap-2 px-6 py-2.5 border border-primary/50 text-primary/80 hover:bg-primary hover:text-black transition-colors font-display tracking-wider text-sm">
+            <Download size={15} /> DOWNLOADS
+          </Link>
+        </div>}
+
         {/* Core principle + live capability list. Reads from the shared
             morpheusCapabilities module, so new features appear here automatically
             as soon as they're added to that file. */}

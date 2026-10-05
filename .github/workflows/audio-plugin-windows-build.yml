@@ -80,6 +80,15 @@ jobs:
       # `fail_on_unmatched_files` is deliberate. A release missing one of the formats would be a download
       # page promising a VST3 that is not in the archive, which is the exact failure the verify steps
       # above exist to prevent — so the publish fails rather than shipping a partial set.
+      # ⚠️ THE PROOF IS RENAMED BEFORE IT IS PUBLISHED, AND THIS IS NOT COSMETIC. Every rig writes a file
+      # called BUILD-PROOF.txt and they all publish to the SAME release, so whichever platform ran last
+      # overwrote the others — the release briefly carried the Windows proof beside the Linux binaries,
+      # which is a download page whose evidence describes a different machine than the file next to it.
+      # The zips never collided because they are already named per platform; the proof was not.
+      - name: Name the proof for the machine that wrote it
+        if: inputs.publish_tag != ''
+        run: cp "${{ runner.temp }}/audio-plugin-windows-build/BUILD-PROOF.txt" "${{ runner.temp }}/BUILD-PROOF-windows.txt"
+
       - name: Publish the demo download
         if: inputs.publish_tag != ''
         uses: softprops/action-gh-release@v2
@@ -96,7 +105,7 @@ jobs:
             you is a plugin built in your own repository around your own model and cabinet.
           files: |
             ${{ runner.temp }}/audio-plugin-windows-build/build/assets/*.zip
-            ${{ runner.temp }}/audio-plugin-windows-build/BUILD-PROOF.txt
+            ${{ runner.temp }}/BUILD-PROOF-windows.txt
             docs/PLUGIN-DEMO-NOTICE.txt
           fail_on_unmatched_files: true
         env:

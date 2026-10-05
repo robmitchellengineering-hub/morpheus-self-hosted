@@ -28,3 +28,7 @@ export const MORPHEUS_POSSIBILITY = data.possibility;
 // carried here: the prose-ink rule (scripts/verify-prose-ink.mjs) attributes a green label to the text
 // where it is written, so a heading that arrived at runtime would fail the build.
 export const MORPHEUS_AUDIO = data.audio;
+// Everything Morpheus hands you as a file, in one place — the downloads page reads it, so does the sitemap,
+// so does llms.txt. It is data rather than JSX for the same reason the capability list is: a page and a
+// machine-readable brief generated from one list cannot come to disagree about what is on offer.
+export const MORPHEUS_DOWNLOADS = data.downloads;
