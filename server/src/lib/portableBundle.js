@@ -96,6 +96,19 @@ export function portableBundleReadme({ commit, builtAt, fileCount }) {
 older tree.** Portable Morpheus is the whole product: the builder *and* the Command Deck, running on
 your own Mac, PC or Linux machine.
 
+> ## ⚠️ This is published source, not open source
+>
+> You may **read** this code, and you may **run** it as we provide it. You may not copy, modify,
+> redistribute, sublicense or sell it, or use it to train a model, without our written permission.
+> Commercial licensing — including OEM and white-label terms — is available on request.
+>
+> **Your own projects are not covered by this.** The applications Morpheus writes for you are yours,
+> with no obligation to us. This notice covers the tool, not what the tool makes for you.
+>
+> Third-party components keep their own (more permissive) licences — CLAP, the VST3 SDK,
+> NeuralAmpModelerCore, clap-wrapper, RtAudio/RtMidi, AudioUnitSDK, Eigen and others. See the
+> \`LICENSE\` file in this bundle for the full notice.
+
 | | |
 |---|---|
 | Built from commit | \`${commit}\` |

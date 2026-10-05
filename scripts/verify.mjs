@@ -123,6 +123,7 @@ const HARD = [
   'verify-export-promise.mjs',
   'verify-client-env.mjs',
   'verify-netlify-cost.mjs',
+  'verify-license-terms.mjs',
   'verify-no-secret-fixtures.mjs',
   'verify-build-failure-owner.mjs',
   'verify-project-divergence.mjs',
