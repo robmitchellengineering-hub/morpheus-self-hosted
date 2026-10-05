@@ -80,7 +80,7 @@ jobs:
       # it is the one published.
       - name: Build it again WITH the model — this is the one people download
         run: |
-          node scripts/scripts/audio-plugin-windows-runner-build.mjs --model .cache/models/wavenet_a1_standard.nam
+          node scripts/audio-plugin-windows-runner-build.mjs --model .cache/models/wavenet_a1_standard.nam
         env:
           AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-windows-nam-build
 
