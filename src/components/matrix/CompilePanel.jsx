@@ -12,8 +12,21 @@ import LinuxDistroConfigDialog from '@/components/matrix/LinuxDistroConfigDialog
 import DiagnosisPanel, { DiagnosisLoading } from '@/components/matrix/DiagnosisPanel';
 import { useDiagnosis } from '@/hooks/useDiagnosis';
 import { base44 } from '@/api/base44Client';
+import { COMPILE_TARGETS } from '@/lib/compileTargets';
 
-const SUPPORTED = ['web-app', 'python-package', 'windows-exe', 'linux-binary', 'mac-app', 'android-apk', 'ios-app', 'rpi-distro', 'linux-distro', 'arduino-firmware'];
+// ⚠️ DERIVED, NOT LISTED, AND THIS COST THE WHOLE AUDIO FEATURE ITS SCREEN.
+//
+// This was a hardcoded ten-target array, and it had NEVER contained an audio-plugin route — the three of them
+// arrived in the registry and in the picker and not here. `isSupported` gates the block that holds COMPILE
+// NOW, CABINET (.wav), CHECK A CAPTURE (.wav) and SIGNAL PATH (BOARD), so for every audio-plugin project the
+// panel said "Remote compilation not yet supported for this target" and not one of those buttons existed.
+// The board, the delay, the spring reverb and the drive were all unreachable in the app while their guards
+// were green, because a render check RENDERS and never PRESSES.
+//
+// `COMPILE_TARGETS` is the picker's own list and the one file that says what a target is called, so deriving
+// from it means a new target cannot arrive in the picker and be missing here. `source` is the one entry
+// filtered out: it is in the picker but it is not a build, it is the choice to download the files instead.
+const SUPPORTED = COMPILE_TARGETS.map((t) => t.value).filter((v) => v !== 'source');
 
 // 2026-09-04 (Rob: "i need an eta timer and larger spinning circle with
 // steps in the compile ai fix window, its hard to tell its doing anything")
