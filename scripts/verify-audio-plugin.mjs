@@ -1420,6 +1420,106 @@ check('the board a project opens with is the plugin it already builds, not a def
 check('…and a project with no chain opens as the one-Gain plugin it is',
   projectMod.boardFor(empty).items.map((i) => i.kind).join(','), 'output');
 
+console.log('\n22. a block that is not a part of an amp: the delay');
+// ⭐ THE REGISTRY'S OWN TEST. Everything in `ampChain.js` was written for one signal path — an amplifier —
+// and the board made that path a list. A delay is the cheapest honest proof that the list is a list: it is
+// not an amplifier, it belongs at no particular place in the chain, it holds state across samples and it has
+// to allocate. If it can be carried, the registry is real.
+//
+// ⚠️ AND THIS SECTION EXISTS BECAUSE THE FIRST VERSION OF IT WAS CORRUPT. `boardChain` read "more than one
+// parameter" as "a tone stack" and wrote the delay's Time/Feedback/Mix over `TONE_BANDS` as bass, middle and
+// treble: the plugin had BASS = 300 ms and NO DELAY IN IT, and every check that looked for the block's
+// presence still passed. The assertions below are written against the emitted source for that reason.
+const delayMod = await import('../server/src/lib/delayBlock.js');
+const delayKind = boardMod.blockKind('delay');
+check('the catalogue has the delay, and its controls are its own three, in the order they are declared',
+  Boolean(delayKind)
+  && boardMod.kindControls('delay').map((c) => c.key).join(',') === 'delay_time,delay_feedback,delay_mix'
+  && boardMod.kindControls('delay').map((c) => c.name).join(',') === 'Time,Feedback,Mix', true);
+const delayBoard = (before) => {
+  const items = boardItems().filter((i) => i.kind !== 'cab');
+  const delay = { instanceId: 20, kind: 'delay', enabled: true, values: {} };
+  const at = before == null ? items.length : items.findIndex((i) => i.kind === before);
+  items.splice(at < 0 ? items.length : at, 0, delay);
+  return items;
+};
+const withDelay = boardSrc(delayBoard(null));
+
+// THE IDS. Appending a block must not move a control that already existed — and a fixed list of known keys
+// would fail the second check, which is why identity is creation order.
+check('⭐ adding a delay leaves the amp chain\'s controls exactly where they were',
+  boardMod.boardParamsStable({ items: delayBoard(null) }).slice(0, 6).map((p) => p.key).join(','),
+  'input,gate,bass,mid,treble,output');
+check('…and the delay\'s own controls are appended, in the order the block declares them',
+  boardMod.boardParamsStable({ items: delayBoard(null) }).slice(6).map((p) => p.key).join(','),
+  'delay_time,delay_feedback,delay_mix');
+// ⭐ THE CASE A FIXED ORDER OF KNOWN KEYS GETS WRONG, and the reason identity is creation order instead. A
+// project that started as the one-Gain plugin, had a delay added, and then had a tone stack added: if the
+// parameter list were ordered by a known-key table, the tone stack's three keys would sort into the middle and
+// push the delay's controls to new ids — the same corruption as a drag, arriving from an ADD.
+check('⭐ and a tone stack added AFTERWARDS does not renumber the delay',
+  (() => {
+    const before = { nextInstanceId: 5, items: [
+      { instanceId: 1, kind: 'output', enabled: true, values: {} },
+      { instanceId: 2, kind: 'delay', enabled: true, values: {} },
+    ] };
+    const after = { nextInstanceId: 6, items: [...before.items, { instanceId: 3, kind: 'tone', enabled: true, values: {} }] };
+    const at = (b, key) => boardMod.boardParamsStable(b).findIndex((p) => p.key === key);
+    const keys = boardMod.boardParamsStable(after).map((p) => p.key).join(',');
+    return at(after, 'delay_time') === at(before, 'delay_time')
+      && at(after, 'delay_mix') === at(before, 'delay_mix')
+      && keys === 'output,delay_time,delay_feedback,delay_mix,bass,mid,treble';
+  })(), true);
+
+// THE C++. A block that brings its own DSP has to bring its own everything: the struct and the functions, the
+// state inside plugin_t, the allocation and the free.
+check('the delay brings its own struct, state, allocation and free — the template is handed them, not told about them',
+  /typedef struct \{ float \*buf; int size; int w; double damp; \} delay_t;/.test(withDelay)
+  && /delay_t delay\[2\];/.test(withDelay)
+  && /calloc\(\(size_t\)MORPHEUS_DELAY_CAPACITY/.test(withDelay)
+  && /free\(p->delay\[c\]\.buf\)/.test(withDelay), true);
+check('…its stage calls its own function on the sample',
+  /x = delay_process\(&p->delay\[c\], x,/.test(withDelay), true);
+check('…and every marker it emitted was replaced, rather than left in the source as a compile error',
+  /__DELAY_STAGE__|__GATE_STAGE__|__CAB_STAGE__/.test(withDelay), false);
+check('…with the parameters it declared, at the defaults the board saved',
+  /\{ 7, "Time", 20\.0, 2000\.0, 300\.0 \}/.test(withDelay)
+  && /\{ 8, "Feedback", 0\.0, 95\.0, 30\.0 \}/.test(withDelay)
+  && /\{ 9, "Mix", 0\.0, 100\.0, 25\.0 \}/.test(withDelay), true);
+check('…and the tone stack still has its OWN three bands, not the delay\'s',
+  /\{ 3, "Bass", -12\.0, 12\.0, 0\.0 \}/.test(withDelay), true);
+
+// ⭐ WHERE THE BLOCK SITS IS THE BLOCK'S BUSINESS. A delay after the model has to be emitted after the model —
+// this is the pass split, and a stage the second pass cannot emit is a stage that vanishes from the plugin.
+const delayLate = boardSrc(delayBoard('output'));
+const lateBody = delayLate.slice(delayLate.indexOf('static clap_process_status plug_process'));
+check('⭐ a delay placed after the model is emitted after the model',
+  lateBody.indexOf('delay_process(&p->delay[c]') > lateBody.indexOf('p->model[c]->process'), true);
+check('…and one placed before it is emitted before it',
+  (() => {
+    const early = boardSrc(delayBoard('model'));
+    const b = early.slice(early.indexOf('static clap_process_status plug_process'));
+    return b.indexOf('delay_process(&p->delay[c]') < b.indexOf('p->model[c]->process');
+  })(), true);
+
+// BYPASS: the control stays, the DSP goes. Same contract as every other block, and it has to hold for one
+// whose DSP is a whole struct rather than a line.
+const delayOff = boardSrc(delayBoard(null).map((i) => (i.kind === 'delay' ? { ...i, enabled: false } : i)));
+check('a bypassed delay keeps its three controls, marked as bypassed',
+  delayOff.includes('"Time (bypassed)"') && delayOff.includes('"Mix (bypassed)"'), true);
+check('…and emits no delay code at all — not a delay that is ignored',
+  /delay_process\(&p->delay\[c\], x,/.test(delayOff), false);
+
+// The template must stay identical for a project that has none of this. That is the assertion that keeps the
+// extension point from being a rewrite of every plugin Morpheus has already generated.
+check('⭐ a project with no board is still byte-identical, so the extension point changed nothing',
+  generated(audioPlugin.scaffold([
+    { path: 'morpheus.plugin.json', content: JSON.stringify({ chain: 'amp' }) },
+    { path: 'models/amp.nam', content: LINEAR },
+  ]), 'Source/Plugin.cpp') === ampFromChain, true);
+check('…and neither is the plain plugin',
+  !/delay_process|__DELAY_STAGE__/.test(generated(audioPlugin.scaffold([...empty, { path: 'models/amp.nam', content: LINEAR }]), 'Source/Plugin.cpp')), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');

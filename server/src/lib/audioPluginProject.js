@@ -19,7 +19,7 @@ import {
   MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
 } from './namPlugin.js';
 import { PLAIN_CHAIN, chainFor, chainHas, chainParamsStable } from './ampChain.js';
-import { ampBoard, boardChain, boardJson, boardParamsStable, readBoard, validateBoard } from './board.js';
+import { ampBoard, boardBundle, boardChain, boardJson, boardParamsStable, readBoard, validateBoard } from './board.js';
 import {
   CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSource, cabHeader, resolveCab,
 } from './cabIr.js';
@@ -252,6 +252,10 @@ export function scaffoldPlugin(files) {
     // generated source is unchanged; a board decides them from its own items.
     modelInPath: useBoard ? chainHas(chain, 'model') : true,
     cabInPath: useBoard ? chainHas(chain, 'cab') : true,
+    // ⭐ AND THE BLOCKS' OWN C++, for the kinds that bring some. `board.js` decides what a block contributes
+    // — its DSP, its state, its allocation — and the template interpolates that without knowing what a delay
+    // is. A project with no board passes null, which is what keeps the generated text identical.
+    blocks: useBoard ? boardBundle(board) : null,
   }));
   add(PLUGIN_ENTRY, entrySource());
   add('CMakeLists.txt', cmakeLists({

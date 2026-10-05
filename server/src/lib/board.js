@@ -21,8 +21,9 @@
 // stack, the neural model, the cabinet, output level. A delay or a compressor is a NEW block kind and
 // belongs in its own change — the point of a registry is that adding one is a new entry here and no change
 // anywhere else, and that claim is only worth making if it is kept true.
-import { AMP_CHAIN, PLAIN_CHAIN, PARAM_ORDER, chainHas, chainParams, modelStageIndex } from './ampChain.js';
+import { AMP_CHAIN, PLAIN_CHAIN, chainHas, chainParams, modelStageIndex } from './ampChain.js';
 import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
+import { DELAY_MARKER, DELAY_PARAMS, delayBundle } from './delayBlock.js';
 
 /**
  * ⚠️ ONE OF EACH, FOR NOW, AND IT IS ENFORCED RATHER THAN ASSUMED.
@@ -78,6 +79,18 @@ export const BLOCK_KINDS = [
     stage: () => ({ kind: 'cab' }),
   },
   {
+    kind: 'delay',
+    label: 'Delay',
+    group: 'time',
+    blurb: 'Repeats. The first block here that is not a part of an amplifier, and the one that proves the list is a list — it holds state across samples, it allocates, and it is happy anywhere in the path.',
+    // A BLOCK MAY BRING ITS OWN PARAMETERS rather than borrowing an amp chain stage's. That is the difference
+    // between a kind that describes an amplifier and a kind that is simply a block.
+    params: () => DELAY_PARAMS.map((x) => ({ ...x })),
+    marker: DELAY_MARKER,
+    bundle: delayBundle,
+    stage: () => ({ kind: 'delay', dsp: DELAY_MARKER }),
+  },
+  {
     kind: 'output',
     label: 'Output',
     group: 'level',
@@ -106,11 +119,13 @@ function ampStage(kind) {
 /** The parameters a block kind contributes, with the board's saved values applied. */
 function kindParams(kind, values = {}, manifest = {}) {
   const entry = blockKind(kind);
-  const stage = entry ? entry.stage() : null;
-  if (!stage) return [];
-  const rows = stage.bands
-    ? stage.bands.map((b) => ({ key: b.key, name: b.label, min: -b.rangeDb, max: b.rangeDb, def: 0, role: 'tone' }))
-    : (stage.param ? [{ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain') }] : []);
+  if (!entry) return [];
+  const stage = entry.stage();
+  const rows = entry.params
+    ? entry.params(manifest).map((x) => ({ ...x }))
+    : (stage.bands
+      ? stage.bands.map((b) => ({ key: b.key, name: b.label, min: -b.rangeDb, max: b.rangeDb, def: 0, role: 'tone' }))
+      : (stage.param ? [{ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain') }] : []));
   return rows.map((r) => {
     // A saved value outside the range is CLAMPED rather than refused: the range can change between versions,
     // and a plugin that will not build because a saved 15 dB is now a 12 dB control is worse than one that
@@ -168,10 +183,17 @@ export function boardChain(board, manifest = {}) {
     const base = entry.stage();
     const params = kindParams(item.kind, item.values, manifest);
     const stage = { ...base, id: String(item.instanceId) };
-    if (params.length === 1) stage.param = { ...params[0] };
-    // The tone stack is ONE block with three controls, so its saved values go back onto the table the
-    // emitters read — `TONE_BANDS` — rather than onto a copy that would lose the design's frequencies.
-    else if (params.length > 1) stage.bands = TONE_BANDS.map((b, i) => ({ ...b, def: params[i]?.def ?? 0 }));
+    // A block that brings its own DSP says so with a marker; `ampChain.js` passes it through untouched.
+    if (entry.marker) stage.dsp = entry.marker;
+    // ⚠️ AND A BLOCK THAT BRINGS ITS OWN PARAMETERS CARRIES THEM ON THE STAGE. The branch below used to read
+    // "more than one parameter means a tone stack", which was true while the tone stack was the only block
+    // with three controls and became a SILENT CORRUPTION the moment a delay arrived: the delay's Time,
+    // Feedback and Mix were written over `TONE_BANDS` as though they were bass, middle and treble, so the
+    // generated plugin had BASS = 300 ms and no delay in it at all. A kind that declares a table gets that
+    // table; the tone stack's three controls stay the one design the emitters read from `TONE_BANDS`.
+    if (entry.params) stage.params = params;
+    else if (params.length === 1) stage.param = { ...params[0] };
+    else if (stage.bands) stage.bands = TONE_BANDS.map((b, i) => ({ ...b, def: params[i]?.def ?? 0 }));
     if (item.enabled === false) stage.bypass = true;
     stages.push(stage);
   }
@@ -182,31 +204,37 @@ export function boardChain(board, manifest = {}) {
  * The parameters in their STABLE identity order — the same contract as `chainParamsStable`, extended to
  * blocks the amp chain never had.
  *
- * The order is: the amp chain's known keys first, in their known order, then any other block by the ORDER IT
- * WAS ADDED (`instanceId`), never by where it currently sits. That second half is what keeps a future
- * delay's automation lane still when the board is rearranged — the trap this whole module is built around.
+ * ⭐ THE ORDER IS CREATION, NOT ARRANGEMENT, AND NOT A FIXED LIST OF KNOWN KEYS.
+ *
+ * Keyed by the owning item's `instanceId`, which is assigned once and never reused, so:
+ *   • dragging a block does not move a control — the id a host automated still belongs to it;
+ *   • ADDING a block does not move an existing control either, whatever kind it is. A fixed order of known
+ *     keys would fail that the moment a new kind sorted into the middle of it: the delay's controls would be
+ *     renumbered by a tone stack added afterwards, which is the same corruption wearing a different hat.
+ *
+ * The amp chain's own ids come out unchanged, and not by luck: `ampBoard()` numbers the amp chain's stages
+ * in their signal order, so creation order IS `PARAM_ORDER` for the board every amp project opens with —
+ * which is what makes the default board generate the amp chain byte for byte.
  */
 export function boardParamsStable(board, manifest = {}) {
   const chain = boardChain(board, manifest);
   const owner = new Map();
   for (const item of board?.items || []) owner.set(String(item.instanceId), Number(item.instanceId) || 0);
-  const rank = (key) => {
-    const known = PARAM_ORDER.indexOf(key);
-    return known < 0 ? PARAM_ORDER.length : known;
-  };
-  const stageOf = (key) => {
-    const stage = (chain.stages || []).find((s) => {
-      const keys = s.bands ? s.bands.map((b) => b.key) : (s.param ? [s.param.key] : []);
+  const ownerOf = (key) => {
+    const stage = (chain.stages || []).find((st) => {
+      // All THREE shapes a stage can hold its controls in. Missing `params` here is not a cosmetic bug: a
+      // key whose owner cannot be found is ranked 0, which sorts it to the FRONT of the parameter list — so
+      // the delay's controls landed before Input and every id in the amp chain moved by three.
+      const keys = st.params ? st.params.map((x) => x.key)
+        : (st.bands ? st.bands.map((b) => b.key) : (st.param ? [st.param.key] : []));
       return keys.includes(key);
     });
     return stage ? owner.get(stage.id) ?? 0 : 0;
   };
-  return chainParams(chain, manifest).slice().sort((a, b) => rank(a.key) - rank(b.key) || stageOf(a.key) - stageOf(b.key));
+  // A stable sort, so the parameters WITHIN one block keep the order that block declares — Time, Feedback,
+  // Mix is the order the panel shows and the order the host will list.
+  return chainParams(chain, manifest).slice().sort((a, b) => ownerOf(a.key) - ownerOf(b.key));
 }
-
-// The identity order comes from `ampChain.js`'s PARAM_ORDER rather than a copy — one table, and the board's
-// default arrangement must produce the amp chain's own ids. Duplicating it here is how the two would drift
-// apart, and the drift would be a renumbered automation lane rather than a failing test.
 
 /** The parameters a kind contributes, for the UI to render as controls. */
 export const kindControls = (kind, manifest = {}) => kindParams(kind, {}, manifest);
@@ -323,6 +351,37 @@ export function boardJson(board) {
       for (const k of Object.keys(it.values || {}).sort()) values[k] = it.values[k];
       return { instanceId: Number(it.instanceId), kind: String(it.kind), enabled: it.enabled !== false, values };
     }),
+  };
+}
+
+/**
+ * Everything the board's blocks contribute to the generated plugin that is not a parameter: file-scope DSP,
+ * state inside `plugin_t`, and the alloc/free pair.
+ *
+ * The template is handed this and knows nothing else about a delay — see `pluginSource`'s `blocks` argument.
+ * Deduped by marker, because two blocks of one kind are refused today but a bundle that emitted the same
+ * struct twice would be a compile error rather than a validation message.
+ */
+export function boardBundle(board) {
+  const out = { dsp: [], state: [], init: [], destroy: [], markers: {} };
+  const seen = new Set();
+  for (const item of board?.items || []) {
+    const entry = blockKind(item.kind);
+    if (!entry || !entry.bundle || seen.has(item.kind)) continue;
+    seen.add(item.kind);
+    const b = entry.bundle();
+    if (b.dsp) out.dsp.push(b.dsp);
+    if (b.state) out.state.push(b.state);
+    if (b.init) out.init.push(b.init);
+    if (b.destroy) out.destroy.push(b.destroy);
+    Object.assign(out.markers, b.markers || {});
+  }
+  return {
+    dsp: out.dsp.join('\n'),
+    state: out.state.join('\n'),
+    init: out.init.join('\n'),
+    destroy: out.destroy.join('\n'),
+    markers: out.markers,
   };
 }
 

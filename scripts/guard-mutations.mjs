@@ -1669,6 +1669,45 @@ export const MUTATIONS = [
     find: "  if (!m) return { segment: '', spokenChars: from };",
     replace: '  if (!m) return { segment: rest.trim(), spokenChars: full.length };',
   },
+  // ── the delay, and the extension point it proved (2026-10-05) ─────────────────────────────────────────
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // ⚠️ THE BUG THIS SHIPPED WITH FIRST, AS A MUTATION. `boardChain` read "more than one parameter" as "a
+    // tone stack" and wrote the delay's Time, Feedback and Mix over TONE_BANDS as bass, middle and treble: the
+    // generated plugin had BASS = 300 ms, no delay in it, and every presence check still passed.
+    why: 'Stops a block that declares its own parameters from carrying them, so the delay\u2019s Time, Feedback and Mix are written over the tone stack\u2019s three bands instead.',
+    find: '    if (entry.params) stage.params = params;',
+    replace: '    if (false) stage.params = params;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // The parameter list is ordered by the owning block, and a key whose owner cannot be found ranks 0 — so
+    // forgetting one of the three shapes a stage holds its controls in sorts that block's controls to the
+    // FRONT and moves every id in the amp chain.
+    why: 'Stops looking for a block\u2019s own parameter table when ordering the controls, so the delay\u2019s three ids land before Input and renumber the whole chain.',
+    find: '      const keys = st.params ? st.params.map((x) => x.key)',
+    replace: '      const keys = (false) ? st.params.map((x) => x.key)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // ⭐ THE EXTENSION POINT. Without it a stage that brings its own DSP emits nothing at all, which is the
+    // silent-loss shape the board was built to prevent — a block in the picture and no block in the plugin.
+    why: 'Drops the pass-through for a stage that carries its own DSP, so a delay in the arrangement emits nothing into the plugin.',
+    find: '  if (stage.dsp) return [stage.dsp];',
+    replace: '  if (stage.dsp) return [];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginProject.js',
+    // The bundle is what the template interpolates. Not passing it leaves the block's marker in the generated
+    // C++ — a compile error for anyone who adds a delay, rather than a wrong sound.
+    why: 'Stops handing the blocks\u2019 own C++ to the template, so a delay\u2019s marker is left in the generated source unreplaced.',
+    find: '    blocks: useBoard ? boardBundle(board) : null,',
+    replace: '    blocks: null,',
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.
@@ -1676,10 +1715,12 @@ export const MUTATIONS = [
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/board.js',
     // ⭐ THE CORRUPTION, IN THE DOMAIN THE BOARD ADDED. Sorting the parameters by the arrangement instead of
-    // by PARAM_ORDER renumbers them the moment a user drags a block: the ids stay unique, the plugin builds,
-    // the audio is right, and a host's automation lane now drives a different control. Nothing throws.
-    why: 'Identifies the controls by the arrangement instead of by their own order, so reordering a block renumbers every parameter a host has automated.',
-    find: '  return chainParams(chain, manifest).slice().sort((a, b) => rank(a.key) - rank(b.key) || stageOf(a.key) - stageOf(b.key));',
+    // by the block that owns them renumbers them the moment a user drags a block: the ids stay unique, the
+    // plugin builds, the audio is right, and a host's automation lane now drives a different control.
+    // (Repointed when identity became CREATION order rather than a fixed table of known keys — the delay made
+    // the table wrong, because a kind that sorts into the middle of it renumbers everything after it.)
+    why: 'Identifies the controls by the arrangement instead of by the block that owns them, so reordering a block renumbers every parameter a host has automated.',
+    find: '  return chainParams(chain, manifest).slice().sort((a, b) => ownerOf(a.key) - ownerOf(b.key));',
     replace: '  return chainParams(chain, manifest).slice();',
   },
   {
