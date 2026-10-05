@@ -598,6 +598,63 @@ check('…a corrupt .nam does not fail the build, it warns and builds the gain s
 check('…and a named model that is not in the project falls back rather than throwing',
   nam.resolveModel(empty, { model: 'models/absent.nam' }).path, null);
 
+// ── ⭐ NAM A2 IS A CONTAINER, AND THE FORMAT WAS REJECTED BY A GATE ON ONE FORMAT ────────────────────────
+// A `SlimmableContainer` is SEVERAL submodels of one amp at different sizes, chosen at runtime, with its
+// weights in `config.submodels[].model` and the top-level `weights` deliberately empty. Measured against
+// NeuralAmpModelerCore 0b3d3c9: `A2.nam` is exactly that and the engine loads it happily, so the engine was
+// never the problem — `inspectModel`'s flat-weight requirement was, and it reports "has no weights array",
+// which reads like a corrupt file rather than like a format we do not handle.
+//
+// The assertions below are the two halves of getting that right: a container must be ACCEPTED, and it must
+// not become a hole through which a null weight reaches the plugin — which is the one thing the flat check
+// existed to stop, and a container is where a truncated file is hardest to notice because the total still
+// looks plausible.
+const CONTAINER = (subs) => JSON.stringify({
+  version: '0.5.4', architecture: 'SlimmableContainer', sample_rate: 48000,
+  config: { submodels: subs },
+});
+const sub = (maxValue, weights, architecture = 'WaveNet') => ({ max_value: maxValue, model: { architecture, weights } });
+
+const container = nam.resolveModel([...empty, { path: 'models/a2.nam', content: CONTAINER([sub(0.5, [1, 2, 3]), sub(1.0, [4, 5, 6, 7, 8])]) }], { name: 'X' });
+check('a SlimmableContainer is accepted rather than refused as corrupt', Boolean(container.info), true);
+check('…and is reported as a container, not as whatever the last submodel happened to be',
+  container.info?.architecture, 'SlimmableContainer');
+check('…with the TOTAL weight count', container.info?.weights, 8);
+check('…and one entry per submodel, so a caller can see the size dial it is getting',
+  container.info?.submodels?.map((m) => m.weights), [3, 5]);
+check('…and its thresholds, which are the dial positions', container.info?.submodels?.map((m) => m.maxValue), [0.5, 1]);
+check('…flagged as resizable, which is what makes one file a quality/CPU dial', container.info?.slimmable, true);
+check('…and a flat model says it is NOT slimmable rather than leaving the field absent',
+  nam.resolveModel(withModel, { name: 'X' }).info?.slimmable, false);
+
+// The hole the flat check existed to close, kept closed for containers.
+const badSub = nam.resolveModel([...empty, { path: 'models/bad.nam', content: CONTAINER([sub(0.5, [1, 2]), sub(1.0, [3, null])]) }], { name: 'X' });
+check('a null weight inside a submodel is still caught', badSub.info, null);
+check('…and named by submodel, so the message says where to look',
+  /submodel 1 weight 1 is not a finite number/.test(badSub.warnings[0] || ''), true);
+check('an empty container is refused as a container, not as a missing weights array',
+  /SlimmableContainer with no submodels/.test(nam.resolveModel([...empty, { path: 'models/e.nam', content: CONTAINER([]) }], { name: 'X' }).warnings[0] || ''), true);
+check('…and a submodel with no weights in it too',
+  /submodel 0 has no weights array/.test(nam.resolveModel([...empty, { path: 'models/e2.nam', content: CONTAINER([{ max_value: 1, model: { architecture: 'WaveNet' } }]) }], { name: 'X' }).warnings[0] || ''), true);
+
+// ── the instrument that produced the numbers, and the two ways it could report a wrong one ──────────────
+// The bench exists so a throughput comparison is reproducible on one machine in one run. It compiles ONCE and
+// runs the binary per model — recompiling the engine per model is a minute each and it was the first thing
+// this got wrong.
+const benchSrc = read('scripts/audio-model-bench.mjs');
+check('the bench times the engine\'s own process loop', /processStart|t0 = std::chrono::steady_clock::now\(\)/.test(benchSrc)
+  && /for \(int done = 0; done < total; done \+= block\)/.test(benchSrc), true);
+check('…after a warm-up, so the first blocks are not what is measured', /for \(int i = 0; i < 200; i\+\+\) model->process/.test(benchSrc), true);
+check('…uses the engine\'s own slimmable interface rather than guessing at the file',
+  /dynamic_cast<nam::SlimmableModel\*>/.test(benchSrc) && /SetSlimmableSize/.test(benchSrc), true);
+check('…and reports a model the engine will not load as UNLOADABLE, never as a slow one',
+  /error/.test(benchSrc) && /get_dsp/.test(benchSrc), true);
+check('…compiles the engine once, not once per model',
+  (benchSrc.match(/compile\(\[/g) || []).length === 1, true);
+check('the bench refuses to run without a checkout instead of reporting nothing',
+  /no engine checkout at/.test(benchSrc), true);
+
+
 for (const withIt of [false, true]) {
   const seed = withIt ? withModel : empty;
   const files = audioPlugin.scaffold(seed).files;

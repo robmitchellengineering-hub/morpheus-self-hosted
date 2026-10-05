@@ -162,7 +162,7 @@ export function compareToReference(reference, candidate) {
 
 const log = (m) => console.log(`[nam-render] ${m}`);
 
-function compile(args, label, cwd = ROOT) {
+export function compile(args, label, cwd = ROOT) {
   const cxx = process.env.CXX ?? 'c++';
   const run = spawnSync(cxx, args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (run.status !== 0) {
@@ -179,10 +179,10 @@ function compile(args, label, cwd = ROOT) {
  * sample flag, so the engine's sources were compiled as C++17 and clang answered `no template named
  * 'optional' in namespace 'std'` seventeen times. Found by running the check locally rather than on a runner.
  */
-const COMPILE_FLAGS = ['-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT'];
+export const COMPILE_FLAGS = ['-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT'];
 
 /** Every C++ source under the engine's NAM directory, the way its own CMakeLists globs them. */
-function namSources(namcore) {
+export function namSources(namcore) {
   const out = [];
   for (const sub of ['NAM', 'NAM/wavenet']) {
     const dir = join(namcore, sub);

@@ -977,6 +977,36 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // ⭐ THE GATE ON ONE FORMAT, as a mutation: dropping the container branch sends a SlimmableContainer back
+    // through the flat-weight check, which rejects the format NAM is moving to and reports it as though the
+    // file were corrupt. That is the state this repository was actually in until 2026-10-05.
+    why: 'Removes the SlimmableContainer branch, so NAM A2\u2019s own file format is refused as a corrupt model.',
+    find: "  const isContainer = String(raw.architecture) === 'SlimmableContainer';",
+    replace: "  const isContainer = false;",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // A CONTAINER MUST NOT BECOME A HOLE. The flat check refuses a non-finite weight because a null becomes a
+    // plausible zero in the plugin and the model plays something that was never trained; skipping that per
+    // submodel would reopen it exactly where a truncated file is hardest to notice.
+    why: 'Stops checking submodel weights for non-finite values, so a null weight reaches the plugin through the container path.',
+    find: '      const bad = m.weights.findIndex((w) => typeof w !== \'number\' || !Number.isFinite(w));',
+    replace: '      const bad = -1;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // THE PROJECTION IS WHAT THE PRODUCT SEES. `inspectModel` knowing about submodels is worth nothing if
+    // `resolveModel` drops them on the way to the scaffold — which it did, and the format validated while
+    // nothing downstream could act on it.
+    why: 'Drops the slimmable flag from the projection the scaffold reads, so a container validates but nothing knows it can be resized.',
+    find: '      slimmable: inspected.slimmable === true,',
+    replace: '      slimmable: false,',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⭐ THE DIRECTION OF THE ANSWER, as a mutation. Swapping the division reports a machine that cannot keep up
     // as one with headroom to spare, and every null test in the run still passes — the plugin is right, it just
