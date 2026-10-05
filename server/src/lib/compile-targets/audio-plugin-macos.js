@@ -104,7 +104,15 @@ export const audioPlugin = {
           // overwrite an existing cache entry. A wrapper that reads the variable then sees "" — which on
           // at least one version is a hard configure error, and on another silently changes which
           // filesystem library gets linked.
-          '  -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13',
+          // ⚠️ 10.15, NOT 10.13, AND A MODEL IS WHY. `NAM/dsp.h` takes `std::filesystem::path`, and libc++
+          // marks that whole header UNAVAILABLE below macOS 10.15:
+          //
+          //     error: 'path' is unavailable: introduced in macOS 10.15
+          //     NAM/dsp.h:379: std::unique_ptr<DSP> get_dsp_legacy(const std::filesystem::path dirname);
+          //
+          // The no-model build never includes NAMCore, which is why this went unnoticed until the demo rig
+          // started building the amp — the failure is the model's, and it reads as a header problem.
+          '  -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15',
         ].join('\n'),
       },
 

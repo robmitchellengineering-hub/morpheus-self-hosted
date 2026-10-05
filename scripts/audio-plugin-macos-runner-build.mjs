@@ -23,9 +23,9 @@
 // the steps use `sysctl`, `nm`, `lipo` and `ditto`, and the standalone needs Xcode. Actions bills macOS at
 // 10x, which is why the workflow that calls this is `workflow_dispatch`-only.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import audioPlugin from '../server/src/lib/compile-targets/audio-plugin-macos.js';
 
 const log = (m) => console.log(`[audio-plugin] ${m}`);
@@ -44,6 +44,60 @@ log(`platform ${process.platform}/${process.arch} · building in ${OUT}`);
 
 // ── 1. Materialise exactly what the target generates ────────────────────────────────────────────────────
 const seed = [{ path: 'README.md', content: '# audio-plugin runner build\n' }];
+// ── THE MODEL, WHEN ONE IS GIVEN ─────────────────────────────────────────────────────────────────────────
+// ⚠️ THIS SCRIPT HAD NO WAY TO BUILD THE AMP, AND THE DEMO DOWNLOAD SHIPPED THE GAIN PLUGIN BECAUSE OF IT.
+// The rig ran exactly one build, with no model, so `plugin-{mac,windows}-*.zip` was the stereo gain stage —
+// and the release described it as "a neural amp model with an input trim, a gate and a three-band tone
+// stack", which was false. The proof file it published said so in as many words ("(none: this is the gain
+// plugin)") and listed one parameter, `Gain`, where the amp has six.
+//
+// `models/` is the conventional place and what lib/namPlugin.js looks in first; the basename is kept so a
+// build log names the file the way its owner does. Mirrors the Linux ARM rig, which already has this — the
+// mechanism was never route-specific, only this script's command line was.
+// ── THE TWO THIRD-PARTY CHECKOUTS, CLEARED BEFORE ANY STEP RUNS ──────────────────────────────────────────
+// ⚠️ THIS JOB NOW BUILDS TWICE, AND THE SECOND BUILD DIED ON THE FIRST ONE'S CLONE:
+//
+//   fatal: destination path '.../clap-wrapper' already exists and is not an empty directory
+//
+// The steps clone into $RUNNER_TEMP and `git clone` refuses a directory that exists — deliberately, and that
+// refusal is worth keeping: a clone that reused whatever was already there would silently build against a
+// tree from an earlier step. So they are cleared here and said out loud, which keeps the refusal and still
+// lets one job prove both shapes.
+//
+// The Linux ARM rig has had this since it gained a second build, and its comment quotes the same error. This
+// is that block, on the routes that were missing it — which is why the failure was identical and the fix is
+// a copy rather than a discovery.
+for (const dir of ['clap-wrapper', 'namcore']) {
+  const stale = join(RUNNER_TEMP, dir);
+  if (existsSync(stale)) {
+    log(`clearing ${stale} so the steps behave as they would on a fresh runner`);
+    rmSync(stale, { recursive: true, force: true });
+  }
+}
+
+const modelArg = (() => {
+  const at = process.argv.indexOf('--model');
+  return at !== -1 && process.argv[at + 1] && !process.argv[at + 1].startsWith('--') ? process.argv[at + 1] : null;
+})();
+
+if (modelArg) {
+  if (!existsSync(modelArg)) {
+    console.error(`[audio-plugin-macos] the model ${modelArg} does not exist — refusing to spend a build on it.`);
+    process.exit(1);
+  }
+  seed.push({ path: `models/${basename(modelArg)}`, content: readFileSync(modelArg, 'utf8') });
+  console.log(`[audio-plugin-macos] building with a model: ${basename(modelArg)}`);
+
+  // ⚠️ AND THE CHAIN, OR THE DEMO IS NOT THE THING THE RELEASE DESCRIBES. A model with no `chain` gives the
+  // PLAIN plugin: the model IS processed, but the host offers ONE control, `Gain`. Input trim, gate and the
+  // three-band tone stack only exist when the manifest says `chain: 'amp'` — which is what a user's project
+  // sets, and what the release page promises. The build's own proof listed the single `Gain` parameter and I
+  // read past it twice; this is the line that makes the proof say six.
+  seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Morpheus Plugin', chain: 'amp' }, null, 2)}\n` });
+} else {
+  console.log('[audio-plugin-macos] building WITHOUT a model (the gain stage)');
+}
+
 const validation = audioPlugin.validate(seed);
 if (!validation.valid) {
   console.error(`[audio-plugin] the target rejected an empty workspace: ${JSON.stringify(validation)}`);
