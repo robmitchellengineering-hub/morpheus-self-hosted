@@ -202,9 +202,14 @@ export default function Landing() {
             One button rather than a row: it is a door, and the page behind it does the explaining —
             including the distinction that most of what Morpheus makes is NOT a download from us. */}
         {showButtons && <div className="mt-10 flex justify-center">
-          <Link to="/downloads" className="inline-flex items-center gap-2 px-6 py-2.5 border border-primary/50 text-primary/80 hover:bg-primary hover:text-black transition-colors font-display tracking-wider text-sm">
+          {/* A plain <a>, deliberately, and for the same reason READ THE MANUAL is one: /downloads is a STATIC
+              page generated at build time and served by a rewrite in public/_redirects, not an SPA route. A
+              client-side <Link> would hand it to the router, which has no route for it, and 404. It also
+              keeps ONE rendering of that URL — a prerendered page that ALSO had a React route would look
+              different after a reload, and the two would drift. */}
+          <a href="/downloads" className="inline-flex items-center gap-2 px-6 py-2.5 border border-primary/50 text-primary/80 hover:bg-primary hover:text-black transition-colors font-display tracking-wider text-sm">
             <Download size={15} /> DOWNLOADS
-          </Link>
+          </a>
         </div>}
 
         {/* Core principle + live capability list. Reads from the shared
