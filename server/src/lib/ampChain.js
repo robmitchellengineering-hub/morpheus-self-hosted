@@ -279,7 +279,7 @@ const toneTypeConst = (type) => ({ lowshelf: 'TONE_LOWSHELF', peak: 'TONE_PEAK',
  * The output level stays on the final line, after both channels, because it is a level on the plugin's
  * output rather than a stage inside one channel's path.
  */
-export function chainSampleCpp(chain, params) {
+export function chainPreCpp(chain, params) {
   const lines = [];
   for (const p of params) {
     if (p.role === 'input') lines.push(`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`);
@@ -289,38 +289,42 @@ export function chainSampleCpp(chain, params) {
   if (chain.tone) {
     for (const b of TONE_BANDS) lines.push(`         x = biquad_process(&p->tone[c][${TONE_KEYS.indexOf(b.key)}], x);`);
   }
-  // ALWAYS EMITTED, BEHIND THE FLAG. The plugin source is the same text with a model and without one — see
-  // namPlugin.js on why that matters to the test bench — so the model sits in the chain as a guarded block
-  // rather than as something the generator decides to include.
-  // ⚠️ THE MODEL COMES BEFORE THE CABINET, and the first version had them the other way round — the comment
-  // said "after the model" while the code pushed the cabinet first, so a speaker was being convolved before
-  // the amplifier that drives it. Both are placeholders because the texts live with the things they describe
-  // (`namPlugin`/`cabIr`), and both are replaced by the template.
-  lines.push(
-    '#if MORPHEUS_HAS_MODEL',
-    '         // The model is the amp: its output replaces the dry sample. Reset() sized its buffers and',
-    '         // settled its initial conditions in activate(); nothing here allocates.',
-    '         if (p->model[c]) {',
-    '            NAM_SAMPLE mx[1] = {(NAM_SAMPLE)x};',
-    '            NAM_SAMPLE my[1] = {0};',
-    '            NAM_SAMPLE *mip[1] = {mx};',
-    '            NAM_SAMPLE *mop[1] = {my};',
-    '            p->model[c]->process(mip, mop, 1);',
-    '            x = (double)my[0];',
-    '         }',
-    '#endif',
-  );
-  // THE CABINET LAST OF THE THREE, because a speaker is driven by the amp: convolving before the model
-  // would put a cabinet in front of the amplifier. Found by reading the emitted chain rather than the code.
-  lines.push('__CAB_STAGE__');
   return lines.join('\n');
 }
 
+/**
+ * The stages AFTER the model. The cabinet is the only one, and it is last of the three because a speaker is
+ * driven by the amp: convolving before the model would put a cabinet in front of the amplifier.
+ *
+ * ⚠️ THE MODEL USED TO BE EMITTED HERE TOO, AND IT IS NOT ANY MORE. It sat between the tone stack and the
+ * cabinet as an inline `#if MORPHEUS_HAS_MODEL` block, which was the right PLACE and the wrong SHAPE: it ran
+ * one sample at a time, inside a per-sample loop, per channel. Splitting the chain here is what lets the
+ * template call the engine once per block instead of once per sample — see audioPluginTemplate.js, which
+ * owns that loop and the measurement behind it.
+ */
+export function chainPostCpp() {
+  return '__CAB_STAGE__';
+}
+
 /** Every parameter stepped one sample toward its target. */
-export function smoothCpp() {
+export function smoothCpp(skipIdx = null) {
   return [
     '         for (uint32_t k = 0; k < MORPHEUS_NUM_PARAMS; ++k) {',
+    ...(skipIdx ? [`            if (k == ${skipIdx}) continue;`] : []),
     '            p->smoothed[k] += (p->value[k] - p->smoothed[k]) * 0.001;',
     '         }',
   ].join('\n');
+}
+
+/**
+ * ONE parameter stepped one sample toward its target, for the parameter that has to keep its own ramp.
+ *
+ * WHY THIS EXISTS. The output level is applied AFTER the model, and the model now runs a whole block at a
+ * time — so the output smoother would otherwise be stepped in the first pass, run a block ahead, and apply
+ * a block-early value to every sample in it. That is 1.3 ms of ramp at 64 frames: inaudible, and still a
+ * difference nobody asked for, so the output ramp is stepped where the output is, and the first pass
+ * deliberately skips it.
+ */
+export function smoothOneCpp(idxName) {
+  return `         p->smoothed[${idxName}] += (p->value[${idxName}] - p->smoothed[${idxName}]) * 0.001;`;
 }

@@ -22,8 +22,8 @@
 //      are the part that is genuinely ours, and a plugin without them is not a usable starting point.
 
 import {
-  GATE_OFF_DB, PLAIN_CHAIN, chainParams, chainSampleCpp, eventCpp, gateDspCpp, gateInitCpp, gateStageCpp,
-  initCpp, paramsCpp, smoothCpp, stateCpp, toneCpp, toneUpdateCpp,
+  GATE_OFF_DB, PLAIN_CHAIN, chainParams, chainPreCpp, chainPostCpp, eventCpp, gateDspCpp, gateInitCpp,
+  gateStageCpp, initCpp, paramsCpp, smoothCpp, smoothOneCpp, stateCpp, toneCpp, toneUpdateCpp,
 } from './ampChain.js';
 // The band count only, for the two loops that reset filter state. The filters themselves are emitted by
 // ampChain.js, which reads this same module so the design and the build cannot disagree.
@@ -366,25 +366,77 @@ static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_
          if (ev_index == nev) { next_ev_frame = nframes; break; }
       }
 
-      for (; i < next_ev_frame; ++i) {
-${smoothCpp()}
+      const uint32_t chunk_start = i;
+      const uint32_t chunk_end = next_ev_frame;
+
+      // ── PASS 1 — everything per-sample that comes BEFORE the model ────────────────────────────────────
+      // ⭐ IT IS WRITTEN STRAIGHT INTO THE OUTPUT BUFFER, which is not a shortcut: that port is float32 and
+      // NAM_SAMPLE is float (asserted below), so the model can then run IN PLACE over the chunk and the
+      // plugin needs no scratch buffer, no allocation and no field in plugin_t. In place is safe with this
+      // engine and it was CHECKED rather than assumed — every architecture copies its input into its own
+      // working state before it writes an output sample (NAM/wavenet/model.cpp's _set_condition_array,
+      // NAM/wavenet/a2_fast.cpp's rechannel, NAM/lstm.cpp frame by frame), so input == output aliases
+      // nothing the model still has to read.
+      //
+      // IDX_OUTPUT IS SKIPPED HERE and stepped in pass 2 instead, so its ramp stays per-sample: stepped
+      // once per sample in pass 1 it would run a whole block ahead and apply a block-early value to every
+      // sample in it.
+      for (; i < chunk_end; ++i) {
+${smoothCpp('IDX_OUTPUT')}
 ${hasTone ? `${toneUpdateCpp()}\n` : ''}         double in_l = process->audio_inputs[0].data32[0][i];
          double in_r = process->audio_inputs[0].data32[1][i];
          // ONE CHANNEL AT A TIME through the same chain, so the two paths cannot drift: a channel that took
          // a different route would be a stereo image that moves when a control does.
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${chainSampleCpp(chain, list)
-  .replace('__GATE_STAGE__', gateStageCpp)
-  .replace('__MODEL_STAGE__', '')
-  .replace('__CAB_STAGE__', cabStageCpp)}
+${chainPreCpp(chain, list).replace('__GATE_STAGE__', gateStageCpp)}
+            process->audio_outputs[0].data32[c][i] = (float)x;
+         }
+      }
+
+#if MORPHEUS_HAS_MODEL
+      // ── THE MODEL, ONCE PER CHUNK PER CHANNEL ─────────────────────────────────────────────────────────
+      // ⚠️ THIS WAS ONE SAMPLE AT A TIME, AND IT COST MOST OF THE PLUGIN'S REAL-TIME BUDGET. Measured on the
+      // engine alone, same model, same 48 kHz, 64-frame host blocks (scripts/audio-model-bench.mjs):
+      //
+      //     block size    wavenet_a1_standard    A2.nam (full submodel)
+      //        1 frame            2.58x                   1.96x   faster than real time
+      //       64 frames           6.23x                   8.85x
+      //
+      // so calling process() once per sample was 2.4x-4.5x of the model's cost, multiplied by two because
+      // the plugin runs one instance per channel. A block is the shape the engine is written for: its own
+      // renderer uses 64, and the per-call setup is what the extra calls were paying for.
+      {
+         // The in-place call below reinterprets the port's float buffer as NAM_SAMPLE. If NAM_SAMPLE_FLOAT
+         // ever came off, NAM_SAMPLE would be double and that cast would be undefined behaviour rather than
+         // a compile error — so it is a compile error.
+         static_assert(sizeof(NAM_SAMPLE) == sizeof(float), "the model runs in place on a float32 port");
+         const int model_frames = (int)(chunk_end - chunk_start);
+         if (model_frames > 0) {
+            for (int c = 0; c < 2; ++c) {
+               if (!p->model[c]) continue;
+               NAM_SAMPLE *io[1] = {(NAM_SAMPLE *)process->audio_outputs[0].data32[c] + chunk_start};
+               p->model[c]->process(io, io, model_frames);
+            }
+         }
+      }
+#endif
+
+      // ── PASS 2 — everything per-sample that comes AFTER the model ─────────────────────────────────────
+      for (uint32_t k = chunk_start; k < chunk_end; ++k) {
+${smoothOneCpp('IDX_OUTPUT')}
+         double in_l = process->audio_outputs[0].data32[0][k];
+         double in_r = process->audio_outputs[0].data32[1][k];
+         for (int c = 0; c < 2; ++c) {
+            double x = (c == 0) ? in_l : in_r;
+${chainPostCpp().replace('__CAB_STAGE__', cabStageCpp)}
             if (c == 0) in_l = x; else in_r = x;
          }
          // The output level is applied last, so moving it changes how loud the plugin is and NOT how hard
          // the model is driven — the difference between an output control and a drive control. This line is
          // what scripts/audio-testbench.mjs patches to prove its own checks can fail.
-         process->audio_outputs[0].data32[0][i] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]));
-         process->audio_outputs[0].data32[1][i] = (float)(in_r * db_to_linear(p->smoothed[IDX_OUTPUT]));
+         process->audio_outputs[0].data32[0][k] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]));
+         process->audio_outputs[0].data32[1][k] = (float)(in_r * db_to_linear(p->smoothed[IDX_OUTPUT]));
       }
    }
    return CLAP_PROCESS_CONTINUE;
