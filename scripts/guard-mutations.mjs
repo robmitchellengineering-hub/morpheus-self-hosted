@@ -1765,6 +1765,16 @@ export const MUTATIONS = [
     find: '    blocks: useBoard ? boardBundle(board) : null,',
     replace: '    blocks: null,',
   },
+  {
+    guard: 'verify-onramp.mjs',
+    file: 'src/components/matrix/CompilePanel.jsx',
+    // ⭐ THE BUG THAT HID A WHOLE FEATURE, AS A MUTATION — the exact text that shipped. A hardcoded target
+    // list in a panel that is not a picker, missing the three audio-plugin routes, so their buttons could
+    // never render and every guard stayed green.
+    why: 'Puts a hardcoded target list back into the compile panel, so a target the server can build is one the panel refuses to.',
+    find: "const SUPPORTED = COMPILE_TARGETS.map((t) => t.value).filter((v) => v !== 'source');",
+    replace: "const SUPPORTED = ['web-app', 'python-package', 'windows-exe', 'linux-binary', 'mac-app', 'android-apk', 'ios-app', 'rpi-distro', 'linux-distro', 'arduino-firmware'];",
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.
