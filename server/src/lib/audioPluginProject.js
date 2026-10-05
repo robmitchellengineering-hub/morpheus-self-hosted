@@ -18,7 +18,7 @@ import {
 import {
   MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
 } from './namPlugin.js';
-import { PLAIN_CHAIN, chainFor, chainParams } from './ampChain.js';
+import { PLAIN_CHAIN, chainFor, chainHas, chainParams } from './ampChain.js';
 import {
   CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSource, cabHeader, resolveCab,
 } from './cabIr.js';
@@ -183,7 +183,7 @@ export function scaffoldPlugin(files) {
   // A cabinet only means anything inside a chain — it is a stage in the signal path, and the plain plugin has
   // no path to put it in. Said out loud rather than silently ignored: a user who added a .wav and heard no
   // change deserves to know why.
-  if (cab.info && !chainFor(manifest).tone) {
+  if (cab.info && !chainHas(chainFor(manifest), 'tone')) {
     warnings.push(`${cab.path} was found, but a cabinet is a stage in the amp chain and this project uses the plain plugin — add 'chain': 'amp' to morpheus.plugin.json to convolve it.`);
   }
 

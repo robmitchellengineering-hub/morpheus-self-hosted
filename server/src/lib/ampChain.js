@@ -19,8 +19,39 @@ import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
  */
 export const GATE_OFF_DB = -80;
 
+/**
+ * A CHAIN IS DATA — an ordered list of STAGES, each with a stable `id`.
+ *
+ * ⚠️ THE `id` IS NOT DECORATION AND IT IS NOT THE POSITION. Every stage carries one so that identity survives
+ * a reorder, which is the single decision that is painful to retrofit: anything keyed by position (a saved
+ * parameter value, a MIDI binding, an automation lane in a host) silently follows the wrong block the moment
+ * a user drags one past another. The pedalboard work reads `instanceId` out of PiPedal's model for exactly
+ * this reason, and it is cheaper to have it here before there is anything to break.
+ *
+ * `kind` is what a stage DOES; `role` is which parameter drives it. The emitters ask two questions of this
+ * list — is there a stage of this kind, and where is the model — instead of branching on a chain's name.
+ */
+export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind === kind);
+
+/**
+ * WHERE THE MODEL SITS, so the pre-model/post-model split is DERIVED rather than assumed.
+ *
+ * The split exists because the model runs a whole block at once — `process()` once per chunk instead of once
+ * per sample, which was 2.6x of this plugin's entire real-time budget. That optimisation is an AMP's shape: a
+ * chain with no model has no middle, and a chain that is only a delay has nothing either side of it. Asking
+ * the list where the model is means the next chain does not have to be an amp to be expressed.
+ */
+export const modelStageIndex = (chain) => (chain.stages || []).findIndex((s) => s.kind === 'model');
+
 /** The single-parameter plugin every project got before the chain existed. */
-export const PLAIN_CHAIN = { name: 'plain', params: null, tone: false };
+export const PLAIN_CHAIN = {
+  name: 'plain',
+  stages: [
+    // `name: null` — the plain plugin's one control is called `Gain` by default, and is renamed from the
+    // manifest. The amp's output stage names itself, which is the only difference between the two.
+    { id: 'output', kind: 'level', role: 'output', param: { key: 'output', name: null, min: -60, max: 12, def: 0, role: 'output' } },
+  ],
+};
 
 /**
  * The amp chain: input trim, a noise gate, a three-band tone stack, the model (when there is one), the
@@ -35,15 +66,24 @@ export const PLAIN_CHAIN = { name: 'plain', params: null, tone: false };
  */
 export const AMP_CHAIN = {
   name: 'amp',
-  tone: true,
-  params: [
-    { key: 'input', name: 'Input', min: -24, max: 24, def: 0, role: 'input' },
+  // IN SIGNAL ORDER, which is the only order this list may be in: the loop walks it. The musical reasoning
+  // for that order is above and is unchanged by the shape.
+  stages: [
+    { id: 'input', kind: 'gain', role: 'input',
+      param: { key: 'input', name: 'Input', min: -24, max: 24, def: 0, role: 'input' } },
     // ⚠️ THE BOTTOM OF THE RANGE IS OFF, NOT A VERY LOW THRESHOLD, and the difference is measurable: at -80 dB
     // the gate is still an envelope follower on the signal and never exactly transparent, while OFF is a null
     // against the chain without a gate at all. That is the state the proof asserts, so it has to be a state.
-    { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' },
-    ...TONE_BANDS.map((b) => ({ key: b.key, name: b.label, min: -b.rangeDb, max: b.rangeDb, def: 0, role: 'tone' })),
-    { key: 'output', name: 'Output', min: -60, max: 12, def: 0, role: 'output' },
+    { id: 'gate', kind: 'gate', role: 'gate',
+      param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' } },
+    // The three bands are ONE stage with three parameters: they are one design — a tone stack — and pulling
+    // them apart into three stages would let a reorder separate a mid from its bass, which is not a thing a
+    // tone stack can be.
+    { id: 'tone', kind: 'tone', bands: TONE_BANDS },
+    { id: 'model', kind: 'model' },
+    { id: 'cab', kind: 'cab' },
+    { id: 'output', kind: 'level', role: 'output',
+      param: { key: 'output', name: 'Output', min: -60, max: 12, def: 0, role: 'output' } },
   ],
 };
 
@@ -60,13 +100,21 @@ export function chainFor(manifest = {}) {
   return PLAIN_CHAIN;
 }
 
-/** The parameter list, with the plain plugin's single Gain named from the manifest. */
+/**
+ * The parameter list, DERIVED from the stages — read in the stages' order, which is the order the emitted
+ * `IDX_*` constants and the host's automation lanes are in.
+ *
+ * KEYED `output` IN BOTH CHAINS, deliberately and unchanged: the emitted C++ indexes the parameters by key,
+ * and the final multiply is written on `IDX_OUTPUT` either way — so the test bench's patch, which proves its
+ * own checks can fail by breaking that one line, has a single shape to match.
+ */
 export function chainParams(chain, manifest = {}) {
-  if (chain.params) return chain.params;
-  // KEYED `output` IN BOTH CHAINS, deliberately: the emitted C++ indexes the parameters by key, and the
-  // final multiply is written on `IDX_OUTPUT` either way — so the test bench's patch, which proves its own
-  // checks can fail by breaking that one line, has a single shape to match.
-  return [{ key: 'output', name: String(manifest.paramName || 'Gain'), min: -60, max: 12, def: 0, role: 'output' }];
+  const out = [];
+  for (const stage of chain.stages || []) {
+    if (stage.bands) out.push(...stage.bands.map((b) => ({ key: b.key, name: b.label, min: -b.rangeDb, max: b.rangeDb, def: 0, role: 'tone' })));
+    else if (stage.param) out.push({ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain') });
+  }
+  return out;
 }
 
 const cstr = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
@@ -161,7 +209,7 @@ export function stateCpp(chain, params) {
     `   double smoothed[MORPHEUS_NUM_PARAMS];`,
     '   double fs;',
   ];
-  if (chain.tone) {
+  if (chainHas(chain, 'tone')) {
     lines.push(
       '',
       '   // One filter per band per channel: a stereo plugin needs its state twice or the two channels bleed',
@@ -281,13 +329,21 @@ const toneTypeConst = (type) => ({ lowshelf: 'TONE_LOWSHELF', peak: 'TONE_PEAK',
  */
 export function chainPreCpp(chain, params) {
   const lines = [];
-  for (const p of params) {
-    if (p.role === 'input') lines.push(`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`);
-  }
-  // The gate runs on the channel's sample before anything that amplifies it.
-  if (params.some((p) => p.role === 'gate')) lines.push('__GATE_STAGE__');
-  if (chain.tone) {
-    for (const b of TONE_BANDS) lines.push(`         x = biquad_process(&p->tone[c][${TONE_KEYS.indexOf(b.key)}], x);`);
+  const stages = chain.stages || [];
+  const at = modelStageIndex(chain);
+  // EVERY STAGE BEFORE THE MODEL, in the order the chain declares — not in parameter order, and not by
+  // asking each parameter what it is. Same list, same order, same output; the difference is that the next
+  // chain does not have to be an amp for this to make sense.
+  for (const stage of stages.slice(0, at < 0 ? stages.length : at)) {
+    if (stage.kind === 'gain') {
+      const p = params.find((x) => x.role === 'input');
+      if (p) lines.push(`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`);
+    } else if (stage.kind === 'gate') {
+      // The gate runs on the channel's sample before anything that amplifies it.
+      lines.push('__GATE_STAGE__');
+    } else if (stage.kind === 'tone') {
+      for (const b of TONE_BANDS) lines.push(`         x = biquad_process(&p->tone[c][${TONE_KEYS.indexOf(b.key)}], x);`);
+    }
   }
   return lines.join('\n');
 }
@@ -302,7 +358,13 @@ export function chainPreCpp(chain, params) {
  * template call the engine once per block instead of once per sample — see audioPluginTemplate.js, which
  * owns that loop and the measurement behind it.
  */
-export function chainPostCpp() {
+export function chainPostCpp(chain) {
+  // STILL EMITTED UNCONDITIONALLY, AND THAT IS DELIBERATE. The cabinet's own text is behind
+  // `#if MORPHEUS_HAS_CAB`, so a chain without one compiles this away; making it conditional HERE would
+  // change the generated source for the plain chain, and a refactor that changes the output is not a
+  // refactor. Where it SITS is now the stages' business — after the model — and that is the part that had to
+  // stop being an assumption.
+  void chain;
   return '__CAB_STAGE__';
 }
 
