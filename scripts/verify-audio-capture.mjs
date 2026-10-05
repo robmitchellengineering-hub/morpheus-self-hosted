@@ -25,16 +25,18 @@
 //
 // Run:  node scripts/verify-audio-capture.mjs
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   INPUT_MD5, STRONG_HASHES, V3, blipLatency, checkCapture, esr, md5File,
-} from './lib/namCapture.mjs';
+} from '../server/src/lib/audio/namCapture.js';
 import { encodeWav } from '../server/src/lib/audio/wav.js';
 
 const SR = 48000;
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = join(dirname(fileURLToPath(import.meta.url)), 'audio-capture.mjs');
 const HALF = 432000; // NAM v3's t_validate: the length of each validation section
 let failures = 0;
@@ -50,6 +52,11 @@ function near(name, actual, expected, tol) {
   if (Number.isFinite(actual) && Math.abs(actual - expected) <= tol) console.log(`  PASS  ${name}`);
   else { console.log(`  FAIL  ${name}\n          expected ${expected} ±${tol}\n          got      ${show(actual)}`); failures++; }
 }
+function above(name, actual, limit) {
+  checks++;
+  if (Number.isFinite(actual) && actual > limit) console.log(`  PASS  ${name}`);
+  else { console.log(`  FAIL  ${name}\n          expected > ${limit}\n          got      ${show(actual)}`); failures++; }
+}
 function truthy(name, actual) {
   checks++;
   if (actual) console.log(`  PASS  ${name}`);
@@ -57,6 +64,7 @@ function truthy(name, actual) {
 }
 /** The finding a case must produce, by name — so a change of wording fails here rather than at a user. */
 const hasIssue = (result, fragment) => result.issues.some((i) => i.what.includes(fragment));
+
 const issueLevel = (result, fragment) => (result.issues.find((i) => i.what.includes(fragment)) || {}).level;
 
 // ── 1. the constants ARE the contract ────────────────────────────────────────────────────────────────────
@@ -294,6 +302,94 @@ console.log('\n7. the CLI refuses what it cannot do, and says so in JSON when as
   truthy('…and its output parses as JSON with the flags LAST', parsed !== null);
   check('…carrying the verdict rather than a summary', parsed?.ok, false);
   check('…and the trainer\'s own reason', hasIssue(parsed ?? { issues: [] }, 'will not recognise'), true);
+}
+
+// ── 8. the app's side: the endpoint, and the panel that calls it ──────────────────────────────────────────
+// The pre-flight shipped as a command line first and the panel came second, so what can go wrong here is a
+// SECOND implementation — a route that re-derives the length rule or the impulse calibration, or a panel that
+// hardcodes the re-amp signal's hash — and a split like that is invisible until the two disagree about the
+// same upload. Everything below is either a real call with real WAV bytes or an assertion that there is only
+// one copy of a rule.
+console.log('\n8. the endpoint and the panel run the same code, and store nothing');
+{
+  const { runCaptureCheck } = await import('../server/src/lib/audio/captureCheck.js');
+  const { MAX_CAPTURE_BYTES } = await import('../server/src/lib/audio/namCapture.js');
+  const wav = (seconds, freq, rate = SR) => {
+    const n = Math.round(seconds * rate);
+    const x = new Float64Array(n);
+    for (let i = 0; i < n; i++) x[i] = 0.3 * Math.sin((2 * Math.PI * freq * i) / rate);
+    return encodeWav({ sampleRate: rate, data: x, format: 'float32' });
+  };
+  const asFile = (name, buffer) => ({ filename: name, buffer });
+
+  // ⭐ THE BOUND MUST BE ABOVE THE FILE EVERYONE HAS TO UPLOAD. A size limit below the official re-amp signal
+  // would reject the one input the trainer accepts, and it would do it as "too large" — which reads as the
+  // user's fault. 27,360,080 bytes is the file, measured.
+  above('the upload limit is above the official re-amp signal (27,360,080 bytes)', MAX_CAPTURE_BYTES, 27360080);
+
+  // A real call, with real bytes: a WAV that is not a known input is judged and reported honestly rather than
+  // crashing or being accepted.
+  const dryBytes = wav(3, 220);
+  const md5OfDry = createHash('md5').update(dryBytes).digest('hex');
+  const unknown = runCaptureCheck({ input: asFile('dry.wav', dryBytes), recorded: asFile('amp.wav', wav(3, 440)) });
+  check('an acceptable WAV the trainer would not recognise comes back as a verdict, not an error',
+    unknown.status, 200);
+  check('…and the verdict is that the trainer will not take it', unknown.body.ok, false);
+  check('…naming the reason', hasIssue(unknown.body, 'will not recognise'), true);
+  check('…and carrying the hash of the bytes it was given, so the user can compare it with the one they downloaded',
+    unknown.body.inputMd5, md5OfDry);
+  check('…with both file names echoed back', unknown.body.inputName === 'dry.wav' && unknown.body.recordedName === 'amp.wav', true);
+
+  check('one file alone is refused', runCaptureCheck({ input: asFile('a.wav', wav(1, 220)), recorded: null }).status, 400);
+  check('nothing at all is refused', runCaptureCheck({ input: null, recorded: null }).status, 400);
+  const notWav = runCaptureCheck({ input: asFile('notes.txt', Buffer.from('this is not audio at all, not even close')), recorded: asFile('b.wav', wav(1, 220)) });
+  check('a non-WAV is refused before anything is decoded', notWav.status, 400);
+  check('…and it says WHICH file', String(notWav.body.error).includes('notes.txt'), true);
+  const tiny = runCaptureCheck({ input: asFile('a.wav', Buffer.alloc(8)), recorded: asFile('b.wav', wav(1, 220)) });
+  check('a file too small to hold a header is refused', tiny.status, 400);
+
+  // ⚠️ THE MEMORY CLAIM, ASSERTED RATHER THAN COMMENTED. The official input is 9.12 M frames and becomes a
+  // 73 MB Float64Array on decode; the endpoint only ever wants its frame count, so it must pass `inputFrames`
+  // and drop the buffer. A later edit that passes `input` instead would still pass every behavioural check
+  // above while holding 73 MB for the rest of the request.
+  const checkSrc = readFileSync(join(ROOT, 'server/src/lib/audio/captureCheck.js'), 'utf8');
+  check('the endpoint passes the input\'s frame count, not its samples', /inputFrames,/.test(checkSrc), true);
+  check('…and releases the decode before the second file is read', /wav = null;/.test(checkSrc), true);
+
+  // THE ROUTE IS WIRING ONLY. If it ever imports the rules itself, there are two implementations again.
+  const routeSrc = readFileSync(join(ROOT, 'server/src/routes/capture.routes.js'), 'utf8');
+  const indexSrc = readFileSync(join(ROOT, 'server/src/index.js'), 'utf8');
+  check('the capture route is mounted', /app\.use\('\/api\/capture', captureRoutes\)/.test(indexSrc), true);
+  check('…and imported', /import captureRoutes from '\.\/routes\/capture\.routes\.js'/.test(indexSrc), true);
+  // The route may import the CONSTANTS — the download URL, the hash, the size bound are all it needs for
+  // multipart — but if it ever imports a rule, there are two implementations of the length check or the
+  // impulse calibration and they will disagree about the same upload eventually. (Not a substring test on
+  // `checkCapture`, which `runCaptureCheck` contains.)
+  const RULES = ['checkCapture', 'blipLatency', 'esr', 'validateCaptureWav', 'identifyBytes'];
+  truthy('the route is wiring: it takes the constants and none of the rules',
+    /runCaptureCheck/.test(routeSrc)
+    && !RULES.some((n) => new RegExp(`\\b${n}\\b`).test(routeSrc)));
+  check('the route imports no database, because there is nothing to store',
+    !/prisma/.test(routeSrc) && !/uploadFile/.test(routeSrc), true);
+  check('…and neither does the code it calls', !/prisma|writeFileSync|uploadFile/.test(checkSrc), true);
+
+  // THE PANEL. A button that opens a dialog nobody can reach, or a client method that names an endpoint that
+  // does not exist, are both green-build failures, so the three files are checked against each other.
+  const panelSrc = readFileSync(join(ROOT, 'src/components/matrix/CaptureDialog.jsx'), 'utf8');
+  const clientSrc = readFileSync(join(ROOT, 'src/api/base44Client.js'), 'utf8');
+  const compileSrc = readFileSync(join(ROOT, 'src/components/matrix/CompilePanel.jsx'), 'utf8');
+  check('the client exposes both capture calls to the documented endpoints',
+    /captureAbout: \(\) => apiFetch\('\/capture\/about'\)/.test(clientSrc)
+    && /checkCapture: \(form\) => apiFetch\('\/capture\/check'/.test(clientSrc), true);
+  check('the panel calls them', /base44\.functions\.checkCapture\(/.test(panelSrc) && /base44\.functions\.captureAbout\(/.test(panelSrc), true);
+  check('…and is reachable, on the audio targets only',
+    /<CaptureDialog/.test(compileSrc) && /setShowCapture\(true\)/.test(compileSrc)
+    && /startsWith\('audio-plugin-'\)/.test(compileSrc), true);
+  check('the panel states what it does NOT do rather than leaving it to be discovered',
+    /does not train/i.test(panelSrc), true);
+  // The hash and the download link come from the server, so the panel cannot promise a file the module does
+  // not recognise — which is the one mistake that wastes an afternoon.
+  check('the panel does not hardcode the re-amp signal\'s hash', !/36cd1af62985c2fac3e654333e36431e/.test(panelSrc), true);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

@@ -14,6 +14,7 @@ import functionsRoutes from './routes/functions.routes.js';
 import uploadsRoutes from './routes/uploads.routes.js';
 import mediaAssetsRoutes from './routes/mediaAssets.routes.js';
 import cabinetRoutes from './routes/cabinet.routes.js';
+import captureRoutes from './routes/capture.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import appCapabilityRoutes from './routes/appCapability.routes.js';
 import brokerRoutes from './routes/broker.routes.js';
@@ -61,6 +62,7 @@ app.use('/api/functions', functionsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/media-assets', mediaAssetsRoutes);
 app.use('/api/cabinet', cabinetRoutes);
+app.use('/api/capture', captureRoutes);
 app.use('/api/admin', adminRoutes);
 
 // App capability grants — what a GENERATED APP's backend calls, with a bearer

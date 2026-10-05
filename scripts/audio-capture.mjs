@@ -10,9 +10,10 @@
 //   check    whether the pair you recorded will train, and what the trainer will make of it
 //   verify   how well the model that came back reproduces your recording
 //
-// THE RULES AND THE ALGORITHMS LIVE IN scripts/lib/namCapture.mjs, transcribed from NAM's own trainer, with
-// the reasoning for each one; this file is the command line and the fetch. Read that header first — it
-// explains why generating our own re-amp signal was the obvious design and is not possible.
+// THE RULES AND THE ALGORITHMS LIVE IN server/src/lib/audio/namCapture.js, transcribed from NAM's own
+// trainer, with the reasoning for each one; this file is the command line and the fetch. It lives in the
+// server because the app's capture panel runs the same code — one copy, not two. Read its header first:
+// it explains why generating our own re-amp signal was the obvious design and is not possible.
 //
 // Run:  node scripts/audio-capture.mjs input
 //       node scripts/audio-capture.mjs check --recorded my-amp-output.wav
@@ -22,7 +23,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { join } from 'node:path';
 import {
   INPUT_FILENAME, INPUT_URL, V3, blipLatency, checkCapture, identifyInput,
-} from './lib/namCapture.mjs';
+} from '../server/src/lib/audio/namCapture.js';
 import { decodeWavMono, encodeWav } from '../server/src/lib/audio/wav.js';
 import { nullDepth } from '../server/src/lib/audio/analysis.js';
 import { ensureEngine, renderThroughFile, NAMCORE_REF, ROOT } from './lib/referenceEngine.mjs';
@@ -110,7 +111,9 @@ switch (cmd) {
     const recW = decodeWavMono(readFileSync(recPath));
     const id = identifyInput(inputPath);
     const result = checkCapture({
-      input: inputW.samples,
+      // The frame count, not the samples: `checkCapture` never reads the input's audio, and the server passes
+      // the same field so the 27 MB decode is never held in memory. See the module's header.
+      inputFrames: inputW.samples.length,
       recorded: recW.samples,
       inputRate: inputW.sampleRate,
       recordedRate: recW.sampleRate,
