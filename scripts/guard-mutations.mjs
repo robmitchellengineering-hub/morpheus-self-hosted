@@ -976,6 +976,36 @@ export const MUTATIONS = [
     replace: 'with 16 widgets — the five life streams',
   },
   {
+    guard: 'verify-seo-static.mjs',
+    file: 'src/lib/morpheusCapabilities.json',
+    // ⭐ THE DRIFT ROB NAMED, as a mutation: a plugin format exists on more than one platform, so a page that
+    // describes a route's machine while the picker's own label says a different one is the "builds for
+    // whatever you are on" failure in its purest form — and it is one word, in a string nobody re-reads.
+    why: 'Moves the macOS audio route onto Windows in the published copy, so the page describes one machine while the target it names builds for another.',
+    find: '        "platform": "macOS",',
+    replace: '        "platform": "Windows",',
+  },
+  {
+    guard: 'verify-seo-static.mjs',
+    file: 'src/lib/morpheusCapabilities.json',
+    // A FORMAT THE BUILD DOES NOT VERIFY. An Audio Unit on the Windows route is not a typo — it is a promise
+    // that target cannot keep and does not check for, which is how a download arrives missing the one file the
+    // page advertised.
+    why: 'Promises an Audio Unit from the Windows route, which has no AU and whose build never checks for one.',
+    find: '        "formatTokens": ["VST3", "CLAP", "standalone"],\n        "detail": "No Audio Unit, and that is not an omission',
+    replace: '        "formatTokens": ["VST3", "AU", "CLAP", "standalone"],\n        "detail": "No Audio Unit, and that is not an omission',
+  },
+  {
+    guard: 'verify-seo-static.mjs',
+    file: 'scripts/seo-static.mjs',
+    // A DOC THAT REACHES PEOPLE AND NOT MACHINES. The whole point of the audio doc is that a model asked
+    // "can Morpheus build me an audio plugin, and for which machine?" can answer it; dropping it from llms.txt
+    // leaves the page correct and the answer engines silent, which is the original failure exactly.
+    why: 'Drops the audio docs from llms.txt, so the page describes the pathway and the machine-readable brief does not.',
+    find: '${audioMd}## What Morpheus does\n\n${capabilities.map((c) => `- **${c.title}**',
+    replace: '## What Morpheus does\n\n${capabilities.map((c) => `- **${c.title}**',
+  },
+  {
     guard: 'verify-bootstrap-sql.mjs',
     file: 'server/prisma/manual-supabase-init.sql',
     why: 'Removes a column the migrations add — exactly the drift that shipped: a fresh self-host came up missing seventeen columns and said nothing, because readers fall back to the pre-migration shape (H11).',

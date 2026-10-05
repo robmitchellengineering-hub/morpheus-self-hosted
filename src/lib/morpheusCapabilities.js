@@ -20,3 +20,11 @@ export const MORPHEUS_CLOSING = data.closing;
 // It lives in the JSON beside the capability list for the same reason everything else does —
 // one source, so the page and the prerender cannot say different things.
 export const MORPHEUS_POSSIBILITY = data.possibility;
+// The audio pathway, in more detail than one capability line can carry: which machine each route builds
+// for, how to use it, what the build measures, and — as its own list, never as a hedge inside a sentence
+// — what is on the bench rather than shipped. The landing page renders it above the capability box, and
+// scripts/seo-static.mjs publishes the same object to the prerender, llms.txt and llms-full.txt, so a
+// reader and a crawler get one text. The SECTION HEADINGS are typed out at both call sites rather than
+// carried here: the prose-ink rule (scripts/verify-prose-ink.mjs) attributes a green label to the text
+// where it is written, so a heading that arrived at runtime would fail the build.
+export const MORPHEUS_AUDIO = data.audio;

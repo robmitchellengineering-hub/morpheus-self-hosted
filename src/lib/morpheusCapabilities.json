@@ -7,10 +7,87 @@
     "body": "The destination rather than a shipped feature — and the reason Jarvis exists. Everything you tell Morpheus and Jarvis is kept, brought together, and read back so it can surface opportunities and possibilities you had not seen. Jarvis's suggestions is the first working piece of it: he reads across your own Command Deck unprompted and tells you what you may have missed, and switching that widget off stops it dead with no AI spend."
   },
   "buildTargets": ["android-apk", "arduino-firmware", "ios-app", "linux-binary", "linux-distro", "mac-app", "python-package", "rpi-distro", "web-app", "windows-exe", "audio-plugin-macos", "audio-plugin-windows", "audio-plugin-linux-arm"],
+  "audio": {
+    "title": "Audio — your amp, in the box",
+    "intro": "Morpheus builds real audio plugins around a neural amp model. Put a .nam model in the project, add a cabinet impulse response if you have one, pick the target for your machine and COMPILE — the build runs on a hosted runner, and the finished plugin lands in _compiled/ with a proof file the build itself wrote. The model is played by NeuralAmpModelerCore, the reference implementation of the format, and the signal path around it is a measured design rather than a sketch: input trim, gate, bass/mid/treble, the neural model, the cabinet, output.",
+    "routesIntro": "A plugin format exists on more than one platform, so a target that named only its formats would read as \"builds for whatever you are on\". Each route below is one machine and says so; a plugin compiled for the wrong one loads nowhere and explains nothing.",
+    "routes": [
+      {
+        "target": "audio-plugin-macos",
+        "platform": "macOS",
+        "runsOn": "macOS only",
+        "formats": "VST3, Audio Unit, CLAP, and a standalone app",
+        "formatTokens": ["VST3", "AU", "CLAP", "standalone"],
+        "detail": "The only route that can produce an Audio Unit, because there is no AU outside Apple's platforms."
+      },
+      {
+        "target": "audio-plugin-windows",
+        "platform": "Windows",
+        "runsOn": "Windows only",
+        "formats": "VST3, CLAP, and a standalone app",
+        "formatTokens": ["VST3", "CLAP", "standalone"],
+        "detail": "No Audio Unit, and that is not an omission — it is what Windows hosts load."
+      },
+      {
+        "target": "audio-plugin-linux-arm",
+        "platform": "Linux ARM",
+        "runsOn": "64-bit ARM Linux only (a Raspberry Pi 4 or 5, for instance)",
+        "formats": "VST3, CLAP, and a standalone app",
+        "formatTokens": ["VST3", "CLAP", "standalone"],
+        "detail": "A 64-bit ARM ELF, which is what a Raspberry Pi runs — not an x86 Linux binary."
+      }
+    ],
+    "steps": [
+      {
+        "action": "Get a model",
+        "detail": "A .nam file — train your own, or download one. Put it in the project: models/amp.nam is what the builder looks for first, and the compile panel tells you which file it found, or says there is none."
+      },
+      {
+        "action": "Add a speaker",
+        "detail": "Optional, but it matters: a modelled amp on its own sounds like a bee in a jar. Upload a cabinet impulse response as a .wav in the CABINET dialog and it is baked into the plugin — nothing to install beside it. Only the first 4096 samples are convolved, so a 48 kHz IR of roughly 85 ms is the whole of it."
+      },
+      {
+        "action": "Pick your machine",
+        "detail": "audio-plugin-macos, audio-plugin-windows or audio-plugin-linux-arm — whichever one you will actually open it on. They are not interchangeable."
+      },
+      {
+        "action": "Compile and install",
+        "detail": "COMPILE pushes the project to your own GitHub and runs the build there. When it finishes the plugin is in _compiled/ with BUILD-PROOF.txt beside it. Unzip, and put the VST3, AU or CLAP in your plugin folder; the standalone needs no installation at all."
+      },
+      {
+        "action": "Play it",
+        "detail": "Six controls, all of them in your host's automation list: Input (±24 dB), Gate (off to 0 dB), Bass, Mid and Treble (±12 dB each) and Output. The gate's bottom position is OFF rather than a very low threshold, so it is exactly transparent when you do not want it."
+      }
+    ],
+    "measured": "The proof is a measurement the build makes and writes down, not a claim. The plugin's own entry point and NeuralAmpModelerCore's own renderer were given the same dry signal from the same pinned commit and compared sample by sample: they agree to −144.0 dB on a 64-bit ARM runner. The chain around it was measured the same way — bass, mid and treble each inside 0.5 dB of the filter that designed them, the cabinet nulling to −147.5 dB against a direct convolution of its own impulse response, and the gate taking the quiet part 44.8 dB below the loud one.",
+    "planned": [
+      {
+        "what": "A capture rig",
+        "status": "built and measured, in the repository rather than in the app",
+        "detail": "The awkward part of capturing an amp is not the recording, it is knowing whether the recording can be trained on. Morpheus can now fetch the re-amp signal the trainer accepts, check a recorded pair against the trainer's own rules before anyone spends an hour of GPU time — sample rate, length, whether the amp held still for the whole take, the delay it will be aligned at — and then measure the model that comes back against the recording. Today that is a command-line tool in the repository, not a panel in the app."
+      },
+      {
+        "what": "A Raspberry Pi you plug in and play",
+        "status": "planned",
+        "detail": "The plugin above runs on a Pi. A bootable image that carries the plugin, the audio routing and the first-boot setup, controlled from your phone, is the next step — the image target exists, it is the audio host that does not yet."
+      },
+      {
+        "what": "A practice amp with no operating system",
+        "status": "planned",
+        "detail": "The same model in a small microcontroller, for the cheapest and most deterministic tier: no OS, no buffering, fixed latency."
+      },
+      {
+        "what": "Effects pedals and instruments that are programmable logic",
+        "status": "planned",
+        "detail": "Running quantized models on an FPGA. The open question is not whether a network fits — it is what low bit-widths cost the sound, and that gets measured before anything is bought."
+      }
+    ]
+  },
   "capabilities": [
     { "title": "Chat-to-code", "body": "Describe an app in a sentence; Morpheus writes production-ready frontend and backend code you can read, edit, and own. No pseudo-code, no placeholders.", "workflow": "Type your request in the chat bar → Morpheus plans the file structure → writes each file in full → runs a review pass → saves to the file tree. Tap REVERT beneath your message to undo that prompt." },
     { "title": "Autonomous build pipeline", "body": "A self-correcting loop: compile → run → on failure, an AI agent reads the logs, writes a fix, and recompiles — only escalating to you when it's truly stuck.", "workflow": "Tap the bot icon in the chat bar → describe the full scope → watch the multi-step log in real time → STOP anytime. On a failed step it reads the error logs, writes a fix, and recompiles automatically." },
     { "title": "One chat, every target", "body": "Compile the same project to a web app, Windows EXE, macOS app, Linux binary, Android APK, iOS app, Python package, or Arduino firmware — all from your phone.", "workflow": "Pick a compile target in the toolbar → tap COMPILE → Morpheus pushes a GitHub Actions workflow → the build runs on a hosted runner → the artifact lands in _compiled/ ready to download." },
+    { "title": "Audio plugins — a modelled amp, compiled for your machine", "body": "Compile a real VST3, Audio Unit or CLAP plugin around a neural amp model and a cabinet impulse response, for macOS, Windows or 64-bit ARM Linux. The model is baked into the binary and played by the reference implementation of the format, so there is nothing to install beside it. The signal path — input trim, gate, three-band tone, the model, the cabinet — is measured against a reference on every build, and the build writes what it verified into your download.", "workflow": "Open a project → put your .nam in the file tree (models/ is searched first) → CABINET dialog to add a speaker impulse response if you have one → set the target to audio-plugin-macos, audio-plugin-windows or audio-plugin-linux-arm → COMPILE → unzip _compiled/ and load the plugin in your DAW. BUILD-PROOF.txt beside it is the build's own record of what it checked." },
     { "title": "Bootable OS images", "body": "Bake your app into a Raspberry Pi image or a full PC/server Linux distro (Debian/Ubuntu/Fedora) that boots and runs your software on first start. Customise hostname, timezone, locale, SSH, and packages at build time.", "workflow": "Open Distro Config → set hostname, timezone, locale, SSH keys, packages → COMPILE → flash the .img to an SD card with flash.sh, or push it to a remote device with flash-network.sh over SSH." },
     { "title": "Auto-generated backends", "body": "Morpheus plans, writes, and deploys a backend (API, database, auth) for your app, then wires the frontend to it automatically.", "workflow": "Open the Architect → describe the API → Morpheus plans the schema and routes → generates the server code → deploy to a connected host → use Wire to Backend to point the frontend at the live URL." },
     { "title": "Marketplace", "body": "Publish your project as a paid template; browse, buy, and install others' templates in one tap. Sellers get a cut, buyers get working code.", "workflow": "Finish a project → Marketplace panel → Publish tab → add icon, screenshots, description, price (min $0.50) → Publish. Buyers tap BUY → Stripe checkout → download the ZIP, or tap INSTALL to copy it into their workspace." },
