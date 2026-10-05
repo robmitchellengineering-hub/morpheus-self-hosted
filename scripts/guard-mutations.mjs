@@ -977,6 +977,16 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-linux-arm-build.yml',
+    // A PIN THAT ONLY HALF THE WORKFLOW HONOURS IS NOT A PIN. Fetching example models from `main` while the
+    // engine is pinned lets a model arrive that the pinned engine cannot load, and it would fail inside a
+    // build rather than here.
+    why: 'Puts the example-model download back on a moving branch while the engine stays pinned, so a model the pinned engine cannot load can reach a build.',
+    find: 'NeuralAmpModelerCore/0b3d3c9/example_models',
+    replace: 'NeuralAmpModelerCore/main/example_models',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/namPlugin.js',
     // ⭐ THE GATE ON ONE FORMAT, as a mutation: dropping the container branch sends a SlimmableContainer back
     // through the flat-weight check, which rejects the format NAM is moving to and reports it as though the

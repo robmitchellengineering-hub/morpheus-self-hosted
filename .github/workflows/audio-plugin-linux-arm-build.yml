@@ -62,8 +62,18 @@ jobs:
       - name: Fetch the example models (MIT)
         run: |
           mkdir -p .cache/models
-          base=https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/main/example_models
+          # ⚠️ THE PINNED COMMIT, NOT `main`. The engine is pinned to NAMCORE_REF in namPlugin.js, and fetching
+          # models from a moving branch means a model can arrive that the pinned engine cannot load — which is
+          # the same class of failure as the one just fixed from the other side, where our generator refused a
+          # format the engine supported. The model and the engine that plays it come from one commit.
+          base=https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/0b3d3c9/example_models
           curl -sSfL -o .cache/models/wavenet_a1_standard.nam "$base/wavenet_a1_standard.nam"
+          # NAM A2's own file: a SlimmableContainer, several submodels of one amp at different sizes. It is the
+          # format the device tier is being decided on, and until #543 our generator refused it.
+          curl -sSfL -o .cache/models/A2.nam "$base/A2.nam"
+          curl -sSfL -o .cache/models/slimmable_container.nam "$base/slimmable_container.nam"
+          curl -sSfL -o .cache/models/slimmable_wavenet.nam "$base/slimmable_wavenet.nam"
+          curl -sSfL -o .cache/models/lstm.nam "$base/lstm.nam"
           curl -sSfL -o .cache/models/linear_1.nam \
             https://raw.githubusercontent.com/sdatkinson/neural-amp-modeler/main/tests/resources/models/identity/linear_1.nam
           ls -la .cache/models
@@ -87,6 +97,34 @@ jobs:
             --expect-model-effect-db -20
         env:
           AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-nam-build
+
+      # ⭐ THE ARCHITECTURE TABLE, ON THE CPU THE DEVICE USES. The build above proves the plugin plays ONE
+      # model; this says what every model COSTS, which is the other half of the device decision and the half
+      # nothing had measured. It times `nam::get_dsp`'s process() directly — the same call the plugin's CLAP
+      # process() makes, same engine, same pin, same 64-frame blocks — so it is one engine compile and then a
+      # row per model, rather than a whole plugin build each. `--slim` walks a container's size dial, which is
+      # the feature that makes NAM A2 interesting on a Pi at all.
+      - name: Model throughput on a Pi-class CPU, across architectures
+        run: |
+          git clone --quiet --depth 1 https://github.com/sdatkinson/NeuralAmpModelerCore.git "$RUNNER_TEMP/bench-namcore"
+          git -C "$RUNNER_TEMP/bench-namcore" submodule update --init --depth 1
+          node scripts/audio-model-bench.mjs \
+            --namcore "$RUNNER_TEMP/bench-namcore" \
+            --models .cache/models/wavenet_a1_standard.nam,.cache/models/A2.nam,.cache/models/slimmable_container.nam,.cache/models/slimmable_wavenet.nam,.cache/models/lstm.nam \
+            --slim 0.0,1.0
+
+      # ⭐ AND THE PLUGIN ITSELF PLAYING A CONTAINER. The bench above measures the ENGINE, and the plugin is a
+      # separate claim: it embeds the .nam as bytes and hands them to nam::get_dsp, so a SlimmableContainer
+      # reaches the engine through our generator. Nothing had proved that path end to end — and the default
+      # submodel is the LARGEST, so this also fixes which end of A2's dial "no choice made" means.
+      - name: Build with NAM A2, then prove the plugin plays the container
+        run: |
+          node scripts/audio-plugin-linux-arm-runner-build.mjs \
+            --model .cache/models/A2.nam \
+            --render-check \
+            --expect-model-effect-db -20
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-a2-build
 
       # ⭐ THE CHAIN ON A PI-CLASS CPU. The gate, the tone stack and the speaker have their own designs and were
       # measured against them on x86-64; this renders them through the plugin's own CLAP entry point on aarch64.

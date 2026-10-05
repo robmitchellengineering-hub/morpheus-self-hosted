@@ -887,6 +887,19 @@ const armRunnerSrc = read('scripts/audio-plugin-linux-arm-runner-build.mjs');
 // The throughput number is only useful if something refuses a bad one. Both halves are asserted here because
 // either alone leaves a measurement that is reported and then ignored — H17's shape, where a check that cannot
 // fail reads as a check that passed.
+// ⚠️ THE MODEL AND THE ENGINE THAT PLAYS IT COME FROM ONE COMMIT. The engine is pinned to NAMCORE_REF, and
+// fetching the example models from `main` means a model can arrive that the pinned engine cannot load — the
+// same class of failure as the one just fixed from the other side, where our generator refused a format the
+// engine supported. A pin that only half the workflow honours is not a pin.
+check('the workflow fetches its example models from the SAME commit as the engine',
+  linuxNamWf.includes(`NeuralAmpModelerCore/${nam.NAMCORE_REF}/example_models`), true);
+// The device tier is being decided on NAM A2, which is a container with a runtime size dial — so the workflow
+// has to both carry it and walk the dial, or the number that decides the tier is for one end of it only.
+check('…and carries NAM A2\'s own container model, not just the A1 it was built around',
+  /\.cache\/models\/A2\.nam/.test(linuxNamWf), true);
+check('…and measures the size dial rather than one end of it', /--slim 0\.0,1\.0/.test(linuxNamWf), true);
+check('…and proves the PLUGIN plays a container, which the engine-level bench does not',
+  /--model \.cache\/models\/A2\.nam/.test(linuxNamWf) && /--render-check/.test(linuxNamWf), true);
 check('the render check fails a CPU that cannot beat real time', /realTimeFactor >= maxRtf/.test(renderSrc), true);
 check('…and the runner build refuses it too, before anything is published',
   /realTimeFactor < 1/.test(armRunnerSrc), true);
