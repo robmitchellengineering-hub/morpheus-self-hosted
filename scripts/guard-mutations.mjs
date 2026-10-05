@@ -869,7 +869,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-capture.mjs',
-    file: 'scripts/lib/namCapture.mjs',
+    file: 'server/src/lib/audio/namCapture.js',
     // THE OFFSET BUG, which this repository has already paid for once in `bestLag`: the delay is measured
     // relative to the start of the scan window, so dropping that term reports the window's own index instead
     // of the delay. It is the worst shape of wrong — a plausible number of the right sign and a magnitude off
@@ -881,7 +881,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-capture.mjs',
-    file: 'scripts/lib/namCapture.mjs',
+    file: 'server/src/lib/audio/namCapture.js',
     // THE TRIGGER HAS TWO BRANCHES AND THE QUIET ONE IS THE ONE THAT HIDES. Pinning the threshold to the
     // absolute floor makes every quiet capture check out, which is exactly the case the official input takes —
     // so a test suite built only on silence would still pass. On a real high-gain capture the amp's own hiss
@@ -892,7 +892,7 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-capture.mjs',
-    file: 'scripts/lib/namCapture.mjs',
+    file: 'server/src/lib/audio/namCapture.js',
     // A CHECK THAT NEVER RUNS READS AS A CHECK THAT PASSED (H17). v3 can tell whether the amp held still,
     // because its input carries the same validation signal at both ends; removing that comparison leaves a
     // take with a knob moved halfway through reporting as a pair that will train, and the model comes back
@@ -1004,6 +1004,33 @@ export const MUTATIONS = [
     why: 'Drops the audio docs from llms.txt, so the page describes the pathway and the machine-readable brief does not.',
     find: '${audioMd}## What Morpheus does\n\n${capabilities.map((c) => `- **${c.title}**',
     replace: '## What Morpheus does\n\n${capabilities.map((c) => `- **${c.title}**',
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/lib/audio/captureCheck.js',
+    // ⭐ THE ONE-IMPLEMENTATION CLAIM, AND THE REASON THE PANEL IS SAFE TO SHIP. Passing the input's SAMPLES
+    // instead of its frame count still produces the right verdict — every behavioural check above stays green —
+    // while holding a 73 MB Float64Array for the rest of the request, because the official re-amp signal is
+    // 9.12 M frames. That is the class of bug a comment cannot prevent.
+    why: 'Hands the endpoint the whole decoded input instead of its frame count, so a 27 MB upload becomes 73 MB held in memory for the rest of the request.',
+    find: '    inputFrames,\n    recorded: rec.samples,',
+    replace: '    input: rec.samples,\n    recorded: rec.samples,',
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/routes/capture.routes.js',
+    // A SECOND IMPLEMENTATION OF THE RULES, which is how the panel and the command line start disagreeing
+    // about the same upload. The route is supposed to be multipart and a status code.
+    why: 'Makes the route re-derive the verdict itself instead of delegating, so there are two implementations of the trainer\u2019s own rules.',
+    find: "import { runCaptureCheck } from '../lib/audio/captureCheck.js';",
+    replace: "import { checkCapture } from '../lib/audio/namCapture.js';\nimport { runCaptureCheck } from '../lib/audio/captureCheck.js';",
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/lib/audio/namCapture.js',
+    // THE BOUND BELOW THE FILE EVERYONE MUST UPLOAD. A 16 MB limit — the cabinet's, copied by habit — rejects
+    // the official 27.4 MB re-amp signal, and it does it as "too large", which reads as the user's fault.
+    why: 'Drops the upload limit below the official re-amp signal, so the one input the trainer accepts is refused as too large.',
+    find: 'export const MAX_CAPTURE_BYTES = 40 * 1024 * 1024;',
+    replace: 'export const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;',
   },
   {
     guard: 'verify-bootstrap-sql.mjs',

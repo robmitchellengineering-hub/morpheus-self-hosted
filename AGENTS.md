@@ -219,7 +219,7 @@ catalog is the source of truth for what exists; the table below is the map, and
   amp hold still for the whole take?) possible at all. So `input` fetches NAM's official 190 s / 48 kHz mono
   file and verifies it against the strong hash in the trainer's source (`36cd1af6…`). `check` and `verify`
   then reproduce the trainer's own pre-flight rather than offering a second opinion that disagrees with it:
-  the rules and the impulse-calibration port live in `scripts/lib/namCapture.mjs`, each traced to
+  the rules and the impulse-calibration port live in `server/src/lib/audio/namCapture.js`, each traced to
   `nam/train/core.py`, and `scripts/verify-audio-capture.mjs` pins every constant as a literal. **If you
   change a constant there, or the rule it implements, you are changing what the tool promises about someone
   else's program** — re-read their source first.

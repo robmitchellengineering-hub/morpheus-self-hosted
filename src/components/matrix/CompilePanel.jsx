@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Hammer, X, Loader2, CheckCircle, XCircle, AlertTriangle, Download, ExternalLink, Bot, Eye, Server, Wifi, Sliders, Timer, Square, RefreshCw, Rocket, Copy, Check } from 'lucide-react';
+import { Hammer, X, Loader2, CheckCircle, XCircle, AlertTriangle, Download, ExternalLink, Bot, Eye, Server, Wifi, Sliders, Timer, Square, RefreshCw, Rocket, Copy, Check, Activity } from 'lucide-react';
 import GithubGate from '@/components/matrix/GithubGate';
 import { useRunTimer } from '@/hooks/useRunTimer';
 import { getCompileEstimate } from '@/lib/compileEstimates';
 import NetworkFlashDialog from '@/components/matrix/NetworkFlashDialog';
 import DistroConfigDialog from '@/components/matrix/DistroConfigDialog';
 import CabinetDialog from '@/components/matrix/CabinetDialog';
+import CaptureDialog from '@/components/matrix/CaptureDialog';
 import LinuxDistroConfigDialog from '@/components/matrix/LinuxDistroConfigDialog';
 import DiagnosisPanel, { DiagnosisLoading } from '@/components/matrix/DiagnosisPanel';
 import { useDiagnosis } from '@/hooks/useDiagnosis';
@@ -105,6 +106,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const [showNetFlash, setShowNetFlash] = useState(false);
   const [showDistroConfig, setShowDistroConfig] = useState(false);
   const [showCabinet, setShowCabinet] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
   const [showLinuxDistroConfig, setShowLinuxDistroConfig] = useState(false);
   const pollRef = useRef(null);
   const savePollRef = useRef(null);
@@ -804,11 +806,17 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               )}
               {/* The three audio plugin routes, because a cabinet only means anything inside an amp chain —
                   and the plain plugin has no chain to put it in. */}
-              {String(target).startsWith('audio-plugin-') && (
+              {String(target).startsWith('audio-plugin-') && (<>
                 <button onClick={() => setShowCabinet(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
                   <Sliders size={14} /> CABINET (.wav)
                 </button>
-              )}
+                {/* The other half of a capture, and the half with no instrument: whether the pair you recorded
+                    can be trained on at all. It is here rather than in a menu because this is the moment a user
+                    has the recording and is about to spend an hour of GPU time on it. */}
+                <button onClick={() => setShowCapture(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
+                  <Activity size={14} /> CHECK A CAPTURE (.wav)
+                </button>
+              </>)}
               {target === 'linux-distro' && (
                 <button onClick={() => setShowLinuxDistroConfig(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
                   <Sliders size={14} /> CONFIGURE DISTRO
@@ -1282,6 +1290,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       <NetworkFlashDialog key={target} open={showNetFlash} onClose={() => setShowNetFlash(false)} projectId={project.id} target={target} />
       <DistroConfigDialog open={showDistroConfig} onClose={() => setShowDistroConfig(false)} projectId={project.id} />
       <CabinetDialog open={showCabinet} onClose={() => setShowCabinet(false)} projectId={project.id} />
+      <CaptureDialog open={showCapture} onClose={() => setShowCapture(false)} />
       <LinuxDistroConfigDialog open={showLinuxDistroConfig} onClose={() => setShowLinuxDistroConfig(false)} projectId={project.id} />
     </div>
   );

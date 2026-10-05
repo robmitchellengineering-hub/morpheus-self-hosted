@@ -41,7 +41,7 @@
 // See the guard for what is proven about all of this: scripts/verify-audio-capture.mjs
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { peak, rms } from '../../server/src/lib/audio/dsp.js';
+import { peak, rms } from './dsp.js';
 
 /** The official re-amp signal, from the link NAM's own GUI points at (docs/source/tutorials/gui.rst). */
 export const INPUT_URL = 'https://drive.google.com/uc?export=download&id=1KbaS4oXXNEuh2aCPLwKrPdf5KFOjda8G';
@@ -98,15 +98,46 @@ export function esr(pred, target) {
   return err / target.length / (sig / target.length);
 }
 
+/** The most a capture WAV may be. The official re-amp signal is 27.4 MB, so this has room and is a bound. */
+export const MAX_CAPTURE_BYTES = 40 * 1024 * 1024;
+
 export function md5File(path) {
   return createHash('md5').update(readFileSync(path)).digest('hex');
 }
 
-/** Which known input this file is, by the trainer's own strong hash of the whole file. */
-export function identifyInput(path) {
-  const md5 = md5File(path);
+/**
+ * Which known input this is, by the trainer's own strong hash — from a path or from bytes already in hand.
+ *
+ * Both forms exist because the CLI has a file and the server has a buffer, and the alternative was two copies
+ * of the hash table. A drift between them would mean the panel and the command line disagreeing about whether
+ * the same upload is acceptable, which is the one thing this module is for.
+ */
+export function identifyBytes(bytes) {
+  const md5 = createHash('md5').update(bytes).digest('hex');
   const version = STRONG_HASHES[md5] ?? null;
   return { md5, version, major: version ? Number.parseInt(version, 10) || 4 : null };
+}
+
+export function identifyInput(path) {
+  return identifyBytes(readFileSync(path));
+}
+
+/**
+ * Whether an upload is a WAV this can read at all, BEFORE anything is decoded.
+ *
+ * The magic number is checked here rather than in the browser for the same reason lib/cabinetFile.js checks
+ * it there: a check on the client is a courtesy. A 27 MB upload that is not a WAV should be refused at the
+ * door, not after two full decodes have been paid for.
+ */
+export function validateCaptureWav({ filename, bytes }) {
+  if (!bytes || bytes.length < 44) return { ok: false, reason: `${filename} is too small to be a WAV file.` };
+  if (bytes.length > MAX_CAPTURE_BYTES) {
+    return { ok: false, reason: `${filename} is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is ${MAX_CAPTURE_BYTES / 1048576} MB.` };
+  }
+  if (bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE') {
+    return { ok: false, reason: `${filename} is not a WAV file. The pre-flight reads WAV only, because the trainer does.` };
+  }
+  return { ok: true, size: bytes.length };
 }
 
 function maxAbs(x) {
@@ -158,7 +189,11 @@ export function blipLatency(output, info = V3) {
  * than the input, and the trainer refuses past 0 s" is.
  */
 export function checkCapture({
-  input,
+  input = null,
+  // The input's SAMPLES are never read — only how many there are — so a caller holding the file can pass the
+  // count and drop the buffer. That is not a micro-optimisation on the server: the official re-amp signal is
+  // 27.4 MB of 24-bit mono, which is 73 MB as a Float64Array, and there is no reason to keep it.
+  inputFrames = null,
   recorded,
   inputRate,
   recordedRate,
@@ -167,13 +202,14 @@ export function checkCapture({
 }) {
   const facts = {};
   const issues = [];
+  if (inputFrames === null && !input) throw new Error('checkCapture needs inputFrames or input');
 
-  facts.inputFrames = input.length;
+  facts.inputFrames = inputFrames ?? input.length;
   facts.recordedFrames = recorded.length;
   facts.inputRate = inputRate;
   facts.recordedRate = recordedRate;
   facts.inputVersion = inputVersion;
-  facts.inputSeconds = input.length / inputRate;
+  facts.inputSeconds = facts.inputFrames / inputRate;
   facts.recordedSeconds = recorded.length / recordedRate;
   facts.deltaSeconds = facts.recordedSeconds - facts.inputSeconds;
 
@@ -197,7 +233,7 @@ export function checkCapture({
     });
     // Everything below compares the two files to each other, so it would produce a second, misleading finding
     // for one cause. Clipping and DC are still worth reporting, so they are computed before returning.
-    const nn = Math.min(input.length, recorded.length);
+    const nn = Math.min(facts.inputFrames, recorded.length);
     facts.recordedRmsDb = 20 * Math.log10(rms(recorded.subarray(0, nn)) || 1e-30);
     facts.recordedPeakDb = 20 * Math.log10(peak(recorded.subarray(0, nn)) || 1e-30);
     let c = 0;
@@ -223,7 +259,7 @@ export function checkCapture({
   }
 
   // ── 3. Silence, clipping, DC — what the trainer does not check and a capture still dies of ────────────
-  const n = Math.min(input.length, recorded.length);
+  const n = Math.min(facts.inputFrames, recorded.length);
   // Every fact is computed before any of them is judged, so a report is complete even when one finding is
   // fatal — a fail that also blanks the numbers leaves the user with nothing to act on.
   const recRms = rms(recorded.subarray(0, n));

@@ -311,6 +311,13 @@ const functions = {
   listCabinets: (projectId) => apiFetch(`/cabinet/${projectId}`),
   addCabinet: (projectId, form) => apiFetch(`/cabinet/${projectId}`, { method: 'POST', body: form }),
   deleteCabinet: (projectId, fileId) => apiFetch(`/cabinet/${projectId}/${fileId}`, { method: 'DELETE' }),
+
+  // The capture pre-flight. It takes no project: a pair of recordings is not part of a project until the model
+  // trained from them is, and the endpoint stores nothing — it reads a verdict out of the bytes and drops them.
+  // `about` carries the constants the panel would otherwise hardcode (the re-amp signal's download URL and the
+  // MD5 the trainer recognises it by), so the two cannot drift apart.
+  captureAbout: () => apiFetch('/capture/about'),
+  checkCapture: (form) => apiFetch('/capture/check', { method: 'POST', body: form }),
 };
 
 const integrations = {
