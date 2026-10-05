@@ -1060,6 +1060,43 @@ const bothLoop = withModelAndCab.slice(withModelAndCab.indexOf('static clap_proc
 check('…with a model AND a cabinet, the cabinet is still last of the two',
   bothLoop.indexOf('p->model[c]->process') < bothLoop.indexOf('cab_process'), true);
 
+console.log('\n22. the chain is proven on a Pi-class CPU, with an impulse response nobody owns');
+const cabGen = read('scripts/make-test-cab.mjs');
+check('a synthetic cabinet is generated rather than committed, because every real IR belongs to somebody',
+  cabGen.length > 500 && /encodeWav/.test(cabGen), true);
+// A fixture a BUILD depends on has to be the same fixture next time, or every stored number stops being
+// comparable to the next run — which is why this generator is written out rather than taken from signals.js.
+check('…from a seed, with no Math.random anywhere in it',
+  /SEED = \d+/.test(cabGen) && !/Math\.random/.test(cabGen), true);
+check('…longer than the tap cap, so the truncation path is exercised too',
+  /TAPS = (\d+)/.test(cabGen) && Number(cabGen.match(/TAPS = (\d+)/)[1]) > 4096, true);
+
+const armRun = read('scripts/audio-plugin-linux-arm-runner-build.mjs');
+check('the runner can build the amp chain and put a cabinet in it',
+  /flagOn\('chain'\)/.test(armRun) && /--cab/.test(armRun) && /models\/\$\{basename\(cabArg\)\}/.test(armRun), true);
+// ⚠️ A cabinet is a stage in the chain, and the plain plugin has no chain to put it in. lib/cabIr.js warns a
+// USER about that; a runner is not a user and would spend a whole build discovering it.
+check('…and REFUSES a cabinet without a chain rather than spending a build on it',
+  /--cab needs --chain/.test(armRun), true);
+check('…refusing a cabinet file that does not exist, for the same reason',
+  /the cabinet \$\{cabArg\} does not exist/.test(armRun), true);
+check('…and renders the chain against its design when asked, with a threshold it enforces',
+  /ampChainCheck\(\{ pluginDir: OUT, cab: cabArg \|\| null, gateCase: true/.test(armRun)
+  && /-120 dB this check requires/.test(armRun), true);
+// ⭐ THE GATE IS MEASURED RELATIVE TO THE LOUD SECTION. Everything else in the chain changes the level — a
+// cabinet moves it by +21 dB — so an absolute comparison reports the SPEAKER as a gate failure. That is
+// exactly what happened the first time this ran with a cabinet in the chain.
+check('⭐ the gate is measured relative to the loud section, not against the dry signal',
+  /relativeDb: quietChangeDb - loudChangeDb/.test(read('scripts/audio-amp-chain-check.mjs')), true);
+const chainWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
+// ⚠️ THE FLAG, NOT A PREFIX OF IT. `/--chain-check/` also matches `--chain-check-disabled`, so the mutation
+// that disabled the step left this check green — a substring match on a flag name is a check that a longer
+// flag walks straight through.
+check('the ARM workflow generates the cabinet, builds the chain and proves it',
+  /make-test-cab\.mjs/.test(chainWf) && /--chain-check(?!-)/.test(chainWf) && /--chain \\/.test(chainWf), true);
+check('…keeping that build\u2019s proof file with the others',
+  /audio-plugin-linux-arm-chain-build\/BUILD-PROOF\.txt/.test(chainWf), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');

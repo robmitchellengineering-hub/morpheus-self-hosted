@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { namRenderCheck } from './audio-nam-render-check.mjs';
+import { ampChainCheck } from './audio-amp-chain-check.mjs';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
 
@@ -78,6 +79,16 @@ const modelArg = (() => {
 // thresholds are the caller's because they depend on the model being checked.
 const flagOn = (name) => process.argv.includes(`--${name}`);
 const renderCheck = flagOn('render-check');
+// `--chain` builds the AMP CHAIN (input, gate, tone, model, cabinet, output) rather than the plain plugin, and
+// `--cab` puts an impulse response in it; `--chain-check` then renders the chain and compares each stage
+// against its own design. Together they are how the gate, the tone stack and the speaker get proven on an
+// aarch64 CPU rather than only on the machine this was written on.
+const chainProject = flagOn('chain');
+const chainCheck = flagOn('chain-check');
+const cabArg = (() => {
+  const at = process.argv.indexOf('--cab');
+  return process.env.AUDIO_PLUGIN_CAB || (at !== -1 ? process.argv[at + 1] : '') || '';
+})();
 const numArg = (name, fallback) => {
   const at = process.argv.indexOf(`--${name}`);
   return at !== -1 && process.argv[at + 1] ? Number(process.argv[at + 1]) : fallback;
@@ -87,6 +98,24 @@ const maxNullDb = numArg('max-null-db', -60);
 // fail a "must change the signal" assertion for the right reason and the wrong conclusion.
 const expectEffectDb = numArg('expect-model-effect-db', Number.NaN);
 const seed = [{ path: 'README.md', content: '# audio-plugin-linux-arm runner build\n' }];
+if (chainProject) {
+  // The same manifest a user would write. `chain: 'amp'` is what turns the single-Gain plugin into the amp.
+  seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Amp Chain', chain: 'amp' }, null, 2)}\n` });
+}
+if (cabArg) {
+  if (!existsSync(cabArg)) {
+    console.error(`[audio-plugin-linux-arm] the cabinet ${cabArg} does not exist — refusing to spend a build on it.`);
+    process.exit(1);
+  }
+  // A cabinet only means anything inside a chain, and lib/cabIr.js says so with a scaffold warning if it is
+  // asked for one without the other — but that warning reaches a user, not a runner, so it is refused here.
+  if (!chainProject) {
+    console.error('[audio-plugin-linux-arm] --cab needs --chain: a cabinet is a stage in the amp chain, and the plain plugin has no chain to put it in.');
+    process.exit(1);
+  }
+  seed.push({ path: `models/${basename(cabArg)}`, content: readFileSync(cabArg).toString('base64'), encoding: 'base64' });
+  log(`building the amp chain with a cabinet: ${basename(cabArg)}`);
+}
 if (modelArg) {
   if (!existsSync(modelArg)) {
     console.error(`[audio-plugin-linux-arm] the model ${modelArg} does not exist — refusing to spend a build on it.`);
@@ -201,6 +230,38 @@ for (const [format, match] of expected) {
   log(`ok ${format}: ${hit[0].slice(OUT.length + 1)} (${statSync(hit[0]).size} bytes, AArch64)`);
 }
 log('all three formats built, each an AArch64 ELF');
+
+// ── 4b. Does the CHAIN do what it says? ───────────────────────────────────────────────────────────────────
+// The model has its own proof above; this is the gate, the tone stack and the speaker, rendered through the
+// plugin's own CLAP entry point on a machine that is not the one they were written on. It needs no engine
+// build — a chain without a model links nothing from NAMCore — which is why it is a separate pass rather than
+// a longer version of the one above.
+if (chainCheck) {
+  console.log('\n[audio-plugin-linux-arm] > the chain: gate, tone stack and cabinet against their designs');
+  const result = ampChainCheck({ pluginDir: OUT, cab: cabArg || null, gateCase: true, work: join(OUT, 'chain-check') });
+  const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');
+  let worst = -Infinity;
+  for (const row of result.rows) {
+    log(`  ${row.label.padEnd(11)} ${f(row.null.nullDb)} vs the JS design`);
+    worst = Math.max(worst, Number.isFinite(row.null.nullDb) ? row.null.nullDb : -Infinity);
+  }
+  if (result.cabRow) {
+    log(`  ${'cabinet'.padEnd(11)} ${f(result.cabRow.null.nullDb)} vs the JS convolution (${result.cabRow.taps} taps)`);
+    worst = Math.max(worst, Number.isFinite(result.cabRow.null.nullDb) ? result.cabRow.null.nullDb : -Infinity);
+  }
+  if (result.gateRow) {
+    log(`  ${'gate'.padEnd(11)} the quiet section is ${f(result.gateRow.relativeDb)} below the loud one`);
+    if (!(result.gateRow.relativeDb < -20)) {
+      console.error('[audio-plugin-linux-arm] x the gate did not close on the quiet section.');
+      process.exit(1);
+    }
+  }
+  if (worst > -120) {
+    console.error(`[audio-plugin-linux-arm] x the chain is ${worst.toFixed(1)} dB from its design, worse than the -120 dB this check requires.`);
+    process.exit(1);
+  }
+  log('the chain is its design, on this CPU');
+}
 
 // ── 4. Does it PLAY the model? ────────────────────────────────────────────────────────────────────────────
 // Everything above proves the model is embedded and the engine is linked. This is the only check that says

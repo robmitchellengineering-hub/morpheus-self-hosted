@@ -757,6 +757,29 @@ export const MUTATIONS = [
     replace: "{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: 0, role: 'gate' },",
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-amp-chain-check.mjs',
+    // ⭐ The metric that reported a SPEAKER as a gate failure: with a cabinet in the chain the loud section
+    // moves +21 dB, so an absolute comparison calls a working gate a volume control.
+    why: 'Measures the gate against the dry signal instead of relative to the loud section, so the cabinet\u2019s own gain reads as a gate that never opens.',
+    find: '    gateRow = { thresholdDb, loudChangeDb, quietChangeDb, relativeDb: quietChangeDb - loudChangeDb };',
+    replace: '    gateRow = { thresholdDb, loudChangeDb, quietChangeDb, relativeDb: quietChangeDb };',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
+    why: 'Builds a plain plugin when a cabinet is asked for, so the cabinet is silently absent and the chain check measures something else entirely.',
+    find: '--cab needs --chain',
+    replace: '--cab without --chain',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-linux-arm-build.yml',
+    why: 'Stops proving the chain on the ARM runner, which is the only place a Pi-class CPU can be asked whether the gate, the tone stack and the speaker are their designs.',
+    find: '            --chain-check',
+    replace: '            --chain-check-disabled',
+  },
+  {
     guard: 'verify-cabinet-upload.mjs',
     file: 'server/src/lib/cabinetFile.js',
     // ⚠️ THE SSRF BOUNDARY. A row's file_url is data; a compile that dials whatever a row says is a fetch
