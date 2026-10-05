@@ -117,6 +117,31 @@ export function chainParams(chain, manifest = {}) {
   return out;
 }
 
+/**
+ * ⚠️ THE ORDER A PARAMETER IS IDENTIFIED IN, WHICH IS NOT THE ORDER IT IS PROCESSED IN.
+ *
+ * `paramsCpp` turns the parameter list into `PARAM_<KEY> = <index + 1>` and `IDX_<KEY> = <index>`, and **a
+ * host stores automation against those ids**. A list that follows the stage order therefore means that
+ * dragging a block in a pedalboard RE-NUMBERS the controls: a lane automated on `Gate` (id 2) would, after a
+ * rebuild, find that id 2 is something else. Nothing fails to build and nothing throws — it is the same
+ * corruption the stage `id` exists to prevent, one level down, which is why it is fixed before there is a UI
+ * that can reorder anything.
+ *
+ * So the two orderings are separate, and they must never be the same list:
+ *   - the STAGES decide what is wired where, and a user may move them;
+ *   - this decides what a control IS, and a user may not.
+ *
+ * The order below is the amp chain's existing one, deliberately: this changes which arrangements are
+ * POSSIBLE without changing the plugin that already exists.
+ */
+export const PARAM_ORDER = ['input', 'gate', 'bass', 'mid', 'treble', 'output'];
+
+/** The parameters in their STABLE identity order — see PARAM_ORDER. A stage reorder cannot move a control. */
+export function chainParamsStable(chain, manifest = {}) {
+  const rank = (k) => { const at = PARAM_ORDER.indexOf(k); return at < 0 ? PARAM_ORDER.length : at; };
+  return chainParams(chain, manifest).slice().sort((a, b) => rank(a.key) - rank(b.key));
+}
+
 const cstr = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 const num = (v) => {
   const s = String(Number(v));

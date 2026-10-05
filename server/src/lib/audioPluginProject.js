@@ -18,7 +18,7 @@ import {
 import {
   MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
 } from './namPlugin.js';
-import { PLAIN_CHAIN, chainFor, chainHas, chainParams } from './ampChain.js';
+import { PLAIN_CHAIN, chainFor, chainHas, chainParamsStable } from './ampChain.js';
 import {
   CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSource, cabHeader, resolveCab,
 } from './cabIr.js';
@@ -192,7 +192,7 @@ export function scaffoldPlugin(files) {
   if (manifest.chain && chainFor(manifest) === PLAIN_CHAIN) {
     warnings.push(`morpheus.plugin.json asks for chain "${manifest.chain}", which this version does not have; building the single-parameter plugin instead. The chain this version knows is "amp".`);
   }
-  add(PLUGIN_SOURCE, pluginSource({ ...manifest, chain: chainFor(manifest), params: chainParams(chainFor(manifest), manifest) }));
+  add(PLUGIN_SOURCE, pluginSource({ ...manifest, chain: chainFor(manifest), params: chainParamsStable(chainFor(manifest), manifest) }));
   add(PLUGIN_ENTRY, entrySource());
   add('CMakeLists.txt', cmakeLists({
     name: manifest.name,

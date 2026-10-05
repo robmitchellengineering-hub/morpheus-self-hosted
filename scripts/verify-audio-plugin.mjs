@@ -944,6 +944,17 @@ check('…and a chain with no model has no middle', chainMod.modelStageIndex(cha
 check('…which the emitters ask rather than assume', chainMod.chainHas(chainMod.PLAIN_CHAIN, 'model'), false, true);
 check('the parameters are DERIVED from the stages, in the stages\' own order',
   chainMod.chainParams(chainMod.AMP_CHAIN, {}).map((pp) => pp.key), ['input', 'gate', 'bass', 'mid', 'treble', 'output']);
+// ⚠️ AND A STAGE REORDER MUST NOT RENUMBER A CONTROL. `paramsCpp` turns this list into `PARAM_<KEY> =
+// <index + 1>`, and a host stores automation against those ids — so a parameter list that follows the stage
+// order means dragging a block in a pedalboard silently re-points every automated lane at a different knob.
+// Nothing fails to build; a saved session just starts controlling the wrong thing. Asserted by reversing the
+// stages and requiring the identity order to be unmoved, which is the exact thing a pedalboard will do.
+const reversed = { ...chainMod.AMP_CHAIN, stages: [...chainMod.AMP_CHAIN.stages].reverse() };
+check('a stage reorder does not renumber the parameters',
+  chainMod.chainParamsStable(reversed, {}).map((pp) => pp.key),
+  chainMod.chainParamsStable(chainMod.AMP_CHAIN, {}).map((pp) => pp.key));
+check('…and the identity order is the amplifier\'s own, not an accident of the stage list',
+  chainMod.PARAM_ORDER, ['input', 'gate', 'bass', 'mid', 'treble', 'output']);
 check('…and the plain chain still calls its single control what the manifest says',
   chainMod.chainParams(chainMod.PLAIN_CHAIN, { paramName: 'Drive' }).map((pp) => pp.name), ['Drive']);
 const tone = await import('../server/src/lib/audio/toneStack.js');

@@ -22,7 +22,7 @@
 //      are the part that is genuinely ours, and a plugin without them is not a usable starting point.
 
 import {
-  GATE_OFF_DB, PLAIN_CHAIN, chainHas, chainParams, chainPreCpp, chainPostCpp, eventCpp, gateDspCpp, gateInitCpp,
+  GATE_OFF_DB, PLAIN_CHAIN, chainHas, chainParamsStable, chainPreCpp, chainPostCpp, eventCpp, gateDspCpp, gateInitCpp,
   gateStageCpp, initCpp, paramsCpp, smoothCpp, smoothOneCpp, stateCpp, toneCpp, toneUpdateCpp,
 } from './ampChain.js';
 // The band count only, for the two loops that reset filter state. The filters themselves are emitted by
@@ -82,7 +82,7 @@ export function pluginSource({ name, vendor, id, description = '', chain = PLAIN
   const safeDesc = JSON.stringify(String(description || `${name} — built with Morpheus.`));
   // The chain decides which parameters exist and what the signal path does with them. A project that did not
   // ask for one gets the single-Gain plugin, unchanged — see lib/ampChain.js for why that matters.
-  const list = params || chainParams(chain, { paramName: 'Gain' });
+  const list = params || chainParamsStable(chain, { paramName: 'Gain' });
   const hasTone = chainHas(chain, 'tone');
 
   return `// ${name} — a CLAP audio effect.

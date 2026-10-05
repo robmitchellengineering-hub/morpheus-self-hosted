@@ -629,6 +629,16 @@ export const MUTATIONS = [
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/ampChain.js',
+    // ⚠️ THE CORRUPTION IN THE PARAMETER DOMAIN, as a mutation. Dropping the stable ordering makes the
+    // parameter list follow the stages again, so a pedalboard reorder re-numbers the controls — and a host's
+    // automation lane, which is keyed by that number, follows the wrong knob. Nothing throws.
+    why: 'Makes the parameter order follow the stages again, so reordering a block renumbers the controls a host has automated.',
+    find: 'export function chainParamsStable(chain, manifest = {}) {',
+    replace: 'export function chainParamsStable(chain, manifest = {}) { return chainParams(chain, manifest);\\n  // eslint-disable-next-line no-unreachable\\n  const unused = () => {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
     // ⚠️ THE CORRUPTION THIS ID EXISTS TO PREVENT, as a mutation. Two stages sharing an id is not a type
     // error and nothing fails to build: a saved value, a MIDI binding or an automation lane attached to one
     // silently applies to the other, which is a board that misbehaves only after a user rearranges it.
