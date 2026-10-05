@@ -63,6 +63,7 @@ jobs:
       # will play it — a model from a moving branch could arrive in a shape the pinned engine cannot load.
       - name: Fetch the example model (MIT)
         run: |
+        shell: bash
           mkdir -p .cache/models
           curl -sSfL -o .cache/models/wavenet_a1_standard.nam \
             https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/0b3d3c9/example_models/wavenet_a1_standard.nam
@@ -77,7 +78,7 @@ jobs:
       # it is the one published.
       - name: Build it again WITH the model — this is the one people download
         run: |
-          node scripts/scripts/audio-plugin-macos-runner-build.mjs --model .cache/models/wavenet_a1_standard.nam
+          node scripts/audio-plugin-macos-runner-build.mjs --model .cache/models/wavenet_a1_standard.nam
         env:
           AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build
 
