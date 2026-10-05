@@ -1,0 +1,71 @@
+MORPHEUS AUDIO PLUGIN — DEMO BUILD
+==================================
+
+What this is
+------------
+A prebuilt Morpheus audio plugin, published so you can hear what the plugin route
+produces before you compile one of your own. It is the amplifier stage: a neural
+amp model from NeuralAmpModelerCore, wrapped by Morpheus with an input trim, a
+noise gate and a three-band tone stack. There is no cabinet in this build.
+
+It is NOT the product. What Morpheus makes for you is a plugin built in your own
+repository, around your own model, with your own cabinet — see morpheus.nz.
+
+Where to put it
+---------------
+  macOS    VST3  ->  ~/Library/Audio/Plug-Ins/VST3/
+           AU    ->  ~/Library/Audio/Plug-Ins/Components/
+           CLAP  ->  ~/Library/Audio/Plug-Ins/CLAP/
+           standalone: run it, no installation
+  Windows  VST3  ->  C:\Program Files\Common Files\VST3\
+           CLAP  ->  %COMMONPROGRAMFILES%\CLAP\
+  Linux    VST3  ->  ~/.vst3/          CLAP -> ~/.clap/
+  (AArch64 only. 64-bit ARM Linux — a Raspberry Pi 4 or 5, for instance.)
+
+These builds are unsigned. macOS will quarantine them, and Windows SmartScreen
+will warn once. See the user manual for what each platform's warning means and
+how to get past it.
+
+Terms
+-----
+Morpheus is published source, not open source. Copyright (c) 2026 Rob Mitchell.
+All rights reserved.
+
+YOU MAY: run this build, and evaluate it, free of charge, for as long as you like.
+YOU MAY NOT: redistribute it, sell it, or ship it inside another product, and you
+may not use it, or anything it contains, to train a model — without our written
+permission. Commercial licensing, including OEM and white-label terms, is
+available: robmitchellengineering@gmail.com
+
+This notice covers the Morpheus software. It does NOT cover the software Morpheus
+writes FOR you: projects and builds produced from your own prompts belong to you.
+It also does not cover the third-party components below, whose own licences are
+more permissive and govern their own code.
+
+The model in this build
+-----------------------
+wavenet_a1_standard.nam, taken from NeuralAmpModelerCore's example_models at the
+commit this plugin pins. NeuralAmpModelerCore is MIT licensed, and so is that
+example set; it is not a Morpheus model and we claim no rights in it.
+
+  https://github.com/sdatkinson/NeuralAmpModelerCore
+
+Third-party components compiled into this build
+-----------------------------------------------
+  CLAP SDK                 MIT          https://github.com/free-audio/clap
+  VST3 SDK (Steinberg)     MIT          https://github.com/steinbergmedia/vst3sdk
+  clap-wrapper             MIT          https://github.com/free-audio/clap-wrapper
+  NeuralAmpModelerCore     MIT          https://github.com/sdatkinson/NeuralAmpModelerCore
+  AudioUnitSDK (Apple)     Apache-2.0   https://github.com/apple/AudioUnitSDK
+  RtAudio, RtMidi          MIT-style    https://github.com/thestk/rtaudio
+  Eigen                    MPL-2.0      https://gitlab.com/libeigen/eigen
+  nlohmann/json            MIT          https://github.com/nlohmann/json
+
+On Linux the build also links ALSA (LGPL-2.1) and X11 (MIT) as system libraries.
+
+Provenance
+----------
+BUILD-PROOF.txt beside this file was written by the build itself, not by hand. It
+records what that build verified — the formats produced, that each is a real
+binary for the machine it claims, and the measurements the plugin was checked
+against. Do not trust this notice over that file; trust that file over this one.
