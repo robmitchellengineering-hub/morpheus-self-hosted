@@ -66,6 +66,26 @@ const PSEUDO = ['source'];
 check('…and the picker offers nothing the server cannot build',
   values.filter((v) => !PSEUDO.includes(v) && !serverTargets.includes(v)).join(','), '');
 
+console.log('\n2d. the panel that BUILDS them is not a picker, and nothing was checking it');
+// ⭐ THIS IS THE CHECK THAT WOULD HAVE SAVED THE AUDIO FEATURE ITS SCREEN. The compile panel is not a picker
+// surface, so section 2 never looked at it — and it held a hardcoded ten-target array that had NEVER contained
+// an audio-plugin route. `isSupported` gates the block holding COMPILE NOW, CABINET (.wav), CHECK A CAPTURE
+// (.wav) and SIGNAL PATH (BOARD), so every audio-plugin project showed "Remote compilation not yet supported
+// for this target" and none of those buttons existed. The board, the delay, the spring reverb and the drive
+// were unreachable in the app while their own guards were green — because a render check RENDERS, and never
+// presses a button.
+//
+// The chain is asserted one link at a time: the picker equals the server registry (above), the panel derives
+// from the picker (here), therefore every target the server can build is one the panel offers to build.
+const panelSrc = read('src/components/matrix/CompilePanel.jsx');
+check('the compile panel derives its supported targets rather than listing them',
+  panelSrc.includes('COMPILE_TARGETS.map((t) => t.value)') && !/const SUPPORTED = \[/.test(panelSrc), true);
+check('…filtering out exactly `source`, which is not a build but a choice about what you receive',
+  /COMPILE_TARGETS\.map\(\(t\) => t\.value\)\.filter\(\(v\) => v !== 'source'\)/.test(panelSrc), true);
+check('…so what the panel will build is exactly what the server has',
+  COMPILE_TARGETS.map((t) => t.value).filter((v) => v !== 'source').sort().join(','),
+  [...serverTargets].sort().join(','));
+
 console.log('\n2c. a route bound to one machine says so in the words a user reads');
 // An id is not what a user sees — the label is. Every route whose id names a platform must say that
 // platform in the label, because `VST3` (unlike `.dmg` or `.exe`) exists on more than one machine, so a
