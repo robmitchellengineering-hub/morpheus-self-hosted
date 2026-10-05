@@ -88,6 +88,21 @@ jobs:
         env:
           AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-nam-build
 
+      # ⭐ THE CHAIN ON A PI-CLASS CPU. The gate, the tone stack and the speaker have their own designs and were
+      # measured against them on x86-64; this renders them through the plugin's own CLAP entry point on aarch64.
+      # The impulse response is SYNTHETIC and generated here, because every real cabinet IR belongs to somebody.
+      - name: Make a synthetic cabinet (deterministic, nothing third-party)
+        run: node scripts/make-test-cab.mjs "${{ runner.temp }}/test-cab.wav"
+
+      - name: Build the amp chain, then prove the gate, the tone stack and the cabinet
+        run: |
+          node scripts/audio-plugin-linux-arm-runner-build.mjs \
+            --chain \
+            --cab "${{ runner.temp }}/test-cab.wav" \
+            --chain-check
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-chain-build
+
       # `if-no-files-found: error` is the second half of the check: if any of the three archives is missing,
       # the run fails here rather than passing with two of three artifacts.
       - name: Keep the packaged plugins, so the run can be inspected rather than believed
@@ -99,5 +114,6 @@ jobs:
             ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/build/assets/*.zip
             ${{ runner.temp }}/audio-plugin-linux-arm-build/BUILD-PROOF.txt
             ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/BUILD-PROOF.txt
+            ${{ runner.temp }}/audio-plugin-linux-arm-chain-build/BUILD-PROOF.txt
           if-no-files-found: error
           retention-days: 7

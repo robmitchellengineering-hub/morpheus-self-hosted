@@ -201,7 +201,14 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
     // which is how a working gate measured as doing nothing. What a gate does to a section is a level, so the
     // number here is a level: 20·log10(out/in).
     const levelDb = (n) => 20 * Math.log10(rms(section(actual, n)) / rms(section(long, n)));
-    gateRow = { thresholdDb, loudChangeDb: levelDb(2), quietChangeDb: levelDb(1) };
+    const loudChangeDb = levelDb(2);
+    const quietChangeDb = levelDb(1);
+    // ⚠️ MEASURED RELATIVE TO THE LOUD SECTION, not against the dry signal. Everything else in the chain
+    // changes the level — a cabinet does, and so does a tone setting — so an absolute comparison reports the
+    // SPEAKER as a gate failure. What is the gate's is the difference between how much the quiet part moved
+    // and how much the loud part did. Found by running this with a cabinet in the chain, where the loud
+    // section read +21 dB and the check called a working gate a volume control.
+    gateRow = { thresholdDb, loudChangeDb, quietChangeDb, relativeDb: quietChangeDb - loudChangeDb };
   }
   return { rows, cabRow, gateRow, sampleRate, frames: dry.length, settledFrom: from };
 }
@@ -235,15 +242,12 @@ if (isMain) {
   }
   if (r.gateRow) {
     const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');
-    console.log(`[amp-chain]   ${'gate'.padEnd(11)} at ${r.gateRow.thresholdDb} dB: the quiet section is ${f(r.gateRow.quietChangeDb)} and the loud one ${f(r.gateRow.loudChangeDb)} against the dry signal`);
-    // A GATE THAT ATTENUATES EVERYTHING PASSES THE QUIET HALF OF THIS AND FAILS HERE — which is the whole
-    // reason the loud section is measured at all.
-    if (Math.abs(r.gateRow.loudChangeDb) > 1) {
-      console.error('[amp-chain] x the gate is changing the loud sections too, so it is a volume control rather than a gate');
-      process.exit(1);
-    }
-    if (!(r.gateRow.quietChangeDb < -20)) {
-      console.error(`[amp-chain] x the gate did not close on the quiet section (${f(r.gateRow.quietChangeDb)})`);
+    console.log(`[amp-chain]   ${'gate'.padEnd(11)} at ${r.gateRow.thresholdDb} dB: the quiet section is ${f(r.gateRow.relativeDb)} below the loud one (loud moved ${f(r.gateRow.loudChangeDb)}, the chain's own level)`);
+    // ⚠️ AND THE ABSOLUTE LEVELS ARE NOT ASSERTED, only the difference. A chain with a cabinet in it moves the
+    // loud section by +21 dB, which says nothing about the gate — asserting on it was this check calling a
+    // speaker a volume control.
+    if (!(r.gateRow.relativeDb < -20)) {
+      console.error(`[amp-chain] x the gate did not close on the quiet section (${f(r.gateRow.relativeDb)} below the loud one)`);
       process.exit(1);
     }
   }
