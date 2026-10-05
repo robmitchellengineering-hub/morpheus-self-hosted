@@ -24,6 +24,7 @@
 #include <clap/clap.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -286,6 +287,10 @@ int main(int argc, char **argv) {
 
   std::vector<float> rendered((size_t)in.frames * portChannels, 0.0f);
   uint32_t done = 0;
+  // ⏱ TIMED AROUND THE PROCESS LOOP AND NOTHING ELSE — not the file read, not the JSON, not the plugin's
+  // construction. This number is what answers "can a Raspberry Pi run this in real time?", and a measurement
+  // that included process startup would be a measurement of process startup on a short render.
+  const auto processStart = std::chrono::steady_clock::now();
   while (done < in.frames) {
     const uint32_t n = std::min(blockSize, in.frames - done);
     for (uint32_t c = 0; c < portChannels; c++) {
@@ -324,10 +329,19 @@ int main(int argc, char **argv) {
     eventList.events.clear(); // the change is delivered once, not every block
   }
 
+  const auto processEnd = std::chrono::steady_clock::now();
+  const double processSeconds = std::chrono::duration<double>(processEnd - processStart).count();
+
   plugin->stop_processing(plugin);
   plugin->deactivate(plugin);
   plugin->destroy(plugin);
   entry->deinit();
+
+  // Reported on stdout as one more field of the same JSON line, so a caller reads the plugin's identity and
+  // how long it took in the same parse. `audioSeconds` is what the render was worth, so the real-time factor
+  // is a division the caller does rather than two numbers it has to be trusted to combine correctly.
+  std::printf("{\"processSeconds\":%.9f,\"audioSeconds\":%.9f,\"frames\":%u,\"sampleRate\":%u,\"blockSize\":%u}\n",
+              processSeconds, (double)in.frames / (double)in.sampleRate, in.frames, in.sampleRate, blockSize);
 
   if (!mrawWrite(outPath, in.sampleRate, portChannels, rendered)) return 1;
   return 0;

@@ -284,6 +284,17 @@ if (renderCheck) {
   log(`  plugin vs reference : ${fmt(result.vsReference.nullDb)}  (peak error ${result.vsReference.peakError.toExponential(2)})`);
   log(`  dry vs reference    : ${fmt(result.dryVsReference.nullDb)}  (what the model does to the signal)`);
   log(`  left vs right       : ${fmt(result.leftVsRight.nullDb)}  (the two model instances must agree)`);
+  // ⭐ THE DEVICE QUESTION, on the CPU the device uses. Everything else in this run says the plugin is RIGHT;
+  // this says whether it FITS — and a model that only just beats real time on a runner does not beat it on a
+  // Pi, whose core is slower and whose audio thread is competing with everything else on the board.
+  log(`  throughput          : ${result.timesFaster.toFixed(2)}x faster than real time `
+    + `(${result.timing.processSeconds.toFixed(3)} s CPU / ${result.timing.audioSeconds.toFixed(3)} s audio, `
+    + `${result.timing.blockSize}-frame blocks)`);
+  if (!(result.realTimeFactor < 1)) {
+    console.error(`[audio-plugin-linux-arm] x the plugin renders at ${result.realTimeFactor.toFixed(3)}x real time — `
+      + 'a model that cannot beat real time on the runner cannot run on a device.');
+    process.exit(1);
+  }
 
   if (result.vsReference.lengthMismatch) {
     console.error('[audio-plugin-linux-arm] x the plugin produced a different number of frames than the reference.');

@@ -738,6 +738,52 @@ check('…and de-interleaves, so left is 1,3,5 and right is 2,4,6',
   [Array.from(back.data[0]), Array.from(back.data[1])], [[1, 3, 5], [2, 4, 6]]);
 unlinkSync(mrawPath);
 
+// ⭐ THE DEVICE QUESTION, which every other number in this file is silent about: not "is the plugin RIGHT" but
+// "does it FIT". A model that only just beats real time on a runner does not beat it on a Raspberry Pi, whose
+// core is slower and whose audio thread shares the board with everything else.
+//
+// The arithmetic is checked against figures worked out by hand, because THE DIRECTION IS THE WHOLE ANSWER: the
+// factor is wall time over audio time, so below 1 is faster than real time. An inverted division reads as a
+// comfortable pass on a machine that cannot keep up — which is the one way this could be actively misleading
+// rather than merely absent.
+check('half a second of CPU for a second of audio is real-time factor 0.5',
+  render.realTimeFactor({ processSeconds: 0.5, audioSeconds: 1 }).realTimeFactor, 0.5);
+check('…which is twice as fast as real time, not half',
+  render.realTimeFactor({ processSeconds: 0.5, audioSeconds: 1 }).timesFaster, 2);
+check('two seconds of CPU for one of audio is SLOWER than real time (factor 2, not 0.5)',
+  render.realTimeFactor({ processSeconds: 2, audioSeconds: 1 }).realTimeFactor, 2);
+check('…and a render with no audio in it is not given a factor at all',
+  render.realTimeFactor({ processSeconds: 1, audioSeconds: 0 }), null);
+
+// The host prints two JSON lines — the plugin's identity, then the timing — and the parse has to find the
+// second without being fooled by the first. Reading the identity line as the timing would report a throughput
+// of `undefined`, and `undefined < 1` is false, so the check would pass on a run that measured nothing.
+const hostOut = '{"id":"x","params":[]}\n{"processSeconds":0.5,"audioSeconds":4,"frames":192000,"sampleRate":48000,"blockSize":64}\n';
+check('the host\'s timing is read from the second JSON line, not the first',
+  render.parseHostTiming(hostOut), { processSeconds: 0.5, audioSeconds: 4, frames: 192000, sampleRate: 48000, blockSize: 64 });
+check('…and stdout with no timing line in it is null, not a guess',
+  render.parseHostTiming('{"id":"x","params":[]}\n'), null);
+check('…and a truncated timing line is skipped rather than half-read',
+  render.parseHostTiming('{"processSeconds":0.5,"audioSe\n'), null);
+check('…and no stdout at all is null', render.parseHostTiming(''), null);
+
+// The number has to come from the plugin's own process() loop, not from a stopwatch around the process. A
+// timing taken from JS mostly measures process startup and the file read on a quarter-second render, and it
+// would be reported as the model's throughput.
+const hostSrc = read('tools/clap-offline/clap_offline.cpp');
+check('the host times its own process loop', /steady_clock::now\(\)/.test(hostSrc) && /processStart/.test(hostSrc), true);
+// The C++ source carries them as escaped quotes inside a printf format, so the literal to look for is
+// \"processSeconds rather than "processSeconds — the first version of this check looked for the latter and
+// failed on a host that prints exactly the right thing.
+check('…and prints the seconds and the audio it was worth, on stdout',
+  /\\"processSeconds/.test(hostSrc) && /\\"audioSeconds/.test(hostSrc), true);
+check('…timed around the loop and not around the load', (() => {
+  const start = hostSrc.indexOf('processStart = std::chrono::steady_clock::now()');
+  const loop = hostSrc.indexOf('while (done < in.frames)');
+  const end = hostSrc.indexOf('processEnd = std::chrono::steady_clock::now()');
+  return start > 0 && loop > start && end > loop;
+})(), true);
+
 // ⚠️ LIKE FOR LIKE, OR THE COMPARISON MEASURES THE WRONG THING. The plugin pins NAM_SAMPLE_FLOAT; NAMCore's
 // own render tool defaults to double. A float plugin against a double reference would report the precision
 // choice as though it were a wiring bug, so BOTH compile lines carry the flag.
@@ -780,6 +826,13 @@ check('the CLAP headers are pinned, fetched once into .cache, and can be overrid
   render.CLAP_REF.length === 40 && /CLAP_INCLUDE/.test(renderSrc) && /\.cache/.test(renderSrc), true);
 
 const armRunnerSrc = read('scripts/audio-plugin-linux-arm-runner-build.mjs');
+
+// The throughput number is only useful if something refuses a bad one. Both halves are asserted here because
+// either alone leaves a measurement that is reported and then ignored — H17's shape, where a check that cannot
+// fail reads as a check that passed.
+check('the render check fails a CPU that cannot beat real time', /realTimeFactor >= maxRtf/.test(renderSrc), true);
+check('…and the runner build refuses it too, before anything is published',
+  /realTimeFactor < 1/.test(armRunnerSrc), true);
 check('the ARM runner runs the comparison when asked, and only with a model',
   /if \(renderCheck\) \{/.test(armRunnerSrc) && /--render-check needs a model/.test(armRunnerSrc), true);
 check('…refusing when the engine checkout is missing rather than silently skipping the proof',
