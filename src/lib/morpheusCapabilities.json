@@ -83,6 +83,43 @@
       }
     ]
   },
+  "downloads": {
+    "title": "Downloads",
+    "intro": "Everything Morpheus hands you as a file, in one place. Most of what you make is deliberately not here: your builds land in your own project, in your own repository, in _compiled/ — which is the point.",
+    "pluginRelease": "https://github.com/robmitchellengineering-hub/morpheus-self-hosted/releases/tag/plugin-demo",
+    "items": [
+      {
+        "name": "Portable Morpheus",
+        "platform": "macOS · Windows · Linux",
+        "what": "The whole product — the builder and the Command Deck — running on your own machine. Your data stays with you, and nothing stops working if you stop paying.",
+        "href": "/portable-morpheus",
+        "note": "A ZIP of the product's own source, generated at build time from the repository. Published source, not open source — see the notice inside."
+      },
+      {
+        "name": "The user manual",
+        "platform": "Every target",
+        "what": "How to install and run what Morpheus builds, for every target it builds — including what each platform's unsigned-software warning means, and how to get past it.",
+        "href": "/manual",
+        "note": "Generated at build time from the same module that writes USER-MANUAL.txt into every build, so the published manual cannot drift from the one a download carries."
+      },
+      {
+        "name": "Audio plugin — demo builds",
+        "platform": "Windows · Linux AArch64 · macOS on request",
+        "what": "A prebuilt plugin you can load in a DAW today: a neural amp model from NeuralAmpModelerCore with an input trim, a noise gate and a three-band tone stack, in VST3, CLAP and a standalone app.",
+        "href": "https://github.com/robmitchellengineering-hub/morpheus-self-hosted/releases/tag/plugin-demo",
+        "note": "Unsigned, so your platform will warn once. This is the amplifier stage and not the product — what Morpheus makes for you is a plugin built in your own repository around your own model and your own cabinet."
+      },
+      {
+        "name": "Marketplace templates",
+        "platform": "Any target",
+        "what": "Working projects other people have published — buy one or install it into your workspace in a tap, and read every file before you run it.",
+        "href": "/market",
+        "note": "Published by other users, not by us. Sellers get a cut."
+      }
+    ],
+    "ownHeading": "What you compile is not a download from us",
+    "own": "Every target compiles inside your own GitHub repository and its output lands in _compiled/ in your own project: an Android APK, an iOS app, a macOS app, a Windows EXE, a Linux binary, a Raspberry Pi image, a full Linux distro, a Python package, a web app, or a VST3 / Audio Unit / CLAP plugin. That is the difference between a download page and a build tool — the file is yours, in your account, from your source."
+  },
   "capabilities": [
     { "title": "Chat-to-code", "body": "Describe an app in a sentence; Morpheus writes production-ready frontend and backend code you can read, edit, and own. No pseudo-code, no placeholders.", "workflow": "Type your request in the chat bar → Morpheus plans the file structure → writes each file in full → runs a review pass → saves to the file tree. Tap REVERT beneath your message to undo that prompt." },
     { "title": "Autonomous build pipeline", "body": "A self-correcting loop: compile → run → on failure, an AI agent reads the logs, writes a fix, and recompiles — only escalating to you when it's truly stuck.", "workflow": "Tap the bot icon in the chat bar → describe the full scope → watch the multi-step log in real time → STOP anytime. On a failed step it reads the error logs, writes a fix, and recompiles automatically." },

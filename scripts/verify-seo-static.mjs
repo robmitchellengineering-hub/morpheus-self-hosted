@@ -139,6 +139,49 @@ if (generated) {
     Boolean(llmsFull) && codeTargets.every((t) => llmsFull.includes(t)));
   check('llms.txt points at both', Boolean(llms) && llms.includes('/manual') && llms.includes('/llms-full.txt'));
   check('the sitemap lists the manual as a real page', Boolean(sitemap) && sitemap.includes('/manual'));
+
+  // ── THE DOWNLOADS PAGE, AND THE DISTINCTION IT EXISTS TO MAKE ────────────────────────────────────────
+  // Rob, 2026-10-05: *"if we have standalone versions of the plugin and the other formats where are they
+  // available for download"* — and the answer was nowhere. The rigs kept 7-day artifacts and the site
+  // offered no file, so a visitor whose next move is "show me one" had no page to land on.
+  check('the capabilities JSON carries the download list', Boolean(caps.downloads) && Array.isArray(caps.downloads.items));
+  if (caps.downloads) {
+    // ⚠️ NOT the landing prerender: the downloads live on their own route, and putting them in the
+    // landing page's prerendered block would be content the landing page does not show, which is cloaking.
+    // The first version of this assertion looked for them in `html` and failed — correctly, and the failure
+    // is the reason this comment exists.
+    //
+    // The machine surface that DOES carry them is the two briefs, generated from the same JSON as the page,
+    // so a model asked "what can I download from Morpheus" has the answer without fetching a client-rendered
+    // route at all.
+    check('every download is in llms.txt and llms-full.txt, so a model asked what it can get has an answer',
+      [llms, llmsFull].every((x) => Boolean(x) && caps.downloads.items.every((it) => x.includes(it.name))), true);
+    check('the sitemap lists it as a real page', Boolean(sitemap) && sitemap.includes('<loc>https://morpheus.nz/downloads</loc>'));
+    // A page a human cannot reach is a page only crawlers see — the line this whole file holds.
+    // Read here rather than reusing `landingSrcForAudio`, which is declared further down this file: the
+    // first version of this check referenced it and died on the temporal dead zone, which is the second
+    // time in this file that a const declared later has been read earlier.
+    const landingForDownloads = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
+    check('the landing page links to it with a real button, above the capability list',
+      /to="\/downloads"/.test(landingForDownloads), true);
+    check('…and the route is registered in the app',
+      /path="\/downloads"/.test(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8')), true);
+    // ⚠️ THE DISTINCTION IS THE HARD PART, NOT THE LIST. Almost nothing Morpheus produces is a download
+    // from us — it is built in the user's own repository and lands in their own `_compiled/`. A downloads
+    // page that blurred that would be selling a builder as a shop, so the sentence is asserted rather
+    // than left to survive on its own.
+    check('…and the page states what is NOT a download, rather than leaving it to be inferred',
+      /in your own project/.test(caps.downloads.own)
+      && /\{d\.own\}/.test(readFileSync(join(ROOT, 'src/pages/Downloads.jsx'), 'utf8'))
+      && /built inside your own GitHub repository/.test(llms || ''), true);
+    // An entry pointing at somebody else's origin must be an absolute URL, or the SPA router takes it and
+    // 404s; an in-app route must be relative. One wrong one is a dead download link on the page whose whole
+    // job is downloads.
+    const bad = caps.downloads.items.filter((it) => !/^(https?:\/\/|\/)/.test(String(it.href)));
+    check('every download link is either an absolute URL or an in-app route', bad.map((it) => it.name), []);
+    check('the plugin demo points at a RELEASE rather than at a workflow artifact that expires in 7 days',
+      /\/releases\/tag\//.test(String(caps.downloads.pluginRelease)), true);
+  }
   // ORDERING, and it is the difference between a page and a 404: Netlify takes the FIRST matching rule, so the
   // manual rewrite has to come before the SPA catch-all or the clean URL serves index.html.
   const redirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
