@@ -629,6 +629,16 @@ export const MUTATIONS = [
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/ampChain.js',
+    // ⚠️ THE CORRUPTION THIS ID EXISTS TO PREVENT, as a mutation. Two stages sharing an id is not a type
+    // error and nothing fails to build: a saved value, a MIDI binding or an automation lane attached to one
+    // silently applies to the other, which is a board that misbehaves only after a user rearranges it.
+    why: 'Gives the cabinet the model\u2019s id, so two stages share an identity and anything keyed to it follows the wrong block.',
+    find: "{ id: 'cab', kind: 'cab' },",
+    replace: "{ id: 'model', kind: 'cab' },",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
     // 0.001 dB of coefficient error measured as -55 dB of residual against the design; 1e-6 measures -140.
     why: 'Puts the tone coefficients back on a thousandth-of-a-decibel update threshold, which the measurement showed leaves the filter visibly wrong.',
     find: '#define MORPHEUS_TONE_EPS 0.000001',
@@ -665,8 +675,10 @@ export const MUTATIONS = [
     file: 'server/src/lib/ampChain.js',
     // `IDX_OUTPUT` is the name the test bench's patch and the output multiply both rely on.
     why: 'Renames the plain plugin\u2019s parameter key, so the emitted C++ indexes an identifier that does not exist and the bench stops matching the output line.',
-    find: "return [{ key: 'output', name: String(manifest.paramName || 'Gain'), min: -60, max: 12, def: 0, role: 'output' }];",
-    replace: "return [{ key: 'gain', name: String(manifest.paramName || 'Gain'), min: -60, max: 12, def: 0, role: 'output' }];",
+    // ⚠️ REPOINTED when a chain became a list of stages: the plain plugin's one control is no longer a
+    // returned literal but a stage's `param`, so the mutation follows the text rather than the shape.
+    find: "else if (stage.param) out.push({ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain') });",
+    replace: "else if (stage.param) out.push({ ...stage.param, key: 'gain', name: stage.param.name ?? String(manifest.paramName || 'Gain') });",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -757,8 +769,10 @@ export const MUTATIONS = [
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/ampChain.js',
     why: 'Makes the gate default to a 0 dB threshold, which with a real signal is a gate that never opens — a plugin that is silent by default.',
-    find: "{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' },",
-    replace: "{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: 0, role: 'gate' },",
+    // ⚠️ REPOINTED for the same reason: the gate's parameter now sits inside its stage object, so the
+    // line it is on ends differently. The claim is identical — the gate must default to OFF, not to 0 dB.
+    find: "param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' } },",
+    replace: "param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: 0, role: 'gate' } },",
   },
   {
     guard: 'verify-audio-plugin.mjs',

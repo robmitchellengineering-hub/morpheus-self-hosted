@@ -922,6 +922,30 @@ check('…and the workflow renders the real WAVENET, not the identity model that
 
 console.log('\n18. the amp chain: a table of parameters, and a tone stack measured against its design');
 const chainMod = await import('../server/src/lib/ampChain.js');
+
+// ⭐ A CHAIN IS DATA, AND EVERY STAGE CARRIES AN IDENTITY THAT IS NOT ITS POSITION. The pedalboard work
+// reads `instanceId` out of PiPedal's model for the same reason, and it is the one decision that corrupts
+// silently if it arrives late: anything keyed by position — a saved value, a MIDI binding, a host's
+// automation lane — follows the WRONG block the moment a user drags one past another. There is nothing to
+// break yet, which is exactly when it is cheap.
+for (const chain of [chainMod.PLAIN_CHAIN, chainMod.AMP_CHAIN]) {
+  const stages = chain.stages || [];
+  check(`${chain.name}: the chain IS a list of stages`, stages.length > 0, true);
+  check(`${chain.name}: every stage says what it does`, stages.every((st) => typeof st.kind === 'string' && st.kind.length > 0), true);
+  check(`${chain.name}: every stage has a NON-EMPTY id`, stages.every((st) => typeof st.id === 'string' && st.id.length > 0), true);
+  check(`${chain.name}: the ids are unique, so identity survives a reorder`,
+    new Set(stages.map((st) => st.id)).size, stages.length);
+}
+// THE SPLIT IS DERIVED, WHICH IS THE POINT OF THE WHOLE SHAPE. The model runs a block at a time, so the loop
+// is three passes — and that was an AMP's shape bolted into the template. A chain with no model has no
+// middle, which is what makes a delay or a reverb expressible without arguing with an amp.
+check('the model is a stage with stages before it', chainMod.modelStageIndex(chainMod.AMP_CHAIN) > 0, true);
+check('…and a chain with no model has no middle', chainMod.modelStageIndex(chainMod.PLAIN_CHAIN), -1, true);
+check('…which the emitters ask rather than assume', chainMod.chainHas(chainMod.PLAIN_CHAIN, 'model'), false, true);
+check('the parameters are DERIVED from the stages, in the stages\' own order',
+  chainMod.chainParams(chainMod.AMP_CHAIN, {}).map((pp) => pp.key), ['input', 'gate', 'bass', 'mid', 'treble', 'output']);
+check('…and the plain chain still calls its single control what the manifest says',
+  chainMod.chainParams(chainMod.PLAIN_CHAIN, { paramName: 'Drive' }).map((pp) => pp.name), ['Drive']);
 const tone = await import('../server/src/lib/audio/toneStack.js');
 
 // ── the design, which is what the plugin is measured against ───────────────────────────────────────────
@@ -940,7 +964,7 @@ const trebleUp = tone.toneDesign({ gains: { treble: 12 }, sampleRate: SR });
 check('…and the treble shelf does the mirror image',
   tone.toneResponseDb(trebleUp, 6000, SR) > 10.5 && Math.abs(tone.toneResponseDb(trebleUp, 50, SR)) < 0.05, true);
 check('the bands are the ones the plugin is generated from — same keys, same order',
-  tone.TONE_KEYS.join(','), chainMod.AMP_CHAIN.params.filter((p) => p.role === 'tone').map((p) => p.key).join(','));
+  tone.TONE_KEYS.join(','), chainMod.chainParams(chainMod.AMP_CHAIN, {}).filter((p) => p.role === 'tone').map((p) => p.key).join(','));
 
 // ── what the plugin asks for ───────────────────────────────────────────────────────────────────────────
 check('a project that asks for nothing gets the single-parameter plugin', chainMod.chainFor({}).name, 'plain');
