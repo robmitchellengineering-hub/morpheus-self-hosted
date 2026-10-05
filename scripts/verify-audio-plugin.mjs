@@ -1565,6 +1565,49 @@ check('…and a bypassed spring reverb keeps its controls and emits no reverb at
     return off.includes('"Decay (bypassed)"') && !/spring_process\(&p->spring\[c\], x,/.test(off);
   })(), true);
 
+console.log('\n24. the drive: a block whose sound is the thing, so the numbers are the specification');
+// ⭐ "IT CLIPS" IS NOT A CLAIM. Every overdrive clips. What makes this architecture worth having is HOW: a clean
+// path and a clipped path summed, two DIFFERENT diode thresholds, and a tone control in FRONT of the clipper.
+// scripts/drive-check.mjs measures all four at the audio level; the assertions here pin the decisions it
+// depends on, because it needs a compiler and cannot run in this job.
+const driveSrc = boardSrc([...boardItems(), { instanceId: 20, kind: 'drive', enabled: true, values: {} }]);
+check('the catalogue has the drive, with its three controls',
+  Boolean(boardMod.blockKind('drive'))
+  && boardMod.kindControls('drive').map((c) => c.key).join(',') === 'drive_gain,drive_treble,drive_level',
+  true);
+check('⭐ the two diode thresholds are DIFFERENT, which is the only thing here that can make an even harmonic',
+  (() => {
+    const pos = /#define MORPHEUS_DRIVE_VF_POS ([0-9.]+)/.exec(driveSrc);
+    const neg = /#define MORPHEUS_DRIVE_VF_NEG ([0-9.]+)/.exec(driveSrc);
+    return Boolean(pos && neg) && Number(pos[1]) !== Number(neg[1]);
+  })(), true);
+check('⭐ the clean path and the clipped path are summed, and the clean one GIVES WAY as the gain comes up',
+  /const double out = x \* \(1\.0 - d->mix\) \+ clipped \* \(d->mix \* MORPHEUS_DRIVE_MAKEUP\);/.test(driveSrc), true);
+check('…with a coupling capacitor, because an asymmetric clipper puts a DC offset on the output without one',
+  /d->dcY = out - d->dcX \+ 0\.9995 \* d->dcY;/.test(driveSrc), true);
+check('…and the tone control is IN FRONT of the clipper, so it changes the grain rather than the brightness',
+  driveSrc.indexOf('const double pre = d->toneLp + treble * (x - d->toneLp);') < driveSrc.indexOf('const double y = pre * d->drive;')
+  && /const double y = pre \* d->drive;/.test(driveSrc), true);
+check('…and it carries its own struct and state with no allocation at all',
+  /typedef struct \{[\s\S]*?\} drive_t;/.test(driveSrc) && /drive_t drive\[2\];/.test(driveSrc)
+  && /p->drive\[c\]\.dcY = 0\.0;/.test(driveSrc)
+  && !/calloc[\s\S]{0,200}drive/.test(driveSrc), true);
+check('…no marker left, and a bypassed drive keeps its controls and emits nothing',
+  (() => {
+    const off = boardSrc([...boardItems(), { instanceId: 20, kind: 'drive', enabled: false, values: {} }]);
+    return !/__DRIVE_STAGE__/.test(driveSrc) && off.includes('"Gain (bypassed)"') && !/drive_process\(&p->drive\[c\], x,/.test(off);
+  })(), true);
+check('three blocks that are not part of an amp can share one board, and all three reach the source',
+  (() => {
+    const all = boardSrc([...boardItems(),
+      { instanceId: 20, kind: 'drive', enabled: true, values: {} },
+      { instanceId: 21, kind: 'delay', enabled: true, values: {} },
+      { instanceId: 22, kind: 'spring', enabled: true, values: {} }]);
+    return /drive_process\(&p->drive\[c\], x,/.test(all) && /delay_process\(&p->delay\[c\], x,/.test(all)
+      && /spring_process\(&p->spring\[c\], x,/.test(all)
+      && !/__DRIVE_STAGE__|__DELAY_STAGE__|__SPRING_STAGE__/.test(all);
+  })(), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');

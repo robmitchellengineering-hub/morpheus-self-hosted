@@ -18,13 +18,13 @@
 //
 // Run:  node scripts/spring-check.mjs --plugin <dir with Source/Plugin.cpp>
 //       …add --json for the numbers alone, --keep to leave the render behind.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
+import {
+  buildOfflineHost, clapIncludeDir, describePlugin, render, writeMraw,
+} from './lib/clapOffline.mjs';
 
-const ROOT = join(dirname(new URL(import.meta.url).pathname), '..');
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const value = (n, d = null) => { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
@@ -38,31 +38,6 @@ const pass = [];
 const fail = [];
 const check = (ok, label, detail) => (ok ? pass : fail).push(detail ? `${label} — ${detail}` : label);
 
-// ── the MRAW container, as the offline host speaks it ───────────────────────────────────────────────────────
-function writeMraw(path, channels, frames) {
-  const head = Buffer.alloc(20);
-  head.write('MRAW', 0, 'ascii');
-  head.writeUInt32LE(1, 4);
-  head.writeUInt32LE(SR, 8);
-  head.writeUInt32LE(channels.length, 12);
-  head.writeUInt32LE(frames, 16);
-  const body = Buffer.alloc(frames * channels.length * 4);
-  for (let f = 0; f < frames; f++) {
-    for (let c = 0; c < channels.length; c++) body.writeFloatLE(channels[c][f], (f * channels.length + c) * 4);
-  }
-  writeFileSync(path, Buffer.concat([head, body]));
-}
-function readMraw(path) {
-  const buf = readFileSync(path);
-  if (buf.toString('ascii', 0, 4) !== 'MRAW') throw new Error(`${path} is not MRAW`);
-  const chans = buf.readUInt32LE(12);
-  const frames = buf.readUInt32LE(16);
-  const out = Array.from({ length: chans }, () => new Float64Array(frames));
-  for (let f = 0; f < frames; f++) {
-    for (let c = 0; c < chans; c++) out[c][f] = buf.readFloatLE((f * chans + c) * 4 + 20);
-  }
-  return out;
-}
 
 // ── the measurements ────────────────────────────────────────────────────────────────────────────────────────
 /** A one-pole high-pass at `hi` minus a one-pole low-pass at `lo`: a band, without an FFT. */
@@ -120,48 +95,23 @@ const t60 = (sig) => {
 
 // ── build ───────────────────────────────────────────────────────────────────────────────────────────────────
 const projectDir = value('--plugin');
-if (!projectDir || !existsSync(join(projectDir, 'Source', 'Plugin.cpp'))) {
+if (!projectDir) {
   console.error('usage: node scripts/spring-check.mjs --plugin <dir with Source/Plugin.cpp> [--json] [--keep]');
   process.exit(2);
 }
 const work = value('--work') ?? mkdtempSync(join(tmpdir(), 'spring-check-'));
-mkdirSync(work, { recursive: true });
-
-const clapInclude = (() => {
-  const explicit = value('--clap-include') ?? process.env.CLAP_INCLUDE;
-  if (explicit) return explicit;
-  const cached = join(ROOT, '.cache', 'clap', 'include');
-  if (existsSync(join(cached, 'clap', 'clap.h'))) return cached;
-  console.error('no CLAP headers: pass --clap-include <dir> or set CLAP_INCLUDE (the plugin test bench fetches them into .cache/clap).');
-  process.exit(2);
-})();
-
-const bin = join(work, 'clap_offline');
-const hostSrc = join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp');
-const compile = spawnSync(process.env.CXX ?? 'c++', [
-  '-std=c++20', '-O2', '-w',
-  `-I${clapInclude}`,
-  `-I${join(projectDir, 'Source')}`,
-  hostSrc,
-  join(projectDir, 'Source', 'Plugin.cpp'),
-  join(projectDir, 'Source', 'PluginEntry.cpp'),
-  '-o', bin,
-], { encoding: 'utf8' });
-if (compile.status !== 0) {
-  console.error(`compilation failed:\n${compile.stderr || compile.stdout}`);
-  process.exit(1);
-}
+const bin = buildOfflineHost({ projectDir, work, clapInclude: clapIncludeDir(value('--clap-include')) });
 
 // ── render ─────────────────────────────────────────────────────────────────────────────────────────────────
 const dry = new Float64Array(FRAMES);
-// A single sample, not a burst: the impulse response IS the thing being judged, and any other input asks about
-// the input as much as about the reverb.
+// A single sample, not a burst: the impulse response IS the thing being judged, and any other input asks
+// about the input as much as about the reverb.
 dry[Math.round(IMPULSE_AT * SR)] = 1.0;
 const inPath = join(work, 'impulse.mraw');
-writeMraw(inPath, [dry, dry], FRAMES);
+writeMraw(inPath, SR, [dry, dry], FRAMES);
 
-const listed = JSON.parse(spawnSync(bin, ['--in', inPath, '--out', join(work, 'x.mraw'), '--list-params'], { encoding: 'utf8' }).stdout);
-const params = listed.params || [];
+const info = describePlugin(bin, inPath);
+const params = info.params;
 const idOf = (name) => params.find((p) => p.name === name)?.id;
 for (const name of ['Decay', 'Tone', 'Mix']) {
   if (idOf(name) == null) {
@@ -169,29 +119,19 @@ for (const name of ['Decay', 'Tone', 'Mix']) {
     process.exit(2);
   }
 }
-
-const render = (over = {}) => {
-  const argv = ['--in', inPath, '--out', join(work, 'out.mraw'), '--blocksize', '64'];
-  for (const [name, v] of Object.entries(over)) argv.push('--param', `${idOf(name)}=${v}`);
-  const run = spawnSync(bin, argv, { encoding: 'utf8' });
-  if (run.status !== 0) {
-    console.error(`the plugin failed to render: ${run.stderr || run.stdout}`);
-    process.exit(1);
-  }
-  // The host reports twice — the descriptor and a timing line — and the LAST one is the timing. (The test
-  // bench read the wrong line for a while; see scripts/audio-testbench.mjs.)
-  const reports = (run.stdout || '').trim().split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  return { audio: readMraw(join(work, 'out.mraw'))[0], timing: reports.find((r) => r && r.processSeconds != null) || null };
-};
+const renderWith = (over = {}) => render(bin, {
+  inPath, outPath: join(work, 'out.mraw'),
+  params: Object.entries(over).map(([n, v]) => [idOf(n), v]),
+});
 
 const at = (ms) => Math.round((IMPULSE_AT + ms / 1000) * SR);
-const wet = render({ Mix: 100, Decay: 50, Tone: 100 }).audio;
-const dryRun = render({ Mix: 0, Decay: 50, Tone: 100 }).audio;
+const wet = renderWith({ Mix: 100, Decay: 50, Tone: 100 }).data[0];
+const dryRun = renderWith({ Mix: 0, Decay: 50, Tone: 100 }).data[0];
 const results = { controls: params.map((p) => `#${p.id} ${p.name}`).join(' · ') };
 
 // 1 ── it decays, and the control moves it
 const decays = {};
-for (const d of [10, 35, 60, 85, 100]) decays[d] = t60(render({ Mix: 100, Decay: d, Tone: 60 }).audio);
+for (const d of [10, 35, 60, 85, 100]) decays[d] = t60(renderWith({ Mix: 100, Decay: d, Tone: 60 }).data[0]);
 const decayValues = Object.values(decays);
 check(decayValues.every((v) => Number.isFinite(v) && v > 0), 'the reverb has a tail that decays', JSON.stringify(decays));
 check(decayValues.every((v, i) => i === 0 || v > decayValues[i - 1]), '…and a higher Decay is a longer tail, every step of the way');
@@ -219,7 +159,7 @@ results.mixZeroNullDb = nullDb;
 // 4 ── Tone changes the LATE tail's brightness and nothing else about it
 const brightness = {};
 for (const t of [0, 50, 100]) {
-  const s = render({ Mix: 100, Tone: t, Decay: 50 }).audio;
+  const s = renderWith({ Mix: 100, Tone: t, Decay: 50 }).data[0];
   // From 0.5 s in: the FIRST pass through a spring is undamped by design, so a whole-tail measurement would be
   // mostly measuring the direct chirp and would report this control as doing nothing. (It did.)
   brightness[t] = 10 * Math.log10((energyFrom(band(s, 3000, 12000), IMPULSE_AT + 0.5) + 1e-30) / (energyFrom(s, IMPULSE_AT + 0.5) + 1e-30));
@@ -236,7 +176,7 @@ let peak = 0;
 for (let i = 0; i < wet.length; i++) peak = Math.max(peak, Math.abs(wet[i]));
 check(peak < 8, 'the output is not running away', `peak ${peak.toFixed(3)}`);
 
-const timing = render({ Mix: 100, Decay: 50, Tone: 60 }).timing;
+const timing = renderWith({ Mix: 100, Decay: 50, Tone: 60 }).timing;
 if (timing && timing.processSeconds && timing.audioSeconds) {
   // the cost of the block, on the machine that ran this
   results.realTimeFactor = timing.audioSeconds / timing.processSeconds;

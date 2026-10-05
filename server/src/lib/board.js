@@ -25,6 +25,7 @@ import { AMP_CHAIN, PLAIN_CHAIN, chainHas, chainParams, modelStageIndex } from '
 import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
 import { DELAY_MARKER, DELAY_PARAMS, delayBundle } from './delayBlock.js';
 import { SPRING_MARKER, SPRING_PARAMS, springBundle } from './springBlock.js';
+import { DRIVE_MARKER, DRIVE_PARAMS, driveBundle } from './driveBlock.js';
 
 /**
  * ⚠️ ONE OF EACH, FOR NOW, AND IT IS ENFORCED RATHER THAN ASSUMED.
@@ -100,6 +101,16 @@ export const BLOCK_KINDS = [
     marker: SPRING_MARKER,
     bundle: springBundle,
     stage: () => ({ kind: 'spring', dsp: SPRING_MARKER }),
+  },
+  {
+    kind: 'drive',
+    label: 'Drive',
+    group: 'dynamics',
+    blurb: 'A clean path and a clipped path summed, with the clipper biting at a guitar\u2019s own level \u2014 so the harmonics arrive under your signal rather than replacing it. Put it before the amp model.',
+    params: () => DRIVE_PARAMS.map((x) => ({ ...x })),
+    marker: DRIVE_MARKER,
+    bundle: driveBundle,
+    stage: () => ({ kind: 'drive', dsp: DRIVE_MARKER }),
   },
   {
     kind: 'output',
