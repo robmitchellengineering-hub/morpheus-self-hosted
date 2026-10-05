@@ -21,9 +21,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logSweep, withFades } from '../server/src/lib/audio/signals.js';
 import { toneDesign, toneProcess, toneResponseDb } from '../server/src/lib/audio/toneStack.js';
-import { convolveDirect } from '../server/src/lib/audio/dsp.js';
+import { convolveDirect, rms } from '../server/src/lib/audio/dsp.js';
 import { decodeWav } from '../server/src/lib/audio/wav.js';
 import { MAX_CAB_TAPS } from '../server/src/lib/cabIr.js';
+import { AMP_CHAIN, GATE_OFF_DB } from '../server/src/lib/ampChain.js';
 import { clapIncludes, compareToReference, readMraw, writeMraw } from './audio-nam-render-check.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,13 +36,27 @@ export const SETTLE_FRACTION = 0.75;
  * The settings this check renders, chosen so that each band is exercised on its own and then together. A
  * single "all bands up" case would pass with two of the three filters wired to the wrong band.
  */
+// ⚠️ THE IDS COME FROM THE PARAMETER TABLE, NOT FROM MEMORY. They were hardcoded as 2/3/4 until the GATE was
+// inserted at position 2, at which point every one of these cases silently addressed the wrong control — the
+// bass case became the gate. A number copied from a table is a number that goes stale the moment the table
+// moves; this reads it.
+const paramId = (key) => {
+  const at = AMP_CHAIN.params.findIndex((p) => p.key === key);
+  if (at === -1) throw new Error(`the amp chain has no "${key}" parameter — the cases below are stale`);
+  return at + 1;
+};
+
 export const TONE_CASES = [
   { label: 'flat', params: [], gains: {} },
-  { label: 'bass +12', params: ['2=12'], gains: { bass: 12 } },
-  { label: 'bass -12', params: ['2=-12'], gains: { bass: -12 } },
-  { label: 'mid -12', params: ['3=-12'], gains: { mid: -12 } },
-  { label: 'treble +12', params: ['4=12'], gains: { treble: 12 } },
-  { label: 'all +6', params: ['2=6', '3=6', '4=6'], gains: { bass: 6, mid: 6, treble: 6 } },
+  { label: 'bass +12', params: [`${paramId('bass')}=12`], gains: { bass: 12 } },
+  { label: 'bass -12', params: [`${paramId('bass')}=-12`], gains: { bass: -12 } },
+  { label: 'mid -12', params: [`${paramId('mid')}=-12`], gains: { mid: -12 } },
+  { label: 'treble +12', params: [`${paramId('treble')}=12`], gains: { treble: 12 } },
+  {
+    label: 'all +6',
+    params: [`${paramId('bass')}=6`, `${paramId('mid')}=6`, `${paramId('treble')}=6`],
+    gains: { bass: 6, mid: 6, treble: 6 },
+  },
 ];
 
 /** Build the offline host against the plugin's own sources — the same harness the model check uses. */
@@ -70,7 +85,7 @@ function buildHost({ pluginDir, clapInclude, work }) {
  * Render the chain at each setting and compare it against the design. Returns the numbers rather than
  * asserting them, so the caller decides what is good enough and can print everything either way.
  */
-export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate = 48000, seconds = 0.5, cab = null }) {
+export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate = 48000, seconds = 0.5, cab = null, gateCase = false }) {
   mkdirSync(work, { recursive: true });
   const bin = buildHost({ pluginDir, clapInclude: clapInclude || clapIncludes(), work });
 
@@ -126,6 +141,7 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
   // two-implementations-must-agree shape as the tone stack: the JS convolution is the design and the plugin's
   // ring buffer is what runs. With every parameter at 0 dB the cabinet is the only thing in the path.
   let cabRow = null;
+  let gateRow = null;
   if (cab) {
     const taps = cabTaps;
     const outPath = join(work, 'out-cabinet.mraw');
@@ -145,7 +161,49 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
       changedDb: compareToReference(dry.subarray(from), actual.subarray(from)).nullDb,
     };
   }
-  return { rows, cabRow, sampleRate, frames: dry.length, settledFrom: from };
+  // ── the gate ──────────────────────────────────────────────────────────────────────────────────────────
+  // A GATE IS PROVEN BY A SIGNAL THAT GOES QUIET, not by a null test: with the threshold at its lowest the
+  // gate is bypassed and the tone rows above already prove that exactly, but that says nothing about whether
+  // it works. Three seconds: loud, quiet, loud. The quiet part must come out far below where it went in, and
+  // the loud parts must come out where they went in — a gate that attenuates everything passes the first half
+  // of that and fails the second.
+  if (gateCase) {
+    // ⚠️ 1.5 SECONDS A SECTION, and the first version used 0.5 — which made the gate look broken. A gate with a
+    // 120 ms release takes ~440 ms just to decide to close, and then another 120 ms time constant to actually
+    // get down, so a half-second quiet section never gets quiet and the measurement read 0.0 dB of attenuation
+    // on a gate that was working perfectly. The window has to be longer than the thing being measured.
+    const seg = Math.floor(sampleRate * 1.5);
+    const long = new Float64Array(seg * 3);
+    const tone = logSweep({ f1: 100, f2: 4000, sampleRate, seconds: 1.5, amplitude: 0.4 });
+    for (let i = 0; i < seg; i++) {
+      long[i] = tone[i];                    // loud
+      long[seg + i] = tone[i] * 0.002;      // -54 dB: below a -40 dB threshold
+      long[2 * seg + i] = tone[i];          // loud again
+    }
+    const stereoLong = new Float32Array(long.length * 2);
+    for (let i = 0; i < long.length; i++) { stereoLong[i * 2] = long[i]; stereoLong[i * 2 + 1] = long[i]; }
+    const longPath = join(work, 'gate-dry.mraw');
+    writeMraw(longPath, sampleRate, 2, stereoLong);
+    const outPath = join(work, 'gate-out.mraw');
+    const thresholdDb = -40;
+    const run = spawnSync(bin, ['--in', longPath, '--out', outPath, '--blocksize', '64',
+      '--param', `${paramId('gate')}=${thresholdDb}`], { encoding: 'utf8' });
+    if (run.status !== 0) {
+      console.error(`[amp-chain] x the gate render failed:\n${(run.stderr || '').slice(-1000)}`);
+      process.exit(1);
+    }
+    const actual = readMraw(outPath).data[0];
+    // Compared over the SETTLED part of each section: the gate's release is 120 ms, so the first tenth of a
+    // section is the transition rather than the state.
+    const section = (x, n) => x.subarray(n * seg + Math.floor(seg * 0.7), (n + 1) * seg);
+    // ⚠️ THE LEVEL CHANGE, NOT THE NULL DEPTH. `compareToReference` measures how SIMILAR two signals are, so a
+    // gate that closes completely makes the output maximally DIFFERENT from the dry signal and reads as 0 dB —
+    // which is how a working gate measured as doing nothing. What a gate does to a section is a level, so the
+    // number here is a level: 20·log10(out/in).
+    const levelDb = (n) => 20 * Math.log10(rms(section(actual, n)) / rms(section(long, n)));
+    gateRow = { thresholdDb, loudChangeDb: levelDb(2), quietChangeDb: levelDb(1) };
+  }
+  return { rows, cabRow, gateRow, sampleRate, frames: dry.length, settledFrom: from };
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -165,6 +223,7 @@ if (isMain) {
     work: arg('work', join(ROOT, '.cache', 'amp-chain')),
     seconds: Number(arg('seconds', '0.5')),
     cab: arg('cab'),
+    gateCase: process.argv.includes('--gate'),
   });
   console.log('[amp-chain] plugin vs the JS design, over the settled tail:');
   let worst = -Infinity;
@@ -173,6 +232,20 @@ if (isMain) {
     if (v > worst) worst = v;
     const d = row.designDb;
     console.log(`[amp-chain]   ${row.label.padEnd(11)} ${(Number.isFinite(row.null.nullDb) ? `${row.null.nullDb.toFixed(1)} dB` : 'identical').padStart(13)}   design: 50Hz ${d[50].toFixed(2)} · 800Hz ${d[800].toFixed(2)} · 6kHz ${d[6000].toFixed(2)} dB`);
+  }
+  if (r.gateRow) {
+    const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');
+    console.log(`[amp-chain]   ${'gate'.padEnd(11)} at ${r.gateRow.thresholdDb} dB: the quiet section is ${f(r.gateRow.quietChangeDb)} and the loud one ${f(r.gateRow.loudChangeDb)} against the dry signal`);
+    // A GATE THAT ATTENUATES EVERYTHING PASSES THE QUIET HALF OF THIS AND FAILS HERE — which is the whole
+    // reason the loud section is measured at all.
+    if (Math.abs(r.gateRow.loudChangeDb) > 1) {
+      console.error('[amp-chain] x the gate is changing the loud sections too, so it is a volume control rather than a gate');
+      process.exit(1);
+    }
+    if (!(r.gateRow.quietChangeDb < -20)) {
+      console.error(`[amp-chain] x the gate did not close on the quiet section (${f(r.gateRow.quietChangeDb)})`);
+      process.exit(1);
+    }
   }
   if (r.cabRow) {
     const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');

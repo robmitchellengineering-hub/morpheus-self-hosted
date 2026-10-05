@@ -732,6 +732,31 @@ export const MUTATIONS = [
     replace: "else echo ''",
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // ⚠️ THE DEFECT THIS CHECK EXISTS FOR, and it shipped: the cabinet was emitted BEFORE the model while its
+    // own comment said "after the model", so a speaker was convolved in front of the amplifier driving it.
+    // Every check that only looks for a stage's PRESENCE passed.
+    why: 'Emits the cabinet stage where the model goes, which is how a speaker ended up in front of the amplifier it is driven by.',
+    find: "  lines.push('__CAB_STAGE__');",
+    replace: "  lines.push('__MODEL_STAGE__');",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // OFF must be a BYPASS, because the tone rows null against the chain with no gate at all.
+    why: 'Runs the gate at every threshold including its off position, so the default plugin is an envelope follower rather than bit-for-bit the chain without one.',
+    find: 'if (p->smoothed[IDX_GATE] > (double)MORPHEUS_GATE_OFF_DB + 0.001) {',
+    replace: 'if (true) {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    why: 'Makes the gate default to a 0 dB threshold, which with a real signal is a gate that never opens — a plugin that is silent by default.',
+    find: "{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' },",
+    replace: "{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: 0, role: 'gate' },",
+  },
+  {
     guard: 'verify-cabinet-upload.mjs',
     file: 'server/src/lib/cabinetFile.js',
     // ⚠️ THE SSRF BOUNDARY. A row's file_url is data; a compile that dials whatever a row says is a fetch

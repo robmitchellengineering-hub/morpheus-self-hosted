@@ -822,9 +822,11 @@ const ampSeed = [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ na
 const ampFiles = audioPlugin.scaffold(ampSeed).files;
 const ampSrc = generated({ files: ampFiles }, 'Source/Plugin.cpp');
 const plainSrc = src;
-check('the amp chain has five parameters, input first and output last',
+// Six since the gate landed, and the ids are asserted as a SEQUENCE because inserting a stage in the middle
+// renumbers everything after it — which is how the measurement's hardcoded parameter ids went stale.
+check('the amp chain is input, gate, three tone bands, output',
   (ampSrc.match(/PARAM_\w+ = \d+/g) || []).join(' '),
-  'PARAM_INPUT = 1 PARAM_BASS = 2 PARAM_MID = 3 PARAM_TREBLE = 4 PARAM_OUTPUT = 5');
+  'PARAM_INPUT = 1 PARAM_GATE = 2 PARAM_BASS = 3 PARAM_MID = 4 PARAM_TREBLE = 5 PARAM_OUTPUT = 6');
 check('…and the plain plugin still has exactly one, so nothing that predates this changed',
   (plainSrc.match(/PARAM_\w+ = \d+/g) || []).join(' '), 'PARAM_OUTPUT = 1');
 check('…and the plain plugin carries no tone code at all', /biquad_process/.test(plainSrc), false);
@@ -1007,6 +1009,56 @@ check('the check renders the cabinet through the plugin and compares it to the s
 // against the tone stack alone reported +22 dB of "error" that was the cabinet doing its job.
 check('…and its expectation is the WHOLE chain, so the order is checked too',
   /throughChain\(toneProcess\(design, dry\)\)/.test(cabCheckSrc), true);
+
+console.log('\n21. the gate, and the ORDER of a chain that is now six stages deep');
+const ampChainMod = await import('../server/src/lib/ampChain.js');
+const ampSeedNow = [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) }];
+const ampNow = audioPlugin.scaffold(ampSeedNow);
+const ampNowSrc = generated(ampNow, 'Source/Plugin.cpp');
+const gateIds = (ampNowSrc.match(/PARAM_\w+ = \d+/g) || []).join(' ');
+check('the amp chain is input, gate, three tone bands, output',
+  gateIds, 'PARAM_INPUT = 1 PARAM_GATE = 2 PARAM_BASS = 3 PARAM_MID = 4 PARAM_TREBLE = 5 PARAM_OUTPUT = 6');
+// ⚠️ OFF IS A STATE, NOT A VERY LOW THRESHOLD. At -80 dB the gate is still an envelope follower on the
+// signal and is never exactly transparent; bypassed, it nulls against the chain with no gate at all — and
+// that null is what the tone rows in audio-amp-chain-check measure, so the bypass is load-bearing.
+check('…the gate\u2019s lowest setting is a BYPASS, so the default plugin is bit-for-bit the chain without it',
+  ampChainMod.GATE_OFF_DB, -80);
+check('…the default really is that setting, not a 0 dB threshold',
+  /\{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' \}/.test(read('server/src/lib/ampChain.js')), true);
+check('…and the emitted stage is guarded by exactly that comparison',
+  /if \(p->smoothed\[IDX_GATE\] > \(double\)MORPHEUS_GATE_OFF_DB \+ 0\.001\) \{/.test(ampNowSrc), true);
+check('…with the constant defined, not interpolated into a comment',
+  /#define MORPHEUS_GATE_OFF_DB -80\.0/.test(ampNowSrc), true);
+check('the gate has hysteresis, or a signal at the threshold buzzes instead of gating',
+  /MORPHEUS_GATE_HYSTERESIS/.test(ampNowSrc), true);
+check('…and a plain plugin has no gate code at all', /gate_process/.test(plainSrc), false);
+
+// ⭐ THE ORDER, ASSERTED AS ORDER. A chain six stages deep is where a stage ends up in the wrong place and
+// every check that only looks for its PRESENCE still passes — which is exactly what happened: the cabinet was
+// emitted BEFORE the model while its own comment said "after the model", so a speaker was being convolved in
+// front of the amplifier that drives it. Found by reading the emitted chain, not by a check.
+const ampLoopNow = ampNowSrc.slice(ampNowSrc.indexOf('static clap_process_status plug_process'));
+// Infinity when the needle is absent, so a missing stage FAILS the comparison instead of crashing the guard
+// — a guard that throws is a guard whose output nobody reads.
+const at = (needle) => {
+  const i = ampLoopNow.indexOf(needle);
+  return i < 0 ? Infinity : i;
+};
+check('⭐ the chain runs input, gate, tone, model, cabinet, output in that order',
+  at('IDX_INPUT') < at('gate_process')
+  && at('gate_process') < at('biquad_process(&p->tone[c][0]')
+  && at('biquad_process(&p->tone[c][2]') < at('#if MORPHEUS_HAS_MODEL')
+  && at('p->model[c]->process') < at('cab_process')
+  && at('cab_process') < ampLoopNow.lastIndexOf('IDX_OUTPUT'), true);
+// A gate anywhere but first is gating what the stages after it added, and cannot un-add it.
+check('…and the gate is before everything that amplifies', at('gate_process') < at('p->model[c]->process'), true);
+const withModelAndCab = generated(audioPlugin.scaffold([
+  ...ampSeedNow, { path: 'models/amp.nam', content: '{"architecture":"Linear","weights":[1.0],"sample_rate":48000}' },
+  { path: 'models/cab.wav', content: (await import('../server/src/lib/audio/wav.js')).encodeWav({ sampleRate: 48000, data: new Float64Array(256).fill(0.1), format: 'float32' }).toString('base64'), encoding: 'base64' },
+]), 'Source/Plugin.cpp');
+const bothLoop = withModelAndCab.slice(withModelAndCab.indexOf('static clap_process_status plug_process'));
+check('…with a model AND a cabinet, the cabinet is still last of the two',
+  bothLoop.indexOf('p->model[c]->process') < bothLoop.indexOf('cab_process'), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

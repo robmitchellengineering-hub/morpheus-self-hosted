@@ -22,8 +22,8 @@
 //      are the part that is genuinely ours, and a plugin without them is not a usable starting point.
 
 import {
-  PLAIN_CHAIN, chainParams, chainSampleCpp, eventCpp, initCpp, paramsCpp, smoothCpp, stateCpp,
-  toneCpp, toneUpdateCpp,
+  GATE_OFF_DB, PLAIN_CHAIN, chainParams, chainSampleCpp, eventCpp, gateDspCpp, gateInitCpp, gateStageCpp,
+  initCpp, paramsCpp, smoothCpp, stateCpp, toneCpp, toneUpdateCpp,
 } from './ampChain.js';
 // The band count only, for the two loops that reset filter state. The filters themselves are emitted by
 // ampChain.js, which reads this same module so the design and the build cannot disagree.
@@ -152,6 +152,7 @@ static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 #if MORPHEUS_HAS_CAB
 ${cabDspCpp}
 #endif
+${list.some((p) => p.role === 'gate') ? `#define MORPHEUS_GATE_OFF_DB ${GATE_OFF_DB}.0\n${gateDspCpp}` : ''}
 ${hasTone ? `\n${toneCpp()}\n` : ''}
 typedef struct {
    clap_plugin_t plugin;
@@ -277,6 +278,7 @@ static bool plug_init(const clap_plugin_t *plugin) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
 ${initCpp(list)}
    p->fs = 48000.0;
+${list.some((p) => p.role === 'gate') ? gateInitCpp : ''}
 ${cabInitCpp}
 ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes every coefficient, so a plugin that starts
    // at 0 dB is not silent because its filters were never configured. calloc leaves these at zero, and a
@@ -372,7 +374,10 @@ ${hasTone ? `${toneUpdateCpp()}\n` : ''}         double in_l = process->audio_in
          // a different route would be a stereo image that moves when a control does.
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${chainSampleCpp(chain, list).replace('__CAB_STAGE__', cabStageCpp)}
+${chainSampleCpp(chain, list)
+  .replace('__GATE_STAGE__', gateStageCpp)
+  .replace('__MODEL_STAGE__', '')
+  .replace('__CAB_STAGE__', cabStageCpp)}
             if (c == 0) in_l = x; else in_r = x;
          }
          // The output level is applied last, so moving it changes how loud the plugin is and NOT how hard
