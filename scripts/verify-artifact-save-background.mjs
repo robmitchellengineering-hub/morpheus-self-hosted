@@ -236,6 +236,47 @@ console.log('\n11. the two functions the client invokes exist');
 check('saveCompiledArtifacts.js exists', existsSync(join(ROOT, 'server/src/functions/saveCompiledArtifacts.js')), true);
 check('getArtifactSaveStatus.js exists', existsSync(join(ROOT, 'server/src/functions/getArtifactSaveStatus.js')), true);
 
+// ── the build's own proof, shown where the build finished ────────────────────────────────────────────────
+// Rob, 2026-10-05: *"I can see any of the things weve done, have they landed, where are they?"* Every fact
+// this project asserts lived in an Actions log. The build now writes BUILD-PROOF.txt and publishes it, and
+// this is the second surface for the same bytes: the panel, which is where you look after a build.
+console.log('\n7. the build explains itself where the build finished');
+const proofFn = 'server/src/functions/getBuildProof.js';
+check('the proof endpoint exists', existsSync(join(ROOT, proofFn)), true);
+const proofSrc = read(proofFn);
+const panelSrc = read('src/components/matrix/CompilePanel.jsx');
+// The file name is shared with the generator that writes it, because two names would be two files.
+check('…it reads the SAME file name the build writes, from one constant',
+  /import \{ BUILD_PROOF_FILE \}/.test(proofSrc) && !/'BUILD-PROOF\.txt'/.test(proofSrc), true);
+check('…it takes the repo and the release tag, like the poller does',
+  /repoFullName required/.test(proofSrc) && /releaseTag required/.test(proofSrc), true);
+// ⚠️ A MISSING PROOF IS NOT AN ERROR. Every target predates the format and every build before today has
+// none, so answering with a throw would turn "this build is older than the feature" into a broken build.
+check('…and a missing proof answers with a reason rather than throwing',
+  (proofSrc.match(/proof: null, reason:/g) || []).length >= 3, true);
+check('…bounded, so a wrong asset cannot be streamed into the panel',
+  /MAX_PROOF_BYTES/.test(proofSrc), true);
+// ⭐ THE POINT OF THE WHOLE FEATURE: the panel shows the BUILD'S text, not a sentence about the build. A
+// panel that composed its own summary would be a claim again, which is the thing the file exists to avoid.
+check('⭐ it returns the build\u2019s own text and composes none of it',
+  /await res\.text\(\)/.test(proofSrc) && !/MORPHEUS BUILD PROOF/.test(proofSrc), true);
+check('…the panel asks for it once, when the run has finished',
+  /functions\.invoke\('getBuildProof'/.test(panelSrc)
+  && panelSrc.indexOf("invoke('getBuildProof'") > panelSrc.indexOf("data.status === 'completed' && !stillPublishing"), true);
+// Position, not proximity: the invoke must sit INSIDE the success branch. A character window was the first
+// form of this and it failed on correct code the moment a comment was added between the two lines — a check
+// that measures the distance between two things says more about the comments than about the code.
+const successAt = panelSrc.indexOf("if (data.conclusion === 'success') {");
+const proofInvokeAt = panelSrc.indexOf("invoke('getBuildProof'");
+const savingAt = panelSrc.indexOf("setPhase('saving')", successAt);
+check('…on success only, and never on the polling path',
+  successAt > 0 && proofInvokeAt > successAt && savingAt > successAt && proofInvokeAt < savingAt, true);
+check('…and a proof that cannot be fetched stays silent rather than reading as a failure',
+  /catch \{[\s\S]{0,300}A missing proof must never look like a failed build/.test(panelSrc)
+  && !/setError\([^)]*proof/i.test(panelSrc), true);
+check('…and the panel renders nothing at all when there is none',
+  /status\?\.proof && \(/.test(panelSrc), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`${failures} FAILED\n`);
