@@ -523,6 +523,13 @@ jobs:
       - name: The site is not rebuilt for every pull request
         run: node scripts/verify-netlify-cost.mjs
 
+      # Morpheus is PUBLISHED source, not open source (Rob, 2026-10-05: "lets not grant those rights"). That
+      # posture is carried entirely by a LICENSE file and four `license` fields — nothing breaks when they go.
+      # And it had already gone wrong the other way: two manifests declared "license": "MIT", an active grant
+      # of exactly the rights the notice withholds, in the files a tool reads first.
+      - name: The repository states its own terms, and no manifest contradicts them
+        run: node scripts/verify-license-terms.mjs
+
       # THE ACTUAL CAUSE of that outage, and it was a test fixture. `verify-security-posture.mjs` needed a
       # hardcoded-secret fixture and used a Stripe-shaped `sk-live-…` string; smart detection scans REPOSITORY
       # CODE, so from the moment that guard landed the deploy was refused while the build passed. Netlify's

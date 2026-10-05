@@ -1072,6 +1072,36 @@ export const MUTATIONS = [
     replace: '  const auto processStart = processStartEarly;',
   },
   {
+    guard: 'verify-license-terms.mjs',
+    file: 'LICENSE',
+    // ⭐ THE POSTURE ITSELF, as a mutation. Deleting the prohibition changes nothing that runs: the build
+    // passes, the site deploys, the portable bundle still downloads — and the project becomes "publicly
+    // readable with no terms", which is the ambiguous middle this file exists to end.
+    why: 'Deletes the prohibition on reuse, so the repository is publicly readable with no terms stated and the notice reads as permission.',
+    find: 'No licence is granted except as set out below.',
+    replace: 'You are free to use this software for any purpose.',
+  },
+  {
+    guard: 'verify-license-terms.mjs',
+    file: 'server/package.json',
+    // ⚠️ THE DIRECTION IT ACTUALLY WENT WRONG. A manifest is what a tool reads and a LICENSE is what a person
+    // reads; a permissive value in the manifest grants the rights the notice withholds, and it wins silently.
+    why: 'Puts a permissive licence back in a manifest, granting through the file a tool reads the rights the notice withholds.',
+    // No trailing comma: `license` is the last key in the manifest, and the first version of this find
+    // included one and matched nothing.
+    find: '"license": "SEE LICENSE IN ../LICENSE"',
+    replace: '"license": "MIT"',
+  },
+  {
+    guard: 'verify-license-terms.mjs',
+    file: 'LICENSE',
+    // THE CARVE-OUT THAT KEEPS THE NOTICE FROM CONTRADICTING THE PRODUCT. Losing this section would let the
+    // notice be read as claiming a user's own generated project, against the promise the product is sold on.
+    why: 'Deletes the carve-out for generated applications, so the notice can be read as claiming the user\u2019s own project.',
+    find: '1. APPLICATIONS MORPHEUS GENERATES ARE YOURS.',
+    replace: '1. Applications Morpheus generates remain subject to this notice.',
+  },
+  {
     guard: 'verify-netlify-cost.mjs',
     file: 'netlify.toml',
     // ⭐ THE BILL, as a mutation — and the one that has actually happened twice. Removing the ignore command
