@@ -514,6 +514,15 @@ jobs:
       - name: A new client variable cannot silently stop the frontend deploying
         run: node scripts/verify-client-env.mjs
 
+      # AND THE THING THAT ACTUALLY RAN OUT TWICE. Every push builds: a deploy preview for a branch and a
+      # production deploy for main. morpheus.nz answered 503 usage_exceeded on every path on 2026-10-01, and
+      # again on 2026-10-05 after a day of five pull requests and a few rebases — about thirteen full builds.
+      # `netlify.toml` now skips deploy previews by reading the deploy CONTEXT, which cannot skip production,
+      # and this asserts the rule exists, that it keys on the context rather than on paths (the stale-site
+      # trap that file already warns about), and that the incident record stays next to it.
+      - name: The site is not rebuilt for every pull request
+        run: node scripts/verify-netlify-cost.mjs
+
       # THE ACTUAL CAUSE of that outage, and it was a test fixture. `verify-security-posture.mjs` needed a
       # hardcoded-secret fixture and used a Stripe-shaped `sk-live-…` string; smart detection scans REPOSITORY
       # CODE, so from the moment that guard landed the deploy was refused while the build passed. Netlify's
