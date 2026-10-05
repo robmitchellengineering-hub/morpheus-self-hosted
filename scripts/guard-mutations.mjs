@@ -775,6 +775,16 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-testbench.mjs',
+    // ⚠️ THE BUG THAT MADE THE BENCH MEASURE NOTHING: taking the host's LAST reported object, which stopped
+    // being the plugin's descriptor when the host grew a timing report. Every run read `undefined` for the
+    // plugin's name and crashed before a single measurement.
+    why: 'Reads the host\u2019s last JSON object again, which is the timing report rather than the plugin descriptor \u2014 so the bench crashes before measuring anything.',
+    find: "  const info = reported.find((o) => o && typeof o.id === 'string');",
+    replace: '  const info = reported[reported.length - 1];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/ampChain.js',
     // OFF must be a BYPASS, because the tone rows null against the chain with no gate at all.
     why: 'Runs the gate at every threshold including its off position, so the default plugin is an envelope follower rather than bit-for-bit the chain without one.',

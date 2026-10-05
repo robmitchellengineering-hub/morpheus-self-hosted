@@ -1237,6 +1237,17 @@ check('…and the emitted stage is guarded by exactly that comparison',
   /if \(p->smoothed\[IDX_GATE\] > \(double\)MORPHEUS_GATE_OFF_DB \+ 0\.001\) \{/.test(ampNowSrc), true);
 check('…with the constant defined, not interpolated into a comment',
   /#define MORPHEUS_GATE_OFF_DB -80\.0/.test(ampNowSrc), true);
+// ⚠️ THE BENCH READ THE WRONG JSON LINE FOR AS LONG AS THE HOST HAS PRINTED TWO, and it failed SILENTLY in
+// the way that matters: it did not report a wrong measurement, it crashed on `info.params` after printing
+// `undefined` for the plugin's own name — so the bench measured nothing at all in that time. The host prints
+// a descriptor and, since the throughput work, a timing report; `.pop()` took the timing one. This pins the
+// contract between the two files: more than one object is reported, and the descriptor is found by what it is.
+check('⭐ the bench finds the plugin descriptor by what it is, not by being the last line the host prints',
+  /reported\.find\(\(o\) => o && typeof o\.id === 'string'\)/.test(read('scripts/audio-testbench.mjs'))
+  // …and the host's own second report, which is the object that broke the parse when it appeared. Written
+  // without the quotes because the C++ escapes them inside its printf format string.
+  && /processSeconds/.test(read('tools/clap-offline/clap_offline.cpp')), true);
+
 check('the gate has hysteresis, or a signal at the threshold buzzes instead of gating',
   /MORPHEUS_GATE_HYSTERESIS/.test(ampNowSrc), true);
 check('…and a plain plugin has no gate code at all', /gate_process/.test(plainSrc), false);
