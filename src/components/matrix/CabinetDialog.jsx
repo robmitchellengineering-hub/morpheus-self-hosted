@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Sliders, X, Upload, Trash2, AlertTriangle, Check } from 'lucide-react';
-import { apiFetch } from '@/api/base44Client';
+import { base44 } from '@/api/base44Client';
 
 // The cabinet: put the speaker in the plugin.
 //
@@ -25,7 +25,7 @@ export default function CabinetDialog({ open, onClose, projectId }) {
 
   const load = async () => {
     try {
-      const data = await apiFetch(`/cabinet/${projectId}`);
+      const data = await base44.functions.listCabinets(projectId);
       setRows(data.cabinets || []);
     } catch (e) { setErr(e?.data?.error || e.message); }
   };
@@ -51,11 +51,11 @@ export default function CabinetDialog({ open, onClose, projectId }) {
     }
     setBusy(true);
     try {
-      // `apiFetch` adds the bearer token and leaves FormData alone — a multipart body with a JSON
-      // content-type is the classic way an upload arrives empty.
+      // Through the client wrapper, which adds the bearer token and leaves FormData alone — a multipart body
+      // with a JSON content-type is the classic way an upload arrives empty.
       const form = new FormData();
       form.append('file', file);
-      const data = await apiFetch(`/cabinet/${projectId}`, { method: 'POST', body: form });
+      const data = await base44.functions.addCabinet(projectId, form);
       setUploaded(data.cabinet?.path || file.name);
       await load();
     } catch (e) { setErr(e.message); }
@@ -65,7 +65,7 @@ export default function CabinetDialog({ open, onClose, projectId }) {
   const remove = async (id) => {
     setErr(null);
     try {
-      await apiFetch(`/cabinet/${projectId}/${id}`, { method: 'DELETE' });
+      await base44.functions.deleteCabinet(projectId, id);
       await load();
     } catch (e) { setErr(e?.data?.error || e.message); }
   };
@@ -83,13 +83,13 @@ export default function CabinetDialog({ open, onClose, projectId }) {
 
         <div className="p-4 space-y-4 text-xs text-ink-strong leading-relaxed">
           <p>
-            A <span className="text-primary">.nam</span> model is usually the <span className="text-primary">amplifier</span>.
-            The <span className="text-primary">speaker</span> is a separate convolution, and without one a modelled amp
+            A <span className="text-ink-strong">.nam</span> model is usually the <span className="text-ink-strong">amplifier</span>.
+            The <span className="text-ink-strong">speaker</span> is a separate convolution, and without one a modelled amp
             sounds like a bee in a jar. Put your cabinet impulse response here and it is baked into the plugin on your
             next compile — nothing to install beside it.
           </p>
 
-          {rows === null && <p className="text-primary/50">Loading…</p>}
+          {rows === null && <p className="text-ink-strong">Loading…</p>}
 
           {rows !== null && rows.length === 0 && (
             <p className="text-yellow-500/90 border border-yellow-500/30 px-2 py-2">
@@ -101,11 +101,11 @@ export default function CabinetDialog({ open, onClose, projectId }) {
             <div className="space-y-1.5">
               {rows.map((r) => (
                 <div key={r.id} className="flex items-center gap-2 border border-primary/30 px-2 py-1.5">
-                  <span className="text-primary truncate flex-1">{r.path}</span>
+                  <span className="text-ink-strong truncate flex-1">{r.path}</span>
                   {!r.stored && (
                     <span className="text-yellow-500/90 flex items-center gap-1"><AlertTriangle size={12} /> not stored</span>
                   )}
-                  {r.size != null && <span className="text-primary/50">{r.size.toLocaleString()} bytes</span>}
+                  {r.size != null && <span className="text-ink-strong">{r.size.toLocaleString()} bytes</span>}
                   <button onClick={() => remove(r.id)} className="text-primary/60 hover:text-red-400"><Trash2 size={14} /></button>
                 </div>
               ))}
@@ -113,7 +113,7 @@ export default function CabinetDialog({ open, onClose, projectId }) {
           )}
 
           {uploaded && (
-            <p className="text-primary flex items-center gap-1"><Check size={12} /> {uploaded} uploaded — compile to bake it in.</p>
+            <p className="text-ink-strong flex items-center gap-1"><Check size={12} /> {uploaded} uploaded — compile to bake it in.</p>
           )}
 
           <div className="border-t border-primary/20 pt-3 space-y-2">
@@ -124,7 +124,7 @@ export default function CabinetDialog({ open, onClose, projectId }) {
             </button>
             {/* ⚠️ SAID HERE, NOT DISCOVERED LATER. Both of these are real limits of the current build and both
                 change how the cabinet sounds; a user who is told afterwards has already blamed the cabinet. */}
-            <p className="text-[10px] text-primary/50">
+            <p className="text-[10px] text-ink-max">
               A WAV, up to {MAX_MB} MB. Only the first 4096 samples are convolved (~85 ms at 48 kHz) — a longer
               tail is dropped, and the build says so. A 44.1 kHz cabinet is used as-is and will sound shifted;
               48 kHz is what the plugin runs at.

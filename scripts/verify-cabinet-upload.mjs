@@ -123,8 +123,11 @@ check('the panel offers the upload for the audio plugin routes only',
   /startsWith\('audio-plugin-'\)/.test(read('src/components/matrix/CompilePanel.jsx')), true);
 check('…states the 4096-tap and 48 kHz limits rather than letting them be discovered',
   /4096/.test(dialog) && /44\.1 kHz/.test(dialog), true);
-check('…and sends multipart through the client that adds the token',
-  /apiFetch\(`\/cabinet\/\$\{projectId\}`/.test(dialog) && /FormData/.test(dialog), true);
+// ⚠️ THROUGH THE CLIENT WRAPPER. The first version imported `apiFetch` directly, and it is NOT an export —
+// the page died at the module boundary and `render:check` caught it, which is what that check is for.
+check('…and sends multipart through the client wrapper that adds the token',
+  /base44\.functions\.addCabinet\(projectId, form\)/.test(dialog) && /FormData/.test(dialog)
+  && !/import \{[^}]*apiFetch[^}]*\} from '@\/api\/base44Client'/.test(dialog), true);
 // The dialog is not the check: the server refuses too. Said out loud because the reverse is the classic bug.
 check('…and the client-side size check is described as a courtesy, not the enforcement',
   /the limit is/.test(dialog) && /req\.file\.buffer/.test(route), true);
