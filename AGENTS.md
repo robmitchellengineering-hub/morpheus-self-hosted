@@ -208,6 +208,21 @@ catalog is the source of truth for what exists; the table below is the map, and
   guard stayed green. `verify-onramp.mjs` now compares the two lists.
 - **Revert build noise.** `npm run build` rewrites `src/MORPHEUS_DESIGN_PLAN.md`
   (H3) — `git checkout` it if you didn't mean to change it.
+- **A NAM capture starts from the trainer's own `input.wav`, and generating one is not possible.**
+  `scripts/audio-capture.mjs` was first written to synthesise a licence-free re-amp signal, and **that file
+  cannot be trained on.** NAM's trainer MD5s the whole input and looks it up in a table of known inputs
+  (`_detect_input_version`), then falls back to hashing its first 17 s and last 9 s; no match and it raises
+  *"cannot be recognized as any known version"* — in the GUI the Train button simply never enables. The
+  version it identifies also decides the STRUCTURE the trainer relies on, and v3's is a contract, not
+  metadata: 9 s validation, 1 s silence, two impulses at 0:10.5 and 0:11.5, chirps, noise, training data,
+  then **the same validation signal again** at the end — which is what makes its replicate-ESR check (did the
+  amp hold still for the whole take?) possible at all. So `input` fetches NAM's official 190 s / 48 kHz mono
+  file and verifies it against the strong hash in the trainer's source (`36cd1af6…`). `check` and `verify`
+  then reproduce the trainer's own pre-flight rather than offering a second opinion that disagrees with it:
+  the rules and the impulse-calibration port live in `scripts/lib/namCapture.mjs`, each traced to
+  `nam/train/core.py`, and `scripts/verify-audio-capture.mjs` pins every constant as a literal. **If you
+  change a constant there, or the rule it implements, you are changing what the tool promises about someone
+  else's program** — re-read their source first.
 
 Harness state: skills live in `.dsh/skills/`; git hooks are enabled with
 `git config core.hooksPath .githooks`; browser automation is the Playwright CLI
