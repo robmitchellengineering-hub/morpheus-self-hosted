@@ -133,6 +133,29 @@ enforces this, not only `merge.js`**:
   a merge made with `--admin`, which bypasses the checks; after one of those, run the
   workflow by hand (`gh workflow run ci.yml --ref main`).
 
+### Adding a guard is THREE files, not one (2026-10-05)
+
+Written down because a session added a guard, watched it pass locally, and had the build
+fail on a check it had never heard of. A new guard is not done until all three are true:
+
+1. **The gate** — the filename goes in the `HARD` list in `scripts/verify.mjs`.
+2. **The mutation** — an entry in `scripts/guard-mutations.mjs`, because
+   `scripts/verify-guard-mutations.mjs` refuses a hard gate with no mutation (H19: a
+   guard whose failure cannot be demonstrated is a comment with a `console.log`). That
+   ratchet compares the unproven count to `UNPROVEN_BASELINE` with **equality**: proving
+   a previously-unproven guard means lowering the number, and adding an unproven one
+   means it goes up and fails. Adding a guard *and* its mutation leaves the number where
+   it was.
+3. **CI** — a step in `.github/workflows/ci.yml`, in the `guards (no install)` job.
+   `scripts/verify-context.mjs` fails with `CI runs every hard gate` and names the
+   missing file if you forget. That check is easy to trip and easy to miss, because
+   nothing in `verify.mjs` mentions CI: the guard passes locally, the gate passes
+   locally, and only CI disagrees.
+
+The same applies in reverse: a guard deleted from `verify.mjs` must have its mutation and
+its CI step removed too, or `verify-context.mjs` reports an entry that is not a real
+script.
+
 ## Agent harness (DSH)
 
 This repo is developed through **DSH** (DeepSeek Harness) via the Web GUI. DSH is
