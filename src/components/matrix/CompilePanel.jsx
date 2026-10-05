@@ -417,6 +417,25 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       if (data.status === 'completed' && !stillPublishing) {
         stopPolling();
         if (data.conclusion === 'success') {
+          // ⭐ WHAT THIS BUILD VERIFIED, asked for ONCE and only on success. Deliberately not part of the
+          // poll above: the proof is one small file at the end, and fetching it on every poll would spend
+          // GitHub API calls on the same bytes. Deliberately not a download either — Rob, 2026-10-05:
+          // *"I can see any of the things weve done"* — the evidence existed and sat in a log and a zip.
+          //
+          // A build that published none is not an error: everything before the proof format, and every
+          // target that does not produce one, answers with no proof and the block simply does not render.
+          (async () => {
+            try {
+              const { data: proofData } = await base44.functions.invoke('getBuildProof', {
+                repoFullName: repo,
+                releaseTag: data.releaseTag,
+              });
+              if (proofData?.proof) setStatus((prev) => ({ ...(prev || {}), proof: proofData.proof }));
+            } catch {
+              // A missing proof must never look like a failed build. Silence is the correct outcome, and the
+              // file is still in the user's _compiled/ either way.
+            }
+          })();
           setPhase('saving');
           // Start the save as a BACKGROUND JOB. It returns as soon as the job is
           // registered; the download + re-upload (~217 MB on a real macOS build)
@@ -1191,6 +1210,17 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                     </a>
                   ))}
                 </div>
+              )}
+
+              {/* ⭐ WHAT THIS BUILD VERIFIED. Collapsed by default because it is evidence, not a headline —
+                  and OPEN by default would push the download below the fold on every success. The text is
+                  the build's own file, fetched verbatim; nothing here is composed from the status object, so
+                  a build that verified nothing shows nothing rather than an empty box. */}
+              {status?.proof && (
+                <details className="border border-primary/30 bg-primary/5" open>
+                  <summary className="text-xs text-primary cursor-pointer px-3 py-1.5 hover:text-primary">// VERIFIED BY THIS BUILD (click to collapse)</summary>
+                  <pre className="text-[10px] text-ink-max overflow-x-auto max-h-64 p-3 scrollbar-matrix whitespace-pre-wrap">{status.proof}</pre>
+                </details>
               )}
 
               {status?.logs?.length > 0 && (

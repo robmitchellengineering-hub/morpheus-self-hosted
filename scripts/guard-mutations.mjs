@@ -738,6 +738,23 @@ export const MUTATIONS = [
     replace: 'if (false) {',
   },
   {
+    guard: 'verify-artifact-save-background.mjs',
+    file: 'server/src/functions/getBuildProof.js',
+    // ⭐ The whole point of the feature: the panel shows the BUILD'S text. A panel that composed its own
+    // summary would be a claim again — it would say "AArch64" for a build that produced an x86-64 plugin,
+    // which is the thing BUILD-PROOF.txt exists to avoid.
+    why: 'Makes the proof endpoint write its own summary instead of returning the build\u2019s file, so what the panel shows states things the build never checked.',
+    find: 'const proof = await res.text();',
+    replace: "const proof = 'MORPHEUS BUILD PROOF — a summary Morpheus wrote';",
+  },
+  {
+    guard: 'verify-artifact-save-background.mjs',
+    file: 'src/components/matrix/CompilePanel.jsx',
+    why: 'Renders the proof block unconditionally, so every build that published no proof shows an empty box where the evidence should be.',
+    find: '{status?.proof && (',
+    replace: '{true && (',
+  },
+  {
     guard: 'verify-audio-measure.mjs',
     file: 'server/src/lib/audio/analysis.js',
     // THE CLASSIC WINDOWING BUG, as a mutation: dropping the window's coherent gain makes every amplitude read
