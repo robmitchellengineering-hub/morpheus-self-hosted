@@ -121,6 +121,14 @@ export function chainParams(chain, manifest = {}) {
     // about a block that is switched off. `def` is read from the stage when the board saved one — a board's
     // value is the plugin's default, and it has to survive into the generated `kParams` table.
     const suffix = stage.bypass ? ' (bypassed)' : '';
+    // ⭐ A STAGE MAY CARRY ITS OWN LIST. An amp chain stage borrows one of two shapes — `param` for one
+    // control, `bands` for a tone stack whose three controls are one design — and a block that is not part of
+    // an amplifier has no reason to fit either. `stage.params` is that case: the block's own table, values
+    // already applied, and the names still marked when it is bypassed.
+    if (stage.params) {
+      out.push(...stage.params.map((x) => ({ ...x, name: `${x.name}${suffix}` })));
+      continue;
+    }
     if (stage.bands) {
       out.push(...stage.bands.map((b) => ({
         key: b.key,
@@ -394,6 +402,13 @@ const toneTypeConst = (type) => ({ lowshelf: 'TONE_LOWSHELF', peak: 'TONE_PEAK',
  * loop rather than a stage in one channel's path.
  */
 export function stageDspCpp(stage, params) {
+  // ⭐ A STAGE MAY BRING ITS OWN DSP, and this is the whole extension point for a block that is not part of
+  // an amp. `stage.dsp` is a marker the emitter cannot be expected to understand — `__DELAY_STAGE__` — and the
+  // template replaces it with text supplied by whoever built the chain. That is why `ampChain.js` still has
+  // never heard of a delay: a block that needs state across samples, its own allocation and its own struct in
+  // `plugin_t` cannot be described by a switch statement in here, and a switch statement in here would make
+  // every future block a change to the amp chain.
+  if (stage.dsp) return [stage.dsp];
   if (stage.kind === 'gain') {
     const p = params.find((x) => x.role === 'input');
     return p ? [`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`] : [];

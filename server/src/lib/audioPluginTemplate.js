@@ -83,7 +83,7 @@ export function auSubtypeCode(name) {
  * path", which is what removing or bypassing the Amp model block means. The file being in the project and
  * the block being in the path stopped being the same question the moment a user could remove one.
  */
-export function pluginSource({ name, vendor, id, description = '', chain = PLAIN_CHAIN, params = null, modelInPath = true, cabInPath = true }) {
+export function pluginSource({ name, vendor, id, description = '', chain = PLAIN_CHAIN, params = null, modelInPath = true, cabInPath = true, blocks = null }) {
   const safeName = JSON.stringify(String(name));
   const safeVendor = JSON.stringify(String(vendor));
   const safeId = JSON.stringify(String(id));
@@ -92,6 +92,23 @@ export function pluginSource({ name, vendor, id, description = '', chain = PLAIN
   // ask for one gets the single-Gain plugin, unchanged — see lib/ampChain.js for why that matters.
   const list = params || chainParamsStable(chain, { paramName: 'Gain' });
   const hasTone = chainHas(chain, 'tone');
+  // ⭐ THE BLOCKS THAT ARE NOT PART OF AN AMP, HANDED IN RATHER THAN KNOWN HERE. `board.js` decides which
+  // blocks a project has and what C++ each one contributes; this file interpolates the four fragments and
+  // replaces each marker. Empty by default, which is what keeps every project that predates the board
+  // generating the same text to the byte.
+  const extra = blocks || {};
+  const extraDsp = extra.dsp || '';
+  const extraState = extra.state || '';
+  const extraInit = extra.init || '';
+  const extraDestroy = extra.destroy || '';
+  const extraMarkers = extra.markers || {};
+  // One pass over both emitted halves, so a block's marker is replaced wherever the chain put it — before the
+  // model or after it, which is a choice the user makes and this file must not have an opinion about.
+  const emitStages = (text) => {
+    let out = text.replace('__GATE_STAGE__', gateStageCpp).replace('__CAB_STAGE__', cabStageCpp);
+    for (const [marker, cpp] of Object.entries(extraMarkers)) out = out.split(marker).join(cpp);
+    return out;
+  };
 
   return `// ${name} — a CLAP audio effect.
 //
@@ -161,12 +178,12 @@ static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 ${cabDspCpp}
 #endif
 ${chainHas(chain, 'gate') ? `#define MORPHEUS_GATE_OFF_DB ${GATE_OFF_DB}.0\n${gateDspCpp}` : ''}
-${hasTone ? `\n${toneCpp()}\n` : ''}
+${hasTone ? `\n${toneCpp()}\n` : ''}${extraDsp ? `\n${extraDsp}` : ''}
 typedef struct {
    clap_plugin_t plugin;
    const clap_host_t *host;
 
-${stateCpp(chain, list)}
+${stateCpp(chain, list)}${extraState ? `\n${extraState}` : ''}
 #if MORPHEUS_HAS_CAB
 ${cabStateCpp}
 #endif
@@ -287,7 +304,7 @@ static bool plug_init(const clap_plugin_t *plugin) {
 ${initCpp(list)}
    p->fs = 48000.0;
 ${chainHas(chain, 'gate') ? gateInitCpp : ''}
-${cabInitCpp}
+${cabInitCpp}${extraInit ? `\n${extraInit}` : ''}
 ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes every coefficient, so a plugin that starts
    // at 0 dB is not silent because its filters were never configured. calloc leaves these at zero, and a
    // zero-coefficient biquad passes nothing.
@@ -320,7 +337,7 @@ static void plug_destroy(const clap_plugin_t *plugin) {
    // \`free\` runs no destructors, so the models are released here or not at all.
    for (int c = 0; c < 2; ++c) { delete p->model[c]; p->model[c] = NULL; }
 #endif
-${cabDestroyCpp}
+${cabDestroyCpp}${extraDestroy ? `\n${extraDestroy}` : ''}
    free(plugin->plugin_data);
 }
 
@@ -397,7 +414,7 @@ ${hasTone ? `${toneUpdateCpp()}\n` : ''}         double in_l = process->audio_in
          // a different route would be a stereo image that moves when a control does.
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${chainPreCpp(chain, list).replace('__GATE_STAGE__', gateStageCpp).replace('__CAB_STAGE__', cabStageCpp)}
+${emitStages(chainPreCpp(chain, list))}
             process->audio_outputs[0].data32[c][i] = (float)x;
          }
       }
@@ -437,7 +454,7 @@ ${smoothOneCpp('IDX_OUTPUT')}
          double in_r = process->audio_outputs[0].data32[1][k];
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${chainPostCpp(chain, list, cabInPath).replace('__GATE_STAGE__', gateStageCpp).replace('__CAB_STAGE__', cabStageCpp)}
+${emitStages(chainPostCpp(chain, list, cabInPath))}
             if (c == 0) in_l = x; else in_r = x;
          }
          // The output level is applied last, so moving it changes how loud the plugin is and NOT how hard
