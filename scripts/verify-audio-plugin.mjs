@@ -76,11 +76,12 @@ const empty = [{ path: 'README.md', content: '# empty\n' }];
 const v = audioPlugin.validate(empty);
 check('an empty workspace is valid (Morpheus scaffolds the whole plugin)', v.valid, true);
 const s = audioPlugin.scaffold(empty);
-// Six rather than four since models landed: `ModelData.{h,cpp}` are generated for EVERY project, including
-// one with no model, because the plugin includes the header unconditionally and branches on
-// MORPHEUS_HAS_MODEL inside it. That is what keeps Source/Plugin.cpp the same text either way.
-check('it generates exactly the six files the build needs',
-  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/ModelData.cpp', 'Source/ModelData.h', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', PLUGIN_MANIFEST]);
+// EIGHT RATHER THAN FOUR, and every pair is there for the same reason: `ModelData.{h,cpp}` and
+// `CabIr.{h,cpp}` are generated for EVERY project, including one that has neither a model nor a cabinet,
+// because the plugin includes their headers unconditionally and branches on the flags inside. That is what
+// keeps Source/Plugin.cpp the same text whatever the workspace holds.
+check('it generates exactly the eight files the build needs',
+  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/CabIr.cpp', 'Source/CabIr.h', 'Source/ModelData.cpp', 'Source/ModelData.h', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', PLUGIN_MANIFEST]);
 check('…and no warnings for a clean generate', s.warnings, []);
 
 console.log('\n3. identity is derived, valid, and cannot silently collide');
@@ -649,8 +650,8 @@ check('…and a model that will not load degrades to a gain stage with a line in
 
 const cmakeWith = generated(audioPlugin.scaffold(withModel), 'CMakeLists.txt');
 const cmakeWithout = generated(audioPlugin.scaffold(empty), 'CMakeLists.txt');
-check('the CMake compiles the model data either way',
-  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin.cpp Source\/ModelData\.cpp\)/.test(cmakeWithout), true);
+check('the CMake compiles the generated data files either way',
+  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp\)/.test(cmakeWithout), true);
 check('…without a model it mentions no engine at all, so nothing extra is fetched or compiled',
   /MORPHEUS_NAM_DIR|NAM_SAMPLE_FLOAT/.test(cmakeWithout), false);
 check('…with one it requires a checkout, globs the engine\u2019s sources and adds both header-only deps',
@@ -933,6 +934,79 @@ for (const [route, target] of [['Linux ARM', audioPluginLinux], ['macOS', audioP
   const list = files.slice(files.indexOf('files: |'), files.indexOf('fail_on_unmatched_files'));
   check(`${route}: the workflow publishes the proof beside the downloads`, list.includes(proof.BUILD_PROOF_FILE), true);
 }
+
+console.log('\n20. the cabinet: a speaker is a convolution, and it is measured against its own taps');
+const cabMod = await import('../server/src/lib/cabIr.js');
+const { encodeWav } = await import('../server/src/lib/audio/wav.js');
+// A synthetic IR, so nothing third-party is committed and the numbers are reproducible. Exponentially
+// decaying noise is what a speaker impulse looks like: an initial transient and a short tail.
+const synthIr = (n, tau, seed = 3) => {
+  const out = new Float64Array(n);
+  let x = seed;
+  for (let i = 0; i < n; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    out[i] = ((x / 0x7fffffff) * 2 - 1) * Math.exp(-i / tau) * 0.4;
+  }
+  return out;
+};
+const irB64 = (data, sampleRate = 48000) => encodeWav({ sampleRate, data, format: 'float32' }).toString('base64');
+const cabSeed = (b64) => [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) }, { path: 'models/cab.wav', content: b64, encoding: 'base64' }];
+
+const mono = cabMod.resolveCab(cabSeed(irB64(synthIr(4800, 800))), {});
+check('a mono .wav in the project is found, decoded and normalised to a peak of 1.0',
+  mono.info?.channels === 1 && mono.info.taps === 4096 && Math.abs(mono.info.sourcePeak - 0.4) < 0.2
+  && Math.abs(Math.max(...Array.from(mono.channels[0], Math.abs)) - 1) < 1e-6, true);
+// 4800 samples is longer than the direct-convolution cap, and the tail it drops is SAID rather than dropped.
+check('…a longer file is truncated to the cap, and the scaffold says so',
+  mono.info.truncated === true && mono.warnings.some((w) => /only the first 4096/.test(w)), true);
+check('…a silent file is refused as a cabinet rather than convolved as one',
+  cabMod.resolveCab(cabSeed(irB64(new Float64Array(512))), {}).warnings.some((w) => /is silent/.test(w)), true);
+check('…and a file that is not a WAV at all warns instead of throwing',
+  cabMod.resolveCab(cabSeed(Buffer.from('not a wav').toString('base64')), {}).info, null);
+check('…and a cabinet in a project with no chain is reported rather than silently ignored',
+  audioPlugin.scaffold([...empty, { path: 'models/cab.wav', content: irB64(synthIr(512, 100)), encoding: 'base64' }])
+    .warnings.some((w) => /add 'chain': 'amp'/.test(w)), true);
+
+const cabFiles = audioPlugin.scaffold(cabSeed(irB64(synthIr(4800, 800)))).files;
+const cabSrc = generated({ files: cabFiles }, 'Source/Plugin.cpp');
+const cabHeaderSrc = generated({ files: cabFiles }, 'Source/CabIr.h');
+const cabDataSourceSrc = generated({ files: cabFiles }, 'Source/CabIr.cpp');
+check('the header names the taps, the rate and the PEAK OF THE FILE it normalised away',
+  /#define MORPHEUS_CAB_TAPS 4096/.test(cabHeaderSrc) && /#define MORPHEUS_CAB_SOURCE_PEAK 0\./.test(cabHeaderSrc)
+  && /#define MORPHEUS_CAB_NORMALISED 1/.test(cabHeaderSrc), true);
+check('…and declares the taps the .cpp defines',
+  /extern const float morpheus_cab_l\[\];/.test(cabHeaderSrc) && /const float morpheus_cab_l\[MORPHEUS_CAB_TAPS\] = \{/.test(cabDataSourceSrc), true);
+// ⚠️ A `${...}` INSIDE A C++ `#if` IS NOT GUARDED. The first version emitted the right channel
+// unconditionally and crashed generating a MONO cabinet, because the JavaScript runs before any
+// preprocessor exists. The right channel is emitted only when there is one.
+check('…and a MONO cabinet emits no right channel at all, which is what crashed the generator once',
+  /morpheus_cab_r/.test(cabDataSourceSrc), false);
+check('…while a stereo one emits both',
+  /morpheus_cab_r\[MORPHEUS_CAB_TAPS\]/.test(generated(audioPlugin.scaffold(cabSeed(irB64([synthIr(512, 100), synthIr(512, 100)]))), 'Source/CabIr.cpp')), true);
+// The same property the model has, for the same reason: the test bench patches this file to prove its own
+// checks can fail, so its text must not depend on what is in the workspace.
+// ⚠️ COMPARED AGAINST THE SAME CHAIN, not against the plain plugin: an amp chain and a plain plugin are
+// different by design, so the first version of this compared two things that were supposed to differ.
+const ampNoCab = generated(audioPlugin.scaffold([...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) }]), 'Source/Plugin.cpp');
+check('⭐ the plugin source is byte-identical with a cabinet and without one',
+  cabSrc === ampNoCab, true);
+check('…the cabinet is compiled in only through the flag the header sets',
+  /#include "CabIr.h"/.test(cabSrc) && /#if MORPHEUS_HAS_CAB[\s\S]{0,900}cab_process/.test(cabSrc), true);
+// ⚠️ MEASURED, NOT PREFERRED: accumulating 4096 float products into a float nulled against the JavaScript
+// reference at -116 dB; in double it is -148 dB. The whole of that residual was accumulation.
+check('…and the convolution accumulates in DOUBLE, which the measurement chose',
+  /double y = 0\.0;/.test(cabSrc) && /return \(float\)y;/.test(cabSrc), true);
+const cabCmake = generated(audioPlugin.scaffold(cabSeed(irB64(synthIr(512, 100)))), 'CMakeLists.txt');
+check('…and CabIr.cpp is compiled whether or not it holds a cabinet',
+  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin.cpp Source\/ModelData.cpp Source\/CabIr.cpp\)/.test(cabCmake), true);
+const cabCheckSrc = read('scripts/audio-amp-chain-check.mjs');
+check('the check renders the cabinet through the plugin and compares it to the same taps',
+  /arg\('cab'\)/.test(cabCheckSrc) && /cabTaps/.test(cabCheckSrc) && /convolveDirect\(/.test(cabCheckSrc)
+  && /cabRow/.test(cabCheckSrc), true);
+// Order matters and the expectation has to contain it: tone stack THEN speaker. Comparing the tone rows
+// against the tone stack alone reported +22 dB of "error" that was the cabinet doing its job.
+check('…and its expectation is the WHOLE chain, so the order is checked too',
+  /throughChain\(toneProcess\(design, dry\)\)/.test(cabCheckSrc), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

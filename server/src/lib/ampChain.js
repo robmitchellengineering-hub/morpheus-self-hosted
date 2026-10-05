@@ -226,6 +226,10 @@ export function chainSampleCpp(chain, params) {
   // ALWAYS EMITTED, BEHIND THE FLAG. The plugin source is the same text with a model and without one — see
   // namPlugin.js on why that matters to the test bench — so the model sits in the chain as a guarded block
   // rather than as something the generator decides to include.
+  // THE CABINET GOES HERE, between the model and the level — the speaker is part of the amp, and a cabinet
+  // after a level control would change its tone when the level moved. `cabStageCpp` is emitted by cabIr.js,
+  // which is the module that knows what a cabinet is.
+  lines.push('__CAB_STAGE__');
   lines.push(
     '#if MORPHEUS_HAS_MODEL',
     '         // The model is the amp: its output replaces the dry sample. Reset() sized its buffers and',

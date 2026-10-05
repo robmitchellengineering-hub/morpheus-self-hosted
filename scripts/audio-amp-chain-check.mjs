@@ -16,11 +16,14 @@
 //
 // Run:  node scripts/audio-amp-chain-check.mjs --plugin <dir> [--clap-include <dir>] [--work <dir>]
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logSweep, withFades } from '../server/src/lib/audio/signals.js';
 import { toneDesign, toneProcess, toneResponseDb } from '../server/src/lib/audio/toneStack.js';
+import { convolveDirect } from '../server/src/lib/audio/dsp.js';
+import { decodeWav } from '../server/src/lib/audio/wav.js';
+import { MAX_CAB_TAPS } from '../server/src/lib/cabIr.js';
 import { clapIncludes, compareToReference, readMraw, writeMraw } from './audio-nam-render-check.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -45,7 +48,10 @@ export const TONE_CASES = [
 function buildHost({ pluginDir, clapInclude, work }) {
   const bin = join(work, 'host');
   const cxx = process.env.CXX ?? 'c++';
-  const sources = ['Plugin.cpp', 'PluginEntry.cpp', 'ModelData.cpp']
+  // CabIr.cpp is in the list because the plugin links against its symbols whether or not it holds a cabinet:
+  // the header declares them, and only the `#if` inside decides. Leaving it out is a link error naming
+  // `morpheus_cab_l`, which is exactly how this was found.
+  const sources = ['Plugin.cpp', 'PluginEntry.cpp', 'ModelData.cpp', 'CabIr.cpp']
     .map((f) => join(pluginDir, 'Source', f))
     .filter((f) => existsSync(f));
   const run = spawnSync(cxx, [
@@ -64,7 +70,7 @@ function buildHost({ pluginDir, clapInclude, work }) {
  * Render the chain at each setting and compare it against the design. Returns the numbers rather than
  * asserting them, so the caller decides what is good enough and can print everything either way.
  */
-export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate = 48000, seconds = 0.5 }) {
+export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate = 48000, seconds = 0.5, cab = null }) {
   mkdirSync(work, { recursive: true });
   const bin = buildHost({ pluginDir, clapInclude: clapInclude || clapIncludes(), work });
 
@@ -76,6 +82,20 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
   const dryPath = join(work, 'dry.mraw');
   writeMraw(dryPath, sampleRate, 2, stereo);
   const from = Math.floor(dry.length * SETTLE_FRACTION);
+
+  // The cabinet's taps, decoded once. When a cabinet is baked in, THE EXPECTATION IS THE WHOLE CHAIN — tone
+  // stack then speaker — because that is what the plugin under test is. Comparing the tone rows against the
+  // tone stack alone measured +22 dB "errors" that were the cabinet doing its job, which is the check telling
+  // the truth about a wrong expectation.
+  const cabTaps = (() => {
+    if (!cab) return null;
+    const wav = decodeWav(readFileSync(cab));
+    const raw = wav.data[0];
+    let peak = 0;
+    for (const v of raw) peak = Math.max(peak, Math.abs(v));
+    return Float64Array.from(raw.subarray(0, MAX_CAB_TAPS), (v) => v / peak);
+  })();
+  const throughChain = (x) => (cabTaps ? convolveDirect(cabTaps, x).subarray(0, dry.length) : x);
 
   const rows = [];
   for (const testCase of TONE_CASES) {
@@ -89,7 +109,7 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
     }
     const actual = readMraw(outPath).data[0];
     const design = toneDesign({ gains: testCase.gains, sampleRate });
-    const expected = toneProcess(design, dry);
+    const expected = throughChain(toneProcess(design, dry));
     rows.push({
       label: testCase.label,
       gains: testCase.gains,
@@ -101,7 +121,31 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
       },
     });
   }
-  return { rows, sampleRate, frames: dry.length, settledFrom: from };
+  // ── the cabinet, when one was baked in ────────────────────────────────────────────────────────────────
+  // Compared against `convolveDirect` on the SAME normalised taps the scaffold baked, which is the same
+  // two-implementations-must-agree shape as the tone stack: the JS convolution is the design and the plugin's
+  // ring buffer is what runs. With every parameter at 0 dB the cabinet is the only thing in the path.
+  let cabRow = null;
+  if (cab) {
+    const taps = cabTaps;
+    const outPath = join(work, 'out-cabinet.mraw');
+    const run = spawnSync(bin, ['--in', dryPath, '--out', outPath, '--blocksize', '64'], { encoding: 'utf8' });
+    if (run.status !== 0) {
+      console.error(`[amp-chain] x the cabinet render failed:\n${(run.stderr || '').slice(-1000)}`);
+      process.exit(1);
+    }
+    const actual = readMraw(outPath).data[0];
+    // A STREAMING convolution drops the tail: the plugin emits as many frames as it was given, so the
+    // reference is truncated to match rather than the comparison being off by the length of the IR.
+    const expected = convolveDirect(taps, dry).subarray(0, dry.length);
+    cabRow = {
+      label: 'cabinet',
+      taps: taps.length,
+      null: compareToReference(expected.subarray(from), actual.subarray(from)),
+      changedDb: compareToReference(dry.subarray(from), actual.subarray(from)).nullDb,
+    };
+  }
+  return { rows, cabRow, sampleRate, frames: dry.length, settledFrom: from };
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -120,6 +164,7 @@ if (isMain) {
     clapInclude: arg('clap-include'),
     work: arg('work', join(ROOT, '.cache', 'amp-chain')),
     seconds: Number(arg('seconds', '0.5')),
+    cab: arg('cab'),
   });
   console.log('[amp-chain] plugin vs the JS design, over the settled tail:');
   let worst = -Infinity;
@@ -128,6 +173,11 @@ if (isMain) {
     if (v > worst) worst = v;
     const d = row.designDb;
     console.log(`[amp-chain]   ${row.label.padEnd(11)} ${(Number.isFinite(row.null.nullDb) ? `${row.null.nullDb.toFixed(1)} dB` : 'identical').padStart(13)}   design: 50Hz ${d[50].toFixed(2)} · 800Hz ${d[800].toFixed(2)} · 6kHz ${d[6000].toFixed(2)} dB`);
+  }
+  if (r.cabRow) {
+    const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');
+    console.log(`[amp-chain]   ${'cabinet'.padEnd(11)} ${f(r.cabRow.null.nullDb).padStart(13)}   ${r.cabRow.taps} taps, and it changes the signal by ${f(r.cabRow.changedDb)}`);
+    worst = Math.max(worst, Number.isFinite(r.cabRow.null.nullDb) ? r.cabRow.null.nullDb : -Infinity);
   }
   console.log(JSON.stringify({ ok: true, ...r }));
   if (r.rows.some((row) => row.null.lengthMismatch)) {
