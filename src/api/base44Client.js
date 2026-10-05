@@ -318,6 +318,11 @@ const functions = {
   // MD5 the trainer recognises it by), so the two cannot drift apart.
   captureAbout: () => apiFetch('/capture/about'),
   checkCapture: (form) => apiFetch('/capture/check', { method: 'POST', body: form }),
+
+  // The board — the plugin's own signal path, arranged. Its own route because the validation, and the file it
+  // writes (`morpheus.plugin.json`), both belong on the server; see server/src/routes/board.routes.js.
+  getBoard: (projectId) => apiFetch(`/board/${projectId}`),
+  saveBoard: (projectId, board) => apiFetch(`/board/${projectId}`, { method: 'PUT', body: board }),
 };
 
 const integrations = {

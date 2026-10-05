@@ -74,8 +74,16 @@ export function auSubtypeCode(name) {
   return head + tail;
 }
 
-/** The CLAP implementation: one stereo gain stage with one real parameter. */
-export function pluginSource({ name, vendor, id, description = '', chain = PLAIN_CHAIN, params = null }) {
+/**
+ * The CLAP implementation: one stereo gain stage with one real parameter.
+ *
+ * ⚠️ `modelInPath` AND `cabInPath` EXIST FOR THE BOARD AND DEFAULT TO TRUE, which is the whole trick: for
+ * every project that predates `lib/board.js` they are true, so the emitted text is unchanged to the byte —
+ * and a board is the only caller that can say "this project has a .nam but the model is not in the signal
+ * path", which is what removing or bypassing the Amp model block means. The file being in the project and
+ * the block being in the path stopped being the same question the moment a user could remove one.
+ */
+export function pluginSource({ name, vendor, id, description = '', chain = PLAIN_CHAIN, params = null, modelInPath = true, cabInPath = true }) {
   const safeName = JSON.stringify(String(name));
   const safeVendor = JSON.stringify(String(vendor));
   const safeId = JSON.stringify(String(id));
@@ -152,7 +160,7 @@ static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 #if MORPHEUS_HAS_CAB
 ${cabDspCpp}
 #endif
-${list.some((p) => p.role === 'gate') ? `#define MORPHEUS_GATE_OFF_DB ${GATE_OFF_DB}.0\n${gateDspCpp}` : ''}
+${chainHas(chain, 'gate') ? `#define MORPHEUS_GATE_OFF_DB ${GATE_OFF_DB}.0\n${gateDspCpp}` : ''}
 ${hasTone ? `\n${toneCpp()}\n` : ''}
 typedef struct {
    clap_plugin_t plugin;
@@ -278,7 +286,7 @@ static bool plug_init(const clap_plugin_t *plugin) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
 ${initCpp(list)}
    p->fs = 48000.0;
-${list.some((p) => p.role === 'gate') ? gateInitCpp : ''}
+${chainHas(chain, 'gate') ? gateInitCpp : ''}
 ${cabInitCpp}
 ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes every coefficient, so a plugin that starts
    // at 0 dB is not silent because its filters were never configured. calloc leaves these at zero, and a
@@ -389,12 +397,12 @@ ${hasTone ? `${toneUpdateCpp()}\n` : ''}         double in_l = process->audio_in
          // a different route would be a stereo image that moves when a control does.
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${chainPreCpp(chain, list).replace('__GATE_STAGE__', gateStageCpp)}
+${chainPreCpp(chain, list).replace('__GATE_STAGE__', gateStageCpp).replace('__CAB_STAGE__', cabStageCpp)}
             process->audio_outputs[0].data32[c][i] = (float)x;
          }
       }
 
-#if MORPHEUS_HAS_MODEL
+${modelInPath ? '#if MORPHEUS_HAS_MODEL' : '#if 0'}
       // ── THE MODEL, ONCE PER CHUNK PER CHANNEL ─────────────────────────────────────────────────────────
       // ⚠️ THIS WAS ONE SAMPLE AT A TIME, AND IT COST MOST OF THE PLUGIN'S REAL-TIME BUDGET. Measured on the
       // engine alone, same model, same 48 kHz, 64-frame host blocks (scripts/audio-model-bench.mjs):
@@ -429,7 +437,7 @@ ${smoothOneCpp('IDX_OUTPUT')}
          double in_r = process->audio_outputs[0].data32[1][k];
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${chainPostCpp(chain).replace('__CAB_STAGE__', cabStageCpp)}
+${chainPostCpp(chain, list, cabInPath).replace('__GATE_STAGE__', gateStageCpp).replace('__CAB_STAGE__', cabStageCpp)}
             if (c == 0) in_l = x; else in_r = x;
          }
          // The output level is applied last, so moving it changes how loud the plugin is and NOT how hard

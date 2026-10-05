@@ -677,8 +677,11 @@ export const MUTATIONS = [
     // change shape when a project carries a model.
     file: 'server/src/lib/audioPluginTemplate.js',
     why: 'Takes the model out from behind MORPHEUS_HAS_MODEL, so the plugin source changes shape when a project carries one.',
-    find: '#if MORPHEUS_HAS_MODEL\n      // ── THE MODEL, ONCE PER CHUNK PER CHANNEL',
-    replace: '#if 1\n      // ── THE MODEL, ONCE PER CHUNK PER CHANNEL',
+    // ⚠️ REPOINTED when a board could take the model out of the path: the flag is now chosen by a ternary, so
+    // the anchor has to carry the ternary. The property is identical — the emitted guard must still be the
+    // model's own flag.
+    find: "${modelInPath ? '#if MORPHEUS_HAS_MODEL' : '#if 0'}\n      // ── THE MODEL, ONCE PER CHUNK PER CHANNEL",
+    replace: "${modelInPath ? '#if 1' : '#if 0'}\n      // ── THE MODEL, ONCE PER CHUNK PER CHANNEL",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -687,8 +690,10 @@ export const MUTATIONS = [
     why: 'Renames the plain plugin\u2019s parameter key, so the emitted C++ indexes an identifier that does not exist and the bench stops matching the output line.',
     // ⚠️ REPOINTED when a chain became a list of stages: the plain plugin's one control is no longer a
     // returned literal but a stage's `param`, so the mutation follows the text rather than the shape.
-    find: "else if (stage.param) out.push({ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain') });",
-    replace: "else if (stage.param) out.push({ ...stage.param, key: 'gain', name: stage.param.name ?? String(manifest.paramName || 'Gain') });",
+    // ⚠️ REPOINTED when a bypassed block's control had to say so in its own name: the emitted name grew a
+    // suffix. The claim is unchanged — the key a parameter is indexed by must stay `output`.
+    find: "out.push({ ...stage.param, name: `${stage.param.name ?? String(manifest.paramName || 'Gain')}${suffix}` });",
+    replace: "out.push({ ...stage.param, key: 'gain', name: `${stage.param.name ?? String(manifest.paramName || 'Gain')}${suffix}` });",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -761,11 +766,12 @@ export const MUTATIONS = [
     // ⚠️ THE DEFECT THIS CHECK EXISTS FOR, and it shipped: the cabinet was emitted BEFORE the model while its
     // own comment said "after the model", so a speaker was convolved in front of the amplifier driving it.
     // Every check that only looks for a stage's PRESENCE passed.
-    why: 'Emits the cabinet stage where the model goes, which is how a speaker ended up in front of the amplifier it is driven by.',
-    // ⚠️ REPOINTED with the chain split: the cabinet is emitted by chainPostCpp now, but the property this
-    // protects is unchanged — the cabinet must not be emitted where the model goes.
-    find: "  return '__CAB_STAGE__';",
-    replace: "  return '__MODEL_STAGE__';",
+    why: 'Emits a marker nothing replaces instead of the cabinet\u2019s stage, so the speaker is not in the path at all \u2014 the shape the defect really had, where the cabinet\u2019s line and the model\u2019s were one apart.',
+    // ⚠️ REPOINTED TWICE, and both times by the emitted text moving rather than the claim. The cabinet is
+    // emitted by chainPostCpp, and since a board can take it out of the path that emission is a guarded push.
+    // The property this protects is unchanged: the cabinet's DSP must be emitted, and after the model.
+    find: "  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__CAB_STAGE__');",
+    replace: "  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__MODEL_STAGE__');",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -1652,6 +1658,47 @@ export const MUTATIONS = [
     why: 'Speaks a half-written sentence, so the voice reads a fragment aloud and then continues with text the listener already heard — the boundary that makes "speak behind the stream" safe rather than gibberish.',
     find: "  if (!m) return { segment: '', spokenChars: from };",
     replace: '  if (!m) return { segment: rest.trim(), spokenChars: full.length };',
+  },
+  // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
+  // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
+  // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // ⭐ THE CORRUPTION, IN THE DOMAIN THE BOARD ADDED. Sorting the parameters by the arrangement instead of
+    // by PARAM_ORDER renumbers them the moment a user drags a block: the ids stay unique, the plugin builds,
+    // the audio is right, and a host's automation lane now drives a different control. Nothing throws.
+    why: 'Identifies the controls by the arrangement instead of by their own order, so reordering a block renumbers every parameter a host has automated.',
+    find: '  return chainParams(chain, manifest).slice().sort((a, b) => rank(a.key) - rank(b.key) || stageOf(a.key) - stageOf(b.key));',
+    replace: '  return chainParams(chain, manifest).slice();',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // A BYPASSED BLOCK MUST KEEP ITS CONTROL AND LOSE ITS DSP. Dropping the mark does the opposite of what a
+    // bypass sounds like: the block is still in the signal path, and the switch in the editor is a lie.
+    why: 'Ignores the enabled flag, so a block switched off in the editor is still in the plugin\u2019s signal path.',
+    find: '    if (item.enabled === false) stage.bypass = true;',
+    replace: '    if (false) stage.bypass = true;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginProject.js',
+    // ⭐ THE FILE AND THE BLOCK ARE DIFFERENT QUESTIONS. Hard-wiring the flag back to true is the state the
+    // generator was in before the board: a project whose model block was removed still runs the model, so the
+    // editor and the plugin disagree and only the audio says so.
+    why: 'Keeps the model in the signal path however the board is arranged, so removing the Amp model block changes the picture and nothing else.',
+    find: "    modelInPath: useBoard ? chainHas(chain, 'model') : true,",
+    replace: '    modelInPath: true,',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // ONE OF EACH, ENFORCED RATHER THAN ASSUMED. Two blocks of a kind would share their parameter keys, which
+    // is the collision the instance ids cannot fix yet — so the second one has to be refused, loudly.
+    why: 'Accepts two blocks of the same kind, which would emit two controls with the same parameter id.',
+    find: '    if (ONE_OF_EACH && seenKinds.has(item.kind)) {',
+    replace: '    if (false && seenKinds.has(item.kind)) {',
   },
   {
     guard: 'verify-jarvis-stream.mjs',

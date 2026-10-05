@@ -174,6 +174,9 @@ const PLATFORM_GUIDES = {
       'above without the trailing slash, and create it.'
     ],
     firstRun: [
+      'THE BLOCKS AND THEIR ORDER ARE YOURS. The plugin runs the signal path you arranged in the app —',
+      'the COMPILE panel\'s SIGNAL PATH button — and that arrangement is saved in morpheus.plugin.json as',
+      'the "board" key, so the file you are reading the rest of this from says what this plugin does.',
       'A MODEL MAKES IT AN AMP. Put a .nam file in the project — models/ is the usual place, or name one in',
       'morpheus.plugin.json as "model" — and rebuild. The model is baked into this download, so there is',
       'nothing to install beside it. Without one the plugin is a stereo gain stage, which is what you have if',
@@ -223,6 +226,9 @@ const PLATFORM_GUIDES = {
       'path and not for the file.'
     ],
     firstRun: [
+      'THE BLOCKS AND THEIR ORDER ARE YOURS. The plugin runs the signal path you arranged in the app —',
+      'the COMPILE panel\'s SIGNAL PATH button — and that arrangement is saved in morpheus.plugin.json as',
+      'the "board" key, so the file you are reading the rest of this from says what this plugin does.',
       'A MODEL MAKES IT AN AMP. Put a .nam file in the project — models/ is the usual place, or name one in',
       'morpheus.plugin.json as "model" — and rebuild. The model is baked into this download, so there is',
       'nothing to install beside it. Without one the plugin is a stereo gain stage, which is what you have if',
@@ -274,6 +280,9 @@ const PLATFORM_GUIDES = {
       'If a folder does not exist, create it:  mkdir -p ~/.vst3 ~/.clap'
     ],
     firstRun: [
+      'THE BLOCKS AND THEIR ORDER ARE YOURS. The plugin runs the signal path you arranged in the app —',
+      'the COMPILE panel\'s SIGNAL PATH button — and that arrangement is saved in morpheus.plugin.json as',
+      'the "board" key, so the file you are reading the rest of this from says what this plugin does.',
       'A MODEL MAKES IT AN AMP. Put a .nam file in the project — models/ is the usual place, or name one in',
       'morpheus.plugin.json as "model" — and rebuild. The model is baked into this download, so there is',
       'nothing to install beside it. Without one the plugin is a stereo gain stage, which is what you have if',

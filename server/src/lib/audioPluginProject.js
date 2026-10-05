@@ -19,6 +19,7 @@ import {
   MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
 } from './namPlugin.js';
 import { PLAIN_CHAIN, chainFor, chainHas, chainParamsStable } from './ampChain.js';
+import { ampBoard, boardChain, boardJson, boardParamsStable, readBoard, validateBoard } from './board.js';
 import {
   CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSource, cabHeader, resolveCab,
 } from './cabIr.js';
@@ -95,7 +96,61 @@ export function readManifest(files) {
     // The cabinet impulse response this plugin convolves, when one is named. Empty means "find a .wav in the
     // project", the same rule as the model.
     cab: parsed.cab == null ? '' : String(parsed.cab),
+    // ⭐ THE BOARD — the user's own arrangement of blocks, when this project has one. `null` means "this
+    // project predates the board", and every consumer falls back to `chain`. See lib/board.js: the fallback
+    // is what keeps every project that existed before it generating the same plugin, byte for byte.
+    board: (parsed.board && typeof parsed.board === 'object' && !Array.isArray(parsed.board)) ? parsed.board : null,
   };
+}
+
+/**
+ * The manifest as it is written to disk — the ONE writer, shared by the scaffold and the board route.
+ *
+ * WHY IT IS SHARED RATHER THAN COPIED. `morpheus.plugin.json` is generated during a compile and edited by the
+ * user through the board, which means two writers the moment the board exists. Two writers for one file is
+ * exactly how a generated file and an edited file drift into disagreeing about the plugin's own name — and
+ * the failure is a plugin that renames itself on the next build.
+ *
+ * `board` is written LAST and only when there is one, so a project that has no board produces the same
+ * manifest text it produced before this key existed. That is what keeps the file diffable across a change
+ * that added a feature.
+ */
+export function manifestJson(manifest, board = null) {
+  return `${JSON.stringify({
+    name: manifest.name,
+    vendor: manifest.vendor,
+    version: manifest.version,
+    id: manifest.id,
+    parameter: manifest.paramName,
+    description: manifest.description,
+    auType: manifest.auType,
+    auSubtype: manifest.auSubtype,
+    auManufacturer: manifest.auManufacturer,
+    // Carried through so the choice survives a re-scaffold. Empty rather than absent keeps the file's shape
+    // stable, which is what makes the generated manifest diffable between two builds.
+    model: manifest.model || '',
+    chain: manifest.chain || '',
+    cab: manifest.cab || '',
+    ...(board ? { board: boardJson(board) } : {}),
+  }, null, 2)}\n`;
+}
+
+/**
+ * The board a project should OPEN with: its own when it has one, otherwise the arrangement it ALREADY builds.
+ *
+ * ⚠️ THE FALLBACK IS A READING, NOT A DEFAULT. A project that asked for the amp chain has to open showing the
+ * amp chain — an editor that opened with some other arrangement would invite the user to save a board that
+ * silently changes the plugin they have been compiling. A project with no chain at all is the single-Gain
+ * plugin, which is one block: the output level. It lives here rather than in the route so that the guard can
+ * ask this question without a database.
+ */
+export function boardFor(files) {
+  const manifest = readManifest(files);
+  const stored = readBoard(manifest);
+  if (stored) return stored;
+  return String(manifest.chain || '').trim().toLowerCase() === 'amp'
+    ? ampBoard()
+    : { nextInstanceId: 2, items: [{ instanceId: 1, kind: 'output', enabled: true, values: {} }] };
 }
 
 /** What is wrong with this workspace, as warnings the user can act on. Never a refusal: Morpheus scaffolds. */
@@ -163,36 +218,41 @@ export function scaffoldPlugin(files) {
   replace(CAB_DATA_HEADER, cabHeader(cab.info));
   replace(CAB_DATA_SOURCE, cabDataSource(cab.info, cab.channels));
 
-  add(PLUGIN_MANIFEST, `${JSON.stringify({
-    name: manifest.name,
-    vendor: manifest.vendor,
-    version: manifest.version,
-    id: manifest.id,
-    parameter: manifest.paramName,
-    description: manifest.description,
-    auType: manifest.auType,
-    auSubtype: manifest.auSubtype,
-    auManufacturer: manifest.auManufacturer,
-    // Carried through so the choice survives a re-scaffold. Empty rather than absent keeps the file's shape
-    // stable, which is what makes the generated manifest diffable between two builds.
-    model: manifest.model || '',
-    chain: manifest.chain || '',
-    cab: manifest.cab || '',
-  }, null, 2)}\n`);
-
-  // A cabinet only means anything inside a chain — it is a stage in the signal path, and the plain plugin has
-  // no path to put it in. Said out loud rather than silently ignored: a user who added a .wav and heard no
-  // change deserves to know why.
-  if (cab.info && !chainHas(chainFor(manifest), 'tone')) {
-    warnings.push(`${cab.path} was found, but a cabinet is a stage in the amp chain and this project uses the plain plugin — add 'chain': 'amp' to morpheus.plugin.json to convolve it.`);
+  // ── the board, when the project has one ────────────────────────────────────────────────────────────────
+  // A board arrives FROM THE USER — it is edited in the app and written back to the manifest — so it is the
+  // one input here that can be wrong in a way the file tree cannot show. It is validated rather than
+  // repaired: a board that cannot be built falls back to the chain this project would have had, and says so
+  // in a warning. Silently fixing a user's arrangement is how a plugin comes back different from the one
+  // they drew.
+  const board = readBoard(manifest);
+  const boardCheck = board ? validateBoard(board, { modelFile: model.info?.path || null, cabFile: cab.info?.path || null }) : null;
+  if (boardCheck) {
+    for (const w of boardCheck.warnings) warnings.push(w);
+    for (const e of boardCheck.errors) warnings.push(`The board was not used: ${e}`);
   }
+  const useBoard = Boolean(board && boardCheck.ok);
+  const chain = useBoard ? boardChain(board, manifest) : chainFor(manifest);
+  const params = useBoard ? boardParamsStable(board, manifest) : chainParamsStable(chain, manifest);
 
-  // An unknown chain is a WARNING rather than a refusal — Morpheus scaffolds, and the plugin still builds —
-  // but it must be said, because the user asked for something and got the default.
-  if (manifest.chain && chainFor(manifest) === PLAIN_CHAIN) {
+  add(PLUGIN_MANIFEST, manifestJson(manifest, useBoard ? board : null));
+
+  // ⚠️ THIS WARNING USED TO SAY A CABINET DOES NOTHING WITHOUT THE AMP CHAIN, AND THAT WAS NOT TRUE. The
+  // cabinet's stage is emitted for every chain and its DSP is behind `#if MORPHEUS_HAS_CAB`, so the plain
+  // plugin convolves it too — after its gain stage rather than after the model. Telling a user their cabinet
+  // was ignored while it was audibly working is worse than saying nothing, and the board's own warnings now
+  // cover the case that matters: a cabinet FILE with no Cabinet BLOCK in the path.
+  if (manifest.chain && chainFor(manifest) === PLAIN_CHAIN && !useBoard) {
     warnings.push(`morpheus.plugin.json asks for chain "${manifest.chain}", which this version does not have; building the single-parameter plugin instead. The chain this version knows is "amp".`);
   }
-  add(PLUGIN_SOURCE, pluginSource({ ...manifest, chain: chainFor(manifest), params: chainParamsStable(chainFor(manifest), manifest) }));
+  add(PLUGIN_SOURCE, pluginSource({
+    ...manifest,
+    chain,
+    params,
+    // THE FILE AND THE BLOCK ARE DIFFERENT QUESTIONS. A legacy project has no board, so both are true and the
+    // generated source is unchanged; a board decides them from its own items.
+    modelInPath: useBoard ? chainHas(chain, 'model') : true,
+    cabInPath: useBoard ? chainHas(chain, 'cab') : true,
+  }));
   add(PLUGIN_ENTRY, entrySource());
   add('CMakeLists.txt', cmakeLists({
     name: manifest.name,
