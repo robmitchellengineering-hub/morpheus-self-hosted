@@ -90,6 +90,50 @@ export function inspectModel(text) {
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, reason: 'not a JSON object' };
   if (!raw.architecture) return { ok: false, reason: 'has no "architecture" field' };
+  // ── A CONTAINER IS NOT A MODEL WITH ITS WEIGHTS IN THE USUAL PLACE ────────────────────────────────────────
+  // ⚠️ THIS CHECK REJECTED THE FORMAT NAM IS MOVING TO, and it did it as "has no weights array", which reads
+  // like a corrupt file rather than like a format we do not handle. NAM A2's file is a `SlimmableContainer`:
+  // SEVERAL submodels of the same amp at different sizes, chosen at runtime via `SetSlimmableSize`, with the
+  // weights living in `config.submodels[].model` and the top-level `weights` deliberately EMPTY. Measured
+  // 2026-10-05 against NeuralAmpModelerCore 0b3d3c9: `A2.nam` is exactly that, and the engine loads it
+  // happily — `nam::get_dsp` returns a ContainerModel with two WaveNet submodels (1,871 and 12,146 weights).
+  // So the engine was never the problem; this gate was, and a flat-weight-only gate is a gate on one format.
+  const isContainer = String(raw.architecture) === 'SlimmableContainer';
+  if (isContainer) {
+    const subs = raw.config && Array.isArray(raw.config.submodels) ? raw.config.submodels : null;
+    if (!subs || subs.length === 0) return { ok: false, reason: 'is a SlimmableContainer with no submodels' };
+    const submodels = [];
+    for (let i = 0; i < subs.length; i++) {
+      const m = subs[i] && subs[i].model;
+      if (!m || !Array.isArray(m.weights) || m.weights.length === 0) {
+        return { ok: false, reason: `submodel ${i} has no weights array` };
+      }
+      // The same raw-value check as below, per submodel: a container is not an excuse for letting a null
+      // through, and a container is where a truncated file is easiest to miss because the total still looks
+      // plausible.
+      const bad = m.weights.findIndex((w) => typeof w !== 'number' || !Number.isFinite(w));
+      if (bad !== -1) return { ok: false, reason: `submodel ${i} weight ${bad} is not a finite number` };
+      submodels.push({
+        maxValue: typeof subs[i].max_value === 'number' ? subs[i].max_value : null,
+        architecture: m.architecture == null ? null : String(m.architecture),
+        weights: m.weights.length,
+      });
+    }
+    return {
+      ok: true,
+      architecture: 'SlimmableContainer',
+      version: raw.version == null ? null : String(raw.version),
+      sampleRate: typeof raw.sample_rate === 'number' ? raw.sample_rate
+        : (typeof subs[subs.length - 1].model.sample_rate === 'number' ? subs[subs.length - 1].model.sample_rate : null),
+      weights: submodels.reduce((n, m) => n + m.weights, 0),
+      // `slimmable` is what the scaffold and the plugin branch on: this model can be resized at runtime, so
+      // the device tier can offer one file with a quality dial instead of a folder of separate models.
+      slimmable: true,
+      submodels,
+      missing: MODEL_FIELDS.filter((k) => raw[k] === undefined),
+      bytes: Buffer.byteLength(text, 'utf8'),
+    };
+  }
   if (!Array.isArray(raw.weights) || raw.weights.length === 0) return { ok: false, reason: 'has no "weights" array' };
   // The RAW values, for the reason `parseNam` documents: `Float64Array.from([1, null])` is `[1, 0]`, so a
   // null quietly becomes a plausible weight and the plugin loads a model that was never trained.
@@ -101,6 +145,7 @@ export function inspectModel(text) {
     version: raw.version == null ? null : String(raw.version),
     sampleRate: typeof raw.sample_rate === 'number' ? raw.sample_rate : null,
     weights: raw.weights.length,
+    slimmable: false,
     missing: MODEL_FIELDS.filter((k) => raw[k] === undefined),
     bytes: Buffer.byteLength(text, 'utf8'),
   };
@@ -266,6 +311,12 @@ export function resolveModel(files, manifest = {}) {
       sampleRate: inspected.sampleRate,
       weights: inspected.weights,
       bytes: inspected.bytes,
+      // ⚠️ CARRIED THROUGH, NOT DROPPED. This projection is what the scaffold and the compile panel actually
+      // see, so a field that stops here does not exist as far as the product is concerned: a container's
+      // `slimmable` and its submodel sizes are the whole reason NAM A2 is useful on a device, and leaving
+      // them in `inspectModel` alone made the format pass validation while nothing could act on it.
+      slimmable: inspected.slimmable === true,
+      ...(inspected.submodels ? { submodels: inspected.submodels } : {}),
     },
     warnings: [],
   };
