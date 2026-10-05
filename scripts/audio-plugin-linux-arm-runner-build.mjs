@@ -125,6 +125,17 @@ if (modelArg) {
   // failure message names the file the user recognises rather than a temp path.
   seed.push({ path: `models/${basename(modelArg)}`, content: readFileSync(modelArg, 'utf8') });
   log(`building with a model: ${basename(modelArg)}`);
+
+  // ⚠️ AND THE CHAIN, OR THIS PUBLISHES A MODEL WITH ONE `Gain` KNOB AND CALLS IT THE AMPLIFIER. macOS and
+  // Windows got this first (#552); Linux was left behind because its `--chain` is a SEPARATE flag with its own
+  // build, and the build that gets published is the `--model` one. `chain: 'amp'` is what turns the
+  // single-Gain plugin into the amp — input trim, gate, three-band tone stack, output — and the build's own
+  // proof is the record: it listed `Gain` alone, and the release page claimed six.
+  //
+  // Not pushed when `--chain` already did it: two entries for one path is a seed that contradicts itself.
+  if (!chainProject) {
+    seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Morpheus Plugin', chain: 'amp' }, null, 2)}\n` });
+  }
 } else {
   log('building WITHOUT a model (the gain stage) — set AUDIO_PLUGIN_MODEL=/path/to/model.nam to build the amp');
 }
