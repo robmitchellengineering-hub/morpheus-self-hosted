@@ -876,6 +876,9 @@ jobs:
       - name: The artifact save runs in the background and never reads as a failed build
         run: node scripts/verify-artifact-save-background.mjs
 
+      - name: An uploaded cabinet reaches the build, and only from our own storage
+        run: node scripts/verify-cabinet-upload.mjs
+
       # A macOS app compiled on macos-latest is Apple-silicon-only, and an Intel Mac answers
       # "not supported on this Mac" — Rob, holding a disk image Morpheus had just built him.
       # This asserts the Python path builds on both runners, that each disk image is named for

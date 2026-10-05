@@ -5,6 +5,7 @@ import { useRunTimer } from '@/hooks/useRunTimer';
 import { getCompileEstimate } from '@/lib/compileEstimates';
 import NetworkFlashDialog from '@/components/matrix/NetworkFlashDialog';
 import DistroConfigDialog from '@/components/matrix/DistroConfigDialog';
+import CabinetDialog from '@/components/matrix/CabinetDialog';
 import LinuxDistroConfigDialog from '@/components/matrix/LinuxDistroConfigDialog';
 import DiagnosisPanel, { DiagnosisLoading } from '@/components/matrix/DiagnosisPanel';
 import { useDiagnosis } from '@/hooks/useDiagnosis';
@@ -103,6 +104,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const [previewing, setPreviewing] = useState(false);
   const [showNetFlash, setShowNetFlash] = useState(false);
   const [showDistroConfig, setShowDistroConfig] = useState(false);
+  const [showCabinet, setShowCabinet] = useState(false);
   const [showLinuxDistroConfig, setShowLinuxDistroConfig] = useState(false);
   const pollRef = useRef(null);
   const savePollRef = useRef(null);
@@ -800,6 +802,13 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   <Sliders size={14} /> CONFIGURE DISTRO
                 </button>
               )}
+              {/* The three audio plugin routes, because a cabinet only means anything inside an amp chain —
+                  and the plain plugin has no chain to put it in. */}
+              {String(target).startsWith('audio-plugin-') && (
+                <button onClick={() => setShowCabinet(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
+                  <Sliders size={14} /> CABINET (.wav)
+                </button>
+              )}
               {target === 'linux-distro' && (
                 <button onClick={() => setShowLinuxDistroConfig(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
                   <Sliders size={14} /> CONFIGURE DISTRO
@@ -1272,6 +1281,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       </div>
       <NetworkFlashDialog key={target} open={showNetFlash} onClose={() => setShowNetFlash(false)} projectId={project.id} target={target} />
       <DistroConfigDialog open={showDistroConfig} onClose={() => setShowDistroConfig(false)} projectId={project.id} />
+      <CabinetDialog open={showCabinet} onClose={() => setShowCabinet(false)} projectId={project.id} />
       <LinuxDistroConfigDialog open={showLinuxDistroConfig} onClose={() => setShowLinuxDistroConfig(false)} projectId={project.id} />
     </div>
   );

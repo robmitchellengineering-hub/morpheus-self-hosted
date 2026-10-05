@@ -732,6 +732,24 @@ export const MUTATIONS = [
     replace: "else echo ''",
   },
   {
+    guard: 'verify-cabinet-upload.mjs',
+    file: 'server/src/lib/cabinetFile.js',
+    // ⚠️ THE SSRF BOUNDARY. A row's file_url is data; a compile that dials whatever a row says is a fetch
+    // primitive aimed by whoever can write a row.
+    why: 'Accepts any storage URL, so a compile would fetch an address out of a database row — the thing the allowlist exists to prevent.',
+    find: "  return storagePrefixes(env).some((prefix) => u.startsWith(`${prefix}/`) || (prefix.startsWith('http') && u.startsWith(prefix)));",
+    replace: '  return true;',
+  },
+  {
+    guard: 'verify-cabinet-upload.mjs',
+    file: 'server/src/lib/cabinetFile.js',
+    // The bytes, not the extension. A file named .wav that is not one convolves rubbish, and the user's only
+    // clue would be that the cabinet "sounds wrong".
+    why: 'Stops checking the RIFF/WAVE magic, so anything named .wav is accepted as a cabinet.',
+    find: "  if (magic !== 'RIFF' || form !== 'WAVE') {",
+    replace: '  if (false) {',
+  },
+  {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/cabIr.js',
     // ⚠️ MEASURED, NOT PREFERRED: summing 4096 float products into a float nulled against the JavaScript

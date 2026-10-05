@@ -306,6 +306,11 @@ const functions = {
   addProjectAssetUrl: (projectId, body) => apiFetch(`/media-assets/${projectId}/url`, { method: 'POST', body }),
   addProjectAssetFile: (projectId, form) => apiFetch(`/media-assets/${projectId}/upload`, { method: 'POST', body: form }),
   deleteProjectAsset: (projectId, assetId) => apiFetch(`/media-assets/${projectId}/${assetId}`, { method: 'DELETE' }),
+
+  // Cabinet uploads — also their own route, and multipart for the same reason.
+  listCabinets: (projectId) => apiFetch(`/cabinet/${projectId}`),
+  addCabinet: (projectId, form) => apiFetch(`/cabinet/${projectId}`, { method: 'POST', body: form }),
+  deleteCabinet: (projectId, fileId) => apiFetch(`/cabinet/${projectId}/${fileId}`, { method: 'DELETE' }),
 };
 
 const integrations = {
