@@ -61,8 +61,11 @@ jobs:
       # The model is MIT and is FETCHED rather than committed, from the SAME pinned commit as the engine that
       # will play it — a model from a moving branch could arrive in a shape the pinned engine cannot load.
       - name: Fetch the example model (MIT)
-        run: |
+        # ⚠️ `shell` goes BEFORE `run`, not between `run: |` and its body. Putting it after turned the
+        # block body into the value of `shell`, and the runner refused the whole step with "Invalid shell
+        # option" — a YAML shape error that reads like a shell problem.
         shell: bash
+        run: |
           mkdir -p .cache/models
           curl -sSfL -o .cache/models/wavenet_a1_standard.nam \
             https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/0b3d3c9/example_models/wavenet_a1_standard.nam
