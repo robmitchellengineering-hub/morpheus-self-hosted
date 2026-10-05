@@ -147,7 +147,10 @@ export function boardItem(kind, instanceId) {
 
 /** The next free instanceId. Monotonic and never reused, including after a block is removed. */
 export function nextInstanceId(board) {
-  const fromItems = (board?.items || []).reduce((m, it) => Math.max(m, Number(it.instanceId) || 0), 0);
+  // ⚠️ `it?.instanceId`, NOT `it.instanceId`. This runs on the RAW body of a save, before validation, so a
+  // malformed item is an ordinary thing to receive — and `JSON.stringify` turns a sparse array's holes into
+  // `null`. Reading through the hole threw, and the route answered 500 to what is a 400.
+  const fromItems = (board?.items || []).reduce((m, it) => Math.max(m, Number(it?.instanceId) || 0), 0);
   return Math.max(Number(board?.nextInstanceId) || 0, fromItems + 1, 1);
 }
 

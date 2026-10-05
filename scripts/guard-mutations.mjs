@@ -1704,6 +1704,15 @@ export const MUTATIONS = [
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/board.js',
+    // A 500 WHERE A 400 BELONGS. The id scan runs on the raw save body, before anything has validated it, so
+    // reading `it.instanceId` instead of `it?.instanceId` turns a malformed request into a crash.
+    why: 'Reads the item id through a missing entry, so a malformed save crashes the route instead of being refused.',
+    find: 'Math.max(m, Number(it?.instanceId) || 0)',
+    replace: 'Math.max(m, Number(it.instanceId) || 0)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
     // ONE OF EACH, ENFORCED RATHER THAN ASSUMED. Two blocks of a kind would share their parameter keys, which
     // is the collision the instance ids cannot fix yet — so the second one has to be refused, loudly.
     why: 'Accepts two blocks of the same kind, which would emit two controls with the same parameter id.',

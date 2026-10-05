@@ -1390,6 +1390,12 @@ check('…and removing the Cabinet block stops the convolution, with the .wav st
 // A board that CANNOT be built is refused with a reason rather than repaired — the one input here that the
 // file tree cannot show the user is wrong.
 const dup = boardMod.validateBoard({ items: [...boardItems(), { instanceId: 9, kind: 'gate', enabled: true, values: {} }] }, {});
+// ⚠️ FOUND BY CALLING THE ROUTE, not by reading it: a save whose items array contained a hole (a
+// `JSON.stringify` of a sparse array produces `null` entries) answered **500** to what is a 400. The id scan
+// runs on the raw body, before validation, so it has to read through a missing item rather than assume one.
+check('⭐ a malformed save is refused rather than throwing \u2014 the id scan runs before validation',
+  boardMod.nextInstanceId({ items: [null, undefined, { instanceId: 3 }] }), 4);
+
 check('a second block of the same kind is refused, because the two would share a control id',
   dup.ok === false && /share their parameter ids/.test(dup.errors[0]), true);
 check('…an unknown block is refused rather than skipped',
