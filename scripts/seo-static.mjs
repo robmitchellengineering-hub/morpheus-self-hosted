@@ -435,7 +435,62 @@ if (html.includes('seo-static:start')) {
 
 writeFileSync(join(DIST, 'llms.txt'), llms);
 writeFileSync(join(DIST, 'llms-full.txt'), llmsFull);
+// ── 2c. the downloads page, published the same way the manual is ──────────────────────────────────────
+// ⚠️ A STANDALONE FILE RATHER THAN A PRERENDERED SPA ROUTE, and the reason is /manual's: the static file is
+// served by a rewrite in public/_redirects, so a URL whose content is prerendered must not ALSO have a React
+// route — one URL with two renderings changes appearance when a reader reloads it, and the two would drift.
+// /manual has no route for exactly this reason, and neither does this.
+//
+// It is generated from `caps.downloads`, the same object llms.txt and the sitemap read, so the page a person
+// sees and the page a model reads cannot come to disagree about what is on offer.
+const downloadsHtml = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Morpheus downloads — everything you can get as a file</title>
+<meta name="description" content="Everything Morpheus hands you as a file in one place: Portable Morpheus, the user manual, demo builds of the audio plugin for Windows and Linux AArch64, and the Marketplace." />
+<link rel="canonical" href="${SITE}/downloads" />
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 2rem 1rem 5rem; background: #050705; color: #b9ffc4;
+         font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main { max-width: 82ch; margin: 0 auto; }
+  h1 { color: #7dff9b; font-size: 1.4rem; letter-spacing: .08em; text-transform: uppercase; }
+  h2 { color: #7dff9b; font-size: 1rem; margin: 2.5rem 0 .5rem; letter-spacing: .06em; }
+  p.lede { color: #86c993; }
+  article { border-left: 2px solid #1f5c2c; padding: .75rem 1rem; margin: 1rem 0; }
+  article h3 { margin: 0 0 .25rem; font-size: 1rem; color: #7dff9b; }
+  article .platform { color: #6f9c78; font-size: .8rem; }
+  article .note { color: #86c993; font-size: .85rem; margin-top: .5rem; }
+  a { color: #9effb5; }
+  footer { margin-top: 3rem; color: #6f9c78; }
+</style>
+</head>
+<body>
+<main>
+  <h1>${esc(caps.downloads.title)}</h1>
+  <p class="lede">${esc(caps.downloads.intro)}</p>
+${caps.downloads.items.map((it) => `  <article>
+    <h3><a href="${esc(it.href)}">${esc(it.name)}</a></h3>
+    <p class="platform">${esc(it.platform)}</p>
+    <p>${esc(it.what)}</p>
+    <p class="note">${esc(it.note)}</p>
+  </article>`).join('\n')}
+  <h2>${esc(caps.downloads.ownHeading)}</h2>
+  <p>${esc(caps.downloads.own)}</p>
+  <footer>
+    <p>Morpheus is a chat-driven software builder — describe it, and it writes the code, compiles a native
+    build and puts it in a repository you own. <a href="${SITE}/">${SITE.replace('https://', '')}</a></p>
+    <p>Machine-readable: <a href="/llms.txt">/llms.txt</a> · <a href="/llms-full.txt">/llms-full.txt</a></p>
+  </footer>
+</main>
+</body>
+</html>
+`;
+
 writeFileSync(join(DIST, 'manual.html'), manualHtml);
+writeFileSync(join(DIST, 'downloads.html'), downloadsHtml);
 writeFileSync(join(DIST, 'sitemap.xml'), sitemap);
 
 const kb = (s) => `${(Buffer.byteLength(s) / 1024).toFixed(1)} KB`;

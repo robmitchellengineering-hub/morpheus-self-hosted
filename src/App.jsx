@@ -27,8 +27,6 @@ const Market = lazy(() => import('@/pages/Market'));
 const StoreItem = lazy(() => import('@/pages/StoreItem'));
 const Architect = lazy(() => import('@/pages/Architect'));
 const PortableMorpheusDownload = lazy(() => import('@/pages/PortableMorpheusDownload'));
-// Public and lazily loaded like the rest: a downloads page nobody opened should not be in the entry bundle.
-const Downloads = lazy(() => import('@/pages/Downloads'));
 const Terms = lazy(() => import('@/pages/Terms'));
 const Privacy = lazy(() => import('@/pages/Privacy'));
 const RefundPolicy = lazy(() => import('@/pages/RefundPolicy'));
@@ -171,7 +169,6 @@ function AnimatedRoutes() {
             <Route path="/workspace/:projectId" element={<Workspace />} />
             <Route path="/architect" element={<Architect />} />
           <Route path="/portable-morpheus" element={<PortableMorpheusDownload />} />
-          <Route path="/downloads" element={<Downloads />} />
             <Route path="/settings" element={<Settings />} />
             {/* Command Deck/Jarvis — 2026-09-17: opened up to every signed-in
                 account (Rob: "they dont see my command deck, they see their

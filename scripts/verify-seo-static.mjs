@@ -74,6 +74,7 @@ try {
       llms: existsSync(join(tmp, 'llms.txt')) ? readFileSync(join(tmp, 'llms.txt'), 'utf8') : null,
       sitemap: existsSync(join(tmp, 'sitemap.xml')) ? readFileSync(join(tmp, 'sitemap.xml'), 'utf8') : null,
       manual: existsSync(join(tmp, 'manual.html')) ? readFileSync(join(tmp, 'manual.html'), 'utf8') : null,
+      downloads: existsSync(join(tmp, 'downloads.html')) ? readFileSync(join(tmp, 'downloads.html'), 'utf8') : null,
       llmsFull: existsSync(join(tmp, 'llms-full.txt')) ? readFileSync(join(tmp, 'llms-full.txt'), 'utf8') : null,
     };
   }
@@ -82,7 +83,7 @@ try {
 }
 
 if (generated) {
-  const { html, llms, sitemap, manual, llmsFull } = generated;
+  const { html, llms, sitemap, manual, llmsFull, downloads } = generated;
 
   // ── The prerender is complete: everything a reader needs is in the HTML ────────────
   const missing = [];
@@ -158,21 +159,35 @@ if (generated) {
       [llms, llmsFull].every((x) => Boolean(x) && caps.downloads.items.every((it) => x.includes(it.name))), true);
     check('the sitemap lists it as a real page', Boolean(sitemap) && sitemap.includes('<loc>https://morpheus.nz/downloads</loc>'));
     // A page a human cannot reach is a page only crawlers see — the line this whole file holds.
+    // ⚠️ A STATIC PAGE, NOT AN SPA ROUTE — the same shape as /manual, and the guard checks the same three
+    // things for it. A URL whose content is prerendered must NOT also have a React route: one URL with two
+    // renderings looks different after a reload, and the two drift.
+    check('a downloads page is published as a real, crawlable file', Boolean(downloads) && downloads.length > 1000);
+    check('…carrying every download', Boolean(downloads) && caps.downloads.items.every((it) => downloads.includes(it.name)));
+    check('…and the distinction, so a reader who only sees this page still gets it',
+      Boolean(downloads) && /in your own project/.test(downloads));
+    check('…visible, with no hiding style anywhere in it', !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(downloads || ''));
+    check('…with a title a reader and a crawler both see', /<title>[^<]*downloads/i.test(downloads || ''));
     // Read here rather than reusing `landingSrcForAudio`, which is declared further down this file: the
     // first version of this check referenced it and died on the temporal dead zone, which is the second
     // time in this file that a const declared later has been read earlier.
     const landingForDownloads = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
-    check('the landing page links to it with a real button, above the capability list',
-      /to="\/downloads"/.test(landingForDownloads), true);
-    check('…and the route is registered in the app',
-      /path="\/downloads"/.test(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8')), true);
+    check('the landing page links to it with a real <a>, above the capability list',
+      /href="\/downloads"/.test(landingForDownloads), true);
+    // ORDERING, and it is the difference between a page and a 404: Netlify takes the FIRST matching rule.
+    const dlRedirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
+    check('the /downloads rewrite comes BEFORE the SPA catch-all',
+      dlRedirects.indexOf('/downloads  /downloads.html') >= 0
+      && dlRedirects.indexOf('/downloads  /downloads.html') < dlRedirects.indexOf('/*  /index.html'), true);
+    check('…and there is no React route for it, so the URL has ONE rendering',
+      !/path="\/downloads"/.test(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8')), true);
     // ⚠️ THE DISTINCTION IS THE HARD PART, NOT THE LIST. Almost nothing Morpheus produces is a download
     // from us — it is built in the user's own repository and lands in their own `_compiled/`. A downloads
     // page that blurred that would be selling a builder as a shop, so the sentence is asserted rather
     // than left to survive on its own.
     check('…and the page states what is NOT a download, rather than leaving it to be inferred',
       /in your own project/.test(caps.downloads.own)
-      && /\{d\.own\}/.test(readFileSync(join(ROOT, 'src/pages/Downloads.jsx'), 'utf8'))
+      && /in your own project/.test(downloads || '')
       && /built inside your own GitHub repository/.test(llms || ''), true);
     // An entry pointing at somebody else's origin must be an absolute URL, or the SPA router takes it and
     // 404s; an in-app route must be relative. One wrong one is a dead download link on the page whose whole

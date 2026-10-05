@@ -15,5 +15,6 @@
 # writes USER-MANUAL.txt into a build. It must be matched BEFORE the SPA catch-all below,
 # or the clean URL would serve index.html and the page would never be reachable.
 /manual  /manual.html  200
+/downloads  /downloads.html  200
 
 /*  /index.html  200
