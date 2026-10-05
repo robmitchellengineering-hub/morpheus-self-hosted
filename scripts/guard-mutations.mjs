@@ -1072,6 +1072,25 @@ export const MUTATIONS = [
     replace: '  const auto processStart = processStartEarly;',
   },
   {
+    guard: 'verify-netlify-cost.mjs',
+    file: 'netlify.toml',
+    // ⭐ THE BILL, as a mutation — and the one that has actually happened twice. Removing the ignore command
+    // puts a full site build on every push to every pull request, which cost Rob two rounds of buying credits.
+    // Nothing goes red: the site builds, the previews look fine, and the money leaves quietly.
+    why: 'Removes the deploy-preview skip, so every push to every pull request builds and deploys the whole site again.',
+    find: '  ignore = "test \\"$CONTEXT\\" = \\"deploy-preview\\""\n',
+    replace: '',
+  },
+  {
+    guard: 'verify-netlify-cost.mjs',
+    file: 'netlify.toml',
+    // THE TRAP THE FILE ALREADY WARNS ABOUT, as a mutation: the path-based form is the obvious way to save
+    // more, and an incomplete path list leaves the deployed site SILENTLY stale.
+    why: 'Swaps the deploy-context rule for a path-based one, the shape that leaves the live site quietly stale when the path list is wrong.',
+    find: '  ignore = "test \\"$CONTEXT\\" = \\"deploy-preview\\""',
+    replace: '  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF scripts/ server/"',
+  },
+  {
     guard: 'verify-seo-static.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     // ⭐ THE DRIFT ROB NAMED, as a mutation: a plugin format exists on more than one platform, so a page that

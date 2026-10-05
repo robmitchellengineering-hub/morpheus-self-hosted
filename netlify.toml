@@ -28,6 +28,30 @@
 # SILENTLY stale, which is a worse failure than the bill, and it cannot be tested from a repository. Do
 # not add one without proving that a real frontend change still deploys.
 
+# ── DEPLOY PREVIEWS ARE OFF, IN THE REPOSITORY RATHER THAN IN THE SITE UI (2026-10-05) ──────────────────
+#
+# Rob, after the second outage: *"I thought we were trying to batch PRs together to minimise that spend."*
+# He was right, and the volume had nothing to do with batching in the end — a day of five PRs and a few
+# rebases was ~13 full builds, because EVERY PUSH BUILDS: a preview for a branch, a production deploy for
+# main. The previews are the larger half and they buy almost nothing here: the three checks that gate a merge
+# are GitHub Actions (guards, lint + build, render), and `npm run render:check` is the local equivalent of
+# what the preview would show.
+#
+# `CONTEXT` is one of `production`, `deploy-preview`, `branch-deploy`, `dev` (Netlify's build environment
+# variables). An `ignore` command exiting 0 STOPS the build; 1 continues it. So this skips previews and
+# nothing else — main still deploys on every merge, and a frontend change still reaches the live site.
+#
+# ⚠️ WHY THIS IS NOT THE TRAP THIS FILE ALREADY WARNS ABOUT. The rejected idea was a PATH-based ignore: skip
+# the build when the change is only in `scripts/`. That is a trap because an incomplete path list leaves the
+# deployed site quietly stale, and it cannot be tested from a repository. This rule never looks at paths — it
+# reads the deploy context — so there is no list to be incomplete and no way for `main` to be skipped.
+# scripts/verify-netlify-cost.mjs asserts both halves of that: the rule exists and keys on the context, and it
+# does NOT contain a `git diff` (the path-based shape).
+#
+# To put previews back, delete these two lines. Nothing else depends on them.
+[build]
+  ignore = "test \"$CONTEXT\" = \"deploy-preview\""
+
 [build.environment]
   # WHY THIS EXISTS (2026-09-30) — AND WHAT IT DID *NOT* FIX, which is worth more than the setting.
   #

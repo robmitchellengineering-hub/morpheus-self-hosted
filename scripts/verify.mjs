@@ -122,6 +122,7 @@ const HARD = [
   'verify-ui-feedback.mjs',
   'verify-export-promise.mjs',
   'verify-client-env.mjs',
+  'verify-netlify-cost.mjs',
   'verify-no-secret-fixtures.mjs',
   'verify-build-failure-owner.mjs',
   'verify-project-divergence.mjs',
