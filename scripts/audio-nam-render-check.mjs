@@ -97,6 +97,38 @@ export function readMraw(path) {
 }
 
 /**
+ * Can this CPU run this model in real time? THE number a device needs, and the one nothing had measured.
+ *
+ * `realTimeFactor` is wall time over audio time: **below 1 is faster than real time**, and the headroom is
+ * `1 / rtf`. It is computed here rather than in the C++ so the arithmetic is unit-tested — a factor reported
+ * upside down would read as a comfortable pass on a machine that cannot actually keep up.
+ *
+ * ⚠️ WHAT THIS DOES *NOT* MEASURE, said rather than implied: the audio device, its buffer, its driver and its
+ * xruns. This is the plugin's own DSP throughput through its real `process()`, at 48 kHz and 64-frame blocks,
+ * which is the part that decides whether a Pi CAN — hardware I/O is the part that decides whether it does.
+ */
+/**
+ * The host's timing line out of its stdout, or null.
+ *
+ * The host prints its plugin identity and then the timing, both as JSON, one per line. Exported so the parse
+ * is TESTED rather than trusted: it returns null on failure, and a caller that treated null as "no timing" and
+ * carried on would report a throughput of nothing as a pass.
+ */
+export function parseHostTiming(stdout) {
+  return String(stdout || '').split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('{') && l.includes('processSeconds'))
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(Boolean)
+    .pop() || null;
+}
+
+export function realTimeFactor({ processSeconds, audioSeconds }) {
+  if (!(audioSeconds > 0)) return null;
+  return { realTimeFactor: processSeconds / audioSeconds, timesFaster: audioSeconds / processSeconds };
+}
+
+/**
  * How far apart two signals are, in dB below the reference — the number this whole file exists to produce.
  *
  * Pure, so it is unit-tested by the guard rather than only exercised on a runner: a comparison that cannot
@@ -169,7 +201,7 @@ function namSources(namcore) {
  * are. Returns the numbers rather than asserting them, so the caller decides what is good enough and can
  * print everything either way.
  */
-export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = null, work, seconds = 0.25, sampleRate = 48000 }) {
+export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = null, work, seconds = 0.25, timingSeconds = 4, sampleRate = 48000 }) {
   mkdirSync(work, { recursive: true });
   const clap = clapInclude || clapIncludes();
   const nam = namSources(namcore);
@@ -246,12 +278,38 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
     console.error(`[nam-render] x the reference renderer failed:\n${(refRun.stderr || refRun.stdout || '').slice(-2000)}`);
     process.exit(1);
   }
+  // ONE PLACE THAT INVOKES THE HOST, because both renders below must use the SAME block size and there being
+  // two call sites is how a block size drifts between them — which is precisely what one of the guard's
+  // mutations does on purpose, and it cannot be a mutation if the two call sites are one.
+  const runHost = (label, inPath, outPath) => {
+    const run = spawnSync(hostBin, ['--in', inPath, '--out', outPath, '--blocksize', String(REFERENCE_BLOCK_SIZE)], { encoding: 'utf8' });
+    if (run.status !== 0) {
+      console.error(`[nam-render] x ${label} failed:\n${(run.stderr || run.stdout || '').slice(-2000)}`);
+      process.exit(1);
+    }
+    return String(run.stdout || '');
+  };
+
   const oursMraw = join(work, 'ours.mraw');
-  const oursRun = spawnSync(hostBin, ['--in', dryMraw, '--out', oursMraw, '--blocksize', String(REFERENCE_BLOCK_SIZE)], { encoding: 'utf8' });
-  if (oursRun.status !== 0) {
-    console.error(`[nam-render] x the plugin render failed:\n${(oursRun.stderr || oursRun.stdout || '').slice(-2000)}`);
+  runHost('the plugin render', dryMraw, oursMraw);
+  // ── 4b. The throughput render, on its own longer signal ───────────────────────────────────────────────
+  // ⚠️ NOT THE SAME RENDER AS THE NULL. 0.25 s at 64-frame blocks is ~190 blocks, which is long enough to
+  // compare two signals and not long enough to report a rate — the first blocks of a WaveNet carry whatever
+  // the caches did, and on a runner the scheduler is still settling. The host binary is already built, so a
+  // second signal costs one more process and makes the number about the model rather than about the startup.
+  const timingDry = withFades(logSweep({ f1: 40, f2: 10000, sampleRate, seconds: timingSeconds, amplitude: 0.25 }), { samples: 64 });
+  const timingMraw = join(work, 'timing.mraw');
+  writeMraw(timingMraw, sampleRate, 1, timingDry);
+  const timingStdout = runHost('the throughput render', timingMraw, join(work, 'timing-out.mraw'));
+  // Read out of the host's own stdout rather than timed from JS: a `spawnSync` around the whole process would
+  // mostly measure process startup and file I/O. The host times its process loop and prints that.
+  const timing = parseHostTiming(timingStdout);
+  if (!timing) {
+    console.error('[nam-render] the host printed no timing line — a render that reports no throughput cannot '
+      + 'answer whether this CPU keeps up');
     process.exit(1);
   }
+  const rtf = realTimeFactor(timing);
   const ref = decodeWavMono(readFileSync(refWav));
   const ours = readMraw(oursMraw);
   log(`reference ${ref.samples.length} frames (${ref.format}) · plugin ${ours.frames} frames × ${ours.channels}ch`);
@@ -262,7 +320,7 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
   const vsReference = compareToReference(ref.samples, left);
   const dryVsReference = compareToReference(dry, ref.samples);
   const leftVsRight = compareToReference(left, right);
-  return { vsReference, dryVsReference, leftVsRight, sampleRate, frames: dry.length };
+  return { vsReference, dryVsReference, leftVsRight, sampleRate, frames: dry.length, timing, ...rtf };
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -282,11 +340,20 @@ if (isMain) {
   for (const [what, v] of [['--plugin', pluginDir], ['--model', modelPath], ['--namcore', namcore]]) {
     if (!v) { console.error(`[nam-render] ${what} is required`); process.exit(2); }
   }
-  const r = namRenderCheck({ pluginDir, modelPath, namcore, clapInclude, work, seconds: Number(arg('seconds', '0.25')) });
+  const r = namRenderCheck({
+    pluginDir, modelPath, namcore, clapInclude, work,
+    seconds: Number(arg('seconds', '0.25')),
+    // The rate wants a longer signal than the null does; see 4b in namRenderCheck.
+    timingSeconds: Number(arg('timing-seconds', '4')),
+  });
+  const maxRtf = Number(arg('max-rtf', '1'));
   const fmt = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical (exact)');
   console.log(`[nam-render] plugin vs reference : ${fmt(r.vsReference.nullDb)}  (peak error ${r.vsReference.peakError.toExponential(2)}, ${r.vsReference.frames} frames)`);
   console.log(`[nam-render] dry vs reference    : ${fmt(r.dryVsReference.nullDb)}  (what the model does to the signal)`);
   console.log(`[nam-render] left vs right       : ${fmt(r.leftVsRight.nullDb)}  (the two model instances must agree)`);
+  console.log(`[nam-render] throughput          : ${r.timesFaster.toFixed(2)}x faster than real time `
+    + `(${r.timing.processSeconds.toFixed(3)} s of CPU for ${r.timing.audioSeconds.toFixed(3)} s of audio at `
+    + `${r.timing.sampleRate} Hz, ${r.timing.blockSize}-frame blocks) — real-time factor ${r.realTimeFactor.toFixed(3)}`);
   console.log(JSON.stringify({ ok: true, ...r }));
   const worst = Math.max(
     Number.isFinite(r.vsReference.nullDb) ? r.vsReference.nullDb : -Infinity,
@@ -300,5 +367,14 @@ if (isMain) {
     console.error(`[nam-render] x the plugin is ${worst.toFixed(1)} dB from the reference, worse than the ${maxNullDb} dB this check requires`);
     process.exit(1);
   }
-  console.log('[nam-render] the plugin plays the model the reference engine plays\n');
+  // ⭐ THE DEVICE QUESTION, AS AN ASSERTION. "A Pi you plug in and play" needs the DSP to fit inside real time
+  // with room for the audio thread to be scheduled; a model that only just keeps up on a runner does not keep
+  // up on a Pi. This is the plugin's own process() and nothing else, so it is the floor rather than the whole
+  // story — the device, its buffer and its driver are the rest, and they can only make it worse.
+  if (r.realTimeFactor >= maxRtf) {
+    console.error(`[nam-render] x this CPU renders at ${r.realTimeFactor.toFixed(3)}x real time, at or over the `
+      + `${maxRtf}x this check allows — a model that cannot beat real time here cannot run on a device`);
+    process.exit(1);
+  }
+  console.log('[nam-render] the plugin plays the model the reference engine plays, and this CPU keeps up in real time\n');
 }

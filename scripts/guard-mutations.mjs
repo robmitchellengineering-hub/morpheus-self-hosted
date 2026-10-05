@@ -976,6 +976,26 @@ export const MUTATIONS = [
     replace: 'with 16 widgets — the five life streams',
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⭐ THE DIRECTION OF THE ANSWER, as a mutation. Swapping the division reports a machine that cannot keep up
+    // as one with headroom to spare, and every null test in the run still passes — the plugin is right, it just
+    // does not fit. That is the failure that only shows up on the device.
+    why: 'Inverts the real-time factor to audio-over-wall, so a CPU that cannot keep up is reported as one with headroom to spare.',
+    find: 'return { realTimeFactor: processSeconds / audioSeconds, timesFaster: audioSeconds / processSeconds };',
+    replace: 'return { realTimeFactor: audioSeconds / processSeconds, timesFaster: processSeconds / audioSeconds };',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'tools/clap-offline/clap_offline.cpp',
+    // A MEASUREMENT THAT MEASURES THE WRONG THING IS WORSE THAN NONE. Timing from before the file is read and
+    // the plugin is constructed makes "throughput" a report on process startup, and on a four-second render the
+    // startup is a real fraction of it.
+    why: 'Starts the clock before the plugin is loaded, so the reported throughput is partly a measurement of process startup.',
+    find: '  const auto processStart = std::chrono::steady_clock::now();',
+    replace: '  const auto processStart = processStartEarly;',
+  },
+  {
     guard: 'verify-seo-static.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     // ⭐ THE DRIFT ROB NAMED, as a mutation: a plugin format exists on more than one platform, so a page that
