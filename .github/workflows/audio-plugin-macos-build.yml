@@ -59,6 +59,28 @@ jobs:
       # not re-type a single command.
       - name: Build and verify every format the target emits
         run: node scripts/audio-plugin-macos-runner-build.mjs
+      # The model is MIT and is FETCHED rather than committed, from the SAME pinned commit as the engine that
+      # will play it — a model from a moving branch could arrive in a shape the pinned engine cannot load.
+      - name: Fetch the example model (MIT)
+        run: |
+          mkdir -p .cache/models
+          curl -sSfL -o .cache/models/wavenet_a1_standard.nam \
+            https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/0b3d3c9/example_models/wavenet_a1_standard.nam
+          ls -la .cache/models
+
+      # ⭐ WHY THIS RIG NOW BUILDS TWICE, AND WHY THE DEMO WAS WRONG WITHOUT IT. The first build has no model
+      # and is the plain gain stage — that is a supported state and the run above still proves it. But the
+      # DEMO DOWNLOAD was pointed at that build, so `plugin-macos-*.zip` was a stereo gain stage published
+      # under a description calling it "a neural amp model with an input trim, a gate and a three-band tone
+      # stack". The build's own proof said otherwise in as many words — "(none: this is the gain plugin)" and
+      # one parameter, `Gain`, where the amp has six — and nobody read it. This second build IS the amp, and
+      # it is the one published.
+      - name: Build it again WITH the model — this is the one people download
+        run: |
+          node scripts/scripts/audio-plugin-macos-runner-build.mjs --model .cache/models/wavenet_a1_standard.nam
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build
+
 
       # `if-no-files-found: error` is the second half of the check: if the standalone's zip is missing, the
       # run fails here rather than passing with three of four artifacts.
@@ -88,7 +110,7 @@ jobs:
       # The zips never collided because they are already named per platform; the proof was not.
       - name: Name the proof for the machine that wrote it
         if: inputs.publish_tag != ''
-        run: cp "${{ runner.temp }}/audio-plugin-build/BUILD-PROOF.txt" "${{ runner.temp }}/BUILD-PROOF-macos.txt"
+        run: cp "${{ runner.temp }}/audio-plugin-nam-build/BUILD-PROOF.txt" "${{ runner.temp }}/BUILD-PROOF-macos.txt"
 
       - name: Publish the demo download
         if: inputs.publish_tag != ''
@@ -105,7 +127,7 @@ jobs:
             a noise gate and a three-band tone stack. Unsigned. Not the product — what Morpheus makes for
             you is a plugin built in your own repository around your own model and cabinet.
           files: |
-            ${{ runner.temp }}/audio-plugin-build/build/assets/*.zip
+            ${{ runner.temp }}/audio-plugin-nam-build/build/assets/*.zip
             ${{ runner.temp }}/BUILD-PROOF-macos.txt
             docs/PLUGIN-DEMO-NOTICE.txt
           fail_on_unmatched_files: true
