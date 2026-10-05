@@ -651,12 +651,14 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/ampChain.js',
-    // The source has to stay the same text with and without a model, or the test bench's self-test patch
-    // depends on the workspace.
+    // ⚠️ REPOINTED — BOTH THE FILE AND THE ANCHOR — when the model became a block call. The flag moved out of
+    // the chain text and into the template's process loop, so a mutation that kept naming ampChain.js would
+    // have gone stale, which reads as coverage. The property is unchanged: the generated source must not
+    // change shape when a project carries a model.
+    file: 'server/src/lib/audioPluginTemplate.js',
     why: 'Takes the model out from behind MORPHEUS_HAS_MODEL, so the plugin source changes shape when a project carries one.',
-    find: "    '#if MORPHEUS_HAS_MODEL',",
-    replace: "    '#if 1',",
+    find: '#if MORPHEUS_HAS_MODEL\n      // ── THE MODEL, ONCE PER CHUNK PER CHANNEL',
+    replace: '#if 1\n      // ── THE MODEL, ONCE PER CHUNK PER CHANNEL',
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -687,8 +689,8 @@ export const MUTATIONS = [
     // The mistake the test bench caught on its first local run: the output level emitted both inside the
     // channel loop and on the final line, so a +6 dB setting measured +11.85 dB.
     why: 'Applies the output level twice, which is exactly the defect that measured a +6 dB setting as +11.85 dB.',
-    find: 'process->audio_outputs[0].data32[0][i] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]));',
-    replace: 'process->audio_outputs[0].data32[0][i] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]) * db_to_linear(p->smoothed[IDX_OUTPUT]));',
+    find: 'process->audio_outputs[0].data32[0][k] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]));',
+    replace: 'process->audio_outputs[0].data32[0][k] = (float)(in_l * db_to_linear(p->smoothed[IDX_OUTPUT]) * db_to_linear(p->smoothed[IDX_OUTPUT]));',
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -738,8 +740,10 @@ export const MUTATIONS = [
     // own comment said "after the model", so a speaker was convolved in front of the amplifier driving it.
     // Every check that only looks for a stage's PRESENCE passed.
     why: 'Emits the cabinet stage where the model goes, which is how a speaker ended up in front of the amplifier it is driven by.',
-    find: "  lines.push('__CAB_STAGE__');",
-    replace: "  lines.push('__MODEL_STAGE__');",
+    // ⚠️ REPOINTED with the chain split: the cabinet is emitted by chainPostCpp now, but the property this
+    // protects is unchanged — the cabinet must not be emitted where the model goes.
+    find: "  return '__CAB_STAGE__';",
+    replace: "  return '__MODEL_STAGE__';",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -974,6 +978,38 @@ export const MUTATIONS = [
     why: 'Changes the published widget count so the landing page and llms.txt quote a number the widget registry does not have — the "6 platforms" drift, one number smaller. (The count is read from src/pages/CommandDeck/deckWidgets.js, so a widget added without updating the copy fails the same check.)',
     find: 'with 15 widgets — the five life streams',
     replace: 'with 16 widgets — the five life streams',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⭐ THE REGRESSION THIS WHOLE CHANGE EXISTS TO PREVENT, as a mutation. One sample at a time produces the
+    // SAME AUDIO and costs 2.6x more CPU, so nothing about the output says it happened — the plugin simply
+    // stops fitting on the machine it was measured for.
+    why: 'Puts the model back to one sample per call, which changes no audio and costs 2.6x the CPU.',
+    find: 'p->model[c]->process(io, io, model_frames);',
+    replace: 'p->model[c]->process(io, io, 1);',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // THE CAST THAT IS ONLY SOUND WHILE NAM_SAMPLE IS FLOAT. Without the assert, turning off NAM_SAMPLE_FLOAT
+    // makes NAM_SAMPLE double, and reinterpreting a float32 port as double* is undefined behaviour — not a
+    // compile error, and not necessarily a crash either. It would read garbage and sound like a broken model.
+    why: 'Drops the static_assert tying the in-place cast to NAM_SAMPLE being float, turning a compile error into undefined behaviour.',
+    find: '         static_assert(sizeof(NAM_SAMPLE) == sizeof(float), "the model runs in place on a float32 port");\n',
+    replace: '',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    // ⚠️ THE EMITTED LINE IS BUILT IN ampChain.js, not written in the template — the template holds
+    // `${smoothCpp('IDX_OUTPUT')}`. So this points at the module that owns the text; the first version aimed
+    // at the template and was stale on arrival.
+    file: 'server/src/lib/ampChain.js',
+    // THE OUTPUT RAMP, stepped in the wrong pass. Stepping it in pass 1 as well as pass 2 doubles its rate;
+    // stepping it only in pass 1 runs it a block ahead. Both are inaudible at 64 frames and both are wrong.
+    why: 'Stops pass 1 skipping the output smoother, so the output ramp is stepped twice per sample and settles at twice the rate.',
+    find: '...(skipIdx ? [`            if (k == ${skipIdx}) continue;`] : []),',
+    replace: '',
   },
   {
     guard: 'verify-audio-plugin.mjs',

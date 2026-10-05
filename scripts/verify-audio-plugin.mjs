@@ -990,8 +990,43 @@ check('…and exactly ONCE, which is the mistake that measured a +6 dB setting a
 // `if (p->model[c])` — the first version of this check was the loose form, and it PASSED with the chain's
 // flag removed, because plug_activate has the same two strings within 400 characters of each other. The
 // mutation survived, which is how the check was found to be measuring the wrong region.
+// The anchor moved with the model block when the model became a BLOCK call (see below): it now lives in the
+// template's process loop rather than in the chain text, and the comment it is anchored on changed with it.
+// The property is unchanged and so is the reason for anchoring on a COMMENT rather than on the two pragma
+// strings — a loose match passed with the flag removed because plug_activate contains both of them.
 check('…and the model is still behind the flag, so the source does not change with one',
-  /#if MORPHEUS_HAS_MODEL\n\s*\/\/ The model is the amp:/.test(ampSrc), true);
+  /#if MORPHEUS_HAS_MODEL\n\s*\/\/ ── THE MODEL, ONCE PER CHUNK PER CHANNEL/.test(ampSrc), true);
+
+// ⭐ THE ENGINE IS CALLED ONCE PER BLOCK, NOT ONCE PER SAMPLE — and this is the assertion that keeps it that
+// way, because the regression is silent: one sample at a time produces the SAME audio and simply costs 2.6x
+// more CPU. Measured here with the plugin built both ways, 4 s of audio in 64-frame blocks on one machine:
+//
+//     one sample at a time   3.3775 s CPU   1.18x real time   -144.0 dB vs the reference
+//     once per block         1.2855 s CPU   3.11x real time   EXACT vs the reference
+//
+// The per-sample calls were not merely slow: they were the entire reason the null was -144 dB instead of
+// exact, so the "worse" number was being reported as the plugin's accuracy.
+check('⭐ the model is called ONCE PER BLOCK, not once per sample',
+  /p->model\[c\]->process\(io, io, model_frames\)/.test(ampSrc), true);
+check('…with the chunk it was given, and the count is that and not a literal 1',
+  /const int model_frames = \(int\)\(chunk_end - chunk_start\);/.test(ampSrc)
+  && !/->process\(mip, mop, 1\)/.test(ampSrc), true);
+// IN PLACE, which is what removes the need for a scratch buffer, an allocation and a field in plugin_t. It is
+// only sound while NAM_SAMPLE is float, and a cast between float and double is undefined behaviour rather
+// than a compile error — so the cast is guarded by a static_assert that makes it one.
+check('…in place on the float32 port, with the cast made a compile error if NAM_SAMPLE stops being float',
+  /NAM_SAMPLE \*io\[1\] = \{\(NAM_SAMPLE \*\)process->audio_outputs\[0\]\.data32\[c\]/.test(ampSrc)
+  && /static_assert\(sizeof\(NAM_SAMPLE\) == sizeof\(float\)/.test(ampSrc), true);
+// AND THE OUTPUT RAMP STAYS PER-SAMPLE. Pass 1 deliberately skips IDX_OUTPUT so that pass 2 can step it where
+// the output is applied; stepping it in both would double its rate, and stepping it only in pass 1 would run
+// it a block ahead. Both are silent.
+check('the output smoother is stepped ONCE per sample, in the pass that applies it',
+  /if \(k == IDX_OUTPUT\) continue;/.test(ampSrc)
+  && /p->smoothed\[IDX_OUTPUT\] \+= \(p->value\[IDX_OUTPUT\] - p->smoothed\[IDX_OUTPUT\]\) \* 0.001;/.test(ampSrc), true);
+// The measurement is the justification for the shape, and it is in the generated source so the next person to
+// touch this loop reads the number rather than the opinion.
+check('…and the generated source carries the measurement that justifies the shape',
+  /2\.58x/.test(ampSrc) && /8\.85x/.test(ampSrc), true);
 check('an unknown chain warns instead of quietly building something else',
   audioPlugin.scaffold([...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'X', chain: 'marshall' }) }])
     .warnings.some((w) => /does not have/.test(w)), true);
