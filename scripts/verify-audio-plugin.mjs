@@ -944,6 +944,17 @@ check('…and a chain with no model has no middle', chainMod.modelStageIndex(cha
 check('…which the emitters ask rather than assume', chainMod.chainHas(chainMod.PLAIN_CHAIN, 'model'), false, true);
 check('the parameters are DERIVED from the stages, in the stages\' own order',
   chainMod.chainParams(chainMod.AMP_CHAIN, {}).map((pp) => pp.key), ['input', 'gate', 'bass', 'mid', 'treble', 'output']);
+// ⚠️ AND A STAGE REORDER MUST NOT RENUMBER A CONTROL. `paramsCpp` turns this list into `PARAM_<KEY> =
+// <index + 1>`, and a host stores automation against those ids — so a parameter list that follows the stage
+// order means dragging a block in a pedalboard silently re-points every automated lane at a different knob.
+// Nothing fails to build; a saved session just starts controlling the wrong thing. Asserted by reversing the
+// stages and requiring the identity order to be unmoved, which is the exact thing a pedalboard will do.
+const reversed = { ...chainMod.AMP_CHAIN, stages: [...chainMod.AMP_CHAIN.stages].reverse() };
+check('a stage reorder does not renumber the parameters',
+  chainMod.chainParamsStable(reversed, {}).map((pp) => pp.key),
+  chainMod.chainParamsStable(chainMod.AMP_CHAIN, {}).map((pp) => pp.key));
+check('…and the identity order is the amplifier\'s own, not an accident of the stage list',
+  chainMod.PARAM_ORDER, ['input', 'gate', 'bass', 'mid', 'treble', 'output']);
 check('…and the plain chain still calls its single control what the manifest says',
   chainMod.chainParams(chainMod.PLAIN_CHAIN, { paramName: 'Drive' }).map((pp) => pp.name), ['Drive']);
 const tone = await import('../server/src/lib/audio/toneStack.js');
@@ -1152,9 +1163,19 @@ check('…a silent file is refused as a cabinet rather than convolved as one',
   cabMod.resolveCab(cabSeed(irB64(new Float64Array(512))), {}).warnings.some((w) => /is silent/.test(w)), true);
 check('…and a file that is not a WAV at all warns instead of throwing',
   cabMod.resolveCab(cabSeed(Buffer.from('not a wav').toString('base64')), {}).info, null);
-check('…and a cabinet in a project with no chain is reported rather than silently ignored',
-  audioPlugin.scaffold([...empty, { path: 'models/cab.wav', content: irB64(synthIr(512, 100)), encoding: 'base64' }])
-    .warnings.some((w) => /add 'chain': 'amp'/.test(w)), true);
+// ⚠️ THIS ASSERTED THE OPPOSITE UNTIL 2026-10-05, AND THE THING IT ASSERTED WAS NOT TRUE. It required a
+// warning saying a cabinet does nothing without the amp chain. The cabinet's stage is emitted for EVERY
+// chain and its DSP is behind `#if MORPHEUS_HAS_CAB`, so the plain plugin convolves it too — after its gain
+// stage rather than after the model. A guard can only pin a claim, and pinning the sentence instead of the
+// CODE is how a false warning sat in front of users. This checks what the emitted source does.
+check('⭐ a cabinet in a project with NO chain is convolved anyway — the plain plugin has a speaker too',
+  (() => {
+    const src = generated(
+      audioPlugin.scaffold([...empty, { path: 'models/cab.wav', content: irB64(synthIr(512, 100)), encoding: 'base64' }]),
+      'Source/Plugin.cpp',
+    );
+    return /cab_process\(&p->cab\[c\]/.test(src) && /#if MORPHEUS_HAS_CAB/.test(src);
+  })(), true);
 
 const cabFiles = audioPlugin.scaffold(cabSeed(irB64(synthIr(4800, 800)))).files;
 const cabSrc = generated({ files: cabFiles }, 'Source/Plugin.cpp');
@@ -1216,6 +1237,17 @@ check('…and the emitted stage is guarded by exactly that comparison',
   /if \(p->smoothed\[IDX_GATE\] > \(double\)MORPHEUS_GATE_OFF_DB \+ 0\.001\) \{/.test(ampNowSrc), true);
 check('…with the constant defined, not interpolated into a comment',
   /#define MORPHEUS_GATE_OFF_DB -80\.0/.test(ampNowSrc), true);
+// ⚠️ THE BENCH READ THE WRONG JSON LINE FOR AS LONG AS THE HOST HAS PRINTED TWO, and it failed SILENTLY in
+// the way that matters: it did not report a wrong measurement, it crashed on `info.params` after printing
+// `undefined` for the plugin's own name — so the bench measured nothing at all in that time. The host prints
+// a descriptor and, since the throughput work, a timing report; `.pop()` took the timing one. This pins the
+// contract between the two files: more than one object is reported, and the descriptor is found by what it is.
+check('⭐ the bench finds the plugin descriptor by what it is, not by being the last line the host prints',
+  /reported\.find\(\(o\) => o && typeof o\.id === 'string'\)/.test(read('scripts/audio-testbench.mjs'))
+  // …and the host's own second report, which is the object that broke the parse when it appeared. Written
+  // without the quotes because the C++ escapes them inside its printf format string.
+  && /processSeconds/.test(read('tools/clap-offline/clap_offline.cpp')), true);
+
 check('the gate has hysteresis, or a signal at the threshold buzzes instead of gating',
   /MORPHEUS_GATE_HYSTERESIS/.test(ampNowSrc), true);
 check('…and a plain plugin has no gate code at all', /gate_process/.test(plainSrc), false);
@@ -1283,6 +1315,110 @@ check('the ARM workflow generates the cabinet, builds the chain and proves it',
   /make-test-cab\.mjs/.test(chainWf) && /--chain-check(?!-)/.test(chainWf) && /--chain \\/.test(chainWf), true);
 check('…keeping that build\u2019s proof file with the others',
   /audio-plugin-linux-arm-chain-build\/BUILD-PROOF\.txt/.test(chainWf), true);
+
+console.log('\n21. the board: the order is the user\'s, and moving a block does not move a control');
+// ⭐ THE TWO THINGS THIS SECTION EXISTS FOR. A board is the first thing in this target that a USER arranges,
+// and it fails in two ways nothing else in the pipeline can see: an order that is drawn but not emitted (a
+// block silently missing from the plugin), and an order that renumbers the parameters (a host's automation
+// lane following the wrong knob after a drag). Neither throws, and neither changes the build's exit code.
+const boardMod = await import('../server/src/lib/board.js');
+const projectMod = await import('../server/src/lib/audioPluginProject.js');
+const boardSeed = (items) => [
+  { path: 'morpheus.plugin.json', content: JSON.stringify({ chain: 'amp', board: { nextInstanceId: 20, items } }) },
+  { path: 'models/amp.nam', content: LINEAR },
+];
+const boardItems = () => JSON.parse(JSON.stringify(boardMod.ampBoard().items));
+const boardSrc = (items) => generated(audioPlugin.scaffold(boardSeed(items)), 'Source/Plugin.cpp');
+const moved = (items, kind, before) => {
+  const out = JSON.parse(JSON.stringify(items));
+  const [it] = out.splice(out.findIndex((x) => x.kind === kind), 1);
+  out.splice(before == null ? out.length : out.findIndex((x) => x.kind === before), 0, it);
+  return out;
+};
+
+// The default board is the amp chain, so it has to GENERATE the amp chain — otherwise the editor's opening
+// state is already a different plugin from the one the project has.
+// BOTH DIRECTIONS: the board against the amp chain, and the amp chain against the board. A board that
+// opened with six blocks and generated something else would be an editor that lies about the plugin.
+const ampFromChain = generated(audioPlugin.scaffold([
+  { path: 'morpheus.plugin.json', content: JSON.stringify({ chain: 'amp' }) },
+  { path: 'models/amp.nam', content: LINEAR },
+]), 'Source/Plugin.cpp');
+check('⭐ the default board generates the amp chain, byte for byte',
+  boardSrc(boardItems()) === ampFromChain && ampFromChain.length > 20000, true);
+
+// ⭐ THE CORRUPTION, ASSERTED DIRECTLY: the controls must not move when the blocks do.
+const boardReversed = [...boardItems()].reverse();
+check('⭐ reversing the board leaves the parameter ids exactly where they were',
+  boardMod.boardParamsStable({ items: boardReversed }).map((p) => p.key).join(','),
+  boardMod.boardParamsStable({ items: boardItems() }).map((p) => p.key).join(','));
+check('…and the ids are the amp chain\'s own order, not the arrangement\'s',
+  boardMod.boardParamsStable({ items: boardReversed }).map((p) => p.key).join(','), 'input,gate,bass,mid,treble,output');
+
+// A block after the model has to be EMITTED after the model. This is the one that bit before the board
+// existed: the post-model pass knew how to emit exactly one kind, so anything else placed there vanished.
+const toneLate = boardSrc(moved(boardItems(), 'tone', null));
+const bodyLate = toneLate.slice(toneLate.indexOf('static clap_process_status plug_process'));
+check('⭐ a tone stack placed after the model is emitted after the model',
+  bodyLate.indexOf('biquad_process(&p->tone[c][0]') > bodyLate.indexOf('p->model[c]->process'), true);
+check('…and one placed before it is emitted before it',
+  (() => {
+    const s = boardSrc(boardItems());
+    const b = s.slice(s.indexOf('static clap_process_status plug_process'));
+    return b.indexOf('biquad_process(&p->tone[c][0]') < b.indexOf('p->model[c]->process');
+  })(), true);
+
+// BYPASS IS A STATE, NOT AN ABSENCE: the control stays (that is the automation lane) and the DSP goes.
+const gateOff = boardMod.boardChain({ items: boardItems().map((i) => (i.kind === 'gate' ? { ...i, enabled: false } : i)) });
+const gateOffSrc = boardSrc(boardItems().map((i) => (i.kind === 'gate' ? { ...i, enabled: false } : i)));
+check('…a bypassed block keeps its control, so nothing after it is renumbered',
+  gateOffSrc.includes('"Gate (bypassed)"') && /IDX_GATE/.test(gateOffSrc), true);
+check('…and it emits no DSP at all, rather than DSP that is ignored',
+  /gate_process/.test(gateOffSrc), false);
+check('…while the block that is still on keeps its own',
+  /gate_process/.test(boardSrc(boardItems())), true);
+
+// THE FILE AND THE BLOCK ARE DIFFERENT QUESTIONS — the whole reason the template takes two extra flags.
+const noModel = boardSrc(boardItems().filter((i) => i.kind !== 'model'));
+check('⭐ removing the Amp model block takes the model out of the path, with the .nam still in the project',
+  /#if 0\n\s*\/\/ ── THE MODEL, ONCE PER CHUNK PER CHANNEL/.test(noModel)
+  && !/if \(p->model\[c\]\) continue;/.test(noModel.slice(noModel.indexOf('static clap_process_status plug_process'))), true);
+const noCab = boardSrc(boardItems().filter((i) => i.kind !== 'cab'));
+check('…and removing the Cabinet block stops the convolution, with the .wav still in the project',
+  /cab_process\(&p->cab\[c\]/.test(noCab.slice(noCab.indexOf('static clap_process_status plug_process'))), false);
+
+// A board that CANNOT be built is refused with a reason rather than repaired — the one input here that the
+// file tree cannot show the user is wrong.
+const dup = boardMod.validateBoard({ items: [...boardItems(), { instanceId: 9, kind: 'gate', enabled: true, values: {} }] }, {});
+// ⚠️ FOUND BY CALLING THE ROUTE, not by reading it: a save whose items array contained a hole (a
+// `JSON.stringify` of a sparse array produces `null` entries) answered **500** to what is a 400. The id scan
+// runs on the raw body, before validation, so it has to read through a missing item rather than assume one.
+check('⭐ a malformed save is refused rather than throwing \u2014 the id scan runs before validation',
+  boardMod.nextInstanceId({ items: [null, undefined, { instanceId: 3 }] }), 4);
+
+check('a second block of the same kind is refused, because the two would share a control id',
+  dup.ok === false && /share their parameter ids/.test(dup.errors[0]), true);
+check('…an unknown block is refused rather than skipped',
+  boardMod.validateBoard({ items: [{ instanceId: 1, kind: 'reverb', values: {} }] }, {}).errors.some((e) => /not a block this version has/.test(e)), true);
+check('…a board with no Output block is refused, because the emitted loop indexes it by name',
+  boardMod.validateBoard({ items: boardItems().filter((i) => i.kind !== 'output') }, {}).errors.some((e) => /no Output block/.test(e)), true);
+check('…and bypassing the Output block is refused, because the level is applied on the output',
+  boardMod.validateBoard({ items: boardItems().map((i) => (i.kind === 'output' ? { ...i, enabled: false } : i)) }, {}).ok, false);
+check('…a block after Output is a warning rather than a refusal — the plugin still builds',
+  (() => {
+    const r = boardMod.validateBoard({ items: moved(boardItems(), 'output', 'cab') }, {});
+    return r.ok === true && r.warnings.some((w) => /after the Output block/.test(w));
+  })(), true);
+// The file that exists but is NOT in the path — the state a user reaches by removing a block, and the one
+// that looks like nothing happened because the .nam is still compiled into the binary.
+check('…and a .nam with no model block is reported rather than silently idle',
+  boardMod.validateBoard({ items: boardItems().filter((i) => i.kind !== 'model') }, { modelFile: 'models/amp.nam' })
+    .warnings.some((w) => /never runs/.test(w)), true);
+check('the board a project opens with is the plugin it already builds, not a default',
+  projectMod.boardFor([{ path: 'morpheus.plugin.json', content: '{"chain":"amp"}' }]).items.map((i) => i.kind).join(','),
+  'input,gate,tone,model,cab,output');
+check('…and a project with no chain opens as the one-Gain plugin it is',
+  projectMod.boardFor(empty).items.map((i) => i.kind).join(','), 'output');
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

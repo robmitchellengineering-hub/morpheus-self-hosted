@@ -192,9 +192,22 @@ function render(samples, { params = [], blockSize = 256, channels = 1 } = {}) {
     console.error(`the plugin failed to render: ${run.stderr || run.stdout}`);
     process.exit(1);
   }
-  let info;
-  try { info = JSON.parse((run.stdout || '').trim().split('\n').pop()); }
-  catch { console.error(`could not parse the host's report:\n${run.stdout}`); process.exit(1); }
+  // ⚠️ THE HOST PRINTS TWO JSON LINES, AND THIS USED TO TAKE THE LAST ONE. It printed only the descriptor
+  // until it grew a timing report (`processSeconds` / `audioSeconds`, added for the throughput measurement in
+  // scripts/audio-model-bench.mjs); from then on `.pop()` returned the TIMING object, so every run read
+  // `info.name` as `undefined` and crashed on `info.params`. The bench measured NOTHING in that time, and the
+  // crash is the only reason it looked like a failure rather than like a wrong number.
+  //
+  // The descriptor is now found by WHAT IT IS — the only reported object carrying a plugin `id` — rather than
+  // by its position, so a third line cannot do this again.
+  const reported = (run.stdout || '').trim().split('\n')
+    .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+    .filter(Boolean);
+  const info = reported.find((o) => o && typeof o.id === 'string');
+  if (!info) {
+    console.error(`the host printed no plugin descriptor:\n${run.stdout}`);
+    process.exit(1);
+  }
   return { info, audio: readMraw(outPath) };
 }
 

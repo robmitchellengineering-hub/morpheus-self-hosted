@@ -7,6 +7,7 @@ import NetworkFlashDialog from '@/components/matrix/NetworkFlashDialog';
 import DistroConfigDialog from '@/components/matrix/DistroConfigDialog';
 import CabinetDialog from '@/components/matrix/CabinetDialog';
 import CaptureDialog from '@/components/matrix/CaptureDialog';
+import BoardDialog from '@/components/matrix/BoardDialog';
 import LinuxDistroConfigDialog from '@/components/matrix/LinuxDistroConfigDialog';
 import DiagnosisPanel, { DiagnosisLoading } from '@/components/matrix/DiagnosisPanel';
 import { useDiagnosis } from '@/hooks/useDiagnosis';
@@ -107,6 +108,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
   const [showDistroConfig, setShowDistroConfig] = useState(false);
   const [showCabinet, setShowCabinet] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
+  const [showBoard, setShowBoard] = useState(false);
   const [showLinuxDistroConfig, setShowLinuxDistroConfig] = useState(false);
   const pollRef = useRef(null);
   const savePollRef = useRef(null);
@@ -807,6 +809,12 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
               {/* The three audio plugin routes, because a cabinet only means anything inside an amp chain —
                   and the plain plugin has no chain to put it in. */}
               {String(target).startsWith('audio-plugin-') && (<>
+                {/* ⭐ THE FIRST BUTTON, because it is the arrangement everything else sits in: which blocks
+                    there are, in what order, and which are switched off. It is a drawing of the plugin, and
+                    the plugin is generated from it. */}
+                <button onClick={() => setShowBoard(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
+                  <Sliders size={14} /> SIGNAL PATH (BOARD)
+                </button>
                 <button onClick={() => setShowCabinet(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
                   <Sliders size={14} /> CABINET (.wav)
                 </button>
@@ -1291,6 +1299,7 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
       <DistroConfigDialog open={showDistroConfig} onClose={() => setShowDistroConfig(false)} projectId={project.id} />
       <CabinetDialog open={showCabinet} onClose={() => setShowCabinet(false)} projectId={project.id} />
       <CaptureDialog open={showCapture} onClose={() => setShowCapture(false)} />
+      <BoardDialog open={showBoard} onClose={() => setShowBoard(false)} projectId={project.id} />
       <LinuxDistroConfigDialog open={showLinuxDistroConfig} onClose={() => setShowLinuxDistroConfig(false)} projectId={project.id} />
     </div>
   );

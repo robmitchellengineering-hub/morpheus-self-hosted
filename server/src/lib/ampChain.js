@@ -31,7 +31,12 @@ export const GATE_OFF_DB = -80;
  * `kind` is what a stage DOES; `role` is which parameter drives it. The emitters ask two questions of this
  * list — is there a stage of this kind, and where is the model — instead of branching on a chain's name.
  */
-export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind === kind);
+// ⚠️ A BYPASSED STAGE IS NOT IN THE CHAIN, and this is the one place that decides it. Every emitter asks
+// `chainHas` before writing a block's DSP, so a bypassed tone stack emits no biquads, no filter state and no
+// per-sample work — while its PARAMETERS stay in the list. That split is deliberate and is the whole of
+// bypass: the control keeps its id (a host's automation lane still points at it) and does nothing until the
+// block is switched back on. See lib/board.js.
+export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind === kind && !s.bypass);
 
 /**
  * WHERE THE MODEL SITS, so the pre-model/post-model split is DERIVED rather than assumed.
@@ -41,7 +46,7 @@ export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind
  * chain with no model has no middle, and a chain that is only a delay has nothing either side of it. Asking
  * the list where the model is means the next chain does not have to be an amp to be expressed.
  */
-export const modelStageIndex = (chain) => (chain.stages || []).findIndex((s) => s.kind === 'model');
+export const modelStageIndex = (chain) => (chain.stages || []).findIndex((s) => s.kind === 'model' && !s.bypass);
 
 /** The single-parameter plugin every project got before the chain existed. */
 export const PLAIN_CHAIN = {
@@ -111,10 +116,50 @@ export function chainFor(manifest = {}) {
 export function chainParams(chain, manifest = {}) {
   const out = [];
   for (const stage of chain.stages || []) {
-    if (stage.bands) out.push(...stage.bands.map((b) => ({ key: b.key, name: b.label, min: -b.rangeDb, max: b.rangeDb, def: 0, role: 'tone' })));
-    else if (stage.param) out.push({ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain') });
+    // A BYPASSED BLOCK'S CONTROLS STAY, and they say so. The id must not move (that is the automation lane),
+    // so the parameter cannot be dropped; naming it instead is how the host's control list tells the truth
+    // about a block that is switched off. `def` is read from the stage when the board saved one — a board's
+    // value is the plugin's default, and it has to survive into the generated `kParams` table.
+    const suffix = stage.bypass ? ' (bypassed)' : '';
+    if (stage.bands) {
+      out.push(...stage.bands.map((b) => ({
+        key: b.key,
+        name: `${b.label}${suffix}`,
+        min: -b.rangeDb,
+        max: b.rangeDb,
+        def: Number.isFinite(b.def) ? b.def : 0,
+        role: 'tone',
+      })));
+    } else if (stage.param) {
+      out.push({ ...stage.param, name: `${stage.param.name ?? String(manifest.paramName || 'Gain')}${suffix}` });
+    }
   }
   return out;
+}
+
+/**
+ * ⚠️ THE ORDER A PARAMETER IS IDENTIFIED IN, WHICH IS NOT THE ORDER IT IS PROCESSED IN.
+ *
+ * `paramsCpp` turns the parameter list into `PARAM_<KEY> = <index + 1>` and `IDX_<KEY> = <index>`, and **a
+ * host stores automation against those ids**. A list that follows the stage order therefore means that
+ * dragging a block in a pedalboard RE-NUMBERS the controls: a lane automated on `Gate` (id 2) would, after a
+ * rebuild, find that id 2 is something else. Nothing fails to build and nothing throws — it is the same
+ * corruption the stage `id` exists to prevent, one level down, which is why it is fixed before there is a UI
+ * that can reorder anything.
+ *
+ * So the two orderings are separate, and they must never be the same list:
+ *   - the STAGES decide what is wired where, and a user may move them;
+ *   - this decides what a control IS, and a user may not.
+ *
+ * The order below is the amp chain's existing one, deliberately: this changes which arrangements are
+ * POSSIBLE without changing the plugin that already exists.
+ */
+export const PARAM_ORDER = ['input', 'gate', 'bass', 'mid', 'treble', 'output'];
+
+/** The parameters in their STABLE identity order — see PARAM_ORDER. A stage reorder cannot move a control. */
+export function chainParamsStable(chain, manifest = {}) {
+  const rank = (k) => { const at = PARAM_ORDER.indexOf(k); return at < 0 ? PARAM_ORDER.length : at; };
+  return chainParams(chain, manifest).slice().sort((a, b) => rank(a.key) - rank(b.key));
 }
 
 const cstr = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
@@ -200,8 +245,14 @@ ${rows}
 };`;
 }
 
-/** The per-instance state: one value and one smoothed value per parameter, plus the filter state. */
-export function stateCpp(chain, params) {
+/**
+ * The per-instance state: one value and one smoothed value per parameter, plus the filter state.
+ *
+ * `_params` IS DELIBERATELY UNUSED: what needs state is decided by the CHAIN, not by the parameter list, so
+ * that a BYPASSED gate keeps its control and loses its envelope follower. The argument stays for the caller's
+ * sake and is named with the underscore the lint rule asks for.
+ */
+export function stateCpp(chain, _params) {
   const lines = [
     '   // One pair per parameter, indexed by IDX_*, and stepped one sample at a time. Keeping the host value',
     '   // and the applied value apart is what stops a parameter jump from clicking.',
@@ -218,7 +269,9 @@ export function stateCpp(chain, params) {
       `   double tone_last[${TONE_KEYS.length}];`,
     );
   }
-  if (params.some((p) => p.role === 'gate')) lines.push(gateStateCpp);
+  // Keyed on the CHAIN rather than on the parameter, so a bypassed gate keeps its control and loses its
+  // envelope follower — a `gate_t` and a `gate_process` that nothing calls would be dead code in the binary.
+  if (chainHas(chain, 'gate')) lines.push(gateStateCpp);
   return lines.join('\n');
 }
 
@@ -327,6 +380,35 @@ const toneTypeConst = (type) => ({ lowshelf: 'TONE_LOWSHELF', peak: 'TONE_PEAK',
  * The output level stays on the final line, after both channels, because it is a level on the plugin's
  * output rather than a stage inside one channel's path.
  */
+/**
+ * ONE STAGE'S DSP, in the shape the process loop needs — the shared half of the two passes.
+ *
+ * ⚠️ IT USED TO BE WRITTEN OUT IN THE PRE-MODEL PASS ONLY, and the post pass knew how to emit exactly one
+ * thing: the cabinet. That was fine while the amp chain was the only arrangement there was, and it became a
+ * SILENT LOSS the moment a user could order the blocks: a Tone stack placed after the model emitted nothing
+ * at all — it simply vanished from the plugin, with a control in the host that did nothing and no warning.
+ * Both passes now emit from this one function, so a block's DSP follows the block.
+ *
+ * `x` is the sample; the result replaces it. The `level` kind is deliberately absent: the output level is a
+ * level on the plugin's OUTPUT, applied after both channels, which is why it is the last line of the process
+ * loop rather than a stage in one channel's path.
+ */
+export function stageDspCpp(stage, params) {
+  if (stage.kind === 'gain') {
+    const p = params.find((x) => x.role === 'input');
+    return p ? [`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`] : [];
+  }
+  if (stage.kind === 'gate') {
+    // The gate runs on the channel's sample before anything that amplifies it, when it is placed there.
+    return ['__GATE_STAGE__'];
+  }
+  if (stage.kind === 'tone') {
+    return TONE_BANDS.map((b) => `         x = biquad_process(&p->tone[c][${TONE_KEYS.indexOf(b.key)}], x);`);
+  }
+  if (stage.kind === 'cab') return ['__CAB_STAGE__'];
+  return [];
+}
+
 export function chainPreCpp(chain, params) {
   const lines = [];
   const stages = chain.stages || [];
@@ -335,15 +417,9 @@ export function chainPreCpp(chain, params) {
   // asking each parameter what it is. Same list, same order, same output; the difference is that the next
   // chain does not have to be an amp for this to make sense.
   for (const stage of stages.slice(0, at < 0 ? stages.length : at)) {
-    if (stage.kind === 'gain') {
-      const p = params.find((x) => x.role === 'input');
-      if (p) lines.push(`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`);
-    } else if (stage.kind === 'gate') {
-      // The gate runs on the channel's sample before anything that amplifies it.
-      lines.push('__GATE_STAGE__');
-    } else if (stage.kind === 'tone') {
-      for (const b of TONE_BANDS) lines.push(`         x = biquad_process(&p->tone[c][${TONE_KEYS.indexOf(b.key)}], x);`);
-    }
+    // A bypassed stage contributes nothing to the signal path — see `chainHas`. Its parameters still exist.
+    if (stage.bypass) continue;
+    lines.push(...stageDspCpp(stage, params));
   }
   return lines.join('\n');
 }
@@ -358,14 +434,24 @@ export function chainPreCpp(chain, params) {
  * template call the engine once per block instead of once per sample — see audioPluginTemplate.js, which
  * owns that loop and the measurement behind it.
  */
-export function chainPostCpp(chain) {
-  // STILL EMITTED UNCONDITIONALLY, AND THAT IS DELIBERATE. The cabinet's own text is behind
-  // `#if MORPHEUS_HAS_CAB`, so a chain without one compiles this away; making it conditional HERE would
-  // change the generated source for the plain chain, and a refactor that changes the output is not a
-  // refactor. Where it SITS is now the stages' business — after the model — and that is the part that had to
-  // stop being an assumption.
-  void chain;
-  return '__CAB_STAGE__';
+export function chainPostCpp(chain, params = [], cabInPath = true) {
+  const stages = chain.stages || [];
+  const at = modelStageIndex(chain);
+  // EVERY STAGE AFTER THE MODEL, in the chain's own order — the mirror of chainPreCpp, and the reason a tone
+  // stack placed after the amp now exists in the plugin instead of quietly disappearing. With no model stage
+  // at all there is no "after the model", so every stage is in the first pass.
+  const lines = [];
+  for (const stage of (at < 0 ? [] : stages.slice(at + 1))) {
+    if (stage.bypass) continue;
+    lines.push(...stageDspCpp(stage, params));
+  }
+  // ⭐ THE LEGACY CHAIN HAS NO CABINET STAGE AT ALL. Before a board existed, "there is a .wav in the project"
+  // and "the speaker is in the signal path" were the same question, so the cabinet's stage was emitted for
+  // every chain and its DSP is behind `#if MORPHEUS_HAS_CAB`. Emitting it here — for a chain that does not
+  // name one — is what keeps the plain plugin, the amp plugin and the three runner proofs byte-identical.
+  // A board never takes this branch: it says what is in the path, and `cabInPath` is derived from that.
+  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__CAB_STAGE__');
+  return lines.join('\n');
 }
 
 /** Every parameter stepped one sample toward its target. */
