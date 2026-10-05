@@ -24,6 +24,7 @@
 import { AMP_CHAIN, PLAIN_CHAIN, chainHas, chainParams, modelStageIndex } from './ampChain.js';
 import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
 import { DELAY_MARKER, DELAY_PARAMS, delayBundle } from './delayBlock.js';
+import { SPRING_MARKER, SPRING_PARAMS, springBundle } from './springBlock.js';
 
 /**
  * ⚠️ ONE OF EACH, FOR NOW, AND IT IS ENFORCED RATHER THAN ASSUMED.
@@ -89,6 +90,16 @@ export const BLOCK_KINDS = [
     marker: DELAY_MARKER,
     bundle: delayBundle,
     stage: () => ({ kind: 'delay', dsp: DELAY_MARKER }),
+  },
+  {
+    kind: 'spring',
+    label: 'Spring reverb',
+    group: 'time',
+    blurb: 'A tank of three springs. A click into a spring does not come out as a click — it comes out as a descending chirp, and that is what the dispersion in here is for.',
+    params: () => SPRING_PARAMS.map((x) => ({ ...x })),
+    marker: SPRING_MARKER,
+    bundle: springBundle,
+    stage: () => ({ kind: 'spring', dsp: SPRING_MARKER }),
   },
   {
     kind: 'output',
