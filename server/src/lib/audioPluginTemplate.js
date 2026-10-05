@@ -572,7 +572,7 @@ if (APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
   # entry. Without FORCE this line silently does nothing and a wrapper reading the variable sees "" —
   # which on at least one clap-wrapper version is a hard configure error. The build also passes
   # -DCMAKE_OSX_DEPLOYMENT_TARGET explicitly, so this only matters when you build the project by hand.
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version" FORCE)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS version" FORCE)
 endif()
 
 # ── identity ─────────────────────────────────────────────────────────────────────────────────────────

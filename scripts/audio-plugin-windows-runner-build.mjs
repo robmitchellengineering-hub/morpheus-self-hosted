@@ -83,6 +83,13 @@ if (modelArg) {
   }
   seed.push({ path: `models/${basename(modelArg)}`, content: readFileSync(modelArg, 'utf8') });
   console.log(`[audio-plugin-windows] building with a model: ${basename(modelArg)}`);
+
+  // ⚠️ AND THE CHAIN, OR THE DEMO IS NOT THE THING THE RELEASE DESCRIBES. A model with no `chain` gives the
+  // PLAIN plugin: the model IS processed, but the host offers ONE control, `Gain`. Input trim, gate and the
+  // three-band tone stack only exist when the manifest says `chain: 'amp'` — which is what a user's project
+  // sets, and what the release page promises. The build's own proof listed the single `Gain` parameter and I
+  // read past it twice; this is the line that makes the proof say six.
+  seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Morpheus Plugin', chain: 'amp' }, null, 2)}\n` });
 } else {
   console.log('[audio-plugin-windows] building WITHOUT a model (the gain stage)');
 }
