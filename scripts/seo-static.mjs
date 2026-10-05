@@ -226,7 +226,7 @@ const landingSection = `
         <p>${esc(intro)}</p>
         <h2>${esc(possibility.title)}</h2>
         <p>${esc(possibility.body)}</p>
-${audioHtml}        <h2>What Morpheus does</h2>
+        <h2>What Morpheus does</h2>
         <ul>
 ${capabilities.map((c) => `          <li><h3>${esc(c.title)}</h3><p>${esc(c.body)}</p>${c.workflow ? `<p>${esc(c.workflow)}</p>` : ''}</li>`).join('\n')}
         </ul>
@@ -236,7 +236,7 @@ ${capabilities.map((c) => `          <li><h3>${esc(c.title)}</h3><p>${esc(c.body
         <h2>Pricing</h2>
         <p>${esc(PRICING)}</p>
         <p>${esc(closing)}</p>
-      </section>
+${audioHtml}      </section>
       <!-- seo-static:end -->`;
 
 // ── 2b. the user manual, published — the same text a download carries ────────────────
@@ -301,11 +301,11 @@ ${intro}
 
 ${possibility.body}
 
-${audioMd}## What Morpheus does
+## What Morpheus does
 
 ${capabilities.map((c) => `### ${c.title}\n\n${c.body}${c.workflow ? `\n\nWorkflow: ${c.workflow}` : ''}`).join('\n\n')}
 
-## User manual
+${audioMd}## User manual
 
 The manual that ships with a build, for every target. Each section covers installing it, starting it, and the
 unsigned-software warnings that platform puts in your way.
@@ -329,7 +329,7 @@ from a phone as well as a desktop.
 
 ${possibility.body}
 
-${audioMd}## What Morpheus does
+## What Morpheus does
 
 ${capabilities.map((c) => `- **${c.title}** — ${c.body}${c.workflow ? `\n  Workflow: ${c.workflow}` : ''}`).join('\n')}
 
@@ -347,7 +347,7 @@ merges a pull request once the checks pass. "Revert last push" undoes it in one 
 
 ${PRICING}
 
-## Ownership
+${audioMd}## Ownership
 
 Every file is written into your own project and pushed to your own GitHub repository.
 There is no runtime dependency on Morpheus, and nothing stops working if you stop paying.
