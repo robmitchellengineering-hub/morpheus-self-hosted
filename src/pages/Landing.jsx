@@ -207,8 +207,8 @@ export default function Landing() {
               client-side <Link> would hand it to the router, which has no route for it, and 404. It also
               keeps ONE rendering of that URL — a prerendered page that ALSO had a React route would look
               different after a reload, and the two would drift. */}
-          <a href="/downloads" className="inline-flex items-center gap-2 px-6 py-2.5 border border-primary/50 text-primary/80 hover:bg-primary hover:text-black transition-colors font-display tracking-wider text-sm">
-            <Download size={15} /> DOWNLOADS
+          <a href="/downloads" className="px-8 py-3 border border-primary/40 text-primary/70 hover:bg-primary/90 hover:text-black transition-colors font-display tracking-wider inline-flex items-center gap-2">
+            <Download size={16} /> DOWNLOADS
           </a>
         </div>}
 
@@ -329,8 +329,8 @@ export default function Landing() {
           <ul className="mt-1.5 space-y-1.5">
             {MORPHEUS_AUDIO.routes.map((r) => (
               <li key={r.target} className="text-xs leading-snug">
-                <span className="text-primary font-mono tracking-wider">{r.target}</span>
-                <span className="text-ink-strong"> — {r.runsOn}. {r.formats}. {r.detail}</span>
+                <span className="text-primary font-display tracking-wider neon-glow">{r.target}</span>
+                <span className="text-ink-strong font-mono"> — {r.runsOn}. {r.formats}. {r.detail}</span>
               </li>
             ))}
           </ul>
@@ -339,21 +339,21 @@ export default function Landing() {
           <ol className="space-y-1.5 list-decimal list-inside">
             {MORPHEUS_AUDIO.steps.map((st) => (
               <li key={st.action} className="text-xs leading-snug">
-                <span className="text-primary font-display tracking-wider">{st.action}</span>
-                <span className="text-ink-strong"> — {st.detail}</span>
+                <span className="text-primary font-display tracking-wider neon-glow">{st.action}</span>
+                <span className="text-ink-strong font-mono"> — {st.detail}</span>
               </li>
             ))}
           </ol>
 
           <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mt-3 mb-1">// WHAT THE BUILD PROVES</p>
-          <p className="text-xs text-ink-strong leading-snug">{MORPHEUS_AUDIO.measured}</p>
+          <p className="text-xs text-ink-strong font-mono leading-snug">{MORPHEUS_AUDIO.measured}</p>
 
           <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mt-3 mb-1">// ON THE BENCH, NOT IN THE APP YET</p>
           <ul className="space-y-1.5">
             {MORPHEUS_AUDIO.planned.map((pl) => (
               <li key={pl.what} className="text-xs leading-snug">
-                <span className="text-primary font-display tracking-wider">{pl.what}</span>
-                <span className="text-ink-strong"> — {pl.status}. {pl.detail}</span>
+                <span className="text-primary font-display tracking-wider neon-glow">{pl.what}</span>
+                <span className="text-ink-strong font-mono"> — {pl.status}. {pl.detail}</span>
               </li>
             ))}
           </ul>
