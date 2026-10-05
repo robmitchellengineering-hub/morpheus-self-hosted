@@ -1520,6 +1520,51 @@ check('⭐ a project with no board is still byte-identical, so the extension poi
 check('…and neither is the plain plugin',
   !/delay_process|__DELAY_STAGE__/.test(generated(audioPlugin.scaffold([...empty, { path: 'models/amp.nam', content: LINEAR }]), 'Source/Plugin.cpp')), true);
 
+console.log('\n23. the spring reverb: a block whose whole point is something a measurement has to show');
+// ⭐ THE CHIRP IS THE BLOCK. A spring is dispersive — the high frequencies travel faster along the coil, so a
+// click comes back as a descending chirp — and a reverb that is only a decaying tail is a plate. The first
+// version of this block used Schroeder comb all-passes, looked completely correct, and measured 0.36 ms in the
+// WRONG DIRECTION. scripts/spring-check.mjs is what caught it and what proves the properties below;
+// the assertions here pin the decisions that file depends on, because it cannot run in this job — it needs a
+// compiler and the CLAP headers, and a check that cannot run is worse than no check (H17).
+const springSrc = boardSrc([...boardItems(), { instanceId: 20, kind: 'spring', enabled: true, values: {} }]);
+check('the catalogue has the spring reverb, with its three controls',
+  Boolean(boardMod.blockKind('spring'))
+  && boardMod.kindControls('spring').map((c) => c.key).join(',') === 'spring_decay,spring_tone,spring_mix',
+  true);
+check('⭐ the dispersion coefficient is NEGATIVE, because a positive one sweeps the chirp upward and no spring does',
+  /#define MORPHEUS_SPRING_AP_A \(-0\.62\)/.test(springSrc), true);
+check('…and it is a chain of first-order sections, not a Schroeder comb whose impulse response is symmetric',
+  /MORPHEUS_SPRING_SECTIONS 56/.test(springSrc) && /static double spring_disp\(spring_disp_t \*d, double x\)/.test(springSrc), true);
+check('…with three round trips of DIFFERENT lengths, because equal loops beat against each other as one flutter',
+  (() => {
+    const m = /kSpringLoop48\[MORPHEUS_SPRINGS\] = \{ ([0-9, ]+) \}/.exec(springSrc);
+    if (!m) return false;
+    const lens = m[1].split(',').map((x) => Number(x.trim()));
+    return lens.length === 3 && new Set(lens).size === 3;
+  })(), true);
+check('…the three loops are allocated and released, and the dispersion needs no allocation at all',
+  /calloc\(\(size_t\)kSpringLoopCap\[i\], sizeof\(float\)\)/.test(springSrc)
+  && /free\(p->spring\[c\]\.loop\[i\]\)/.test(springSrc)
+  && /spring_disp_t disp\[MORPHEUS_SPRINGS\]\[MORPHEUS_SPRING_SECTIONS\]/.test(springSrc), true);
+check('…and a project with a spring in it has no unreplaced marker left',
+  /__SPRING_STAGE__|__DELAY_STAGE__|__GATE_STAGE__|__CAB_STAGE__/.test(springSrc), false);
+check('two blocks that are not part of an amp can be in one board, and BOTH bundles reach the source',
+  (() => {
+    const both = boardSrc([...boardItems(),
+      { instanceId: 20, kind: 'spring', enabled: true, values: {} },
+      { instanceId: 21, kind: 'delay', enabled: true, values: {} }]);
+    return /spring_process\(&p->spring\[c\], x,/.test(both)
+      && /delay_process\(&p->delay\[c\], x,/.test(both)
+      && /spring_t spring\[2\];/.test(both) && /delay_t delay\[2\];/.test(both)
+      && !/__SPRING_STAGE__|__DELAY_STAGE__/.test(both);
+  })(), true);
+check('…and a bypassed spring reverb keeps its controls and emits no reverb at all',
+  (() => {
+    const off = boardSrc([...boardItems(), { instanceId: 20, kind: 'spring', enabled: false, values: {} }]);
+    return off.includes('"Decay (bypassed)"') && !/spring_process\(&p->spring\[c\], x,/.test(off);
+  })(), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');

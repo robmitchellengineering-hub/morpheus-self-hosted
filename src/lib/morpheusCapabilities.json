@@ -48,7 +48,7 @@
       },
       {
         "action": "Arrange the signal path",
-        "detail": "The COMPILE panel's SIGNAL PATH dialog is the plugin's own block diagram: the blocks in the order the audio runs, move one with the arrows, switch one off, set each control's default. Add a Delay — repeats with time, feedback and mix — anywhere in the path, before or after the amp model. It is saved into the project's morpheus.plugin.json, so the file says what the plugin does. A block that is switched off keeps its control — a host stores automation against a control's id, so removing it would re-point every automated lane — and its name says (bypassed)."
+        "detail": "The COMPILE panel's SIGNAL PATH dialog is the plugin's own block diagram: the blocks in the order the audio runs, move one with the arrows, switch one off, set each control's default. Add a Delay — repeats with time, feedback and mix — or a Spring reverb, a tank of three springs whose controls set how long it rings and how dark it is, anywhere in the path, before or after the amp model. It is saved into the project's morpheus.plugin.json, so the file says what the plugin does. A block that is switched off keeps its control — a host stores automation against a control's id, so removing it would re-point every automated lane — and its name says (bypassed)."
       },
       {
         "action": "Pick your machine",

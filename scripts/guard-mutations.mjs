@@ -1669,6 +1669,35 @@ export const MUTATIONS = [
     find: "  if (!m) return { segment: '', spokenChars: from };",
     replace: '  if (!m) return { segment: rest.trim(), spokenChars: full.length };',
   },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/springBlock.js',
+    // ⭐ THE DIRECTION OF THE CHIRP, as a mutation. The sign of the all-pass coefficient decides which end of
+    // the spectrum is held back: positive delays the highs and the reverb sweeps UP, which no spring does. It
+    // is the one character of this block that a measurement had to find — the first version was 0.36 ms the
+    // wrong way and looked entirely correct.
+    why: 'Flips the dispersion coefficient so the reverb chirps upward instead of downward, which is the direction no spring disperses in.',
+    find: 'const AP_A = -0.62;',
+    replace: 'const AP_A = 0.62;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/springBlock.js',
+    // Three round trips that are the same length beat against each other as one flutter, which is a delay
+    // rather than a reverb — and the whole reason a tank has more than one spring.
+    why: 'Makes the three springs the same length, so their chirps line up into one flutter instead of filling in.',
+    find: 'const LOOP_48 = [1301, 1997, 2903];',
+    replace: 'const LOOP_48 = [1301, 1301, 1301];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // ⭐ THE MERGE. Two blocks that are not part of an amp have to both reach the source; a bundle that
+    // overwrote instead of accumulating would leave one block's marker in the C++ as a compile error.
+    why: 'Stops the block bundles accumulating, so only the first non-amp block in a board reaches the generated source.',
+    find: '    Object.assign(out.markers, b.markers || {});',
+    replace: '    out.markers = { ...(b.markers || {}) };',
+  },
   // ── the delay, and the extension point it proved (2026-10-05) ─────────────────────────────────────────
   {
     guard: 'verify-audio-plugin.mjs',
