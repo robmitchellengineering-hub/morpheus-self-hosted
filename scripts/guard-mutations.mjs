@@ -1698,6 +1698,34 @@ export const MUTATIONS = [
     find: '    Object.assign(out.markers, b.markers || {});',
     replace: '    out.markers = { ...(b.markers || {}) };',
   },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/driveBlock.js',
+    // ⭐ THE ASYMMETRY, as a mutation. Equal thresholds are a symmetric clipper, and a symmetric clipper cannot
+    // produce an even harmonic — which is the difference between "warm" and "fizzy", and the one thing about
+    // this architecture a listener notices immediately.
+    why: 'Makes the two diode thresholds equal, so the clipper is symmetric and the even harmonics the drive depends on cannot exist.',
+    find: 'const VF_NEG = 0.46;',
+    replace: 'const VF_NEG = 0.30;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/driveBlock.js',
+    // An asymmetric clipper puts a DC offset on its output. Without the coupling cap the plugin emits a
+    // constant offset into a host's mix bus — a measurable fault, and one that a listener hears as a thump.
+    why: 'Removes the coupling capacitor, so the asymmetric clipper\u2019s DC offset reaches the output.',
+    find: '   d->dcY = out - d->dcX + 0.9995 * d->dcY;',
+    replace: '   d->dcY = out;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/driveBlock.js',
+    // ⭐ THE BLEND, as a mutation. A clean path that does not give way turns the pedal back into a single-path
+    // overdrive whose level rises with the gain — the exact thing this architecture exists not to do.
+    why: 'Stops the clean path giving way as the gain comes up, so the level rises with the gain like any other overdrive.',
+    find: '   const double out = x * (1.0 - d->mix) + clipped * (d->mix * MORPHEUS_DRIVE_MAKEUP);',
+    replace: '   const double out = x * 1.0 + clipped * (d->mix * MORPHEUS_DRIVE_MAKEUP);',
+  },
   // ── the delay, and the extension point it proved (2026-10-05) ─────────────────────────────────────────
   {
     guard: 'verify-audio-plugin.mjs',
