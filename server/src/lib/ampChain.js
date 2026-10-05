@@ -13,23 +13,35 @@
 // project opts in through `morpheus.plugin.json`.
 import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
 
+/**
+ * The gate's threshold at its lowest setting, in dB — and at that value the gate is BYPASSED rather than
+ * merely permissive. See the parameter's own note.
+ */
+export const GATE_OFF_DB = -80;
+
 /** The single-parameter plugin every project got before the chain existed. */
 export const PLAIN_CHAIN = { name: 'plain', params: null, tone: false };
 
 /**
- * The amp chain: input trim, a three-band tone stack, the model (when there is one), output level.
+ * The amp chain: input trim, a noise gate, a three-band tone stack, the model (when there is one), the
+ * cabinet (when there is one), output level.
  *
- * ORDER MATTERS AND IT IS THE MUSICAL ONE. Input trim before the tone stack because the trim is what drives
- * the model and the tone stack is a filter on the way in; the model in the middle because everything else
- * exists to feed it and to tame what comes out; output last so the level control cannot change how the model
- * distorts — which is the difference between a level control and a drive control, and the reason a player
- * expects turning the output down to sound identical, only quieter.
+ * ORDER MATTERS AND IT IS THE MUSICAL ONE. Input trim first because it is what drives everything after it; the
+ * GATE next, before anything that amplifies, because a gate after the tone stack or the model is gating the
+ * noise they added; the tone stack on the way in; the model in the middle because everything else exists to
+ * feed it and to tame what comes out; the cabinet after the model because a speaker is part of the amp; output
+ * last so the level control cannot change how the model distorts — the difference between a level control and
+ * a drive control, and the reason a player expects turning the output down to sound identical, only quieter.
  */
 export const AMP_CHAIN = {
   name: 'amp',
   tone: true,
   params: [
     { key: 'input', name: 'Input', min: -24, max: 24, def: 0, role: 'input' },
+    // ⚠️ THE BOTTOM OF THE RANGE IS OFF, NOT A VERY LOW THRESHOLD, and the difference is measurable: at -80 dB
+    // the gate is still an envelope follower on the signal and never exactly transparent, while OFF is a null
+    // against the chain without a gate at all. That is the state the proof asserts, so it has to be a state.
+    { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' },
     ...TONE_BANDS.map((b) => ({ key: b.key, name: b.label, min: -b.rangeDb, max: b.rangeDb, def: 0, role: 'tone' })),
     { key: 'output', name: 'Output', min: -60, max: 12, def: 0, role: 'output' },
   ],
@@ -62,6 +74,57 @@ const num = (v) => {
   const s = String(Number(v));
   return s.includes('.') || s.includes('e') ? s : `${s}.0`;
 };
+
+// ── the noise gate ──────────────────────────────────────────────────────────────────────────────────────
+// WHY A GATE IS THE FIRST THING AFTER THE TRIM, and not later: a gate placed after the tone stack or the model
+// is gating the noise THEY added rather than the noise that came in, and it cannot un-add what they did. This
+// one sees what the player's instrument and cable actually sent.
+//
+// THE OTHER THREE NUMBERS ARE FIXED, and that is a decision rather than an omission: a 1 ms attack, a 120 ms
+// release and 6 dB of hysteresis are not musical choices at this stage, and a gate with four controls is a
+// gate nobody sets. The threshold is the one a player reaches for.
+
+/** The gate's DSP, emitted when the chain has a gate. */
+export const gateDspCpp = `// ── the noise gate ───────────────────────────────────────────────────────────────────────────────────
+// An envelope follower and a switch with hysteresis. See lib/ampChain.js for why the time constants are not
+// parameters.
+typedef struct { double env; double gain; int open; } gate_t;
+
+#define MORPHEUS_GATE_ATTACK_MS 1.0
+#define MORPHEUS_GATE_RELEASE_MS 120.0
+// HALF THE THRESHOLD IS -6 dB: a signal sitting exactly at the threshold would otherwise open and close the
+// gate on alternate samples, which is audible as a buzz rather than as a gate.
+#define MORPHEUS_GATE_HYSTERESIS 0.5
+
+static double gate_process(gate_t *g, double x, double threshold_db, double fs) {
+   const double rectified = fabs(x);
+   const double atk = exp(-1.0 / (MORPHEUS_GATE_ATTACK_MS * 0.001 * fs));
+   const double rel = exp(-1.0 / (MORPHEUS_GATE_RELEASE_MS * 0.001 * fs));
+   g->env = rectified > g->env ? atk * g->env + (1.0 - atk) * rectified
+                               : rel * g->env + (1.0 - rel) * rectified;
+   const double thr = pow(10.0, threshold_db / 20.0);
+   if (g->env > thr) g->open = 1;
+   else if (g->env < thr * MORPHEUS_GATE_HYSTERESIS) g->open = 0;
+   // The gain moves on the SAME two time constants, so the gate opens fast and closes gently. A gate's click
+   // is the gain moving in one sample, which is the entire reason these constants exist.
+   const double c = g->open ? atk : rel;
+   g->gain += ((g->open ? 1.0 : 0.0) - g->gain) * (1.0 - c);
+   return x * g->gain;
+}`;
+
+/** The gate's per-instance state. Per channel, like everything else that holds a signal's history. */
+export const gateStateCpp = `   gate_t gate[2];`;
+
+/** Start the gate open, so a plugin that is never told a threshold does not fade in. */
+export const gateInitCpp = `   for (int c = 0; c < 2; ++c) { p->gate[c].env = 0.0; p->gate[c].gain = 1.0; p->gate[c].open = 1; }`;
+
+/** The stage, per channel. */
+export const gateStageCpp = `         // ⚠️ THE BOTTOM OF THE RANGE IS OFF, and bypassed rather than merely permissive: at -80 dB the
+         // gate is still an envelope follower and never exactly transparent, while OFF nulls against the
+         // chain without a gate — which is the state the measurement asserts.
+         if (p->smoothed[IDX_GATE] > (double)MORPHEUS_GATE_OFF_DB + 0.001) {
+            x = gate_process(&p->gate[c], x, p->smoothed[IDX_GATE], p->fs);
+         }`;
 
 /** The parameter array index of a role, or -1. Used by the emitted C++ and by the measurement. */
 export const paramIndex = (params, key) => params.findIndex((p) => p.key === key);
@@ -107,6 +170,7 @@ export function stateCpp(chain, params) {
       `   double tone_last[${TONE_KEYS.length}];`,
     );
   }
+  if (params.some((p) => p.role === 'gate')) lines.push(gateStateCpp);
   return lines.join('\n');
 }
 
@@ -220,16 +284,18 @@ export function chainSampleCpp(chain, params) {
   for (const p of params) {
     if (p.role === 'input') lines.push(`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`);
   }
+  // The gate runs on the channel's sample before anything that amplifies it.
+  if (params.some((p) => p.role === 'gate')) lines.push('__GATE_STAGE__');
   if (chain.tone) {
     for (const b of TONE_BANDS) lines.push(`         x = biquad_process(&p->tone[c][${TONE_KEYS.indexOf(b.key)}], x);`);
   }
   // ALWAYS EMITTED, BEHIND THE FLAG. The plugin source is the same text with a model and without one — see
   // namPlugin.js on why that matters to the test bench — so the model sits in the chain as a guarded block
   // rather than as something the generator decides to include.
-  // THE CABINET GOES HERE, between the model and the level — the speaker is part of the amp, and a cabinet
-  // after a level control would change its tone when the level moved. `cabStageCpp` is emitted by cabIr.js,
-  // which is the module that knows what a cabinet is.
-  lines.push('__CAB_STAGE__');
+  // ⚠️ THE MODEL COMES BEFORE THE CABINET, and the first version had them the other way round — the comment
+  // said "after the model" while the code pushed the cabinet first, so a speaker was being convolved before
+  // the amplifier that drives it. Both are placeholders because the texts live with the things they describe
+  // (`namPlugin`/`cabIr`), and both are replaced by the template.
   lines.push(
     '#if MORPHEUS_HAS_MODEL',
     '         // The model is the amp: its output replaces the dry sample. Reset() sized its buffers and',
@@ -244,6 +310,9 @@ export function chainSampleCpp(chain, params) {
     '         }',
     '#endif',
   );
+  // THE CABINET LAST OF THE THREE, because a speaker is driven by the amp: convolving before the model
+  // would put a cabinet in front of the amplifier. Found by reading the emitted chain rather than the code.
+  lines.push('__CAB_STAGE__');
   return lines.join('\n');
 }
 
