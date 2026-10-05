@@ -571,7 +571,12 @@ console.log('\n16. a project carrying a .nam runs the model — and one that doe
 // this stays true. So it is asserted first, and asserted against the shape of the files rather than a summary.
 const MODEL_FILES = ['Source/ModelData.h', 'Source/ModelData.cpp'];
 const nam = await import('../server/src/lib/namPlugin.js');
-const namCli = read('scripts/audio-quantize.mjs');
+// ⚠️ THE PIN MOVED AND THIS GUARD HAD TO FOLLOW IT. It used to be inlined in scripts/audio-quantize.mjs;
+// the capture work needed the same engine, so it now lives in scripts/lib/referenceEngine.mjs and both CLIs
+// import it. Reading only the CLI would have gone ON A MISSING PIN — `includes` on a file that no longer
+// mentions it is false, which is the right colour for the wrong reason — so the assertion reads the module
+// that holds it. It failed here the moment the move happened, which is the behaviour it is for.
+const namEngine = read('scripts/lib/referenceEngine.mjs');
 const LINEAR = '{\n "version": "0.5.4",\n "architecture": "Linear",\n "config": {"receptive_field": 1, "bias": false},\n "weights": [1.0],\n "sample_rate": 48000\n}';
 const withModel = [...empty, { path: 'models/amp.nam', content: LINEAR }];
 
@@ -669,7 +674,7 @@ check('…and does NOT add_subdirectory the engine, which would build its tools'
 // ⭐ ONE ENGINE, BOTH SIDES: the CLI that renders the reference WAV and the plugin that plays the model must
 // build the same commit, or the comparison that proves the plugin is between two implementations.
 check('⭐ the engine pin is the SAME COMMIT the measurement CLI builds',
-  namCli.includes(nam.NAMCORE_REF) && namCli.includes(nam.NAMCORE_REPO.replace(/\.git$/, '')), true);
+  namEngine.includes(nam.NAMCORE_REF) && namEngine.includes(nam.NAMCORE_REPO.replace(/\.git$/, '')), true);
 
 for (const [route, target] of [['macOS', audioPlugin], ['Windows', audioPluginWindows], ['Linux ARM', audioPluginLinux]]) {
   const off = target.buildSteps(target.scaffold(empty).files);

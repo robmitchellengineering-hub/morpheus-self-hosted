@@ -868,6 +868,40 @@ export const MUTATIONS = [
     replace: 'const scale = (k === 0 || k === half ? 1 : 2) / n;',
   },
   {
+    guard: 'verify-audio-capture.mjs',
+    file: 'scripts/lib/namCapture.mjs',
+    // THE OFFSET BUG, which this repository has already paid for once in `bestLag`: the delay is measured
+    // relative to the start of the scan window, so dropping that term reports the window's own index instead
+    // of the delay. It is the worst shape of wrong — a plausible number of the right sign and a magnitude off
+    // by a constant — and a pre-flight that reports a 1 039-sample round trip for a 39-sample one sends the
+    // user off to re-record an interface that was fine.
+    why: 'Reports the impulse scan\u2019s own index as the delay, so every alignment the tool predicts is wrong by the lookahead.',
+    find: '  const delay = first + startLooking - iRel;',
+    replace: '  const delay = first;',
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'scripts/lib/namCapture.mjs',
+    // THE TRIGGER HAS TWO BRANCHES AND THE QUIET ONE IS THE ONE THAT HIDES. Pinning the threshold to the
+    // absolute floor makes every quiet capture check out, which is exactly the case the official input takes —
+    // so a test suite built only on silence would still pass. On a real high-gain capture the amp's own hiss
+    // then trips the scan on its first sample and the trainer reports a delay of -lookahead.
+    why: 'Pins the impulse trigger to the absolute floor, so a loud amp\u2019s noise floor can no longer raise it.',
+    find: '  const threshold = Math.max(background + info.absThreshold, (1 + info.relThreshold) * background);',
+    replace: '  const threshold = info.absThreshold;',
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'scripts/lib/namCapture.mjs',
+    // A CHECK THAT NEVER RUNS READS AS A CHECK THAT PASSED (H17). v3 can tell whether the amp held still,
+    // because its input carries the same validation signal at both ends; removing that comparison leaves a
+    // take with a knob moved halfway through reporting as a pair that will train, and the model comes back
+    // wrong with nothing in the report to explain it.
+    why: 'Skips the replicate-ESR comparison, so a take whose amp drifted is reported as one that will train.',
+    find: '    if (!(facts.replicateEsr <= 0.01)) {',
+    replace: '    if (false) {',
+  },
+  {
     guard: 'verify-nam-quantize.mjs',
     file: 'server/src/lib/audio/namModel.js',
     // THE BLOCKING CLAIM, as a mutation: stepping by the whole array means one scale covers everything, which is

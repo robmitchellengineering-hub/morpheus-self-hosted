@@ -425,6 +425,12 @@ jobs:
       - name: NAM quantization and the deployment format
         run: node scripts/verify-nam-quantize.mjs
 
+      # The capture pre-flight: what NAM's own trainer will accept, transcribed from its source. It needs no
+      # engine, no model and no network either — the official input is identified by MD5, and everything else
+      # is arithmetic on a synthetic capture — so it belongs in this job beside the quantizer.
+      - name: Capture pre-flight agrees with NAM's trainer
+        run: node scripts/verify-audio-capture.mjs
+
       # The portable download used to be a hand-run mirror that shipped a tree a month out of
       # date. This asserts it is generated during the build, selects the real product, and says
       # what it does NOT contain.
