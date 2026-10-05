@@ -8,7 +8,7 @@ import DonationThankYouModal from '@/components/matrix/DonationThankYouModal';
 import SuggestionBox from '@/components/matrix/SuggestionBox';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { useAuth } from '@/lib/AuthContext';
-import { MORPHEUS_PRINCIPLE, MORPHEUS_CAPABILITIES, MORPHEUS_BUILD_TARGETS, MORPHEUS_POSSIBILITY } from '@/lib/morpheusCapabilities';
+import { MORPHEUS_PRINCIPLE, MORPHEUS_CAPABILITIES, MORPHEUS_BUILD_TARGETS, MORPHEUS_POSSIBILITY, MORPHEUS_AUDIO } from '@/lib/morpheusCapabilities';
 
 const BOOT_TEXT = 'Wake up. The Construct has you. Follow the white rabbit.';
 
@@ -194,6 +194,60 @@ export default function Landing() {
           </div>
         )}
         {bluePillLine && <p className="mt-4 text-ink-strong text-xs italic max-w-md mx-auto leading-relaxed">"{bluePillLine}"</p>}
+
+        {/* AUDIO — the pathway, as a doc, ABOVE the capability list rather than as one line inside it.
+            Rob, 2026-10-05: the audio routes needed to be readable as instructions ("how to do it, use
+            it") and to say plainly which machine each one builds for.
+
+            WHY THE SHIPPED HALF AND THE PLANNED HALF ARE TWO LISTS: a plan stated as its own list cannot
+            be skim-read as a shipped feature, and that is the exact failure this repo has already paid
+            for twice — the explainer docs said "6 platforms" while ten shipped, and "no free tier" while
+            a 200-credit grant was live. The bench list is rendered here, in the prerender and in llms.txt
+            from the same array, so nothing can be "planned" in one place and "available" in another.
+
+            The section labels are LITERALS rather than values from MORPHEUS_AUDIO for the same reason
+            // CAPABILITIES above is: the prose-ink rule (scripts/verify-prose-ink.mjs) attributes a green
+            label to the text at the call site, so a heading that arrived at runtime is unattributable and
+            fails the build. The JSON carries the content; both renderers type their own headings. */}
+        {showButtons && MORPHEUS_AUDIO && <div className="mt-10 mx-auto max-w-lg border border-primary/40 bg-black/60 p-4 text-left shadow-[0_0_20px_rgba(0,255,65,0.15)]">
+          <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// AUDIO</p>
+          <p className="text-ink font-display tracking-wide text-sm mt-1">{MORPHEUS_AUDIO.title}</p>
+          <p className="text-xs text-ink-strong leading-relaxed mt-1">{MORPHEUS_AUDIO.intro}</p>
+
+          <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mt-3 mb-1">// THREE ROUTES, EACH FOR ONE MACHINE</p>
+          <p className="text-xs text-ink-strong leading-snug">{MORPHEUS_AUDIO.routesIntro}</p>
+          <ul className="mt-1.5 space-y-1.5">
+            {MORPHEUS_AUDIO.routes.map((r) => (
+              <li key={r.target} className="text-xs leading-snug">
+                <span className="text-primary font-mono tracking-wider">{r.target}</span>
+                <span className="text-ink-strong"> — {r.runsOn}. {r.formats}. {r.detail}</span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mt-3 mb-1">// USING IT</p>
+          <ol className="space-y-1.5 list-decimal list-inside">
+            {MORPHEUS_AUDIO.steps.map((st) => (
+              <li key={st.action} className="text-xs leading-snug">
+                <span className="text-primary font-display tracking-wider">{st.action}</span>
+                <span className="text-ink-strong"> — {st.detail}</span>
+              </li>
+            ))}
+          </ol>
+
+          <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mt-3 mb-1">// WHAT THE BUILD PROVES</p>
+          <p className="text-xs text-ink-strong leading-snug">{MORPHEUS_AUDIO.measured}</p>
+
+          <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display mt-3 mb-1">// ON THE BENCH, NOT IN THE APP YET</p>
+          <ul className="space-y-1.5">
+            {MORPHEUS_AUDIO.planned.map((pl) => (
+              <li key={pl.what} className="text-xs leading-snug">
+                <span className="text-primary font-display tracking-wider">{pl.what}</span>
+                <span className="text-ink-strong"> — {pl.status}. {pl.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>}
 
         {/* Core principle + live capability list. Reads from the shared
             morpheusCapabilities module, so new features appear here automatically

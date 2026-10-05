@@ -148,6 +148,7 @@ if (generated) {
   // A page no human can reach is a page only crawlers see, which is the line this file exists to hold.
   // (named apart from the later `landingSrc`, which reads the same file for the capability checks)
   const landingForManualLink = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
+  const landingSrcForAudio = landingForManualLink;
   check('the landing page links to it visibly, with a real <a> (it is not an SPA route)',
     landingForManualLink.includes('href="/manual"'));
 
@@ -208,6 +209,93 @@ if (generated) {
     Boolean(caps.possibility)
     && html.includes(caps.possibility.title) && html.includes(caps.possibility.body.slice(0, 60))
     && llms.includes(caps.possibility.title) && llms.includes(caps.possibility.body.slice(0, 60)));
+
+  // ── THE AUDIO PATHWAY: documented in full, and documented HONESTLY ───────────────
+  // This is the most claim-dense block on the site — three platform-specific build routes, a list of
+  // measurements, and four things that are NOT built — so it is asserted from both ends. The shipped half
+  // has to be backed by code (a real target id, a platform that target's own label states, formats that
+  // target's own build verifies), and the planned half has to stay out of it.
+  const audioDoc = caps.audio;
+  check('the capabilities JSON carries the audio docs', Boolean(audioDoc) && Array.isArray(audioDoc.routes));
+  if (audioDoc) {
+    // 1. Every audio route in the registry is documented, and nothing is documented that is not a target.
+    // A fourth plugin route added to the picker without a line here fails this — which is the failure mode
+    // that put "6 platforms" in the explainer docs while ten shipped.
+    const audioTargets = (caps.buildTargets || []).filter((t) => t.startsWith('audio-plugin-')).sort();
+    check(`every audio-plugin target is documented (${audioTargets.length})`,
+      JSON.stringify(audioDoc.routes.map((r) => r.target).sort()) === JSON.stringify(audioTargets),
+      `documented ${JSON.stringify(audioDoc.routes.map((r) => r.target))} vs registry ${JSON.stringify(audioTargets)}`);
+
+    // 2. THE PLATFORM IN THE COPY IS THE PLATFORM IN THE PICKER. Rob, 2026-10-04: a plugin format exists on
+    // more than one platform, so a label naming only the formats reads as "builds for whatever you are on".
+    // The doc makes the same promise in a different string, and the two are compared here rather than
+    // trusted to match. A route that says macOS while its target says Windows would otherwise ship.
+    const wrongPlatform = audioDoc.routes.filter((r) => {
+      const t = getCompileTarget(r.target);
+      return !t || !String(t.label).includes(r.platform);
+    });
+    check('each documented platform is the platform its target\'s own label states',
+      wrongPlatform.length === 0,
+      wrongPlatform.map((r) => `${r.target}: copy says "${r.platform}", label is "${getCompileTarget(r.target)?.label}"`).join('; '));
+
+    // 3. THE FORMATS ARE THE BUILD'S, not the copywriter's. Read from each target's own declaration — the
+    // `formats: [...]` its proof step walks, or the exported *_FORMATS constant it builds that list from —
+    // so claiming an Audio Unit on the Windows route (which has no AU and does not check for one) fails.
+    const declaredFormats = (id) => {
+      const src = readFileSync(join(ROOT, 'server/src/lib/compile-targets', `${id}.js`), 'utf8');
+      const out = new Set();
+      for (const line of src.split('\n')) {
+        if (!/formats\s*:|_FORMATS\s*=/.test(line)) continue;
+        for (const m of line.matchAll(/'([A-Za-z0-9]+)'/g)) out.add(m[1]);
+      }
+      return out;
+    };
+    const unbacked = [];
+    for (const r of audioDoc.routes) {
+      const declared = declaredFormats(r.target);
+      for (const f of r.formatTokens || []) if (!declared.has(f)) unbacked.push(`${r.target}: ${f}`);
+    }
+    check('every format the docs promise is one that target\'s own build verifies',
+      unbacked.length === 0, unbacked.join(', '));
+    check('…and every route declares which formats it promises',
+      audioDoc.routes.every((r) => Array.isArray(r.formatTokens) && r.formatTokens.length > 0));
+
+    // 4. THE SHIPPED HALF MUST NOT NAME WHAT IS ONLY PLANNED. This is the check that keeps a roadmap from
+    // being skim-read as an inventory: the words that only belong to the bench half are pinned, so moving
+    // an FPGA pedal or a microcontroller amp into the shipped half fails here rather than in production.
+    const shippedText = [
+      audioDoc.title, audioDoc.intro, audioDoc.routesIntro, audioDoc.measured,
+      ...audioDoc.routes.flatMap((r) => [r.runsOn, r.formats, r.detail]),
+      ...audioDoc.steps.flatMap((st) => [st.action, st.detail]),
+    ].join(' ').toLowerCase();
+    const BENCH_ONLY = ['fpga', 'microcontroller', 'effects pedals', 'practice amp'];
+    check('the bench-only nouns are kept out of the shipped half',
+      BENCH_ONLY.every((n) => !shippedText.includes(n)),
+      BENCH_ONLY.filter((n) => shippedText.includes(n)).join(', '));
+    const benchText = audioDoc.planned.map((pl) => `${pl.what} ${pl.status} ${pl.detail}`).join(' ').toLowerCase();
+    check('…and the planned half really does describe them', BENCH_ONLY.every((n) => benchText.includes(n)),
+      BENCH_ONLY.filter((n) => !benchText.includes(n)).join(', '));
+    check('every planned item says plainly that it is not shipped',
+      audioDoc.planned.length > 0 && audioDoc.planned.every((pl) => pl.what && pl.status && pl.detail));
+    check('…and no planned item has been quietly restated in the shipped half',
+      audioDoc.planned.every((pl) => !shippedText.includes(pl.what.toLowerCase())));
+
+    // 5. On all three machine surfaces, and mirrored by the page. A doc that only machines can read is the
+    // cloaking line this file exists to hold; a doc only the page shows is invisible to the answer engines
+    // that made the original failure worth fixing.
+    for (const [what, text] of [['the static HTML', html], ['llms.txt', llms], ['llms-full.txt', llmsFull]]) {
+      check(`${what} carries the audio docs in full`,
+        Boolean(text) && text.includes(audioDoc.title) && text.includes(audioDoc.measured.slice(0, 60))
+        && audioDoc.routes.every((r) => text.includes(r.target))
+        && audioDoc.planned.every((pl) => text.includes(pl.what)));
+    }
+    check('the page itself renders the audio docs (a prerender, not a bot-only block)',
+      /MORPHEUS_AUDIO\.routes\.map/.test(landingSrcForAudio)
+      && /MORPHEUS_AUDIO\.steps\.map/.test(landingSrcForAudio)
+      && /MORPHEUS_AUDIO\.planned\.map/.test(landingSrcForAudio));
+    check('…and the page\'s own headings are literals, so the prose-ink rule can attribute them',
+      (landingSrcForAudio.match(/\/\/ (AUDIO|THREE ROUTES, EACH FOR ONE MACHINE|USING IT|WHAT THE BUILD PROVES|ON THE BENCH, NOT IN THE APP YET)/g) || []).length >= 5);
+  }
 
   // ── CLOAKING: the prerendered block must not be hidden from people ────────────────
   const section = (html.match(/<section id="seo-landing"[\s\S]*?<\/section>/) || [''])[0];
