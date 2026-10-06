@@ -1769,6 +1769,55 @@ check('…and its ids come from the parameter table, not from a number somebody 
   chainCheckMod.TONE_CASES.some((c) => c.params.includes('3=12'))
   && !chainCheckMod.TONE_CASES.some((c) => c.params.some((x) => x.startsWith('2='))), true);
 
+console.log('\n27. ⭐ THE DEMO IS THE WHOLE RIG, AND IT IS DEFINED ONCE');
+
+// ── WHY THIS IS A GUARD AND NOT A COMMENT ────────────────────────────────────────────────────────────────
+// The free download is the product's shop window, and it has already been wrong twice in the same direction: a
+// model build with no chain published ONE `Gain` knob under a release page describing an amplifier, and then
+// an amplifier with no pedals published as "fully functional". Both were a manifest written out by hand in a
+// runner script, three times, in three files. So the demo's block list is asserted here, where a change to it
+// is a failing build rather than a release nobody re-reads.
+const demo = await import('./lib/pluginDemo.mjs');
+check('the demo carries the blocks that make it a rig rather than a DI box',
+  demo.DEMO_BLOCKS.filter((k) => ['drive', 'delay', 'spring', 'cab'].includes(k)),
+  ['drive', 'tone', 'cab', 'delay', 'spring'].filter((k) => ['drive', 'delay', 'spring', 'cab'].includes(k)));
+check('…in the musical order: drive and tone before the amp, cabinet after it, time effects after that',
+  demo.DEMO_BLOCKS, ['input', 'gate', 'drive', 'tone', 'model', 'cab', 'delay', 'spring', 'output']);
+check('…with one of each block the board allows only one of',
+  demo.DEMO_BLOCKS.length, new Set(demo.DEMO_BLOCKS).size);
+check('…and the output block LAST, because it is the plugin\'s output and not a stage in the path',
+  demo.DEMO_BLOCKS[demo.DEMO_BLOCKS.length - 1], 'output');
+
+// The manifest is what the runner scripts seed, so the thing to assert is the plugin it produces.
+const demoFiles = [
+  { path: 'README.md', content: '# demo\n' },
+  { path: 'morpheus.plugin.json', content: demo.demoManifest() },
+  { path: 'models/amp.nam', content: '{"architecture":"Linear","weights":[1.0],"sample_rate":48000}' },
+];
+const demoScaffold = audioPlugin.scaffold(demoFiles);
+const demoParams = demoScaffold.generated.join(' ');
+check('…and the plugin it generates is the block count, not the four-block amp',
+  [demo.DEMO_BLOCKS.length > 6, /PluginGuiLayout/.test(demoParams) || /blocks/i.test(demoParams)], [true, true]);
+check('…with a control for every block that has one, so nothing is in the signal path and unreachable',
+  (() => {
+    const src = demoScaffold.files.find((f) => f.path === 'Source/Plugin.cpp')?.content || '';
+    const keys = ['IDX_INPUT', 'IDX_GATE', 'IDX_DRIVE_GAIN', 'IDX_BASS', 'IDX_DELAY_TIME', 'IDX_SPRING_MIX', 'IDX_OUTPUT'];
+    return keys.filter((k) => !src.includes(k));
+  })(), []);
+
+// ⚠️ AND THE THREE RUNNERS MUST SEED THAT, NOT THEIR OWN COPY. Three hand-written manifests is how macOS and
+// Windows published an amp while Linux published a gain knob, so the import is the claim: if a script stops
+// using the shared definition, its release silently becomes a different product under the same tag.
+const demoRunners = ['scripts/audio-plugin-macos-runner-build.mjs', 'scripts/audio-plugin-windows-runner-build.mjs', 'scripts/audio-plugin-linux-arm-runner-build.mjs'];
+const runnerText = Object.fromEntries(demoRunners.map((f) => [f, readFileSync(f, 'utf8')]));
+// ⚠️ THE IMPORT AND THE CALL, BOTH. Checking only the import passes for a script that imports the definition
+// and then writes its own manifest anyway — which is precisely the bug: three files each with a hand-written
+// manifest, one of which said `chain: 'amp'` and published a different product under the same release tag.
+check('every runner seeds the shared definition rather than its own manifest',
+  demoRunners.filter((f) => !/from '\.\/lib\/pluginDemo\.mjs'/.test(runnerText[f]) || !/demoManifest\(\)/.test(runnerText[f])), []);
+check('…and every one of them can carry a cabinet, which is what a demo needs to sound like an amplifier',
+  demoRunners.filter((f) => !/--cab/.test(runnerText[f])), []);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');
