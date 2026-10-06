@@ -2,6 +2,7 @@
 //
 //   node scripts/task.mjs families
 //   node scripts/task.mjs check <dataset-dir> [--family audio.classify] [--json]
+//   node scripts/task.mjs scaffold --out <dir> [--dataset <dir>] [--family audio.classify]
 //
 // ── WHY THIS IS A CLI BEFORE THERE IS A MODEL ─────────────────────────────────────────────────────────────
 // The five stages are COLLECT → TRAIN → VERIFY → PACK → EMBED, and TRAIN runs on the user's own machine — that
@@ -14,8 +15,10 @@
 // nobody can feed to the trainer they already have.
 import { readdirSync, statSync, readFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { TASK_FAMILIES, taskFamily } from '../server/src/lib/tasks/registry.js';
 import { checkDataset, clipFacts, verdictOf } from '../server/src/lib/tasks/dataset.js';
+import { PROJECT_FILES, trainingProject, validateProject } from '../server/src/lib/tasks/trainProject.js';
 import { decodeWav } from '../server/src/lib/audio/wav.js';
 
 const args = process.argv.slice(2);
@@ -135,8 +138,62 @@ if (command === 'families') {
   process.exit(0);
 }
 
+// ── scaffold: write the training project, WITH the dataset's verdict inside it ────────────────────────────
+// ⚠️ THE VERDICT IS PART OF THE PROJECT, AND THE TRAINER REFUSES TO RUN WITHOUT IT. That is what makes the
+// pre-flight a gate rather than advice: `train.py` opens preflight.json first and stops if it is missing or
+// says no. Generating the project without checking the dataset writes a project that will not start — which is
+// the correct outcome, and better than one that trains on anything.
+if (command === 'scaffold') {
+  const out = value('--out');
+  const familyId = value('--family', 'audio.classify');
+  if (!out) {
+    console.error('usage: node scripts/task.mjs scaffold --out <dir> [--dataset <dir>] [--family <id>]');
+    process.exit(2);
+  }
+  const family = taskFamily(familyId);
+  if (!family) {
+    console.error(`no such task family: ${familyId}\n  Known: ${TASK_FAMILIES.map((f) => f.id).join(', ')}`);
+    process.exit(2);
+  }
+  const datasetDir = value('--dataset');
+  let verdict = null;
+  if (datasetDir) {
+    const collected = collect(resolve(datasetDir), family);
+    const result = checkDataset(collected.clips, familyId);
+    if (collected.problem) {
+      result.issues.unshift({ level: 'fail', what: collected.problem, detail: `Move each kind of sound into its own directory: ${family.data.layout}.` });
+    }
+    verdict = { ...result, ok: verdictOf(result).ok, dataset: resolve(datasetDir) };
+  }
+  const project = trainingProject(familyId, verdict);
+  const problems = validateProject(project);
+  if (problems.length) {
+    console.error(`the generated project is incomplete, so it was not written:\n  ${problems.join('\n  ')}`);
+    process.exit(1);
+  }
+  mkdirSync(out, { recursive: true });
+  for (const file of project.files) writeFileSync(join(out, file.path), file.content);
+  console.log(`\nwrote ${project.files.length} files to ${out}\n`);
+  for (const path of PROJECT_FILES) console.log(`  ${path}`);
+  console.log('');
+  if (!verdict) {
+    console.log('  ⚠️ no --dataset was given, so preflight.json holds a refusal and train.py will not start.');
+    console.log('     Run: node scripts/task.mjs scaffold --out <dir> --dataset <your-clips>\n');
+  } else if (!verdict.ok) {
+    console.log('  ✗ the dataset did not pass, so train.py will refuse to start. The reasons are in preflight.json:\n');
+    for (const issue of verdict.issues.filter((i) => i.level === 'fail')) console.log(`     ${issue.what}`);
+    console.log('');
+  } else {
+    console.log('  ✓ the dataset passed — next, in that directory:\n');
+    console.log('     python -m venv .venv && . .venv/bin/activate');
+    console.log('     pip install -r requirements.txt');
+    console.log('     python train.py --dataset ' + resolve(datasetDir) + ' --dry-run\n');
+  }
+  process.exit(verdict && !verdict.ok ? 1 : 0);
+}
+
 if (command !== 'check') {
-  console.error('usage: node scripts/task.mjs families | check <dataset-dir> [--family <id>] [--json]');
+  console.error('usage: node scripts/task.mjs families | check <dataset-dir> [--family <id>] [--json] | scaffold --out <dir> [--dataset <dir>]');
   process.exit(2);
 }
 

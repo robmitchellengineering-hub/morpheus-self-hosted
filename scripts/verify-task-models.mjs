@@ -9,12 +9,14 @@
 //
 // So each refusal below is asserted together with the reason it gives, and the ones that are warnings are
 // asserted to be warnings — a check that refuses everything is as useless as one that refuses nothing.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { TASK_FAMILIES, taskFamily, taskFamilyIds, validateRegistry } from '../server/src/lib/tasks/registry.js';
 import { checkDataset, clipFacts, verdictOf } from '../server/src/lib/tasks/dataset.js';
+import { PROJECT_FILES, trainingProject, validateProject } from '../server/src/lib/tasks/trainProject.js';
+import { quantizedModel, validateModel } from '../server/src/lib/audio/modelFormat.js';
 import { encodeWav } from '../server/src/lib/audio/wav.js';
 
 let failures = 0;
@@ -168,6 +170,97 @@ check('the CLI decodes the samples, so it can see a silent file rather than trus
   [silentRun.status, /silent/.test(JSON.stringify(silentJson?.issues))], [1, true]);
 
 rmSync(work, { recursive: true, force: true });
+
+console.log('\n6. the training project is a project the user can actually run');
+const project = trainingProject('audio.classify', { ok: true, issues: [] });
+check('every file the README promises is in it, and none is empty', validateProject(project), []);
+check('…and a project missing the recording rule is refused, because that rule IS the split',
+  validateProject({ family: 'audio.classify', files: project.files.map((f) => (f.path === 'dataset.py' ? { ...f, content: f.content.replace('def recording_of', 'def renamed') } : f)) }).length > 0, true);
+check('the requirements are PINNED, because a project that trains differently next month cannot be reproduced',
+  (project.files.find((f) => f.path === 'requirements.txt').content.match(/^[a-z].*==/gm) || []).length >= 3
+  && !/^[a-z][^=]*$/m.test(project.files.find((f) => f.path === 'requirements.txt').content.replace(/^#.*$/gm, '').trim()), true);
+
+// ⚠️ EVERY GENERATED PYTHON FILE IS COMPILED, NOT READ. A training project that does not parse is a project
+// that fails on the user's machine after they have installed PyTorch — which is the worst moment to find out,
+// and the only way to know here is to hand it to a Python.
+const projDir = mkdtempSync(join(tmpdir(), 'morpheus-proj-'));
+for (const f of project.files) writeFileSync(join(projDir, f.path), f.content);
+const pyFiles = project.files.filter((f) => f.path.endsWith('.py')).map((f) => f.path);
+check('there is Python to check', pyFiles.length >= 6, true);
+const compile = spawnSync('python3', ['-m', 'py_compile', ...pyFiles], { cwd: projDir, encoding: 'utf8' });
+check('every generated .py file compiles', compile.status, 0);
+if (compile.status !== 0) console.log(`          ${(compile.stderr || '').split('\n')[0]}`);
+
+// ⭐ AND THE SCAFFOLD WRITES THE VERDICT IN. That is what makes the pre-flight a GATE rather than advice —
+// a project generated without it is a project whose trainer refuses to start, which is the right outcome and
+// only happens if the CLI hands the verdict to the generator. Asserted by running it, because reading the call
+// site is what a mutation walks straight through.
+const badDs = mkdtempSync(join(tmpdir(), 'morpheus-badds-'));
+mkdirSync(join(badDs, 'only'), { recursive: true });
+for (let i = 0; i < 3; i++) writeFileSync(join(badDs, 'only', `a${i}.wav`), encodeWav({ sampleRate: SR, data: tone(1), format: 'float32' }));
+const scaffoldOut = mkdtempSync(join(tmpdir(), 'morpheus-scaffold-'));
+const scaffolded = spawnSync(process.execPath, [join(new URL('..', import.meta.url).pathname, 'scripts', 'task.mjs'),
+  'scaffold', '--out', scaffoldOut, '--dataset', badDs], { encoding: 'utf8' });
+// Deliberately NOT wrapped in a try/catch. The first version was, and it swallowed the ReferenceError from a
+// missing `readFileSync` import whole — it reported "no verdict written" for a verdict that was written
+// correctly, which is the H18 shape and precisely the class of bug this guard exists to catch.
+const writtenVerdict = JSON.parse(readFileSync(join(scaffoldOut, 'preflight.json'), 'utf8'));
+check('the scaffold refuses a dataset that cannot train, and exits non-zero so a script can act on it',
+  [scaffolded.status, /one label|has 3 clips/.test(scaffolded.stdout)], [1, true]);
+// ⚠️ ASSERTING `ok === false` IS NOT ENOUGH, AND THAT IS NOT A THEORY. `trainingProject` has a fallback for a
+// project generated with no dataset at all, and that placeholder is *also* `ok:false` with a fail issue — so a
+// check on the shape passes while the CLI is throwing the real verdict away. Pin the CONTENT: the dataset the
+// verdict is about, and the reason, which the placeholder cannot name.
+check('⭐ …and the verdict it wrote into the project is the one the trainer will read',
+  [writtenVerdict?.ok, writtenVerdict?.dataset, (writtenVerdict?.issues || []).some((i) => /one label/.test(i.what || ''))],
+  [false, resolve(badDs), true]);
+check('…not the placeholder a project gets when it was generated with no dataset at all',
+  (writtenVerdict?.issues || []).some((i) => /has not been checked yet/.test(i.what || '')), false);
+rmSync(badDs, { recursive: true, force: true });
+rmSync(scaffoldOut, { recursive: true, force: true });
+
+console.log('\n7. ⭐ the gate fires BEFORE the dependencies do');
+// ⭐ THE ORDER IS THE FEATURE. The check has no dependencies and the scientific imports do, so a user who has
+// not installed anything must still be told about their DATA. The first version called the gate inside main(),
+// after `import torch` — so the answer to "is my dataset any good" was hidden behind a missing-package error,
+// on the one run where it matters most. Found by trying to test it.
+const gateDir = mkdtempSync(join(tmpdir(), 'morpheus-gate-'));
+for (const f of project.files) writeFileSync(join(gateDir, f.path), f.content);
+writeFileSync(join(gateDir, 'preflight.json'), JSON.stringify({ ok: false, issues: [{ level: 'fail', what: 'the same audio is in 2 different labels', detail: 'x' }] }));
+const gated = spawnSync('python3', ['train.py', '--dataset', '/nonexistent'], { cwd: gateDir, encoding: 'utf8' });
+check('a failing verdict stops the run and says what is wrong with the data',
+  [gated.status !== 0, /same audio is in 2 different labels/.test(gated.stdout + gated.stderr)], [true, true]);
+check('…even with the requirements NOT installed, which is the first run a user ever does',
+  /install the pinned requirements/i.test(gated.stdout + gated.stderr), false);
+const noVerdict = mkdtempSync(join(tmpdir(), 'morpheus-noverdict-'));
+for (const f of project.files.filter((x) => x.path !== 'preflight.json')) writeFileSync(join(noVerdict, f.path), f.content);
+const missing = spawnSync('python3', ['train.py', '--dataset', '/nonexistent'], { cwd: noVerdict, encoding: 'utf8' });
+check('a project with no verdict at all refuses, and says how to make one',
+  [missing.status !== 0, /preflight.json is missing/.test(missing.stdout + missing.stderr), /task\.mjs check/.test(missing.stdout + missing.stderr)],
+  [true, true, true]);
+rmSync(gateDir, { recursive: true, force: true });
+rmSync(noVerdict, { recursive: true, force: true });
+
+console.log('\n8. the container a classifier exports into, and the labels it must carry');
+const classifier = quantizedModel({
+  architecture: 'AudioClassifier',
+  sampleRate: 48000,
+  family: 'audio.classify',
+  task: { labels: ['clean', 'distorted'] },
+  card: { name: 'run-1', parameters: 1234 },
+  layers: [{ name: 'head', bits: 8, tensors: [{ name: 'weight', shape: [2, 32], codes: [1, 2], scale: 0.25 }] }],
+});
+check('a classifier container is valid, with its labels', validateModel(classifier), { valid: true, errors: [] });
+check('…and one with no labels is refused, because its outputs would mean nothing',
+  /at least two labels/.test(validateModel({ ...classifier, task: {} }).errors.join(' ')), true);
+check('…as is one whose labels repeat, since two outputs would mean the same thing',
+  /duplicate/.test(validateModel({ ...classifier, task: { labels: ['a', 'a'] } }).errors.join(' ')), true);
+// ⚠️ AND AN AMP MODEL IS STILL AN AMP MODEL. The audio path must not have to change because a second family
+// arrived — a container built the way the existing quantiser builds one carries no family and is unchanged.
+const amp = quantizedModel({ architecture: 'WaveNet', sampleRate: 48000, layers: classifier.layers });
+check('…and a container with no family is exactly what it was before — the audio path does not move',
+  [Object.keys(amp).includes('family'), validateModel(amp).valid], [false, true]);
+rmSync(projDir, { recursive: true, force: true });
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
