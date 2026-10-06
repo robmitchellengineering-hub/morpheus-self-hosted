@@ -80,8 +80,11 @@ const s = audioPlugin.scaffold(empty);
 // `CabIr.{h,cpp}` are generated for EVERY project, including one that has neither a model nor a cabinet,
 // because the plugin includes their headers unconditionally and branches on the flags inside. That is what
 // keeps Source/Plugin.cpp the same text whatever the workspace holds.
-check('it generates exactly the eight files the build needs',
-  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/CabIr.cpp', 'Source/CabIr.h', 'Source/ModelData.cpp', 'Source/ModelData.h', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', PLUGIN_MANIFEST]);
+// TEN FILES NOW, NOT EIGHT. Source/PluginGui.mm and .cpp are the panel — one per platform, BOTH always
+// written, because a plugin project moves between machines and one that arrives without the source its
+// platform compiles is a build that fails on the user's machine rather than here.
+check('it generates exactly the ten files the build needs',
+  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/CabIr.cpp', 'Source/CabIr.h', 'Source/ModelData.cpp', 'Source/ModelData.h', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', 'Source/PluginGui.cpp', 'Source/PluginGui.mm', PLUGIN_MANIFEST]);
 check('…and no warnings for a clean generate', s.warnings, []);
 
 console.log('\n3. identity is derived, valid, and cannot silently collide');
@@ -713,7 +716,7 @@ check('…and a model that will not load degrades to a gain stage with a line in
 const cmakeWith = generated(audioPlugin.scaffold(withModel), 'CMakeLists.txt');
 const cmakeWithout = generated(audioPlugin.scaffold(empty), 'CMakeLists.txt');
 check('the CMake compiles the generated data files either way',
-  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp\)/.test(cmakeWithout), true);
+  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(cmakeWithout), true);
 check('…without a model it mentions no engine at all, so nothing extra is fetched or compiled',
   /MORPHEUS_NAM_DIR|NAM_SAMPLE_FLOAT/.test(cmakeWithout), false);
 check('…with one it requires a checkout, globs the engine\u2019s sources and adds both header-only deps',
@@ -1208,7 +1211,7 @@ check('…and the convolution accumulates in DOUBLE, which the measurement chose
   /double y = 0\.0;/.test(cabSrc) && /return \(float\)y;/.test(cabSrc), true);
 const cabCmake = generated(audioPlugin.scaffold(cabSeed(irB64(synthIr(512, 100)))), 'CMakeLists.txt');
 check('…and CabIr.cpp is compiled whether or not it holds a cabinet',
-  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin.cpp Source\/ModelData.cpp Source\/CabIr.cpp\)/.test(cabCmake), true);
+  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin.cpp Source\/ModelData.cpp Source\/CabIr.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(cabCmake), true);
 const cabCheckSrc = read('scripts/audio-amp-chain-check.mjs');
 check('the check renders the cabinet through the plugin and compares it to the same taps',
   /arg\('cab'\)/.test(cabCheckSrc) && /cabTaps/.test(cabCheckSrc) && /convolveDirect\(/.test(cabCheckSrc)
@@ -1232,7 +1235,7 @@ check('the amp chain is input, gate, three tone bands, output',
 check('…the gate\u2019s lowest setting is a BYPASS, so the default plugin is bit-for-bit the chain without it',
   ampChainMod.GATE_OFF_DB, -80);
 check('…the default really is that setting, not a 0 dB threshold',
-  /\{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' \}/.test(read('server/src/lib/ampChain.js')), true);
+  /\{ key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate', unit: 'dB' \}/.test(read('server/src/lib/ampChain.js')), true);
 check('…and the emitted stage is guarded by exactly that comparison',
   /if \(p->smoothed\[IDX_GATE\] > \(double\)MORPHEUS_GATE_OFF_DB \+ 0\.001\) \{/.test(ampNowSrc), true);
 check('…with the constant defined, not interpolated into a comment',
@@ -1483,11 +1486,11 @@ check('…its stage calls its own function on the sample',
 check('…and every marker it emitted was replaced, rather than left in the source as a compile error',
   /__DELAY_STAGE__|__GATE_STAGE__|__CAB_STAGE__/.test(withDelay), false);
 check('…with the parameters it declared, at the defaults the board saved',
-  /\{ 7, "Time", 20\.0, 2000\.0, 300\.0 \}/.test(withDelay)
-  && /\{ 8, "Feedback", 0\.0, 95\.0, 30\.0 \}/.test(withDelay)
-  && /\{ 9, "Mix", 0\.0, 100\.0, 25\.0 \}/.test(withDelay), true);
+  /\{ 7, "Time", 20\.0, 2000\.0, 300\.0, "ms" \}/.test(withDelay)
+  && /\{ 8, "Feedback", 0\.0, 95\.0, 30\.0, "%" \}/.test(withDelay)
+  && /\{ 9, "Mix", 0\.0, 100\.0, 25\.0, "%" \}/.test(withDelay), true);
 check('…and the tone stack still has its OWN three bands, not the delay\'s',
-  /\{ 3, "Bass", -12\.0, 12\.0, 0\.0 \}/.test(withDelay), true);
+  /\{ 3, "Bass", -12\.0, 12\.0, 0\.0, "dB" \}/.test(withDelay), true);
 
 // ⭐ WHERE THE BLOCK SITS IS THE BLOCK'S BUSINESS. A delay after the model has to be emitted after the model —
 // this is the pass split, and a stage the second pass cannot emit is a stage that vanishes from the plugin.
@@ -1607,6 +1610,51 @@ check('three blocks that are not part of an amp can share one board, and all thr
       && /spring_process\(&p->spring\[c\], x,/.test(all)
       && !/__DRIVE_STAGE__|__DELAY_STAGE__|__SPRING_STAGE__/.test(all);
   })(), true);
+
+console.log('\n25. the panel: a plugin with no GUI leaves the standalone window empty');
+// ⚠️ A DAW DRAWS ITS OWN GENERIC PANEL FOR A PLUGIN THAT HAS NONE, SO THIS WAS INVISIBLE FOR A LONG TIME. A
+// STANDALONE is not a host with a fallback: clap-wrapper opens a window and asks the plugin for a
+// clap_plugin_gui, and without one the user gets sound and no knobs — which is exactly what shipped.
+const guiProject = audioPlugin.scaffold([{ path: 'README.md', content: '# x' }]);
+const guiCpp = generated(guiProject, 'Source/PluginGui.mm');
+const guiStub = generated(guiProject, 'Source/PluginGui.cpp');
+const guiPlugin = generated(guiProject, 'Source/Plugin.cpp');
+const guiCmake = generated(guiProject, 'CMakeLists.txt');
+check('the scaffold writes both panel files, so a project that moves between machines still builds',
+  guiCpp.length > 2000 && guiStub.length > 100, true);
+check('…the plugin exposes the GUI extension and gets it from that file',
+  /strcmp\(id, CLAP_EXT_GUI\)\) return morpheus_gui_extension\(\)/.test(guiPlugin)
+  && /extern "C" const clap_plugin_gui_t \*morpheus_gui_extension\(void\)/.test(guiCpp), true);
+check('⭐ …and OFF APPLE it returns NULL rather than claiming a window it cannot draw, so nothing regresses',
+  /morpheus_gui_extension\(void\) \{ return nullptr; \}/.test(guiStub), true);
+check('…the cmake compiles exactly one of them, because Plugin.cpp references the symbol either way',
+  /if \(APPLE\)[\s\S]{0,200}Source\/PluginGui\.mm[\s\S]{0,200}else\(\)[\s\S]{0,200}Source\/PluginGui\.cpp/.test(guiCmake)
+  && /add_library\(morpheus_plugin-impl STATIC Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(guiCmake), true);
+check('⭐ …and the panel reads its parameters from the PLUGIN, not from a copy of the table',
+  /get_extension\(plugin, CLAP_EXT_PARAMS\)/.test(guiCpp)
+  && /_params->get_info\(_plugin/.test(guiCpp) && /_params->get_value\(_plugin/.test(guiCpp)
+  && /value_to_text\(_plugin/.test(guiCpp), true);
+check('…it refuses a floating window, so a host keeps its own window and puts our view in it',
+  /if \(is_floating\) return false;/.test(guiCpp), true);
+check('…its timer runs in COMMON modes, or the knobs freeze whenever a host is in a modal loop',
+  /addTimer:_timer forMode:NSRunLoopCommonModes/.test(guiCpp), true);
+// ⚠️ A CONTROL AND ITS UNITS ARE ONE FACT. This said "%.2f dB" for every parameter in every plugin, which was
+// true while an amp was the only chain and became wrong the day a delay arrived: Time read "340.00 dB".
+check('⭐ every control carries its OWN unit through to the host and to the panel',
+  /const char \*unit; \} kParams\[\]/.test(guiPlugin)
+  && /kParams\[ix\]\.unit/.test(guiPlugin)
+  && /unit: 'ms'/.test(read('server/src/lib/delayBlock.js'))
+  && /unit: '%'/.test(read('server/src/lib/springBlock.js'))
+  && /unit: 'dB'/.test(read('server/src/lib/ampChain.js')), true);
+// ⚠️ AND THE ONE PLACE TWO THREADS MEET. A GUI write that the audio thread cannot see is a knob that moves
+// and does nothing; a GUI write applied on the main thread is this thread writing state the audio thread
+// reads. Both halves are asserted, because either one alone looks correct.
+check('⭐ a control moved on the panel reaches the audio thread through a flag, and the host through an event',
+  /__atomic_store_n\(&p->gui_pending\[ix\], 1, __ATOMIC_RELEASE\)/.test(guiPlugin)
+  && /__atomic_exchange_n\(&p->gui_pending\[k\], 0, __ATOMIC_ACQ_REL\)/.test(guiPlugin)
+  && /CLAP_EVENT_PARAM_VALUE/.test(guiPlugin) && /out_events->try_push/.test(guiPlugin), true);
+check('…and the output queue is remembered, because CLAP hands it over in process() and nowhere else',
+  /p->out_events = process->out_events;/.test(guiPlugin) && /p->out_events = out;/.test(guiPlugin), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

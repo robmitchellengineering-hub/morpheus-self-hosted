@@ -54,7 +54,7 @@ export const PLAIN_CHAIN = {
   stages: [
     // `name: null` — the plain plugin's one control is called `Gain` by default, and is renamed from the
     // manifest. The amp's output stage names itself, which is the only difference between the two.
-    { id: 'output', kind: 'level', role: 'output', param: { key: 'output', name: null, min: -60, max: 12, def: 0, role: 'output' } },
+    { id: 'output', kind: 'level', role: 'output', param: { key: 'output', name: null, min: -60, max: 12, def: 0, role: 'output', unit: 'dB' } },
   ],
 };
 
@@ -75,12 +75,12 @@ export const AMP_CHAIN = {
   // for that order is above and is unchanged by the shape.
   stages: [
     { id: 'input', kind: 'gain', role: 'input',
-      param: { key: 'input', name: 'Input', min: -24, max: 24, def: 0, role: 'input' } },
+      param: { key: 'input', name: 'Input', min: -24, max: 24, def: 0, role: 'input', unit: 'dB' } },
     // ⚠️ THE BOTTOM OF THE RANGE IS OFF, NOT A VERY LOW THRESHOLD, and the difference is measurable: at -80 dB
     // the gate is still an envelope follower on the signal and never exactly transparent, while OFF is a null
     // against the chain without a gate at all. That is the state the proof asserts, so it has to be a state.
     { id: 'gate', kind: 'gate', role: 'gate',
-      param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' } },
+      param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate', unit: 'dB' } },
     // The three bands are ONE stage with three parameters: they are one design — a tone stack — and pulling
     // them apart into three stages would let a reorder separate a mid from its bass, which is not a thing a
     // tone stack can be.
@@ -88,7 +88,7 @@ export const AMP_CHAIN = {
     { id: 'model', kind: 'model' },
     { id: 'cab', kind: 'cab' },
     { id: 'output', kind: 'level', role: 'output',
-      param: { key: 'output', name: 'Output', min: -60, max: 12, def: 0, role: 'output' } },
+      param: { key: 'output', name: 'Output', min: -60, max: 12, def: 0, role: 'output', unit: 'dB' } },
   ],
 };
 
@@ -137,6 +137,7 @@ export function chainParams(chain, manifest = {}) {
         max: b.rangeDb,
         def: Number.isFinite(b.def) ? b.def : 0,
         role: 'tone',
+        unit: 'dB',
       })));
     } else if (stage.param) {
       out.push({ ...stage.param, name: `${stage.param.name ?? String(manifest.paramName || 'Gain')}${suffix}` });
@@ -237,8 +238,11 @@ export const paramIndex = (params, key) => params.findIndex((p) => p.key === key
 /** The id enum and the table the params extension reads. */
 export function paramsCpp(params) {
   const enums = params.map((p, i) => `PARAM_${p.key.toUpperCase()} = ${i + 1}`).join(', ');
+  // THE UNIT TRAVELS WITH THE CONTROL. It is what the HOST shows when it draws the parameter, and what the
+  // plugin's own panel shows — one string, so a delay can read "340.00 ms" and a mix "25.00 %" instead of
+  // every control in every plugin claiming to be decibels. A parameter that declares none is unitless.
   const rows = params
-    .map((p, i) => `   { ${i + 1}, ${cstr(p.name)}, ${num(p.min)}, ${num(p.max)}, ${num(p.def)} },`)
+    .map((p, i) => `   { ${i + 1}, ${cstr(p.name)}, ${num(p.min)}, ${num(p.max)}, ${num(p.def)}, ${cstr(p.unit || '')} },`)
     .join('\n');
   return `// The id must not be 0: CLAP_INVALID_ID means "no parameter", so a host treats an event carrying id 0 as
 // malformed. These come from server/src/lib/ampChain.js — one table, used here and by the measurement.
@@ -248,7 +252,7 @@ enum { ${enums} };
 // The array index of each parameter, named, so the process loop cannot index the wrong one.
 ${params.map((p, i) => `#define IDX_${p.key.toUpperCase()} ${i}`).join('\n')}
 
-static const struct { clap_id id; const char *name; double min; double max; double def; } kParams[] = {
+static const struct { clap_id id; const char *name; double min; double max; double def; const char *unit; } kParams[] = {
 ${rows}
 };`;
 }
