@@ -1815,6 +1815,22 @@ const runnerText = Object.fromEntries(demoRunners.map((f) => [f, readFileSync(f,
 // mutation that puts a runner back on a hand-written manifest left the word behind in prose, the check stayed
 // green, and `mutate-guards` reported it SURVIVED. This is the fourth time this week that a check was anchored
 // on text the mutation does not remove; matching the seed line itself is the version that cannot be.
+// ⚠️ AND THE DEFAULT PATCH, WHICH THE FIRST VERSION OF THIS SECTION DID NOT CHECK AT ALL — its mutation
+// SURVIVED, which is how it was found. The block LIST being right says nothing about what the knobs are set to,
+// and the demo shipped the blocks' own defaults: a drive at 30 % gain, a delay at 25 % and a spring at 18 %, so
+// the download arrived distorted, echoing and reverberating. The ARM render proof is what caught the sound
+// (-4.3 dB against the reference instead of a null); this is the same claim, checked where it can be checked in
+// a second: the defaults are a NULL, so the demo sounds like an amplifier out of the box and every pedal is one
+// knob away.
+const demoDefaults = Object.fromEntries(boardMod.boardParamsStable(demo.DEMO_BOARD, {}).map((p) => [p.key, p.def]));
+const demoStages = boardMod.boardChain(demo.DEMO_BOARD, {}).stages;
+check('…and its default patch is a NULL: both time effects mixed to nothing, the drive bypassed',
+  [demoDefaults.delay_mix, demoDefaults.spring_mix, demoStages.filter((st) => st.kind === 'drive' && st.bypass).length],
+  [0, 0, 1]);
+check('…so nothing in the signal path colours the sound until somebody asks it to',
+  [demoDefaults.gate, demoDefaults.input, demoDefaults.output, demoDefaults.bass, demoDefaults.mid, demoDefaults.treble],
+  [demoDefaults.gate, 0, 0, 0, 0, 0]);
+
 check('every runner seeds the shared definition rather than its own manifest',
   demoRunners.filter((f) => !/from '\.\/lib\/pluginDemo\.mjs'/.test(runnerText[f])
     || !/seed\.push\(\{ path: 'morpheus\.plugin\.json', content: demoManifest\(\) \}\)/.test(runnerText[f])), []);
