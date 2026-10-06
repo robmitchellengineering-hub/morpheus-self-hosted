@@ -325,6 +325,94 @@ ok( 1 === $canonical_count, 'the head carries EXACTLY ONE canonical tag (found '
 ok( strpos( $head, 'rel="canonical" href="https://example.com/canonical"' ) !== false, 'carrying the canonical Morpheus set, not the one core derived' );
 ok( strpos( $head, 'name="robots"' ) === false, 'no robots tag while the page is indexable' );
 
+// ⭐⭐ AND THE ARCHIVES, WHICH HAD NOTHING AT ALL UNTIL THIS EXISTED.
+//
+// `emit_head()` began with `if ( ! is_singular() ) return;`, and on a site where Morpheus owns the head what it
+// skips, nobody emits — so the shop, every product category, every tag and the blog index rendered with no
+// canonical, no description and no social tags. Measured on the live store: `/shop/` had title 1,
+// description 0, canonical 0, og 0, twitter 0.
+//
+// The canonical is the one that matters commercially: a WooCommerce archive multiplies URLs with `?orderby=`,
+// `?filter_…` and `?paged=`, and a self-referencing canonical is what stops twelve near-copies of one page being
+// indexed twelve times. So the tests below assert it EXISTS, that it is the archive's own permalink, and — the
+// part that is easy to get wrong — that it IGNORES THE QUERY STRING.
+// ⚠️ `wp_insert_term`, NOT `wp_create_category`: the latter lives in wp-admin/includes/taxonomy.php, which a
+// harness that boots WordPress and calls REST does not load — and an undefined function here kills the whole run
+// silently after the assertions above, which is exactly what happened on the first attempt.
+$cat_term = wp_insert_term( 'Harness Category', 'category' );
+$cat_id   = is_wp_error( $cat_term ) ? 0 : (int) $cat_term['term_id'];
+wp_update_term( $cat_id, 'category', array( 'description' => 'Amplifiers, pedals and the things between them.' ) );
+$cat_post = wp_insert_post( array( 'post_title' => 'A post in the harness category', 'post_status' => 'publish', 'post_content' => 'Body.', 'post_category' => array( $cat_id ) ) );
+
+// ⚠️ A QUERY STRING ON THE REQUEST, so the assertion is about stripping rather than about a URL nobody sent.
+$_GET['orderby'] = 'price';
+$GLOBALS['wp_query'] = new WP_Query( array( 'cat' => $cat_id ) );
+$GLOBALS['wp_the_query'] = $GLOBALS['wp_query'];
+ob_start();
+do_action( 'wp_head' );
+$archive_head = ob_get_clean();
+
+$archive_canonicals = array();
+if ( preg_match_all( '#<link rel="canonical" href="([^"]+)"#', $archive_head, $m ) ) {
+	$archive_canonicals = $m[1];
+}
+$category_link = get_category_link( $cat_id );
+ok( 1 === count( $archive_canonicals ), 'an archive carries EXACTLY ONE canonical (found ' . count( $archive_canonicals ) . ')' );
+ok( isset( $archive_canonicals[0] ) && untrailingslashit( $archive_canonicals[0] ) === untrailingslashit( $category_link ), '…and it is the archive\'s own permalink' );
+ok( isset( $archive_canonicals[0] ) && strpos( $archive_canonicals[0], 'orderby' ) === false, '…with the query string STRIPPED, which is what collapses ?orderby= near-duplicates' );
+ok( strpos( $archive_head, 'name="description" content="Amplifiers, pedals and the things between them."' ) !== false, 'an archive carries the TERM\'S OWN description, not a generated sentence' );
+ok( strpos( $archive_head, 'property="og:url" content="' . esc_url( $category_link ) . '"' ) !== false, 'an archive carries og:url pointing at the canonical' );
+ok( strpos( $archive_head, 'property="og:type" content="website"' ) !== false, 'an archive is og:type website, not article' );
+// ⚠️ AND NOTHING IT SHOULD NOT. No robots tag (the theme emits one on these pages and a second is the
+// duplicate-tag defect this module exists to prevent), and no second schema entity.
+ok( strpos( $archive_head, 'name="robots"' ) === false, 'an archive emits NO robots tag, because the theme already does' );
+ok( strpos( $archive_head, 'LocalBusiness' ) === false && strpos( $archive_head, 'BreadcrumbList' ) === false, '…and no LocalBusiness or BreadcrumbList, which the theme already emits' );
+
+// A term with no description of its own falls back to the site tagline — a sentence somebody actually wrote —
+// and never to a generated one.
+wp_update_term( $cat_id, 'category', array( 'description' => '' ) );
+$GLOBALS['wp_query'] = new WP_Query( array( 'cat' => $cat_id ) );
+ob_start();
+do_action( 'wp_head' );
+$bare_head = ob_get_clean();
+$tagline   = get_bloginfo( 'description' );
+if ( $tagline !== '' ) {
+	ok( strpos( $bare_head, 'name="description" content="' . esc_attr( $tagline ) . '"' ) !== false, 'a term with no description falls back to the site tagline' );
+} else {
+	ok( strpos( $bare_head, 'name="description"' ) === false, 'with no term description and no tagline, NO description is invented' );
+}
+
+// The blog index, when a static front page is set — the other shape `is_home()` covers.
+$posts_page = wp_insert_post( array( 'post_title' => 'Harness Blog', 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '' ) );
+update_option( 'show_on_front', 'page' );
+update_option( 'page_for_posts', $posts_page );
+$GLOBALS['wp_query'] = new WP_Query( array( 'post_type' => 'post' ) );
+$GLOBALS['wp_query']->is_home = true;
+$GLOBALS['wp_query']->is_archive = false;
+ob_start();
+do_action( 'wp_head' );
+$home_head = ob_get_clean();
+ok( strpos( $home_head, 'rel="canonical" href="' . esc_url( get_permalink( $posts_page ) ) . '"' ) !== false, 'the blog index points at the page WordPress serves it from' );
+update_option( 'show_on_front', 'posts' );
+delete_option( 'page_for_posts' );
+
+// A PAGED archive points at itself, not at page one: page 3 of a category is a real page, and a canonical
+// claiming it is page one is how pages get dropped from the index.
+set_query_var( 'paged', 2 );
+$GLOBALS['wp_query'] = new WP_Query( array( 'cat' => $cat_id, 'paged' => 2 ) );
+ob_start();
+do_action( 'wp_head' );
+$paged_head = ob_get_clean();
+ok( strpos( $paged_head, '/page/2/' ) !== false || strpos( $paged_head, 'page/2' ) !== false, 'a paged archive points at the page it is' );
+
+// Back to a singular view for the assertions that follow.
+$_GET = array();
+set_query_var( 'paged', 0 );
+wp_reset_query();
+$GLOBALS['wp_query'] = new WP_Query( array( 'p' => $id ) );
+$GLOBALS['wp_query']->is_singular = true;
+$GLOBALS['wp_query']->is_page = true;
+
 // noindex is stored differently per plugin and is the one field with its own
 // write branch — assert the round trip through to the emitted tag.
 seo_req( 'set_seo', array( 'id' => $id, 'noindex' => true ), $SECRET );

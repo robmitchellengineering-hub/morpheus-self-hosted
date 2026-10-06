@@ -1951,6 +1951,16 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-pairing.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // The live store's `/shop/` shipped with no canonical, no description and no social tags because
+    // `emit_head()` returned early on anything that was not a single post. The structural check is what CI can
+    // hold; the behaviour is asserted in the hand-run Playground harness.
+    why: 'Makes the head singular-only again, which is how every archive on the live store came to have no canonical and no description.',
+    find: '\t\t\tif ( self::is_archive_view() ) {',
+    replace: '\t\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-pairing.mjs',
     file: 'scripts/lib/wpPluginRelease.mjs',
     // ⭐ THE BUG THAT COST ROB A ROUND TRIP: a plugin change with no version bump is published, hashed and
     // served, and NO site is ever offered it — because every update channel compares versions. This predicate is
