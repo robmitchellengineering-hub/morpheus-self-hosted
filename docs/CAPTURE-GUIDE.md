@@ -36,12 +36,18 @@ the speaker without colouring it. If all you have is the whole rig, capture it a
 1. **Generate the sweep** and put it on a track:
 
    ```
-   node scripts/audio-capture.mjs ir sweep --out ir-sweep.wav
+   node scripts/audio-capture.mjs ir sweep --out ir-sweep.wav --f1 60 --f2 12000
    ```
 
-   It is 5 s: 0.5 s of silence, a 3 s exponential sweep from 20 Hz to 20 kHz, then 1.5 s of silence. The
-   silence at the end is where the cabinet's own decay happens — without it the tail is cut off by the
-   recording rather than by us.
+   It is 5 s: 0.5 s of silence, a 3 s exponential sweep, then 1.5 s of silence. The silence at the end is where
+   the cabinet's own decay happens — without it the tail is cut off by the recording rather than by us.
+
+   ⚠️ **`--f1 60 --f2 12000` for a guitar cabinet**, rather than the default 20 Hz–20 kHz. A guitar speaker does
+   not reproduce 20 Hz, and three seconds of it is cone excursion for energy that will not be in the cabinet.
+
+   ⚠️ **Match your session's sample rate.** The sweep is 48 kHz by default; if your session is 44.1 kHz, either
+   record at 48 or generate the sweep to match: `--sample-rate 44100`. A mismatch is refused rather than turned
+   into a time-scaled cabinet.
 
 2. **Set the level.** Play it, and set the amp so the loudest moment is a good way below clipping on the
    interface. It will sound harsh — a sweep always does. What matters is that nothing clips and the room is
@@ -56,9 +62,13 @@ the speaker without colouring it. If all you have is the whole rig, capture it a
    node scripts/audio-capture.mjs ir make --recorded my-take.wav --sweep ir-sweep.wav --out my-cab.wav
    ```
 
-   You get a 4096-tap IR, normalised to a peak of 1.0, plus a report: where in the take the response actually
-   started (your interface's round-trip latency, measured rather than assumed), how long the tail runs, and the
-   energy that was thrown away outside the window.
+   You get a 4096-tap IR, normalised to a peak of 1.0, plus a report: where the sweep's response sits in your
+   take, how long the tail runs, and how closely the two ways of locating the response agree — which is what
+   says this really is a capture. (⚠️ Neither is your interface's round-trip latency: the recording does not
+   contain the moment the sweep was *sent*, so that number is not knowable from these two files.)
+
+   It refuses the three ways a take is not a capture, by name: a different sample rate, a take shorter than the
+   sweep, and a take that does not contain the sweep at all.
 
 5. **Check it** — any time, on any IR:
 

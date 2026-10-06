@@ -2023,6 +2023,33 @@ export const MUTATIONS = [
     find: "  const values = { delay: { delay_mix: 0 }, spring: { spring_mix: 0 } };",
     replace: "  const values = {};",
   },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/lib/audio/irCapture.js',
+    // The fold: without it a response 33 samples EARLY reads as 524255 samples late, and a perfect capture is
+    // refused. This is the arithmetic bug that was in the tool for one revision.
+    why: 'Stops folding the circular delay to the nearest zero, so a response a few samples early reads as a whole buffer late.',
+    // ⚠️ THE WRAP IS THE BUG THAT WAS THERE, and the first version of this mutation (`- sweepAt`, unfolded)
+    // produced the right answer for the unit's numbers — a mutation that changes nothing is not a mutation.
+    find: '  return ((latencySamples - sweepAt + size / 2) % size) - size / 2;',
+    replace: '  return ((latencySamples - sweepAt) % size + size) % size;',
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'scripts/audio-capture.mjs',
+    // A flag the CLI does not spell correctly is accepted, documented, and silently ignored — which is how three
+    // of them shipped in the first version of the cabinet capture.
+    why: 'Spells one flag without its dashes, so the value is accepted on the command line and silently ignored.',
+    find: "const f1 = num('--f1', IR_SWEEP.f1);",
+    replace: "const f1 = num('f1', IR_SWEEP.f1);",
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/lib/audio/irCapture.js',
+    why: 'Locates the sweep by the loudest part of the take, which is useless for a sweep whose envelope is flat by design — the rule that refused a perfect capture.',
+    find: '  const sweepAt = locateSweep(recorded, sweep, size).at;',
+    replace: '  const sweepAt = recorded.length > 0 ? 0 : 0;',
+  },
   // ── VERIFY and PACK (2026-10-06) ────────────────────────────────────────────────────────────────────────
   // ⭐ THE LADDER'S TWO MIDDLE STAGES ARE THE ONES A PERSON BELIEVES WITHOUT CHECKING: a card that says 94%, and
   // a pack report that says "8 bits, no loss". Each claim below gets an edit that makes it false.

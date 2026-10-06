@@ -25,7 +25,7 @@ import {
   INPUT_FILENAME, INPUT_URL, V3, blipLatency, checkCapture, identifyInput,
 } from '../server/src/lib/audio/namCapture.js';
 import { decodeWavMono, encodeWav } from '../server/src/lib/audio/wav.js';
-import { IR_SWEEP, DEFAULT_TAPS, sweepSignal, deconvolve, normaliseIr, checkIr, formatIrCapture } from '../server/src/lib/audio/irCapture.js';
+import { IR_SWEEP, DEFAULT_TAPS, sweepSignal, deconvolve, normaliseIr, checkIr, formatIrCapture, responseDelay } from '../server/src/lib/audio/irCapture.js';
 import { nullDepth } from '../server/src/lib/audio/analysis.js';
 import { ensureEngine, renderThroughFile, NAMCORE_REF, ROOT } from './lib/referenceEngine.mjs';
 
@@ -213,15 +213,20 @@ switch (cmd) {
     const sub = positional[1];
     if (sub === 'sweep') {
       const out = value('--out', 'ir-sweep.wav');
-      const seconds = num('seconds', IR_SWEEP.seconds);
-      const rate = num('sample-rate', IR_SWEEP.sampleRate);
-      const signal = sweepSignal({ seconds, sampleRate: rate });
+      const seconds = num('--seconds', IR_SWEEP.seconds);
+      const rate = num('--sample-rate', IR_SWEEP.sampleRate);
+      // ⚠️ THE BAND IS YOURS TO CHOOSE, AND FOR A GUITAR CABINET NARROWER IS BETTER. The default sweeps 20 Hz to
+      // 20 kHz; a guitar speaker does not reproduce 20 Hz, and driving it there is 3 seconds of cone excursion
+      // for energy that will not be in the cab anyway. `--f1 60 --f2 12000` is a sensible guitar-cabinet sweep.
+      const f1 = num('--f1', IR_SWEEP.f1);
+      const f2 = num('--f2', IR_SWEEP.f2);
+      const signal = sweepSignal({ seconds, sampleRate: rate, f1, f2 });
       writeFileSync(out, Buffer.from(encodeWav({ sampleRate: rate, data: signal, format: 'float32' })));
       const facts = {
         cmd: 'ir-sweep', out, seconds, sampleRate: rate, samples: signal.length,
         totalSeconds: signal.length / rate,
         leadSeconds: IR_SWEEP.leadSeconds, tailSeconds: IR_SWEEP.tailSeconds,
-        from: IR_SWEEP.f1, to: IR_SWEEP.f2,
+        from: f1, to: f2,
       };
       if (flag('--json')) console.log(JSON.stringify(facts, null, 2));
       else {
@@ -241,22 +246,52 @@ switch (cmd) {
       if (!existsSync(recorded)) { console.error(`--recorded ${recorded} does not exist`); process.exit(2); }
       if (!existsSync(sweepPath)) { console.error(`--sweep ${sweepPath} does not exist — run \`audio-capture ir sweep\` first`); process.exit(2); }
       const take = decodeWavMono(readFileSync(recorded));
-      const { samples: sweep } = decodeWavMono(readFileSync(sweepPath));
-      const taps = num('taps', DEFAULT_TAPS);
+      const decodedSweep = decodeWavMono(readFileSync(sweepPath));
+      const sweep = decodedSweep.samples;
+
+      // ── the three ways a real take goes wrong, refused BY NAME rather than turned into a cabinet ──────────
+      // ⚠️ EACH OF THESE PRODUCES A PERFECTLY PLAUSIBLE IR FROM A TAKE THAT CANNOT HAVE ONE. The arithmetic
+      // does not know it was given the wrong file, so every one of these is checked before the deconvolution
+      // rather than after it.
+      const problems = [];
+      if (take.sampleRate !== decodedSweep.sampleRate) {
+        problems.push(`your take is ${take.sampleRate} Hz and the sweep is ${decodedSweep.sampleRate} Hz — record (or export) at the sweep's rate, or generate a matching one with \`ir sweep --sample-rate ${take.sampleRate}\``);
+      }
+      if (take.samples.length < sweep.length * 0.9) {
+        problems.push(`the take is ${(take.samples.length / take.sampleRate).toFixed(2)} s and the sweep alone is ${(sweep.length / decodedSweep.sampleRate).toFixed(2)} s — it cannot contain the whole sweep, so the cabinet's tail was cut off by the recording`);
+      }
+      const taps = num('--taps', DEFAULT_TAPS);
       const result = deconvolve(take.samples, sweep, { taps });
+      const delay = responseDelay(result);
+      const maxDelay = num('--max-response-ms', 100) / 1000 * take.sampleRate;
+      // ⚠️ TWO WAYS OF LOCATING THE SAME RESPONSE, AND THEIR AGREEMENT IS THE TEST. The matched filter
+      // (correlation) and the inverse filter (deconvolution) both find the cabinet, with slightly different
+      // biases — a few milliseconds apart on a real capture, and SECONDS apart when the take is not a capture
+      // at all. ⚠️ Neither is a measurement of the interface's round trip: the recording does not contain the
+      // moment the sweep was SENT, so that number is not knowable from these two files, and the tool will not
+      // pretend otherwise.
+      if (Math.abs(delay) > maxDelay) {
+        problems.push(`the two ways of locating the response disagree by ${(Math.abs(delay) / take.sampleRate * 1000).toFixed(0)} ms. A cabinet is a fraction of a millisecond of ambiguity, not seconds — this take almost certainly does not contain the sweep. Check that you recorded the right track, and that the sweep is in the session at all`);
+      }
+      if (problems.length) {
+        console.error(`\nrefusing to make a cabinet out of this take:\n`);
+        for (const p of problems) console.error(`  ✗ ${p}`);
+        console.error('');
+        process.exit(1);
+      }
       const { ir, peak } = normaliseIr(result.ir);
       writeFileSync(out, Buffer.from(encodeWav({ sampleRate: take.sampleRate, data: ir, format: 'float32' })));
       const verdict = checkIr(ir, { sampleRate: take.sampleRate });
       const facts = { cmd: 'ir-make', out, taps, fromSeconds: take.frames ? take.samples.length / take.sampleRate : 0,
-        latencySamples: result.latencySamples, windowStart: result.windowStart, outsideDb: result.outsideDb,
+        sweepAt: result.sweepAt, responseDelaySamples: delay, windowStart: result.windowStart, outsideDb: result.outsideDb,
         originalPeak: peak, ...verdict.facts };
       if (flag('--json')) console.log(JSON.stringify({ ...facts, issues: verdict.issues }, null, 2));
       else {
         console.log(`\nwrote ${out}\n`);
-        console.log(formatIrCapture(verdict, result.latencySamples));
-        console.log(`\n  the take's response starts ${(result.latencySamples / take.sampleRate * 1000).toFixed(2)} ms in `
-          + `— that is your interface's round trip, measured rather than assumed`);
-        console.log(`  energy outside the kept window: ${result.outsideDb.toFixed(1)} dB (distortion products and room)`);
+        console.log(formatIrCapture(verdict));
+        console.log(`\n  the sweep's own response sits ${(result.sweepAt / take.sampleRate * 1000).toFixed(1)} ms into your take`);
+        console.log(`  the matched filter and the inverse filter locate the cabinet within `
+          + `${(Math.abs(delay) / take.sampleRate * 1000).toFixed(1)} ms of each other — that agreement is what says this is a capture`);
         console.log(`  peak before normalising: ${peak.toExponential(3)}\n`);
       }
       if (!verdict.ok) process.exit(1);
@@ -273,8 +308,9 @@ switch (cmd) {
       break;
     }
     console.error('usage: audio-capture ir sweep|make|check …\n'
-      + '  ir sweep [--out ir-sweep.wav] [--seconds 3] [--sample-rate 48000]\n'
+      + '  ir sweep [--out ir-sweep.wav] [--seconds 3] [--sample-rate 48000] [--f1 20 --f2 20000]\n'
       + '  ir make  --recorded <take.wav> --sweep <ir-sweep.wav> [--out cabinet.wav] [--taps 4096]\n'
+      + '           [--max-response-ms 100]\n'
       + '  ir check <cabinet.wav>');
     process.exit(2);
   }
