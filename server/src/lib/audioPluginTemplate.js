@@ -764,8 +764,14 @@ add_subdirectory(\${CLAP_WRAPPER_DIR} clap-wrapper)
 # plugin has no GUI" — so Windows and Linux keep the host's own generic parameter list rather than claiming a
 # window they cannot draw. EITHER WAY ONE OF THEM MUST COMPILE: Plugin.cpp references the symbol
 # unconditionally, so a build that picked neither would fail at link rather than at runtime.
+# Cocoa on Apple, a child HWND and GDI on Windows, a child X11 window with its own event thread on Linux, and
+# a NULL stub for a platform nobody has written a panel for yet.
 if (APPLE)
   set(MORPHEUS_GUI_SOURCE Source/PluginGui.mm)
+elseif (WIN32)
+  set(MORPHEUS_GUI_SOURCE Source/PluginGuiWin.cpp)
+elseif (UNIX)
+  set(MORPHEUS_GUI_SOURCE Source/PluginGuiX11.cpp)
 else()
   set(MORPHEUS_GUI_SOURCE Source/PluginGui.cpp)
 endif()
@@ -777,6 +783,14 @@ target_link_libraries(morpheus_plugin-impl PUBLIC clap clap-wrapper-extensions)
 # go wrong inside a host's window. QuartzCore is for the layer-backed drawing path Cocoa uses on Retina.
 if (APPLE)
   target_link_libraries(morpheus_plugin-impl PUBLIC "-framework Cocoa" "-framework QuartzCore")
+elseif (WIN32)
+  # GDI for the drawing; both are part of the Windows SDK and every MSVC toolchain already has them.
+  target_link_libraries(morpheus_plugin-impl PUBLIC gdi32 user32)
+elseif (UNIX)
+  # X11 for the drawing, and Threads because the Linux panel runs its own event loop — see
+  # server/src/lib/pluginGui.js for why it has to. libx11-dev is what the Linux ARM route already installs.
+  find_package(Threads REQUIRED)
+  target_link_libraries(morpheus_plugin-impl PUBLIC X11 Threads::Threads)
 endif()
 ${hasCab ? `
 # The cabinet needs nothing fetched — the taps are compiled in. This line exists so the configure cannot

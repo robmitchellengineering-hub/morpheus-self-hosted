@@ -1,80 +1,178 @@
-// The plugin's own control panel — what makes the standalone app more than a window with nothing in it.
+// The plugin's own control panel — what makes a standalone window more than a window.
 //
 // ── WHY A PLUGIN NEEDS A GUI AT ALL, WHICH SOUNDS OBVIOUS AND IS NOT ─────────────────────────────────────
 // A DAW draws its own generic panel for any plugin that has none — every parameter as a row of sliders — so
 // inside a host, a plugin without a GUI is survivable. A STANDALONE is not a host with a generic panel: it is
-// clap-wrapper opening a window and asking the plugin for a `clap_plugin_gui`. Without one there is nothing
-// to put in the window, and the user gets sound and no knobs. That is the state this file fixes.
+// clap-wrapper opening a window and asking the plugin for a `clap_plugin_gui`. Without one there is nothing to
+// put in the window, and the user gets sound and no knobs.
 //
-// ── NO THIRD-PARTY GUI TOOLKIT, AND THAT IS A DECISION RATHER THAN PURISM ────────────────────────────────
+// ── ⚠️ ONE LAYOUT, THREE DRAWING BACKENDS, AND THE SPLIT IS THE WHOLE DESIGN ─────────────────────────────
+// What a panel *says* — which rows there are, what they are called, where each sits, what its number reads,
+// and what a click at a given x means — is identical on every platform and lives once, in
+// `Source/PluginGuiLayout.h`. What differs is only how a rectangle, a circle and a piece of text get onto the
+// screen: NSBezierPath on Cocoa, GDI on Windows, Xlib on Linux.
+//
+// That split is not tidiness. Three copies of "which parameter is under this point" is three places for the
+// hit test to disagree with the drawing, and the failure is a slider that moves when you click a different
+// one — which looks like a broken plugin and is unreproducible on the machine you develop on.
+//
+// ── NO THIRD-PARTY GUI TOOLKIT, AND THAT IS ALSO A DECISION ──────────────────────────────────────────────
 // The obvious choice is an immediate-mode toolkit (Dear ImGui is MIT and would work). It is not taken here
-// for three reasons that all point the same way:
+// because a toolkit needs a RENDERER — OpenGL, Metal or DirectX — and therefore a GPU context inside a window
+// the HOST owns. That is the single most common source of "the plugin window is black in my DAW", and it is a
+// class of bug that cannot exist when the drawing is the platform's own.
 //
-//   * a toolkit needs a RENDERER — OpenGL, Metal or DirectX — and therefore a GPU context inside a window
-//     the HOST owns. That is the single most common source of "the plugin window is black in my DAW", and it
-//     is a class of bug that cannot exist if the drawing is the platform's own;
-//   * it would add a device-lifetime question to a plugin whose whole build is currently "the CLAP SDK, the
-//     wrappers and (maybe) the engine", all pinned and permissive;
-//   * the panel is a list of sliders. A platform can draw that in a few hundred lines, and text comes for
-//     free from the system font rather than from a baked atlas.
-//
-// ── IT IS ALSO NOT A SECOND SOURCE OF TRUTH FOR THE PARAMETERS ───────────────────────────────────────────
+// ── IT IS NOT A SECOND SOURCE OF TRUTH FOR THE PARAMETERS EITHER ─────────────────────────────────────────
 // The panel asks the plugin's own `clap_plugin_params` extension for the count, the names, the ranges, the
-// current values and the display text. It never reads the parameter table directly, which is why it needs no
-// header from Plugin.cpp and why a parameter that changes there changes here. That is exactly the interface a
-// host uses, so the panel cannot describe a plugin that is not the one running.
+// current values and the display text. It never reads the parameter table directly, which is why no panel
+// needs a header from Plugin.cpp and why a parameter that changes there changes here. That is exactly the
+// interface a host uses, so a panel cannot describe a plugin that is not the one running.
 //
 // ── ⚠️ AND THE ONE PLACE TWO THREADS MEET ────────────────────────────────────────────────────────────────
-// A GUI drag runs on the main thread; `process()` runs on the audio thread. Three things happen on a drag, in
-// this order, and all three are needed:
+// A drag runs on the GUI thread; `process()` runs on the audio thread. Three things then happen, and all three
+// are needed:
 //
 //   1. the value is handed to Plugin.cpp, which writes it into a slot and raises a flag — the audio thread
-//      picks it up at the top of its next block. This is what makes the sound change even in a host that
-//      does not echo a plugin-set parameter;
+//      picks it up at the top of its next block. This is what makes the sound change even in a host that does
+//      not echo a plugin-set parameter;
 //   2. the same change is pushed to the host as a PARAM_VALUE output event, which is how CLAP says a plugin
-//      tells its host that a control moved — without it the host's own automation display and undo would not
-//      know;
+//      tells its host that a control moved — without it the host's automation display, undo and saved state
+//      would not know;
 //   3. the panel redraws from `get_value`, so what you see is what the host actually holds.
 //
-// See `morpheus_gui_param_set` in Plugin.cpp for why the handover is a flag and a slot rather than a lock:
-// the audio thread may not wait for anything, ever.
+// See `morpheus_gui_param_set` in Plugin.cpp for why the handover is a flag and a slot rather than a lock: the
+// audio thread may not wait for anything, ever.
+export const PLUGIN_GUI_LAYOUT = 'Source/PluginGuiLayout.h';
 export const PLUGIN_GUI_APPLE = 'Source/PluginGui.mm';
+export const PLUGIN_GUI_WINDOWS = 'Source/PluginGuiWin.cpp';
+export const PLUGIN_GUI_X11 = 'Source/PluginGuiX11.cpp';
 export const PLUGIN_GUI_STUB = 'Source/PluginGui.cpp';
 
-/** The panel's geometry, in points. One row per parameter, and the view is exactly as tall as they need. */
-const ROW = 34;
-const PAD = 14;
-const WIDTH = 460;
-/** Where the slider track starts, and how much room the number on the right gets. */
-const TRACK_X = 168;
-const VALUE_W = 78;
+/** The panel's geometry, in points. One source, so a backend cannot lay out a different panel. */
+export const PANEL = { row: 34, pad: 14, width: 460, trackX: 168, valueW: 78, knobR: 6 };
 
 /**
- * The ObjC++ panel. Compiled only on Apple, where the CLAP window API is Cocoa (`CLAP_WINDOW_API_COCOA`,
- * which is an `NSView *`).
+ * The shared layout, included by every backend.
+ *
+ * It carries the geometry constants, the row builder that reads the plugin's own params extension, the hit
+ * test and the x-of-value arithmetic. A backend that draws has nothing left to decide except pixels.
  */
-export const pluginGuiApple = `// ${'Source/PluginGui.mm'} — generated by Morpheus. This file is yours: edit it freely, and the build picks
-// up your changes. See server/src/lib/pluginGui.js for why it is drawn natively rather than with a toolkit.
+export const pluginGuiLayout = `// ${PLUGIN_GUI_LAYOUT} — generated by Morpheus. This file is yours: edit it freely, and the build picks up
+// your changes. See server/src/lib/pluginGui.js for why the layout is shared and the drawing is not.
+#ifndef MORPHEUS_PLUGIN_GUI_LAYOUT_H
+#define MORPHEUS_PLUGIN_GUI_LAYOUT_H
 
-#import <Cocoa/Cocoa.h>
 #include <clap/clap.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
-// The three things this panel needs from the plugin, and nothing else. Declared here rather than in a header
-// so that the GUI is one file to add, remove or replace.
+// The three things a panel needs from Plugin.cpp, and nothing else. Declared here rather than in a header of
+// its own so that a panel is one file to add, remove or replace.
 extern "C" {
 void *morpheus_gui_state(const clap_plugin_t *plugin);
 void morpheus_gui_set_state(const clap_plugin_t *plugin, void *state);
 void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, double value);
 }
 
-#define MORPHEUS_ROW ${ROW}
-#define MORPHEUS_PAD ${PAD}
-#define MORPHEUS_TRACK_X ${TRACK_X}
-#define MORPHEUS_VALUE_W ${VALUE_W}
+// ── the layout, and the only place a row's position is written down ──────────────────────────────────────
+#define MORPHEUS_ROW ${PANEL.row}
+#define MORPHEUS_PAD ${PANEL.pad}
+#define MORPHEUS_PANEL_WIDTH ${PANEL.width}
+#define MORPHEUS_TRACK_X ${PANEL.trackX}
+#define MORPHEUS_VALUE_W ${PANEL.valueW}
+#define MORPHEUS_KNOB_R ${PANEL.knobR}
+#define MORPHEUS_TRACK_W (MORPHEUS_PANEL_WIDTH - MORPHEUS_TRACK_X - MORPHEUS_VALUE_W - MORPHEUS_PAD)
 
-// The panel's colours. Dark, and the same green the rest of Morpheus uses — a plugin that looks like the
-// thing that built it is worth the four lines.
+/** One row: what to draw, and where its control is. Built from the plugin's own params extension. */
+typedef struct {
+   double t;                 // 0..1 along the track — the ONLY thing a backend has to turn into pixels
+   char name[64];
+   char value[64];
+} morpheus_gui_row_t;
+
+/** How tall the panel is for this many rows. The host is told this, and the backends draw exactly it. */
+static uint32_t morpheus_gui_height(const uint32_t count) {
+   return (uint32_t)(MORPHEUS_PAD * 2 + MORPHEUS_ROW * (int)count);
+}
+
+/**
+ * Fill in every row from the plugin's own params extension. Returns how many were written.
+ *
+ * The value text is the plugin's own \`value_to_text\`, so a panel cannot show a unit the plugin does not agree
+ * with — a control whose unit is milliseconds reads "340.00 ms" here for the same reason it does in a DAW.
+ */
+static uint32_t morpheus_gui_rows(const clap_plugin_t *plugin, const clap_plugin_params_t *params,
+                                  morpheus_gui_row_t *out, const uint32_t max) {
+   const uint32_t n = params->count(plugin);
+   uint32_t written = 0;
+   for (uint32_t i = 0; i < n && written < max; ++i) {
+      clap_param_info_t info;
+      memset(&info, 0, sizeof(info));
+      if (!params->get_info(plugin, i, &info)) continue;
+      double value = info.default_value;
+      params->get_value(plugin, info.id, &value);
+      const double span = info.max_value - info.min_value;
+      morpheus_gui_row_t *row = &out[written++];
+      row->t = span > 0.0 ? (value - info.min_value) / span : 0.0;
+      snprintf(row->name, sizeof(row->name), "%s", info.name);
+      if (!params->value_to_text(plugin, info.id, value, row->value, sizeof(row->value))) {
+         snprintf(row->value, sizeof(row->value), "%.2f", value);
+      }
+   }
+   return written;
+}
+
+/**
+ * The row a point is over, or -1.
+ *
+ * ⚠️ THE WHOLE ROW IS THE TARGET, not just the track: a control you have to aim at is a control that feels
+ * broken. And it is ONE function because every backend must answer it the same way — otherwise a click lands
+ * on a different slider depending on the operating system, which is a bug you cannot reproduce on the machine
+ * you develop on.
+ */
+static int morpheus_gui_row_at(const double x, const double y, const uint32_t count) {
+   if (x < MORPHEUS_TRACK_X - 8) return -1;
+   const int i = (int)((y - MORPHEUS_PAD) / MORPHEUS_ROW);
+   return (i >= 0 && (uint32_t)i < count) ? i : -1;
+}
+
+/** What a click at \`x\` means: 0..1 along the track, clamped. */
+static double morpheus_gui_t_at(const double x) {
+   const double t = (x - MORPHEUS_TRACK_X) / (double)MORPHEUS_TRACK_W;
+   return t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+}
+
+/** The x pixel a value sits at — the same arithmetic as \`morpheus_gui_t_at\` backwards, for the drawing. */
+static double morpheus_gui_x_of(const double t) {
+   return MORPHEUS_TRACK_X + MORPHEUS_TRACK_W * (t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t));
+}
+
+/** Put a row's control where the click asked, or back to its default. Values go through Plugin.cpp. */
+static void morpheus_gui_set_row(const clap_plugin_t *plugin, const clap_plugin_params_t *params,
+                                 const uint32_t row, const double t, const bool to_default) {
+   clap_param_info_t info;
+   memset(&info, 0, sizeof(info));
+   if (!params->get_info(plugin, row, &info)) return;
+   const double span = info.max_value - info.min_value;
+   const double v = to_default ? info.default_value : info.min_value + morpheus_gui_t_at(t) * span;
+   morpheus_gui_param_set(plugin, info.id, v);
+}
+#endif  // MORPHEUS_PLUGIN_GUI_LAYOUT_H
+`;
+
+/** The Cocoa panel. Compiled only on Apple, where the CLAP window API is `CLAP_WINDOW_API_COCOA` (an NSView). */
+export const pluginGuiApple = `// ${PLUGIN_GUI_APPLE} — generated by Morpheus. This file is yours: edit it freely, and the build picks up
+// your changes.
+//
+// The COCOA drawing backend. Everything it knows about this plugin — which rows, what they say, where the
+// control is — comes from Source/PluginGuiLayout.h; what is here is NSBezierPath and a font.
+
+#import <Cocoa/Cocoa.h>
+#include "PluginGuiLayout.h"
+
+// The panel's colours, and the same green the rest of Morpheus uses. A plugin that looks like the thing that
+// built it is worth the four lines.
 static NSColor *morpheusBg(void) { return [NSColor colorWithCalibratedRed:0.039 green:0.039 blue:0.043 alpha:1.0]; }
 static NSColor *morpheusGreen(void) { return [NSColor colorWithCalibratedRed:0.22 green:1.0 blue:0.08 alpha:1.0]; }
 static NSColor *morpheusDim(void) { return [NSColor colorWithCalibratedRed:0.10 green:0.24 blue:0.10 alpha:1.0]; }
@@ -84,7 +182,7 @@ static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78
   const clap_plugin_t *_plugin;
   const clap_plugin_params_t *_params;
   uint32_t _count;
-  int _drag;             // the row being dragged, or -1
+  int _drag;
   NSTimer *_timer;
 }
 - (instancetype)initWithPlugin:(const clap_plugin_t *)plugin params:(const clap_plugin_params_t *)params;
@@ -94,12 +192,10 @@ static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78
 @implementation MorpheusPanel
 
 - (instancetype)initWithPlugin:(const clap_plugin_t *)plugin params:(const clap_plugin_params_t *)params {
-  const uint32_t n = params->count(plugin);
-  const CGFloat h = MORPHEUS_PAD * 2 + MORPHEUS_ROW * (CGFloat)n;
-  if ((self = [super initWithFrame:NSMakeRect(0, 0, ${WIDTH}, h)])) {
+  _count = params->count(plugin);
+  if ((self = [super initWithFrame:NSMakeRect(0, 0, MORPHEUS_PANEL_WIDTH, morpheus_gui_height(_count))])) {
     _plugin = plugin;
     _params = params;
-    _count = n;
     _drag = -1;
     // ⚠️ COMMON MODES, NOT THE DEFAULT MODE. A scheduled timer fires in NSDefaultRunLoopMode, which STOPS
     // while a window is being dragged or a DAW is in a modal loop — so the knobs would freeze mid-drag, which
@@ -110,27 +206,15 @@ static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78
   return self;
 }
 
-- (void)stop {
-  [_timer invalidate];
-  _timer = nil;
-}
-
-- (void)tick:(NSTimer *)t {
-  (void)t;
-  // Redrawn rather than pushed to: a host may automate a parameter with no mouse involved, and the only
-  // source of truth for the current value is the plugin's own params extension.
-  [self setNeedsDisplay:YES];
-}
-
-// Top-left origin, because it makes the layout arithmetic the same as reading it: row 0 is the top row.
-- (BOOL)isFlipped { return YES; }
-- (BOOL)acceptsFirstMouse:(NSEvent *)event { (void)event; return YES; }
+- (void)stop { [_timer invalidate]; _timer = nil; }
+- (void)tick:(NSTimer *)t { (void)t; [self setNeedsDisplay:YES]; }
+- (BOOL)isFlipped { return YES; }                    // row 0 at the top, so the arithmetic reads like the layout
+- (BOOL)acceptsFirstMouse:(NSEvent *)e { (void)e; return YES; }
 
 - (void)drawRect:(NSRect)dirty {
   (void)dirty;
   [morpheusBg() setFill];
   NSRectFill(self.bounds);
-
   NSDictionary *nameAttrs = @{
     NSFontAttributeName: [NSFont monospacedSystemFontOfSize:10 weight:NSFontWeightRegular],
     NSForegroundColorAttributeName: morpheusText(),
@@ -139,114 +223,70 @@ static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78
     NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium],
     NSForegroundColorAttributeName: morpheusGreen(),
   };
-  const CGFloat trackW = self.bounds.size.width - MORPHEUS_TRACK_X - MORPHEUS_VALUE_W - MORPHEUS_PAD;
 
-  for (uint32_t i = 0; i < _count; ++i) {
-    clap_param_info_t info;
-    memset(&info, 0, sizeof(info));
-    if (!_params->get_info(_plugin, i, &info)) continue;
-    double value = info.default_value;
-    _params->get_value(_plugin, info.id, &value);
-    const double span = info.max_value - info.min_value;
-    const double t = span > 0.0 ? (value - info.min_value) / span : 0.0;
-
+  morpheus_gui_row_t rows[256];
+  const uint32_t n = morpheus_gui_rows(_plugin, _params, rows, 256);
+  for (uint32_t i = 0; i < n; ++i) {
+    const morpheus_gui_row_t *row = &rows[i];
     const CGFloat y = MORPHEUS_PAD + MORPHEUS_ROW * (CGFloat)i;
+    [[NSString stringWithUTF8String:row->name] drawAtPoint:NSMakePoint(12, y + 3) withAttributes:nameAttrs];
 
-    // the name, on the left
-    [[NSString stringWithUTF8String:info.name] drawAtPoint:NSMakePoint(12, y + 3) withAttributes:nameAttrs];
-
-    // the track, and the part of it that is filled
-    const NSRect track = NSMakeRect(MORPHEUS_TRACK_X, y + 11, trackW, 4);
+    const NSRect track = NSMakeRect(MORPHEUS_TRACK_X, y + 11, MORPHEUS_TRACK_W, 4);
     [morpheusDim() setFill];
     NSRectFill(track);
     NSRect filled = track;
-    filled.size.width = (CGFloat)(trackW * t);
+    filled.size.width = (CGFloat)(MORPHEUS_TRACK_W * row->t);
     [morpheusGreen() setFill];
     NSRectFill(filled);
 
-    // the knob. A circle rather than a handle: it reads as a control rather than as a scrollbar.
-    const CGFloat knobX = MORPHEUS_TRACK_X + (CGFloat)(trackW * t);
-    NSBezierPath *knob = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(knobX - 6, y + 7, 12, 12)];
-    [[NSColor colorWithCalibratedRed:0.02 green:0.06 blue:0.02 alpha:1.0] setFill];
+    // A circle rather than a handle: it reads as a control rather than as a scrollbar.
+    const CGFloat knobX = (CGFloat)morpheus_gui_x_of(row->t);
+    NSBezierPath *knob = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2)];
+    [morpheusBg() setFill];
     [knob fill];
     [morpheusGreen() setStroke];
     [knob setLineWidth:2.0];
     [knob stroke];
 
-    // the number, in the parameter's OWN units, from the plugin's own formatter — so the panel cannot show
-    // a unit the plugin does not agree with.
-    char text[64] = {0};
-    if (!_params->value_to_text(_plugin, info.id, value, text, sizeof(text))) {
-      snprintf(text, sizeof(text), "%.2f", value);
-    }
-    NSString *shown = [NSString stringWithUTF8String:text];
+    NSString *shown = [NSString stringWithUTF8String:row->value];
     const NSSize size = [shown sizeWithAttributes:valueAttrs];
-    [shown drawAtPoint:NSMakePoint(self.bounds.size.width - MORPHEUS_PAD - size.width, y + 2) withAttributes:valueAttrs];
+    [shown drawAtPoint:NSMakePoint(MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.width, y + 2) withAttributes:valueAttrs];
   }
-}
-
-// Which row a point is over, or -1. The whole row is the target, not just the track: a control you have to
-// aim at is a control that feels broken.
-- (int)rowAt:(NSPoint)p {
-  if (p.x < MORPHEUS_TRACK_X - 8) return -1;
-  const int i = (int)((p.y - MORPHEUS_PAD) / MORPHEUS_ROW);
-  return (i >= 0 && (uint32_t)i < _count) ? i : -1;
-}
-
-- (void)setRow:(int)row from:(NSPoint)p {
-  if (row < 0) return;
-  clap_param_info_t info;
-  memset(&info, 0, sizeof(info));
-  if (!_params->get_info(_plugin, (uint32_t)row, &info)) return;
-  const CGFloat trackW = self.bounds.size.width - MORPHEUS_TRACK_X - MORPHEUS_VALUE_W - MORPHEUS_PAD;
-  double t = (double)((p.x - MORPHEUS_TRACK_X) / trackW);
-  t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
-  const double v = info.min_value + t * (info.max_value - info.min_value);
-  morpheus_gui_param_set(_plugin, info.id, v);
-  [self setNeedsDisplay:YES];
 }
 
 - (void)mouseDown:(NSEvent *)event {
   const NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
-  // A double-click on a row puts it back where it started. Every hardware control has a way back to its
-  // default and a slider otherwise has none but the host's undo.
-  if ([event clickCount] == 2) {
-    const int row = [self rowAt:p];
-    if (row >= 0) {
-      clap_param_info_t info;
-      memset(&info, 0, sizeof(info));
-      if (_params->get_info(_plugin, (uint32_t)row, &info)) {
-        morpheus_gui_param_set(_plugin, info.id, info.default_value);
-        [self setNeedsDisplay:YES];
-      }
-      return;
-    }
+  const int row = morpheus_gui_row_at(p.x, p.y, _count);
+  // A double-click puts a row back where it started. Every hardware control has a way back to its default and
+  // a slider otherwise has none but the host's undo.
+  if (row >= 0 && [event clickCount] == 2) {
+    morpheus_gui_set_row(_plugin, _params, (uint32_t)row, 0.0, true);
+    [self setNeedsDisplay:YES];
+    return;
   }
-  _drag = [self rowAt:p];
-  [self setRow:_drag from:p];
+  _drag = row;
+  if (row >= 0) morpheus_gui_set_row(_plugin, _params, (uint32_t)row, p.x, false);
+  [self setNeedsDisplay:YES];
 }
 
 - (void)mouseDragged:(NSEvent *)event {
   if (_drag < 0) return;
-  [self setRow:_drag from:[self convertPoint:[event locationInWindow] fromView:nil]];
+  const NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
+  morpheus_gui_set_row(_plugin, _params, (uint32_t)_drag, p.x, false);
+  [self setNeedsDisplay:YES];
 }
 
-- (void)mouseUp:(NSEvent *)event {
-  (void)event;
-  _drag = -1;
-}
+- (void)mouseUp:(NSEvent *)event { (void)event; _drag = -1; }
 
 @end
 
 // ── the CLAP interface ──────────────────────────────────────────────────────────────────────────────────
 namespace {
-const clap_plugin_t *g_plugin = nullptr;
-
 bool gui_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating) {
   (void)plugin;
   // EMBEDDED WINDOWS ONLY. A floating window is one the plugin owns and positions itself, which a plugin
-  // embedded in a host's own window manager has no business doing — and refusing it here is what lets every
-  // host fall back to putting our view inside its window instead.
+  // embedded in a host's window manager has no business doing — and refusing it here is what lets every host
+  // fall back to putting our view inside its window instead.
   if (is_floating) return false;
   return api && !strcmp(api, CLAP_WINDOW_API_COCOA);
 }
@@ -264,7 +304,6 @@ bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) 
   if (!params) return false;
   MorpheusPanel *view = [[MorpheusPanel alloc] initWithPlugin:plugin params:params];
   morpheus_gui_set_state(plugin, (void *)CFBridgingRetain(view));
-  g_plugin = plugin;
   return true;
 }
 
@@ -280,23 +319,15 @@ void gui_destroy(const clap_plugin_t *plugin) {
   [view removeFromSuperview];
   CFRelease((__bridge CFTypeRef)view);
   morpheus_gui_set_state(plugin, nullptr);
-  if (g_plugin == plugin) g_plugin = nullptr;
 }
 
-bool gui_set_scale(const clap_plugin_t *plugin, double scale) {
-  (void)plugin;
-  (void)scale;
-  // Nothing to do: Cocoa draws in points and the backing store is the screen's. A toolkit with a baked font
-  // atlas would have to do arithmetic here; the system font does not.
-  return true;
-}
+bool gui_set_scale(const clap_plugin_t *plugin, double scale) { (void)plugin; (void)scale; return true; }
 
 bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
   MorpheusPanel *view = panel_of(plugin);
   if (!view) return false;
-  const NSSize size = view.frame.size;
-  *width = (uint32_t)size.width;
-  *height = (uint32_t)size.height;
+  *width = (uint32_t)view.frame.size.width;
+  *height = (uint32_t)view.frame.size.height;
   return true;
 }
 
@@ -312,10 +343,6 @@ bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
   if (!window->api || strcmp(window->api, CLAP_WINDOW_API_COCOA)) return false;
   NSView *parent = (__bridge NSView *)window->cocoa;
   if (!parent) return false;
-  // The host hands us its own view; the panel becomes a child of it and fills it. The frame is set from our
-  // own size because a host is free to give us a container of any size, and a view that draws outside its
-  // bounds is a view that shows the wrong number of rows.
-  view.frame = NSMakeRect(0, 0, view.frame.size.width, view.frame.size.height);
   [parent addSubview:view];
   return true;
 }
@@ -357,22 +384,577 @@ extern "C" const clap_plugin_gui_t *morpheus_gui_extension(void) { return &s_gui
 `;
 
 /**
- * ⚠️ THE OTHER TWO PLATFORMS GET A STUB RATHER THAN A WINDOWS OR X11 PANEL, AND IT RETURNS NULL RATHER THAN A
- * STRUCT THAT SAYS NO.
+ * The Windows panel: a child HWND and GDI.
  *
- * Returning NULL from `get_extension` is the CLAP way to say "this plugin has no GUI", and it is what a host
- * already gets today — so nothing regresses on Windows or Linux, and the DAW's own generic parameter panel is
- * exactly what those users keep. A struct whose `is_api_supported` returns false would be a plugin claiming a
- * capability it does not have, which hosts handle in a variety of imaginative ways.
- *
- * This is a stub with a date on it, not a design: the Windows panel is win32 + GDI and the Linux one is X11,
- * both of the same shape as the Cocoa view above, and both belong in their own change with their own build.
+ * ⚠️ WHY THIS ONE NEEDS NO EVENT THREAD. Windows delivers messages to a window through the thread that owns
+ * it, and our window is a CHILD of the host's — so the host's own message loop dispatches our `WM_PAINT`,
+ * `WM_LBUTTONDOWN` and `WM_TIMER` for free. The X11 panel below has no such luxury and has to run its own.
  */
-export const pluginGuiStub = `// ${'Source/PluginGui.cpp'} — generated by Morpheus. See server/src/lib/pluginGui.js.
+export const pluginGuiWindows = `// ${PLUGIN_GUI_WINDOWS} — generated by Morpheus. This file is yours: edit it freely, and the build picks up
+// your changes.
 //
-// No GUI on this platform yet: Windows and Linux return NULL from CLAP_EXT_GUI, which is how a plugin says it
-// has no panel. A DAW then draws its own generic parameter list — the behaviour these platforms have today —
-// so this file is the honest "not built here" rather than a plugin that claims a window it cannot draw.
+// The WIN32 + GDI drawing backend. Which rows exist, what they say and where a click lands comes from
+// Source/PluginGuiLayout.h; what is here is a child window, four GDI calls and a font.
+
+#include "PluginGuiLayout.h"
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+namespace {
+const wchar_t *kClassName = L"MorpheusPanelClass";
+
+struct Panel {
+   const clap_plugin_t *plugin;
+   const clap_plugin_params_t *params;
+   uint32_t count;
+   int drag;
+   HWND hwnd;
+   HFONT font;
+   HFONT fontBold;
+   HBRUSH bg;
+   HBRUSH dim;
+   HBRUSH green;
+};
+
+const COLORREF kBg = RGB(10, 10, 11);
+const COLORREF kGreen = RGB(56, 255, 20);
+const COLORREF kDim = RGB(26, 61, 26);
+const COLORREF kText = RGB(199, 242, 204);
+
+Panel *panel_of(const clap_plugin_t *plugin) { return (Panel *)morpheus_gui_state(plugin); }
+
+void fill(HDC dc, HBRUSH brush, int x, int y, int w, int h) {
+   RECT r = {x, y, x + w, y + h};
+   FillRect(dc, &r, brush);
+}
+
+/**
+ * Everything the panel draws, from the shared rows.
+ *
+ * ⚠️ FONT HEIGHT, NOT POINT SIZE. \`CreateFontW\` with a POSITIVE height asks for a cell height that includes
+ * the leading, so a face asked for as 10 comes out looking like 13 and the rows overflow the arithmetic the
+ * layout header did; negative means "character height", which is what the layout assumes. The face name is a
+ * REQUEST, not a requirement — Windows substitutes when a machine has no Consolas, which is the right
+ * behaviour for a plugin.
+ */
+void paint(HWND hwnd, Panel *p) {
+   PAINTSTRUCT ps;
+   HDC dc = BeginPaint(hwnd, &ps);
+   RECT whole;
+   GetClientRect(hwnd, &whole);
+   fill(dc, p->bg, 0, 0, whole.right, whole.bottom);
+   SetBkMode(dc, TRANSPARENT);
+
+   morpheus_gui_row_t rows[256];
+   const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, 256);
+   for (uint32_t i = 0; i < n; ++i) {
+      const morpheus_gui_row_t *row = &rows[i];
+      const int y = MORPHEUS_PAD + MORPHEUS_ROW * (int)i;
+
+      SelectObject(dc, p->font);
+      SetTextColor(dc, kText);
+      TextOutA(dc, 12, y + 3, row->name, (int)strlen(row->name));
+
+      fill(dc, p->dim, MORPHEUS_TRACK_X, y + 11, MORPHEUS_TRACK_W, 4);
+      fill(dc, p->green, MORPHEUS_TRACK_X, y + 11, (int)(MORPHEUS_TRACK_W * row->t), 4);
+
+      const int knobX = (int)morpheus_gui_x_of(row->t);
+      HBRUSH ring = CreateSolidBrush(kBg);
+      HPEN pen = CreatePen(PS_SOLID, 2, kGreen);
+      HGDIOBJ oldBrush = SelectObject(dc, ring);
+      HGDIOBJ oldPen = SelectObject(dc, pen);
+      Ellipse(dc, knobX - MORPHEUS_KNOB_R, y + 7, knobX + MORPHEUS_KNOB_R, y + 7 + MORPHEUS_KNOB_R * 2);
+      SelectObject(dc, oldBrush);
+      SelectObject(dc, oldPen);
+      DeleteObject(ring);
+      DeleteObject(pen);
+
+      SelectObject(dc, p->fontBold);
+      SetTextColor(dc, kGreen);
+      SIZE size = {0, 0};
+      GetTextExtentPoint32A(dc, row->value, (int)strlen(row->value), &size);
+      TextOutA(dc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.cx, y + 2, row->value, (int)strlen(row->value));
+   }
+   EndPaint(hwnd, &ps);
+}
+
+LRESULT CALLBACK panel_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+   Panel *p = (Panel *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+   switch (msg) {
+      case WM_NCCREATE: {
+         CREATESTRUCTW *cs = (CREATESTRUCTW *)lp;
+         SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
+         return TRUE;
+      }
+      case WM_PAINT:
+         if (p) paint(hwnd, p);
+         return 0;
+      case WM_ERASEBKGND:
+         return 1;   // the paint covers every pixel; erasing first is a visible flash
+      case WM_TIMER:
+         // ⚠️ THE REDRAW IS THE POINT. A host may automate a parameter with no mouse involved, and the only
+         // source of truth for the current value is the plugin's own params extension.
+         InvalidateRect(hwnd, nullptr, FALSE);
+         return 0;
+      case WM_LBUTTONDOWN: {
+         if (!p) return 0;
+         const int row = morpheus_gui_row_at((double)LOWORD(lp), (double)HIWORD(lp), p->count);
+         if (row < 0) return 0;
+         morpheus_gui_set_row(p->plugin, p->params, (uint32_t)row, (double)LOWORD(lp), false);
+         p->drag = row;
+         SetCapture(hwnd);
+         InvalidateRect(hwnd, nullptr, FALSE);
+         return 0;
+      }
+      case WM_LBUTTONDBLCLK: {
+         if (!p) return 0;
+         // A double-click puts a row back where it started. CS_DBLCLKS on the class is what delivers this
+         // message at all — without it a double-click arrives as two single clicks and the gesture turns into
+         // two nudges towards the same place.
+         const int row = morpheus_gui_row_at((double)LOWORD(lp), (double)HIWORD(lp), p->count);
+         if (row >= 0) morpheus_gui_set_row(p->plugin, p->params, (uint32_t)row, 0.0, true);
+         InvalidateRect(hwnd, nullptr, FALSE);
+         return 0;
+      }
+      case WM_MOUSEMOVE:
+         if (p && p->drag >= 0) {
+            morpheus_gui_set_row(p->plugin, p->params, (uint32_t)p->drag, (double)LOWORD(lp), false);
+            InvalidateRect(hwnd, nullptr, FALSE);
+         }
+         return 0;
+      case WM_LBUTTONUP:
+         if (p) { p->drag = -1; ReleaseCapture(); }
+         return 0;
+      case WM_DESTROY:
+         if (p) { KillTimer(hwnd, 1); p->hwnd = nullptr; }
+         return 0;
+      default:
+         return DefWindowProcW(hwnd, msg, wp, lp);
+   }
+}
+}  // namespace
+
+// ── the CLAP interface ──────────────────────────────────────────────────────────────────────────────────
+namespace {
+bool gui_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating) {
+   (void)plugin;
+   if (is_floating) return false;   // embedded only: a plugin does not own the host's window manager
+   return api && !strcmp(api, CLAP_WINDOW_API_WIN32);
+}
+
+bool gui_get_preferred_api(const clap_plugin_t *plugin, const char **api, bool *is_floating) {
+   (void)plugin;
+   *api = CLAP_WINDOW_API_WIN32;
+   *is_floating = false;
+   return true;
+}
+
+bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) {
+   if (!gui_is_api_supported(plugin, api, is_floating)) return false;
+   const clap_plugin_params_t *params = (const clap_plugin_params_t *)plugin->get_extension(plugin, CLAP_EXT_PARAMS);
+   if (!params) return false;
+
+   // The class is registered once per process, not once per plugin instance: two instances of this plugin in
+   // one host is an ordinary thing, and registering the same name twice fails on the second.
+   static bool registered = false;
+   if (!registered) {
+      WNDCLASSEXW wc;
+      memset(&wc, 0, sizeof(wc));
+      wc.cbSize = sizeof(wc);
+      wc.lpfnWndProc = panel_proc;
+      wc.style = CS_DBLCLKS;
+      wc.hInstance = GetModuleHandleW(nullptr);
+      wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+      wc.lpszClassName = kClassName;
+      if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+      registered = true;
+   }
+
+   Panel *p = new Panel();
+   p->plugin = plugin;
+   p->params = params;
+   p->count = params->count(plugin);
+   p->drag = -1;
+   p->hwnd = nullptr;
+   p->bg = CreateSolidBrush(kBg);
+   p->dim = CreateSolidBrush(kDim);
+   p->green = CreateSolidBrush(kGreen);
+   p->font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                         CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+   p->fontBold = CreateFontW(-14, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+   morpheus_gui_set_state(plugin, p);
+   return true;
+}
+
+void gui_destroy(const clap_plugin_t *plugin) {
+   Panel *p = panel_of(plugin);
+   if (!p) return;
+   if (p->hwnd) { KillTimer(p->hwnd, 1); DestroyWindow(p->hwnd); p->hwnd = nullptr; }
+   if (p->font) DeleteObject(p->font);
+   if (p->fontBold) DeleteObject(p->fontBold);
+   if (p->bg) DeleteObject(p->bg);
+   if (p->dim) DeleteObject(p->dim);
+   if (p->green) DeleteObject(p->green);
+   delete p;
+   morpheus_gui_set_state(plugin, nullptr);
+}
+
+bool gui_set_scale(const clap_plugin_t *plugin, double scale) { (void)plugin; (void)scale; return true; }
+
+bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
+   Panel *p = panel_of(plugin);
+   if (!p) return false;
+   *width = MORPHEUS_PANEL_WIDTH;
+   *height = morpheus_gui_height(p->count);
+   return true;
+}
+
+bool gui_can_resize(const clap_plugin_t *plugin) { (void)plugin; return false; }
+bool gui_adjust_size(const clap_plugin_t *plugin, uint32_t *w, uint32_t *h) { (void)plugin; (void)w; (void)h; return false; }
+bool gui_set_size(const clap_plugin_t *plugin, uint32_t w, uint32_t h) { (void)plugin; (void)w; (void)h; return false; }
+bool gui_set_transient(const clap_plugin_t *plugin, const clap_window_t *w) { (void)plugin; (void)w; return false; }
+void gui_suggest_title(const clap_plugin_t *plugin, const char *title) { (void)plugin; (void)title; }
+
+bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
+   Panel *p = panel_of(plugin);
+   if (!p || !window) return false;
+   if (!window->api || strcmp(window->api, CLAP_WINDOW_API_WIN32)) return false;
+   HWND parent = (HWND)window->win32;
+   if (!parent) return false;
+   p->hwnd = CreateWindowExW(0, kClassName, L"", WS_CHILD | WS_VISIBLE, 0, 0, MORPHEUS_PANEL_WIDTH,
+                             (int)morpheus_gui_height(p->count), parent, nullptr, GetModuleHandleW(nullptr), p);
+   if (!p->hwnd) return false;
+   // 33 ms: thirty redraws a second, which is enough for an automated knob to look live and cheap enough that
+   // a host never notices it.
+   SetTimer(p->hwnd, 1, 33, nullptr);
+   return true;
+}
+
+bool gui_show(const clap_plugin_t *plugin) {
+   Panel *p = panel_of(plugin);
+   if (!p || !p->hwnd) return false;
+   ShowWindow(p->hwnd, SW_SHOW);
+   return true;
+}
+
+bool gui_hide(const clap_plugin_t *plugin) {
+   Panel *p = panel_of(plugin);
+   if (!p || !p->hwnd) return false;
+   ShowWindow(p->hwnd, SW_HIDE);
+   return true;
+}
+
+const clap_plugin_gui_t s_gui = {
+  .is_api_supported = gui_is_api_supported,
+  .get_preferred_api = gui_get_preferred_api,
+  .create = gui_create,
+  .destroy = gui_destroy,
+  .set_scale = gui_set_scale,
+  .get_size = gui_get_size,
+  .can_resize = gui_can_resize,
+  .adjust_size = gui_adjust_size,
+  .set_size = gui_set_size,
+  .set_parent = gui_set_parent,
+  .set_transient = gui_set_transient,
+  .suggest_title = gui_suggest_title,
+  .show = gui_show,
+  .hide = gui_hide,
+};
+}  // namespace
+
+extern "C" const clap_plugin_gui_t *morpheus_gui_extension(void) { return &s_gui; }
+#endif  // _WIN32
+`;
+
+/**
+ * The Linux panel: a child X11 window and Xlib.
+ *
+ * ⚠️ THIS ONE HAS TO RUN ITS OWN EVENT LOOP, AND THAT IS NOT A SHORTCUT. Windows delivers a child window's
+ * messages through the thread that owns the parent, so the host's loop does the work for us. X11 has no such
+ * thing: a window's events go to whoever selected input on it, and the host selected input on ITS windows, not
+ * on ours. So the panel opens its own connection to the same display, creates its own window, selects its own
+ * events, and runs a small thread that pumps them and repaints.
+ *
+ * The alternative — hoping the host forwards events to a window it did not create — is what makes Linux
+ * plugin GUIs work on one host and sit there dead on another.
+ */
+export const pluginGuiX11 = `// ${PLUGIN_GUI_X11} — generated by Morpheus. This file is yours: edit it freely, and the build picks up
+// your changes.
+//
+// The X11 drawing backend. Which rows exist, what they say and where a click lands comes from
+// Source/PluginGuiLayout.h; what is here is a window, an event thread and Xlib's drawing calls.
+
+#include "PluginGuiLayout.h"
+
+#ifdef __linux__
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <atomic>
+#include <chrono>
+#include <thread>
+
+namespace {
+struct Panel {
+   const clap_plugin_t *plugin;
+   const clap_plugin_params_t *params;
+   uint32_t count;
+   Display *dpy;
+   Window win;
+   GC gc;
+   XFontStruct *font;
+   unsigned long bg, green, dim, text;
+   std::thread thread;
+   std::atomic<bool> running;
+   int drag;
+   Time lastClick;
+   int lastClickRow;
+};
+
+Panel *panel_of(const clap_plugin_t *plugin) { return (Panel *)morpheus_gui_state(plugin); }
+
+unsigned long colour(Display *d, const char *spec, unsigned long fallback) {
+   XColor c, exact;
+   Colormap cmap = DefaultColormap(d, DefaultScreen(d));
+   if (!XAllocNamedColor(d, cmap, spec, &c, &exact)) return fallback;
+   return c.pixel;
+}
+
+void put(Display *d, Window w, GC gc, int x, int y, const char *s) {
+   if (s && *s) XDrawString(d, w, gc, x, y, s, (int)strlen(s));
+}
+
+void paint(Panel *p) {
+   const int h = (int)morpheus_gui_height(p->count);
+   XSetForeground(p->dpy, p->gc, p->bg);
+   XFillRectangle(p->dpy, p->win, p->gc, 0, 0, MORPHEUS_PANEL_WIDTH, (unsigned)h);
+
+   morpheus_gui_row_t rows[256];
+   const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, 256);
+   for (uint32_t i = 0; i < n; ++i) {
+      const morpheus_gui_row_t *row = &rows[i];
+      const int y = MORPHEUS_PAD + MORPHEUS_ROW * (int)i;
+
+      XSetForeground(p->dpy, p->gc, p->text);
+      put(p->dpy, p->win, p->gc, 12, y + 13, row->name);
+
+      XSetForeground(p->dpy, p->gc, p->dim);
+      XFillRectangle(p->dpy, p->win, p->gc, MORPHEUS_TRACK_X, (unsigned)(y + 11), MORPHEUS_TRACK_W, 4);
+      XSetForeground(p->dpy, p->gc, p->green);
+      XFillRectangle(p->dpy, p->win, p->gc, MORPHEUS_TRACK_X, (unsigned)(y + 11),
+                     (unsigned)(MORPHEUS_TRACK_W * row->t), 4);
+
+      const int knobX = (int)morpheus_gui_x_of(row->t);
+      XSetForeground(p->dpy, p->gc, p->bg);
+      XFillArc(p->dpy, p->win, p->gc, knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2, 0, 360 * 64);
+      XSetForeground(p->dpy, p->gc, p->green);
+      XDrawArc(p->dpy, p->win, p->gc, knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2, 0, 360 * 64);
+
+      int textW = p->font ? XTextWidth(p->font, row->value, (int)strlen(row->value)) : 0;
+      XSetForeground(p->dpy, p->gc, p->green);
+      put(p->dpy, p->win, p->gc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - textW, y + 13, row->value);
+   }
+   XFlush(p->dpy);
+}
+
+/**
+ * The panel's own event loop: pump, then repaint thirty times a second.
+ *
+ * ⚠️ XLIB IS NOT THREAD-SAFE ACROSS CONNECTIONS without \`XInitThreads()\`, and a plugin cannot assume the host
+ * called it. Two things follow, and both are deliberate: this thread uses ONLY the connection it opened, and
+ * every value it produces goes to the audio thread through the same slot-and-flag handover the other two
+ * backends use. No Xlib call is made from any other thread, ever.
+ *
+ * The repaint is on a timer as well as on an event because a host may automate a parameter with no mouse
+ * involved, and the only source of truth for the current value is the plugin's own params extension.
+ */
+void run(Panel *p) {
+   while (p->running.load()) {
+      while (XPending(p->dpy)) {
+         XEvent ev;
+         XNextEvent(p->dpy, &ev);
+         if (ev.type == Expose) {
+            paint(p);
+         } else if (ev.type == ButtonPress && ev.xbutton.button == Button1) {
+            const int row = morpheus_gui_row_at((double)ev.xbutton.x, (double)ev.xbutton.y, p->count);
+            if (row >= 0) {
+               // X11 does not synthesise a double-click, so the pair is counted here: the same row, twice
+               // inside 350 ms, puts the control back to its default.
+               const bool dbl = (p->lastClickRow == row && (ev.xbutton.time - p->lastClick) < 350);
+               p->lastClick = ev.xbutton.time;
+               p->lastClickRow = row;
+               morpheus_gui_set_row(p->plugin, p->params, (uint32_t)row, (double)ev.xbutton.x, dbl);
+               p->drag = dbl ? -1 : row;
+               paint(p);
+            }
+         } else if (ev.type == MotionNotify && p->drag >= 0) {
+            morpheus_gui_set_row(p->plugin, p->params, (uint32_t)p->drag, (double)ev.xmotion.x, false);
+            paint(p);
+         } else if (ev.type == ButtonRelease) {
+            p->drag = -1;
+         }
+      }
+      paint(p);
+      std::this_thread::sleep_for(std::chrono::milliseconds(33));
+   }
+}
+}  // namespace
+
+// ── the CLAP interface ──────────────────────────────────────────────────────────────────────────────────
+namespace {
+bool gui_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating) {
+   (void)plugin;
+   if (is_floating) return false;
+   return api && !strcmp(api, CLAP_WINDOW_API_X11);
+}
+
+bool gui_get_preferred_api(const clap_plugin_t *plugin, const char **api, bool *is_floating) {
+   (void)plugin;
+   *api = CLAP_WINDOW_API_X11;
+   *is_floating = false;
+   return true;
+}
+
+bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) {
+   if (!gui_is_api_supported(plugin, api, is_floating)) return false;
+   const clap_plugin_params_t *params = (const clap_plugin_params_t *)plugin->get_extension(plugin, CLAP_EXT_PARAMS);
+   if (!params) return false;
+   Panel *p = new Panel();
+   p->plugin = plugin;
+   p->params = params;
+   p->count = params->count(plugin);
+   p->dpy = nullptr;
+   p->win = 0;
+   p->gc = nullptr;
+   p->font = nullptr;
+   p->drag = -1;
+   p->lastClick = 0;
+   p->lastClickRow = -1;
+   p->running.store(false);
+   morpheus_gui_set_state(plugin, p);
+   return true;
+}
+
+void gui_destroy(const clap_plugin_t *plugin) {
+   Panel *p = panel_of(plugin);
+   if (!p) return;
+   if (p->running.load()) {
+      p->running.store(false);
+      if (p->thread.joinable()) p->thread.join();
+   }
+   if (p->dpy) {
+      if (p->win) XDestroyWindow(p->dpy, p->win);
+      if (p->gc) XFreeGC(p->dpy, p->gc);
+      if (p->font) XFreeFont(p->dpy, p->font);
+      XCloseDisplay(p->dpy);
+   }
+   delete p;
+   morpheus_gui_set_state(plugin, nullptr);
+}
+
+bool gui_set_scale(const clap_plugin_t *plugin, double scale) { (void)plugin; (void)scale; return true; }
+
+bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
+   Panel *p = panel_of(plugin);
+   if (!p) return false;
+   *width = MORPHEUS_PANEL_WIDTH;
+   *height = morpheus_gui_height(p->count);
+   return true;
+}
+
+bool gui_can_resize(const clap_plugin_t *plugin) { (void)plugin; return false; }
+bool gui_adjust_size(const clap_plugin_t *plugin, uint32_t *w, uint32_t *h) { (void)plugin; (void)w; (void)h; return false; }
+bool gui_set_size(const clap_plugin_t *plugin, uint32_t w, uint32_t h) { (void)plugin; (void)w; (void)h; return false; }
+bool gui_set_transient(const clap_plugin_t *plugin, const clap_window_t *w) { (void)plugin; (void)w; return false; }
+void gui_suggest_title(const clap_plugin_t *plugin, const char *title) { (void)plugin; (void)title; }
+
+bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
+   Panel *p = panel_of(plugin);
+   if (!p || !window) return false;
+   if (!window->api || strcmp(window->api, CLAP_WINDOW_API_X11)) return false;
+   const Window parent = (Window)window->x11;
+   if (!parent) return false;
+   // ⚠️ ITS OWN CONNECTION. A plugin that draws through the host's Display* is a plugin calling Xlib from
+   // another thread's connection, which is undefined unless the host called XInitThreads() — and a host that
+   // did not is a host where this works until the day it does not.
+   p->dpy = XOpenDisplay(nullptr);
+   if (!p->dpy) return false;
+   const int screen = DefaultScreen(p->dpy);
+   p->bg = colour(p->dpy, "#0a0a0b", BlackPixel(p->dpy, screen));
+   p->green = colour(p->dpy, "#38ff14", WhitePixel(p->dpy, screen));
+   p->dim = colour(p->dpy, "#1a3d1a", BlackPixel(p->dpy, screen));
+   p->text = colour(p->dpy, "#c7f2cc", WhitePixel(p->dpy, screen));
+   p->win = XCreateSimpleWindow(p->dpy, parent, 0, 0, MORPHEUS_PANEL_WIDTH, morpheus_gui_height(p->count), 0,
+                                p->bg, p->bg);
+   if (!p->win) return false;
+   XSelectInput(p->dpy, p->win,
+                ExposureMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | StructureNotifyMask);
+   p->gc = XCreateGC(p->dpy, p->win, 0, nullptr);
+   // A CORE FONT, NOT XFT. A plugin should not need a font server or a fontconfig cache to draw four words,
+   // and the layout does not depend on the exact metrics — with no font at all it still draws everything but
+   // the text, which is a better failure than not opening.
+   p->font = XLoadQueryFont(p->dpy, "fixed");
+   if (p->font) XSetFont(p->dpy, p->gc, p->font->fid);
+   XMapWindow(p->dpy, p->win);
+   XFlush(p->dpy);
+   p->running.store(true);
+   p->thread = std::thread(run, p);
+   return true;
+}
+
+bool gui_show(const clap_plugin_t *plugin) {
+   Panel *p = panel_of(plugin);
+   if (!p || !p->dpy) return false;
+   XMapWindow(p->dpy, p->win);
+   XFlush(p->dpy);
+   return true;
+}
+
+bool gui_hide(const clap_plugin_t *plugin) {
+   Panel *p = panel_of(plugin);
+   if (!p || !p->dpy) return false;
+   XUnmapWindow(p->dpy, p->win);
+   XFlush(p->dpy);
+   return true;
+}
+
+const clap_plugin_gui_t s_gui = {
+  .is_api_supported = gui_is_api_supported,
+  .get_preferred_api = gui_get_preferred_api,
+  .create = gui_create,
+  .destroy = gui_destroy,
+  .set_scale = gui_set_scale,
+  .get_size = gui_get_size,
+  .can_resize = gui_can_resize,
+  .adjust_size = gui_adjust_size,
+  .set_size = gui_set_size,
+  .set_parent = gui_set_parent,
+  .set_transient = gui_set_transient,
+  .suggest_title = gui_suggest_title,
+  .show = gui_show,
+  .hide = gui_hide,
+};
+}  // namespace
+
+extern "C" const clap_plugin_gui_t *morpheus_gui_extension(void) { return &s_gui; }
+#endif  // __linux__
+`;
+
+/**
+ * ⚠️ THE FALLBACK STUB RETURNS NULL RATHER THAN A STRUCT THAT SAYS NO.
+ *
+ * Returning NULL from `get_extension` is the CLAP way to say "this plugin has no GUI", and a plugin that
+ * claims a capability it does not have is handled by hosts in a variety of imaginative ways. This file is
+ * compiled only when the platform is none of Apple, Windows or Linux — which is to say, for a port that has
+ * not been written yet.
+ */
+export const pluginGuiStub = `// ${PLUGIN_GUI_STUB} — generated by Morpheus. See server/src/lib/pluginGui.js.
+//
+// No panel on this platform: CLAP_EXT_GUI answers NULL, which is how a plugin says it has no GUI, and a host
+// then draws its own generic parameter list. The three panels Morpheus generates are Source/PluginGui.mm
+// (Cocoa), Source/PluginGuiWin.cpp (win32 + GDI) and Source/PluginGuiX11.cpp (X11).
 
 #include <clap/clap.h>
 

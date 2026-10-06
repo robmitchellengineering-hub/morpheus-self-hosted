@@ -1814,6 +1814,25 @@ export const MUTATIONS = [
     find: '      if (__atomic_exchange_n(&p->gui_pending[k], 0, __ATOMIC_ACQ_REL)) p->value[k] = p->gui_value[k];',
     replace: '      if (false) p->value[k] = p->gui_value[k];',
   },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ TWO PLATFORMS GET A PANEL, THE THIRD GETS THE STUB — and a Windows user whose plugin quietly fell
+    // back to "no GUI" is exactly the state this change exists to end.
+    why: 'Points the Windows build at the fallback stub, so a Windows plugin says it has no GUI and the standalone window comes up empty again.',
+    find: 'elseif (WIN32)\n  set(MORPHEUS_GUI_SOURCE Source/PluginGuiWin.cpp)',
+    replace: 'elseif (WIN32)\n  set(MORPHEUS_GUI_SOURCE Source/PluginGui.cpp)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE X11 PANEL CANNOT BORROW THE HOST'S CONNECTION. Drawing through another thread's Display* is
+    // undefined unless the host called XInitThreads(), and a host that did not is a host where this works
+    // until the day it does not.
+    why: 'Makes the Linux panel reuse the host display connection instead of opening its own, which is undefined behaviour in any host that did not call XInitThreads.',
+    find: '   p->dpy = XOpenDisplay(nullptr);',
+    replace: '   p->dpy = XOpenDisplay(getenv("DISPLAY"));',
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.

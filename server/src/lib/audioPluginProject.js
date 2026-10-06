@@ -20,7 +20,10 @@ import {
 } from './namPlugin.js';
 import { PLAIN_CHAIN, chainFor, chainHas, chainParamsStable } from './ampChain.js';
 import { ampBoard, boardBundle, boardChain, boardJson, boardParamsStable, readBoard, validateBoard } from './board.js';
-import { PLUGIN_GUI_APPLE, PLUGIN_GUI_STUB, pluginGuiApple, pluginGuiStub } from './pluginGui.js';
+import {
+  PLUGIN_GUI_APPLE, PLUGIN_GUI_LAYOUT, PLUGIN_GUI_STUB, PLUGIN_GUI_WINDOWS, PLUGIN_GUI_X11,
+  pluginGuiApple, pluginGuiLayout, pluginGuiStub, pluginGuiWindows, pluginGuiX11,
+} from './pluginGui.js';
 import {
   CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSource, cabHeader, resolveCab,
 } from './cabIr.js';
@@ -248,7 +251,10 @@ export function scaffoldPlugin(files) {
   // Both files are always written and the cmake picks one. Writing only the platform's own would mean a
   // project that moves between machines — which is exactly what a plugin project does — arrives somewhere
   // with a missing source file.
+  add(PLUGIN_GUI_LAYOUT, pluginGuiLayout);
   add(PLUGIN_GUI_APPLE, pluginGuiApple);
+  add(PLUGIN_GUI_WINDOWS, pluginGuiWindows);
+  add(PLUGIN_GUI_X11, pluginGuiX11);
   add(PLUGIN_GUI_STUB, pluginGuiStub);
   add(PLUGIN_SOURCE, pluginSource({
     ...manifest,
