@@ -183,6 +183,16 @@ typedef struct {
    clap_plugin_t plugin;
    const clap_host_t *host;
 
+   // ⚠️ THE ONLY PLACE TWO THREADS MEET. The panel runs on the main thread, \`process()\` on the audio thread,
+   // and the audio thread may not wait for anything — so a GUI change does not take a lock. It writes the
+   // value into a slot, raises a flag with RELEASE ordering, and asks the host to make it official (see
+   // morpheus_gui_param_set below). The audio thread picks the slot up at the top of its next block with
+   // ACQUIRE ordering, which is what makes the write visible without a fence on either side.
+   void *gui;
+   double gui_value[MORPHEUS_NUM_PARAMS];
+   volatile unsigned char gui_pending[MORPHEUS_NUM_PARAMS];
+   const clap_output_events_t *out_events;
+
 ${stateCpp(chain, list)}${extraState ? `\n${extraState}` : ''}
 #if MORPHEUS_HAS_CAB
 ${cabStateCpp}
@@ -254,11 +264,18 @@ static bool params_get_value(const clap_plugin_t *plugin, clap_id id, double *ou
    return true;
 }
 
+// ⚠️ THE UNIT IS THE PARAMETER'S OWN. This said "%.2f dB" for every control in every plugin, which was true
+// while the only chain was an amp and became wrong the moment a block arrived whose control is a time in
+// milliseconds or a mix in percent: the DELAY showed "340.00 dB". The unit now comes from the parameter table
+// — the same table the panel draws from — so a control cannot be described in units it does not have.
 static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double value, char *out,
                                  uint32_t capacity) {
    (void)plugin;
-   if (param_index(id) < 0) return false;
-   snprintf(out, capacity, "%.2f dB", value);
+   const int ix = param_index(id);
+   if (ix < 0) return false;
+   const char *unit = kParams[ix].unit;
+   if (unit && unit[0]) snprintf(out, capacity, "%.2f %s", value, unit);
+   else snprintf(out, capacity, "%.2f", value);
    return true;
 }
 
@@ -285,6 +302,7 @@ ${eventCpp()}
 static void params_flush(const clap_plugin_t *plugin, const clap_input_events_t *in,
                          const clap_output_events_t *out) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
+   p->out_events = out;   // the GUI may need it before the first process() call
    const uint32_t n = in->size(in);
    for (uint32_t i = 0; i < n; ++i) apply_param_event(p, in->get(in, i));
 }
@@ -374,9 +392,69 @@ ${hasTone ? `   for (int c = 0; c < 2; ++c) for (int b = 0; b < ${TONE_KEYS.leng
 ` : ''}}
 static void plug_on_main_thread(const clap_plugin_t *plugin) {}
 
+// ── the GUI's half of the handover, and the ONLY functions in this file with C linkage ──────────────────
+// The panel is a separate translation unit on purpose (Source/PluginGui.mm), so it cannot see plugin_t. These
+// three functions are the whole interface between the panel and the plugin, and none of them is on the audio
+// thread.
+extern "C" void *morpheus_gui_state(const clap_plugin_t *plugin) {
+   const ${'plugin_t'} *p = (const ${'plugin_t'} *)plugin->plugin_data;
+   return p->gui;
+}
+
+extern "C" void morpheus_gui_set_state(const clap_plugin_t *plugin, void *state) {
+   ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
+   p->gui = state;
+}
+
+/**
+ * A control moved on the panel. Three things happen, and all three are needed:
+ *
+ *   1. the value goes into a slot with the flag raised AFTER it, so the audio thread cannot see the flag
+ *      without seeing the value;
+ *   2. the host is told, as a PARAM_VALUE output event. This is how CLAP says a plugin's own interface
+ *      changed a parameter — without it the host's automation display, its undo and its saved state would
+ *      all still hold the old value;
+ *   3. nothing is applied here. The audio thread applies it, at the top of its next block, because applying
+ *      it here would be this thread writing state the audio thread is reading.
+ */
+extern "C" void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, double value) {
+   ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
+   const int ix = param_index(id);
+   if (ix < 0) return;
+   const double clamped = value < kParams[ix].min ? kParams[ix].min
+                        : (value > kParams[ix].max ? kParams[ix].max : value);
+   p->gui_value[ix] = clamped;
+   __atomic_store_n(&p->gui_pending[ix], 1, __ATOMIC_RELEASE);
+   if (p->out_events) {
+      clap_event_param_value_t ev;
+      memset(&ev, 0, sizeof(ev));
+      ev.header.size = sizeof(ev);
+      ev.header.time = 0;
+      ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+      ev.header.type = CLAP_EVENT_PARAM_VALUE;
+      ev.header.flags = 0;
+      ev.param_id = id;
+      ev.cookie = NULL;
+      ev.note_id = -1;
+      ev.port_index = -1;
+      ev.channel = -1;
+      ev.key = -1;
+      ev.value = clamped;
+      p->out_events->try_push(p->out_events, &ev.header);
+   }
+}
+
+// The output queue, remembered rather than asked for. CLAP hands it to process() and to params.flush() and
+// nowhere else, and a plugin whose own GUI changes a parameter needs it between blocks.
 static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_process_t *process) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
    const uint32_t nframes = process->frames_count;
+   p->out_events = process->out_events;
+   // Whatever the panel changed since the last block, applied HERE — on the audio thread, where the value is
+   // read, rather than on the main thread where it was written.
+   for (uint32_t k = 0; k < MORPHEUS_NUM_PARAMS; ++k) {
+      if (__atomic_exchange_n(&p->gui_pending[k], 0, __ATOMIC_ACQ_REL)) p->value[k] = p->gui_value[k];
+   }
    const uint32_t nev = process->in_events->size(process->in_events);
 
    uint32_t ev_index = 0;
@@ -467,9 +545,15 @@ ${emitStages(chainPostCpp(chain, list, cabInPath))}
    return CLAP_PROCESS_CONTINUE;
 }
 
+// Defined in Source/PluginGui.mm on Apple and Source/PluginGui.cpp everywhere else. The stub returns NULL,
+// which is how a plugin says "no panel" — so a platform without one keeps the host's generic parameter list
+// rather than claiming a window it cannot draw.
+extern "C" const clap_plugin_gui_t *morpheus_gui_extension(void);
+
 static const void *plug_get_extension(const clap_plugin_t *plugin, const char *id) {
    if (!strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &s_audio_ports;
    if (!strcmp(id, CLAP_EXT_PARAMS)) return &s_params;
+   if (!strcmp(id, CLAP_EXT_GUI)) return morpheus_gui_extension();
    return NULL;
 }
 
@@ -675,9 +759,25 @@ add_subdirectory(\${CLAP_WRAPPER_DIR} clap-wrapper)
 # ModelData.cpp and CabIr.cpp ALWAYS EXIST, whether or not they hold anything: the plugin includes their
 # headers unconditionally and branches on the flags inside, so there is no configuration in which one of a
 # pair is present and the other is not.
-add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp)
+# ⚠️ THE PANEL IS ONE OF TWO FILES AND THE PLATFORM PICKS WHICH. \`PluginGui.mm\` is the Cocoa view;
+# \`PluginGui.cpp\` is a stub whose \`morpheus_gui_extension()\` returns NULL, which is how CLAP says "this
+# plugin has no GUI" — so Windows and Linux keep the host's own generic parameter list rather than claiming a
+# window they cannot draw. EITHER WAY ONE OF THEM MUST COMPILE: Plugin.cpp references the symbol
+# unconditionally, so a build that picked neither would fail at link rather than at runtime.
+if (APPLE)
+  set(MORPHEUS_GUI_SOURCE Source/PluginGui.mm)
+else()
+  set(MORPHEUS_GUI_SOURCE Source/PluginGui.cpp)
+endif()
+
+add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp \${MORPHEUS_GUI_SOURCE})
 target_include_directories(morpheus_plugin-impl PRIVATE Source)
 target_link_libraries(morpheus_plugin-impl PUBLIC clap clap-wrapper-extensions)
+# The panel is drawn with the system's own frameworks — no toolkit, no GPU context, and therefore nothing to
+# go wrong inside a host's window. QuartzCore is for the layer-backed drawing path Cocoa uses on Retina.
+if (APPLE)
+  target_link_libraries(morpheus_plugin-impl PUBLIC "-framework Cocoa" "-framework QuartzCore")
+endif()
 ${hasCab ? `
 # The cabinet needs nothing fetched — the taps are compiled in. This line exists so the configure cannot
 # quietly build a project whose CabIr.cpp was generated without a cabinet.
