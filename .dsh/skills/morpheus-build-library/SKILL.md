@@ -33,7 +33,7 @@ than none.
 Two things that are not cards, because they already exist and are maintained
 elsewhere:
 
-* **What has already broken in production** — `KNOWN-HAZARDS.md` (H1–H22) and the
+* **What has already broken in production** — `KNOWN-HAZARDS.md` (H1–H23) and the
   `morpheus-hazards` skill. Read that before proposing anything risky; this
   library is about how to build, that list is about what has already cost us a
   night.

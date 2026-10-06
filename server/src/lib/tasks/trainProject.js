@@ -25,6 +25,7 @@
 // (`audio-quantize.mjs` measures what a bit width costs, and that measurement is the reason to keep the two
 // apart). It does not embed either — EMBED is generated source, and it comes after a model exists to embed.
 import { TASK_FAMILIES, taskFamily } from './registry.js';
+import { FRONT_END, PROBE_TONES } from './classifierModel.js';
 
 /** Where the app writes the verdict the trainer insists on. Named here because two languages share it. */
 export const PREFLIGHT_FILE = 'preflight.json';
@@ -95,7 +96,7 @@ const py = (s) => s.replace(/^\n/, '');
  * here would be a second opinion nobody asked for. What this file owns is the part the pre-flight cannot know:
  * HOW THE CLIPS BECOME TENSORS, and that a recording never straddles the split.
  */
-const datasetPy = (family) => py(`
+const datasetPy = () => py(`
 """Loading, the recording rule, and the split.
 
 The contract — how many clips, how loud, how long, whether anything is duplicated — is checked by Morpheus
@@ -107,11 +108,15 @@ import soundfile as sf
 import torch
 from torch.utils.data import Dataset
 
-SAMPLE_RATE = ${family.data.sampleRate || 48000}
-CLIP_SECONDS = ${family.data.clipSeconds || 2.0}
-N_MELS = 64
-N_FFT = 1024
-HOP = 256
+# ⚠️ THESE COME FROM ONE OBJECT, AND THE RUNTIME READS THE SAME ONE. A second copy of "1024" is a second thing
+# to change, and a training project whose STFT no longer matches the runtime's produces a model that is quietly
+# worse than the one that was measured. The container carries these numbers, and VERIFY compares a probe taken
+# through them.
+SAMPLE_RATE = ${FRONT_END.sampleRate}
+CLIP_SECONDS = ${FRONT_END.clipSeconds}
+N_MELS = ${FRONT_END.nMels}
+N_FFT = ${FRONT_END.nFft}
+HOP = ${FRONT_END.hop}
 
 
 def recording_of(path):
@@ -415,7 +420,7 @@ if __name__ == "__main__":
 /**
  * `evaluate.py` — the measurement, which is the stage that makes the number mean something.
  */
-const evaluatePy = () => py(`
+const evaluatePy = (family) => py(`
 """Measure the trained model on the split it has never seen, and write metrics.json.
 
 ⚠️ ACCURACY ALONE IS NOT A MEASUREMENT. A dataset that is 90% one class scores 90% by answering that class
@@ -432,7 +437,10 @@ from torch.utils.data import DataLoader
 from dataset import ClipDataset, discover, split_by_recording
 from model import AudioClassifier
 
-FRACTIONS = (0.8, 0.1, 0.1)
+# ⚠️ THE SAME SPLIT THE TRAINER USED, AND THAT IS NOT COSMETIC. If this tuple drifts from train.py's, the clips
+# called "test" here are clips the model was trained on — a leak that reports a better number and is invisible in
+# the output.
+FRACTIONS = (${family.data.split.train}, ${family.data.split.validation}, ${family.data.split.test})
 
 
 def main():
@@ -499,7 +507,7 @@ if __name__ == "__main__":
  * value is the MEASUREMENT — what a bit width costs in accuracy against what it saves in bytes — and a
  * decision that needs a measurement should not be made by a script whose author cannot see the alternatives.
  */
-const exportPy = () => py(`
+const exportPy = (family) => py(`
 """Write model.json: the trained weights in Morpheus's container, with a card describing them.
 
     python export.py --run runs/<timestamp> [--out model.json]
@@ -510,14 +518,63 @@ where the alternatives can be compared.
 """
 import argparse
 import json
+import math
 import os
 import time
 
 import torch
 
+from dataset import log_mel, discover, split_by_recording
 from model import AudioClassifier
 
 FORMAT = "morpheus-model/1"
+FRACTIONS = (${family.data.split.train}, ${family.data.split.validation}, ${family.data.split.test})
+
+# ⚠️ THE FRONT END IS WRITTEN INTO THE CONTAINER, NOT ASSUMED BY THE RUNTIME. It is the same object the training
+# project computes its features with, so an embedded runtime reads what this model was trained to see rather than
+# what somebody remembered. Change it here and the container says so.
+FRONT_END = ${JSON.stringify(FRONT_END, null, 4)}
+
+# The canonical clip the probe is taken on. Both this file and the runtime synthesise exactly these two tones.
+PROBE_TONES = ${JSON.stringify(PROBE_TONES)}
+
+
+def _at(ordered, p):
+    """The nearest-rank quantile, rounded the way the runtime rounds it.
+
+    ⚠️ NOT \`torch.quantile\`. That interpolates between the two nearest samples and the runtime does not, so the
+    two would disagree by more than the probe's tolerance in the tails — and a probe that disagrees with itself is
+    a probe that refuses every model.
+    """
+    i = min(len(ordered) - 1, int(p * (len(ordered) - 1) + 0.5))
+    return round(float(ordered[i]), 6)
+
+
+def front_end_probe():
+    """The moments of one canonical clip's spectrogram — what a drifted front end moves.
+
+    ⭐ THIS IS THE ONLY CHECK THAT SEES A DRIFT THAT COSTS NO ACCURACY. A model with a wide margin still scores
+    100% with the wrong hop; every other verification in the ladder is blind to that, and it is the failure that
+    ships quietly.
+    """
+    n = int(FRONT_END["sampleRate"] * FRONT_END["clipSeconds"])
+    t = torch.arange(n, dtype=torch.float32)
+    wave = torch.zeros(n, dtype=torch.float32)
+    for hz, amplitude in PROBE_TONES:
+        wave = wave + amplitude * torch.sin(2 * math.pi * hz * t / FRONT_END["sampleRate"])
+    features = log_mel(wave, FRONT_END["sampleRate"])
+    flat = features.flatten()
+    ordered, _ = torch.sort(flat)
+    return {
+        "tones": [hz for hz, _ in PROBE_TONES],
+        "frames": int(features.shape[1]),
+        "min": round(float(ordered[0]), 6),
+        "max": round(float(ordered[-1]), 6),
+        "mean_abs": round(float(flat.abs().mean()), 6),
+        "p05": _at(ordered, 0.05),
+        "p50": _at(ordered, 0.5),
+        "p95": _at(ordered, 0.95),
+    }
 
 
 def main():
@@ -532,6 +589,25 @@ def main():
     model = AudioClassifier(len(classes))
     model.load_state_dict(state["model"])
     model.eval()
+
+    # ⭐ THE TEST CLIPS TRAVEL WITH THE MODEL. Morpheus's VERIFY re-scores exactly these and refuses to embed a
+    # container whose card cannot be reproduced — and a card that says "94%" without saying 94% OF WHAT cannot be
+    # checked at all. The run directory named the dataset when it trained; this reads it back and writes the clip
+    # list RELATIVE to that directory, because that is how the other side finds them again.
+    split = None
+    config_path = os.path.join(args.run, "config.json")
+    if os.path.exists(config_path):
+        with open(config_path) as fh:
+            trained_on = json.load(fh).get("args", {}).get("dataset")
+        if trained_on and os.path.isdir(trained_on):
+            _, items = discover(trained_on)
+            parts, recordings = split_by_recording(items, FRACTIONS)
+            split = {
+                "name": "test",
+                "fractions": list(FRACTIONS),
+                "recordings": recordings,
+                "clips": [os.path.relpath(path, trained_on) for path, _ in parts["test"]],
+            }
 
     # Every tensor, by name, as plain lists. NO QUANTISATION — see the docstring.
     tensors = {}
@@ -549,6 +625,11 @@ def main():
         "family": "audio.classify",
         "architecture": "AudioClassifier",
         "sample_rate": 48000,
+        "io": {
+            "front_end": {**FRONT_END, "probe": front_end_probe()},
+            "input": "a mono clip, mixed down and normalised per clip",
+            "output": "one probability per label; the largest wins",
+        },
         "task": {
             "labels": classes,
             "input": "a mono clip, 2.0 s at 48 kHz, resampled and normalised",
@@ -564,12 +645,15 @@ def main():
                         "split": metrics.get("split") if metrics else None},
             "classes": classes,
             "parameters": sum(int(t.numel()) for t in model.state_dict().values()),
+            "split": split,
         },
     }
     with open(args.out, "w") as fh:
         json.dump(model_json, fh)
     size = os.path.getsize(args.out)
     print(f"wrote {args.out} — {len(classes)} labels, {model_json['card']['parameters']} parameters, {size / 1024:.0f} KB")
+    if split is None:
+        print("  ⚠️ no config.json with a dataset in that run, so the card carries no test clips.")
     if metrics is None:
         print("  (no metrics.json in that run — run evaluate.py first, so the card can carry a number)")
 
@@ -680,11 +764,11 @@ export function trainingProject(familyId = 'audio.classify', preflight = null) {
       { path: 'requirements.txt', content: requirementsTxt() },
       { path: PREFLIGHT_FILE, content: preflightJson(preflight ?? { ok: false, issues: [{ level: 'fail', what: 'the dataset has not been checked yet', detail: 'Run the dataset check and write its verdict here.' }] }) },
       { path: 'preflight.py', content: preflightPy() },
-      { path: 'dataset.py', content: datasetPy(family) },
+      { path: 'dataset.py', content: datasetPy() },
       { path: 'model.py', content: modelPy() },
       { path: 'train.py', content: trainPy(family) },
-      { path: 'evaluate.py', content: evaluatePy() },
-      { path: 'export.py', content: exportPy() },
+      { path: 'evaluate.py', content: evaluatePy(family) },
+      { path: 'export.py', content: exportPy(family) },
     ],
   };
 }
@@ -708,6 +792,29 @@ export function validateProject(project) {
   if (heavyAt >= 0 && gateAt > heavyAt) problems.push('train.py imports torch before the pre-flight, so a missing dependency hides the verdict');
   // And the split is only by recording if the rule is in the loader.
   if (!/def recording_of/.test(have.get('dataset.py') || '')) problems.push('dataset.py has no recording rule, so the split is by clip');
+  // ⚠️ AND THE EXPORT MUST WRITE THE FRONT END AND ITS PROBE. Without them the container cannot say what the model
+  // was trained to see, and VERIFY can only tell that a model got worse — never that the runtime moved underneath
+  // it. Both halves are asserted because either one alone is useless: a front end with no probe is not checkable,
+  // and a probe with no front end is not reproducible.
+  const exportSrc = have.get('export.py') || '';
+  // ⚠️ THE CALL, NOT THE WORD. The first version looked for `front_end_probe` anywhere in the file — and the
+  // function's own definition satisfied it, so deleting the line that WRITES the probe changed nothing. A check
+  // anchored on a name the file cannot avoid mentioning is not a check.
+  if (!/["']probe["']\s*:\s*front_end_probe\(\)/.test(exportSrc)) {
+    problems.push('export.py does not put a front-end probe in the container, so a drift that costs no accuracy cannot be caught');
+  }
+  if (!/"front_end"/.test(exportSrc)) problems.push('export.py does not write the front end into the container, so the runtime has to assume one');
+  if (!/"split": split/.test(exportSrc)) problems.push('export.py writes no test clip list, so nothing can re-score the model the customer runs');
+  // ⚠️ AND THE TWO FILES MUST AGREE ABOUT THE SPLIT. `evaluate.py`'s "test" split is the number the card carries
+  // and `train.py`'s is the one the model never saw; if the two tuples drift apart, the clips called test are
+  // clips the model trained on — a leak that reports a BETTER score and looks like nothing at all.
+  const fractionsIn = (src) => (src.match(/FRACTIONS = \(([^)]*)\)/) || [])[1];
+  const trainFractions = fractionsIn(train);
+  const evaluateFractions = fractionsIn(have.get('evaluate.py') || '');
+  if (!trainFractions) problems.push('train.py names no split fractions');
+  else if (trainFractions !== evaluateFractions) {
+    problems.push(`evaluate.py measures the split (${evaluateFractions}) and the model was trained on (${trainFractions}) — the "test" clips may be clips it has seen`);
+  }
   return problems;
 }
 

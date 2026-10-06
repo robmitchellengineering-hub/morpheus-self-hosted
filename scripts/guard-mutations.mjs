@@ -1946,6 +1946,133 @@ export const MUTATIONS = [
     find: 'const project = trainingProject(familyId, verdict);',
     replace: 'const project = trainingProject(familyId, null);',
   },
+  // ── VERIFY and PACK (2026-10-06) ────────────────────────────────────────────────────────────────────────
+  // ⭐ THE LADDER'S TWO MIDDLE STAGES ARE THE ONES A PERSON BELIEVES WITHOUT CHECKING: a card that says 94%, and
+  // a pack report that says "8 bits, no loss". Each claim below gets an edit that makes it false.
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/classifierModel.js',
+    // The window is the one convention a library would have chosen silently and wrongly: `torch.hann_window` is
+    // PERIODIC, `dsp.js`'s `hann` is SYMMETRIC, and using the wrong one windows every frame differently forever.
+    why: 'Windows the STFT symmetrically instead of periodically, which is a front end that is subtly not the one the model trained on.',
+    find: '  for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / n));',
+    replace: '    w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)));',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/classifierModel.js',
+    // Without this the runtime SILENTLY computes something other than what the container asked for — the failure
+    // mode the placeholder ternary had before it was removed.
+    why: 'Lets the reader compute a window it does not implement instead of refusing, which is the silent-wrong-answer case.',
+    find: "  if (fe.window !== 'hann-periodic') throw new Error(`this runtime computes the periodic Hann window, not \"${fe.window}\"`);",
+    replace: "  if (false) throw new Error(`this runtime computes the periodic Hann window, not \"${fe.window}\"`);",
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/classifierModel.js',
+    // Several scales without the block size is either an invalid container or a scale per code, and the count
+    // `modelBytes` reports depends on this line.
+    why: 'Drops the block size from a per-channel tensor, so its codes and its scales no longer line up.',
+    file: 'server/src/lib/tasks/classifierContainer.js',
+    find: '    t.block_size = values.length / scales.length;',
+    replace: '    t.block_size = undefined;',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/classifierModel.js',
+    why: 'Dequantizes with one scale per code instead of one per channel, so a weight comes back on the wrong grid.',
+    find: '    const block = t.block_size > 0 ? t.block_size : 1;',
+    replace: '    const block = 1;',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/verifyModel.js',
+    why: 'Puts the probe back to a bare frame count, so a front end that drifted in every other field is not compared.',
+    find: '  const drift = compareProbe(probe, frontEndProbe(fe));',
+    replace: '  const drift = compareProbe(probe, { ...frontEndProbe(fe), ...probe });',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/classifierContainer.js',
+    // The probe is what catches a drift whose cost is invisible in the accuracy. A container built without one
+    // turns the strongest assertion in VERIFY into a warning.
+    why: 'Stops containers carrying a front-end probe, so a drift that costs no accuracy cannot be seen at all.',
+    find: '      front_end: { ...fe, ...(probe ? { probe: frontEndProbe(fe) } : {}) },',
+    replace: '      front_end: { ...fe },',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/verifyModel.js',
+    why: 'Stops refusing a container whose front end no longer matches the one that trained it — the drift that ships quietly.',
+    find: '    if (drift.length) {',
+    replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/verifyModel.js',
+    why: 'Stops checking the card\'s number against the container, which leaves the one claim the stage exists to reproduce unverified.',
+    find: '    if (accuracy < claimed - tolerance) {',
+    replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/verifyModel.js',
+    why: 'Stops refusing a model that cannot beat answering the commonest label, which is how a 90%-one-class dataset looks like success.',
+    find: '  if (facts.margin < margin) {',
+    replace: '  if (false) {',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/verifyModel.js',
+    why: 'Reports a clip the card names but the dataset does not have as merely unscored, so a container with missing evidence reads as a container that passed.',
+    find: "  if (unreadable.length) {\n    issues.push({",
+    replace: "  if (false) {\n    issues.push({",
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/packModel.js',
+    why: 'Leaves the packed container quoting the float model\'s accuracy, which is a lie that reads as diligence.',
+    find: '  if (packed.card) {',
+    replace: '  if (false) {',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/packModel.js',
+    why: 'Packs at any width a caller asks for instead of the ones the family measured, so the report is about a width nobody chose.',
+    find: '  if (!allowed.includes(bits)) {',
+    replace: '  if (false) {',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/registry.js',
+    why: 'Lets a family declare no bit width, so a trained model has no size to be measured against and PACK has nothing to offer.',
+    find: '    if (!Array.isArray(f?.quantise?.bits) || !f.quantise.bits.length) {',
+    replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/trainProject.js',
+    // The generated project is the half of the contract that cannot be run here (no numpy, no torch), so its
+    // agreement with the reader is asserted on the TEXT — and `HOP` is the number a front-end drift starts with.
+    why: 'Writes a different hop into the training project than the runtime computes with, which degrades every embedded model silently.',
+    find: 'HOP = ${FRONT_END.hop}',
+    replace: 'HOP = 512',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/trainProject.js',
+    why: 'Stops export.py putting the front-end probe in the container, which is the difference between a checkable container and one that must be taken on trust.',
+    find: '            "front_end": {**FRONT_END, "probe": front_end_probe()},',
+    replace: '            "front_end": {**FRONT_END, "probe": {}},',
+  },
+  {
+    guard: 'verify-task-ladder.mjs',
+    file: 'server/src/lib/tasks/trainProject.js',
+    // A split that drifts between train.py and evaluate.py means the "test" clips are clips the model trained on.
+    why: 'Gives evaluate.py its own split fractions instead of the trainer\'s, so the test set can be data the model has seen.',
+    find: '# the output.\nFRACTIONS = (${family.data.split.train}, ${family.data.split.validation}, ${family.data.split.test})',
+    replace: 'FRACTIONS = (0.9, 0.05, 0.05)',
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.

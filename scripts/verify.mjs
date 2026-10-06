@@ -102,6 +102,7 @@ const HARD = [
   'verify-render-check.mjs',
   'verify-audio-plugin.mjs',
   'verify-task-models.mjs',
+  'verify-task-ladder.mjs',
   'verify-audio-measure.mjs',
   'verify-nam-quantize.mjs',
   'verify-audio-capture.mjs',

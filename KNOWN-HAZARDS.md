@@ -601,3 +601,35 @@ while the panel was unmounted reported `undefined` instead of its error.
   resolves. The broken chunk contained `o=orderDeckWidgets(s)` where every other local was `s`, `d`,
   `r`, `n`, `i`; the fixed one contains `o=Q(s)`. That is a way to check a *deployed* artifact for this
   class of bug without a login.
+
+---
+
+## H23 — a long-running check that rewrites the tree restores a STALE backup over live edits
+
+**Incident (2026-10-06, the VERIFY/PACK/EMBED work).** `scripts/mutate-guards.mjs` sabotages a file, runs the
+guard, and puts the original back in a `finally`. A full `--allow-dirty` run of one guard with sixteen mutations
+takes about thirteen minutes, so it was left in the background — **while the same files were being edited.**
+
+The restore is a blind `writeFileSync(original)`, so an edit made during those minutes is destroyed, and the
+run's own integrity check cannot see it: it hashes the file *after* restoring, which of course matches the
+backup it just wrote. The failure is silent, and it looks exactly like "my edit never applied" — which is what
+cost the time: a re-checked expectation, a re-applied edit, and a spell of believing the guard itself was
+flaky. It also explains two impossible-looking results from the same window (a container that produced `NaN`
+scores, and a drift check that stopped firing) — both were a *mutated* reader being executed by the guard.
+
+**Rule: a tool that rewrites the tree owns the tree for as long as it runs.**
+
+- **`mutate-guards` now refuses to restore a file whose bytes are no longer its own sabotage.** It saves what it
+  found as `<backup>.CONFLICT`, says where the original bytes are, and exits 4 without touching the file. That is
+  the general shape for any tool that writes a file and later writes it back: **check that what you are about to
+  overwrite is what you left there.**
+- **Never run `mutate-guards` in the background while editing its subject files**, and never leave one running
+  across a work session. `--allow-dirty` removes the tool's only other protection, so if it is used, the run must
+  be exclusive and short.
+- **Commit before starting a long proof.** The work that survived this did so because it had been committed one
+  step earlier; the edit that was lost had not.
+
+**Why this is a repository hazard and not just a session one:** the same shape is everywhere in the generated
+product — a tool that writes a file, then writes it back after doing something slow, with no check that the
+thing it is about to overwrite is the thing it left. The self-dev loop does exactly this with `project_files`,
+and so does every "sync, transform, restore" path here.
