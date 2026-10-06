@@ -4,9 +4,15 @@ MORPHEUS AUDIO PLUGIN — DEMO BUILD
 What this is
 ------------
 A prebuilt Morpheus audio plugin, published so you can hear what the plugin route
-produces before you compile one of your own. It is the amplifier stage: a neural
-amp model from NeuralAmpModelerCore, wrapped by Morpheus with an input trim, a
-noise gate and a three-band tone stack. There is no cabinet in this build.
+produces before you compile one of your own. It is the whole rig: a neural amp model
+from NeuralAmpModelerCore, into a drive, a three-band tone stack and a spring reverb,
+with a delay — nine blocks, in the order a pedalboard would have them.
+
+THERE IS NO CABINET IN THIS BUILD. The cabinet block is in the signal path and inert,
+because every good guitar-cabinet impulse response in the wild is either a commercial
+product or carries no right to redistribute it. The plugin says so when you build
+your own — "There is a Cabinet block but no .wav in this project" — and dropping a
+.wav into the project makes it live.
 
 It is NOT the product. What Morpheus makes for you is a plugin built in your own
 repository, around your own model, with your own cabinet — see morpheus.nz.

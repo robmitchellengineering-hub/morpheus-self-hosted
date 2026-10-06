@@ -25,6 +25,7 @@ import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { namRenderCheck } from './audio-nam-render-check.mjs';
 import { ampChainCheck } from './audio-amp-chain-check.mjs';
+import { demoManifest } from './lib/pluginDemo.mjs';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
 
@@ -134,7 +135,7 @@ if (modelArg) {
   //
   // Not pushed when `--chain` already did it: two entries for one path is a seed that contradicts itself.
   if (!chainProject) {
-    seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Morpheus Plugin', chain: 'amp' }, null, 2)}\n` });
+    seed.push({ path: 'morpheus.plugin.json', content: demoManifest() });
   }
 } else {
   log('building WITHOUT a model (the gain stage) — set AUDIO_PLUGIN_MODEL=/path/to/model.nam to build the amp');

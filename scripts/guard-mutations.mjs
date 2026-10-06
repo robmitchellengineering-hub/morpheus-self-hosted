@@ -1946,6 +1946,35 @@ export const MUTATIONS = [
     find: 'const project = trainingProject(familyId, verdict);',
     replace: 'const project = trainingProject(familyId, null);',
   },
+  // ── the demo (2026-10-06) ───────────────────────────────────────────────────────────────────────────────
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // The demo is the shop window, and it has twice been published as something narrower than the release page
+    // described. Losing a block here is how that happens.
+    why: 'Takes the delay out of the demo board, so the free download is a rig without the effect people would notice missing.',
+    find: "  const kinds = ['input', 'gate', 'drive', 'tone', 'model', 'cab', 'delay', 'spring', 'output'];",
+    replace: "  const kinds = ['input', 'gate', 'drive', 'tone', 'model', 'cab', 'spring', 'output'];",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/lib/pluginDemo.mjs',
+    why: 'Seeds a manifest with no board, which generates the single-Gain plugin while the release page still describes the whole rig.',
+    // ⚠️ NO ESCAPES IN THIS ONE. The first version ended at the `\n` of the template literal, and a `\n` inside
+    // a single-quoted string in THIS file is a real newline — so the find matched nothing and the mutation was
+    // reported STALE, which is a claim that quietly stops being checked. The shorter string cannot drift that way.
+    find: '{ name, board: boardJson(DEMO_BOARD) }, null, 2',
+    replace: '{ name }, null, 2',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-windows-runner-build.mjs',
+    // One of the three runners writing its own manifest is exactly how macOS and Windows shipped an amp while
+    // Linux shipped a gain knob, under one release tag.
+    why: 'Puts one runner back on its own hand-written manifest, which is how the three platforms came to publish different products.',
+    find: "  seed.push({ path: 'morpheus.plugin.json', content: demoManifest() });",
+    replace: "  seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Morpheus Plugin', chain: 'amp' }, null, 2)}\n` });",
+  },
   // ── VERIFY and PACK (2026-10-06) ────────────────────────────────────────────────────────────────────────
   // ⭐ THE LADDER'S TWO MIDDLE STAGES ARE THE ONES A PERSON BELIEVES WITHOUT CHECKING: a card that says 94%, and
   // a pack report that says "8 bits, no loss". Each claim below gets an edit that makes it false.

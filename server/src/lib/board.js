@@ -175,6 +175,37 @@ function kindOfStage(stage) {
 
 export const DEFAULT_BOARD = ampBoard();
 
+/**
+ * ⭐ THE DEMO BOARD — the signal path the free download is, and the only place it is defined.
+ *
+ * The demo used to be `chain: 'amp'`, which is the amplifier and nothing else: four blocks, and nothing in it
+ * that a pedalboard has. That was a decision about what a demo should be, and it was the wrong one — the point
+ * of a demo is to be the whole thing, and the blocks that make it sound like a rig rather than a DI are the
+ * ones a person would notice missing.
+ *
+ * ⚠️ THE ORDER IS THE MUSICAL ONE, and it is not the same as the catalogue's display order:
+ *
+ *   input trim → gate → DRIVE → tone stack → amp model → cabinet → DELAY → spring reverb → output
+ *
+ * The drive sits BEFORE the tone stack and the model, because a drive in front of an amp is what a drive is;
+ * after the model it would be distorting the amp's own distortion. The delay and the spring sit AFTER the
+ * cabinet, in the effects loop position, so the repeats are the sound of the amp rather than being re-amplified
+ * by it. And the output is last because it is the plugin's output, not a block in the path — the catalogue pins
+ * it there for exactly that reason.
+ *
+ * Defined here rather than in the three runner build scripts, which each had their own copy of `chain: 'amp'`
+ * and would have drifted the moment one of them changed. It is data, so a guard can assert it and a build can
+ * seed it without either of them owning the definition.
+ */
+export function demoBoard() {
+  const kinds = ['input', 'gate', 'drive', 'tone', 'model', 'cab', 'delay', 'spring', 'output'];
+  const items = kinds.map((kind, i) => {
+    if (!blockKind(kind)) throw new Error(`board.js: the demo board names "${kind}", which is not a block kind`);
+    return { instanceId: i + 1, kind, enabled: true, values: {} };
+  });
+  return { nextInstanceId: items.length + 1, items };
+}
+
 /** A single block, with the kind's defaults. */
 export function boardItem(kind, instanceId) {
   const entry = blockKind(kind);
