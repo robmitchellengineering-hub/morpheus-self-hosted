@@ -176,6 +176,26 @@ check('it documents the deploy deny-list', has(readme, 'wp-config.php'), true);
 check('its changelog covers the shipped versions', has(readme, '= 0.5.0 =') && has(readme, `= ${headerVersion} =`), true);
 check('the readme travels inside the plugin zip', has(packer, "rmSync(resolve(staging, 'morpheus/tests')"), true);
 
+// ⭐ AND THE THING THAT MADE THE TWO-CANONICAL FIX UNDELIVERABLE: a change with no version bump.
+//
+// Every version string agreed — header, constant, stable tag, changelog — and the fix still could not reach a
+// single site, because the whole update channel is VERSION-COMPARED. Rob's words: *"both the Morpheus site and
+// wordpress dont give me update options."* The one place the question can be answered is at pack time, where the
+// published manifest is reachable, and this is the predicate it uses.
+const { undeliverable } = await import('./lib/wpPluginRelease.mjs');
+const published = { version: '0.8.5', sha256: 'f'.repeat(64) };
+check('a plugin change with the version bumped is deliverable',
+  undeliverable(published, { version: '0.8.6', sha256: 'a'.repeat(64) }), null);
+check('…an identical rebuild at the same version is deliverable (nothing changed)',
+  undeliverable(published, { version: '0.8.5', sha256: 'f'.repeat(64) }), null);
+check('…and a change at the SAME version is refused, because no site would ever be offered it',
+  /changed but the version did not/.test(undeliverable(published, { version: '0.8.5', sha256: 'a'.repeat(64) }) || ''), true);
+check('…while an unknown published manifest is not a build failure — it says nothing rather than guessing',
+  undeliverable(null, { version: '0.8.5', sha256: 'a'.repeat(64) }), null);
+// The packer must actually USE it, or the predicate is a unit test with nothing behind it.
+check('the packer refuses to publish an undeliverable build',
+  has(packer, 'undeliverable(live, next)') && has(packer, 'REFUSING TO PUBLISH'), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\nThe pairing flow is broken or the two sides disagree. Fix before merging.\n');

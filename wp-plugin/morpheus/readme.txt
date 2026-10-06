@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.5
+Stable tag: 0.8.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,14 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.6 =
+* Fixed: the head emitted TWO `<link rel="canonical">` tags on every singular view — the plugin's own at
+  `wp_head` priority 1 and WordPress core's `rel_canonical()` at priority 10. Two canonical tags are a defect
+  even when they agree, because the day they disagree is the day the wrong URL gets indexed. The plugin now
+  OWNS THE VALUE and core prints the tag: our canonical is handed to core through its own `get_canonical_url`
+  filter and we print nothing ourselves. If core's callback has been removed, we print as before. A canonical
+  set in the widget still wins.
 
 = 0.8.5 =
 * Fixed: **a false "publicly readable debug.log" finding.** The check used to

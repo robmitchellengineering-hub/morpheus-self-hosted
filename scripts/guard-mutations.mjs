@@ -1284,8 +1284,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 65;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 66;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 64;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 65;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -1949,6 +1949,16 @@ export const MUTATIONS = [
     find: 'const project = trainingProject(familyId, verdict);',
     replace: 'const project = trainingProject(familyId, null);',
   },
+  {
+    guard: 'verify-pairing.mjs',
+    file: 'scripts/lib/wpPluginRelease.mjs',
+    // ⭐ THE BUG THAT COST ROB A ROUND TRIP: a plugin change with no version bump is published, hashed and
+    // served, and NO site is ever offered it — because every update channel compares versions. This predicate is
+    // the only thing that can see it, and a version of it that always says "fine" is the bug it exists to catch.
+    why: 'Makes the deliverability check always pass, so a plugin change without a version bump ships silently and reaches nobody.',
+    find: '  return `the plugin changed but the version did not (still ${next.version}), so no site will ever be offered it`;',
+    replace: '  return null;',
+  },
   // ── the demo (2026-10-06) ───────────────────────────────────────────────────────────────────────────────
   {
     guard: 'verify-audio-plugin.mjs',
@@ -2270,4 +2280,4 @@ export const NOT_YET_PROVEN = [
  * also asserts each `rules:` block re-spreads the recommended set, so the falsification is a plain
  * text edit (drop the spread) and the guard joins the proven pile.
  */
-export const UNPROVEN_BASELINE = 65;
+export const UNPROVEN_BASELINE = 64;
