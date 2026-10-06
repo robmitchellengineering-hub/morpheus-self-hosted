@@ -1683,6 +1683,24 @@ check('⭐ a control moved on the panel reaches the audio thread through a flag,
 check('…and the output queue is remembered, because CLAP hands it over in process() and nowhere else',
   /p->out_events = process->out_events;/.test(guiPlugin) && /p->out_events = out;/.test(guiPlugin), true);
 
+console.log('\n26. the ARM chain check LOADS, which nothing was checking');
+// ⚠️ FOUND BY DISPATCHING THE RUNNER, NOT BY READING ANYTHING. `audio-amp-chain-check.mjs` read
+// `AMP_CHAIN.params`, a property the stages refactor removed — so it threw at MODULE LOAD and the ARM chain
+// proof had been dead since that day. Three things let it through, and each is worth naming:
+//
+//   * `verify-guards-no-install.mjs` parses the import GRAPH statically, which is a different question from
+//     whether a module RUNS when it is loaded;
+//   * it is a script that needs a BUILT plugin, so the runner is the only thing that executes it;
+//   * the runner had not been dispatched since the refactor, so nothing ran it at all.
+//
+// Importing it here costs milliseconds. Everything below the import is a property of the cases it computes.
+const chainCheckMod = await import('../scripts/audio-amp-chain-check.mjs');
+check('⭐ the ARM chain check still loads, so its cases come from a chain that still exists',
+  Array.isArray(chainCheckMod.TONE_CASES) && chainCheckMod.TONE_CASES.length >= 6, true);
+check('…and its ids come from the parameter table, not from a number somebody remembered',
+  chainCheckMod.TONE_CASES.some((c) => c.params.includes('3=12'))
+  && !chainCheckMod.TONE_CASES.some((c) => c.params.some((x) => x.startsWith('2='))), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the audio-plugin target can generate a project that will not build\n');

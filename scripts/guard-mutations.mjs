@@ -1833,6 +1833,15 @@ export const MUTATIONS = [
     find: '   p->dpy = XOpenDisplay(nullptr);',
     replace: '   p->dpy = XOpenDisplay(getenv("DISPLAY"));',
   },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-amp-chain-check.mjs',
+    // ⭐ THE BUG THE RUNNER FOUND, AS A MUTATION — the exact line that shipped. A property the stages refactor
+    // removed, read at module load, in a script only a dispatched runner ever executes.
+    why: 'Puts the ARM chain check back on the parameter property the stages refactor removed, so it throws at load and the chain proof silently stops existing.',
+    find: '  const at = chainParams(AMP_CHAIN).findIndex((p) => p.key === key);',
+    replace: '  const at = AMP_CHAIN.params.findIndex((p) => p.key === key);',
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.

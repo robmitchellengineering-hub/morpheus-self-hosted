@@ -24,7 +24,7 @@ import { toneDesign, toneProcess, toneResponseDb } from '../server/src/lib/audio
 import { convolveDirect, rms } from '../server/src/lib/audio/dsp.js';
 import { decodeWav } from '../server/src/lib/audio/wav.js';
 import { MAX_CAB_TAPS } from '../server/src/lib/cabIr.js';
-import { AMP_CHAIN, GATE_OFF_DB } from '../server/src/lib/ampChain.js';
+import { AMP_CHAIN, GATE_OFF_DB, chainParams } from '../server/src/lib/ampChain.js';
 import { clapIncludes, compareToReference, readMraw, writeMraw } from './audio-nam-render-check.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,8 +40,13 @@ export const SETTLE_FRACTION = 0.75;
 // inserted at position 2, at which point every one of these cases silently addressed the wrong control — the
 // bass case became the gate. A number copied from a table is a number that goes stale the moment the table
 // moves; this reads it.
+// ⚠️ AND IT WENT STALE ANYWAY, WHICH IS WHY THE RUNNER FOUND IT AND NOTHING ELSE DID. When a chain became a
+// list of STAGES, `AMP_CHAIN.params` stopped existing — the parameters are DERIVED now — so this file threw on
+// import and the ARM chain proof had been dead since that day. No guard caught it: it is a script that needs a
+// BUILT plugin, so the only thing that runs it is the runner, and the runner had not been dispatched since.
+// The parameter list comes from the accessor that replaced the property, in the order the host will see it.
 const paramId = (key) => {
-  const at = AMP_CHAIN.params.findIndex((p) => p.key === key);
+  const at = chainParams(AMP_CHAIN).findIndex((p) => p.key === key);
   if (at === -1) throw new Error(`the amp chain has no "${key}" parameter — the cases below are stale`);
   return at + 1;
 };
