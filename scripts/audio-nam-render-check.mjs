@@ -201,6 +201,57 @@ export function namSources(namcore) {
  * are. Returns the numbers rather than asserting them, so the caller decides what is good enough and can
  * print everything either way.
  */
+/**
+ * The sources a plugin project compiles ON THIS PLATFORM, as absolute paths.
+ *
+ * ⚠️ NOT A LIST OF NAMES, AND NOT A BARE GLOB EITHER. Both were tried and both failed, in the runner:
+ *
+ *   * naming three files by hand broke the link the day the generator emitted a fourth
+ *     ("undefined reference to morpheus_gui_extension");
+ *   * globbing every .cpp AND .mm then fed the COCOA panel to gcc on Linux, which answered
+ *     "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there, and no reason for one.
+ *
+ * So it picks the panel the way the generated CMakeLists does, and the guard asserts the two agree: one panel
+ * per platform, every other generated source, and no file belonging to a platform you are not on.
+ */
+export const PANEL_BY_PLATFORM = {
+  darwin: 'PluginGui.mm',
+  win32: 'PluginGuiWin.cpp',
+  linux: 'PluginGuiX11.cpp',
+};
+export const PANEL_FILES = ['PluginGui.mm', 'PluginGuiWin.cpp', 'PluginGuiX11.cpp', 'PluginGui.cpp'];
+
+/**
+ * What a panel has to be LINKED against, per platform — the other half of the same rule.
+ *
+ * ⚠️ THE SOURCES WERE ONLY HALF OF IT. With the right file chosen, this still failed on the runner:
+ *
+ *   PluginGuiX11.cpp:(.text+0xa8): undefined reference to `XUnmapWindow'
+ *
+ * because the generated CMakeLists links X11 for that panel and this tool did not. Three separate rounds of
+ * the same mistake now — a hand-written list of a generated project's sources, then of its panels, then of its
+ * libraries — which is why both halves live here together and are cross-checked against the cmake.
+ */
+export const PANEL_LINK = {
+  darwin: ['-framework', 'Cocoa', '-framework', 'QuartzCore'],
+  win32: ['gdi32', 'user32'],
+  linux: ['-lX11', '-pthread'],
+};
+
+/** The link flags this platform's panel needs. Empty for a platform that has no panel. */
+export const generatedLinkFlags = () => PANEL_LINK[process.platform] || [];
+
+export function generatedSources(pluginDir) {
+  const dir = join(pluginDir, 'Source');
+  if (!existsSync(dir)) return [];
+  const chosen = PANEL_BY_PLATFORM[process.platform] || 'PluginGui.cpp';
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.cpp') || f.endsWith('.mm'))
+    .filter((f) => !PANEL_FILES.includes(f) || f === chosen)
+    .sort()
+    .map((f) => join(dir, f));
+}
+
 export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = null, work, seconds = 0.25, timingSeconds = 4, sampleRate = 48000 }) {
   mkdirSync(work, { recursive: true });
   const clap = clapInclude || clapIncludes();
@@ -234,9 +285,13 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
     ...COMPILE_FLAGS,
     `-I${clap}`, `-I${join(pluginDir, 'Source')}`, ...namIncludes,
     join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'),
-    join(pluginDir, 'Source', 'Plugin.cpp'),
-    join(pluginDir, 'Source', 'PluginEntry.cpp'),
-    join(pluginDir, 'Source', 'ModelData.cpp'),
+    // ⚠️ EVERY GENERATED SOURCE, GLOBBED — NOT THREE OF THEM NAMED. This listed Plugin.cpp,
+    // PluginEntry.cpp and ModelData.cpp by hand, and the day the generator emitted a FOURTH file (the panel)
+    // the link failed with "undefined reference to morpheus_gui_extension" — in the ARM runner, which is the
+    // only place this runs. A hand-maintained list of a generated project's files is a list that goes stale
+    // the moment the generator changes, and the generator is ours to change.
+    ...generatedSources(pluginDir),
+    ...generatedLinkFlags(),
     ...nam,
     '-o', hostBin,
   ], 'the offline host + the plugin + the engine');

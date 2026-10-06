@@ -18,8 +18,8 @@
 // runs in CI's no-install guards job.
 //
 // Run:  node scripts/verify-audio-plugin.mjs
-import { readFileSync, existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, unlinkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
 import audioPluginWindows from '../server/src/lib/compile-targets/audio-plugin-windows.js';
@@ -80,11 +80,11 @@ const s = audioPlugin.scaffold(empty);
 // `CabIr.{h,cpp}` are generated for EVERY project, including one that has neither a model nor a cabinet,
 // because the plugin includes their headers unconditionally and branches on the flags inside. That is what
 // keeps Source/Plugin.cpp the same text whatever the workspace holds.
-// TEN FILES NOW, NOT EIGHT. Source/PluginGui.mm and .cpp are the panel — one per platform, BOTH always
-// written, because a plugin project moves between machines and one that arrives without the source its
-// platform compiles is a build that fails on the user's machine rather than here.
-check('it generates exactly the ten files the build needs',
-  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/CabIr.cpp', 'Source/CabIr.h', 'Source/ModelData.cpp', 'Source/ModelData.h', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', 'Source/PluginGui.cpp', 'Source/PluginGui.mm', PLUGIN_MANIFEST]);
+// THIRTEEN FILES, AND THE PANELS ARE FIVE OF THEM. One layout, three drawing backends and a fallback stub —
+// ALL of them written into every project, because a plugin project moves between machines and one that arrives
+// without the source its platform compiles is a build that fails on the user's machine rather than here.
+check('it generates exactly the thirteen files the build needs',
+  s.generated.slice().sort(), ['CMakeLists.txt', 'Source/CabIr.cpp', 'Source/CabIr.h', 'Source/ModelData.cpp', 'Source/ModelData.h', 'Source/Plugin.cpp', 'Source/PluginEntry.cpp', 'Source/PluginGui.cpp', 'Source/PluginGui.mm', 'Source/PluginGuiLayout.h', 'Source/PluginGuiWin.cpp', 'Source/PluginGuiX11.cpp', PLUGIN_MANIFEST]);
 check('…and no warnings for a clean generate', s.warnings, []);
 
 console.log('\n3. identity is derived, valid, and cannot silently collide');
@@ -1617,23 +1617,50 @@ console.log('\n25. the panel: a plugin with no GUI leaves the standalone window 
 // clap_plugin_gui, and without one the user gets sound and no knobs — which is exactly what shipped.
 const guiProject = audioPlugin.scaffold([{ path: 'README.md', content: '# x' }]);
 const guiCpp = generated(guiProject, 'Source/PluginGui.mm');
+const guiWin = generated(guiProject, 'Source/PluginGuiWin.cpp');
+const guiX11 = generated(guiProject, 'Source/PluginGuiX11.cpp');
+const guiLayout = generated(guiProject, 'Source/PluginGuiLayout.h');
 const guiStub = generated(guiProject, 'Source/PluginGui.cpp');
 const guiPlugin = generated(guiProject, 'Source/Plugin.cpp');
 const guiCmake = generated(guiProject, 'CMakeLists.txt');
-check('the scaffold writes both panel files, so a project that moves between machines still builds',
-  guiCpp.length > 2000 && guiStub.length > 100, true);
-check('…the plugin exposes the GUI extension and gets it from that file',
+check('the scaffold writes every panel, so a project that moves between machines still builds',
+  guiLayout.length > 800 && guiCpp.length > 2000 && guiWin.length > 2000 && guiX11.length > 2000 && guiStub.length > 100, true);
+check('…the plugin exposes the GUI extension and gets it from whichever panel the platform compiled',
   /strcmp\(id, CLAP_EXT_GUI\)\) return morpheus_gui_extension\(\)/.test(guiPlugin)
-  && /extern "C" const clap_plugin_gui_t \*morpheus_gui_extension\(void\)/.test(guiCpp), true);
-check('⭐ …and OFF APPLE it returns NULL rather than claiming a window it cannot draw, so nothing regresses',
+  && [guiCpp, guiWin, guiX11, guiStub].every((f) => /extern "C" const clap_plugin_gui_t \*morpheus_gui_extension\(void\)/.test(f)), true);
+check('⭐ …and the fallback returns NULL rather than claiming a window it cannot draw, so nothing regresses',
   /morpheus_gui_extension\(void\) \{ return nullptr; \}/.test(guiStub), true);
-check('…the cmake compiles exactly one of them, because Plugin.cpp references the symbol either way',
-  /if \(APPLE\)[\s\S]{0,200}Source\/PluginGui\.mm[\s\S]{0,200}else\(\)[\s\S]{0,200}Source\/PluginGui\.cpp/.test(guiCmake)
+// ⭐ ONE LAYOUT, THREE BACKENDS. The row builder, the hit test and the x-of-value arithmetic live in the
+// header, because three copies of "which parameter is under this point" is three places for the hit test to
+// disagree with the drawing — and a slider that moves when you click a different one is unreproducible.
+check('⭐ …each backend DRAWS from the one shared layout rather than its own copy of the arithmetic',
+  [guiCpp, guiWin, guiX11].every((f) => /#include "PluginGuiLayout.h"/.test(f))
+  && /static int morpheus_gui_row_at\(/.test(guiLayout) && /static double morpheus_gui_x_of\(/.test(guiLayout)
+  && [guiCpp, guiWin, guiX11].every((f) => !/static (int|double) morpheus_gui_(row_at|x_of|t_at)\(/.test(f)), true);
+check('…and each answers for its OWN window API, and only that one',
+  /CLAP_WINDOW_API_COCOA/.test(guiCpp) && !/CLAP_WINDOW_API_WIN32|CLAP_WINDOW_API_X11/.test(guiCpp)
+  && /CLAP_WINDOW_API_WIN32/.test(guiWin) && !/CLAP_WINDOW_API_COCOA|CLAP_WINDOW_API_X11/.test(guiWin)
+  && /CLAP_WINDOW_API_X11/.test(guiX11) && !/CLAP_WINDOW_API_COCOA|CLAP_WINDOW_API_WIN32/.test(guiX11), true);
+// ⚠️ WINDOWS GETS MESSAGES FROM THE HOST'S LOOP; X11 DOES NOT. The panel that cannot has to own a connection
+// and a thread, and the failure mode if it does not is a window that draws once and then sits there dead.
+check('⭐ the X11 panel opens its OWN display connection and pumps its own events',
+  /XOpenDisplay\(nullptr\)/.test(guiX11) && /XSelectInput\(/.test(guiX11)
+  && /std::thread\(run, p\)/.test(guiX11) && /XPending\(/.test(guiX11), true);
+check('…and the Windows panel deliberately does NOT, because a child HWND is driven by the host message loop',
+  /SetTimer\(p->hwnd, 1, 33, nullptr\)/.test(guiWin) && !/CreateThread|std::thread/.test(guiWin), true);
+check('…the cmake compiles exactly one panel per platform, because Plugin.cpp references the symbol either way',
+  /if \(APPLE\)[\s\S]{0,120}Source\/PluginGui\.mm/.test(guiCmake)
+  && /elseif \(WIN32\)[\s\S]{0,120}Source\/PluginGuiWin\.cpp/.test(guiCmake)
+  && /elseif \(UNIX\)[\s\S]{0,120}Source\/PluginGuiX11\.cpp/.test(guiCmake)
+  && /else\(\)[\s\S]{0,120}Source\/PluginGui\.cpp/.test(guiCmake)
   && /add_library\(morpheus_plugin-impl STATIC Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(guiCmake), true);
+check('…and links what each panel actually draws with, including X11 and the thread it runs on',
+  /"-framework Cocoa"/.test(guiCmake) && /PUBLIC gdi32 user32/.test(guiCmake)
+  && /PUBLIC X11 Threads::Threads/.test(guiCmake), true);
 check('⭐ …and the panel reads its parameters from the PLUGIN, not from a copy of the table',
   /get_extension\(plugin, CLAP_EXT_PARAMS\)/.test(guiCpp)
-  && /_params->get_info\(_plugin/.test(guiCpp) && /_params->get_value\(_plugin/.test(guiCpp)
-  && /value_to_text\(_plugin/.test(guiCpp), true);
+  && /params->get_info\(plugin/.test(guiLayout) && /params->get_value\(plugin/.test(guiLayout)
+  && /value_to_text\(plugin/.test(guiLayout), true);
 check('…it refuses a floating window, so a host keeps its own window and puts our view in it',
   /if \(is_floating\) return false;/.test(guiCpp), true);
 check('…its timer runs in COMMON modes, or the knobs freeze whenever a host is in a modal loop',
@@ -1650,11 +1677,97 @@ check('⭐ every control carries its OWN unit through to the host and to the pan
 // and does nothing; a GUI write applied on the main thread is this thread writing state the audio thread
 // reads. Both halves are asserted, because either one alone looks correct.
 check('⭐ a control moved on the panel reaches the audio thread through a flag, and the host through an event',
-  /__atomic_store_n\(&p->gui_pending\[ix\], 1, __ATOMIC_RELEASE\)/.test(guiPlugin)
-  && /__atomic_exchange_n\(&p->gui_pending\[k\], 0, __ATOMIC_ACQ_REL\)/.test(guiPlugin)
+  /morpheus_gui_publish\(&p->gui_pending\[ix\]\)/.test(guiPlugin)
+  && /morpheus_gui_consume\(&p->gui_pending\[k\]\)/.test(guiPlugin)
   && /CLAP_EVENT_PARAM_VALUE/.test(guiPlugin) && /out_events->try_push/.test(guiPlugin), true);
+// ⚠️ AND THE HANDOVER IS PORTABLE. `__atomic_*` are GCC/Clang builtins; MSVC has none of them, and the
+// Windows runner rejected this file with "error C2065: '__ATOMIC_RELEASE': undeclared identifier". Both
+// spellings exist because both compilers do.
+// ⚠️ ANCHORED, NOT SUBSTRING. `/defined\(_MSC_VER\)/` still matches `#if defined(_MSC_VER) && !defined(_MSC_VER)`,
+// so the first version of this check passed with the MSVC branch disabled — a mutation that "survived" while
+// having removed exactly the portability it was testing. The line has to BE the guard.
+check('⭐ …and that handover compiles on MSVC as well as on clang, which is not the same statement',
+  /^#if defined\(_MSC_VER\)$/m.test(guiPlugin) && /_InterlockedExchange8/.test(guiPlugin)
+  && /__ATOMIC_RELEASE/.test(guiPlugin) && /__ATOMIC_ACQ_REL/.test(guiPlugin), true);
+// ⚠️ A TOOL THAT NAMES A GENERATED PROJECT'S FILES IS A TOOL THAT BREAKS WHEN THE GENERATOR CHANGES. Adding
+// the panel broke the ARM render check's hand-written source list — "undefined reference to
+// morpheus_gui_extension" — because the generator had grown a file the list did not have.
+// Every tool that compiles the plugin's own sources. The list grew by one during this work — the chain check
+// had its own copy of the same four names, with a good comment explaining why CabIr.cpp had to be in it, and it
+// broke the same way.
+for (const tool of ['scripts/audio-nam-render-check.mjs', 'scripts/audio-testbench.mjs', 'scripts/audio-amp-chain-check.mjs']) {
+  const src = read(tool);
+  // ⚠️ THE COMPILE LIST IS WHAT IS CHECKED, not "the file mentions readdirSync somewhere" — the first version
+  // of this passed with the hand-written list restored, because the same file globs the engine's sources too.
+  // And the LIST shape is the thing that went stale: a bare `'Source/Plugin.cpp'` in an array of sources. A
+  // tool that patches that file by name for its own self-test is a different thing and stays.
+  const fromGlob = tool.includes('audio-nam-render-check')
+    ? /\.\.\.generatedSources\(pluginDir\)/.test(src)
+    : /generatedSources\((projectDir|pluginDir)\)/.test(src);
+  check(`${tool} takes the plugin's sources from the platform's own rule, not from a list of names`,
+    fromGlob && !/'Source\/Plugin\.cpp'/.test(src), true);
+}
 check('…and the output queue is remembered, because CLAP hands it over in process() and nowhere else',
   /p->out_events = process->out_events;/.test(guiPlugin) && /p->out_events = out;/.test(guiPlugin), true);
+
+// ⭐ THE PANEL RULE IS WRITTEN TWICE, SO IT IS ASSERTED TO AGREE. The generated CMakeLists picks one panel per
+// platform, and the tools that compile the plugin by hand have to pick the SAME one — one panel, and never a
+// file belonging to a platform you are not on. Duplication that cannot drift is a cross-check; duplication
+// that can is the bug this whole section is about.
+const panelsMod = await import('../scripts/audio-nam-render-check.mjs');
+// Read the cmake's own branches rather than looking for the file names anywhere in the file — a substring
+// search passes with the branches swapped, which is the mistake being guarded against.
+const cmakePanels = {};
+for (const m of guiCmake.matchAll(/(?:if|elseif) \(([A-Z0-9]+)\)\s*\n\s*set\(MORPHEUS_GUI_SOURCE Source\/([\w.]+)\)/g)) {
+  cmakePanels[m[1]] = m[2];
+}
+check('⭐ the tools pick the same panel the generated cmake picks, for every platform',
+  JSON.stringify([cmakePanels.APPLE, cmakePanels.WIN32, cmakePanels.UNIX]),
+  JSON.stringify([panelsMod.PANEL_BY_PLATFORM.darwin, panelsMod.PANEL_BY_PLATFORM.win32, panelsMod.PANEL_BY_PLATFORM.linux]));
+// ⭐ AND IT FILTERS — ASSERTED BY RUNNING IT, not by reading it. A glob alone fed the Cocoa panel to gcc on
+// Linux, which answered "cannot execute 'cc1objplus'" after a two-minute configure; the first version of this
+// check compared the maps and passed with the filter deleted.
+const probeDir = mkdtempSync(join(tmpdir(), 'morpheus-gui-sources-'));
+mkdirSync(join(probeDir, 'Source'), { recursive: true });
+for (const f of ['Plugin.cpp', 'PluginEntry.cpp', 'PluginGui.mm', 'PluginGuiWin.cpp', 'PluginGuiX11.cpp', 'PluginGui.cpp']) {
+  writeFileSync(join(probeDir, 'Source', f), '');
+}
+const pickedPanels = panelsMod.generatedSources(probeDir).map((f) => basename(f));
+rmSync(probeDir, { recursive: true, force: true });
+check('⭐ …and it picks exactly ONE panel when every platform\'s is sitting in the directory',
+  pickedPanels.includes('Plugin.cpp') && pickedPanels.filter((f) => f.startsWith('PluginGui')).length === 1, true);
+check('…the one this platform compiles',
+  pickedPanels.includes(panelsMod.PANEL_BY_PLATFORM[process.platform] || 'PluginGui.cpp'), true);
+// ⭐ AND THE SOURCES WERE ONLY HALF THE RULE. With the right panel chosen, the runner still failed with
+// "undefined reference to `XUnmapWindow'" — the cmake links X11 for that panel and the tool did not. The link
+// flags live next to the panel map for the same reason, and are cross-checked against the cmake below.
+check('⭐ …and it links what that panel draws with',
+  JSON.stringify(panelsMod.PANEL_LINK.darwin), JSON.stringify(['-framework', 'Cocoa', '-framework', 'QuartzCore']));
+check('…including X11 and the thread the Linux panel runs on',
+  panelsMod.PANEL_LINK.linux.join(' '), '-lX11 -pthread');
+check('…which is not empty on a platform that has a panel',
+  (panelsMod.PANEL_LINK[process.platform] || []).length > 0, true);
+check('…with the stub as the fallback, for a platform none of the three covers',
+  /else\(\)\s*\n\s*set\(MORPHEUS_GUI_SOURCE Source\/PluginGui\.cpp\)/.test(guiCmake)
+  && panelsMod.PANEL_FILES.includes('PluginGui.cpp'), true);
+
+console.log('\n26. the ARM chain check LOADS, which nothing was checking');
+// ⚠️ FOUND BY DISPATCHING THE RUNNER, NOT BY READING ANYTHING. `audio-amp-chain-check.mjs` read
+// `AMP_CHAIN.params`, a property the stages refactor removed — so it threw at MODULE LOAD and the ARM chain
+// proof had been dead since that day. Three things let it through, and each is worth naming:
+//
+//   * `verify-guards-no-install.mjs` parses the import GRAPH statically, which is a different question from
+//     whether a module RUNS when it is loaded;
+//   * it is a script that needs a BUILT plugin, so the runner is the only thing that executes it;
+//   * the runner had not been dispatched since the refactor, so nothing ran it at all.
+//
+// Importing it here costs milliseconds. Everything below the import is a property of the cases it computes.
+const chainCheckMod = await import('../scripts/audio-amp-chain-check.mjs');
+check('⭐ the ARM chain check still loads, so its cases come from a chain that still exists',
+  Array.isArray(chainCheckMod.TONE_CASES) && chainCheckMod.TONE_CASES.length >= 6, true);
+check('…and its ids come from the parameter table, not from a number somebody remembered',
+  chainCheckMod.TONE_CASES.some((c) => c.params.includes('3=12'))
+  && !chainCheckMod.TONE_CASES.some((c) => c.params.some((x) => x.startsWith('2='))), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

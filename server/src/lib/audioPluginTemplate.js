@@ -392,6 +392,33 @@ ${hasTone ? `   for (int c = 0; c < 2; ++c) for (int b = 0; b < ${TONE_KEYS.leng
 ` : ''}}
 static void plug_on_main_thread(const clap_plugin_t *plugin) {}
 
+// ── the handover's two operations, PORTABLY ──────────────────────────────────────────────────────────────
+// ⚠️ \`__atomic_store_n\` AND ITS FAMILY ARE GCC/CLANG BUILTINS AND MSVC HAS NONE OF THEM. This file compiled
+// on macOS with clang and was rejected by MSVC, on the Windows runner, with:
+//
+//    error C2065: '__ATOMIC_RELEASE': undeclared identifier
+//    error C3861: '__atomic_store_n': identifier not found
+//
+// which is the whole reason the panel work was dispatched to all three runners rather than trusted. The MSVC
+// spelling is an interlocked exchange, which is a FULL barrier — stronger than the release/acquire pair the
+// other branch uses, and correct for both directions of this handover.
+#if defined(_MSC_VER)
+#include <intrin.h>
+static inline void morpheus_gui_publish(volatile unsigned char *flag) {
+   _InterlockedExchange8((volatile char *)flag, 1);
+}
+static inline bool morpheus_gui_consume(volatile unsigned char *flag) {
+   return _InterlockedExchange8((volatile char *)flag, 0) != 0;
+}
+#else
+static inline void morpheus_gui_publish(volatile unsigned char *flag) {
+   __atomic_store_n(flag, 1, __ATOMIC_RELEASE);
+}
+static inline bool morpheus_gui_consume(volatile unsigned char *flag) {
+   return __atomic_exchange_n(flag, 0, __ATOMIC_ACQ_REL) != 0;
+}
+#endif
+
 // ── the GUI's half of the handover, and the ONLY functions in this file with C linkage ──────────────────
 // The panel is a separate translation unit on purpose (Source/PluginGui.mm), so it cannot see plugin_t. These
 // three functions are the whole interface between the panel and the plugin, and none of them is on the audio
@@ -424,7 +451,7 @@ extern "C" void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, 
    const double clamped = value < kParams[ix].min ? kParams[ix].min
                         : (value > kParams[ix].max ? kParams[ix].max : value);
    p->gui_value[ix] = clamped;
-   __atomic_store_n(&p->gui_pending[ix], 1, __ATOMIC_RELEASE);
+   morpheus_gui_publish(&p->gui_pending[ix]);
    if (p->out_events) {
       clap_event_param_value_t ev;
       memset(&ev, 0, sizeof(ev));
@@ -453,7 +480,7 @@ static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_
    // Whatever the panel changed since the last block, applied HERE — on the audio thread, where the value is
    // read, rather than on the main thread where it was written.
    for (uint32_t k = 0; k < MORPHEUS_NUM_PARAMS; ++k) {
-      if (__atomic_exchange_n(&p->gui_pending[k], 0, __ATOMIC_ACQ_REL)) p->value[k] = p->gui_value[k];
+      if (morpheus_gui_consume(&p->gui_pending[k])) p->value[k] = p->gui_value[k];
    }
    const uint32_t nev = process->in_events->size(process->in_events);
 
@@ -764,8 +791,14 @@ add_subdirectory(\${CLAP_WRAPPER_DIR} clap-wrapper)
 # plugin has no GUI" — so Windows and Linux keep the host's own generic parameter list rather than claiming a
 # window they cannot draw. EITHER WAY ONE OF THEM MUST COMPILE: Plugin.cpp references the symbol
 # unconditionally, so a build that picked neither would fail at link rather than at runtime.
+# Cocoa on Apple, a child HWND and GDI on Windows, a child X11 window with its own event thread on Linux, and
+# a NULL stub for a platform nobody has written a panel for yet.
 if (APPLE)
   set(MORPHEUS_GUI_SOURCE Source/PluginGui.mm)
+elseif (WIN32)
+  set(MORPHEUS_GUI_SOURCE Source/PluginGuiWin.cpp)
+elseif (UNIX)
+  set(MORPHEUS_GUI_SOURCE Source/PluginGuiX11.cpp)
 else()
   set(MORPHEUS_GUI_SOURCE Source/PluginGui.cpp)
 endif()
@@ -777,6 +810,14 @@ target_link_libraries(morpheus_plugin-impl PUBLIC clap clap-wrapper-extensions)
 # go wrong inside a host's window. QuartzCore is for the layer-backed drawing path Cocoa uses on Retina.
 if (APPLE)
   target_link_libraries(morpheus_plugin-impl PUBLIC "-framework Cocoa" "-framework QuartzCore")
+elseif (WIN32)
+  # GDI for the drawing; both are part of the Windows SDK and every MSVC toolchain already has them.
+  target_link_libraries(morpheus_plugin-impl PUBLIC gdi32 user32)
+elseif (UNIX)
+  # X11 for the drawing, and Threads because the Linux panel runs its own event loop — see
+  # server/src/lib/pluginGui.js for why it has to. libx11-dev is what the Linux ARM route already installs.
+  find_package(Threads REQUIRED)
+  target_link_libraries(morpheus_plugin-impl PUBLIC X11 Threads::Threads)
 endif()
 ${hasCab ? `
 # The cabinet needs nothing fetched — the taps are compiled in. This line exists so the configure cannot

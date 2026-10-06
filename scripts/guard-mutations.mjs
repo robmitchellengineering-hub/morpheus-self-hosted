@@ -1811,8 +1811,74 @@ export const MUTATIONS = [
     // The panel writes on the main thread and the audio thread reads. Without the pickup the knob moves and
     // nothing else does, which reads as a broken plugin rather than as a missing line.
     why: 'Stops the audio thread collecting what the panel changed, so a dragged control moves and the sound does not.',
-    find: '      if (__atomic_exchange_n(&p->gui_pending[k], 0, __ATOMIC_ACQ_REL)) p->value[k] = p->gui_value[k];',
+    find: '      if (morpheus_gui_consume(&p->gui_pending[k])) p->value[k] = p->gui_value[k];',
     replace: '      if (false) p->value[k] = p->gui_value[k];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ TWO PLATFORMS GET A PANEL, THE THIRD GETS THE STUB — and a Windows user whose plugin quietly fell
+    // back to "no GUI" is exactly the state this change exists to end.
+    why: 'Points the Windows build at the fallback stub, so a Windows plugin says it has no GUI and the standalone window comes up empty again.',
+    find: 'elseif (WIN32)\n  set(MORPHEUS_GUI_SOURCE Source/PluginGuiWin.cpp)',
+    replace: 'elseif (WIN32)\n  set(MORPHEUS_GUI_SOURCE Source/PluginGui.cpp)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE X11 PANEL CANNOT BORROW THE HOST'S CONNECTION. Drawing through another thread's Display* is
+    // undefined unless the host called XInitThreads(), and a host that did not is a host where this works
+    // until the day it does not.
+    why: 'Makes the Linux panel reuse the host display connection instead of opening its own, which is undefined behaviour in any host that did not call XInitThreads.',
+    find: '   p->dpy = XOpenDisplay(nullptr);',
+    replace: '   p->dpy = XOpenDisplay(getenv("DISPLAY"));',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-amp-chain-check.mjs',
+    // ⭐ THE BUG THE RUNNER FOUND, AS A MUTATION — the exact line that shipped. A property the stages refactor
+    // removed, read at module load, in a script only a dispatched runner ever executes.
+    why: 'Puts the ARM chain check back on the parameter property the stages refactor removed, so it throws at load and the chain proof silently stops existing.',
+    find: '  const at = chainParams(AMP_CHAIN).findIndex((p) => p.key === key);',
+    replace: '  const at = AMP_CHAIN.params.findIndex((p) => p.key === key);',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ FOUND BY THE WINDOWS RUNNER, not by reading: `__atomic_*` are GCC/Clang builtins and MSVC has none.
+    // Gating the helpers on _MSC_VER is what makes the file compile twice.
+    why: 'Removes the MSVC branch of the GUI handover, so the plugin stops compiling with MSVC and only clang and gcc are left.',
+    find: '#if defined(_MSC_VER)\n#include <intrin.h>',
+    replace: '#if defined(_MSC_VER) && !defined(_MSC_VER)\n#include <intrin.h>',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ THE ARM RENDER CHECK'S SOURCE LIST, AS A MUTATION. It named three generated files by hand, and the
+    // day the generator emitted a fourth the link failed with "undefined reference to morpheus_gui_extension".
+    why: 'Puts the hand-written source list back into the render check, so a generated file the list does not know about breaks the link.',
+    find: '    ...generatedSources(pluginDir),',
+    replace: "    join(pluginDir, 'Source', 'Plugin.cpp'),\n    join(pluginDir, 'Source', 'PluginEntry.cpp'),\n    join(pluginDir, 'Source', 'ModelData.cpp'),",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
+    // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has
+    // to pick the platform's own panel, which means it is written twice (cmake and tools) and cross-checked.
+    why: 'Stops the tools filtering by platform, so they hand the Cocoa panel to a compiler that has no Objective-C++ front end.',
+    find: '    .filter((f) => !PANEL_FILES.includes(f) || f === chosen)',
+    replace: '    .filter((f) => true)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ THE THIRD ROUND OF THE SAME MISTAKE. Sources, then panels, then LIBRARIES — the runner answered this
+    // one with "undefined reference to `XUnmapWindow'". Dropping X11 is what a hand-written link line looks
+    // like when the panel grows a dependency.
+    why: 'Stops the tool linking X11 for the Linux panel, so the offline host fails to link on the runner with undefined Xlib symbols.',
+    find: "  linux: ['-lX11', '-pthread'],",
+    replace: "  linux: [],",
   },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an

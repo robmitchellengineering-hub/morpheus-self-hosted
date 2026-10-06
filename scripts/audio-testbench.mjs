@@ -119,9 +119,14 @@ if (!value('--plugin')) {
   console.log(`generated a reference plugin in ${projectDir}`);
 }
 
-const sources = ['Source/Plugin.cpp', 'Source/PluginEntry.cpp'].map((p) => join(projectDir, p)).filter(existsSync);
+// ⚠️ THE SAME RULE AS THE GENERATED CMAKELISTS: every source, and exactly ONE panel — the one this platform
+// compiles. Naming the files broke when the generator grew one; globbing every extension fed the Cocoa panel
+// to gcc on Linux, which has no Objective-C++ front end. See audio-nam-render-check.mjs for both failures.
+const { generatedSources, generatedLinkFlags } = await import('./audio-nam-render-check.mjs');
+const sources = generatedSources(projectDir);
+const linkFlags = generatedLinkFlags();
 if (!sources.length) {
-  console.error(`no CLAP sources under ${projectDir}/Source — expected Plugin.cpp and PluginEntry.cpp`);
+  console.error(`no CLAP sources under ${projectDir}/Source`);
   process.exit(2);
 }
 const hostSrc = join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp');
@@ -132,7 +137,7 @@ const compile = spawnSync(cxx, [
   '-std=c++20', '-O2', '-w',
   `-I${clapIncludeDir()}`,
   `-I${join(projectDir, 'Source')}`,
-  hostSrc, ...sources, '-o', bin,
+  hostSrc, ...sources, ...linkFlags, '-o', bin,
 ], { encoding: 'utf8' });
 if (compile.status !== 0) {
   console.error(`compilation failed:\n${compile.stderr || compile.stdout}`);

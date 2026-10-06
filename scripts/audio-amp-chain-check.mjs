@@ -20,11 +20,14 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logSweep, withFades } from '../server/src/lib/audio/signals.js';
+// The one rule for what a generated plugin compiles and links with — see generatedSources() there for the two
+// failures that put it in one place rather than three.
+import { generatedLinkFlags, generatedSources } from './audio-nam-render-check.mjs';
 import { toneDesign, toneProcess, toneResponseDb } from '../server/src/lib/audio/toneStack.js';
 import { convolveDirect, rms } from '../server/src/lib/audio/dsp.js';
 import { decodeWav } from '../server/src/lib/audio/wav.js';
 import { MAX_CAB_TAPS } from '../server/src/lib/cabIr.js';
-import { AMP_CHAIN, GATE_OFF_DB } from '../server/src/lib/ampChain.js';
+import { AMP_CHAIN, GATE_OFF_DB, chainParams } from '../server/src/lib/ampChain.js';
 import { clapIncludes, compareToReference, readMraw, writeMraw } from './audio-nam-render-check.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,8 +43,13 @@ export const SETTLE_FRACTION = 0.75;
 // inserted at position 2, at which point every one of these cases silently addressed the wrong control — the
 // bass case became the gate. A number copied from a table is a number that goes stale the moment the table
 // moves; this reads it.
+// ⚠️ AND IT WENT STALE ANYWAY, WHICH IS WHY THE RUNNER FOUND IT AND NOTHING ELSE DID. When a chain became a
+// list of STAGES, `AMP_CHAIN.params` stopped existing — the parameters are DERIVED now — so this file threw on
+// import and the ARM chain proof had been dead since that day. No guard caught it: it is a script that needs a
+// BUILT plugin, so the only thing that runs it is the runner, and the runner had not been dispatched since.
+// The parameter list comes from the accessor that replaced the property, in the order the host will see it.
 const paramId = (key) => {
-  const at = AMP_CHAIN.params.findIndex((p) => p.key === key);
+  const at = chainParams(AMP_CHAIN).findIndex((p) => p.key === key);
   if (at === -1) throw new Error(`the amp chain has no "${key}" parameter — the cases below are stale`);
   return at + 1;
 };
@@ -63,16 +71,19 @@ export const TONE_CASES = [
 function buildHost({ pluginDir, clapInclude, work }) {
   const bin = join(work, 'host');
   const cxx = process.env.CXX ?? 'c++';
-  // CabIr.cpp is in the list because the plugin links against its symbols whether or not it holds a cabinet:
-  // the header declares them, and only the `#if` inside decides. Leaving it out is a link error naming
-  // `morpheus_cab_l`, which is exactly how this was found.
-  const sources = ['Plugin.cpp', 'PluginEntry.cpp', 'ModelData.cpp', 'CabIr.cpp']
-    .map((f) => join(pluginDir, 'Source', f))
-    .filter((f) => existsSync(f));
+  // ⚠️ THE SOURCES AND THE LINK FLAGS COME FROM ONE PLACE, NOT FROM THIS FILE. This listed four generated
+  // files by hand — with a good comment explaining why CabIr.cpp had to be in it — and that list was still a
+  // list: when the generator grew a fifth file (the panel) the link failed on the ARM runner with
+  //
+  //   Plugin.cpp:(.text+0x9b0): undefined reference to `morpheus_gui_extension'
+  //
+  // which is the same failure, from the same cause, as the one in audio-nam-render-check.mjs an hour earlier.
+  // `generatedSources` also picks the platform's panel and `generatedLinkFlags` links what it draws with.
   const run = spawnSync(cxx, [
     '-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT',
     `-I${clapInclude}`, `-I${join(pluginDir, 'Source')}`,
-    join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'), ...sources, '-o', bin,
+    join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'),
+    ...generatedSources(pluginDir), ...generatedLinkFlags(), '-o', bin,
   ], { encoding: 'utf8' });
   if (run.status !== 0) {
     console.error(`[amp-chain] x the host failed to build:\n${(run.stderr || run.stdout || '').slice(-3000)}`);
