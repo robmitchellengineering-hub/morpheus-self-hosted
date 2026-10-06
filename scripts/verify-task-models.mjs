@@ -53,9 +53,9 @@ check('every family is complete enough to build', validateRegistry(), []);
 // ⚠️ ONE FIELD AT A TIME. The first version of this passed a fixture that was missing EVERYTHING, so it stayed
 // green with any single requirement deleted — a mutation proved it, and the check now requires each field
 // individually. A validator is only worth having if it says no to each thing it claims to require.
-const complete = { id: 'x', label: 'X', question: '?', why: 'because', data: { layout: 'x' }, runtime: { how: 'generated' }, embed: ['cpp'], measure: ['accuracy'], built: ['data'], next: [], notYet: [] };
+const complete = { id: 'x', label: 'X', question: '?', why: 'because', data: { layout: 'x' }, runtime: { how: 'generated' }, quantise: { bits: [8] }, embed: ['cpp'], measure: ['accuracy'], built: ['data'], next: [], notYet: [] };
 check('…a complete entry passes the validator', validateRegistry([complete]), []);
-for (const field of ['label', 'question', 'why', 'data', 'runtime', 'embed', 'measure', 'built']) {
+for (const field of ['label', 'question', 'why', 'data', 'runtime', 'quantise', 'embed', 'measure', 'built']) {
   const broken = { ...complete, [field]: ['embed', 'measure', 'built'].includes(field) ? [] : undefined };
   check(`…and it requires "${field}" rather than merely mentioning it`, validateRegistry([broken]).length > 0, true);
 }

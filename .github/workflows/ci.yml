@@ -711,6 +711,13 @@ jobs:
       - name: A dataset is judged before it costs a GPU hour
         run: node scripts/verify-task-models.mjs
 
+      # VERIFY and PACK: a container's claim has to be reproducible from the container, and a bit width has to be
+      # a measurement. The check that matters most is the front-end probe — a runtime whose window, padding or hop
+      # has drifted from the training project still classifies the test set perfectly, and this is the only thing
+      # that sees it. The last section emits the C, COMPILES IT and compares its scores against the reader.
+      - name: A model is verified against its own evidence
+        run: node scripts/verify-task-ladder.mjs
+
       # The price and the meter must agree: the exemption rule is tested behaviourally, and no
       # customer-facing file may promise a free own-key path the billing code does not honour.
       - name: AI cost claims match the meter

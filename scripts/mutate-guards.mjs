@@ -112,6 +112,21 @@ for (const m of selected) {
     else if (run.status === 0) { verdict = 'SURVIVED'; output = tail(run.stdout); }
     else { verdict = 'caught'; detail = `exit ${run.status}`; }
   } finally {
+    // ⚠️ BEFORE RESTORING, CHECK THAT THE SABOTAGE IS STILL WHAT IS ON DISK. The restore in the `finally` is a
+    // blind `writeFileSync(original)` — so if anything else wrote to this file while the guard was running, that
+    // write is DESTROYED, and the hash check below cannot see it because it compares the file against the backup
+    // that was just put there. That is not hypothetical: a long `--allow-dirty` run left in the background while
+    // the file is edited eats the edit silently, and the `--allow-dirty` flag is exactly the case where it
+    // happens. If the bytes are not ours any more, leave them alone and say where the backup is.
+    const onDisk = readFileSync(abs).toString('utf8');
+    if (onDisk !== mutated) {
+      writeFileSync(join(backups, `${m.guard}.${m.file.replace(/\//g, '_')}.CONFLICT`), onDisk);
+      console.error(`\n!! ${m.file} changed underneath this run, so it was NOT restored.`);
+      console.error(`   the sabotage is still in place — put these bytes back by hand:`);
+      console.error(`   ${join(backups, `${m.guard}.${m.file.replace(/\//g, '_')}`)}`);
+      console.error(`   what was on disk when this was noticed is saved as the .CONFLICT file beside it.`);
+      process.exit(4);
+    }
     writeFileSync(abs, original);
     const after = sha(readFileSync(abs));
     if (after !== originalHash) {

@@ -68,17 +68,26 @@ export const TASK_FAMILIES = [
       split: { train: 0.8, validation: 0.1, test: 0.1, recordingRule: 'the file name before the first _ or - is the recording; clips sharing one are never split across train and test' },
       recommendedClipsTotal: 100,
     },
-    runtime: { how: 'generated', what: 'a small convolutional network, emitted as C++ and Python source' },
-    embed: ['cpp', 'python'],
+    runtime: { how: 'generated', what: 'a small convolutional network, emitted as C with no runtime to link' },
+    // ⚠️ THE WIDTHS ARE PART OF THE FAMILY, NOT A FLAG ON A COMMAND LINE. "8-bit" means something different for
+    // a classifier head than for a WaveNet: what varies is how much of the accuracy survives, and that is a
+    // property of the task, the data and the architecture together. Naming the widths here is what stops PACK
+    // from offering a number nobody has measured — and `accumulatorBits` is here because a fixed-point datapath
+    // is designed around it, which is the same reason the container carries it.
+    quantise: { bits: [32, 16, 8], accumulatorBits: 32, scales: 'one per output channel, block_size = the channel stride' },
+    embed: ['cpp'],
     measure: ['accuracy', 'confusion', 'bytes', 'latencyMs'],
     // Said plainly rather than discovered: what this family will not do, and why.
     notYet: [
       'no detection or segmentation — one label per clip, not one per region',
       'no multi-label clips, so a recording of two things at once belongs to neither',
       'no streaming — a clip is classified whole, which is also what makes the latency figure honest',
+      // ⚠️ NAMED RATHER THAN PROMISED. A Python embedding is a target this family wants and this stage cannot
+      // write yet; listing it in `embed` would make the registry say a model can go somewhere it cannot.
+      'no Python embedding yet — EMBED writes C, and it is the target that gets compiled and compared',
     ],
-    built: ['data'],
-    next: ['train', 'verify', 'pack', 'embed'],
+    built: ['data', 'train', 'verify', 'pack', 'embed'],
+    next: ['Python embedding', 'a second family', 'the build-outcome classifier'],
   },
 ];
 
@@ -108,6 +117,9 @@ export function validateRegistry(families = TASK_FAMILIES) {
     }
     if (!f?.data) problems.push(`${at}: names no data contract, so nothing can say whether a dataset fits it`);
     if (!f?.runtime?.how) problems.push(`${at}: names no runtime, so nobody can say what a model runs on`);
+    if (!Array.isArray(f?.quantise?.bits) || !f.quantise.bits.length) {
+      problems.push(`${at}: names no bit width to pack at, so a trained model has no size to be measured against`);
+    }
     if (!Array.isArray(f?.embed) || !f.embed.length) problems.push(`${at}: names no embedding target, so a trained model has nowhere to go`);
     if (!Array.isArray(f?.measure) || !f.measure.length) problems.push(`${at}: names no measurement, so nothing can say whether it works`);
     if (!Array.isArray(f?.built) || !f.built.length) problems.push(`${at}: claims to have built nothing`);
