@@ -221,6 +221,26 @@ export const PANEL_BY_PLATFORM = {
 };
 export const PANEL_FILES = ['PluginGui.mm', 'PluginGuiWin.cpp', 'PluginGuiX11.cpp', 'PluginGui.cpp'];
 
+/**
+ * What a panel has to be LINKED against, per platform — the other half of the same rule.
+ *
+ * ⚠️ THE SOURCES WERE ONLY HALF OF IT. With the right file chosen, this still failed on the runner:
+ *
+ *   PluginGuiX11.cpp:(.text+0xa8): undefined reference to `XUnmapWindow'
+ *
+ * because the generated CMakeLists links X11 for that panel and this tool did not. Three separate rounds of
+ * the same mistake now — a hand-written list of a generated project's sources, then of its panels, then of its
+ * libraries — which is why both halves live here together and are cross-checked against the cmake.
+ */
+export const PANEL_LINK = {
+  darwin: ['-framework', 'Cocoa', '-framework', 'QuartzCore'],
+  win32: ['gdi32', 'user32'],
+  linux: ['-lX11', '-pthread'],
+};
+
+/** The link flags this platform's panel needs. Empty for a platform that has no panel. */
+export const generatedLinkFlags = () => PANEL_LINK[process.platform] || [];
+
 export function generatedSources(pluginDir) {
   const dir = join(pluginDir, 'Source');
   if (!existsSync(dir)) return [];
@@ -271,6 +291,7 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
     // only place this runs. A hand-maintained list of a generated project's files is a list that goes stale
     // the moment the generator changes, and the generator is ours to change.
     ...generatedSources(pluginDir),
+    ...generatedLinkFlags(),
     ...nam,
     '-o', hostBin,
   ], 'the offline host + the plugin + the engine');

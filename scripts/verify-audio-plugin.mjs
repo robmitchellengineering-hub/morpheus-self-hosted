@@ -1735,6 +1735,15 @@ check('⭐ …and it picks exactly ONE panel when every platform\'s is sitting i
   pickedPanels.includes('Plugin.cpp') && pickedPanels.filter((f) => f.startsWith('PluginGui')).length === 1, true);
 check('…the one this platform compiles',
   pickedPanels.includes(panelsMod.PANEL_BY_PLATFORM[process.platform] || 'PluginGui.cpp'), true);
+// ⭐ AND THE SOURCES WERE ONLY HALF THE RULE. With the right panel chosen, the runner still failed with
+// "undefined reference to `XUnmapWindow'" — the cmake links X11 for that panel and the tool did not. The link
+// flags live next to the panel map for the same reason, and are cross-checked against the cmake below.
+check('⭐ …and it links what that panel draws with',
+  JSON.stringify(panelsMod.PANEL_LINK.darwin), JSON.stringify(['-framework', 'Cocoa', '-framework', 'QuartzCore']));
+check('…including X11 and the thread the Linux panel runs on',
+  panelsMod.PANEL_LINK.linux.join(' '), '-lX11 -pthread');
+check('…which is not empty on a platform that has a panel',
+  (panelsMod.PANEL_LINK[process.platform] || []).length > 0, true);
 check('…with the stub as the fallback, for a platform none of the three covers',
   /else\(\)\s*\n\s*set\(MORPHEUS_GUI_SOURCE Source\/PluginGui\.cpp\)/.test(guiCmake)
   && panelsMod.PANEL_FILES.includes('PluginGui.cpp'), true);

@@ -1870,6 +1870,16 @@ export const MUTATIONS = [
     find: '    .filter((f) => !PANEL_FILES.includes(f) || f === chosen)',
     replace: '    .filter((f) => true)',
   },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ THE THIRD ROUND OF THE SAME MISTAKE. Sources, then panels, then LIBRARIES — the runner answered this
+    // one with "undefined reference to `XUnmapWindow'". Dropping X11 is what a hand-written link line looks
+    // like when the panel grows a dependency.
+    why: 'Stops the tool linking X11 for the Linux panel, so the offline host fails to link on the runner with undefined Xlib symbols.',
+    find: "  linux: ['-lX11', '-pthread'],",
+    replace: "  linux: [],",
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.
