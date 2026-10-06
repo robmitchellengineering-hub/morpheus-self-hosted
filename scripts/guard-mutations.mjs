@@ -1860,6 +1860,16 @@ export const MUTATIONS = [
     find: '    ...generatedSources(pluginDir),',
     replace: "    join(pluginDir, 'Source', 'Plugin.cpp'),\n    join(pluginDir, 'Source', 'PluginEntry.cpp'),\n    join(pluginDir, 'Source', 'ModelData.cpp'),",
   },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
+    // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has
+    // to pick the platform's own panel, which means it is written twice (cmake and tools) and cross-checked.
+    why: 'Stops the tools filtering by platform, so they hand the Cocoa panel to a compiler that has no Objective-C++ front end.',
+    find: '    .filter((f) => !PANEL_FILES.includes(f) || f === chosen)',
+    replace: '    .filter((f) => true)',
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.

@@ -119,13 +119,11 @@ if (!value('--plugin')) {
   console.log(`generated a reference plugin in ${projectDir}`);
 }
 
-// ⚠️ GLOBBED, NOT NAMED. This listed Plugin.cpp and PluginEntry.cpp, and a generated project now also carries
-// the panel — one file per platform — so a hand-written list breaks the first time the generator emits
-// another. See audio-nam-render-check.mjs for the same fix and the failure that prompted it.
-const sources = readdirSync(join(projectDir, 'Source'))
-  .filter((f) => f.endsWith('.cpp') || f.endsWith('.mm'))
-  .sort()
-  .map((f) => join(projectDir, 'Source', f));
+// ⚠️ THE SAME RULE AS THE GENERATED CMAKELISTS: every source, and exactly ONE panel — the one this platform
+// compiles. Naming the files broke when the generator grew one; globbing every extension fed the Cocoa panel
+// to gcc on Linux, which has no Objective-C++ front end. See audio-nam-render-check.mjs for both failures.
+const { generatedSources } = await import('./audio-nam-render-check.mjs');
+const sources = generatedSources(projectDir);
 if (!sources.length) {
   console.error(`no CLAP sources under ${projectDir}/Source`);
   process.exit(2);

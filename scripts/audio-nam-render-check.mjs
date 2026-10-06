@@ -202,16 +202,32 @@ export function namSources(namcore) {
  * print everything either way.
  */
 /**
- * Every C++/ObjC++ source the scaffold wrote into a plugin project, as absolute paths.
+ * The sources a plugin project compiles ON THIS PLATFORM, as absolute paths.
  *
- * NOT a list of names: the generator owns this set, and a tool that names the files it expects is a tool that
- * breaks the first time the generator emits one more.
+ * ⚠️ NOT A LIST OF NAMES, AND NOT A BARE GLOB EITHER. Both were tried and both failed, in the runner:
+ *
+ *   * naming three files by hand broke the link the day the generator emitted a fourth
+ *     ("undefined reference to morpheus_gui_extension");
+ *   * globbing every .cpp AND .mm then fed the COCOA panel to gcc on Linux, which answered
+ *     "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there, and no reason for one.
+ *
+ * So it picks the panel the way the generated CMakeLists does, and the guard asserts the two agree: one panel
+ * per platform, every other generated source, and no file belonging to a platform you are not on.
  */
+export const PANEL_BY_PLATFORM = {
+  darwin: 'PluginGui.mm',
+  win32: 'PluginGuiWin.cpp',
+  linux: 'PluginGuiX11.cpp',
+};
+export const PANEL_FILES = ['PluginGui.mm', 'PluginGuiWin.cpp', 'PluginGuiX11.cpp', 'PluginGui.cpp'];
+
 export function generatedSources(pluginDir) {
   const dir = join(pluginDir, 'Source');
   if (!existsSync(dir)) return [];
+  const chosen = PANEL_BY_PLATFORM[process.platform] || 'PluginGui.cpp';
   return readdirSync(dir)
     .filter((f) => f.endsWith('.cpp') || f.endsWith('.mm'))
+    .filter((f) => !PANEL_FILES.includes(f) || f === chosen)
     .sort()
     .map((f) => join(dir, f));
 }

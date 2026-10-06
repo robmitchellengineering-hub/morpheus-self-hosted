@@ -18,8 +18,8 @@
 // runs in CI's no-install guards job.
 //
 // Run:  node scripts/verify-audio-plugin.mjs
-import { readFileSync, existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, unlinkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
 import audioPluginWindows from '../server/src/lib/compile-targets/audio-plugin-windows.js';
@@ -1700,12 +1700,44 @@ for (const tool of ['scripts/audio-nam-render-check.mjs', 'scripts/audio-testben
   // tool that patches that file by name for its own self-test is a different thing and stays.
   const fromGlob = tool.includes('audio-nam-render-check')
     ? /\.\.\.generatedSources\(pluginDir\)/.test(src)
-    : /readdirSync\(join\(projectDir, 'Source'\)\)/.test(src);
-  check(`${tool} takes the plugin's sources from a glob, not from a list of names`,
+    : /generatedSources\(projectDir\)/.test(src);
+  check(`${tool} takes the plugin's sources from the platform's own rule, not from a list of names`,
     fromGlob && !/'Source\/Plugin\.cpp'/.test(src), true);
 }
 check('…and the output queue is remembered, because CLAP hands it over in process() and nowhere else',
   /p->out_events = process->out_events;/.test(guiPlugin) && /p->out_events = out;/.test(guiPlugin), true);
+
+// ⭐ THE PANEL RULE IS WRITTEN TWICE, SO IT IS ASSERTED TO AGREE. The generated CMakeLists picks one panel per
+// platform, and the tools that compile the plugin by hand have to pick the SAME one — one panel, and never a
+// file belonging to a platform you are not on. Duplication that cannot drift is a cross-check; duplication
+// that can is the bug this whole section is about.
+const panelsMod = await import('../scripts/audio-nam-render-check.mjs');
+// Read the cmake's own branches rather than looking for the file names anywhere in the file — a substring
+// search passes with the branches swapped, which is the mistake being guarded against.
+const cmakePanels = {};
+for (const m of guiCmake.matchAll(/(?:if|elseif) \(([A-Z0-9]+)\)\s*\n\s*set\(MORPHEUS_GUI_SOURCE Source\/([\w.]+)\)/g)) {
+  cmakePanels[m[1]] = m[2];
+}
+check('⭐ the tools pick the same panel the generated cmake picks, for every platform',
+  JSON.stringify([cmakePanels.APPLE, cmakePanels.WIN32, cmakePanels.UNIX]),
+  JSON.stringify([panelsMod.PANEL_BY_PLATFORM.darwin, panelsMod.PANEL_BY_PLATFORM.win32, panelsMod.PANEL_BY_PLATFORM.linux]));
+// ⭐ AND IT FILTERS — ASSERTED BY RUNNING IT, not by reading it. A glob alone fed the Cocoa panel to gcc on
+// Linux, which answered "cannot execute 'cc1objplus'" after a two-minute configure; the first version of this
+// check compared the maps and passed with the filter deleted.
+const probeDir = mkdtempSync(join(tmpdir(), 'morpheus-gui-sources-'));
+mkdirSync(join(probeDir, 'Source'), { recursive: true });
+for (const f of ['Plugin.cpp', 'PluginEntry.cpp', 'PluginGui.mm', 'PluginGuiWin.cpp', 'PluginGuiX11.cpp', 'PluginGui.cpp']) {
+  writeFileSync(join(probeDir, 'Source', f), '');
+}
+const pickedPanels = panelsMod.generatedSources(probeDir).map((f) => basename(f));
+rmSync(probeDir, { recursive: true, force: true });
+check('⭐ …and it picks exactly ONE panel when every platform\'s is sitting in the directory',
+  pickedPanels.includes('Plugin.cpp') && pickedPanels.filter((f) => f.startsWith('PluginGui')).length === 1, true);
+check('…the one this platform compiles',
+  pickedPanels.includes(panelsMod.PANEL_BY_PLATFORM[process.platform] || 'PluginGui.cpp'), true);
+check('…with the stub as the fallback, for a platform none of the three covers',
+  /else\(\)\s*\n\s*set\(MORPHEUS_GUI_SOURCE Source\/PluginGui\.cpp\)/.test(guiCmake)
+  && panelsMod.PANEL_FILES.includes('PluginGui.cpp'), true);
 
 console.log('\n26. the ARM chain check LOADS, which nothing was checking');
 // ⚠️ FOUND BY DISPATCHING THE RUNNER, NOT BY READING ANYTHING. `audio-amp-chain-check.mjs` read
