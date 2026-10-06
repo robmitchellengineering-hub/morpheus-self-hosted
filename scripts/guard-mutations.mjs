@@ -1960,8 +1960,11 @@ export const MUTATIONS = [
     guard: 'verify-audio-plugin.mjs',
     file: 'scripts/lib/pluginDemo.mjs',
     why: 'Seeds a manifest with no board, which generates the single-Gain plugin while the release page still describes the whole rig.',
-    find: "  return `${JSON.stringify({ name, board: boardJson(DEMO_BOARD) }, null, 2)}\n`;",
-    replace: "  return `${JSON.stringify({ name }, null, 2)}\n`;",
+    // ⚠️ NO ESCAPES IN THIS ONE. The first version ended at the `\n` of the template literal, and a `\n` inside
+    // a single-quoted string in THIS file is a real newline — so the find matched nothing and the mutation was
+    // reported STALE, which is a claim that quietly stops being checked. The shorter string cannot drift that way.
+    find: '{ name, board: boardJson(DEMO_BOARD) }, null, 2',
+    replace: '{ name }, null, 2',
   },
   {
     guard: 'verify-audio-plugin.mjs',
