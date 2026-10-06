@@ -512,7 +512,7 @@ export const MUTATIONS = [
     // ⚠️ THE LINE GREW A FILE when the cabinet landed, and this mutation went STALE — a find that matches
     // nothing is a guard that is no longer proven, and the harness is right to refuse it. It now drops only
     // ModelData.cpp, which is still the thing it is about, while the cabinet's own mutation drops CabIr.cpp.
-    find: 'Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp)',
+    find: 'Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp \\${MORPHEUS_GUI_SOURCE})',
     replace: 'Source/Plugin.cpp Source/CabIr.cpp)',
   },
   {
@@ -797,8 +797,8 @@ export const MUTATIONS = [
     why: 'Makes the gate default to a 0 dB threshold, which with a real signal is a gate that never opens — a plugin that is silent by default.',
     // ⚠️ REPOINTED for the same reason: the gate's parameter now sits inside its stage object, so the
     // line it is on ends differently. The claim is identical — the gate must default to OFF, not to 0 dB.
-    find: "param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate' } },",
-    replace: "param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: 0, role: 'gate' } },",
+    find: "param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate', unit: 'dB' } },",
+    replace: "param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: 0, role: 'gate', unit: 'dB' } },",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -863,8 +863,8 @@ export const MUTATIONS = [
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/audioPluginTemplate.js',
     why: 'Leaves CabIr.cpp out of the plugin library, so nothing defines the taps the plugin links against.',
-    find: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp)',
-    replace: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp)',
+    find: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp \\${MORPHEUS_GUI_SOURCE})',
+    replace: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp \\${MORPHEUS_GUI_SOURCE})',
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -1774,6 +1774,45 @@ export const MUTATIONS = [
     why: 'Puts a hardcoded target list back into the compile panel, so a target the server can build is one the panel refuses to.',
     find: "const SUPPORTED = COMPILE_TARGETS.map((t) => t.value).filter((v) => v !== 'source');",
     replace: "const SUPPORTED = ['web-app', 'python-package', 'windows-exe', 'linux-binary', 'mac-app', 'android-apk', 'ios-app', 'rpi-distro', 'linux-distro', 'arduino-firmware'];",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ THE WHOLE FEATURE, AS ONE LINE. Without this the plugin exposes no panel, and a standalone window
+    // has nothing to put in it — the state that shipped and that only a person opening the app could see.
+    why: 'Stops the plugin advertising a GUI at all, so the standalone window comes up empty and a DAW falls back to its own generic list.',
+    find: '   if (!strcmp(id, CLAP_EXT_GUI)) return morpheus_gui_extension();',
+    replace: '   if (false) return morpheus_gui_extension();',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // A plugin that CLAIMS a window it cannot draw is worse than one that says nothing: hosts handle the
+    // claim in a variety of imaginative ways, and Windows and Linux have no panel here yet.
+    why: 'Makes the non-Apple stub claim a GUI, so a host is told there is a window that nothing can draw.',
+    find: 'extern "C" const clap_plugin_gui_t *morpheus_gui_extension(void) { return nullptr; }',
+    replace: 'extern "C" const clap_plugin_gui_t *morpheus_gui_extension(void) { return (const clap_plugin_gui_t *)1; }',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ A CONTROL AND ITS UNITS ARE ONE FACT. Hardcoding decibels was true while an amp was the only chain
+    // and became wrong the day a delay arrived: its Time control read "340.00 dB".
+    why: 'Puts every parameter back on decibels, so a delay\u2019s Time control is described in units it does not have.',
+    // ⚠️ THE DECLARATION HAS TO GO WITH IT. The first version of this mutation replaced only the two lines
+    // that USE `unit`, which left `const char *unit = kParams[ix].unit;` standing — so the assertion that the
+    // unit reaches the formatter still matched, and the mutation "survived" while proving nothing at all.
+    find: "   const char *unit = kParams[ix].unit;\n   if (unit && unit[0]) snprintf(out, capacity, \"%.2f %s\", value, unit);\n   else snprintf(out, capacity, \"%.2f\", value);",
+    replace: "   snprintf(out, capacity, \"%.2f dB\", value);",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // The panel writes on the main thread and the audio thread reads. Without the pickup the knob moves and
+    // nothing else does, which reads as a broken plugin rather than as a missing line.
+    why: 'Stops the audio thread collecting what the panel changed, so a dragged control moves and the sound does not.',
+    find: '      if (__atomic_exchange_n(&p->gui_pending[k], 0, __ATOMIC_ACQ_REL)) p->value[k] = p->gui_value[k];',
+    replace: '      if (false) p->value[k] = p->gui_value[k];',
   },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
