@@ -552,6 +552,20 @@ add_filter( 'pre_http_request', $serve_log, 10, 3 );
 add_filter( 'pre_http_request', $deny_quarantine, 10, 3 );
 $r5 = Morpheus_Fixes::apply( 'morpheus_public_debug_log' );
 $row5 = clean_qrow( $r5, 'debug.log' );
+// ⚠️ THE DIAGNOSTIC IS PART OF THE ASSERTION, NOT A DEBUG PRINT LEFT BEHIND. This scenario passed on macOS and
+// FAILED on the first GitHub runner that ever ran it (2026-10-06, the workflow's first dispatch), and the log
+// said only "FAIL" — five assertions with no statement of what the plugin actually decided. A cross-platform
+// harness has to say WHY when it disagrees with itself, or the next person starts by guessing.
+if ( empty( $r5['ok'] ) || null === $row5 ) {
+	echo "        [diag] apply() said: ok=" . ( $r5['ok'] ? 'true' : 'false' )
+		. " code=" . ( $r5['code'] ?? '—' )
+		. " message=" . ( $r5['message'] ?? '—' ) . "\n";
+	echo "        [diag] scan said: status=" . ( $dbg_served['status'] ?? '—' )
+		. " debug.log exists=" . ( is_file( $debuglog ) ? 'yes' : 'no' )
+		. " served_is_the_file(log_body, url_body)="
+		. ( Morpheus_Clean::served_is_the_file( $log_body, $log_body ) ? 'true' : 'false' ) . "\n";
+	echo "        [diag] rows in the result: " . implode( ',', array_map( function ( $r ) { return (string) ( $r['name'] ?? '?' ); }, (array) ( $r5['rows'] ?? array() ) ) ) . "\n";
+}
 ok( ! empty( $r5['ok'] ) && null !== $row5, 'success: with the URL serving it, the log is quarantined' );
 ok( ! is_file( $debuglog ), 'success: …and is no longer at the served path' );
 $rec2 = Morpheus_Fixes::attempts()['morpheus_public_debug_log'] ?? null;
