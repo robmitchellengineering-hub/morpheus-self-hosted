@@ -32,8 +32,11 @@
  * So the rule is:
  *
  *   - No third-party SEO plugin active  → Morpheus OWNS THE HEAD: it emits
- *     title, description, canonical, robots, Open Graph and Twitter tags
- *     itself, from its own postmeta. Full control, all operable in the widget.
+ *     title, description, robots, Open Graph and Twitter tags itself, from its own
+ *     postmeta, and OWNS THE CANONICAL rather than necessarily printing it: when
+ *     core's own `rel_canonical()` is going to print a tag, ours is handed to it
+ *     through core's `get_canonical_url` filter, so exactly one tag exists and its
+ *     value is Morpheus's. Full control, all operable in the widget.
  *   - Yoast / Rank Math / AIOSEO / SEOPress active → Morpheus DRIVES THAT
  *     PLUGIN: it reads and writes that plugin's own keys so its output is what
  *     the widget controls, and emits nothing itself. No duplicates either way.
@@ -1142,9 +1145,27 @@ class Morpheus_SEO {
 		if ( $desc !== '' ) {
 			echo "\n\t<meta name=\"description\" content=\"" . esc_attr( wp_strip_all_tags( $desc ) ) . "\" />\n";
 		}
+		// ⚠️ ONE CANONICAL TAG, AND WE OWN ITS VALUE — not necessarily the tag.
+		//
+		// WordPress core hooks its own `rel_canonical()` onto `wp_head` at priority 10, and we emit at priority 1,
+		// so printing our own tag produced TWO identical `<link rel="canonical">` tags on every singular view —
+		// which the live store's homepage did, verified by fetching it. Two canonical tags are a defect even when
+		// they agree: a consumer has to decide which to believe, and the day they disagree is the day the wrong
+		// URL gets indexed.
+		//
+		// The fix is not to delete anybody's tag. It is to decide WHO OWNS WHAT: when core is going to print one,
+		// we hand it OUR value through core's own `get_canonical_url` filter and print nothing ourselves. One tag,
+		// our value, no deletion — and if something has removed core's callback, we print it as before.
 		$canonical = $f['canonical'] !== '' ? $f['canonical'] : $url;
 		if ( $canonical ) {
-			echo "\t<link rel=\"canonical\" href=\"" . esc_url( $canonical ) . "\" />\n";
+			if ( self::core_prints_canonical() ) {
+				// Added here, at priority 1, so it is in place well before core's callback runs at 10.
+				add_filter( 'get_canonical_url', static function () use ( $canonical ) {
+					return $canonical;
+				}, 20 );
+			} else {
+				echo "\t<link rel=\"canonical\" href=\"" . esc_url( $canonical ) . "\" />\n";
+			}
 		}
 
 		// Open Graph + Twitter. og:image is only emitted when there IS one —
@@ -1223,6 +1244,22 @@ class Morpheus_SEO {
 			$nodes[] = $site;
 		}
 		echo "\t<script type=\"application/ld+json\">" . wp_json_encode( $nodes ) . "</script>\n";
+	}
+
+	/**
+	 * Is WordPress core going to print a canonical tag of its own?
+	 *
+	 * Core adds `rel_canonical` to `wp_head` at priority 10 (`wp-includes/default-filters.php`), and the function
+	 * is also CALLED DIRECTLY by many themes. Either way the tag appears, and either way `has_action` is the right
+	 * question to ask — a theme calling it directly is still core's function printing core's tag.
+	 *
+	 * ⚠️ THIS IS WHY THE DUPLICATE EXISTED AND WHY IT IS FIXABLE RATHER THAN A TASTE QUESTION. The two emitters
+	 * are OURS and CORE'S, both of them known, so nobody has to guess who is printing the second tag — and the
+	 * value core prints can be ours, because `rel_canonical()` runs `wp_get_canonical_url()`, which applies the
+	 * `get_canonical_url` filter.
+	 */
+	private static function core_prints_canonical() {
+		return (bool) has_action( 'wp_head', 'rel_canonical' );
 	}
 
 	/**

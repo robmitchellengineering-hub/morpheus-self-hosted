@@ -311,14 +311,18 @@ foreach ( $ld_blocks as $block ) {
 }
 ok( $bad_json === 0, 'every JSON-LD block parses as JSON (' . count( $ld_blocks ) . ' block(s))' );
 
-// KNOWN FINDING, deliberately not fixed here: while Morpheus owns the head we
-// emit our own canonical at wp_head priority 1 and WordPress core's
-// rel_canonical() still fires at priority 10, so a singular view can render the
-// tag twice. The live homepage does. Removing core's is a shared-ownership
-// decision (it belongs with the head-handover work), so this asserts only that
-// we emit one and reports the count instead of failing on the duplicate.
+// ⭐ EXACTLY ONE CANONICAL, AND IT CARRIES OUR VALUE.
+//
+// This was a KNOWN FINDING that asserted only "at least one" and reported the count, because the duplicate came
+// from WordPress core's own `rel_canonical()` at wp_head priority 10 and removing it looked like a
+// shared-ownership question. It was not: both emitters are known, so the plugin now OWNS THE VALUE instead of
+// printing a second tag — core's `get_canonical_url` filter returns Morpheus's canonical, and we print nothing
+// when core is going to. The live store's homepage was rendering the tag twice; this is the assertion that would
+// have caught it, and it fails on the duplicate rather than reporting it.
 $canonical_count = substr_count( $head, 'rel="canonical"' );
-ok( $canonical_count >= 1, 'head carries our canonical (canonical tags rendered: ' . $canonical_count . ')' );
+ok( 1 === $canonical_count, 'the head carries EXACTLY ONE canonical tag (found ' . $canonical_count . ')' );
+// And it is OURS — the custom value written above, not the permalink core would have derived on its own.
+ok( strpos( $head, 'rel="canonical" href="https://example.com/canonical"' ) !== false, 'carrying the canonical Morpheus set, not the one core derived' );
 ok( strpos( $head, 'name="robots"' ) === false, 'no robots tag while the page is indexable' );
 
 // noindex is stored differently per plugin and is the one field with its own
