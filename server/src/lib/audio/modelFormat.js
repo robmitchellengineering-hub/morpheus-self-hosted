@@ -31,8 +31,8 @@ export const bytesForWeights = (count, bits) => (count * bits) / 8;
  * TENSORS because an LSTM is three (input weights, recurrent weights, bias) and a format that assumed one array
  * per layer could not describe the recurrent models this whole exercise is about.
  */
-export function quantizedModel({ architecture, sampleRate, layers, io = {}, source = {}, accumulatorBits = 32 }) {
-  return {
+export function quantizedModel({ architecture, sampleRate, layers, io = {}, source = {}, accumulatorBits = 32, family = null, task = null, card = null }) {
+  const model = {
     format: MODEL_FORMAT,
     architecture,
     sample_rate: sampleRate,
@@ -41,6 +41,14 @@ export function quantizedModel({ architecture, sampleRate, layers, io = {}, sour
     source,
     layers,
   };
+  // ⚠️ A TASK IS AN ADDITION, NOT A VERSION. `family`, `task` and `card` are written ONLY when they are given,
+  // so every container produced before there was more than one kind of model is byte-identical — and the
+  // format number does not move for a field that was always optional. The audio path is the reason this is a
+  // format at all; it should not have to change because a classifier arrived.
+  if (family) model.family = family;
+  if (task) model.task = task;
+  if (card) model.card = card;
+  return model;
 }
 
 /** Everything wrong with a model, as a list a human can act on. Never throws on bad input. */
@@ -50,6 +58,18 @@ export function validateModel(model) {
   if (model.format !== MODEL_FORMAT) errors.push(`format is "${model.format}", expected "${MODEL_FORMAT}"`);
   if (!(model.sample_rate > 0)) errors.push(`sample_rate must be positive, got ${model.sample_rate}`);
   if (!(model.accumulator_bits > 0)) errors.push(`accumulator_bits must be positive, got ${model.accumulator_bits}`);
+  // ⚠️ A FAMILY IS OPTIONAL AND A LABEL LIST IS NOT. A container with `family: 'audio.classify'` and no labels
+  // describes a model whose outputs mean nothing — the consumer would have to guess what index 3 is. It is
+  // checked HERE rather than where the file is written, because a container read from somebody else's disk is
+  // exactly as likely to be wrong as one we just made.
+  if (model.family != null && typeof model.family !== 'string') errors.push(`family must be a string, got ${typeof model.family}`);
+  if (model.family && String(model.family).endsWith('.classify')) {
+    if (!Array.isArray(model.task?.labels) || model.task.labels.length < 2) {
+      errors.push('a classifier needs at least two labels in task.labels, or its outputs cannot be read');
+    } else if (new Set(model.task.labels).size !== model.task.labels.length) {
+      errors.push('task.labels has a duplicate, so two outputs mean the same thing');
+    }
+  }
   if (!Array.isArray(model.layers) || model.layers.length === 0) errors.push('a model needs at least one layer');
   for (const [i, layer] of (model.layers || []).entries()) {
     const where = `layer ${i} (${layer?.name ?? 'unnamed'})`;

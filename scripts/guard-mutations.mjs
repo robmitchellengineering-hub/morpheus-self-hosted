@@ -1918,6 +1918,34 @@ export const MUTATIONS = [
     find: "    if (!Array.isArray(f?.measure) || !f.measure.length) problems.push(`${at}: names no measurement, so nothing can say whether it works`);",
     replace: '    // measurement check removed',
   },
+  {
+    guard: 'verify-task-models.mjs',
+    file: 'server/src/lib/tasks/trainProject.js',
+    // ⭐ THE ORDER OF THE GATE, as a mutation. Moving the check into main() puts it AFTER the scientific
+    // imports, so a user who has not installed the requirements is told about numpy instead of about their
+    // data — on the one run where the answer about their data matters most. The first version of this file
+    // did exactly that, and it was found by trying to test it.
+    why: 'Moves the pre-flight check after the scientific imports, so a missing dependency hides the verdict about the dataset.',
+    find: 'VERDICT = load_preflight(os.path.dirname(os.path.abspath(__file__)))',
+    replace: 'VERDICT = {"ok": True, "issues": []}',
+  },
+  {
+    guard: 'verify-task-models.mjs',
+    file: 'server/src/lib/tasks/trainProject.js',
+    // ⚠️ THE RECORDING RULE IS THE SPLIT. Without it the loader splits by CLIP, windows of one take land on
+    // both sides of the line, and the score measures memory.
+    why: 'Removes the recording rule from the loader, so the split is by clip and near-identical windows are tested on.',
+    find: 'def recording_of(path):',
+    replace: 'def renamed_recording_of(path):',
+  },
+  {
+    guard: 'verify-task-models.mjs',
+    file: 'scripts/task.mjs',
+    // The verdict is written INTO the project — that is what makes the pre-flight a gate rather than advice.
+    why: 'Stops the scaffold writing the dataset verdict into the project, so the trainer has nothing to refuse on.',
+    find: 'const project = trainingProject(familyId, verdict);',
+    replace: 'const project = trainingProject(familyId, null);',
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.
