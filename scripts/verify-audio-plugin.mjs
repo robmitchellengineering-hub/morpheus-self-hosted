@@ -1810,11 +1810,14 @@ check('…with a control for every block that has one, so nothing is in the sign
 // using the shared definition, its release silently becomes a different product under the same tag.
 const demoRunners = ['scripts/audio-plugin-macos-runner-build.mjs', 'scripts/audio-plugin-windows-runner-build.mjs', 'scripts/audio-plugin-linux-arm-runner-build.mjs'];
 const runnerText = Object.fromEntries(demoRunners.map((f) => [f, readFileSync(f, 'utf8')]));
-// ⚠️ THE IMPORT AND THE CALL, BOTH. Checking only the import passes for a script that imports the definition
-// and then writes its own manifest anyway — which is precisely the bug: three files each with a hand-written
-// manifest, one of which said `chain: 'amp'` and published a different product under the same release tag.
+// ⚠️ THE IMPORT AND THE CALL, BOTH — AND THE CALL HAS TO BE MATCHED AS CODE. The first version asked whether
+// the file contains the text `demoManifest()`, and it does: the COMMENT above the seed mentions it. So the
+// mutation that puts a runner back on a hand-written manifest left the word behind in prose, the check stayed
+// green, and `mutate-guards` reported it SURVIVED. This is the fourth time this week that a check was anchored
+// on text the mutation does not remove; matching the seed line itself is the version that cannot be.
 check('every runner seeds the shared definition rather than its own manifest',
-  demoRunners.filter((f) => !/from '\.\/lib\/pluginDemo\.mjs'/.test(runnerText[f]) || !/demoManifest\(\)/.test(runnerText[f])), []);
+  demoRunners.filter((f) => !/from '\.\/lib\/pluginDemo\.mjs'/.test(runnerText[f])
+    || !/seed\.push\(\{ path: 'morpheus\.plugin\.json', content: demoManifest\(\) \}\)/.test(runnerText[f])), []);
 check('…and every one of them can carry a cabinet, which is what a demo needs to sound like an amplifier',
   demoRunners.filter((f) => !/--cab/.test(runnerText[f])), []);
 
