@@ -200,8 +200,13 @@ jobs:
             terms, the model's provenance and the third-party licences.
 
             This is the amplifier stage: a neural amp model from NeuralAmpModelerCore, with an input trim,
-            a noise gate and a three-band tone stack. Unsigned. Not the product — what Morpheus makes for
-            you is a plugin built in your own repository around your own model and cabinet.
+            a noise gate and a three-band tone stack. **It draws its own control panel** — the plugin owns the
+            sliders, so the standalone app has knobs rather than an empty window, and a DAW shows them instead
+            of its generic parameter list. Every control is in its own units (dB, %, ms).
+
+            Unsigned. Not the product — what Morpheus makes for you is a plugin built in your own repository
+            around your own model and cabinet, arranged as a signal path you order yourself (a drive, a delay
+            and a spring reverb are blocks you can add there; this download is the amplifier chain).
           files: |
             ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/build/assets/*.zip
             ${{ runner.temp }}/BUILD-PROOF-linux-arm.txt
