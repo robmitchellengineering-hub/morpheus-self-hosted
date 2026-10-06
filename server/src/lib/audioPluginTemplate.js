@@ -803,7 +803,28 @@ else()
   set(MORPHEUS_GUI_SOURCE Source/PluginGui.cpp)
 endif()
 
-add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp \${MORPHEUS_GUI_SOURCE})
+# ⚠️ OBJECT, NOT STATIC, AND THE DIFFERENCE IS WHETHER THE MODEL LOADS AT ALL.
+#
+# The engine's architectures register themselves in a static initializer — nam::factory::Helper in
+# NAM/wavenet/model.cpp calls ConfigParserRegistry::instance().registerParser(...) at program start. A
+# STATIC library is an ARCHIVE, and the linker pulls an object out of an archive only when something references
+# a symbol in it. Nothing references anything in wavenet/model.cpp — the only thing it exports is a
+# constructor — so the object was never linked, the WaveNet parser was never registered, and every build of
+# this plugin answered:
+#
+#     No config parser registered for architecture: WaveNet
+#
+# and fell back to the gain stage. The plugin still loaded, still opened in a DAW, still made sound: it just
+# was not the amplifier, and the BUILD-PROOF listed the right parameter names the whole time.
+#
+# ⚠️ AND THE PROOF DID NOT CATCH IT because the proof compiles the sources ITSELF, straight into a test binary
+# — the same way NeuralAmpModelerCore's own tools do, compiling NAM_SOURCES straight into an executable
+# — so the registration was always present there. The plugin people download is built by THIS file, and it was
+# never run anywhere until the AU was opened on a Mac and asked to load a model.
+#
+# An OBJECT library links every object unconditionally, which is what "the engine is part of this plugin"
+# actually means.
+add_library(morpheus_plugin-impl OBJECT Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp \${MORPHEUS_GUI_SOURCE})
 target_include_directories(morpheus_plugin-impl PRIVATE Source)
 target_link_libraries(morpheus_plugin-impl PUBLIC clap clap-wrapper-extensions)
 # The panel is drawn with the system's own frameworks — no toolkit, no GPU context, and therefore nothing to

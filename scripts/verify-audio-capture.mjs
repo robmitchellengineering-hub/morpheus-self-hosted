@@ -392,6 +392,116 @@ console.log('\n8. the endpoint and the panel run the same code, and store nothin
   check('the panel does not hardcode the re-amp signal\'s hash', !/36cd1af62985c2fac3e654333e36431e/.test(panelSrc), true);
 }
 
+// ── the CABINET capture: a linear system, so a known answer exists ────────────────────────────────────────
+// ⚠️ AN AMP CAPTURE CAN ONLY BE CHECKED AGAINST THE TRAINER'S RULES, because training is a fit and the answer
+// depends on the GPU. A CABINET IS LINEAR, so the capture has an exact answer: convolve a known response with
+// the sweep, deconvolve, and the response must come back. That is what makes this half provable without any
+// hardware at all — and it is the check that would catch a deconvolution that is subtly wrong, which otherwise
+// produces a perfectly plausible-looking cabinet that is not the one anybody recorded.
+console.log('\n14. the cabinet capture recovers the cabinet it was given');
+const { sweepSignal, deconvolve, normaliseIr, checkIr, IR_SWEEP, DEFAULT_TAPS } = await import('../server/src/lib/audio/irCapture.js');
+const { fftInPlace, nextPow2, biquadCoefficients, biquadProcess } = await import('../server/src/lib/audio/dsp.js');
+const { whiteNoise } = await import('../server/src/lib/audio/signals.js');
+
+const IR_RATE = 48000;
+const irSweep = sweepSignal({ sampleRate: IR_RATE });
+
+/** A speaker-like response: band-limited, decaying, and nothing above what the sweep covers. */
+function speakerLike({ taps = 2048, seed = 3, cutoff = 6000, decay = 400 } = {}) {
+  const raw = whiteNoise({ length: taps, seed, amplitude: 1 });
+  const lp = biquadProcess(biquadCoefficients({ type: 'lowpass', freq: cutoff, q: 0.707, sampleRate: IR_RATE }), raw);
+  const out = new Float64Array(taps);
+  for (let i = 0; i < taps; i++) out[i] = lp[i] * Math.exp(-i / decay);
+  return out;
+}
+
+/** Linear convolution by FFT — the operation the capture undoes. */
+function convolve(a, b) {
+  const size = nextPow2(a.length + b.length - 1);
+  const re = new Float64Array(size);
+  const im = new Float64Array(size);
+  re.set(a);
+  fftInPlace(re, im);
+  const hr = new Float64Array(size);
+  const hi = new Float64Array(size);
+  hr.set(b);
+  fftInPlace(hr, hi);
+  for (let i = 0; i < size; i++) {
+    const r = re[i] * hr[i] - im[i] * hi[i];
+    const m = re[i] * hi[i] + im[i] * hr[i];
+    re[i] = r; im[i] = m;
+  }
+  for (let i = 0; i < size; i++) im[i] = -im[i];
+  fftInPlace(re, im);
+  for (let i = 0; i < size; i++) re[i] /= size;
+  return re;
+}
+
+/** Relative error between a recovered IR and the truth, aligned as the window aligns them. */
+function recoveryError(got, want, start) {
+  let err = 0;
+  let scale = 0;
+  for (let i = 0; i < want.length; i++) {
+    const t = want[start + i] ?? 0;
+    err += (t - got[i]) ** 2;
+    scale += t * t;
+  }
+  return Math.sqrt(err / scale);
+}
+
+const cabinet = speakerLike();
+const take = convolve(irSweep, cabinet);
+const recovered = normaliseIr(deconvolve(take, irSweep, { taps: 2048 }).ir).ir;
+// ⚠️ ALIGNED AS THE WINDOW ALIGNS IT, and normalised on both sides. The window keeps a few samples before the
+// peak, and `ir make` normalises to a peak of 1.0 because a cabinet's absolute level is not the measurement —
+// the SHAPE is. Comparing raw amplitudes would report a scale factor as an error.
+let cabinetPeak = 0;
+for (let i = 0; i < cabinet.length; i++) if (Math.abs(cabinet[i]) > Math.abs(cabinet[cabinetPeak])) cabinetPeak = i;
+const cabinetNorm = normaliseIr(cabinet).ir;
+check('⭐ a known cabinet comes back out of a take of it, to within a few percent',
+  recoveryError(recovered, cabinetNorm, Math.max(0, cabinetPeak - 8)) < 0.05, true);
+check('…and the sweep has been REMOVED, not passed through — recovering the sweep is not recovering the cabinet',
+  recoveryError(recovered, normaliseIr(Float64Array.from({ length: 2048 }, (_, i) => irSweep[i + 24000] ?? 0)).ir, 0) > 0.5, true);
+
+const offset = deconvolve(convolve(irSweep, cabinet), irSweep, { taps: 2048, preDelay: 0 });
+check('…and the response is located in the take rather than assumed to start at zero',
+  Number.isFinite(offset.latencySamples) && offset.windowStart >= 0, true);
+
+// ⚠️ THE REGULARISATION IS NOT DECORATION. Without it the division blows up wherever the sweep has no energy,
+// and the "cabinet" is a full-scale noise filter — which is what makes this a claim worth a mutation.
+const blurry = normaliseIr(deconvolve(take, irSweep, { taps: 2048, eps: 1e-1 }).ir).ir;
+const sharp = recoveryError(recovered, cabinetNorm, Math.max(0, cabinetPeak - 8));
+check('over-regularising measurably blurs the response, so the default is a decision and not a no-op',
+  recoveryError(blurry, cabinetNorm, Math.max(0, cabinetPeak - 8)) > sharp * 2, true);
+
+check('the taps kept are the taps asked for, so the window is not decided by the take',
+  deconvolve(take, irSweep, { taps: 512 }).ir.length, 512);
+check('…and the default is the cap the plugin convolves, so nothing is silently cut',
+  [DEFAULT_TAPS, DEFAULT_TAPS <= 4096], [4096, true]);
+
+// A silent take is the common real failure (muted mic, wrong input), and it must not produce a cabinet.
+const silent = checkIr(new Float64Array(1024), { sampleRate: IR_RATE });
+check('a silent take is refused rather than turned into a cabinet',
+  [silent.ok, silent.issues.some((i) => /silent/.test(i.what))], [false, true]);
+check('…and a response that is all room is warned about, because it is real and not fatal',
+  checkIr(Float64Array.from({ length: 8192 }, (_, i) => Math.sin(i / 7) * Math.exp(-i / 7000)), { sampleRate: IR_RATE })
+    .issues.some((i) => i.level === 'warn'), true);
+
+// The sweep itself: silence at both ends, or the cabinet's tail is cut off by the recording.
+const lead = irSweep.findIndex((v) => v !== 0);
+const tailAt = irSweep.length - 1 - [...irSweep].reverse().findIndex((v) => v !== 0);
+// ⚠️ THE TAIL SILENCE IS WHAT THE CABINET'S DECAY HAPPENS IN, so the assertion is that the file ENDS silent
+// and that the silence is as long as documented. Asserting that the last NONZERO sample is at the end of the
+// file would be asserting the opposite of the property.
+const tailSilence = irSweep.length - 1 - tailAt;
+check('the sweep has silence at BOTH ends, so the cabinet tail is recorded rather than truncated',
+  [lead > 0.4 * IR_RATE, irSweep[irSweep.length - 1] === 0 && tailSilence > 1.4 * IR_RATE], [true, true]);
+check('…and it is 500 ms of lead, 3 s of sweep and 1.5 s of tail at the default rate',
+  [IR_SWEEP.leadSeconds, IR_SWEEP.seconds, IR_SWEEP.tailSeconds, Math.round(irSweep.length / IR_RATE)],
+  [0.5, 3, 1.5, 5]);
+check('…as an exponential sweep from 20 Hz to 20 kHz, which is what separates distortion from the response',
+  [IR_SWEEP.f1, IR_SWEEP.f2], [20, 20000]);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the capture pre-flight does not agree with the trainer it claims to reproduce\n');
