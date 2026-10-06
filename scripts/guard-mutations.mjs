@@ -1880,6 +1880,44 @@ export const MUTATIONS = [
     find: "  linux: ['-lX11', '-pthread'],",
     replace: "  linux: [],",
   },
+  // ── the task pre-flight (2026-10-06) ──────────────────────────────────────────────────────────────────
+  // ⭐ THE CHECK THAT MATTERS MOST IN THIS FILE, as a mutation. The same audio under two labels is the mistake
+  // that produces a GOOD number — a model tested on what it memorised reports 99% and everything downstream
+  // agrees with it — so a pre-flight that stops reporting it must go red.
+  {
+    guard: 'verify-task-models.mjs',
+    file: 'server/src/lib/tasks/dataset.js',
+    why: 'Stops the pre-flight noticing that the same audio sits under two labels, so the leak that inflates every score goes unreported.',
+    find: '    if (labels.length > 1) {',
+    replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-task-models.mjs',
+    file: 'server/src/lib/tasks/dataset.js',
+    // A class with four clips cannot be learned and cannot even be measured — the test set holds one of them,
+    // or none. Refusing it is the whole reason a pre-flight exists.
+    why: 'Accepts a class too small to learn, so the first model is trained on a label it can never get right.',
+    find: '    if (list.length < c.minClipsPerLabel) {',
+    replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-task-models.mjs',
+    file: 'server/src/lib/tasks/dataset.js',
+    // Silent clips are the quiet one: nothing about the file is broken, so nothing else notices, and the model
+    // learns that silence belongs to whichever label it was filed under.
+    why: 'Stops silent clips being refused, so a class learns that silence is part of its sound.',
+    find: '  if (silent) {',
+    replace: '  if (false) {',
+  },
+  {
+    guard: 'verify-task-models.mjs',
+    file: 'server/src/lib/tasks/registry.js',
+    // A family with no measurement is a family nobody can check — and the registry validator is the only thing
+    // standing between a half-written entry and a pipeline built on it.
+    why: 'Lets a family into the registry with no measurement, so a model can be built and shipped with nothing able to say whether it works.',
+    find: "    if (!Array.isArray(f?.measure) || !f.measure.length) problems.push(`${at}: names no measurement, so nothing can say whether it works`);",
+    replace: '    // measurement check removed',
+  },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an
   // order that is drawn but not emitted, and an order that renumbers the controls a host has automated.

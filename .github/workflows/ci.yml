@@ -705,6 +705,12 @@ jobs:
       - name: The website on-ramp is honest and undrifted
         run: node scripts/verify-onramp.mjs
 
+      # The task families: the registry is data a builder can use, and the COLLECT pre-flight refuses the
+      # things that cannot be trained on — with the right reason each time. The one that matters is the leak:
+      # the same audio on both sides of a split, which reports a GOOD number and is worth nothing.
+      - name: A dataset is judged before it costs a GPU hour
+        run: node scripts/verify-task-models.mjs
+
       # The price and the meter must agree: the exemption rule is tested behaviourally, and no
       # customer-facing file may promise a free own-key path the billing code does not honour.
       - name: AI cost claims match the meter
