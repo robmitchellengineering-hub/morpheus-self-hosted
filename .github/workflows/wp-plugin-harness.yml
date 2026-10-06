@@ -1,0 +1,87 @@
+# Run the WordPress plugin's own test harness, in a real WordPress.
+#
+# WHY THIS EXISTS
+#
+# `wp-plugin/morpheus/tests/run.sh` boots a real WordPress through WordPress Playground (WASM PHP — no Docker,
+# no system PHP) seven times: with WooCommerce and Yoast, with WooCommerce and NO SEO plugin, the plugin
+# upgrader, site maintenance, the dock, and CLEAN MY SITE. It asserts the REST routes, the security helpers,
+# and — the part that matters here — **what the plugin actually renders into `<head>`**.
+#
+# NOTHING RAN IT. It is a hand-run script, so the plugin's PHP had no gate anywhere in CI, and that is not
+# hypothetical: on 2026-10-06 the live store's homepage was rendering **two `<link rel="canonical">` tags**,
+# and the harness had it written down as a *known finding* that asserted only "at least one" and printed the
+# count. The same audit then found every archive — `/shop/`, product categories, tags, the blog index — had no
+# canonical, no description and no social tags at all. Both were fixed; neither was caught by anything.
+#
+# MANUAL ONLY, DELIBERATELY, AND THAT IS THE WHOLE COST DECISION. Seven WordPress boots download the PHP/WP
+# images and install WooCommerce, so a run is minutes rather than seconds — on every PR that is exactly the
+# spend Rob asked to stop. Dispatch it by hand when the plugin, the SEO module, or the store module changes:
+#
+#   gh workflow run wp-plugin-harness.yml --ref main
+#   gh workflow run wp-plugin-harness.yml --ref main -f php_version=7.4
+#
+# ⚠️ A GREEN RUN HERE IS NOT A SUBSTITUTE FOR THE GUARDS, and it is not covered by branch protection: it has
+# never run unless somebody dispatched it. The structural half of the same claims lives in
+# `scripts/verify-pairing.mjs`, which DOES run in the required checks — that split is deliberate, because CI
+# cannot run PHP and this cannot run on every push.
+name: WordPress plugin harness
+
+on:
+  workflow_dispatch:
+    inputs:
+      # 8.2 is what the harness defaults to; 7.4 is the minimum the plugin header claims to support, and the
+      # two are not the same test — the run.sh header records that the minimum has its own failure modes.
+      php_version:
+        description: 'PHP version to boot (8.2 default; 7.4 is the minimum supported)'
+        required: false
+        default: '8.2'
+
+permissions:
+  # Read only. This workflow builds and asserts; it never publishes, tags or writes to the repository.
+  contents: read
+
+jobs:
+  harness:
+    name: plugin harness (WordPress Playground, PHP ${{ inputs.php_version }})
+    runs-on: ubuntu-latest
+    # Seven boots, each downloading images the first time and installing WooCommerce. Generous, because a
+    # cold cache is slow; bounded, because a hang must not hold a runner for the hour default.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Playground caches the PHP and WordPress images between runs, and without this every dispatch pays the
+      # download again. The key is the PHP version, so switching to 7.4 gets its own cache rather than
+      # re-downloading 8.2's on top of it.
+      - name: Cache the WordPress Playground images
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.wordpress-playground
+            ~/.npm/_npx
+          key: wp-playground-${{ inputs.php_version }}-${{ runner.os }}
+
+      # THE SCRIPT IS THE STEP. `run.sh` does `php -l` on every file first, then each of the seven boots in
+      # its own WordPress, and fails on the first one that fails. Nothing is re-typed here for the same reason
+      # the audio-plugin runners do not re-type their build commands: a second copy of a command is a second
+      # thing to keep in step with the first.
+      - name: Run the plugin harness
+        run: ./tests/run.sh "${{ inputs.php_version }}"
+        working-directory: wp-plugin/morpheus
+
+      # ⚠️ AND THE TREE IS CHECKED AFTERWARDS. A Playground boot installs WooCommerce and Yoast INSIDE the
+      # mounted plugin directory, and `run.sh` removes them in a trap — but if that ever fails, the next build
+      # would zip 89 MB of somebody else's plugin into our published update. `scripts/pack-wp-plugin.mjs`
+      # refuses to pack when they are present; this makes the failure name the workflow that caused it.
+      - name: The harness left no test plugins in the plugin directory
+        run: |
+          if [ -d wp-plugin/morpheus/woocommerce ] || [ -d wp-plugin/morpheus/wordpress-seo ]; then
+            echo "::error::a Playground boot left WooCommerce or Yoast inside wp-plugin/morpheus/"
+            ls -la wp-plugin/morpheus
+            exit 1
+          fi
+          echo "clean — no third-party plugin code in the plugin directory"
