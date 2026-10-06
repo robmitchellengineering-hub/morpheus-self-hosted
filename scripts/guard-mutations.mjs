@@ -2029,8 +2029,10 @@ export const MUTATIONS = [
     // The fold: without it a response 33 samples EARLY reads as 524255 samples late, and a perfect capture is
     // refused. This is the arithmetic bug that was in the tool for one revision.
     why: 'Stops folding the circular delay to the nearest zero, so a response a few samples early reads as a whole buffer late.',
+    // ⚠️ THE WRAP IS THE BUG THAT WAS THERE, and the first version of this mutation (`- sweepAt`, unfolded)
+    // produced the right answer for the unit's numbers — a mutation that changes nothing is not a mutation.
     find: '  return ((latencySamples - sweepAt + size / 2) % size) - size / 2;',
-    replace: '  return latencySamples - sweepAt;',
+    replace: '  return ((latencySamples - sweepAt) % size + size) % size;',
   },
   {
     guard: 'verify-audio-capture.mjs',

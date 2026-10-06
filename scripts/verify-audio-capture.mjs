@@ -513,6 +513,26 @@ check('a response a few samples before the correlation peak reads as a few sampl
   responseDelay({ latencySamples: 145, sweepAt: 178, size: 524288 }), -33);
 check('…and one after it reads as a positive delay', responseDelay({ latencySamples: 400, sweepAt: 178, size: 524288 }), 222);
 
+// ⚠️ THE UNIT ABOVE IS NOT ENOUGH, AND THE MUTATION RUN SAID SO. `responseDelay` is only part of the claim; the
+// claim is that a TAKE is judged correctly, and a version that never located the sweep at all (sweepAt = 0) got
+// the same answer on the unit's numbers. These three use the deconvolve → responseDelay path end to end.
+const locate = (take) => responseDelay(deconvolve(take, irSweep, { taps: 2048 }));
+
+check('a real capture locates its response within a few milliseconds of the sweep',
+  Math.abs(locate(take)) < 0.01 * IR_RATE, true);
+// ⚠️ AND WITH A COUPLE OF SECONDS OF SILENCE IN FRONT OF IT, which is what an untrimmed export looks like. The
+// delay must not move: both estimators travel together, and this is the case that catches a version which
+// assumes the take starts where the sweep does.
+const paddedTake = new Float64Array(take.length + 2 * IR_RATE);
+paddedTake.set(take, 2 * IR_RATE);
+check('…even when the take begins seconds before the sweep does',
+  Math.abs(locate(paddedTake)) < 0.01 * IR_RATE, true);
+// And a take of something else entirely is seconds away — which is what refuses it rather than making a cabinet
+// out of it.
+const notACapture = Float64Array.from({ length: irSweep.length }, (_, i) => 0.3 * Math.sin((2 * Math.PI * 440 * i) / IR_RATE));
+check('…and a take that is not a capture at all is seconds away, not milliseconds',
+  Math.abs(locate(notACapture)) > 0.1 * IR_RATE, true);
+
 // ⚠️ AND THE FLAGS. This CLI spells its flags WITH their dashes (`value('--out')`), and the capture commands were
 // first written with bare names — so `--f1 60 --f2 12000 --taps 512` were all accepted, printed in the usage, and
 // SILENTLY IGNORED, because `args.indexOf('f1')` finds nothing and the default is used. A flag that does nothing
