@@ -101,6 +101,7 @@ const HARD = [
   'verify-deck-widget-order.mjs',
   'verify-render-check.mjs',
   'verify-audio-plugin.mjs',
+  'verify-task-models.mjs',
   'verify-audio-measure.mjs',
   'verify-nam-quantize.mjs',
   'verify-audio-capture.mjs',
