@@ -20,6 +20,9 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logSweep, withFades } from '../server/src/lib/audio/signals.js';
+// The one rule for what a generated plugin compiles and links with — see generatedSources() there for the two
+// failures that put it in one place rather than three.
+import { generatedLinkFlags, generatedSources } from './audio-nam-render-check.mjs';
 import { toneDesign, toneProcess, toneResponseDb } from '../server/src/lib/audio/toneStack.js';
 import { convolveDirect, rms } from '../server/src/lib/audio/dsp.js';
 import { decodeWav } from '../server/src/lib/audio/wav.js';
@@ -68,16 +71,19 @@ export const TONE_CASES = [
 function buildHost({ pluginDir, clapInclude, work }) {
   const bin = join(work, 'host');
   const cxx = process.env.CXX ?? 'c++';
-  // CabIr.cpp is in the list because the plugin links against its symbols whether or not it holds a cabinet:
-  // the header declares them, and only the `#if` inside decides. Leaving it out is a link error naming
-  // `morpheus_cab_l`, which is exactly how this was found.
-  const sources = ['Plugin.cpp', 'PluginEntry.cpp', 'ModelData.cpp', 'CabIr.cpp']
-    .map((f) => join(pluginDir, 'Source', f))
-    .filter((f) => existsSync(f));
+  // ⚠️ THE SOURCES AND THE LINK FLAGS COME FROM ONE PLACE, NOT FROM THIS FILE. This listed four generated
+  // files by hand — with a good comment explaining why CabIr.cpp had to be in it — and that list was still a
+  // list: when the generator grew a fifth file (the panel) the link failed on the ARM runner with
+  //
+  //   Plugin.cpp:(.text+0x9b0): undefined reference to `morpheus_gui_extension'
+  //
+  // which is the same failure, from the same cause, as the one in audio-nam-render-check.mjs an hour earlier.
+  // `generatedSources` also picks the platform's panel and `generatedLinkFlags` links what it draws with.
   const run = spawnSync(cxx, [
     '-std=c++20', '-O2', '-w', '-DNAM_SAMPLE_FLOAT',
     `-I${clapInclude}`, `-I${join(pluginDir, 'Source')}`,
-    join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'), ...sources, '-o', bin,
+    join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'),
+    ...generatedSources(pluginDir), ...generatedLinkFlags(), '-o', bin,
   ], { encoding: 'utf8' });
   if (run.status !== 0) {
     console.error(`[amp-chain] x the host failed to build:\n${(run.stderr || run.stdout || '').slice(-3000)}`);

@@ -1692,7 +1692,10 @@ check('⭐ …and that handover compiles on MSVC as well as on clang, which is n
 // ⚠️ A TOOL THAT NAMES A GENERATED PROJECT'S FILES IS A TOOL THAT BREAKS WHEN THE GENERATOR CHANGES. Adding
 // the panel broke the ARM render check's hand-written source list — "undefined reference to
 // morpheus_gui_extension" — because the generator had grown a file the list did not have.
-for (const tool of ['scripts/audio-nam-render-check.mjs', 'scripts/audio-testbench.mjs']) {
+// Every tool that compiles the plugin's own sources. The list grew by one during this work — the chain check
+// had its own copy of the same four names, with a good comment explaining why CabIr.cpp had to be in it, and it
+// broke the same way.
+for (const tool of ['scripts/audio-nam-render-check.mjs', 'scripts/audio-testbench.mjs', 'scripts/audio-amp-chain-check.mjs']) {
   const src = read(tool);
   // ⚠️ THE COMPILE LIST IS WHAT IS CHECKED, not "the file mentions readdirSync somewhere" — the first version
   // of this passed with the hand-written list restored, because the same file globs the engine's sources too.
@@ -1700,7 +1703,7 @@ for (const tool of ['scripts/audio-nam-render-check.mjs', 'scripts/audio-testben
   // tool that patches that file by name for its own self-test is a different thing and stays.
   const fromGlob = tool.includes('audio-nam-render-check')
     ? /\.\.\.generatedSources\(pluginDir\)/.test(src)
-    : /generatedSources\(projectDir\)/.test(src);
+    : /generatedSources\((projectDir|pluginDir)\)/.test(src);
   check(`${tool} takes the plugin's sources from the platform's own rule, not from a list of names`,
     fromGlob && !/'Source\/Plugin\.cpp'/.test(src), true);
 }
