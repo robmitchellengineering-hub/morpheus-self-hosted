@@ -199,9 +199,24 @@ export const DEFAULT_BOARD = ampBoard();
  */
 export function demoBoard() {
   const kinds = ['input', 'gate', 'drive', 'tone', 'model', 'cab', 'delay', 'spring', 'output'];
+  // ⚠️ THE PEDALS ARE IN THE PATH AND SWITCHED OFF, AND THAT IS A MEASURED DECISION RATHER THAN TASTE.
+  // The blocks' own defaults are a *useful* setting for somebody who added the block on purpose (a drive at 30%
+  // gain, a delay at 25% mix) and a *broken* one for a demo that claims to sound like an amplifier: out of the
+  // download, every note would arrive distorted, echoing and reverberating, and the first thing anybody would
+  // do is wonder why the amp sounds wrong.
+  //
+  // It is also what the render proof measures. `audio-nam-render-check.mjs` asserts that the plugin's output
+  // nulls against the reference engine playing the same model — to -60 dB — and with the blocks' defaults that
+  // check failed on the Linux runner at **-4.3 dB**, correctly: a plugin with a drive and a delay engaged is not
+  // the model, and pretending otherwise would mean weakening the one proof that the plugin PLAYS what it carries.
+  //
+  // So: the delay and spring are mixed to nothing (their Mix at 0 is a NULL, not a quiet effect) and the drive is
+  // bypassed. Turn any of them up and they are there; the download sounds like an amp.
+  const values = { delay: { delay_mix: 0 }, spring: { spring_mix: 0 } };
+  const off = new Set(['drive']);
   const items = kinds.map((kind, i) => {
     if (!blockKind(kind)) throw new Error(`board.js: the demo board names "${kind}", which is not a block kind`);
-    return { instanceId: i + 1, kind, enabled: true, values: {} };
+    return { instanceId: i + 1, kind, enabled: !off.has(kind), values: values[kind] || {} };
   });
   return { nextInstanceId: items.length + 1, items };
 }

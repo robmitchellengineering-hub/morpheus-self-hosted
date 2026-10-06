@@ -716,7 +716,7 @@ check('…and a model that will not load degrades to a gain stage with a line in
 const cmakeWith = generated(audioPlugin.scaffold(withModel), 'CMakeLists.txt');
 const cmakeWithout = generated(audioPlugin.scaffold(empty), 'CMakeLists.txt');
 check('the CMake compiles the generated data files either way',
-  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(cmakeWithout), true);
+  /add_library\(morpheus_plugin-impl (?:STATIC|OBJECT) Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(cmakeWithout), true);
 check('…without a model it mentions no engine at all, so nothing extra is fetched or compiled',
   /MORPHEUS_NAM_DIR|NAM_SAMPLE_FLOAT/.test(cmakeWithout), false);
 check('…with one it requires a checkout, globs the engine\u2019s sources and adds both header-only deps',
@@ -1211,7 +1211,7 @@ check('…and the convolution accumulates in DOUBLE, which the measurement chose
   /double y = 0\.0;/.test(cabSrc) && /return \(float\)y;/.test(cabSrc), true);
 const cabCmake = generated(audioPlugin.scaffold(cabSeed(irB64(synthIr(512, 100)))), 'CMakeLists.txt');
 check('…and CabIr.cpp is compiled whether or not it holds a cabinet',
-  /add_library\(morpheus_plugin-impl STATIC Source\/Plugin.cpp Source\/ModelData.cpp Source\/CabIr.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(cabCmake), true);
+  /add_library\(morpheus_plugin-impl (?:STATIC|OBJECT) Source\/Plugin.cpp Source\/ModelData.cpp Source\/CabIr.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(cabCmake), true);
 const cabCheckSrc = read('scripts/audio-amp-chain-check.mjs');
 check('the check renders the cabinet through the plugin and compares it to the same taps',
   /arg\('cab'\)/.test(cabCheckSrc) && /cabTaps/.test(cabCheckSrc) && /convolveDirect\(/.test(cabCheckSrc)
@@ -1653,7 +1653,7 @@ check('…the cmake compiles exactly one panel per platform, because Plugin.cpp 
   && /elseif \(WIN32\)[\s\S]{0,120}Source\/PluginGuiWin\.cpp/.test(guiCmake)
   && /elseif \(UNIX\)[\s\S]{0,120}Source\/PluginGuiX11\.cpp/.test(guiCmake)
   && /else\(\)[\s\S]{0,120}Source\/PluginGui\.cpp/.test(guiCmake)
-  && /add_library\(morpheus_plugin-impl STATIC Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(guiCmake), true);
+  && /add_library\(morpheus_plugin-impl (?:STATIC|OBJECT) Source\/Plugin\.cpp Source\/ModelData\.cpp Source\/CabIr\.cpp \$\{MORPHEUS_GUI_SOURCE\}\)/.test(guiCmake), true);
 check('…and links what each panel actually draws with, including X11 and the thread it runs on',
   /"-framework Cocoa"/.test(guiCmake) && /PUBLIC gdi32 user32/.test(guiCmake)
   && /PUBLIC X11 Threads::Threads/.test(guiCmake), true);
@@ -1820,6 +1820,36 @@ check('every runner seeds the shared definition rather than its own manifest',
     || !/seed\.push\(\{ path: 'morpheus\.plugin\.json', content: demoManifest\(\) \}\)/.test(runnerText[f])), []);
 check('…and every one of them can carry a cabinet, which is what a demo needs to sound like an amplifier',
   demoRunners.filter((f) => !/--cab/.test(runnerText[f])), []);
+
+console.log('\n28. ⭐ THE ENGINE MUST NOT BE LINKED AS A STATIC LIBRARY, OR THE MODEL NEVER LOADS');
+
+// ── THE BUG THIS GUARD EXISTS FOR, FOUND BY RUNNING THE PLUGIN FOR THE FIRST TIME ────────────────────────
+// NeuralAmpModelerCore registers its architectures in a STATIC INITIALIZER: `nam::factory::Helper` in
+// `NAM/wavenet/model.cpp` calls `ConfigParserRegistry::instance().registerParser(...)` before `main`. A STATIC
+// library is an ARCHIVE, and a linker pulls an object out of an archive only when something references a symbol
+// in it — and nothing references anything in `wavenet/model.cpp`, whose only export is a constructor. So the
+// object was never linked, the parser was never registered, and every plugin this generator produced answered
+//
+//     No config parser registered for architecture: WaveNet — running as a gain stage
+//
+// and quietly behaved as a gain stage. It loaded, it opened in a DAW, it made sound. It was just not the
+// amplifier — and the BUILD-PROOF listed the right six parameter names the whole time, because the parameter
+// table is generated from the chain and has nothing to do with whether the model runs.
+//
+// ⚠️ AND NOTHING IN CI COULD HAVE SEEN IT. The render proof compiles the sources itself, straight into a test
+// binary, the same way NAMCore's own tools do — so the registration was always present THERE. The plugin people
+// download is built by the generated CMakeLists, and no gate had ever run it. It was found by building the AU on
+// a Mac and asking it to load a model, which is the only thing that answers the question.
+//
+// The guard is a text check on the generated project, which is weaker than running it and is all CI has: the
+// engine's sources must reach the final link, and a STATIC library is how they stop reaching it.
+const bareCmake = audioPlugin.scaffold([{ path: 'README.md', content: '# x\n' }]).files.find((f) => f.path === 'CMakeLists.txt').content;
+check('⭐ the plugin implementation is an OBJECT library, so every engine object is linked',
+  /add_library\(morpheus_plugin-impl OBJECT/.test(bareCmake), true);
+check('…and NOT a STATIC one, which is exactly how the WaveNet parser stopped being registered',
+  /add_library\(morpheus_plugin-impl STATIC/.test(bareCmake), false);
+check('…with the reason written where the next person will change it',
+  /registerParser|static initializer|register themselves/.test(bareCmake), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

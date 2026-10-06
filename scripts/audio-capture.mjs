@@ -25,6 +25,7 @@ import {
   INPUT_FILENAME, INPUT_URL, V3, blipLatency, checkCapture, identifyInput,
 } from '../server/src/lib/audio/namCapture.js';
 import { decodeWavMono, encodeWav } from '../server/src/lib/audio/wav.js';
+import { IR_SWEEP, DEFAULT_TAPS, sweepSignal, deconvolve, normaliseIr, checkIr, formatIrCapture } from '../server/src/lib/audio/irCapture.js';
 import { nullDepth } from '../server/src/lib/audio/analysis.js';
 import { ensureEngine, renderThroughFile, NAMCORE_REF, ROOT } from './lib/referenceEngine.mjs';
 
@@ -36,6 +37,20 @@ const value = (n, d = null) => {
 };
 const positional = args.filter((a, i) => !a.startsWith('--')
   && !(i > 0 && args[i - 1].startsWith('--') && !args[i - 1].includes('=')));
+/** What the sweep file is, and the three things a person has to do with it. */
+function formatIrSweep(f) {
+  return [
+    `${f.totalSeconds.toFixed(2)} s: ${f.leadSeconds} s of silence, the sweep, ${f.tailSeconds} s of silence`,
+    `swept ${f.from} Hz to ${f.to} Hz at ${f.sampleRate} Hz`,
+    '',
+    '  1. play it through the CABINET — a clean power amp or the amp\'s effects return, not the amp\'s input,',
+    '     so the IR does not carry the amp (the .nam already has that)',
+    '  2. record the cabinet with a mic, at a level that does not clip, keeping the whole tail',
+    '  3. node scripts/audio-capture.mjs ir make --recorded <take.wav> --sweep ' + f.out,
+    '',
+  ].join('\n');
+}
+
 const [cmd] = positional;
 const num = (n, d) => (value(n) == null ? d : Number(value(n)));
 
@@ -190,11 +205,86 @@ switch (cmd) {
     break;
   }
 
+  // ── ir: the CABINET capture, which is a different measurement from the amplifier's ───────────────────────
+  // An amp is nonlinear and needs NAM's long re-amp signal and a training run. A cabinet is linear, so its
+  // impulse response describes it completely — one sweep, one take, one deconvolution, no GPU. See
+  // lib/audio/irCapture.js for why that difference decides the method.
+  case 'ir': {
+    const sub = positional[1];
+    if (sub === 'sweep') {
+      const out = value('--out', 'ir-sweep.wav');
+      const seconds = num('seconds', IR_SWEEP.seconds);
+      const rate = num('sample-rate', IR_SWEEP.sampleRate);
+      const signal = sweepSignal({ seconds, sampleRate: rate });
+      writeFileSync(out, Buffer.from(encodeWav({ sampleRate: rate, data: signal, format: 'float32' })));
+      const facts = {
+        cmd: 'ir-sweep', out, seconds, sampleRate: rate, samples: signal.length,
+        totalSeconds: signal.length / rate,
+        leadSeconds: IR_SWEEP.leadSeconds, tailSeconds: IR_SWEEP.tailSeconds,
+        from: IR_SWEEP.f1, to: IR_SWEEP.f2,
+      };
+      if (flag('--json')) console.log(JSON.stringify(facts, null, 2));
+      else {
+        console.log(`\nwrote ${out}\n`);
+        console.log(formatIrSweep(facts));
+      }
+      break;
+    }
+    if (sub === 'make') {
+      const recorded = value('--recorded');
+      const sweepPath = value('--sweep');
+      const out = value('--out', 'cabinet.wav');
+      if (!recorded || !sweepPath) {
+        console.error('usage: audio-capture ir make --recorded <take.wav> --sweep <ir-sweep.wav> [--out cabinet.wav] [--taps 4096]');
+        process.exit(2);
+      }
+      if (!existsSync(recorded)) { console.error(`--recorded ${recorded} does not exist`); process.exit(2); }
+      if (!existsSync(sweepPath)) { console.error(`--sweep ${sweepPath} does not exist — run \`audio-capture ir sweep\` first`); process.exit(2); }
+      const take = decodeWavMono(readFileSync(recorded));
+      const { samples: sweep } = decodeWavMono(readFileSync(sweepPath));
+      const taps = num('taps', DEFAULT_TAPS);
+      const result = deconvolve(take.samples, sweep, { taps });
+      const { ir, peak } = normaliseIr(result.ir);
+      writeFileSync(out, Buffer.from(encodeWav({ sampleRate: take.sampleRate, data: ir, format: 'float32' })));
+      const verdict = checkIr(ir, { sampleRate: take.sampleRate });
+      const facts = { cmd: 'ir-make', out, taps, fromSeconds: take.frames ? take.samples.length / take.sampleRate : 0,
+        latencySamples: result.latencySamples, windowStart: result.windowStart, outsideDb: result.outsideDb,
+        originalPeak: peak, ...verdict.facts };
+      if (flag('--json')) console.log(JSON.stringify({ ...facts, issues: verdict.issues }, null, 2));
+      else {
+        console.log(`\nwrote ${out}\n`);
+        console.log(formatIrCapture(verdict, result.latencySamples));
+        console.log(`\n  the take's response starts ${(result.latencySamples / take.sampleRate * 1000).toFixed(2)} ms in `
+          + `— that is your interface's round trip, measured rather than assumed`);
+        console.log(`  energy outside the kept window: ${result.outsideDb.toFixed(1)} dB (distortion products and room)`);
+        console.log(`  peak before normalising: ${peak.toExponential(3)}\n`);
+      }
+      if (!verdict.ok) process.exit(1);
+      break;
+    }
+    if (sub === 'check') {
+      const path = positional[2] || value('--ir');
+      if (!path || !existsSync(path)) { console.error('usage: audio-capture ir check <cabinet.wav> [--json]'); process.exit(2); }
+      const { samples, sampleRate } = decodeWavMono(readFileSync(path));
+      const verdict = checkIr(samples, { sampleRate });
+      if (flag('--json')) console.log(JSON.stringify({ cmd: 'ir-check', file: path, ...verdict }, null, 2));
+      else { console.log(`\n${path}\n`); console.log(formatIrCapture(verdict)); console.log(''); }
+      if (!verdict.ok) process.exit(1);
+      break;
+    }
+    console.error('usage: audio-capture ir sweep|make|check …\n'
+      + '  ir sweep [--out ir-sweep.wav] [--seconds 3] [--sample-rate 48000]\n'
+      + '  ir make  --recorded <take.wav> --sweep <ir-sweep.wav> [--out cabinet.wav] [--taps 4096]\n'
+      + '  ir check <cabinet.wav>');
+    process.exit(2);
+  }
+
   default:
-    console.error('usage: audio-capture input|check|verify …\n'
+    console.error('usage: audio-capture input|check|verify|ir …\n'
       + '  input  [--out <input.wav>] [--verify <input.wav>] [--force]\n'
       + '  check  --recorded <amp-output.wav> [--input <input.wav>] [--json]\n'
       + '  verify --model <model.nam> --recorded <amp-output.wav> [--input <input.wav>]\n'
-      + '         [--from-seconds 30] [--max-seconds 20] [--render <path-to-render>] [--json]');
+      + '         [--from-seconds 30] [--max-seconds 20] [--render <path-to-render>] [--json]\n'
+      + '  ir     sweep | make | check   — the CABINET, which is a linear capture (no training)\n');
     process.exit(2);
 }

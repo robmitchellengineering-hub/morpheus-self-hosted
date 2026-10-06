@@ -863,8 +863,11 @@ export const MUTATIONS = [
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/audioPluginTemplate.js',
     why: 'Leaves CabIr.cpp out of the plugin library, so nothing defines the taps the plugin links against.',
-    find: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp \\${MORPHEUS_GUI_SOURCE})',
-    replace: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp \\${MORPHEUS_GUI_SOURCE})',
+    // ⚠️ THE LIBRARY TYPE IS NOT PART OF THIS CLAIM, and matching on it made this mutation go STALE the moment
+    // the library became an OBJECT one — and a stale mutation reads as coverage while proving nothing. The find
+    // is the SOURCE LIST, which is what the check it falsifies is actually about.
+    find: 'Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp \\${MORPHEUS_GUI_SOURCE}',
+    replace: 'Source/Plugin.cpp Source/ModelData.cpp \\${MORPHEUS_GUI_SOURCE}',
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -1974,6 +1977,51 @@ export const MUTATIONS = [
     why: 'Puts one runner back on its own hand-written manifest, which is how the three platforms came to publish different products.',
     find: "  seed.push({ path: 'morpheus.plugin.json', content: demoManifest() });",
     replace: "  seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Morpheus Plugin', chain: 'amp' }, null, 2)}\n` });",
+  },
+  // ── the cabinet capture (2026-10-06) ────────────────────────────────────────────────────────────────────
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/lib/audio/irCapture.js',
+    // Forgetting the conjugate turns the deconvolution into a correlation: the sweep is still "removed" in the
+    // sense that something plausible comes out, and the something is not the cabinet.
+    why: 'Divides by the sweep instead of its conjugate, so the capture correlates with the sweep rather than undoing it.',
+    find: '    outIm[i] = -im[i] / p;',
+    replace: '    outIm[i] = im[i] / p;',
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/lib/audio/irCapture.js',
+    // The window is where the response IS, measured. Taking the first taps of the buffer instead gives every
+    // capture the same offset error, which is a cabinet that is subtly the wrong shape and never silent.
+    why: 'Takes the impulse response from the start of the buffer rather than from where the response actually is.',
+    find: '  for (let i = 0; i < taps; i++) ir[i] = re[(start + i) % size];',
+    replace: '  for (let i = 0; i < taps; i++) ir[i] = re[i % size];',
+  },
+  {
+    guard: 'verify-audio-capture.mjs',
+    file: 'server/src/lib/audio/irCapture.js',
+    why: 'Stops refusing a silent take, so a muted microphone becomes a cabinet that measures perfectly and sounds like nothing.',
+    find: '  if (!(peak > 0)) {',
+    replace: '  if (false) {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⭐ THE BUG THAT SHIPPED: a static library drops the engine's self-registering translation units, so the
+    // WaveNet parser is never registered and the plugin runs as a gain stage while its proof lists six
+    // parameters. Found by building the AU and opening it, not by any gate.
+    why: 'Puts the engine back in a STATIC library, which is how the model silently stopped loading in every plugin ever built.',
+    find: 'add_library(morpheus_plugin-impl OBJECT Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp',
+    replace: 'add_library(morpheus_plugin-impl STATIC Source/Plugin.cpp Source/ModelData.cpp Source/CabIr.cpp',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // The demo's defaults are a MEASURED decision: with the blocks' own defaults a delay and a reverb are mixed
+    // in, and the render proof that the plugin plays its model fails — correctly, at -4.3 dB.
+    why: 'Puts the demo back on the blocks\' own defaults, so the download arrives distorted, echoing and reverberating.',
+    find: "  const values = { delay: { delay_mix: 0 }, spring: { spring_mix: 0 } };",
+    replace: "  const values = {};",
   },
   // ── VERIFY and PACK (2026-10-06) ────────────────────────────────────────────────────────────────────────
   // ⭐ THE LADDER'S TWO MIDDLE STAGES ARE THE ONES A PERSON BELIEVES WITHOUT CHECKING: a card that says 94%, and
