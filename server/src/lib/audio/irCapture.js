@@ -144,9 +144,15 @@ export function deconvolve(recorded, sweep, { taps = DEFAULT_TAPS, eps = 1e-4, p
     if (i >= start && i < start + taps) tapsEnergy += v;
     else distortion += v;
   }
+  // ⚠️ THE PEAK'S ABSOLUTE POSITION IN THE BUFFER MEANS NOTHING ON ITS OWN: it moves with whatever silence
+  // preceded the sweep in the take. What is physical is the distance from the SWEEP to the RESPONSE — a
+  // cabinet cannot answer before it is asked, and it answers a few hundred samples later (the interface's round
+  // trip plus the microphone's distance), not seconds.
+  const sweepAt = locateSweep(recorded, sweep, size).at;
   return {
     ir,
     latencySamples: peak,
+    sweepAt,
     windowStart: start,
     size,
     taps,
@@ -155,6 +161,59 @@ export function deconvolve(recorded, sweep, { taps = DEFAULT_TAPS, eps = 1e-4, p
     outsideDb: 10 * Math.log10((distortion + 1e-30) / (tapsEnergy + 1e-30)),
     energy,
   };
+}
+
+/**
+ * Where the SWEEP begins in the take, by cross-correlation — and this is the check that stops the tool
+ * producing a confident cabinet out of the wrong file.
+ *
+ * ⚠️ THE OBVIOUS PROXY DOES NOT WORK, AND IT WAS TRIED FIRST. "Find the loudest part of the take" is useless
+ * here because an exponential sweep has a FLAT envelope by design — it puts equal energy at every frequency for
+ * its whole duration. Measured: on a take whose sweep began at sample 24000, the loudest 100 ms window was at
+ * 85586, and the rule built on it refused a perfect capture. Loudness carries no position.
+ *
+ * Correlation does. The take contains the sweep, so correlating the two has a sharp maximum exactly where the
+ * sweep starts, whatever the playback offset, the interface delay or how much silence was exported in front.
+ */
+export function locateSweep(recorded, sweep, size) {
+  const n = size ?? nextPow2(recorded.length + sweep.length - 1);
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  re.set(recorded.subarray(0, Math.min(recorded.length, n)));
+  fftInPlace(re, im);
+  const sr = new Float64Array(n);
+  const si = new Float64Array(n);
+  sr.set(sweep.subarray(0, Math.min(sweep.length, n)));
+  fftInPlace(sr, si);
+  // X · conj(S), then the inverse transform: the cross-correlation, whose peak is the sweep's position.
+  for (let i = 0; i < n; i++) {
+    const ar = re[i];
+    const ai = im[i];
+    re[i] = ar * sr[i] + ai * si[i];
+    im[i] = ai * sr[i] - ar * si[i];
+  }
+  for (let i = 0; i < n; i++) im[i] = -im[i];
+  fftInPlace(re, im);
+  let peak = 0;
+  let best = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const v = Math.abs(re[i]);
+    if (v > best) { best = v; peak = i; }
+  }
+  return { at: peak, peak: best };
+}
+
+/**
+ * How long after the sweep the cabinet answered, SIGNED, and folded to the nearest zero.
+ *
+ * ⚠️ THE FOLD IS THE WHOLE POINT. Both positions live in a circular FFT buffer, so a response arriving 33
+ * samples BEFORE the correlation peak is `(145 - 178) mod 524288 = 524255` — which reads as ten seconds late and
+ * refused a perfectly good capture. Folding to the nearest half-buffer turns that back into −33: the answer is a
+ * small number of samples in either direction, and a real cabinet's is a few hundred.
+ */
+export function responseDelay({ latencySamples, sweepAt, size }) {
+  if (!size) return 0;
+  return ((latencySamples - sweepAt + size / 2) % size) - size / 2;
 }
 
 /** Normalise to a peak of 1.0, as `cabIr.js` does at bake time — and say what the peak was. */

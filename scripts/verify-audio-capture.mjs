@@ -502,6 +502,33 @@ check('…and it is 500 ms of lead, 3 s of sweep and 1.5 s of tail at the defaul
 check('…as an exponential sweep from 20 Hz to 20 kHz, which is what separates distortion from the response',
   [IR_SWEEP.f1, IR_SWEEP.f2], [20, 20000]);
 
+// ── and the three ways a real take is NOT a capture, each of which produces a confident cabinet ─────────────
+console.log('\n15. a take that is not a capture is refused, by name');
+const { responseDelay } = await import('../server/src/lib/audio/irCapture.js');
+
+// ⚠️ THE FOLD. Both positions live in a circular FFT buffer, so a response 33 samples BEFORE the correlation peak
+// is `(145 - 178) mod 524288 = 524255` — which reads as ten seconds late and refused a perfect capture. This is
+// the arithmetic that had to be got right, and it is one line.
+check('a response a few samples before the correlation peak reads as a few samples, not as a whole buffer',
+  responseDelay({ latencySamples: 145, sweepAt: 178, size: 524288 }), -33);
+check('…and one after it reads as a positive delay', responseDelay({ latencySamples: 400, sweepAt: 178, size: 524288 }), 222);
+
+// ⚠️ AND THE FLAGS. This CLI spells its flags WITH their dashes (`value('--out')`), and the capture commands were
+// first written with bare names — so `--f1 60 --f2 12000 --taps 512` were all accepted, printed in the usage, and
+// SILENTLY IGNORED, because `args.indexOf('f1')` finds nothing and the default is used. A flag that does nothing
+// is worse than a missing one: the tool reports the sweep it did not make.
+const captureCli = readFileSync(new URL('../scripts/audio-capture.mjs', import.meta.url), 'utf8');
+const bareFlags = [...captureCli.matchAll(/\b(?:value|num)\('([^'-][^']*)'/g)].map((m) => m[1]);
+check('every flag this CLI reads is spelled with the dashes its usage documents',
+  bareFlags, []);
+
+// The sweep's band is the user's, and for a cabinet it should be: a guitar speaker does not reproduce 20 Hz, and
+// three seconds of it is cone excursion for energy that will not be in the cabinet.
+check('the sweep can be banded to what a guitar cabinet actually does',
+  [sweepSignal({ seconds: 0.2, sampleRate: IR_RATE, f1: 60, f2: 12000 }).length,
+    sweepSignal({ seconds: 0.2, sampleRate: IR_RATE, f1: 60, f2: 12000 }).some((v, i, a) => v !== a[0])],
+  [Math.round((0.5 + 0.2 + 1.5) * IR_RATE), true]);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ the capture pre-flight does not agree with the trainer it claims to reproduce\n');
