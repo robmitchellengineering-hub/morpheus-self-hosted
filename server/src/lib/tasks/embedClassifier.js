@@ -16,7 +16,7 @@
 // So the generated code is not trusted: `verify-task-ladder.mjs` compiles it, runs it on real audio and compares
 // its scores against the JavaScript reader, sample for sample. That comparison is the only reason this stage can
 // claim anything at all, and it is why the expensive part of the work is a test rather than a template.
-import { frontEndOf, labelsOf, readTower, CLASSIFIER_ARCH, PROBE_TONES } from './classifierModel.js';
+import { frontEndOf, labelsOf, readTower, CLASSIFIER_ARCH } from './classifierModel.js';
 import { modelBytes } from '../audio/modelFormat.js';
 
 /** What this stage can emit today. Kept next to the family's own list and checked against it. */

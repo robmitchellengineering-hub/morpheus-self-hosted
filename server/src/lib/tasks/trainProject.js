@@ -96,7 +96,7 @@ const py = (s) => s.replace(/^\n/, '');
  * here would be a second opinion nobody asked for. What this file owns is the part the pre-flight cannot know:
  * HOW THE CLIPS BECOME TENSORS, and that a recording never straddles the split.
  */
-const datasetPy = (family) => py(`
+const datasetPy = () => py(`
 """Loading, the recording rule, and the split.
 
 The contract — how many clips, how loud, how long, whether anything is duplicated — is checked by Morpheus
@@ -764,7 +764,7 @@ export function trainingProject(familyId = 'audio.classify', preflight = null) {
       { path: 'requirements.txt', content: requirementsTxt() },
       { path: PREFLIGHT_FILE, content: preflightJson(preflight ?? { ok: false, issues: [{ level: 'fail', what: 'the dataset has not been checked yet', detail: 'Run the dataset check and write its verdict here.' }] }) },
       { path: 'preflight.py', content: preflightPy() },
-      { path: 'dataset.py', content: datasetPy(family) },
+      { path: 'dataset.py', content: datasetPy() },
       { path: 'model.py', content: modelPy() },
       { path: 'train.py', content: trainPy(family) },
       { path: 'evaluate.py', content: evaluatePy(family) },
