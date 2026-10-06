@@ -201,6 +201,21 @@ export function namSources(namcore) {
  * are. Returns the numbers rather than asserting them, so the caller decides what is good enough and can
  * print everything either way.
  */
+/**
+ * Every C++/ObjC++ source the scaffold wrote into a plugin project, as absolute paths.
+ *
+ * NOT a list of names: the generator owns this set, and a tool that names the files it expects is a tool that
+ * breaks the first time the generator emits one more.
+ */
+export function generatedSources(pluginDir) {
+  const dir = join(pluginDir, 'Source');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.cpp') || f.endsWith('.mm'))
+    .sort()
+    .map((f) => join(dir, f));
+}
+
 export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = null, work, seconds = 0.25, timingSeconds = 4, sampleRate = 48000 }) {
   mkdirSync(work, { recursive: true });
   const clap = clapInclude || clapIncludes();
@@ -234,9 +249,12 @@ export function namRenderCheck({ pluginDir, modelPath, namcore, clapInclude = nu
     ...COMPILE_FLAGS,
     `-I${clap}`, `-I${join(pluginDir, 'Source')}`, ...namIncludes,
     join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp'),
-    join(pluginDir, 'Source', 'Plugin.cpp'),
-    join(pluginDir, 'Source', 'PluginEntry.cpp'),
-    join(pluginDir, 'Source', 'ModelData.cpp'),
+    // ⚠️ EVERY GENERATED SOURCE, GLOBBED — NOT THREE OF THEM NAMED. This listed Plugin.cpp,
+    // PluginEntry.cpp and ModelData.cpp by hand, and the day the generator emitted a FOURTH file (the panel)
+    // the link failed with "undefined reference to morpheus_gui_extension" — in the ARM runner, which is the
+    // only place this runs. A hand-maintained list of a generated project's files is a list that goes stale
+    // the moment the generator changes, and the generator is ours to change.
+    ...generatedSources(pluginDir),
     ...nam,
     '-o', hostBin,
   ], 'the offline host + the plugin + the engine');

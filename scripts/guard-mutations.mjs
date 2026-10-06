@@ -1811,7 +1811,7 @@ export const MUTATIONS = [
     // The panel writes on the main thread and the audio thread reads. Without the pickup the knob moves and
     // nothing else does, which reads as a broken plugin rather than as a missing line.
     why: 'Stops the audio thread collecting what the panel changed, so a dragged control moves and the sound does not.',
-    find: '      if (__atomic_exchange_n(&p->gui_pending[k], 0, __ATOMIC_ACQ_REL)) p->value[k] = p->gui_value[k];',
+    find: '      if (morpheus_gui_consume(&p->gui_pending[k])) p->value[k] = p->gui_value[k];',
     replace: '      if (false) p->value[k] = p->gui_value[k];',
   },
   {
@@ -1841,6 +1841,24 @@ export const MUTATIONS = [
     why: 'Puts the ARM chain check back on the parameter property the stages refactor removed, so it throws at load and the chain proof silently stops existing.',
     find: '  const at = chainParams(AMP_CHAIN).findIndex((p) => p.key === key);',
     replace: '  const at = AMP_CHAIN.params.findIndex((p) => p.key === key);',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ FOUND BY THE WINDOWS RUNNER, not by reading: `__atomic_*` are GCC/Clang builtins and MSVC has none.
+    // Gating the helpers on _MSC_VER is what makes the file compile twice.
+    why: 'Removes the MSVC branch of the GUI handover, so the plugin stops compiling with MSVC and only clang and gcc are left.',
+    find: '#if defined(_MSC_VER)\n#include <intrin.h>',
+    replace: '#if defined(_MSC_VER) && !defined(_MSC_VER)\n#include <intrin.h>',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-nam-render-check.mjs',
+    // ⚠️ THE ARM RENDER CHECK'S SOURCE LIST, AS A MUTATION. It named three generated files by hand, and the
+    // day the generator emitted a fourth the link failed with "undefined reference to morpheus_gui_extension".
+    why: 'Puts the hand-written source list back into the render check, so a generated file the list does not know about breaks the link.',
+    find: '    ...generatedSources(pluginDir),',
+    replace: "    join(pluginDir, 'Source', 'Plugin.cpp'),\n    join(pluginDir, 'Source', 'PluginEntry.cpp'),\n    join(pluginDir, 'Source', 'ModelData.cpp'),",
   },
   // ── the board (2026-10-05) ─────────────────────────────────────────────────────────────────────────────
   // ⭐ A BOARD IS THE FIRST THING HERE A USER ARRANGES, and it fails in two ways nothing else can see: an

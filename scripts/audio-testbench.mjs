@@ -119,9 +119,15 @@ if (!value('--plugin')) {
   console.log(`generated a reference plugin in ${projectDir}`);
 }
 
-const sources = ['Source/Plugin.cpp', 'Source/PluginEntry.cpp'].map((p) => join(projectDir, p)).filter(existsSync);
+// ⚠️ GLOBBED, NOT NAMED. This listed Plugin.cpp and PluginEntry.cpp, and a generated project now also carries
+// the panel — one file per platform — so a hand-written list breaks the first time the generator emits
+// another. See audio-nam-render-check.mjs for the same fix and the failure that prompted it.
+const sources = readdirSync(join(projectDir, 'Source'))
+  .filter((f) => f.endsWith('.cpp') || f.endsWith('.mm'))
+  .sort()
+  .map((f) => join(projectDir, 'Source', f));
 if (!sources.length) {
-  console.error(`no CLAP sources under ${projectDir}/Source — expected Plugin.cpp and PluginEntry.cpp`);
+  console.error(`no CLAP sources under ${projectDir}/Source`);
   process.exit(2);
 }
 const hostSrc = join(ROOT, 'tools', 'clap-offline', 'clap_offline.cpp');

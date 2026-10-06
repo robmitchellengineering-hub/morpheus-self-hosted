@@ -1677,9 +1677,33 @@ check('⭐ every control carries its OWN unit through to the host and to the pan
 // and does nothing; a GUI write applied on the main thread is this thread writing state the audio thread
 // reads. Both halves are asserted, because either one alone looks correct.
 check('⭐ a control moved on the panel reaches the audio thread through a flag, and the host through an event',
-  /__atomic_store_n\(&p->gui_pending\[ix\], 1, __ATOMIC_RELEASE\)/.test(guiPlugin)
-  && /__atomic_exchange_n\(&p->gui_pending\[k\], 0, __ATOMIC_ACQ_REL\)/.test(guiPlugin)
+  /morpheus_gui_publish\(&p->gui_pending\[ix\]\)/.test(guiPlugin)
+  && /morpheus_gui_consume\(&p->gui_pending\[k\]\)/.test(guiPlugin)
   && /CLAP_EVENT_PARAM_VALUE/.test(guiPlugin) && /out_events->try_push/.test(guiPlugin), true);
+// ⚠️ AND THE HANDOVER IS PORTABLE. `__atomic_*` are GCC/Clang builtins; MSVC has none of them, and the
+// Windows runner rejected this file with "error C2065: '__ATOMIC_RELEASE': undeclared identifier". Both
+// spellings exist because both compilers do.
+// ⚠️ ANCHORED, NOT SUBSTRING. `/defined\(_MSC_VER\)/` still matches `#if defined(_MSC_VER) && !defined(_MSC_VER)`,
+// so the first version of this check passed with the MSVC branch disabled — a mutation that "survived" while
+// having removed exactly the portability it was testing. The line has to BE the guard.
+check('⭐ …and that handover compiles on MSVC as well as on clang, which is not the same statement',
+  /^#if defined\(_MSC_VER\)$/m.test(guiPlugin) && /_InterlockedExchange8/.test(guiPlugin)
+  && /__ATOMIC_RELEASE/.test(guiPlugin) && /__ATOMIC_ACQ_REL/.test(guiPlugin), true);
+// ⚠️ A TOOL THAT NAMES A GENERATED PROJECT'S FILES IS A TOOL THAT BREAKS WHEN THE GENERATOR CHANGES. Adding
+// the panel broke the ARM render check's hand-written source list — "undefined reference to
+// morpheus_gui_extension" — because the generator had grown a file the list did not have.
+for (const tool of ['scripts/audio-nam-render-check.mjs', 'scripts/audio-testbench.mjs']) {
+  const src = read(tool);
+  // ⚠️ THE COMPILE LIST IS WHAT IS CHECKED, not "the file mentions readdirSync somewhere" — the first version
+  // of this passed with the hand-written list restored, because the same file globs the engine's sources too.
+  // And the LIST shape is the thing that went stale: a bare `'Source/Plugin.cpp'` in an array of sources. A
+  // tool that patches that file by name for its own self-test is a different thing and stays.
+  const fromGlob = tool.includes('audio-nam-render-check')
+    ? /\.\.\.generatedSources\(pluginDir\)/.test(src)
+    : /readdirSync\(join\(projectDir, 'Source'\)\)/.test(src);
+  check(`${tool} takes the plugin's sources from a glob, not from a list of names`,
+    fromGlob && !/'Source\/Plugin\.cpp'/.test(src), true);
+}
 check('…and the output queue is remembered, because CLAP hands it over in process() and nowhere else',
   /p->out_events = process->out_events;/.test(guiPlugin) && /p->out_events = out;/.test(guiPlugin), true);
 

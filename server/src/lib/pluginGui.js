@@ -115,7 +115,10 @@ static uint32_t morpheus_gui_rows(const clap_plugin_t *plugin, const clap_plugin
       const double span = info.max_value - info.min_value;
       morpheus_gui_row_t *row = &out[written++];
       row->t = span > 0.0 ? (value - info.min_value) / span : 0.0;
-      snprintf(row->name, sizeof(row->name), "%s", info.name);
+      // %.63s RATHER THAN %s: the field is 64 bytes and a host's parameter name is up to 256, so the
+      // truncation is INTENDED — and gcc says so at -Wformat-truncation, on a build where clap-wrapper turns
+      // warnings into errors. Saying how much to take is both quieter and a more honest statement of intent.
+      snprintf(row->name, sizeof(row->name), "%.63s", info.name);
       if (!params->value_to_text(plugin, info.id, value, row->value, sizeof(row->value))) {
          snprintf(row->value, sizeof(row->value), "%.2f", value);
       }
