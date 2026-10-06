@@ -40,6 +40,7 @@ const has = (haystack, needle) => String(haystack).includes(needle);
 console.log('\nWordPress pairing — runtime verification\n');
 
 const php = read('wp-plugin/morpheus/includes/class-pairing.php');
+const seo = read('wp-plugin/morpheus/includes/seo/class-seo.php');
 const settings = read('wp-plugin/morpheus/includes/class-settings.php');
 const bootstrap = read('wp-plugin/morpheus/morpheus.php');
 const js = read('server/src/lib/wpPlugin.js');
@@ -193,6 +194,20 @@ check('…and a change at the SAME version is refused, because no site would eve
 check('…while an unknown published manifest is not a build failure — it says nothing rather than guessing',
   undeliverable(null, { version: '0.8.5', sha256: 'a'.repeat(64) }), null);
 // The packer must actually USE it, or the predicate is a unit test with nothing behind it.
+// ⭐ AND THE PLUGIN MUST DESCRIBE ARCHIVES, NOT ONLY SINGLE POSTS. This is a STRUCTURAL check and it is worth
+// being honest about why: the behaviour it stands for — an archive getting exactly one canonical with the query
+// string stripped, a description from a real source, and og tags — is asserted in
+// `wp-plugin/morpheus/tests/harness-noyoast.php`, which needs a real WordPress and is HAND-RUN (Playground, WASM
+// PHP). CI has no PHP, so what it can hold is that the branch still exists. It did not: `emit_head()` returned
+// early on anything that was not a single post, and the live store's `/shop/` shipped with no canonical, no
+// description and no social tags for as long as that was true.
+check('the plugin describes ARCHIVES as well as single posts',
+  has(seo, 'self::is_archive_view()') && has(seo, 'private static function emit_archive_head()'), true);
+check('…and an archive canonical ignores the query string, which is what collapses ?orderby= near-duplicates',
+  has(seo, 'private static function archive_canonical()') && has(seo, 'user_trailingslashit( \'page/\' . $paged )'), true);
+check('…from a real source, in order, and nothing invented when all three are empty',
+  has(seo, "term_description( $term->term_id, $term->taxonomy )") && has(seo, "$tagline === '' ? '' : $tagline"), true);
+
 check('the packer refuses to publish an undeliverable build',
   has(packer, 'undeliverable(live, next)') && has(packer, 'REFUSING TO PUBLISH'), true);
 

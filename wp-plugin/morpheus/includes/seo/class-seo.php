@@ -385,6 +385,50 @@ class Morpheus_SEO {
 	}
 
 	/**
+	 * The site's own image: the Site Icon, or the custom logo — or nothing.
+	 *
+	 * ⚠️ ONE FUNCTION, TWO CALLERS, because the Organization schema node and an ARCHIVE's `og:image` want exactly
+	 * the same picture, and "an empty og:image is worse than none" applies to both. A second copy of this lookup is
+	 * a second place for the fallback order to differ.
+	 */
+	private static function site_image_url() {
+		$logo = (string) get_site_icon_url( 512 );
+		if ( $logo === '' ) {
+			$custom = get_theme_mod( 'custom_logo' );
+			if ( $custom ) {
+				$logo = (string) wp_get_attachment_image_url( $custom, 'full' );
+			}
+		}
+		return $logo;
+	}
+
+	/**
+	 * Substitute the documented tokens. THE ONE PLACE the token list is applied.
+	 *
+	 * ⚠️ EXTRACTED SO AN ARCHIVE CAN USE IT. `apply_template()` needs a post id and an archive has none, so the
+	 * alternative was a second `str_replace` over the same token list — and a second copy of a token list is how
+	 * `%sitename%` ends up working in one place and printing literally in another.
+	 *
+	 * `%excerpt%` and `%content%` are separate arguments rather than one, because for a post they are different
+	 * things (the hand-written excerpt, and the first words of the body) and collapsing them would change what
+	 * every existing description says.
+	 */
+	private static function fill_template( $template, $title, $excerpt, $content ) {
+		$out = str_replace(
+			array( '%title%', '%sitename%', '%tagline%', '%excerpt%', '%content%' ),
+			array(
+				(string) $title,
+				get_bloginfo( 'name' ),
+				get_bloginfo( 'description' ),
+				wp_strip_all_tags( (string) $excerpt ),
+				wp_strip_all_tags( (string) $content ),
+			),
+			(string) $template
+		);
+		return trim( preg_replace( '/\s+/', ' ', $out ) );
+	}
+
+	/**
 	 * Apply a template to one item.
 	 *
 	 * `%excerpt%` prefers the hand-written excerpt and falls back to the body,
@@ -400,18 +444,7 @@ class Morpheus_SEO {
 		if ( $excerpt === '' ) {
 			$excerpt = self::content_excerpt( $post );
 		}
-		$out = str_replace(
-			array( '%title%', '%sitename%', '%tagline%', '%excerpt%', '%content%' ),
-			array(
-				get_the_title( $post_id ),
-				get_bloginfo( 'name' ),
-				get_bloginfo( 'description' ),
-				wp_strip_all_tags( $excerpt ),
-				self::content_excerpt( $post ),
-			),
-			(string) $template
-		);
-		return trim( preg_replace( '/\s+/', ' ', $out ) );
+		return self::fill_template( $template, get_the_title( $post_id ), $excerpt, self::content_excerpt( $post ) );
 	}
 
 	/**
@@ -1126,6 +1159,17 @@ class Morpheus_SEO {
 	 */
 	public static function emit_head() {
 		if ( ! is_singular() ) {
+			// ⭐ THE OTHER HALF OF OWNING THE HEAD. On a site where Morpheus owns it (`owns_head` true, no SEO
+			// plugin active), what this function skips, NOBODY emits — and it used to skip every archive: the
+			// shop, product categories, tags, the blog index. Measured on the live store before this branch
+			// existed: `/shop/` had title 1, description 0, canonical 0, og 0, twitter 0.
+			//
+			// ⚠️ IT MATTERS MOST ON A WOOCOMMERCE STORE, which is where the URLs multiply: `?orderby=`,
+			// `?filter_…` and `?paged=` are the near-duplicate addresses a self-referencing canonical exists to
+			// collapse, and there were none on any of them.
+			if ( self::is_archive_view() ) {
+				self::emit_archive_head();
+			}
 			return;
 		}
 		$id = get_queried_object_id();
@@ -1187,6 +1231,170 @@ class Morpheus_SEO {
 		}
 
 		self::emit_schema( $id, $f );
+	}
+
+	/**
+	 * Is this a view Morpheus should describe but which is NOT a single post?
+	 *
+	 * ⚠️ SEARCH AND 404 ARE DELIBERATELY OUT. A 404 must never carry a canonical — the whole point of a 404 is
+	 * that there is nothing canonical here — and a search result page is a query, not a page. Both are left to
+	 * the theme, which is where the decision belongs.
+	 */
+	private static function is_archive_view() {
+		if ( is_search() || is_404() || is_feed() ) {
+			return false;
+		}
+		// `is_home()` is the blog index when a static front page is set; `is_archive()` covers categories, tags,
+		// custom taxonomies (product_cat, product_tag), post type archives (`/shop/`), authors and dates.
+		return is_home() || is_archive();
+	}
+
+	/**
+	 * The canonical URL of an archive: its own address, WITHOUT any query string.
+	 *
+	 * ⭐ THE STRIPPING IS THE FEATURE. `?orderby=price`, `?filter_colour=red` and every other facet WooCommerce
+	 * offers are the same page sorted or filtered differently, and a crawler that finds twelve of them indexes
+	 * twelve near-copies. Building the URL from the archive's own permalink rather than from `REQUEST_URI` is what
+	 * collapses them — `get_pagenum_link()` would not, because it keeps the query string.
+	 *
+	 * ⚠️ AND WE ARE THE ONLY EMITTER HERE. Core's `rel_canonical()` is SINGULAR-ONLY — it returns before printing
+	 * on an archive — so unlike the singular path there is nobody to hand the value to and nobody to duplicate.
+	 * That is also why this does not go through `core_prints_canonical()`: it would answer "yes, core will print
+	 * one" and we would print nothing, leaving the archive with no canonical at all. Verified against the live
+	 * site, where `/shop/` rendered zero canonical tags before this existed.
+	 */
+	private static function archive_canonical() {
+		$base = '';
+		if ( is_home() ) {
+			$posts_page = (int) get_option( 'page_for_posts' );
+			$base       = $posts_page ? (string) get_permalink( $posts_page ) : home_url( '/' );
+		} elseif ( is_category() || is_tag() || is_tax() ) {
+			$term = get_queried_object();
+			if ( $term instanceof WP_Term ) {
+				$link = get_term_link( $term );
+				if ( ! is_wp_error( $link ) ) {
+					$base = (string) $link;
+				}
+			}
+		} elseif ( is_post_type_archive() ) {
+			$type = get_query_var( 'post_type' );
+			if ( is_array( $type ) ) {
+				$type = reset( $type );
+			}
+			$base = (string) get_post_type_archive_link( (string) $type );
+		} elseif ( is_author() ) {
+			$base = (string) get_author_posts_url( (int) get_queried_object_id() );
+		} elseif ( is_year() || is_month() || is_day() ) {
+			$y = (int) get_query_var( 'year' );
+			$m = (int) get_query_var( 'monthnum' );
+			$d = (int) get_query_var( 'day' );
+			if ( $y && $m && $d ) {
+				$base = (string) get_day_link( $y, $m, $d );
+			} elseif ( $y && $m ) {
+				$base = (string) get_month_link( $y, $m );
+			} elseif ( $y ) {
+				$base = (string) get_year_link( $y );
+			}
+		}
+		if ( $base === '' ) {
+			return '';
+		}
+		// Paged archives point at THEMSELVES, not at page one: page 3 of a category is a real page with its own
+		// content, and telling a search engine it is page one is how pages get dropped from the index.
+		$paged = max( 1, (int) get_query_var( 'paged' ) );
+		if ( $paged > 1 ) {
+			$base = trailingslashit( $base ) . user_trailingslashit( 'page/' . $paged );
+		}
+		return $base;
+	}
+
+	/** The archive's own name, without WordPress's "Category: " prefix — what `%title%` means in a template. */
+	private static function archive_title() {
+		if ( is_category() || is_tag() || is_tax() ) {
+			return (string) single_term_title( '', false );
+		}
+		if ( is_post_type_archive() ) {
+			return (string) post_type_archive_title( '', false );
+		}
+		if ( is_author() ) {
+			return (string) get_the_author_meta( 'display_name', (int) get_queried_object_id() );
+		}
+		if ( is_home() ) {
+			$posts_page = (int) get_option( 'page_for_posts' );
+			return $posts_page ? (string) get_the_title( $posts_page ) : (string) get_bloginfo( 'name' );
+		}
+		return (string) get_the_archive_title();
+	}
+
+	/**
+	 * What an archive should say about itself — from a real source, in order, or nothing.
+	 *
+	 * ⚠️ THREE SOURCES AND NO FOURTH. The term's own description is what somebody wrote about THAT category; the
+	 * site-wide description template is what the operator asked for by name; the tagline is a sentence that already
+	 * exists. If all three are empty the tag is omitted rather than filled with a generated sentence — the same
+	 * rule as `og:image` and the same rule as the schema, and for the same reason: a claim nobody made.
+	 */
+	private static function archive_description() {
+		if ( is_category() || is_tag() || is_tax() ) {
+			$term = get_queried_object();
+			if ( $term instanceof WP_Term ) {
+				$own = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( (string) term_description( $term->term_id, $term->taxonomy ) ) ) );
+				if ( $own !== '' ) {
+					return $own;
+				}
+			}
+		}
+		$d = self::get_defaults();
+		if ( ! empty( $d['enabled'] ) && ! empty( $d['description'] ) ) {
+			$applied = self::fill_template( $d['description'], self::archive_title(), '', '' );
+			if ( $applied !== '' ) {
+				return $applied;
+			}
+		}
+		$tagline = trim( (string) get_bloginfo( 'description' ) );
+		return $tagline === '' ? '' : $tagline;
+	}
+
+	/**
+	 * The head for an archive: the same set of tags as a single view, from the archive's own sources.
+	 *
+	 * ⚠️ NO `robots` TAG, AND NO SCHEMA. The theme emits its own robots meta on these pages (measured on the live
+	 * `/shop/`), so a second one is the duplicate-tag defect this module exists to prevent — and a
+	 * `BreadcrumbList` or `LocalBusiness` here would duplicate the theme's, which is the duplicate-ENTITY version
+	 * of the same mistake. What is missing on an archive is the canonical, the description and the social tags,
+	 * so that is exactly what this emits.
+	 */
+	private static function emit_archive_head() {
+		$canonical   = self::archive_canonical();
+		$title       = (string) wp_get_document_title();
+		$description = self::archive_description();
+		$image       = self::site_image_url();
+
+		if ( $canonical !== '' ) {
+			echo "\t<link rel=\"canonical\" href=\"" . esc_url( $canonical ) . "\" />\n";
+		}
+		if ( $description !== '' ) {
+			echo "\t<meta name=\"description\" content=\"" . esc_attr( $description ) . "\" />\n";
+		}
+		// `website` rather than `article`: an archive is not a piece of content with an author and a date, and
+		// saying it is confuses the thing that reads the tag.
+		echo "\t<meta property=\"og:type\" content=\"website\" />\n";
+		echo "\t<meta property=\"og:title\" content=\"" . esc_attr( $title ) . "\" />\n";
+		if ( $description !== '' ) {
+			echo "\t<meta property=\"og:description\" content=\"" . esc_attr( $description ) . "\" />\n";
+		}
+		if ( $canonical !== '' ) {
+			echo "\t<meta property=\"og:url\" content=\"" . esc_url( $canonical ) . "\" />\n";
+		}
+		echo "\t<meta property=\"og:site_name\" content=\"" . esc_attr( get_bloginfo( 'name' ) ) . "\" />\n";
+		if ( $image !== '' ) {
+			echo "\t<meta property=\"og:image\" content=\"" . esc_url( $image ) . "\" />\n";
+		}
+		echo "\t<meta name=\"twitter:card\" content=\"" . ( $image !== '' ? 'summary_large_image' : 'summary' ) . "\" />\n";
+		echo "\t<meta name=\"twitter:title\" content=\"" . esc_attr( $title ) . "\" />\n";
+		if ( $description !== '' ) {
+			echo "\t<meta name=\"twitter:description\" content=\"" . esc_attr( $description ) . "\" />\n";
+		}
 	}
 
 	/**
@@ -1291,13 +1499,7 @@ class Morpheus_SEO {
 			return array();
 		}
 
-		$logo = (string) get_site_icon_url( 512 );
-		if ( $logo === '' ) {
-			$custom = get_theme_mod( 'custom_logo' );
-			if ( $custom ) {
-				$logo = (string) wp_get_attachment_image_url( $custom, 'full' );
-			}
-		}
+		$logo = self::site_image_url();
 
 		$organization = array(
 			'@type' => 'Organization',

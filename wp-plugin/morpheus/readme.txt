@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.6
+Stable tag: 0.8.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,19 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.7 =
+* Added: Morpheus now describes ARCHIVES too — the shop, product categories, tags and the blog index. Until now
+  `emit_head()` returned early on anything that was not a single post, and on a site where Morpheus owns the
+  head that meant those pages had NO canonical, NO description and NO social tags at all (measured live on
+  `/shop/`: title 1, description 0, canonical 0, og 0, twitter 0).
+* The canonical is the archive's own permalink WITH THE QUERY STRING STRIPPED, which is what collapses the
+  `?orderby=`/`?filter_…` near-duplicates a WooCommerce archive generates, and a PAGED archive points at
+  itself rather than at page one.
+* The description comes from the term's own description, then the site-wide description template, then the
+  site tagline — and if all three are empty the tag is omitted rather than invented.
+* No `robots` tag and no schema on archives: the theme already emits both there, and a duplicate is the same
+  defect this module exists to prevent.
 
 = 0.8.6 =
 * Fixed: the head emitted TWO `<link rel="canonical">` tags on every singular view — the plugin's own at
