@@ -13,6 +13,7 @@
 import { execSync } from 'node:child_process';
 import { rmSync, mkdirSync, cpSync, existsSync, readFileSync, writeFileSync, statSync, readdirSync, utimesSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { undeliverable } from './lib/wpPluginRelease.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -106,6 +107,25 @@ try {
     requires: (header.match(/^\s*\*\s*Requires at least:\s*([\d.]+)/m) || [, null])[1],
     requires_php: (header.match(/^\s*\*\s*Requires PHP:\s*([\d.]+)/m) || [, null])[1],
   }), 'utf8');
+  // ⚠️ THE PUBLISHED MANIFEST, FETCHED AT PACK TIME — see undeliverable() for why this is the only place the
+  // question can be answered. A network failure is NOT a build failure (this runs on every build, including on a
+  // laptop with no connection): it warns and moves on. The condition it exists to catch is specific and knowable.
+  const next = { version, sha256 };
+  let live = null;
+  try {
+    const res = await fetch('https://morpheus.nz/plugin-manifest.json', { signal: AbortSignal.timeout(8000) });
+    if (res.ok) live = await res.json();
+  } catch {
+    console.log('[pack-wp-plugin] could not read the published manifest — skipping the deliverability check');
+  }
+  const why = undeliverable(live, next);
+  if (why) {
+    console.error(`\n[pack-wp-plugin] REFUSING TO PUBLISH: ${why}.`);
+    console.error('  Bump the Version: header, the MORPHEUS_VERSION constant and the readme\'s Stable tag,');
+    console.error('  and add a changelog entry. Three copies plus the changelog — verify-pairing.mjs checks they agree.\n');
+    process.exit(1);
+  }
+
   console.log(`[pack-wp-plugin] wrote ${outManifest} (v${version}, ${bytes} bytes, sha256 ${sha256.slice(0, 12)}…)`);
 } catch (err) {
   console.error(`[pack-wp-plugin] failed: ${err.message}`);
