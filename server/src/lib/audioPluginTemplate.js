@@ -22,8 +22,8 @@
 //      are the part that is genuinely ours, and a plugin without them is not a usable starting point.
 
 import {
-  GATE_OFF_DB, PLAIN_CHAIN, chainHas, chainParamsStable, chainPreCpp, chainPostCpp, eventCpp, gateDspCpp, gateInitCpp,
-  gateStageCpp, initCpp, paramsCpp, smoothCpp, smoothOneCpp, stateCpp, toneCpp, toneUpdateCpp,
+  GATE_OFF_DB, PLAIN_CHAIN, blocksCpp, chainHas, chainParamsStable, chainPreCpp, chainPostCpp, eventCpp, gateDspCpp,
+  gateInitCpp, gateStageCpp, initCpp, paramsCpp, smoothCpp, smoothOneCpp, stateCpp, toneCpp, toneUpdateCpp,
 } from './ampChain.js';
 // The band count only, for the two loops that reset filter state. The filters themselves are emitted by
 // ampChain.js, which reads this same module so the design and the build cannot disagree.
@@ -175,6 +175,10 @@ static const clap_plugin_descriptor_t s_desc = {
 
 // ── parameters ───────────────────────────────────────────────────────────────────────────────────────
 ${paramsCpp(list)}
+
+// ── the blocks, IN SIGNAL ORDER, for the panel to lay its rows out by ─────────────────────────────────
+// The same list the DSP is wired from, so the panel's order and the audio's order cannot disagree.
+${blocksCpp(chain)}
 
 static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 
@@ -493,6 +497,13 @@ extern "C" void *morpheus_gui_state(const clap_plugin_t *plugin) {
 extern "C" void morpheus_gui_set_state(const clap_plugin_t *plugin, void *state) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
    p->gui = state;
+}
+
+// The panel's block list, in signal order — see kMorpheusBlocks above. Declared in PluginGuiLayout.h, and
+// nothing else in this file uses it: the panel does the grouping.
+extern "C" const char *const *morpheus_gui_chain_order(uint32_t *count) {
+   if (count) *count = MORPHEUS_NUM_BLOCKS;
+   return kMorpheusBlocks;
 }
 
 /**

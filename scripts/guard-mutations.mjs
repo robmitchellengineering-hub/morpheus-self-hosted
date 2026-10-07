@@ -2300,6 +2300,16 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // ⭐ THE PANEL'S BLOCK ORDER, AS A MUTATION. An empty table is not a crash: the panel falls back to
+    // grouping by first appearance in the parameter list and still draws every control — in an order that is
+    // not the order anything runs in. That is exactly what shipped, and only a photograph caught it.
+    why: 'Stops telling the panel the signal order, so the blocks draw in the order their parameters happen to be listed in.',
+    find: '  const names = (chain.stages || []).map(stageLabel);',
+    replace: '  const names = [];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/pluginGui.js',
     // ⭐ CLAP'S OWN FLAG, NOT A NAME CONVENTION. Reading it as 0 draws every control as a continuous track —
     // including a block's switch and, later, a rig's capture selector — so the panel and the host disagree

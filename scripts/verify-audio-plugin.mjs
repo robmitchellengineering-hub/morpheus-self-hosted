@@ -1952,6 +1952,28 @@ check('…with a control for every block that has one, so nothing is in the sign
     return keys.filter((k) => !src.includes(k));
   })(), []);
 
+// ⭐ THE PANEL'S BLOCK ORDER IS THE SIGNAL ORDER, NOT THE PARAMETER ORDER — AND THAT IS NOT THE SAME LIST.
+// The panel cannot derive it: grouping rows by where a block first appears in the parameter list puts a block
+// WITH NO CONTROLS OF ITS OWN at the bottom, because its only parameter is its switch and the switches are
+// APPENDED (deliberately, so a host's automation ids never move). So the amp model and the cabinet — the two
+// blocks in the MIDDLE of this chain — drew below the delay and the spring reverb.
+// ⚠️ FOUND BY PHOTOGRAPHING THE PANEL WITH tools/clap-gui-host, and nothing else could have found it: every
+// guard passed, every measurement nulled, and the picture was of a signal path in the wrong order.
+const blockTable = (src) => {
+  const m = /static const char \*const kMorpheusBlocks\[\] = \{([\s\S]*?)\};/.exec(src);
+  return m ? [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]) : null;
+};
+const demoBlocks = blockTable(demoScaffold.files.find((f) => f.path === 'Source/Plugin.cpp')?.content || '');
+const demoSignalOrder = boardMod.boardChain(demo.DEMO_BOARD, {}).stages.map((st) => chainMod.stageLabel(st));
+check('⭐ …and the panel is told the blocks IN SIGNAL ORDER, which is not the order their controls are listed in',
+  demoBlocks, demoSignalOrder);
+check('…so a block with no controls of its own still draws between the blocks it sits between',
+  demoBlocks.indexOf('Amp model') < demoBlocks.indexOf('Delay')
+  && demoBlocks.indexOf('Cabinet') < demoBlocks.indexOf('Delay'), true);
+check('…and the layout groups by that order rather than by first appearance',
+  /morpheus_gui_chain_order\(&orderCount\)/.test(guiLayout)
+  && /if \(strcmp\(raw\[j\]\.group, order\[g\]\)\) continue;/.test(guiLayout), true);
+
 // ⚠️ AND THE THREE RUNNERS MUST SEED THAT, NOT THEIR OWN COPY. Three hand-written manifests is how macOS and
 // Windows published an amp while Linux published a gain knob, so the import is the claim: if a script stops
 // using the shared definition, its release silently becomes a different product under the same tag.
