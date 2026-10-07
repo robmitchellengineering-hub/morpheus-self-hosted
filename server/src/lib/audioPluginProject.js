@@ -28,6 +28,7 @@ import {
   CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSourceAll, cabHeader, resolveCabs, usableCabs,
 } from './cabIr.js';
 import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './compile-targets/utils.js';
+import { rigEntryList } from './rig.js';
 
 /**
  * PINNED TO A COMMIT, NOT A BRANCH, and it is not cosmetic.
@@ -94,6 +95,16 @@ export function readManifest(files) {
     // The `.nam` this plugin runs, when one is named. Empty means "find one in the project", which is what
     // most projects want; naming it is how a project carrying two models picks between them.
     model: parsed.model == null ? '' : String(parsed.model),
+    // ⭐ THE RIG — `models` / `cabs`, the N-captures-and-M-speakers spelling the finders accept. ⚠️ THIS KEY
+    // USED TO BE MISSING AND THE WHITELIST THREW THE RIG AWAY: it was readable in `rig.js` and unreachable
+    // through the real path, so a project that NAMED its captures still got every `.nam` in the tree, named
+    // from the filenames — a selector offering `JCM800 2203 Crunch 2 (No pre amp bass cut)`, which is not a
+    // name. `rigEntryList` validates the shape and returns `null` for anything malformed, which `|| undefined`
+    // turns into an ABSENT key — not `[]`, and not a shorter rig than the file asked for — so a hand-edited
+    // manifest cannot fail a build or reach the finders half-valid. `null` and `[]` both mean "did not ask",
+    // exactly as `rigList` reads them; the escape hatch `{ path, name }` is `rigEntry`'s, not re-implemented.
+    models: rigEntryList(parsed.models) || undefined,
+    cabs: rigEntryList(parsed.cabs) || undefined,
     // Which signal path this plugin is. Empty is the plugin every project got before chains existed, and an
     // unrecognised value is treated the same way rather than guessed at — see lib/ampChain.js.
     chain: parsed.chain == null ? '' : String(parsed.chain),
@@ -118,8 +129,16 @@ export function readManifest(files) {
  * `board` is written LAST and only when there is one, so a project that has no board produces the same
  * manifest text it produced before this key existed. That is what keeps the file diffable across a change
  * that added a feature.
+ *
+ * ⭐ `models` / `cabs` FOLLOW THE SAME RULE, for the same reason and one more: they are the rig the project
+ * was scaffolded with, and a project with no rig must produce the byte-identical manifest it produced before
+ * the rig existed. They are written after `board`, only when `rigEntryList` accepts them, and normalised
+ * through that same validator — so the writer cannot emit a rig the finders would drop on the next build.
  */
 export function manifestJson(manifest, board = null) {
+  // ONE VALIDATOR, AGAIN: what is written is what `readManifest` will accept and what `rigList` will run.
+  const models = rigEntryList(manifest.models);
+  const cabs = rigEntryList(manifest.cabs);
   return `${JSON.stringify({
     name: manifest.name,
     vendor: manifest.vendor,
@@ -136,6 +155,8 @@ export function manifestJson(manifest, board = null) {
     chain: manifest.chain || '',
     cab: manifest.cab || '',
     ...(board ? { board: boardJson(board) } : {}),
+    ...(models ? { models } : {}),
+    ...(cabs ? { cabs } : {}),
   }, null, 2)}\n`;
 }
 

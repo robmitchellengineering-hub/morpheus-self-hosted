@@ -109,9 +109,9 @@
       {
         "name": "Audio plugin — demo builds",
         "platform": "Windows · Linux AArch64 · macOS on request",
-        "what": "A prebuilt plugin you can load in a DAW today: a neural amp model from NeuralAmpModelerCore with an input trim, a noise gate and a three-band tone stack, in VST3, CLAP and a standalone app.",
+        "what": "A prebuilt plugin you can load in a DAW today: the project owner's own Marshall JCM 800 2203 captured in four states, through one Marshall G12M 4x12 captured with four mics, into a drive, a three-band tone stack, a delay and a spring reverb, in VST3, CLAP and a standalone app.",
         "href": "https://github.com/robmitchellengineering-hub/morpheus-self-hosted/releases/tag/plugin-demo",
-        "note": "Unsigned, so your platform will warn once. This is the amplifier stage and not the product — what Morpheus makes for you is a plugin built in your own repository around your own model and your own cabinet."
+        "note": "Unsigned, so your platform will warn once. All four captures and all four cabinets are included, and you switch between them with the Capture and Speaker controls in the plugin's own panel or the host's parameter list. This is the demo rig and not the product — what Morpheus makes for you is a plugin built in your own repository around your own model and your own cabinet."
       },
       {
         "name": "Marketplace templates",

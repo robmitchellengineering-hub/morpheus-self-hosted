@@ -1,0 +1,10 @@
+# The demo rig is CAPTURED AUDIO AND MODEL DATA, and its bytes are the measurement.
+#
+# ⚠️ `-text` FOR EVERY FILE IN IT, INCLUDING THE `.nam`s THAT HAPPEN TO BE JSON. The captures were made from a
+# real amplifier and cabinet; re-encoding a `.wav`, re-sampling it, or re-serialising a `.nam` through an editor
+# that normalises line endings makes every number ever measured about this rig describe bytes that no longer
+# ship. Git must store them exactly as they are, on every machine, whatever `core.autocrlf` is set to.
+#
+# `-diff` is the other half: a 300 KB JSON file diffed as text produces a useless blob of numbers on every
+# touch, and there is nothing in these files a reviewer reads in a diff.
+assets/demo-rig/* -text -diff

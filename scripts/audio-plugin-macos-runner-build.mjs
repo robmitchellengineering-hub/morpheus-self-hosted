@@ -27,7 +27,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import audioPlugin from '../server/src/lib/compile-targets/audio-plugin-macos.js';
-import { demoManifest } from './lib/pluginDemo.mjs';
+import { demoManifest, demoRigSeed } from './lib/pluginDemo.mjs';
 
 const log = (m) => console.log(`[audio-plugin] ${m}`);
 
@@ -76,6 +76,19 @@ for (const dir of ['clap-wrapper', 'namcore']) {
   }
 }
 
+// ⭐ THE DEMO RIG — WHAT THE FREE DOWNLOAD IS. `--demo-rig` seeds the project owner's own captures: the JCM 800
+// in four states through one G12M 4x12 in four mics, all eight files read from `assets/demo-rig/` in this
+// repository, so the build needs no network and cannot ship a different rig than the manifest names.
+// ⚠️ AND IT IS ONE SEED FOR THREE RUNNERS. The eight filenames, their paths inside the project and the names on
+// the two selectors live in scripts/lib/pluginDemo.mjs; a runner that grew its own copy of that list is how one
+// platform publishes three captures under a page that describes four.
+const demoRig = process.argv.includes('--demo-rig') || process.env.AUDIO_PLUGIN_DEMO_RIG === '1';
+if (demoRig) {
+  const rig = demoRigSeed();
+  seed.push(...rig);
+  console.log(`[audio-plugin] building the DEMO RIG: ${rig.length} captures and impulse responses, four of each`);
+}
+
 const modelArg = (() => {
   const at = process.argv.indexOf('--model');
   return at !== -1 && process.argv[at + 1] && !process.argv[at + 1].startsWith('--') ? process.argv[at + 1] : null;
@@ -83,24 +96,23 @@ const modelArg = (() => {
 
 // ⚠️ A CABINET IS A BLOCK IN THE BOARD, BUT THE FILE IS NOT THE BOARD. `demoBoard()` names a `cab` block, and
 // the target emits the cabinet stage whenever the board has one — behind `#if MORPHEUS_HAS_CAB`, which is 0
-// until an impulse response is actually in the project. So the demo builds and sounds the same with or without
-// this flag, and passing it is what turns the block from an inert stage into a speaker. The demo shipped
-// without one for as long as there was no impulse response we were allowed to redistribute — see the note in
-// scripts/lib/pluginDemo.mjs and the release notice.
+// until an impulse response is actually in the project. So a build with the board and without a `.wav` sounds
+// exactly as it did before cabinets shipped; `--cab` is for a hand-run over somebody else's IR. The demo rig
+// brings its own four (`--demo-rig`).
 const cabArg = (() => {
   const at = process.argv.indexOf('--cab');
   return at !== -1 && process.argv[at + 1] && !process.argv[at + 1].startsWith('--') ? process.argv[at + 1] : null;
 })();
 if (cabArg) {
   if (!existsSync(cabArg)) {
-    console.error(`[${tag}] the cabinet ${cabArg} does not exist — refusing to spend a build on it.`);
+    console.error(`[audio-plugin] the cabinet ${cabArg} does not exist — refusing to spend a build on it.`);
     process.exit(1);
   }
   // ⚠️ `models/`, BESIDE THE .nam — NOT A DIRECTORY OF ITS OWN. That is the convention the target ranks first
   // (lib/cabIr.js: a .wav under `models/` wins over one anywhere else), it is where the Linux rig has always put
   // it, and a second convention on two of three platforms is how the same project builds differently per platform.
   seed.push({ path: `models/${basename(cabArg)}`, content: readFileSync(cabArg).toString('base64'), encoding: 'base64' });
-  console.log(`[${tag}] building with a cabinet: ${basename(cabArg)}`);
+  console.log(`[audio-plugin] building with a cabinet: ${basename(cabArg)}`);
 }
 
 if (modelArg) {
@@ -110,15 +122,19 @@ if (modelArg) {
   }
   seed.push({ path: `models/${basename(modelArg)}`, content: readFileSync(modelArg, 'utf8') });
   console.log(`[audio-plugin-macos] building with a model: ${basename(modelArg)}`);
+}
 
-  // ⚠️ AND THE BOARD, OR THE DEMO IS NOT THE THING THE RELEASE DESCRIBES — TWICE OVER. A model with no chain
-  // gives the PLAIN plugin: the model IS processed, but the host offers ONE control, `Gain`, and the build's own
-  // proof said so while the release page claimed an amplifier. And a chain is only four blocks, so the demo was
-  // an amp and nothing else — no drive, no delay, no spring reverb, which is the difference between a demo that
-  // sounds like a DI box and one that sounds like a rig. `demoManifest()` is the whole published signal path,
-  // defined once in scripts/lib/pluginDemo.mjs so three runners cannot publish three products.
+// ⚠️ AND THE BOARD, OR THE DEMO IS NOT THE THING THE RELEASE DESCRIBES — TWICE OVER. A model with no chain
+// gives the PLAIN plugin: the model IS processed, but the host offers ONE control, `Gain`, and the build's own
+// proof said so while the release page claimed an amplifier. And a chain is only four blocks, so the demo was
+// an amp and nothing else — no drive, no delay, no spring reverb, which is the difference between a demo that
+// sounds like a DI box and one that sounds like a rig. `demoManifest()` is the whole published signal path,
+// defined once in scripts/lib/pluginDemo.mjs so three runners cannot publish three products: the board AND, now,
+// the rig — four captures and four cabinets the eight files above bring into the project.
+// ONE CALL SITE, deliberately: two `seed.push` lines for one path is a seed that contradicts itself, and it is
+// also the shape that let a mutation of one of them leave the guard green.
+if (modelArg || demoRig) {
   seed.push({ path: 'morpheus.plugin.json', content: demoManifest() });
-
 } else {
   console.log('[audio-plugin-macos] building WITHOUT a model (the gain stage)');
 }

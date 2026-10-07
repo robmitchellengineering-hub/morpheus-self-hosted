@@ -25,7 +25,7 @@ import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { namRenderCheck } from './audio-nam-render-check.mjs';
 import { ampChainCheck, orderCheck, toggleCheck } from './audio-amp-chain-check.mjs';
-import { demoManifest } from './lib/pluginDemo.mjs';
+import { demoManifest, demoRigSeed } from './lib/pluginDemo.mjs';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
 
@@ -79,6 +79,13 @@ const modelArg = (() => {
 // `--render-check` turns on the proof that the plugin PLAYS the model rather than merely carrying it; the two
 // thresholds are the caller's because they depend on the model being checked.
 const flagOn = (name) => process.argv.includes(`--${name}`);
+// ⭐ THE DEMO RIG — WHAT THE FREE DOWNLOAD IS. `--demo-rig` seeds the project owner's own captures: the JCM 800
+// in four states through one G12M 4x12 in four mics, all eight files read from `assets/demo-rig/` in this
+// repository, so the build needs no network and cannot ship a different rig than the manifest names.
+// ⚠️ AND IT IS ONE SEED FOR THREE RUNNERS. The eight filenames, their paths inside the project and the names on
+// the two selectors live in scripts/lib/pluginDemo.mjs; a runner that grew its own copy of that list is how one
+// platform publishes three captures under a page that describes four.
+const demoRig = flagOn('demo-rig') || process.env.AUDIO_PLUGIN_DEMO_RIG === '1';
 const renderCheck = flagOn('render-check');
 // `--chain` builds the AMP CHAIN (input, gate, tone, model, cabinet, output) rather than the plain plugin, and
 // `--cab` puts an impulse response in it; `--chain-check` then renders the chain and compares each stage
@@ -99,6 +106,19 @@ const maxNullDb = numArg('max-null-db', -60);
 // fail a "must change the signal" assertion for the right reason and the wrong conclusion.
 const expectEffectDb = numArg('expect-model-effect-db', Number.NaN);
 const seed = [{ path: 'README.md', content: '# audio-plugin-linux-arm runner build\n' }];
+// ⚠️ `--demo-rig` IS MUTUALLY EXCLUSIVE WITH `--chain`: one is the nine-block board the demo publishes, the
+// other is a hand-run's four-block amp chain, and seeding both writes two `morpheus.plugin.json` files that
+// disagree. Refused rather than resolved, because either resolution would be a guess about which product was
+// meant.
+if (demoRig && chainProject) {
+  console.error('[audio-plugin-linux-arm] --demo-rig and --chain both write the manifest; pass one.');
+  process.exit(1);
+}
+if (demoRig) {
+  const rig = demoRigSeed();
+  seed.push(...rig);
+  log(`building the DEMO RIG: ${rig.length} captures and impulse responses, four of each`);
+}
 if (chainProject) {
   // The same manifest a user would write. `chain: 'amp'` is what turns the single-Gain plugin into the amp.
   seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Amp Chain', chain: 'amp' }, null, 2)}\n` });
@@ -126,19 +146,20 @@ if (modelArg) {
   // failure message names the file the user recognises rather than a temp path.
   seed.push({ path: `models/${basename(modelArg)}`, content: readFileSync(modelArg, 'utf8') });
   log(`building with a model: ${basename(modelArg)}`);
-
-  // ⚠️ AND THE CHAIN, OR THIS PUBLISHES A MODEL WITH ONE `Gain` KNOB AND CALLS IT THE AMPLIFIER. macOS and
-  // Windows got this first (#552); Linux was left behind because its `--chain` is a SEPARATE flag with its own
-  // build, and the build that gets published is the `--model` one. `chain: 'amp'` is what turns the
-  // single-Gain plugin into the amp — input trim, gate, three-band tone stack, output — and the build's own
-  // proof is the record: it listed `Gain` alone, and the release page claimed six.
-  //
-  // Not pushed when `--chain` already did it: two entries for one path is a seed that contradicts itself.
-  if (!chainProject) {
-    seed.push({ path: 'morpheus.plugin.json', content: demoManifest() });
-  }
-} else {
+} else if (!demoRig) {
   log('building WITHOUT a model (the gain stage) — set AUDIO_PLUGIN_MODEL=/path/to/model.nam to build the amp');
+}
+
+// ⚠️ AND THE BOARD, OR THIS PUBLISHES A MODEL WITH ONE `Gain` KNOB AND CALLS IT THE AMPLIFIER. macOS and
+// Windows got this first (#552); Linux was left behind because its `--chain` is a SEPARATE flag with its own
+// build, and the build that gets published is the `--model` one. `chain: 'amp'` is what turns the
+// single-Gain plugin into the amp — input trim, gate, three-band tone stack, output — and the build's own
+// proof is the record: it listed `Gain` alone, and the release page claimed six.
+//
+// One call site for the shared manifest: the demo rig and the `--model` build both take the nine-block board
+// (now with all four captures and all four cabinets), and `--chain` writes its own four-block manifest above.
+if (demoRig || (modelArg && !chainProject)) {
+  seed.push({ path: 'morpheus.plugin.json', content: demoManifest() });
 }
 const validation = audioPlugin.validate(seed);
 if (!validation.valid) {
