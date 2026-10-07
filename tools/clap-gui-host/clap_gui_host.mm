@@ -18,7 +18,11 @@
 //       tools/clap-gui-host/clap_gui_host.mm <plugin>/Source/Plugin.cpp <plugin>/Source/PluginEntry.cpp \
 //       <plugin>/Source/PluginGui.mm -framework Cocoa -framework QuartzCore -o /tmp/clap_gui_host
 //
-// Run:  /tmp/clap_gui_host --out board.png [--id nz.morpheus.plugin] [--wait 0.5]
+// Run:  /tmp/clap_gui_host --out board.png [--id nz.morpheus.plugin] [--wait 0.5] [--click x,y ...]
+//
+// \`--click\` presses the panel at a point in the PANEL's own coordinates, and may be given more than once:
+// open a block, then step a control inside it. Each press is the same event the window would deliver, so the
+// panel's own hit test decides what it means — nothing here knows where a box or a control is.
 #import <Cocoa/Cocoa.h>
 #include <clap/clap.h>
 #include <stdio.h>
@@ -48,13 +52,24 @@ int main(int argc, char **argv) {
     const char *out = nullptr;
     const char *wanted = nullptr;
     double wait = 0.6;
+    // More than one click, in order, because the parts of the panel worth photographing are often behind an
+    // interaction: open a block, then step a control inside it.
+    double clickX[8], clickY[8];
+    int clicks = 0;
     for (int i = 1; i < argc; ++i) {
       if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
       else if (!strcmp(argv[i], "--id") && i + 1 < argc) wanted = argv[++i];
       else if (!strcmp(argv[i], "--wait") && i + 1 < argc) wait = atof(argv[++i]);
+      else if (!strcmp(argv[i], "--click") && i + 1 < argc) {
+        if (clicks >= 8 || sscanf(argv[++i], "%lf,%lf", &clickX[clicks], &clickY[clicks]) != 2) {
+          fprintf(stderr, "--click wants a point as x,y (at most eight of them)\n");
+          return 2;
+        }
+        ++clicks;
+      }
     }
     if (!out) {
-      fprintf(stderr, "usage: clap_gui_host --out <shot.png> [--id <plugin-id>] [--wait <seconds>]\n");
+      fprintf(stderr, "usage: clap_gui_host --out <shot.png> [--id <plugin-id>] [--wait <seconds>] [--click x,y ...]\n");
       return 2;
     }
 
@@ -138,15 +153,39 @@ int main(int argc, char **argv) {
       [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
     }
 
-    // ── the evidence ──────────────────────────────────────────────────────────────────────────────────────
-    // ⚠️ THIS CANNOT FAIL QUIETLY. A host that got this far has a plugin claiming a working panel, so a
-    // bitmap that will not render — a view with no bounds, a window with no content — is a defect and says
-    // so, rather than writing a one-pixel PNG and exiting happy.
     NSView *panel = [content subviews].firstObject;
     if (!panel) {
       fprintf(stderr, "FAIL: the plugin created no view inside the one it was given\n");
       return 1;
     }
+
+    // ── an optional CLICK, for the part of the panel a block has to be opened to reach ───────────────────
+    // ⚠️ THE POINT IS IN THE PANEL'S OWN COORDINATES and is converted into the window's, so the panel's
+    // `convertPoint:fromView:nil` resolves it back to exactly the point that was asked for — the panel is
+    // flipped, and guessing the flip here would put the click a panel-height away from where it was aimed.
+    for (int c = 0; c < clicks; ++c) {
+      const NSPoint inWindow = [panel convertPoint:NSMakePoint(clickX[c], clickY[c]) toView:nil];
+      NSEvent *down = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:inWindow modifierFlags:0
+          timestamp:[NSDate timeIntervalSinceReferenceDate] windowNumber:window.windowNumber context:nil
+          eventNumber:0 clickCount:1 pressure:1.0];
+      NSEvent *up = [NSEvent mouseEventWithType:NSEventTypeLeftMouseUp location:inWindow modifierFlags:0
+          timestamp:[NSDate timeIntervalSinceReferenceDate] windowNumber:window.windowNumber context:nil
+          eventNumber:0 clickCount:1 pressure:1.0];
+      [panel mouseDown:down];
+      [panel mouseUp:up];
+      printf("clicked the panel at %.0f,%.0f\n", clickX[c], clickY[c]);
+      // …and let it redraw before the next press, so a click on a control is aimed at the state the previous
+      // one left behind rather than at a frame that has not been drawn yet.
+      until = [NSDate dateWithTimeIntervalSinceNow:0.35];
+      while ([until timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+      }
+    }
+
+    // ── the evidence ──────────────────────────────────────────────────────────────────────────────────────
+    // ⚠️ THIS CANNOT FAIL QUIETLY. A host that got this far has a plugin claiming a working panel, so a
+    // bitmap that will not render — a view with no bounds, a window with no content — is a defect and says
+    // so, rather than writing a one-pixel PNG and exiting happy.
     printf("the panel put a %s of %.0fx%.0f into the host's view\n",
            [NSStringFromClass([panel class]) UTF8String], panel.frame.size.width, panel.frame.size.height);
     NSBitmapImageRep *rep = [panel bitmapImageRepForCachingDisplayInRect:panel.bounds];

@@ -2009,6 +2009,73 @@ check('⭐ …and the rows are re-ordered so a block\'s own rows sit together, i
 check('⭐ …and a click on a switch TOGGLES it, rather than reading a position off a track it does not have',
   /v = to_default \? r->def : \(r->setting >= \(r->min \+ r->max\) \* 0\.5 \? r->min : r->max\);/.test(guiLayout), true);
 
+// ── 25b-ii. ⭐ A SELECTOR IS A CHOICE OF N, NOT A SWITCH ─────────────────────────────────────────────────
+// ⚠️ WHY THIS SECTION EXISTS. CLAP's flag says a control is DISCRETE; it does not say whether that means two
+// states called On and Off or a list of named members. A capture or speaker selector and a block's switch are
+// BOTH `CLAP_PARAM_IS_STEPPED`, so a panel that trusted the flag drew the rig's N captures as a 0/1 pill —
+// which is a control that lies about what it does, and is exactly what Rob asked to stop seeing. The plugin
+// answers how many members a control has and what they are called, from the same table the DSP switches
+// between, and every backend draws the answer as a NAME WITH ARROWS.
+check('⭐ the layout asks the PLUGIN which controls are choices, rather than guessing from CLAP\'s stepped flag',
+  /int morpheus_gui_choice_count\(clap_id id\);/.test(guiLayout)
+  && /const char \*morpheus_gui_choice_name\(clap_id id, int index\);/.test(guiLayout)
+  && /row->choices = morpheus_gui_choice_count\(info\.id\);/.test(guiLayout)
+  && /int choices;/.test(guiLayout)
+  && /static int morpheus_gui_is_choice\(const morpheus_gui_row_t \*row\) \{ return row->choices > 1; \}/.test(guiLayout), true);
+check('…and the plugin answers from the RIG TABLE, for both halves of the rig',
+  /if \(id == PARAM_MODEL_SELECT\) return \(int\)MORPHEUS_RIG_MODELS;/.test(rigSrc)
+  && /if \(id == PARAM_MODEL_SELECT\) return index < \(int\)MORPHEUS_RIG_MODELS \? kMorpheusRigModels\[index\]\.name : NULL;/.test(rigSrc)
+  && /if \(id == PARAM_CAB_SELECT\) return \(int\)MORPHEUS_RIG_CABS;/.test(twoCabSrc)
+  && /if \(id == PARAM_CAB_SELECT\) return index < \(int\)MORPHEUS_RIG_CABS \? kMorpheusRigCabs\[index\]\.name : NULL;/.test(twoCabSrc), true);
+// ⚠️ A RIG OF ONE HAS NO TABLE, so both functions must COMPILE and answer "no choice" without one — a project
+// that fails to build is worse than a control drawn wrong. And a 0/1 switch must keep answering 0, or it would
+// be redrawn as a choice of two states called On and Off.
+check('⚠️ …and a project whose rig has no table still compiles and answers "no choice"',
+  /extern "C" int morpheus_gui_choice_count\(clap_id id\) \{\n   \(void\)id;\n   return 0;\n\}/.test(oneModelSrc)
+  && /extern "C" const char \*morpheus_gui_choice_name\(clap_id id, int index\) \{\n   if \(index < 0\) return NULL;\n   \(void\)id; \(void\)index;\n   return NULL;\n\}/.test(oneModelSrc)
+  && !/MORPHEUS_RIG_MODELS|kMorpheusRigModels/.test(oneModelSrc), true);
+check('…and every non-choice control answers 0, so an ordinary control is not offered as a choice',
+  /   \(void\)id;\n   return 0;\n\}/.test(rigSrc) && /   \(void\)id; \(void\)index;\n   return NULL;\n\}/.test(rigSrc), true);
+// ⭐ THE NAME IS THE PLUGIN'S OWN value_to_text, which is what a host draws in an automation lane and what the
+// readout column already shows; the table is the fallback for a control whose display text is missing. Both
+// read the same table, so the control and the readout cannot name two different captures.
+check('⭐ …and the name a choice shows is the plugin\'s own value_to_text, with the table as the fallback',
+  /static void morpheus_gui_choice_text\(const morpheus_gui_row_t \*row, char \*out, const size_t capacity\)/.test(guiLayout)
+  && /if \(row->value\[0\]\) \{/.test(guiLayout)
+  && /morpheus_gui_choice_name\(row->id, index\)/.test(guiLayout), true);
+// ⭐ AND THE CONTROL IS DRAWN. The arrows' three corners are computed ONCE in the shared header, mirrored for
+// left and right, so three backends cannot point in three directions — the same reason the whole layout is
+// shared. The left half steps DOWN the list and the right half UP, and the step is CLAMPED.
+check('⭐ …and the geometry of a choice arrow is decided ONCE in the shared header',
+  /static void morpheus_gui_choice_arrow\(const int left, const uint32_t row_y, int \*out\)/.test(guiLayout)
+  && /out\[0\] = apex; out\[1\] = mid;/.test(guiLayout)
+  && /#define MORPHEUS_CHOICE_X MORPHEUS_CONTROL_X/.test(guiLayout)
+  && /#define MORPHEUS_CHOICE_MID_X/.test(guiLayout), true);
+check('⭐ …and a click on the LEFT half steps DOWN, the right half UP, CLAMPED like the plugin\'s own index',
+  /if \(morpheus_gui_is_choice\(r\)\) \{/.test(guiLayout)
+  && /else if \(t < MORPHEUS_CHOICE_MID_X\) --i;\n      else \+\+i;/.test(guiLayout)
+  && /if \(i > r->choices - 1\) i = r->choices - 1;/.test(guiLayout), true);
+for (const [name, src, place] of [
+  ['Cocoa', guiCpp, /MORPHEUS_CHOICE_NAME_X, y \+ 2\)/],
+  ['win32', guiWin, /MORPHEUS_CHOICE_NAME_X, y \+ 2, choice/],
+  // ⚠️ X11'S TEXT Y IS A BASELINE AND THE OTHER TWO ARE TOP-OF-TEXT — the register every string in each
+  // backend already uses. Getting this wrong puts the name half a line off on the one platform nobody here
+  // can photograph, which is exactly the class of bug this section exists for.
+  ['X11', guiX11, /MORPHEUS_CHOICE_NAME_X, y \+ 13, choice/],
+]) {
+  check(`⭐ …${name} draws a choice as a NAME WITH ARROWS, not as a switch pill`,
+    /if \(morpheus_gui_is_choice\(row\)\) \{[\s\S]*?\} else if \(row->stepped\) \{/.test(src)
+    && /morpheus_gui_choice_text\(row, choice, sizeof\(choice\)\)/.test(src)
+    && place.test(src), true);
+  check(`…and ${name} draws BOTH arrows from the shared geometry, not its own triangles`,
+    /for \(int a = 1; a >= 0; --a\)/.test(src) && /morpheus_gui_choice_arrow\(a,/.test(src)
+    && !/static void morpheus_gui_choice_arrow\(/.test(src), true);
+  // ⚠️ AND A 0/1 SWITCH IS STILL A SWITCH. The choice branch is an addition beside the switch, not a
+  // replacement of it — a block's bypass and the rig's model/cab switches must keep their pill.
+  check(`…and ${name} still draws a 0/1 row as a switch`,
+    /row->stepped/.test(src) && /MORPHEUS_SWITCH_W/.test(src) && /MORPHEUS_SWITCH_H/.test(src), true);
+}
+
 // ── 25c. THE PANEL BECOMES BLOCKS, AND THE ORDER BECOMES DRAGGABLE (Stage 2/3) ───────────────────────────
 // ⚠️ WHAT THESE PROTECT, AND WHY THEY ARE SHAPED THIS WAY. The panel no longer draws a list of rows: it draws
 // a BOX per block with the amber line between them and the SELECTED block's controls beside them. The reason

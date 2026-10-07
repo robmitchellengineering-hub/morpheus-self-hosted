@@ -217,6 +217,44 @@ static int morpheus_cab_index(double v) {
    }
 ` : ''}`;
 
+  // ⭐ WHAT THE PANEL NEEDS TO DRAW A CHOICE RATHER THAN A SWITCH. A selector and a block's switch are BOTH
+  // `CLAP_PARAM_IS_STEPPED`, so the panel cannot tell "On/Off" from "Clean/Crunch/Lead" by the flag alone — and
+  // a three-member selector drawn as a two-state pill is a control that lies about what it does. So the panel
+  // asks the PLUGIN how many members a control has and what each is called; the table behind both is the same
+  // one the DSP switches between and `value_to_text` names, so a control cannot offer a capture the plugin
+  // would not play.
+  //
+  // ⚠️ A RIG OF ONE HAS NO TABLE AT ALL. `MORPHEUS_RIG_MODELS` / `kMorpheusRigModels` are emitted only for a
+  // rig of two or more (see namPlugin.js), so both functions are written to COMPILE and answer "no choice"
+  // without them — which is also what keeps a 0/1 switch, and every ordinary control, out of the choice path.
+  // The `#if defined(...)` is belt and braces beside the JS conditional below, and it is the honest guard: it
+  // names the macro whose absence is the case being handled.
+  const choiceAccessors = `extern "C" int morpheus_gui_choice_count(clap_id id) {
+${modelSelect ? `#if defined(MORPHEUS_RIG_MODELS)
+   if (id == PARAM_MODEL_SELECT) return (int)MORPHEUS_RIG_MODELS;
+#endif
+` : ''}${cabSelect ? `#if defined(MORPHEUS_RIG_CABS)
+   if (id == PARAM_CAB_SELECT) return (int)MORPHEUS_RIG_CABS;
+#endif
+` : ''}   (void)id;
+   return 0;
+}
+
+// ⭐ THE NAME AT AN INDEX, or NULL when this control is not a choice or the index is past the end. The panel
+// draws whatever this returns and never a name of its own, so a member renamed in the project is renamed in
+// the panel by the same rebuild.
+extern "C" const char *morpheus_gui_choice_name(clap_id id, int index) {
+   if (index < 0) return NULL;
+${modelSelect ? `#if defined(MORPHEUS_RIG_MODELS)
+   if (id == PARAM_MODEL_SELECT) return index < (int)MORPHEUS_RIG_MODELS ? kMorpheusRigModels[index].name : NULL;
+#endif
+` : ''}${cabSelect ? `#if defined(MORPHEUS_RIG_CABS)
+   if (id == PARAM_CAB_SELECT) return index < (int)MORPHEUS_RIG_CABS ? kMorpheusRigCabs[index].name : NULL;
+#endif
+` : ''}   (void)id; (void)index;
+   return NULL;
+}`;
+
   return `// ${name} — a CLAP audio effect.
 //
 // Built by Morpheus. This file is yours: edit it freely, and the build picks up your changes.
@@ -689,6 +727,9 @@ extern "C" const char *const *morpheus_gui_chain_order(uint32_t *count) {
    }
    return s_gui_order_names;
 }
+
+// ── the panel's half of the RIG: what a control that CHOOSES offers ──────────────────────────────────────
+${choiceAccessors}
 
 /**
  * A control moved on the panel. Three things happen, and all three are needed:
