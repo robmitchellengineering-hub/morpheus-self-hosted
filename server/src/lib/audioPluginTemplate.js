@@ -92,6 +92,10 @@ export function pluginSource({ name, vendor, id, description = '', chain = PLAIN
   // ask for one gets the single-Gain plugin, unchanged — see lib/ampChain.js for why that matters.
   const list = params || chainParamsStable(chain, { paramName: 'Gain' });
   const hasTone = chainHas(chain, 'tone');
+  // WHETHER THE MODEL IS A BLOCK, which is a different question from whether it is IN THE PATH. A model
+  // BLOCK has an `on_model` switch and a dry buffer to fade against; a legacy project whose `.nam` is simply
+  // in the tree has neither — it runs, as it always has, and there is nothing to switch.
+  const modelSwitch = chainHas(chain, 'model');
   // ⭐ THE BLOCKS THAT ARE NOT PART OF AN AMP, HANDED IN RATHER THAN KNOWN HERE. `board.js` decides which
   // blocks a project has and what C++ each one contributes; this file interpolates the four fragments and
   // replaces each marker. Empty by default, which is what keeps every project that predates the board
@@ -210,6 +214,13 @@ ${cabStateCpp}
    // plugin. \`get_dsp\` returns a unique_ptr and \`.release()\` hands the ownership over on purpose.
    nam::DSP *model[2];
    double sample_rate;
+${modelSwitch ? `   // ⭐ THE DRY COPY THE MODEL'S SWITCH FADES AGAINST, and it exists because of the model's SHAPE: it runs
+   // a whole chunk at once and IN PLACE, so by the time the crossfade wants the signal it replaced, the
+   // buffer holds the model's output. Sized in activate(), where the host has said how large a block it will
+   // send — never in process(), which may not allocate. NULL means "no fade available", not "no model": see
+   // the switch in plug_process, which falls back to switching hard rather than refusing to switch.
+   float *model_dry[2];
+   uint32_t model_dry_cap;` : ''}
 #endif
 } ${'plugin_t'};
 
@@ -246,9 +257,15 @@ static bool params_get_info(const clap_plugin_t *plugin, uint32_t index, clap_pa
    if (index >= MORPHEUS_NUM_PARAMS) return false;
    memset(info, 0, sizeof(*info));
    info->id = kParams[index].id;
-   info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+   // ⭐ A BLOCK'S SWITCH IS A DISCRETE CONTROL AND SAYS SO IN CLAP'S OWN VOCABULARY, rather than leaving the
+   // host to infer it from a 0..1 range: \`CLAP_PARAM_IS_STEPPED\` is what makes a DAW draw a switch or a
+   // two-entry list instead of a slider that happens to land on whole numbers. The plugin's own panel reads
+   // the same flag (see PluginGuiLayout.h), so the two cannot disagree about which rows are switches.
+   info->flags = CLAP_PARAM_IS_AUTOMATABLE | (kParams[index].stepped ? CLAP_PARAM_IS_STEPPED : 0);
    snprintf(info->name, sizeof(info->name), "%s", kParams[index].name);
-   snprintf(info->module, sizeof(info->module), "%s", "");
+   // THE BLOCK THE CONTROL BELONGS TO. A host groups its parameter list by this, which is the difference
+   // between fifteen rows and six named sections — the same thing the plugin's own panel does with it.
+   snprintf(info->module, sizeof(info->module), "%s", kParams[index].module);
    info->min_value = kParams[index].min;
    info->max_value = kParams[index].max;
    info->default_value = kParams[index].def;
@@ -268,14 +285,34 @@ static bool params_get_value(const clap_plugin_t *plugin, clap_id id, double *ou
 // while the only chain was an amp and became wrong the moment a block arrived whose control is a time in
 // milliseconds or a mix in percent: the DELAY showed "340.00 dB". The unit now comes from the parameter table
 // — the same table the panel draws from — so a control cannot be described in units it does not have.
+//
+// ⭐ AND A BLOCK'S SWITCH READS "On"/"Off" RATHER THAN "1.00". A discrete control whose text is a number is a
+// control the host cannot draw and a player cannot read; CLAP carries the discreteness as a flag (see
+// params_get_info) and this is the half that names the two states.
 static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double value, char *out,
                                  uint32_t capacity) {
    (void)plugin;
    const int ix = param_index(id);
    if (ix < 0) return false;
+   if (kParams[ix].stepped) {
+      snprintf(out, capacity, "%s", value >= (kParams[ix].min + kParams[ix].max) * 0.5 ? "On" : "Off");
+      return true;
+   }
    const char *unit = kParams[ix].unit;
    if (unit && unit[0]) snprintf(out, capacity, "%.2f %s", value, unit);
    else snprintf(out, capacity, "%.2f", value);
+   return true;
+}
+
+// ⚠️ PORTABLE ON PURPOSE. \`strncasecmp\` is POSIX and MSVC does not have it — it has \`_strnicmp\` — and this
+// file is compiled by both (the Windows runner is where the \`__atomic_*\` builtins were found missing). Six
+// lines of our own beat a platform branch for a comparison this small.
+static bool morpheus_text_is(const char *text, const char *word) {
+   while (*text == ' ') ++text;
+   for (; *word; ++text, ++word) {
+      const char c = (*text >= 'A' && *text <= 'Z') ? (char)(*text - 'A' + 'a') : *text;
+      if (c != *word) return false;
+   }
    return true;
 }
 
@@ -284,6 +321,12 @@ static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const 
    (void)plugin;
    const int ix = param_index(id);
    if (ix < 0) return false;
+   // A SWITCH IS TYPED AS A WORD. "On"/"Off" is what value_to_text just showed the user, so refusing it here
+   // would be the plugin rejecting its own spelling — and a host that round-trips text would break on it.
+   if (kParams[ix].stepped) {
+      if (morpheus_text_is(text, "on")) { *out = kParams[ix].max; return true; }
+      if (morpheus_text_is(text, "off")) { *out = kParams[ix].min; return true; }
+   }
    char *end = NULL;
    const double v = strtod(text, &end);
    if (end == text) return false;  // nothing numeric was typed
@@ -354,7 +397,7 @@ static void plug_destroy(const clap_plugin_t *plugin) {
 #if MORPHEUS_HAS_MODEL
    // \`free\` runs no destructors, so the models are released here or not at all.
    for (int c = 0; c < 2; ++c) { delete p->model[c]; p->model[c] = NULL; }
-#endif
+${modelSwitch ? '   for (int c = 0; c < 2; ++c) { free(p->model_dry[c]); p->model_dry[c] = NULL; }\n' : ''}#endif
 ${cabDestroyCpp}${extraDestroy ? `\n${extraDestroy}` : ''}
    free(plugin->plugin_data);
 }
@@ -372,12 +415,31 @@ static bool plug_activate(const clap_plugin_t *plugin, double sr, uint32_t min_f
    // model that allocates on the audio thread.
    const int max_buffer = max_frames ? (int)max_frames : 512;
    for (int c = 0; c < 2; ++c) if (p->model[c]) p->model[c]->Reset(sr, max_buffer);
-#else
+${modelSwitch ? `   // ⭐ THE FADE BUFFER IS SIZED HERE, for the same reason and with the same number: the host has just said
+   // how large a block it will send, and activate() is a place allocation is allowed. The previous
+   // activation's is released first — a host may activate, deactivate and activate again at a new rate.
+   // A failed allocation is not a failed plugin: the switch still works, it just cannot fade.
+   for (int c = 0; c < 2; ++c) { free(p->model_dry[c]); p->model_dry[c] = NULL; }
+   p->model_dry_cap = (uint32_t)max_buffer;
+   for (int c = 0; c < 2; ++c) {
+      p->model_dry[c] = (float *)malloc(sizeof(float) * (size_t)p->model_dry_cap);
+      if (!p->model_dry[c]) { p->model_dry_cap = 0; break; }
+   }
+` : ''}#else
    (void)sr; (void)max_frames;
 #endif
    return true;
 }
-static void plug_deactivate(const clap_plugin_t *plugin) {}
+static void plug_deactivate(const clap_plugin_t *plugin) {
+#if MORPHEUS_HAS_MODEL
+   ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
+   (void)p;   // no fade buffer when the chain has no model BLOCK
+${modelSwitch ? `   for (int c = 0; c < 2; ++c) { free(p->model_dry[c]); p->model_dry[c] = NULL; }
+   p->model_dry_cap = 0;` : ''}
+#else
+   (void)plugin;
+#endif
+}
 static bool plug_start_processing(const clap_plugin_t *plugin) { return true; }
 static void plug_stop_processing(const clap_plugin_t *plugin) {}
 static void plug_reset(const clap_plugin_t *plugin) {
@@ -542,13 +604,38 @@ ${modelInPath ? '#if MORPHEUS_HAS_MODEL' : '#if 0'}
          // a compile error — so it is a compile error.
          static_assert(sizeof(NAM_SAMPLE) == sizeof(float), "the model runs in place on a float32 port");
          const int model_frames = (int)(chunk_end - chunk_start);
-         if (model_frames > 0) {
+${modelSwitch ? `         // ⭐ THE AMP IS A SWITCH LIKE EVERY OTHER BLOCK, WITH ONE DIFFERENCE THAT MATTERS: it is the only
+         // stage that runs a WHOLE CHUNK at once and IN PLACE, so the signal it replaced is gone by the time
+         // a crossfade would want it. \`model_dry\` is that copy — sized in activate(), where allocation is
+         // allowed. When it is missing the switch still works and simply drops the fade, which is a click
+         // rather than a refusal, and never a silent no-op.
+         const double on_model = p->smoothed[IDX_ON_MODEL];
+         if (model_frames > 0 && on_model > 0.0) {
+            for (int c = 0; c < 2; ++c) {
+               if (!p->model[c]) continue;
+               NAM_SAMPLE *io[1] = {(NAM_SAMPLE *)process->audio_outputs[0].data32[c] + chunk_start};
+               // ⚠️ FULLY ON IS ITS OWN PATH, and it is the path every existing proof takes. \`dry + 1.0 *
+               // (wet - dry)\` is NOT bit-identical to \`wet\` in floating point, and the runner render checks
+               // null the plugin against the reference engine — so \`on == 1\` must not go through the
+               // arithmetic at all, exactly as a per-sample stage skips its blend line. A block larger than
+               // the buffer the host promised takes the same path, rather than writing past the end of it.
+               if (on_model >= 1.0 || !p->model_dry[c] || model_frames > (int)p->model_dry_cap) {
+                  p->model[c]->process(io, io, model_frames);
+                  continue;
+               }
+               for (int k = 0; k < model_frames; ++k) p->model_dry[c][k] = io[0][k];
+               p->model[c]->process(io, io, model_frames);
+               for (int k = 0; k < model_frames; ++k) {
+                  io[0][k] = (NAM_SAMPLE)(p->model_dry[c][k] + on_model * ((double)io[0][k] - p->model_dry[c][k]));
+               }
+            }
+         }` : `         if (model_frames > 0) {
             for (int c = 0; c < 2; ++c) {
                if (!p->model[c]) continue;
                NAM_SAMPLE *io[1] = {(NAM_SAMPLE *)process->audio_outputs[0].data32[c] + chunk_start};
                p->model[c]->process(io, io, model_frames);
             }
-         }
+         }`}
       }
 #endif
 

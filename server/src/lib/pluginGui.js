@@ -49,7 +49,15 @@ export const PLUGIN_GUI_X11 = 'Source/PluginGuiX11.cpp';
 export const PLUGIN_GUI_STUB = 'Source/PluginGui.cpp';
 
 /** The panel's geometry, in points. One source, so a backend cannot lay out a different panel. */
-export const PANEL = { row: 34, pad: 14, width: 460, trackX: 168, valueW: 78, knobR: 6 };
+export const PANEL = {
+  row: 34, pad: 14, width: 460, trackX: 168, valueW: 78, knobR: 6,
+  // ⭐ TWO THINGS THE PANEL GREW WHEN THE BLOCKS GAINED SWITCHES. A SWITCH is not a track: it is a pill with
+  // a knob at one end, and it needs its own width rather than the width of a slider. A GROUP band is the
+  // strip above the first row of each block that carries the block's name — the thing that answers "I can't
+  // tell what's what", which is why it is height rather than a colour.
+  groupH: 20, switchW: 44, switchH: 16,
+  maxRows: 256,
+};
 
 /**
  * The shared layout, included by every backend.
@@ -83,47 +91,126 @@ void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, double valu
 #define MORPHEUS_VALUE_W ${PANEL.valueW}
 #define MORPHEUS_KNOB_R ${PANEL.knobR}
 #define MORPHEUS_TRACK_W (MORPHEUS_PANEL_WIDTH - MORPHEUS_TRACK_X - MORPHEUS_VALUE_W - MORPHEUS_PAD)
+// The band above the first row of a block, carrying the block's name — see morpheus_gui_row_y.
+#define MORPHEUS_GROUP_H ${PANEL.groupH}
+// A switch, rather than the width of a slider: a two-state control drawn as a full-width track reads as a
+// slider that will not move.
+#define MORPHEUS_SWITCH_W ${PANEL.switchW}
+#define MORPHEUS_SWITCH_H ${PANEL.switchH}
+// The most rows a panel will draw. Every backend allocates this on the stack ONCE and the row builder is the
+// only thing that writes it, so the three of them cannot disagree about the bound.
+#define MORPHEUS_GUI_MAX_ROWS ${PANEL.maxRows}
 
 /** One row: what to draw, and where its control is. Built from the plugin's own params extension. */
 typedef struct {
-   double t;                 // 0..1 along the track — the ONLY thing a backend has to turn into pixels
+   clap_id id;               // the parameter this row addresses — the switch and the slider both need it
+   double t;                 // 0..1 along the track, for a continuous control
+   double setting;           // the raw value, so a switch can draw its position without re-reading anything
+   double min, max, def;     // the range, so acting on a click never re-reads the params extension
+   int stepped;              // CLAP_PARAM_IS_STEPPED: draw a SWITCH, not a track
+   int first;                // the first row of its block, so the backend draws the group label above it
    char name[64];
    char value[64];
+   char group[64];           // the block this row belongs to, from clap_param_info_t.module
 } morpheus_gui_row_t;
 
-/** How tall the panel is for this many rows. The host is told this, and the backends draw exactly it. */
-static uint32_t morpheus_gui_height(const uint32_t count) {
-   return (uint32_t)(MORPHEUS_PAD * 2 + MORPHEUS_ROW * (int)count);
+/** How tall the panel is for these rows. The host is told this, and the backends draw exactly it. */
+static uint32_t morpheus_gui_total_height(const morpheus_gui_row_t *rows, const uint32_t count) {
+   uint32_t h = MORPHEUS_PAD * 2;
+   for (uint32_t i = 0; i < count; ++i) {
+      if (rows[i].first) h += MORPHEUS_GROUP_H;
+      h += MORPHEUS_ROW;
+   }
+   return h;
+}
+
+/**
+ * The y of a row's top. It is a function rather than arithmetic in each backend because a group band makes
+ * rows unevenly spaced, and three copies of that sum is three places for a click to land on a different row
+ * from the one that was drawn.
+ */
+static uint32_t morpheus_gui_row_y(const morpheus_gui_row_t *rows, const uint32_t at) {
+   uint32_t y = MORPHEUS_PAD;
+   for (uint32_t i = 0; i < at; ++i) {
+      if (rows[i].first) y += MORPHEUS_GROUP_H;
+      y += MORPHEUS_ROW;
+   }
+   if (rows[at].first) y += MORPHEUS_GROUP_H;
+   return y;
 }
 
 /**
  * Fill in every row from the plugin's own params extension. Returns how many were written.
  *
  * The value text is the plugin's own \`value_to_text\`, so a panel cannot show a unit the plugin does not agree
- * with — a control whose unit is milliseconds reads "340.00 ms" here for the same reason it does in a DAW.
+ * with — a control whose unit is milliseconds reads "340.00 ms" here for the same reason it does in a DAW, and
+ * a block's switch reads "On"/"Off" for the same reason too.
+ *
+ * ⭐ AND IT GROUPS BY BLOCK. The plugin lists its parameters in IDENTITY order — every control in the order a
+ * host stores automation against — which puts the blocks' switches at the END, because inserting one beside
+ * its block would renumber everything after it. That order is right for a host and wrong for a human, so the
+ * rows are re-ordered HERE, for display only: blocks in the order they first appear, each block's own rows in
+ * the order the plugin listed them. Nothing about the identity order changes; a row addresses its parameter
+ * by id, never by position.
  */
 static uint32_t morpheus_gui_rows(const clap_plugin_t *plugin, const clap_plugin_params_t *params,
                                   morpheus_gui_row_t *out, const uint32_t max) {
+   morpheus_gui_row_t raw[MORPHEUS_GUI_MAX_ROWS];
    const uint32_t n = params->count(plugin);
-   uint32_t written = 0;
-   for (uint32_t i = 0; i < n && written < max; ++i) {
+   uint32_t nr = 0;
+   for (uint32_t i = 0; i < n && nr < MORPHEUS_GUI_MAX_ROWS; ++i) {
       clap_param_info_t info;
       memset(&info, 0, sizeof(info));
       if (!params->get_info(plugin, i, &info)) continue;
       double value = info.default_value;
       params->get_value(plugin, info.id, &value);
+      morpheus_gui_row_t *row = &raw[nr++];
+      memset(row, 0, sizeof(*row));
+      row->id = info.id;
       const double span = info.max_value - info.min_value;
-      morpheus_gui_row_t *row = &out[written++];
       row->t = span > 0.0 ? (value - info.min_value) / span : 0.0;
+      row->setting = value;
+      row->min = info.min_value;
+      row->max = info.max_value;
+      row->def = info.default_value;
+      // ⚠️ CLAP'S OWN FLAG, NOT A CONVENTION OF OURS. \`CLAP_PARAM_IS_STEPPED\` is how the plugin says "this
+      // control is discrete", and reading it here is what makes the panel draw the same control the host does.
+      row->stepped = (info.flags & CLAP_PARAM_IS_STEPPED) ? 1 : 0;
       // %.63s RATHER THAN %s: the field is 64 bytes and a host's parameter name is up to 256, so the
       // truncation is INTENDED — and gcc says so at -Wformat-truncation, on a build where clap-wrapper turns
       // warnings into errors. Saying how much to take is both quieter and a more honest statement of intent.
       snprintf(row->name, sizeof(row->name), "%.63s", info.name);
+      snprintf(row->group, sizeof(row->group), "%.63s", info.module);
       if (!params->value_to_text(plugin, info.id, value, row->value, sizeof(row->value))) {
          snprintf(row->value, sizeof(row->value), "%.2f", value);
       }
    }
+   uint32_t written = 0;
+   for (uint32_t i = 0; i < nr; ++i) {
+      // Has this block already been emitted? Asked of the RAW rows, so the answer does not depend on how many
+      // of the block's rows fitted in \`max\`.
+      int seen = 0;
+      for (uint32_t j = 0; j < i; ++j) if (!strcmp(raw[j].group, raw[i].group)) { seen = 1; break; }
+      if (seen) continue;
+      int first = 1;
+      for (uint32_t j = i; j < nr && written < max; ++j) {
+         if (strcmp(raw[j].group, raw[i].group)) continue;
+         out[written] = raw[j];
+         // A block with no name — every project that predates the board — gets no band, rather than a blank
+         // one. The height arithmetic reads this same flag, so the two cannot disagree.
+         out[written].first = (first && raw[j].group[0]) ? 1 : 0;
+         first = 0;
+         ++written;
+      }
+   }
    return written;
+}
+
+/** How tall the panel is for this plugin. Built from the rows, because a group band makes it more than a row count. */
+static uint32_t morpheus_gui_height(const clap_plugin_t *plugin, const clap_plugin_params_t *params) {
+   morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+   const uint32_t n = morpheus_gui_rows(plugin, params, rows, MORPHEUS_GUI_MAX_ROWS);
+   return morpheus_gui_total_height(rows, n);
 }
 
 /**
@@ -132,12 +219,16 @@ static uint32_t morpheus_gui_rows(const clap_plugin_t *plugin, const clap_plugin
  * ⚠️ THE WHOLE ROW IS THE TARGET, not just the track: a control you have to aim at is a control that feels
  * broken. And it is ONE function because every backend must answer it the same way — otherwise a click lands
  * on a different slider depending on the operating system, which is a bug you cannot reproduce on the machine
- * you develop on.
+ * you develop on. A point in a group band is over no row, deliberately: the band is a label, not a control.
  */
-static int morpheus_gui_row_at(const double x, const double y, const uint32_t count) {
+static int morpheus_gui_row_at(const double x, const double y, const morpheus_gui_row_t *rows,
+                               const uint32_t count) {
    if (x < MORPHEUS_TRACK_X - 8) return -1;
-   const int i = (int)((y - MORPHEUS_PAD) / MORPHEUS_ROW);
-   return (i >= 0 && (uint32_t)i < count) ? i : -1;
+   for (uint32_t i = 0; i < count; ++i) {
+      const double top = (double)morpheus_gui_row_y(rows, i);
+      if (y >= top && y < top + (double)MORPHEUS_ROW) return (int)i;
+   }
+   return -1;
 }
 
 /** What a click at \`x\` means: 0..1 along the track, clamped. */
@@ -151,15 +242,25 @@ static double morpheus_gui_x_of(const double t) {
    return MORPHEUS_TRACK_X + MORPHEUS_TRACK_W * (t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t));
 }
 
-/** Put a row's control where the click asked, or back to its default. Values go through Plugin.cpp. */
-static void morpheus_gui_set_row(const clap_plugin_t *plugin, const clap_plugin_params_t *params,
+/**
+ * Put a row's control where the click asked, or back to its default. Values go through Plugin.cpp.
+ *
+ * ⚠️ A SWITCH IGNORES WHERE INSIDE THE ROW the click landed. It has two states, and making a user hit the
+ * right half of a switch is making them miss it; the row is the target and the click is the toggle. A
+ * double-click still returns the control to its DEFAULT — which for a block's switch is the state the project
+ * was built with, so a player can undo a switch without knowing what it was.
+ */
+static void morpheus_gui_set_row(const clap_plugin_t *plugin, const morpheus_gui_row_t *rows,
                                  const uint32_t row, const double t, const bool to_default) {
-   clap_param_info_t info;
-   memset(&info, 0, sizeof(info));
-   if (!params->get_info(plugin, row, &info)) return;
-   const double span = info.max_value - info.min_value;
-   const double v = to_default ? info.default_value : info.min_value + morpheus_gui_t_at(t) * span;
-   morpheus_gui_param_set(plugin, info.id, v);
+   const morpheus_gui_row_t *r = &rows[row];
+   double v;
+   if (r->stepped) {
+      v = to_default ? r->def : (r->setting >= (r->min + r->max) * 0.5 ? r->min : r->max);
+   } else {
+      const double span = r->max - r->min;
+      v = to_default ? r->def : r->min + morpheus_gui_t_at(t) * span;
+   }
+   morpheus_gui_param_set(plugin, r->id, v);
 }
 #endif  // MORPHEUS_PLUGIN_GUI_LAYOUT_H
 `;
@@ -180,11 +281,13 @@ static NSColor *morpheusBg(void) { return [NSColor colorWithCalibratedRed:0.039 
 static NSColor *morpheusGreen(void) { return [NSColor colorWithCalibratedRed:0.22 green:1.0 blue:0.08 alpha:1.0]; }
 static NSColor *morpheusDim(void) { return [NSColor colorWithCalibratedRed:0.10 green:0.24 blue:0.10 alpha:1.0]; }
 static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78 green:0.95 blue:0.80 alpha:1.0]; }
+// The block labels: visible enough to read as a heading, dimmer than a control's own name so the rows stay
+// the foreground. It is the answer to "I can't tell what's what", and it works by looking different.
+static NSColor *morpheusGroupText(void) { return [NSColor colorWithCalibratedRed:0.42 green:0.62 blue:0.44 alpha:1.0]; }
 
 @interface MorpheusPanel : NSView {
   const clap_plugin_t *_plugin;
   const clap_plugin_params_t *_params;
-  uint32_t _count;
   int _drag;
   NSTimer *_timer;
 }
@@ -195,8 +298,7 @@ static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78
 @implementation MorpheusPanel
 
 - (instancetype)initWithPlugin:(const clap_plugin_t *)plugin params:(const clap_plugin_params_t *)params {
-  _count = params->count(plugin);
-  if ((self = [super initWithFrame:NSMakeRect(0, 0, MORPHEUS_PANEL_WIDTH, morpheus_gui_height(_count))])) {
+  if ((self = [super initWithFrame:NSMakeRect(0, 0, MORPHEUS_PANEL_WIDTH, morpheus_gui_height(plugin, params))])) {
     _plugin = plugin;
     _params = params;
     _drag = -1;
@@ -226,30 +328,58 @@ static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78
     NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium],
     NSForegroundColorAttributeName: morpheusGreen(),
   };
+  NSDictionary *groupAttrs = @{
+    NSFontAttributeName: [NSFont monospacedSystemFontOfSize:9 weight:NSFontWeightBold],
+    NSForegroundColorAttributeName: morpheusGroupText(),
+  };
 
-  morpheus_gui_row_t rows[256];
-  const uint32_t n = morpheus_gui_rows(_plugin, _params, rows, 256);
+  morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+  const uint32_t n = morpheus_gui_rows(_plugin, _params, rows, MORPHEUS_GUI_MAX_ROWS);
   for (uint32_t i = 0; i < n; ++i) {
     const morpheus_gui_row_t *row = &rows[i];
-    const CGFloat y = MORPHEUS_PAD + MORPHEUS_ROW * (CGFloat)i;
+    const CGFloat y = (CGFloat)morpheus_gui_row_y(rows, i);
+
+    // THE BLOCK'S NAME, in its own band above the block's first row. Drawn from the module the plugin
+    // reports, so the heading and the rows under it cannot belong to different blocks.
+    if (row->first) {
+      [[NSString stringWithUTF8String:row->group] drawAtPoint:NSMakePoint(12, y - MORPHEUS_GROUP_H + 4) withAttributes:groupAttrs];
+    }
     [[NSString stringWithUTF8String:row->name] drawAtPoint:NSMakePoint(12, y + 3) withAttributes:nameAttrs];
 
-    const NSRect track = NSMakeRect(MORPHEUS_TRACK_X, y + 11, MORPHEUS_TRACK_W, 4);
-    [morpheusDim() setFill];
-    NSRectFill(track);
-    NSRect filled = track;
-    filled.size.width = (CGFloat)(MORPHEUS_TRACK_W * row->t);
-    [morpheusGreen() setFill];
-    NSRectFill(filled);
+    if (row->stepped) {
+      // ── a SWITCH, not a track. The row is the target, so the switch does not have to be hit precisely; the
+      // knob sits at the end the current state names, and the text on the right says it in words.
+      const NSRect pill = NSMakeRect(MORPHEUS_TRACK_X, y + (MORPHEUS_ROW - MORPHEUS_SWITCH_H) / 2.0,
+                                     MORPHEUS_SWITCH_W, MORPHEUS_SWITCH_H);
+      const BOOL on = row->setting >= (row->min + row->max) * 0.5;
+      [(on ? morpheusGreen() : morpheusDim()) setFill];
+      NSRectFill(pill);
+      const CGFloat knobX = on ? (MORPHEUS_TRACK_X + MORPHEUS_SWITCH_W - MORPHEUS_SWITCH_H) : MORPHEUS_TRACK_X;
+      NSBezierPath *knob = [NSBezierPath bezierPathWithOvalInRect:
+        NSMakeRect(knobX + 1, pill.origin.y + 1, MORPHEUS_SWITCH_H - 2, MORPHEUS_SWITCH_H - 2)];
+      [morpheusBg() setFill];
+      [knob fill];
+      [morpheusGreen() setStroke];
+      [knob setLineWidth:2.0];
+      [knob stroke];
+    } else {
+      const NSRect track = NSMakeRect(MORPHEUS_TRACK_X, y + 11, MORPHEUS_TRACK_W, 4);
+      [morpheusDim() setFill];
+      NSRectFill(track);
+      NSRect filled = track;
+      filled.size.width = (CGFloat)(MORPHEUS_TRACK_W * row->t);
+      [morpheusGreen() setFill];
+      NSRectFill(filled);
 
-    // A circle rather than a handle: it reads as a control rather than as a scrollbar.
-    const CGFloat knobX = (CGFloat)morpheus_gui_x_of(row->t);
-    NSBezierPath *knob = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2)];
-    [morpheusBg() setFill];
-    [knob fill];
-    [morpheusGreen() setStroke];
-    [knob setLineWidth:2.0];
-    [knob stroke];
+      // A circle rather than a handle: it reads as a control rather than as a scrollbar.
+      const CGFloat knobX = (CGFloat)morpheus_gui_x_of(row->t);
+      NSBezierPath *knob = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2)];
+      [morpheusBg() setFill];
+      [knob fill];
+      [morpheusGreen() setStroke];
+      [knob setLineWidth:2.0];
+      [knob stroke];
+    }
 
     NSString *shown = [NSString stringWithUTF8String:row->value];
     const NSSize size = [shown sizeWithAttributes:valueAttrs];
@@ -259,23 +389,30 @@ static NSColor *morpheusText(void) { return [NSColor colorWithCalibratedRed:0.78
 
 - (void)mouseDown:(NSEvent *)event {
   const NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
-  const int row = morpheus_gui_row_at(p.x, p.y, _count);
+  morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+  const uint32_t n = morpheus_gui_rows(_plugin, _params, rows, MORPHEUS_GUI_MAX_ROWS);
+  const int row = morpheus_gui_row_at(p.x, p.y, rows, n);
   // A double-click puts a row back where it started. Every hardware control has a way back to its default and
-  // a slider otherwise has none but the host's undo.
+  // a slider otherwise has none but the host's undo — and for a block's switch the default is the state the
+  // project was BUILT with, so this is how a player undoes a switch they do not remember moving.
   if (row >= 0 && [event clickCount] == 2) {
-    morpheus_gui_set_row(_plugin, _params, (uint32_t)row, 0.0, true);
+    morpheus_gui_set_row(_plugin, rows, (uint32_t)row, 0.0, true);
     [self setNeedsDisplay:YES];
     return;
   }
-  _drag = row;
-  if (row >= 0) morpheus_gui_set_row(_plugin, _params, (uint32_t)row, p.x, false);
+  // ⚠️ A SWITCH IS A CLICK AND NOT A DRAG. Dragging one would only be a way to change nothing slowly, and it
+  // would also leave the switch following the pointer along a track it does not have.
+  _drag = (row >= 0 && !rows[row].stepped) ? row : -1;
+  if (row >= 0) morpheus_gui_set_row(_plugin, rows, (uint32_t)row, p.x, false);
   [self setNeedsDisplay:YES];
 }
 
 - (void)mouseDragged:(NSEvent *)event {
   if (_drag < 0) return;
   const NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
-  morpheus_gui_set_row(_plugin, _params, (uint32_t)_drag, p.x, false);
+  morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+  const uint32_t n = morpheus_gui_rows(_plugin, _params, rows, MORPHEUS_GUI_MAX_ROWS);
+  if ((uint32_t)_drag < n) morpheus_gui_set_row(_plugin, rows, (uint32_t)_drag, p.x, false);
   [self setNeedsDisplay:YES];
 }
 
@@ -411,7 +548,6 @@ const wchar_t *kClassName = L"MorpheusPanelClass";
 struct Panel {
    const clap_plugin_t *plugin;
    const clap_plugin_params_t *params;
-   uint32_t count;
    int drag;
    HWND hwnd;
    HFONT font;
@@ -425,6 +561,8 @@ const COLORREF kBg = RGB(10, 10, 11);
 const COLORREF kGreen = RGB(56, 255, 20);
 const COLORREF kDim = RGB(26, 61, 26);
 const COLORREF kText = RGB(199, 242, 204);
+// The block labels: readable as headings, dimmer than a control's own name, so the rows stay the foreground.
+const COLORREF kGroupText = RGB(107, 158, 112);
 
 Panel *panel_of(const clap_plugin_t *plugin) { return (Panel *)morpheus_gui_state(plugin); }
 
@@ -450,29 +588,55 @@ void paint(HWND hwnd, Panel *p) {
    fill(dc, p->bg, 0, 0, whole.right, whole.bottom);
    SetBkMode(dc, TRANSPARENT);
 
-   morpheus_gui_row_t rows[256];
-   const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, 256);
+   morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+   const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, MORPHEUS_GUI_MAX_ROWS);
    for (uint32_t i = 0; i < n; ++i) {
       const morpheus_gui_row_t *row = &rows[i];
-      const int y = MORPHEUS_PAD + MORPHEUS_ROW * (int)i;
+      const int y = (int)morpheus_gui_row_y(rows, i);
+
+      // THE BLOCK'S NAME, in its own band above the block's first row — from the module the plugin reports,
+      // so the heading and the rows beneath it cannot come from different blocks.
+      if (row->first) {
+         SelectObject(dc, p->font);
+         SetTextColor(dc, kGroupText);
+         TextOutA(dc, 12, y - MORPHEUS_GROUP_H + 3, row->group, (int)strlen(row->group));
+      }
 
       SelectObject(dc, p->font);
       SetTextColor(dc, kText);
       TextOutA(dc, 12, y + 3, row->name, (int)strlen(row->name));
 
-      fill(dc, p->dim, MORPHEUS_TRACK_X, y + 11, MORPHEUS_TRACK_W, 4);
-      fill(dc, p->green, MORPHEUS_TRACK_X, y + 11, (int)(MORPHEUS_TRACK_W * row->t), 4);
+      if (row->stepped) {
+         // ── a SWITCH. The row is the target, so the pill does not have to be hit precisely: a click anywhere
+         // on the row toggles it, and the text on the right says which state it moved to.
+         const int sy = y + (MORPHEUS_ROW - MORPHEUS_SWITCH_H) / 2;
+         const int on = row->setting >= (row->min + row->max) * 0.5;
+         fill(dc, on ? p->green : p->dim, MORPHEUS_TRACK_X, sy, MORPHEUS_SWITCH_W, MORPHEUS_SWITCH_H);
+         const int knobX = on ? (MORPHEUS_TRACK_X + MORPHEUS_SWITCH_W - MORPHEUS_SWITCH_H) : MORPHEUS_TRACK_X;
+         HBRUSH ring = CreateSolidBrush(kBg);
+         HPEN pen = CreatePen(PS_SOLID, 2, kGreen);
+         HGDIOBJ oldBrush = SelectObject(dc, ring);
+         HGDIOBJ oldPen = SelectObject(dc, pen);
+         Ellipse(dc, knobX + 1, sy + 1, knobX + MORPHEUS_SWITCH_H - 1, sy + MORPHEUS_SWITCH_H - 1);
+         SelectObject(dc, oldBrush);
+         SelectObject(dc, oldPen);
+         DeleteObject(ring);
+         DeleteObject(pen);
+      } else {
+         fill(dc, p->dim, MORPHEUS_TRACK_X, y + 11, MORPHEUS_TRACK_W, 4);
+         fill(dc, p->green, MORPHEUS_TRACK_X, y + 11, (int)(MORPHEUS_TRACK_W * row->t), 4);
 
-      const int knobX = (int)morpheus_gui_x_of(row->t);
-      HBRUSH ring = CreateSolidBrush(kBg);
-      HPEN pen = CreatePen(PS_SOLID, 2, kGreen);
-      HGDIOBJ oldBrush = SelectObject(dc, ring);
-      HGDIOBJ oldPen = SelectObject(dc, pen);
-      Ellipse(dc, knobX - MORPHEUS_KNOB_R, y + 7, knobX + MORPHEUS_KNOB_R, y + 7 + MORPHEUS_KNOB_R * 2);
-      SelectObject(dc, oldBrush);
-      SelectObject(dc, oldPen);
-      DeleteObject(ring);
-      DeleteObject(pen);
+         const int knobX = (int)morpheus_gui_x_of(row->t);
+         HBRUSH ring = CreateSolidBrush(kBg);
+         HPEN pen = CreatePen(PS_SOLID, 2, kGreen);
+         HGDIOBJ oldBrush = SelectObject(dc, ring);
+         HGDIOBJ oldPen = SelectObject(dc, pen);
+         Ellipse(dc, knobX - MORPHEUS_KNOB_R, y + 7, knobX + MORPHEUS_KNOB_R, y + 7 + MORPHEUS_KNOB_R * 2);
+         SelectObject(dc, oldBrush);
+         SelectObject(dc, oldPen);
+         DeleteObject(ring);
+         DeleteObject(pen);
+      }
 
       SelectObject(dc, p->fontBold);
       SetTextColor(dc, kGreen);
@@ -503,10 +667,13 @@ LRESULT CALLBACK panel_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
          return 0;
       case WM_LBUTTONDOWN: {
          if (!p) return 0;
-         const int row = morpheus_gui_row_at((double)LOWORD(lp), (double)HIWORD(lp), p->count);
+         morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+         const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, MORPHEUS_GUI_MAX_ROWS);
+         const int row = morpheus_gui_row_at((double)LOWORD(lp), (double)HIWORD(lp), rows, n);
          if (row < 0) return 0;
-         morpheus_gui_set_row(p->plugin, p->params, (uint32_t)row, (double)LOWORD(lp), false);
-         p->drag = row;
+         morpheus_gui_set_row(p->plugin, rows, (uint32_t)row, (double)LOWORD(lp), false);
+         // A switch is a click, not a drag: following the pointer would be a way to change nothing slowly.
+         p->drag = rows[row].stepped ? -1 : row;
          SetCapture(hwnd);
          InvalidateRect(hwnd, nullptr, FALSE);
          return 0;
@@ -515,15 +682,20 @@ LRESULT CALLBACK panel_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
          if (!p) return 0;
          // A double-click puts a row back where it started. CS_DBLCLKS on the class is what delivers this
          // message at all — without it a double-click arrives as two single clicks and the gesture turns into
-         // two nudges towards the same place.
-         const int row = morpheus_gui_row_at((double)LOWORD(lp), (double)HIWORD(lp), p->count);
-         if (row >= 0) morpheus_gui_set_row(p->plugin, p->params, (uint32_t)row, 0.0, true);
+         // two nudges towards the same place. For a block's switch the default is the state the project was
+         // BUILT with, so this is how a player undoes a switch they do not remember moving.
+         morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+         const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, MORPHEUS_GUI_MAX_ROWS);
+         const int row = morpheus_gui_row_at((double)LOWORD(lp), (double)HIWORD(lp), rows, n);
+         if (row >= 0) morpheus_gui_set_row(p->plugin, rows, (uint32_t)row, 0.0, true);
          InvalidateRect(hwnd, nullptr, FALSE);
          return 0;
       }
       case WM_MOUSEMOVE:
          if (p && p->drag >= 0) {
-            morpheus_gui_set_row(p->plugin, p->params, (uint32_t)p->drag, (double)LOWORD(lp), false);
+            morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+            const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, MORPHEUS_GUI_MAX_ROWS);
+            if ((uint32_t)p->drag < n) morpheus_gui_set_row(p->plugin, rows, (uint32_t)p->drag, (double)LOWORD(lp), false);
             InvalidateRect(hwnd, nullptr, FALSE);
          }
          return 0;
@@ -578,7 +750,6 @@ bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) 
    Panel *p = new Panel();
    p->plugin = plugin;
    p->params = params;
-   p->count = params->count(plugin);
    p->drag = -1;
    p->hwnd = nullptr;
    p->bg = CreateSolidBrush(kBg);
@@ -611,7 +782,7 @@ bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height
    Panel *p = panel_of(plugin);
    if (!p) return false;
    *width = MORPHEUS_PANEL_WIDTH;
-   *height = morpheus_gui_height(p->count);
+   *height = morpheus_gui_height(p->plugin, p->params);
    return true;
 }
 
@@ -628,7 +799,7 @@ bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
    HWND parent = (HWND)window->win32;
    if (!parent) return false;
    p->hwnd = CreateWindowExW(0, kClassName, L"", WS_CHILD | WS_VISIBLE, 0, 0, MORPHEUS_PANEL_WIDTH,
-                             (int)morpheus_gui_height(p->count), parent, nullptr, GetModuleHandleW(nullptr), p);
+                             (int)morpheus_gui_height(p->plugin, p->params), parent, nullptr, GetModuleHandleW(nullptr), p);
    if (!p->hwnd) return false;
    // 33 ms: thirty redraws a second, which is enough for an automated knob to look live and cheap enough that
    // a host never notices it.
@@ -703,12 +874,11 @@ namespace {
 struct Panel {
    const clap_plugin_t *plugin;
    const clap_plugin_params_t *params;
-   uint32_t count;
    Display *dpy;
    Window win;
    GC gc;
    XFontStruct *font;
-   unsigned long bg, green, dim, text;
+   unsigned long bg, green, dim, text, group;
    std::thread thread;
    std::atomic<bool> running;
    int drag;
@@ -730,30 +900,49 @@ void put(Display *d, Window w, GC gc, int x, int y, const char *s) {
 }
 
 void paint(Panel *p) {
-   const int h = (int)morpheus_gui_height(p->count);
+   const int h = (int)morpheus_gui_height(p->plugin, p->params);
    XSetForeground(p->dpy, p->gc, p->bg);
    XFillRectangle(p->dpy, p->win, p->gc, 0, 0, MORPHEUS_PANEL_WIDTH, (unsigned)h);
 
-   morpheus_gui_row_t rows[256];
-   const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, 256);
+   morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+   const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, MORPHEUS_GUI_MAX_ROWS);
    for (uint32_t i = 0; i < n; ++i) {
       const morpheus_gui_row_t *row = &rows[i];
-      const int y = MORPHEUS_PAD + MORPHEUS_ROW * (int)i;
+      const int y = (int)morpheus_gui_row_y(rows, i);
+
+      // THE BLOCK'S NAME, in its own band above the block's first row — from the module the plugin reports.
+      if (row->first) {
+         XSetForeground(p->dpy, p->gc, p->group);
+         put(p->dpy, p->win, p->gc, 12, y - MORPHEUS_GROUP_H + 13, row->group);
+      }
 
       XSetForeground(p->dpy, p->gc, p->text);
       put(p->dpy, p->win, p->gc, 12, y + 13, row->name);
 
-      XSetForeground(p->dpy, p->gc, p->dim);
-      XFillRectangle(p->dpy, p->win, p->gc, MORPHEUS_TRACK_X, (unsigned)(y + 11), MORPHEUS_TRACK_W, 4);
-      XSetForeground(p->dpy, p->gc, p->green);
-      XFillRectangle(p->dpy, p->win, p->gc, MORPHEUS_TRACK_X, (unsigned)(y + 11),
-                     (unsigned)(MORPHEUS_TRACK_W * row->t), 4);
+      if (row->stepped) {
+         // ── a SWITCH. The row is the target, so the pill does not have to be hit precisely.
+         const int sy = y + (MORPHEUS_ROW - MORPHEUS_SWITCH_H) / 2;
+         const int on = row->setting >= (row->min + row->max) * 0.5;
+         XSetForeground(p->dpy, p->gc, on ? p->green : p->dim);
+         XFillRectangle(p->dpy, p->win, p->gc, MORPHEUS_TRACK_X, (unsigned)sy, MORPHEUS_SWITCH_W, MORPHEUS_SWITCH_H);
+         const int knobX = on ? (MORPHEUS_TRACK_X + MORPHEUS_SWITCH_W - MORPHEUS_SWITCH_H) : MORPHEUS_TRACK_X;
+         XSetForeground(p->dpy, p->gc, p->bg);
+         XFillArc(p->dpy, p->win, p->gc, knobX + 1, sy + 1, MORPHEUS_SWITCH_H - 2, MORPHEUS_SWITCH_H - 2, 0, 360 * 64);
+         XSetForeground(p->dpy, p->gc, p->green);
+         XDrawArc(p->dpy, p->win, p->gc, knobX + 1, sy + 1, MORPHEUS_SWITCH_H - 2, MORPHEUS_SWITCH_H - 2, 0, 360 * 64);
+      } else {
+         XSetForeground(p->dpy, p->gc, p->dim);
+         XFillRectangle(p->dpy, p->win, p->gc, MORPHEUS_TRACK_X, (unsigned)(y + 11), MORPHEUS_TRACK_W, 4);
+         XSetForeground(p->dpy, p->gc, p->green);
+         XFillRectangle(p->dpy, p->win, p->gc, MORPHEUS_TRACK_X, (unsigned)(y + 11),
+                        (unsigned)(MORPHEUS_TRACK_W * row->t), 4);
 
-      const int knobX = (int)morpheus_gui_x_of(row->t);
-      XSetForeground(p->dpy, p->gc, p->bg);
-      XFillArc(p->dpy, p->win, p->gc, knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2, 0, 360 * 64);
-      XSetForeground(p->dpy, p->gc, p->green);
-      XDrawArc(p->dpy, p->win, p->gc, knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2, 0, 360 * 64);
+         const int knobX = (int)morpheus_gui_x_of(row->t);
+         XSetForeground(p->dpy, p->gc, p->bg);
+         XFillArc(p->dpy, p->win, p->gc, knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2, 0, 360 * 64);
+         XSetForeground(p->dpy, p->gc, p->green);
+         XDrawArc(p->dpy, p->win, p->gc, knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2, 0, 360 * 64);
+      }
 
       int textW = p->font ? XTextWidth(p->font, row->value, (int)strlen(row->value)) : 0;
       XSetForeground(p->dpy, p->gc, p->green);
@@ -781,19 +970,25 @@ void run(Panel *p) {
          if (ev.type == Expose) {
             paint(p);
          } else if (ev.type == ButtonPress && ev.xbutton.button == Button1) {
-            const int row = morpheus_gui_row_at((double)ev.xbutton.x, (double)ev.xbutton.y, p->count);
+            morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+            const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, MORPHEUS_GUI_MAX_ROWS);
+            const int row = morpheus_gui_row_at((double)ev.xbutton.x, (double)ev.xbutton.y, rows, n);
             if (row >= 0) {
                // X11 does not synthesise a double-click, so the pair is counted here: the same row, twice
-               // inside 350 ms, puts the control back to its default.
+               // inside 350 ms, puts the control back to its default — which for a block's switch is the
+               // state the project was BUILT with.
                const bool dbl = (p->lastClickRow == row && (ev.xbutton.time - p->lastClick) < 350);
                p->lastClick = ev.xbutton.time;
                p->lastClickRow = row;
-               morpheus_gui_set_row(p->plugin, p->params, (uint32_t)row, (double)ev.xbutton.x, dbl);
-               p->drag = dbl ? -1 : row;
+               morpheus_gui_set_row(p->plugin, rows, (uint32_t)row, (double)ev.xbutton.x, dbl);
+               // A switch is a click, not a drag: following the pointer would be a way to change nothing slowly.
+               p->drag = (dbl || rows[row].stepped) ? -1 : row;
                paint(p);
             }
          } else if (ev.type == MotionNotify && p->drag >= 0) {
-            morpheus_gui_set_row(p->plugin, p->params, (uint32_t)p->drag, (double)ev.xmotion.x, false);
+            morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
+            const uint32_t n = morpheus_gui_rows(p->plugin, p->params, rows, MORPHEUS_GUI_MAX_ROWS);
+            if ((uint32_t)p->drag < n) morpheus_gui_set_row(p->plugin, rows, (uint32_t)p->drag, (double)ev.xmotion.x, false);
             paint(p);
          } else if (ev.type == ButtonRelease) {
             p->drag = -1;
@@ -827,7 +1022,6 @@ bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) 
    Panel *p = new Panel();
    p->plugin = plugin;
    p->params = params;
-   p->count = params->count(plugin);
    p->dpy = nullptr;
    p->win = 0;
    p->gc = nullptr;
@@ -863,7 +1057,7 @@ bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height
    Panel *p = panel_of(plugin);
    if (!p) return false;
    *width = MORPHEUS_PANEL_WIDTH;
-   *height = morpheus_gui_height(p->count);
+   *height = morpheus_gui_height(p->plugin, p->params);
    return true;
 }
 
@@ -889,7 +1083,8 @@ bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
    p->green = colour(p->dpy, "#38ff14", WhitePixel(p->dpy, screen));
    p->dim = colour(p->dpy, "#1a3d1a", BlackPixel(p->dpy, screen));
    p->text = colour(p->dpy, "#c7f2cc", WhitePixel(p->dpy, screen));
-   p->win = XCreateSimpleWindow(p->dpy, parent, 0, 0, MORPHEUS_PANEL_WIDTH, morpheus_gui_height(p->count), 0,
+   p->group = colour(p->dpy, "#6b9e70", WhitePixel(p->dpy, screen));
+   p->win = XCreateSimpleWindow(p->dpy, parent, 0, 0, MORPHEUS_PANEL_WIDTH, morpheus_gui_height(p->plugin, p->params), 0,
                                 p->bg, p->bg);
    if (!p->win) return false;
    XSelectInput(p->dpy, p->win,

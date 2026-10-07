@@ -16,7 +16,7 @@
 //
 // Run:  node scripts/audio-amp-chain-check.mjs --plugin <dir> [--clap-include <dir>] [--work <dir>]
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logSweep, withFades } from '../server/src/lib/audio/signals.js';
@@ -28,6 +28,7 @@ import { convolveDirect, rms } from '../server/src/lib/audio/dsp.js';
 import { decodeWav } from '../server/src/lib/audio/wav.js';
 import { MAX_CAB_TAPS } from '../server/src/lib/cabIr.js';
 import { AMP_CHAIN, GATE_OFF_DB, chainParams } from '../server/src/lib/ampChain.js';
+import { scaffoldPlugin } from '../server/src/lib/audioPluginProject.js';
 import { clapIncludes, compareToReference, readMraw, writeMraw } from './audio-nam-render-check.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -224,6 +225,87 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
   return { rows, cabRow, gateRow, sampleRate, frames: dry.length, settledFrom: from };
 }
 
+/**
+ * ⭐ THE BLOCKS' ON/OFF SWITCHES, PROVEN AS AUDIO RATHER THAN AS TEXT.
+ *
+ * WHAT THIS EXISTS FOR. On/off used to be a BUILD decision — a block that was switched off emitted no DSP at
+ * all — and it is a runtime parameter now, so the block's code is always emitted and a crossfade is what makes
+ * it inert. That is a much easier thing to get subtly wrong, and every wrong version of it still BUILDS and
+ * still SOUNDS like a plugin:
+ *
+ *   • a switch that does nothing (`if (on)` instead of a blend) — the control moves, the host stores it, the
+ *     audio never changes, and every default is untouched so every other null still lands where it did;
+ *   • a bypass that is a hard cut rather than a fade — audible as a click, which no null test can see;
+ *   • a blend that is not exactly `dry` at zero — a switched-off block that colours the sound very slightly,
+ *     which is the worst version, because it sounds almost right.
+ *
+ * So the comparison is between three builds of the SAME block, and it is a bit-exact one:
+ *
+ *   off      the block is in the board and its own switch is OFF (the saved default)
+ *   gone     a different plugin, with no such block at all
+ *   on       the block is in the board and engaged
+ *
+ * `off` must be IDENTICAL to `gone` — a switched-off block is a true bypass, not a quiet one — and `on` must
+ * NOT be, or the switch is going nowhere. The drive and the delay are the two shapes worth proving: one is a
+ * handful of arithmetic on the sample, the other holds state across samples and allocates.
+ *
+ * Returns the rows rather than asserting them, so the caller decides what is good enough.
+ */
+export function toggleCheck({ work, clapInclude = null, sampleRate = 48000, seconds = 0.5 }) {
+  mkdirSync(work, { recursive: true });
+  const clap = clapInclude || clapIncludes();
+  const dry = withFades(logSweep({ f1: 40, f2: 10000, sampleRate, seconds, amplitude: 0.25 }), { samples: 64 });
+  const stereo = new Float32Array(dry.length * 2);
+  for (let i = 0; i < dry.length; i++) { stereo[i * 2] = dry[i]; stereo[i * 2 + 1] = dry[i]; }
+  const dryPath = join(work, 'dry.mraw');
+  writeMraw(dryPath, sampleRate, 2, stereo);
+
+  const itemsFor = (kind, enabled) => [
+    { instanceId: 1, kind: 'input', enabled: true, values: {} },
+    ...(kind ? [{ instanceId: 2, kind, enabled, values: {} }] : []),
+    // The output is pinned last and cannot be switched off — see board.js. It is only here so the plugin has
+    // a chain the generator will emit at all.
+    { instanceId: 9, kind: 'output', enabled: true, values: {} },
+  ];
+
+  const renderBoard = (label, items) => {
+    const dir = join(work, label);
+    const seed = [
+      { path: 'README.md', content: '# toggle check\n' },
+      { path: 'morpheus.plugin.json', content: JSON.stringify({ name: 'Toggle', board: { nextInstanceId: 99, items } }) },
+    ];
+    const { files } = scaffoldPlugin(seed);
+    for (const f of files) {
+      const dest = join(dir, f.path);
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, f.content);
+    }
+    const bin = buildHost({ pluginDir: dir, clapInclude: clap, work: dir });
+    const outPath = join(work, `out-${label}.mraw`);
+    const run = spawnSync(bin, ['--in', dryPath, '--out', outPath, '--blocksize', '64'], { encoding: 'utf8' });
+    if (run.status !== 0) {
+      console.error(`[amp-chain] x the toggle render failed for "${label}":\n${(run.stderr || '').slice(-1000)}`);
+      process.exit(1);
+    }
+    return readMraw(outPath).data[0];
+  };
+
+  const rows = [];
+  for (const kind of ['drive', 'delay']) {
+    const off = renderBoard(`${kind}-off`, itemsFor(kind, false));
+    const gone = renderBoard(`${kind}-gone`, itemsFor(null, false));
+    const on = renderBoard(`${kind}-on`, itemsFor(kind, true));
+    rows.push({
+      kind,
+      // The block's own switch at its saved default must be the plugin WITHOUT it, sample for sample.
+      offVsRemoved: compareToReference(gone, off),
+      // …and engaged it must actually be doing something, or the switch is a control that goes nowhere.
+      onVsRemoved: compareToReference(gone, on),
+    });
+  }
+  return { rows, sampleRate, frames: dry.length };
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────────────────────────────────────────
 function arg(name, fallback = null) {
   const at = process.argv.indexOf(`--${name}`);
@@ -233,12 +315,41 @@ function arg(name, fallback = null) {
 const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 if (isMain) {
   const pluginDir = arg('plugin');
-  if (!pluginDir) { console.error('[amp-chain] --plugin is required'); process.exit(2); }
+  const work = arg('work', join(ROOT, '.cache', 'amp-chain'));
+  // ── the blocks' switches, which scaffold their own projects and need no prebuilt plugin ────────────────
+  if (process.argv.includes('--toggle')) {
+    const t = toggleCheck({
+      work: join(work, 'toggle'),
+      clapInclude: arg('clap-include'),
+      seconds: Number(arg('seconds', '0.5')),
+    });
+    const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');
+    console.log('[amp-chain] the blocks\' own On/Off switches, as audio:');
+    let bad = 0;
+    for (const row of t.rows) {
+      console.log(`[amp-chain]   ${row.kind.padEnd(6)} off vs the block removed: ${f(row.offVsRemoved.nullDb).padStart(13)}   engaged vs removed: ${f(row.onVsRemoved.nullDb)}`);
+      // A SWITCHED-OFF BLOCK MUST BE ITS OWN BYPASS, exactly — not close, not -200 dB, the same samples.
+      if (!(row.offVsRemoved.identical || row.offVsRemoved.nullDb <= -200)) {
+        console.error(`[amp-chain] x a ${row.kind} switched off is not the plugin without it (${f(row.offVsRemoved.nullDb)})`);
+        bad++;
+      }
+      // …AND AN ENGAGED ONE MUST ACTUALLY DO SOMETHING, or the switch is a control that goes nowhere.
+      if (row.onVsRemoved.identical || !(row.onVsRemoved.nullDb > -60)) {
+        console.error(`[amp-chain] x a ${row.kind} switched on changes nothing (${f(row.onVsRemoved.nullDb)})`);
+        bad++;
+      }
+    }
+    console.log(JSON.stringify({ ok: bad === 0, ...t }));
+    if (bad) process.exit(1);
+    console.log('[amp-chain] every block\'s switch is a true bypass, and every switch does something\n');
+    process.exit(0);
+  }
+  if (!pluginDir) { console.error('[amp-chain] --plugin is required (or --toggle, which needs no plugin)'); process.exit(2); }
   const maxNullDb = Number(arg('max-null-db', '-120'));
   const r = ampChainCheck({
     pluginDir,
     clapInclude: arg('clap-include'),
-    work: arg('work', join(ROOT, '.cache', 'amp-chain')),
+    work,
     seconds: Number(arg('seconds', '0.5')),
     cab: arg('cab'),
     gateCase: process.argv.includes('--gate'),

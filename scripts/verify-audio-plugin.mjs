@@ -946,7 +946,8 @@ check('the model is a stage with stages before it', chainMod.modelStageIndex(cha
 check('…and a chain with no model has no middle', chainMod.modelStageIndex(chainMod.PLAIN_CHAIN), -1, true);
 check('…which the emitters ask rather than assume', chainMod.chainHas(chainMod.PLAIN_CHAIN, 'model'), false, true);
 check('the parameters are DERIVED from the stages, in the stages\' own order',
-  chainMod.chainParams(chainMod.AMP_CHAIN, {}).map((pp) => pp.key), ['input', 'gate', 'bass', 'mid', 'treble', 'output']);
+  chainMod.chainParams(chainMod.AMP_CHAIN, {}).map((pp) => pp.key),
+  ['input', 'gate', 'bass', 'mid', 'treble', 'output', 'on_input', 'on_gate', 'on_tone', 'on_model', 'on_cab']);
 // ⚠️ AND A STAGE REORDER MUST NOT RENUMBER A CONTROL. `paramsCpp` turns this list into `PARAM_<KEY> =
 // <index + 1>`, and a host stores automation against those ids — so a parameter list that follows the stage
 // order means dragging a block in a pedalboard silently re-points every automated lane at a different knob.
@@ -957,7 +958,10 @@ check('a stage reorder does not renumber the parameters',
   chainMod.chainParamsStable(reversed, {}).map((pp) => pp.key),
   chainMod.chainParamsStable(chainMod.AMP_CHAIN, {}).map((pp) => pp.key));
 check('…and the identity order is the amplifier\'s own, not an accident of the stage list',
-  chainMod.PARAM_ORDER, ['input', 'gate', 'bass', 'mid', 'treble', 'output']);
+  chainMod.PARAM_ORDER,
+  // ⚠️ THE SWITCHES ARE APPENDED, AND THAT IS THE WHOLE POINT OF THIS LIST. Inserting them beside their
+  // blocks would have moved every control that already had an id, and a host stores automation against an id.
+  ['input', 'gate', 'bass', 'mid', 'treble', 'output', 'on_input', 'on_gate', 'on_tone', 'on_model', 'on_cab']);
 check('…and the plain chain still calls its single control what the manifest says',
   chainMod.chainParams(chainMod.PLAIN_CHAIN, { paramName: 'Drive' }).map((pp) => pp.name), ['Drive']);
 const tone = await import('../server/src/lib/audio/toneStack.js');
@@ -988,11 +992,12 @@ const ampSeed = [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ na
 const ampFiles = audioPlugin.scaffold(ampSeed).files;
 const ampSrc = generated({ files: ampFiles }, 'Source/Plugin.cpp');
 const plainSrc = src;
-// Six since the gate landed, and the ids are asserted as a SEQUENCE because inserting a stage in the middle
-// renumbers everything after it — which is how the measurement's hardcoded parameter ids went stale.
-check('the amp chain is input, gate, three tone bands, output',
+// Six controls since the gate landed, plus the blocks' five switches APPENDED after them, and the ids are
+// asserted as a SEQUENCE because inserting a parameter before one that already existed renumbers it — which is
+// how the measurement's hardcoded parameter ids went stale, and exactly what appending the switches avoids.
+check('the amp chain is six controls and then the blocks\' switches, in that order',
   (ampSrc.match(/PARAM_\w+ = \d+/g) || []).join(' '),
-  'PARAM_INPUT = 1 PARAM_GATE = 2 PARAM_BASS = 3 PARAM_MID = 4 PARAM_TREBLE = 5 PARAM_OUTPUT = 6');
+  'PARAM_INPUT = 1 PARAM_GATE = 2 PARAM_BASS = 3 PARAM_MID = 4 PARAM_TREBLE = 5 PARAM_OUTPUT = 6 PARAM_ON_INPUT = 7 PARAM_ON_GATE = 8 PARAM_ON_TONE = 9 PARAM_ON_MODEL = 10 PARAM_ON_CAB = 11');
 check('…and the plain plugin still has exactly one, so nothing that predates this changed',
   (plainSrc.match(/PARAM_\w+ = \d+/g) || []).join(' '), 'PARAM_OUTPUT = 1');
 check('…and the plain plugin carries no tone code at all', /biquad_process/.test(plainSrc), false);
@@ -1045,7 +1050,11 @@ check('…and the model is still behind the flag, so the source does not change 
 // The per-sample calls were not merely slow: they were the entire reason the null was -144 dB instead of
 // exact, so the "worse" number was being reported as the plugin's accuracy.
 check('⭐ the model is called ONCE PER BLOCK, not once per sample',
-  /p->model\[c\]->process\(io, io, model_frames\)/.test(ampSrc), true);
+  // ⚠️ ANCHORED TO THE FULLY-ON PATH, AND THAT IS NOT PEDANTRY. `model_frames` now appears in three places —
+  // the three ways through the switch — so a bare search for the call passed while the path every real
+  // session takes processed ONE sample per call. The guard that was supposed to catch this had gone blind to
+  // the mutation it exists for, which is exactly what the mutation harness is for.
+  /on_model >= 1\.0 \|\| !p->model_dry\[c\] \|\| model_frames > \(int\)p->model_dry_cap\) \{\s*p->model\[c\]->process\(io, io, model_frames\);/.test(ampSrc), true);
 check('…with the chunk it was given, and the count is that and not a literal 1',
   /const int model_frames = \(int\)\(chunk_end - chunk_start\);/.test(ampSrc)
   && !/->process\(mip, mop, 1\)/.test(ampSrc), true);
@@ -1080,6 +1089,21 @@ check('…and it compares the settled tail, not the ramp', /SETTLE_FRACTION = 0\
 const chainThreshold = chainCheckSrc.match(/arg\('max-null-db', '(-?\d+)'\)/);
 check('…with a threshold the measured numbers actually clear',
   Boolean(chainThreshold) && Number(chainThreshold[1]) <= -120, true);
+// ⭐ AND THE SWITCHES ARE PROVEN AS AUDIO TOO, not only as text. `--toggle` builds each block three ways —
+// switched off, engaged, and removed from the board entirely — and requires the switched-off build to be
+// BIT-IDENTICAL to the one without the block. That is the claim the panel and the parameter table make, and
+// the only place it can actually be checked is here, at the sample.
+check('⭐ …and a block switched off is proven to be the plugin WITHOUT it, as audio',
+  /export function toggleCheck\(/.test(chainCheckSrc)
+  && /scaffoldPlugin\(seed\)/.test(chainCheckSrc)
+  && /offVsRemoved: compareToReference\(gone, off\)/.test(chainCheckSrc)
+  && /onVsRemoved: compareToReference\(gone, on\)/.test(chainCheckSrc), true);
+check('…and the assertion is a bit-exact bypass plus a real difference, not a threshold on both',
+  /row\.offVsRemoved\.identical \|\| row\.offVsRemoved\.nullDb <= -200/.test(chainCheckSrc)
+  && /row\.onVsRemoved\.identical \|\| !\(row\.onVsRemoved\.nullDb > -60\)/.test(chainCheckSrc), true);
+check('…and the ARM runner dispatches it, because a Linux build is where the panel and the switch land',
+  /import \{ ampChainCheck, toggleCheck \}/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs'))
+  && /toggleCheck\(\{ work: join\(OUT, 'toggle-check'\) \}\)/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs')), true);
 // The bench's self-test proves the bench can fail by breaking the plugin's output gain. It finds that line by
 // shape, so if the plugin's shape moves and the bench's pattern does not, the self-test silently stops
 // patching anything — the bench would then pass a broken plugin and report that as proof it works.
@@ -1227,8 +1251,8 @@ const ampSeedNow = [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({
 const ampNow = audioPlugin.scaffold(ampSeedNow);
 const ampNowSrc = generated(ampNow, 'Source/Plugin.cpp');
 const gateIds = (ampNowSrc.match(/PARAM_\w+ = \d+/g) || []).join(' ');
-check('the amp chain is input, gate, three tone bands, output',
-  gateIds, 'PARAM_INPUT = 1 PARAM_GATE = 2 PARAM_BASS = 3 PARAM_MID = 4 PARAM_TREBLE = 5 PARAM_OUTPUT = 6');
+check('…and the same order holds for a plugin built from the chain directly',
+  gateIds, 'PARAM_INPUT = 1 PARAM_GATE = 2 PARAM_BASS = 3 PARAM_MID = 4 PARAM_TREBLE = 5 PARAM_OUTPUT = 6 PARAM_ON_INPUT = 7 PARAM_ON_GATE = 8 PARAM_ON_TONE = 9 PARAM_ON_MODEL = 10 PARAM_ON_CAB = 11');
 // ⚠️ OFF IS A STATE, NOT A VERY LOW THRESHOLD. At -80 dB the gate is still an envelope follower on the
 // signal and is never exactly transparent; bypassed, it nulls against the chain with no gate at all — and
 // that null is what the tone rows in audio-amp-chain-check measure, so the bypass is load-bearing.
@@ -1356,7 +1380,11 @@ check('⭐ reversing the board leaves the parameter ids exactly where they were'
   boardMod.boardParamsStable({ items: boardReversed }).map((p) => p.key).join(','),
   boardMod.boardParamsStable({ items: boardItems() }).map((p) => p.key).join(','));
 check('…and the ids are the amp chain\'s own order, not the arrangement\'s',
-  boardMod.boardParamsStable({ items: boardReversed }).map((p) => p.key).join(','), 'input,gate,bass,mid,treble,output');
+  boardMod.boardParamsStable({ items: boardReversed }).map((p) => p.key).join(','),
+  // ⚠️ THE SWITCHES ARE IN THIS LIST TOO, and they are why this check earns its keep: a switch is not in the
+  // block's own control table, so an owner lookup that only read those tables ranked it 0 — reversing the
+  // board then reversed the switches' ids while every other check still passed.
+  'input,gate,bass,mid,treble,output,on_input,on_gate,on_tone,on_model,on_cab');
 
 // A block after the model has to be EMITTED after the model. This is the one that bit before the board
 // existed: the post-model pass knew how to emit exactly one kind, so anything else placed there vanished.
@@ -1371,15 +1399,25 @@ check('…and one placed before it is emitted before it',
     return b.indexOf('biquad_process(&p->tone[c][0]') < b.indexOf('p->model[c]->process');
   })(), true);
 
-// BYPASS IS A STATE, NOT AN ABSENCE: the control stays (that is the automation lane) and the DSP goes.
-const gateOff = boardMod.boardChain({ items: boardItems().map((i) => (i.kind === 'gate' ? { ...i, enabled: false } : i)) });
+// ⚠️ BYPASS IS A SWITCH NOW, NOT AN ABSENCE — AND THIS SECTION CHANGED SHAPE WITH IT (2026-10-07).
+// It used to be a BUILD decision: a switched-off block emitted no DSP at all, and its control's NAME admitted
+// it (`"Gate (bypassed)"`). It is a runtime parameter whose default is the build-time state, so the DSP is
+// always emitted, the switch is what makes it inert, and the name suffix is gone. The old assertion was
+// \`/gate_process/.test(gateOffSrc) === false\`, which is exactly the claim that must no longer hold — and a
+// check that only looked for the block's PRESENCE would pass either way, which is why both halves are here.
 const gateOffSrc = boardSrc(boardItems().map((i) => (i.kind === 'gate' ? { ...i, enabled: false } : i)));
-check('…a bypassed block keeps its control, so nothing after it is renumbered',
-  gateOffSrc.includes('"Gate (bypassed)"') && /IDX_GATE/.test(gateOffSrc), true);
-check('…and it emits no DSP at all, rather than DSP that is ignored',
-  /gate_process/.test(gateOffSrc), false);
-check('…while the block that is still on keeps its own',
-  /gate_process/.test(boardSrc(boardItems())), true);
+check('…a block switched off keeps its control and its neighbours, so nothing is renumbered',
+  /\{ 2, "Gate", -80\.0, 0\.0, -80\.0, "dB", 0, "Gate" \}/.test(gateOffSrc)
+  && /IDX_GATE/.test(gateOffSrc) && !/\(bypassed\)/.test(gateOffSrc), true);
+check('…and its switch is a discrete parameter whose DEFAULT is the state the project was built with',
+  /\{ 8, "Gate On", 0\.0, 1\.0, 0\.0, "", 1, "Gate" \}/.test(gateOffSrc), true);
+check('⭐ …and its DSP is emitted anyway, wrapped in the crossfade that makes it inert',
+  /gate_process/.test(gateOffSrc)
+  && /const double dry_on_gate = x;/.test(gateOffSrc)
+  && /if \(on_on_gate < 1\.0\) x = dry_on_gate \+ on_on_gate \* \(x - dry_on_gate\);/.test(gateOffSrc), true);
+check('…while the block that is still on keeps the same code and defaults to On',
+  /gate_process/.test(boardSrc(boardItems()))
+  && /\{ 8, "Gate On", 0\.0, 1\.0, 1\.0, "", 1, "Gate" \}/.test(boardSrc(boardItems())), true);
 
 // THE FILE AND THE BLOCK ARE DIFFERENT QUESTIONS — the whole reason the template takes two extra flags.
 const noModel = boardSrc(boardItems().filter((i) => i.kind !== 'model'));
@@ -1454,8 +1492,11 @@ check('⭐ adding a delay leaves the amp chain\'s controls exactly where they we
   boardMod.boardParamsStable({ items: delayBoard(null) }).slice(0, 6).map((p) => p.key).join(','),
   'input,gate,bass,mid,treble,output');
 check('…and the delay\'s own controls are appended, in the order the block declares them',
-  boardMod.boardParamsStable({ items: delayBoard(null) }).slice(6).map((p) => p.key).join(','),
+  boardMod.boardParamsStable({ items: delayBoard(null) }).filter((p) => !p.stepped).slice(6).map((p) => p.key).join(','),
   'delay_time,delay_feedback,delay_mix');
+check('…and the delay\'s switch follows every control, as every block\'s does',
+  boardMod.boardParamsStable({ items: delayBoard(null) }).filter((p) => p.stepped).map((p) => p.key).join(','),
+  'on_input,on_gate,on_tone,on_model,on_delay');
 // ⭐ THE CASE A FIXED ORDER OF KNOWN KEYS GETS WRONG, and the reason identity is creation order instead. A
 // project that started as the one-Gain plugin, had a delay added, and then had a tone stack added: if the
 // parameter list were ordered by a known-key table, the tone stack's three keys would sort into the middle and
@@ -1471,7 +1512,7 @@ check('⭐ and a tone stack added AFTERWARDS does not renumber the delay',
     const keys = boardMod.boardParamsStable(after).map((p) => p.key).join(',');
     return at(after, 'delay_time') === at(before, 'delay_time')
       && at(after, 'delay_mix') === at(before, 'delay_mix')
-      && keys === 'output,delay_time,delay_feedback,delay_mix,bass,mid,treble';
+      && keys === 'output,delay_time,delay_feedback,delay_mix,bass,mid,treble,on_delay,on_tone';
   })(), true);
 
 // THE C++. A block that brings its own DSP has to bring its own everything: the struct and the functions, the
@@ -1485,12 +1526,14 @@ check('…its stage calls its own function on the sample',
   /x = delay_process\(&p->delay\[c\], x,/.test(withDelay), true);
 check('…and every marker it emitted was replaced, rather than left in the source as a compile error',
   /__DELAY_STAGE__|__GATE_STAGE__|__CAB_STAGE__/.test(withDelay), false);
+// The row is id, name, min, max, def, unit, stepped, module — the last two are what a host and the plugin's own
+// panel need to draw a switch and to group a block, and they are asserted here so they cannot quietly go.
 check('…with the parameters it declared, at the defaults the board saved',
-  /\{ 7, "Time", 20\.0, 2000\.0, 300\.0, "ms" \}/.test(withDelay)
-  && /\{ 8, "Feedback", 0\.0, 95\.0, 30\.0, "%" \}/.test(withDelay)
-  && /\{ 9, "Mix", 0\.0, 100\.0, 25\.0, "%" \}/.test(withDelay), true);
+  /\{ 7, "Time", 20\.0, 2000\.0, 300\.0, "ms", 0, "Delay" \}/.test(withDelay)
+  && /\{ 8, "Feedback", 0\.0, 95\.0, 30\.0, "%", 0, "Delay" \}/.test(withDelay)
+  && /\{ 9, "Mix", 0\.0, 100\.0, 25\.0, "%", 0, "Delay" \}/.test(withDelay), true);
 check('…and the tone stack still has its OWN three bands, not the delay\'s',
-  /\{ 3, "Bass", -12\.0, 12\.0, 0\.0, "dB" \}/.test(withDelay), true);
+  /\{ 3, "Bass", -12\.0, 12\.0, 0\.0, "dB", 0, "Tone" \}/.test(withDelay), true);
 
 // ⭐ WHERE THE BLOCK SITS IS THE BLOCK'S BUSINESS. A delay after the model has to be emitted after the model —
 // this is the pass split, and a stage the second pass cannot emit is a stage that vanishes from the plugin.
@@ -1505,13 +1548,18 @@ check('…and one placed before it is emitted before it',
     return b.indexOf('delay_process(&p->delay[c]') < b.indexOf('p->model[c]->process');
   })(), true);
 
-// BYPASS: the control stays, the DSP goes. Same contract as every other block, and it has to hold for one
-// whose DSP is a whole struct rather than a line.
+// ⚠️ A SWITCH ON A BLOCK WHOSE DSP IS A WHOLE STRUCT RATHER THAN A LINE. The same contract as every other
+// block, and the same rewrite: the controls keep their names, the switch is what makes the block inert, and
+// the delay's code is emitted either way — because "switched off" is now something a host can undo.
 const delayOff = boardSrc(delayBoard(null).map((i) => (i.kind === 'delay' ? { ...i, enabled: false } : i)));
-check('a bypassed delay keeps its three controls, marked as bypassed',
-  delayOff.includes('"Time (bypassed)"') && delayOff.includes('"Mix (bypassed)"'), true);
-check('…and emits no delay code at all — not a delay that is ignored',
-  /delay_process\(&p->delay\[c\], x,/.test(delayOff), false);
+check('a delay that starts switched off keeps its three controls, and its name no longer says so',
+  delayOff.includes('"Time"') && delayOff.includes('"Mix"') && !/\(bypassed\)/.test(delayOff), true);
+check('…with its switch defaulting to Off',
+  /\{ 14, "Delay On", 0\.0, 1\.0, 0\.0, "", 1, "Delay" \}/.test(delayOff), true);
+check('…and it emits its code anyway, wrapped in the crossfade that makes it inert',
+  /delay_process\(&p->delay\[c\], x,/.test(delayOff)
+  && /const double dry_on_delay = x;/.test(delayOff)
+  && /if \(on_on_delay < 1\.0\) x = dry_on_delay \+ on_on_delay \* \(x - dry_on_delay\);/.test(delayOff), true);
 
 // The template must stay identical for a project that has none of this. That is the assertion that keeps the
 // extension point from being a rewrite of every plugin Morpheus has already generated.
@@ -1562,10 +1610,12 @@ check('two blocks that are not part of an amp can be in one board, and BOTH bund
       && /spring_t spring\[2\];/.test(both) && /delay_t delay\[2\];/.test(both)
       && !/__SPRING_STAGE__|__DELAY_STAGE__/.test(both);
   })(), true);
-check('…and a bypassed spring reverb keeps its controls and emits no reverb at all',
+check('…and a spring reverb that starts switched off keeps its controls and emits its code, inert',
   (() => {
     const off = boardSrc([...boardItems(), { instanceId: 20, kind: 'spring', enabled: false, values: {} }]);
-    return off.includes('"Decay (bypassed)"') && !/spring_process\(&p->spring\[c\], x,/.test(off);
+    return off.includes('"Decay"') && !/\(bypassed\)/.test(off)
+      && /spring_process\(&p->spring\[c\], x,/.test(off)
+      && /if \(on_on_spring < 1\.0\) x = dry_on_spring \+ on_on_spring \* \(x - dry_on_spring\);/.test(off);
   })(), true);
 
 console.log('\n24. the drive: a block whose sound is the thing, so the numbers are the specification');
@@ -1595,10 +1645,12 @@ check('…and it carries its own struct and state with no allocation at all',
   /typedef struct \{[\s\S]*?\} drive_t;/.test(driveSrc) && /drive_t drive\[2\];/.test(driveSrc)
   && /p->drive\[c\]\.dcY = 0\.0;/.test(driveSrc)
   && !/calloc[\s\S]{0,200}drive/.test(driveSrc), true);
-check('…no marker left, and a bypassed drive keeps its controls and emits nothing',
+check('…no marker left, and a drive that starts switched off keeps its controls and emits its code, inert',
   (() => {
     const off = boardSrc([...boardItems(), { instanceId: 20, kind: 'drive', enabled: false, values: {} }]);
-    return !/__DRIVE_STAGE__/.test(driveSrc) && off.includes('"Gain (bypassed)"') && !/drive_process\(&p->drive\[c\], x,/.test(off);
+    return !/__DRIVE_STAGE__/.test(driveSrc) && off.includes('"Gain"') && !/\(bypassed\)/.test(off)
+      && /drive_process\(&p->drive\[c\], x,/.test(off)
+      && /if \(on_on_drive < 1\.0\) x = dry_on_drive \+ on_on_drive \* \(x - dry_on_drive\);/.test(off);
   })(), true);
 check('three blocks that are not part of an amp can share one board, and all three reach the source',
   (() => {
@@ -1667,9 +1719,14 @@ check('…its timer runs in COMMON modes, or the knobs freeze whenever a host is
   /addTimer:_timer forMode:NSRunLoopCommonModes/.test(guiCpp), true);
 // ⚠️ A CONTROL AND ITS UNITS ARE ONE FACT. This said "%.2f dB" for every parameter in every plugin, which was
 // true while an amp was the only chain and became wrong the day a delay arrived: Time read "340.00 dB".
+// ⭐ AND THE ROW GREW TWO MORE COLUMNS WHEN THE BLOCKS GAINED SWITCHES: \`stepped\` is CLAP's own discreteness
+// flag, and \`module\` is the block a control belongs to. Both are asserted here, because the panel and the
+// host both read them out of this table and neither would notice them silently becoming empty strings.
 check('⭐ every control carries its OWN unit through to the host and to the panel',
-  /const char \*unit; \} kParams\[\]/.test(guiPlugin)
+  /const char \*unit; int stepped; const char \*module; \} kParams\[\]/.test(guiPlugin)
   && /kParams\[ix\]\.unit/.test(guiPlugin)
+  && /CLAP_PARAM_IS_AUTOMATABLE \| \(kParams\[index\]\.stepped \? CLAP_PARAM_IS_STEPPED : 0\)/.test(guiPlugin)
+  && /kParams\[index\]\.module/.test(guiPlugin)
   && /unit: 'ms'/.test(read('server/src/lib/delayBlock.js'))
   && /unit: '%'/.test(read('server/src/lib/springBlock.js'))
   && /unit: 'dB'/.test(read('server/src/lib/ampChain.js')), true);
@@ -1751,6 +1808,60 @@ check('…with the stub as the fallback, for a platform none of the three covers
   /else\(\)\s*\n\s*set\(MORPHEUS_GUI_SOURCE Source\/PluginGui\.cpp\)/.test(guiCmake)
   && panelsMod.PANEL_FILES.includes('PluginGui.cpp'), true);
 
+// ── 25b. the rows grouped by block, and a SWITCH rather than a slider ────────────────────────────────────
+// ⚠️ THIS IS THE ANSWER TO "I can't tell what's what", AND IT IS ALSO THE RIG'S MISSING HALF. A capture or a
+// mic selector is a discrete control in a named block — the same two things a block switch needs — so the
+// panel learned both once. What follows asserts the mechanism, not the pixels: the marker comes from CLAP,
+// the grouping is done once in the shared header, and every backend draws from it.
+check('⭐ the layout learns which rows are switches from CLAP\'s own flag, not from a name convention',
+  /row->stepped = \(info\.flags & CLAP_PARAM_IS_STEPPED\) \? 1 : 0;/.test(guiLayout), true);
+check('…and which block a row belongs to, from the module the plugin reports',
+  /snprintf\(row->group, sizeof\(row->group\), "%\.63s", info\.module\);/.test(guiLayout), true);
+check('⭐ …and the rows are re-ordered so a block\'s own rows sit together, its switch included',
+  /out\[written\]\.first = \(first && raw\[j\]\.group\[0\]\) \? 1 : 0;/.test(guiLayout)
+  && /if \(rows\[i\]\.first\) h \+= MORPHEUS_GROUP_H;/.test(guiLayout), true);
+check('⭐ …and a click on a switch TOGGLES it, rather than reading a position off a track it does not have',
+  /v = to_default \? r->def : \(r->setting >= \(r->min \+ r->max\) \* 0\.5 \? r->min : r->max\);/.test(guiLayout), true);
+check('…and the panel height is derived from the rows, because a group band is more than a row count',
+  /static uint32_t morpheus_gui_height\(const clap_plugin_t \*plugin, const clap_plugin_params_t \*params\)/.test(guiLayout)
+  && /morpheus_gui_total_height\(rows, n\)/.test(guiLayout), true);
+for (const [name, src] of [['Cocoa', guiCpp], ['win32', guiWin], ['X11', guiX11]]) {
+  check(`⭐ …${name} draws a switch for a stepped row, and a name above each block`,
+    /row->stepped/.test(src) && /row->first/.test(src)
+    && /MORPHEUS_SWITCH_W/.test(src) && /MORPHEUS_GROUP_H/.test(src), true);
+  check(`…${name} refuses to drag a switch — two states have nothing to drag between`,
+    /rows\[row\]\.stepped/.test(src)
+    && /(\(dbl \|\| rows\[row\]\.stepped\)|!rows\[row\]\.stepped\)|rows\[row\]\.stepped \? -1 : row)/.test(src), true);
+  check(`…${name} asks the shared layout where a row is, rather than computing the sum itself`,
+    /morpheus_gui_row_y\(rows, i\)/.test(src) && !/MORPHEUS_PAD \+ MORPHEUS_ROW/.test(src), true);
+}
+
+// ── 25c. the AMP is a switch too, and it is the one block whose SHAPE makes that awkward ─────────────────
+// Every other block is per-sample, so its crossfade is a line. The model runs a WHOLE CHUNK at once and IN
+// PLACE, so by the time a fade wants the signal it replaced the buffer holds the model's output. That is what
+// the dry buffer is for, and it is why "switched off" cannot simply mean "not compiled in".
+const modelOffSrc = boardSrc(boardItems().map((i) => (i.kind === 'model' ? { ...i, enabled: false } : i)));
+check('⭐ a model block that starts switched off is still COMPILED IN — the switch can turn it on',
+  /const double on_model = p->smoothed\[IDX_ON_MODEL\];/.test(modelOffSrc)
+  && /\{ 10, "Amp model On", 0\.0, 1\.0, 0\.0, "", 1, "Amp model" \}/.test(modelOffSrc), true);
+check('…with a dry copy sized in activate, where allocation is allowed, and released on deactivate',
+  /float \*model_dry\[2\];/.test(modelOffSrc)
+  && /p->model_dry\[c\] = \(float \*\)malloc\(sizeof\(float\) \* \(size_t\)p->model_dry_cap\)/.test(modelOffSrc)
+  && /for \(int c = 0; c < 2; \+\+c\) \{ free\(p->model_dry\[c\]\); p->model_dry\[c\] = NULL; \}/.test(modelOffSrc), true);
+check('⭐ …and FULLY ON skips the blend arithmetic, because `dry + 1*(wet-dry)` is not bit-identical to `wet`',
+  /if \(on_model >= 1\.0 \|\| !p->model_dry\[c\] \|\| model_frames > \(int\)p->model_dry_cap\)/.test(modelOffSrc)
+  && /p->model_dry\[c\]\[k\] \+ on_model \* \(\(double\)io\[0\]\[k\] - p->model_dry\[c\]\[k\]\)/.test(modelOffSrc), true);
+// A MODEL THE CHAIN HAS NO BLOCK FOR IS UNCHANGED — a plain project whose `.nam` is simply in the tree runs
+// it as it always did, with no switch and no buffer, because a chain with no model STAGE has nothing to
+// switch. (An `chain: 'amp'` project DOES get one: the amp chain names a model stage.)
+const plainWithModel = generated(audioPlugin.scaffold([...empty, { path: 'models/amp.nam', content: LINEAR }]), 'Source/Plugin.cpp');
+check('…while a plain project whose .nam is not a BLOCK is untouched: no switch, no buffer',
+  !/IDX_ON_MODEL/.test(plainWithModel) && !/model_dry/.test(plainWithModel)
+  && /if \(model_frames > 0\) \{/.test(plainWithModel), true);
+check('…and a switch reads On/Off as TEXT, because a host draws the string this returns',
+  /value >= \(kParams\[ix\]\.min \+ kParams\[ix\]\.max\) \* 0\.5 \? "On" : "Off"/.test(guiPlugin)
+  && /morpheus_text_is\(text, "on"\)/.test(guiPlugin) && /morpheus_text_is\(text, "off"\)/.test(guiPlugin), true);
+
 console.log('\n26. the ARM chain check LOADS, which nothing was checking');
 // ⚠️ FOUND BY DISPATCHING THE RUNNER, NOT BY READING ANYTHING. `audio-amp-chain-check.mjs` read
 // `AMP_CHAIN.params`, a property the stages refactor removed — so it threw at MODULE LOAD and the ARM chain
@@ -1824,12 +1935,22 @@ const runnerText = Object.fromEntries(demoRunners.map((f) => [f, readFileSync(f,
 // knob away.
 const demoDefaults = Object.fromEntries(boardMod.boardParamsStable(demo.DEMO_BOARD, {}).map((p) => [p.key, p.def]));
 const demoStages = boardMod.boardChain(demo.DEMO_BOARD, {}).stages;
-check('…and its default patch is a NULL: both time effects mixed to nothing, the drive bypassed',
-  [demoDefaults.delay_mix, demoDefaults.spring_mix, demoStages.filter((st) => st.kind === 'drive' && st.bypass).length],
-  [0, 0, 1]);
+// ⚠️ THE SWITCH IS NOW WHAT BYPASS MEANS, so this reads the PARAMETER's default rather than the stage's flag:
+// `demoStages.filter((st) => st.bypass)` still holds (the mark is the default's source) but it would go on
+// passing if the switch stopped carrying it — and the switch is the thing a player actually lands on.
+check('…and its default patch is a NULL: both time effects mixed to nothing, the drive switched off',
+  [demoDefaults.delay_mix, demoDefaults.spring_mix, demoDefaults.on_drive,
+    demoStages.filter((st) => st.kind === 'drive' && st.bypass).length],
+  [0, 0, 0, 1]);
 check('…so nothing in the signal path colours the sound until somebody asks it to',
-  [demoDefaults.gate, demoDefaults.input, demoDefaults.output, demoDefaults.bass, demoDefaults.mid, demoDefaults.treble],
-  [demoDefaults.gate, 0, 0, 0, 0, 0]);
+  // Every other block ships switched ON and at a neutral setting: the amp, the cabinet, the gate (whose own
+  // threshold is OFF at -80 dB), the input trim and the output level. A non-zero here would be a pedal on out
+  // of the box, which is the failure this pair of checks was written for.
+  [demoDefaults.on_input, demoDefaults.on_gate, demoDefaults.on_tone, demoDefaults.on_model, demoDefaults.on_cab],
+  [1, 1, 1, 1, 1]);
+check('…with the gate, the trim, the tone stack and the level all at their neutral positions',
+  [demoDefaults.input, demoDefaults.output, demoDefaults.bass, demoDefaults.mid, demoDefaults.treble],
+  [0, 0, 0, 0, 0]);
 
 check('every runner seeds the shared definition rather than its own manifest',
   demoRunners.filter((f) => !/from '\.\/lib\/pluginDemo\.mjs'/.test(runnerText[f])

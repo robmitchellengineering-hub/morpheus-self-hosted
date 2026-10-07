@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { namRenderCheck } from './audio-nam-render-check.mjs';
-import { ampChainCheck } from './audio-amp-chain-check.mjs';
+import { ampChainCheck, toggleCheck } from './audio-amp-chain-check.mjs';
 import { demoManifest } from './lib/pluginDemo.mjs';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
@@ -272,6 +272,25 @@ if (chainCheck) {
     console.error(`[audio-plugin-linux-arm] x the chain is ${worst.toFixed(1)} dB from its design, worse than the -120 dB this check requires.`);
     process.exit(1);
   }
+  // ⭐ AND THE BLOCKS' OWN SWITCHES, on this CPU, as audio. On/off is a runtime parameter now, so the block's
+  // code is always emitted and a crossfade is what makes it inert — which is a much easier thing to get
+  // subtly wrong than "the generator did not emit it". Each block is built three ways: switched off, engaged,
+  // and removed entirely; off must be bit-identical to removed, and on must not be.
+  console.log('\n[audio-plugin-linux-arm] > every block\'s On/Off switch is a true bypass');
+  const toggles = toggleCheck({ work: join(OUT, 'toggle-check') });
+  for (const row of toggles.rows) {
+    log(`  ${row.kind.padEnd(6)} off vs removed: ${(Number.isFinite(row.offVsRemoved.nullDb) ? `${row.offVsRemoved.nullDb.toFixed(1)} dB` : 'identical')}`
+      + `   engaged vs removed: ${(Number.isFinite(row.onVsRemoved.nullDb) ? `${row.onVsRemoved.nullDb.toFixed(1)} dB` : 'identical')}`);
+    if (!(row.offVsRemoved.identical || row.offVsRemoved.nullDb <= -200)) {
+      console.error(`[audio-plugin-linux-arm] x a ${row.kind} switched off is not the plugin without it.`);
+      process.exit(1);
+    }
+    if (row.onVsRemoved.identical || !(row.onVsRemoved.nullDb > -60)) {
+      console.error(`[audio-plugin-linux-arm] x a ${row.kind} switched on changes nothing.`);
+      process.exit(1);
+    }
+  }
+  log('every switch is a true bypass, and every switch does something');
   log('the chain is its design, on this CPU');
 }
 
