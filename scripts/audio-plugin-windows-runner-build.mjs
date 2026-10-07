@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import audioPlugin from '../server/src/lib/compile-targets/audio-plugin-windows.js';
 import { demoManifest, demoRigSeed } from './lib/pluginDemo.mjs';
+import { engineCheckoutVerdict } from './lib/engineCache.mjs';
 
 const log = (m) => console.log(`[audio-plugin-windows] ${m}`);
 
@@ -51,25 +52,47 @@ const seed = [{ path: 'README.md', content: '# audio-plugin-windows runner build
 // `models/` is the conventional place and what lib/namPlugin.js looks in first; the basename is kept so a
 // build log names the file the way its owner does. Mirrors the Linux ARM rig, which already has this — the
 // mechanism was never route-specific, only this script's command line was.
-// ── THE TWO THIRD-PARTY CHECKOUTS, CLEARED BEFORE ANY STEP RUNS ──────────────────────────────────────────
-// ⚠️ THIS JOB NOW BUILDS TWICE, AND THE SECOND BUILD DIED ON THE FIRST ONE'S CLONE:
+// ── THE TWO THIRD-PARTY CHECKOUTS, AND WHAT HAPPENS TO EACH BEFORE ANY STEP RUNS ─────────────────────────
+// ⚠️ THIS JOB BUILDS TWICE, AND THE SECOND BUILD DIED ON THE FIRST ONE'S CLONE:
 //
 //   fatal: destination path '.../clap-wrapper' already exists and is not an empty directory
 //
 // The steps clone into $RUNNER_TEMP and `git clone` refuses a directory that exists — deliberately, and that
 // refusal is worth keeping: a clone that reused whatever was already there would silently build against a
-// tree from an earlier step. So they are cleared here and said out loud, which keeps the refusal and still
-// lets one job prove both shapes.
+// tree from an earlier step. So `clap-wrapper` is still cleared here and said out loud, which keeps the
+// refusal and still lets one job prove both shapes.
 //
-// The Linux ARM rig has had this since it gained a second build, and its comment quotes the same error. This
-// is that block, on the routes that were missing it — which is why the failure was identical and the fix is
-// a copy rather than a discovery.
-for (const dir of ['clap-wrapper', 'namcore']) {
-  const stale = join(RUNNER_TEMP, dir);
-  if (existsSync(stale)) {
-    log(`clearing ${stale} so the steps behave as they would on a fresh runner`);
-    rmSync(stale, { recursive: true, force: true });
+// ⭐ `namcore` IS NOW CACHED, AND IT IS VERIFIED RATHER THAN CLEARED. Its `Dependencies/eigen` submodule is
+// hosted on GITLAB, which intermittently answers "GitLab is currently unable to handle this request due to
+// load" — two of the three runners died on exactly that on 2026-10-07, and both passed when re-dispatched,
+// because the pin never changes and every build re-fetched a permanently-fixed commit from an unreliable
+// host. The three workflows restore $RUNNER_TEMP/namcore with `actions/cache`, keyed on the engine pin AND
+// the eigen pin. That is worth nothing if a stale tree is reused, so it is reused ONLY when it verifies:
+// HEAD is the pinned commit and the eigen submodule is the commit NAMCore pins for it, header present. The
+// rule the old comment defended still holds — a checkout from a different revision is worse than the outage
+// this fixes — and it holds because anything that does not verify is cleared and cloned exactly as it is
+// today. A cold cache is slower, never wrong, and can still hit GitLab; the fallback is deliberately intact.
+//
+// `clap-wrapper` is NOT cached, deliberately: it is GitHub-hosted and was not what failed, and caching it
+// would mean a second pin to key and a second verify-then-reuse path for a host that has not fallen over —
+// cache space and a second way to be wrong, for no outage it would remove. The engine, with eigen, is the
+// expensive and unreliable fetch; that is the one worth the cache.
+const wrapper = join(RUNNER_TEMP, 'clap-wrapper');
+if (existsSync(wrapper)) {
+  log(`clearing ${wrapper} so the steps behave as they would on a fresh runner`);
+  rmSync(wrapper, { recursive: true, force: true });
+}
+const engine = join(RUNNER_TEMP, 'namcore');
+if (existsSync(engine)) {
+  const verdict = engineCheckoutVerdict(engine);
+  if (verdict.reuse) {
+    log(`ENGINE CACHE: HIT — reusing the verified checkout at ${engine} (${verdict.reason}); the clone step will skip it`);
+  } else {
+    log(`ENGINE CACHE: MISS — ${verdict.reason}; clearing ${engine} so the target clones it`);
+    rmSync(engine, { recursive: true, force: true });
   }
+} else {
+  log('ENGINE CACHE: MISS — nothing was restored; the target will clone the engine');
 }
 
 const demoRig = process.argv.includes('--demo-rig') || process.env.AUDIO_PLUGIN_DEMO_RIG === '1';

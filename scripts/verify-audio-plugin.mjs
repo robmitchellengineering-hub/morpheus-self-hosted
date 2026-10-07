@@ -765,13 +765,20 @@ check('the runner can build WITH a model, so the model path is proven on hardwar
   /AUDIO_PLUGIN_MODEL/.test(linuxNamRunner) && /models\/\$\{basename\(modelArg\)\}/.test(linuxNamRunner), true);
 check('…and refuses a model path that does not exist rather than spending a build on it',
   /does not exist — refusing to spend a build on it/.test(linuxNamRunner), true);
-// ⚠️ ONE JOB, TWO BUILDS, AND `git clone` REFUSES AN EXISTING DIRECTORY. The first run of the modelled build
-// died with "destination path .../clap-wrapper already exists" — the workflow's fault, not the steps'. The fix
-// keeps the refusal (a clone that reused a stale checkout would build against a different revision than the
-// pin) and clears the two checkouts instead, which is what makes the job look like a fresh runner.
-check('…and clears the previous run\'s checkouts, because the steps refuse an existing clone and a job now runs twice',
-  /for \(const dir of \['clap-wrapper', 'namcore'\]\)/.test(linuxNamRunner)
-  && /rmSync\(stale, \{ recursive: true, force: true \}\)/.test(linuxNamRunner), true);
+// ⚠️ ONE JOB, MANY BUILDS, AND `git clone` REFUSES AN EXISTING DIRECTORY. The modelled build died with
+// "destination path .../clap-wrapper already exists" — the workflow's fault, not the steps'. The fix keeps
+// the refusal (a clone that reused a stale checkout would build against a different revision than the pin)
+// and clears the wrapper instead, which is what makes the job look like a fresh runner. The ENGINE is no
+// longer cleared blindly: it is restored from `actions/cache` and reused only when it verifies — section 29
+// asserts that for all three runners. All three, here too: the three clone the same two repositories through
+// the same plan, so a check on the ARM runner alone would let the other two lose the clearing silently.
+const audioRunners = [
+  'scripts/audio-plugin-macos-runner-build.mjs',
+  'scripts/audio-plugin-windows-runner-build.mjs',
+  'scripts/audio-plugin-linux-arm-runner-build.mjs',
+];
+check('…and all three runners clear clap-wrapper, because the steps refuse an existing clone and a job runs the modelled build more than once',
+  audioRunners.filter((f) => !/if \(existsSync\(wrapper\)\) \{[\s\S]{0,200}rmSync\(wrapper, \{ recursive: true, force: true \}\)/.test(read(f))), []);
 const linuxNamWf = read('.github/workflows/audio-plugin-linux-arm-build.yml');
 check('the ARM workflow fetches the example models and builds BOTH shapes',
   /curl[^\n]*\.cache\/models\/[a-z0-9_]+\.nam/.test(linuxNamWf)
@@ -2497,6 +2504,94 @@ check('…and NOT a STATIC one, which is exactly how the WaveNet parser stopped 
   /add_library\(morpheus_plugin-impl STATIC/.test(bareCmake), false);
 check('…with the reason written where the next person will change it',
   /registerParser|static initializer|register themselves/.test(bareCmake), true);
+
+console.log('\n29. ⭐ THE NEURAL ENGINE IS CACHED, AND A RESTORED CHECKOUT IS REUSED ONLY WHEN IT VERIFIES');
+
+// ── THE OUTAGE THIS CLOSES ───────────────────────────────────────────────────────────────────────────────
+// `Dependencies/eigen` is hosted on GITLAB, and GitLab intermittently answers "GitLab is currently unable to
+// handle this request due to load". On 2026-10-07 two of the three audio-plugin runners (Windows and Linux
+// ARM) died on exactly that — macOS got through — and both passed when re-dispatched. The engine pin never
+// changes, so every dispatch re-fetched a permanently-fixed commit over a host that falls over. The cache
+// removes that fetch on the happy path; the clone stays, so a cold cache can still reach GitLab rather than
+// fail. ⚠️ AND THE ONE THING THIS MUST NOT DO IS BUILD A DIFFERENT REVISION: a cache that could serve a stale
+// tree would be worse than the outage it fixes, so a restored checkout is reused only after it verifies.
+// Every assertion below is one half of that pair — the cache exists, and the reuse is gated on the pin.
+const engineCache = read('scripts/lib/engineCache.mjs');
+// The pin is single-sourced. A runner that re-typed the hash would keep reusing the old tree after the pin
+// moved — silently, which is the failure this whole change is most at risk of.
+check('the verification reads the pin from the module that owns it',
+  /import \{ NAMCORE_REF, NAMCORE_EIGEN_REF \} from '\.\.\/\.\.\/server\/src\/lib\/namPlugin\.js'/.test(engineCache), true);
+// The commit at HEAD must BE the pin. NAMCORE_REF is a short hash and HEAD is full, so equality is a prefix
+// match: comparing the two strings directly would reject every hit, and that reads as a cache that never works.
+check('…and requires HEAD to be the pinned commit, not merely to exist',
+  /'rev-parse', 'HEAD'/.test(engineCache) && /commit\.startsWith\(NAMCORE_REF\)/.test(engineCache), true);
+// The submodule at the commit NAMCore's own tree pins for it — a different commit that still has a header is
+// not what a clone would have produced, and nothing else in the build would notice.
+check('…and requires the eigen submodule at the commit NAMCore pins for it',
+  /eigenCommit !== NAMCORE_EIGEN_REF/.test(engineCache) && /NAMCORE_EIGEN_REF = 'bc3b39870ecb690a623a3f49149a358b95c5781d'/.test(read('server/src/lib/namPlugin.js')), true);
+// …and the file whose absence was the original failure, asserted as its own check rather than inferred from
+// the commit: a half-initialised submodule can have the right HEAD and no working tree.
+check('…and the header whose absence was `fatal error: \'Eigen/Dense\' file not found`',
+  /existsSync\(join\(dir, EIGEN_HEADER\)\)/.test(engineCache) && /Dependencies\/eigen\/Eigen\/Dense/.test(engineCache), true);
+
+// ⚠️ ALL THREE, AND THE SAME CODE. The macOS and Windows runners run the target's steps through a different
+// shell than the ARM one, but the clone is the ONE plan in lib/namPlugin.js, so the verification is one shared
+// module rather than a fourth copy free to drift. A runner that stops calling it is reusing blindly again.
+check('every one of the three runner scripts asks the shared verdict before reusing a restored checkout',
+  audioRunners.filter((f) => {
+    const src = read(f);
+    return !/import \{ engineCheckoutVerdict \} from '\.\/lib\/engineCache\.mjs'/.test(src)
+      || !/const verdict = engineCheckoutVerdict\(engine\)/.test(src)
+      || !/if \(verdict\.reuse\)/.test(src);
+  }), []);
+check('…and clears it when it does not verify, so the target clones exactly as it does today',
+  audioRunners.filter((f) => !/rmSync\(engine, \{ recursive: true, force: true \}\)/.test(read(f))), []);
+// A run has to SAY whether the cache worked. Two distinct markers, because "the cache is useless" and "the
+// cache saved the fetch" are the two things a reader of the log is trying to tell apart.
+check('…and says loudly which branch was taken, so a run reports whether the cache worked',
+  audioRunners.filter((f) => !/ENGINE CACHE: HIT/.test(read(f)) || !/ENGINE CACHE: MISS/.test(read(f))), []);
+
+// The other half of the pair: the target's clone step must NOT try to clone into a directory the runner kept,
+// or the verified cache would fail the step. Presence is the condition, and it can only be true because the
+// runner above verified and kept it — everything else is deleted before the steps run.
+check('the clone step skips a checkout the runner verified, in every shell a route uses',
+  [['macOS', audioPlugin], ['Windows', audioPluginWindows], ['Linux ARM', audioPluginLinux]].filter(([, target]) => {
+    const on = target.buildSteps(target.scaffold(withModel).files);
+    const step = on.find((s) => /neural engine/i.test(s.name || ''));
+    return !step || !/namcore\/\.git/.test(step.run) || !/else[\s\S]*git clone/.test(step.run);
+  }), []);
+
+const cacheWorkflows = [
+  ['.github/workflows/audio-plugin-macos-build.yml', 'macOS'],
+  ['.github/workflows/audio-plugin-windows-build.yml', 'Windows'],
+  ['.github/workflows/audio-plugin-linux-arm-build.yml', 'Linux ARM'],
+];
+check('every one of the three audio workflows caches the engine checkout',
+  cacheWorkflows.filter(([f]) => !/uses: actions\/cache@v4/.test(read(f))).map(([, n]) => n), []);
+check('…at the path the runner reads and verifies, so what was cached is what gets checked',
+  cacheWorkflows.filter(([f]) => !/path: \$\{\{ runner\.temp \}\}\/namcore\s*$/m.test(read(f))).map(([, n]) => n), []);
+// ⭐ BOTH PINS IN THE KEY. The engine pin alone would serve an old eigen tree after NAMCore moved its
+// submodule; the eigen pin alone would not move when NAMCore did. Either way, moving a pin MUST be a miss —
+// and the runner's verification is the second half of the same guarantee, because a key that failed to move
+// still cannot make a stale tree pass.
+check('…keyed on BOTH the engine pin and the eigen submodule pin, so moving either one misses',
+  cacheWorkflows.filter(([f]) => {
+    const key = /key: ([^\n]+)/.exec(read(f))?.[1] || '';
+    return !key.includes(nam.NAMCORE_REF) || !key.includes(nam.NAMCORE_EIGEN_REF);
+  }).map(([, n]) => n), []);
+// A partial restore can never be reused — verification rejects a different pin — so `restore-keys` would only
+// download a stale tree to delete it. Asserted rather than left as a preference: it is a second way to be
+// wrong for no benefit.
+check('…and a partial restore is not even attempted, because a stale tree can never be reused',
+  cacheWorkflows.filter(([f]) => /^\s*restore-keys\s*:/m.test(read(f))).map(([, n]) => n), []);
+// The wrapper is GitHub-hosted and was not the failure. Caching it would mean a second pin to key and a second
+// verify-then-reuse path; the decision is "no", and this asserts it did not creep in half-done.
+check('…and clap-wrapper is deliberately NOT cached, because it is GitHub-hosted and was not the failure',
+  cacheWorkflows.filter(([f]) => {
+    const src = read(f);
+    const at = src.indexOf('uses: actions/cache@v4');
+    return at !== -1 && /clap-wrapper/.test(src.slice(at, at + 300));
+  }).map(([, n]) => n), []);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

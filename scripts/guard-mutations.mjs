@@ -563,11 +563,70 @@ export const MUTATIONS = [
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
-    // The first modelled build died on `git clone ... already exists` because one job now builds twice. The
-    // fix clears the checkouts rather than weakening the clone, so the mutation removes the clearing.
-    why: 'Stops clearing the previous build\u2019s third-party checkouts, so a second build in the same job dies on a clone that already exists.',
-    find: "for (const dir of ['clap-wrapper', 'namcore']) {",
-    replace: 'for (const dir of []) {',
+    // The modelled builds died on `git clone ... already exists` because one job builds several times. The fix
+    // clears clap-wrapper rather than weakening the clone; the engine is now CACHED and verified instead, so the
+    // mutation defeats the wrapper's clearing — the half that must still happen on every run.
+    why: 'Stops clearing the previous build\u2019s clap-wrapper, so a later modelled build in the same job dies on a clone that already exists.',
+    find: 'if (existsSync(wrapper)) {',
+    replace: 'if (false) {',
+  },
+  // ── the engine cache (2026-10-07): the GitLab outage, and the pair of guarantees that make a cache safe ──
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-macos-build.yml',
+    // ⚠️ THE EIGEN HALF OF THE KEY. NAMCore's own tree pins its eigen submodule, so the engine pin is not the
+    // only way the cached tree goes stale — a key naming only NAMCORE_REF would keep serving the old eigen
+    // checkout. The guard requires BOTH pins; this removes one and leaves the other.
+    why: 'Drops the eigen submodule pin from the cache key, so a cached checkout would survive NAMCore moving its eigen submodule.',
+    find: 'key: namcore-${{ runner.os }}-0b3d3c9-bc3b39870ecb690a623a3f49149a358b95c5781d',
+    replace: 'key: namcore-${{ runner.os }}-0b3d3c9',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-windows-build.yml',
+    // A cache of the wrong directory restores nothing the runner reads, so the GitLab fetch the cache was meant
+    // to remove happens anyway — and the run still says a cache step ran.
+    why: 'Caches a directory the runner never reads, so the cache restores nothing and the fetch returns silently.',
+    find: 'path: ${{ runner.temp }}/namcore',
+    replace: 'path: ${{ runner.temp }}/namcore-cache',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/lib/engineCache.mjs',
+    // ⭐ THE CLAIM THE WHOLE CACHE RESTS ON: a restored checkout is reused only when HEAD IS THE PIN. Defeating
+    // the comparison is how the cache would serve a different revision — the one outcome worse than the outage
+    // it fixes — and the build would be green.
+    why: 'Accepts any HEAD as the pinned commit, so a restored checkout from a different revision would be built against.',
+    find: 'if (!commit.startsWith(NAMCORE_REF)) {',
+    replace: 'if (false) {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/lib/engineCache.mjs',
+    // The file whose absence was the original `fatal error: 'Eigen/Dense' file not found`. A submodule whose
+    // HEAD is right but whose working tree was never written is still a build that dies minutes later.
+    why: 'Stops checking that the eigen header is present, so a checkout whose submodule has no working tree is reused.',
+    find: 'if (!existsSync(join(dir, EIGEN_HEADER))) {',
+    replace: 'if (false) {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-macos-runner-build.mjs',
+    // ⭐ BLIND REUSE, as a mutation: the runner still logs a HIT and clears nothing, so whatever the cache
+    // restored is built against without the pin ever being read. The guard asserts the CALL, not the log line.
+    why: 'Replaces the verification with a trust-all verdict, so a restored checkout is reused without checking the pin.',
+    find: 'const verdict = engineCheckoutVerdict(engine);',
+    replace: "const verdict = { reuse: true, reason: 'assumed' };",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // The other half of a safe reuse: the clone step must not try to clone into the directory the runner kept,
+    // or a verified cache would fail the step outright. Skipping a checkout that is NOT there restores the
+    // `destination path already exists` failure the cache was supposed to make impossible.
+    why: 'Stops the clone step skipping a verified checkout, so a cache hit makes `git clone` fail on a directory that exists.',
+    find: 'if [ -d "$RUNNER_TEMP/namcore/.git" ]; then',
+    replace: 'if [ -d "$RUNNER_TEMP/namcore/never" ]; then',
   },
   {
     guard: 'verify-audio-plugin.mjs',

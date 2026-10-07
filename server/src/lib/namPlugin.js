@@ -50,6 +50,17 @@ export const NAMCORE_REPO = 'https://github.com/sdatkinson/NeuralAmpModelerCore.
 export const NAMCORE_REF = '0b3d3c9';
 
 /**
+ * The commit NAMCore's own tree pins for its `Dependencies/eigen` submodule AT `NAMCORE_REF` — the gitlink
+ * in that commit, not a branch. It is named here, beside the pin it belongs to, because two things need it:
+ * the engine cache's key has to change when EITHER pin moves, and a restored checkout has to be able to say
+ * whether it is the tree a clone would have produced. `Dependencies/eigen` is hosted on GITLAB, which
+ * intermittently answers "GitLab is currently unable to handle this request due to load" — two of the three
+ * runner builds died on exactly that on 2026-10-07 — so the checkout is cached, and this is the half of the
+ * pin a cache keyed on NAMCORE_REF alone would not know about.
+ */
+export const NAMCORE_EIGEN_REF = 'bc3b39870ecb690a623a3f49149a358b95c5781d';
+
+/**
  * The `.nam` this project carries, or null.
  *
  * `morpheus.plugin.json` may name one explicitly (`"model": "models/marshall.nam"`); otherwise the project is
@@ -400,23 +411,43 @@ export function namPlan(files, manifest) {
     model: model.info,
     warnings,
     clone: {
+      // ⭐ THE ENGINE CHECKOUT IS CACHED IN THE THREE RUNNER WORKFLOWS, AND `git clone` REFUSES A DIRECTORY
+      // THAT EXISTS. `actions/cache` restores `$RUNNER_TEMP/namcore` before the build runs, and the runner
+      // script has already decided whether that tree may be reused: it keeps it only when HEAD IS this pin
+      // and the eigen submodule is the commit NAMCore pins (see scripts/lib/engineCache.mjs), and removes
+      // anything else. So the clone below runs exactly when there is nothing verified to reuse — which is a
+      // cold cache, or a user's own build, on precisely today's path.
+      //
+      // ⚠️ THE CONDITION IS PRESENCE, NOT TRUST. A directory can only still be here because the runner left
+      // it after verification; the runner deletes every other case. That is the distinction the original
+      // comment drew, and it is right: `git clone` refusing an existing directory is what stops a build from
+      // silently using a tree from an earlier step, and a reused cache is only acceptable because something
+      // has checked it against the pin first.
       bash: [
+        `if [ -d "$RUNNER_TEMP/namcore/.git" ]; then`,
+        `  echo "the neural engine is already at $RUNNER_TEMP/namcore and verified — not cloning it again"`,
+        `else`,
         // --depth on the submodule as well: this runs inside every user's build, and the engine's history is
         // not part of what the plugin needs.
-        `git clone --quiet ${NAMCORE_REPO} "$RUNNER_TEMP/namcore"`,
-        `git -C "$RUNNER_TEMP/namcore" checkout ${NAMCORE_REF}`,
+        `  git clone --quiet ${NAMCORE_REPO} "$RUNNER_TEMP/namcore"`,
+        `  git -C "$RUNNER_TEMP/namcore" checkout ${NAMCORE_REF}`,
         // ⚠️ EIGEN IS A SUBMODULE. A plain clone leaves Dependencies/eigen empty, and the failure that
         // produces is a missing-header error deep in a library the user has never heard of.
-        `git -C "$RUNNER_TEMP/namcore" submodule update --init --depth 1`,
+        `  git -C "$RUNNER_TEMP/namcore" submodule update --init --depth 1`,
+        `fi`,
       ],
       powershell: [
         '$ErrorActionPreference = "Stop"',
-        `git clone --quiet ${NAMCORE_REPO} "$env:RUNNER_TEMP/namcore"`,
-        'if ($LASTEXITCODE -ne 0) { throw "cloning the neural engine failed" }',
-        `git -C "$env:RUNNER_TEMP/namcore" checkout ${NAMCORE_REF}`,
-        'if ($LASTEXITCODE -ne 0) { throw "checking out the pinned neural engine failed" }',
-        `git -C "$env:RUNNER_TEMP/namcore" submodule update --init --depth 1`,
-        'if ($LASTEXITCODE -ne 0) { throw "fetching the neural engine\'s dependencies failed" }',
+        'if (Test-Path "$env:RUNNER_TEMP/namcore/.git") {',
+        '  Write-Host "the neural engine is already at $env:RUNNER_TEMP/namcore and verified — not cloning it again"',
+        '} else {',
+        `  git clone --quiet ${NAMCORE_REPO} "$env:RUNNER_TEMP/namcore"`,
+        '  if ($LASTEXITCODE -ne 0) { throw "cloning the neural engine failed" }',
+        `  git -C "$env:RUNNER_TEMP/namcore" checkout ${NAMCORE_REF}`,
+        '  if ($LASTEXITCODE -ne 0) { throw "checking out the pinned neural engine failed" }',
+        `  git -C "$env:RUNNER_TEMP/namcore" submodule update --init --depth 1`,
+        '  if ($LASTEXITCODE -ne 0) { throw "fetching the neural engine\'s dependencies failed" }',
+        '}',
       ],
     },
     configure: {
