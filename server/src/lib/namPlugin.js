@@ -273,8 +273,12 @@ const unsigned long morpheus_model_size = sizeof(morpheus_model_data);
  * ⚠️ TWO FILTERS THAT MEAN THE SAME THING ARE TWO FILTERS THAT DRIFT, and the failure is a header promising
  * three entries beside a table that holds two. A member with no `info` is kept by `resolveModels` so its
  * warning reaches the scaffold (see `modelDataSourceAll`); it has no bytes, so it is not a row.
+ *
+ * ⭐ EXPORTED, BECAUSE THE SELECTOR'S RANGE IS THIS SAME COUNT. `scaffoldPlugin` asks it for the number of
+ * controls the rig offers (see `rigSelectors`), so a capture dropped from the table cannot leave a selector
+ * position that plays nothing — the count, the table and the parameter come from one filter.
  */
-const usableModels = (models) => (Array.isArray(models) ? models : []).filter((m) => m && m.info);
+export const usableModels = (models) => (Array.isArray(models) ? models : []).filter((m) => m && m.info);
 
 /**
  * `Source/ModelData.cpp` for a whole RIG — one capture, several, or none.

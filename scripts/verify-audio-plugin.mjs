@@ -972,7 +972,12 @@ check('…and the identity order is the amplifier\'s own, not an accident of the
   chainMod.PARAM_ORDER,
   // ⚠️ THE SWITCHES ARE APPENDED, AND THAT IS THE WHOLE POINT OF THIS LIST. Inserting them beside their
   // blocks would have moved every control that already had an id, and a host stores automation against an id.
-  ['input', 'gate', 'bass', 'mid', 'treble', 'output', 'on_input', 'on_gate', 'on_tone', 'on_model', 'on_cab']);
+  // ⭐ AND THE RIG'S TWO SELECTORS COME AFTER EVEN THE SWITCHES, for the same reason a third time: they exist
+  // only for a project with more than one usable capture or IR (see `rigSelectors`), so they are appended to
+  // the PARAMETER list by the scaffold — but their position a host would have to move for if they ever
+  // sorted themselves into the middle is fixed here, beside the switch that made this rule necessary.
+  ['input', 'gate', 'bass', 'mid', 'treble', 'output', 'on_input', 'on_gate', 'on_tone', 'on_model', 'on_cab',
+    'model_select', 'cab_select']);
 check('…and the plain chain still calls its single control what the manifest says',
   chainMod.chainParams(chainMod.PLAIN_CHAIN, { paramName: 'Drive' }).map((pp) => pp.name), ['Drive']);
 const tone = await import('../server/src/lib/audio/toneStack.js');
@@ -1290,6 +1295,72 @@ check('the check renders the cabinet through the plugin and compares it to the s
 // against the tone stack alone reported +22 dB of "error" that was the cabinet doing its job.
 check('…and its expectation is the WHOLE chain, so the order is checked too',
   /throughChain\(toneProcess\(design, dry\)\)/.test(cabCheckSrc), true);
+
+console.log('\n20b. ⭐ THE RIG PLAYS: every capture and every IR is preloaded, and switching is a pointer swap');
+// ⭐ WHY THIS SECTION EXISTS. The rig is N captures and M speakers in one plugin, and it fails in two ways no
+// other check here can see: a capture built on the AUDIO THREAD (which is what a player does every time they
+// switch, and which no null test would report — it is a drop-out under load, not a wrong sample), and a
+// selector that renumbers the parameters a host has automated. Both are asserted as the emitted source,
+// because neither is visible in a build's exit code.
+const rigSeed = [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) },
+  { path: 'models/clean.nam', content: LINEAR }, { path: 'models/crunch.nam', content: LINEAR }, { path: 'models/lead.nam', content: LINEAR }];
+const rigFiles = audioPlugin.scaffold(rigSeed).files;
+const rigSrc = generated({ files: rigFiles }, 'Source/Plugin.cpp');
+const rigHeader = generated({ files: rigFiles }, 'Source/ModelData.h');
+const rigData = generated({ files: rigFiles }, 'Source/ModelData.cpp');
+const oneModelSeed = [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) }, { path: 'models/clean.nam', content: LINEAR }];
+const oneModelSrc = generated(audioPlugin.scaffold(oneModelSeed), 'Source/Plugin.cpp');
+// The kParams rows, and nothing else: a row starts with its id and a quoted name.
+const rowsOf = (src) => (src.match(/^   \{ \d+, "[^"]*",.*$/gm) || []);
+const rigInit = rigSrc.slice(rigSrc.indexOf('static bool plug_init'), rigSrc.indexOf('static void plug_destroy'));
+const rigProcess = rigSrc.slice(rigSrc.indexOf('static clap_process_status plug_process'), rigSrc.indexOf('static const void *plug_get_extension'));
+
+check('a three-capture rig declares its count in the header, where the plugin reads it',
+  /#define MORPHEUS_RIG_MODELS 3/.test(rigHeader) && /kMorpheusRigModels\[MORPHEUS_RIG_MODELS\]/.test(rigHeader), true);
+check('⭐ …and the selector\'s range is the SAME three, defaulting to the first capture',
+  /\{ 12, "Capture", 0\.0, 2\.0, 0\.0, "", 1, "Amp model" \}/.test(rigSrc), true);
+// ⚠️ APPENDED. `paramsCpp` turns a parameter's POSITION into its id and a host stores automation against
+// that id, so a selector inserted before an existing control re-points every lane after it. The comparison is
+// the prefix — the selector IS the difference this is about — against the SAME project with one capture.
+check('⭐ …and it is APPENDED, so every existing parameter keeps the id a host stored',
+  rowsOf(rigSrc).slice(0, -1), rowsOf(oneModelSrc));
+check('⚠️ a ONE-capture project has no selector at all — one choice is not a control',
+  /PARAM_MODEL_SELECT|kMorpheusRigModels|MORPHEUS_RIG_MODELS/.test(oneModelSrc), false);
+// ⚠️ `get_dsp` PARSES JSON AND ALLOCATES. Every capture must be built in init(), and nothing that does that
+// may be reachable from process() — the switch a player makes mid-song is a pointer read or it is a drop-out.
+check('⭐ every capture is built in init(), and none of that machinery is reachable from process()',
+  /for \(int i = 0; i < MORPHEUS_RIG_MODELS; \+\+i\) \{[\s\S]*?nam::get_dsp\(config\)\.release\(\)/.test(rigInit)
+  && !/get_dsp|json::parse|->Reset\(|calloc|malloc|free\(/.test(rigProcess), true);
+check('⭐ …and the capture that runs is chosen by an INDEX into the table, not by a load',
+  /const int model_sel = morpheus_model_index\(p->value\[IDX_MODEL_SELECT\]\);/.test(rigProcess)
+  && /nam::DSP \*m = p->model\[model_sel\]\[c\];/.test(rigProcess), true);
+// ⭐ THE NAME, NOT THE NUMBER, is what makes an automation lane read "Crunch". The names are asserted in the
+// TABLE, not in the plugin, because that is where the selector reads them from — one source for both.
+check('⭐ value_to_text reports the capture NAME from the rig table, so a lane reads "Crunch" not "1"',
+  /if \(kParams\[ix\]\.id == PARAM_MODEL_SELECT\) \{\n      snprintf\(out, capacity, "%s", kMorpheusRigModels\[morpheus_model_index\(value\)\]\.name\);/.test(rigSrc)
+  && /\{ "Clean", morpheus_model_data,/.test(rigData) && /\{ "Crunch", morpheus_model_data_2,/.test(rigData)
+  && /\{ "Lead", morpheus_model_data_3,/.test(rigData), true);
+// ⚠️ AND IT PARSES ITS OWN NAMES BACK, WHICH IS NOT THE SAME HELPER AS A SWITCH. `morpheus_text_is` assumes
+// a lowercase word and stops at the end OF THE WORD, so "clean" would not match "Clean" and "Clean" would
+// match "Clean Boost" — the wrong capture, silently. Found by running the generated plugin rather than by
+// reading it; a guard cannot catch the second half of that without naming it here.
+check('⭐ …and a name is matched back case-insensitively and IN FULL, not as a prefix',
+  /static bool morpheus_text_is_name/.test(rigSrc)
+  && /morpheus_text_is_name\(text, kMorpheusRigModels\[i\]\.name\)/.test(rigSrc), true);
+// The cabinet half is a TABLE OF TAPS rather than a second runtime engine, so a member's swap is the pointer
+// AND ITS OWN TAP COUNT — a fixed MORPHEUS_CAB_TAPS would read past a longer member and convolve stale tail
+// for a shorter one, neither of which throws.
+const twoCabFiles = audioPlugin.scaffold([...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) },
+  { path: 'models/cab.wav', content: irB64(synthIr(512, 11)), encoding: 'base64' },
+  { path: 'models/mic.wav', content: irB64(synthIr(2048, 12)), encoding: 'base64' }]).files;
+const twoCabSrc = generated({ files: twoCabFiles }, 'Source/Plugin.cpp');
+check('⭐ a two-cabinet rig preloads one convolution per member per channel, each with its OWN tap count',
+  /cab_rig_t cab\[MORPHEUS_RIG_CABS\]\[2\];/.test(twoCabSrc)
+  && /p->cab\[i\]\[c\]\.taps_count = taps;/.test(twoCabSrc)
+  && /for \(int i = 0; i < c->taps_count; \+\+i\)/.test(twoCabSrc)
+  && /morpheus_cab_index\(p->value\[IDX_CAB_SELECT\]\)/.test(twoCabSrc), true);
+check('…and the speaker selector is its own discrete control, under the Cabinet block',
+  /\{ 12, "Speaker", 0\.0, 1\.0, 0\.0, "", 1, "Cabinet" \}/.test(twoCabSrc) && !/PARAM_MODEL_SELECT/.test(twoCabSrc), true);
 
 console.log('\n21. the gate, and the ORDER of a chain that is now six stages deep');
 const ampChainMod = await import('../server/src/lib/ampChain.js');

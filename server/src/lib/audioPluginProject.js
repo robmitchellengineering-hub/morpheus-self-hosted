@@ -16,16 +16,16 @@ import {
   auSubtypeCode, cmakeLists, entrySource, pluginSource, pluginId, fourCharCode,
 } from './audioPluginTemplate.js';
 import {
-  MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSourceAll, modelHeader, resolveModels,
+  MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSourceAll, modelHeader, resolveModels, usableModels,
 } from './namPlugin.js';
-import { PLAIN_CHAIN, chainFor, chainHas, chainParamsStable } from './ampChain.js';
+import { PLAIN_CHAIN, chainFor, chainHas, chainParamsStable, rigSelectors } from './ampChain.js';
 import { ampBoard, boardBundle, boardChain, boardJson, boardParamsStable, readBoard, validateBoard } from './board.js';
 import {
   PLUGIN_GUI_APPLE, PLUGIN_GUI_LAYOUT, PLUGIN_GUI_STUB, PLUGIN_GUI_WINDOWS, PLUGIN_GUI_X11,
   pluginGuiApple, pluginGuiLayout, pluginGuiStub, pluginGuiWindows, pluginGuiX11,
 } from './pluginGui.js';
 import {
-  CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSourceAll, cabHeader, resolveCabs,
+  CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSourceAll, cabHeader, resolveCabs, usableCabs,
 } from './cabIr.js';
 import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './compile-targets/utils.js';
 
@@ -245,7 +245,21 @@ export function scaffoldPlugin(files) {
   }
   const useBoard = Boolean(board && boardCheck.ok);
   const chain = useBoard ? boardChain(board, manifest) : chainFor(manifest);
-  const params = useBoard ? boardParamsStable(board, manifest) : chainParamsStable(chain, manifest);
+  // ⭐ THE RIG'S SELECTORS ARE APPENDED TO THE PARAMETER LIST, AFTER EVERY CONTROL AND EVERY SWITCH, and
+  // appended HERE rather than inside `chainParams` for a reason that is not tidiness: a board's parameters
+  // are sorted by the owning block's creation order (see `boardParamsStable`), and a selector owns no block
+  // — it would sort to the front and take every id in the amp chain with it. Appending to the finished list
+  // is the one place that is true for the amp chain and the board alike.
+  //
+  // ⚠️ THE COUNT IS THE EMITTED MEMBERS, through the SAME filters the emitters use, so a capture the
+  // generator dropped from the rig cannot leave a selector position that plays nothing. `rigSelectors`
+  // returns nothing at all for a rig of fewer than two, which is what keeps a one-capture project's
+  // parameter list — and therefore its generated C++ — exactly what it was.
+  const selectors = rigSelectors({
+    models: usableModels(models).length,
+    cabs: usableCabs(cabs).length,
+  });
+  const params = (useBoard ? boardParamsStable(board, manifest) : chainParamsStable(chain, manifest)).concat(selectors);
 
   add(PLUGIN_MANIFEST, manifestJson(manifest, useBoard ? board : null));
 

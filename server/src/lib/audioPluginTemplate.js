@@ -31,7 +31,7 @@ import {
 import { TONE_KEYS } from './audio/toneStack.js';
 // The cabinet's DSP text lives with the cabinet, the way the model's does. Both are processors that exist
 // when a file does, not parameters of the chain.
-import { cabDestroyCpp, cabDspCpp, cabInitCpp, cabStageCpp, cabStateCpp } from './cabIr.js';
+import { cabDestroyCpp, cabDspCpp, cabInitCpp, cabRigDestroyCpp, cabRigDspCpp, cabRigInitCpp, cabRigStageCpp, cabRigStateCpp, cabStageCpp, cabStateCpp } from './cabIr.js';
 
 /** Four printable ASCII characters, no spaces — the AU 'subtype'/'manufacturer' code format. */
 export function fourCharCode(input, fallback = 'Morp') {
@@ -97,6 +97,16 @@ export function pluginSource({ name, vendor, id, description = '', chain = PLAIN
   // BLOCK has an `on_model` switch and a dry buffer to fade against; a legacy project whose `.nam` is simply
   // in the tree has neither — it runs, as it always has, and there is nothing to switch.
   const modelSwitch = chainHas(chain, 'model');
+  // ⭐ WHETHER THE PROJECT'S RIG OFFERS A CHOICE, which is encoded in the parameter list itself. `rigSelectors`
+  // emits a selector only for two or more USABLE members (see ampChain.js), so the presence of the parameter
+  // IS the question — this file never gets a second copy of the count that could disagree with the table the
+  // plugin switches between, and the `MORPHEUS_RIG_*` macros in the generated headers carry the range.
+  //
+  // ⚠️ EVERY EMISSION BELOW THAT DEPENDS ON THESE IS A JS CONDITIONAL, NOT A C++ `#ifdef`. A `#ifdef` would
+  // leave the extra text in a one-capture Plugin.cpp even when the preprocessor drops it, and a one-capture
+  // project must stay byte-identical to what every existing proof measured (see namPlugin.js).
+  const modelSelect = list.some((p) => p.role === 'select' && p.kind === 'model');
+  const cabSelect = list.some((p) => p.role === 'select' && p.kind === 'cab');
   // ⭐ THE BLOCKS THAT ARE NOT PART OF AN AMP, HANDED IN RATHER THAN KNOWN HERE. `board.js` decides which
   // blocks a project has and what C++ each one contributes; this file interpolates the four fragments and
   // replaces each marker. Empty by default, which is what keeps every project that predates the board
@@ -110,10 +120,102 @@ export function pluginSource({ name, vendor, id, description = '', chain = PLAIN
   // One pass over both emitted halves, so a block's marker is replaced wherever the chain put it — before the
   // model or after it, which is a choice the user makes and this file must not have an opinion about.
   const emitStages = (text) => {
-    let out = text.replace('__GATE_STAGE__', gateStageCpp).replace('__CAB_STAGE__', cabStageCpp);
+    let out = text.replace('__GATE_STAGE__', gateStageCpp).replace('__CAB_STAGE__', cabSelect ? cabRigStageCpp : cabStageCpp);
     for (const [marker, cpp] of Object.entries(extraMarkers)) out = out.split(marker).join(cpp);
     return out;
   };
+
+  // ⭐ THE RIG'S INDEX HELPERS, emitted only when the rig offers a choice. Both take the RAW parameter value
+  // (not the smoothed one): a selector is discrete, so a smoothed ramp would sweep through the intermediate
+  // captures on its way, and the ten-percent-of-a-value it passes through is audible as a burst of the wrong
+  // amp. Empty for every project with no selector, which is what keeps a one-capture plugin byte-identical.
+  const selectorHelpers = [
+    (modelSelect || cabSelect) ? `
+// ⚠️ A RIG NAME IS NOT "On"/"Off". \`morpheus_text_is\` above treats its second argument as a LOWERCASE word
+// and stops when that word ends, which is exactly right for two fixed states and wrong twice over for a
+// capture: "Clean" would never match its own text (the table keeps the player's capital), and it would match
+// "Clean Boost" as a prefix — the wrong amp, silently. This compares case-insensitively on BOTH sides and
+// requires the WHOLE name, allowing only trailing spaces.
+static bool morpheus_text_is_name(const char *text, const char *name) {
+   while (*text == ' ') ++text;
+   for (; *name; ++text, ++name) {
+      const char a = (*text >= 'A' && *text <= 'Z') ? (char)(*text - 'A' + 'a') : *text;
+      const char b = (*name >= 'A' && *name <= 'Z') ? (char)(*name - 'A' + 'a') : *name;
+      if (a != b) return false;
+   }
+   while (*text == ' ') ++text;
+   return *text == '\\0';
+}` : '',
+    modelSelect ? `
+#if MORPHEUS_HAS_MODEL
+// ⭐ A SELECTOR'S VALUE IS AN INDEX INTO THE RIG TABLE, CLAMPED HERE RATHER THAN TRUSTED. A preset saved
+// against a different rig can carry an index past the end of this one, and an out-of-range subscript would
+// play the wrong capture rather than report anything. \`+ 0.5\` is the round-to-nearest a stepped control
+// wants; the clamp is what makes the pattern total.
+// ⚠️ AND THE COMPARISON GUARDS THE CONVERSION: \`(int)\` of a NaN is UNDEFINED, and \`apply_param_event\`'s
+// clamp passes a NaN straight through — every comparison against it is false. A non-positive value is the
+// first capture, which is both the default and the only answer that cannot read past the table.
+static int morpheus_model_index(double v) {
+   int i = (v > 0.0) ? (int)(v + 0.5) : 0;
+   if (i >= MORPHEUS_RIG_MODELS) i = MORPHEUS_RIG_MODELS - 1;
+   return i;
+}
+#endif` : '',
+    cabSelect ? `
+#if MORPHEUS_HAS_CAB
+// ⭐ …and the same clamp for the cabinet half of the rig.
+static int morpheus_cab_index(double v) {
+   int i = (v > 0.0) ? (int)(v + 0.5) : 0;
+   if (i >= MORPHEUS_RIG_CABS) i = MORPHEUS_RIG_CABS - 1;
+   return i;
+}
+#endif` : '',
+  ].filter(Boolean).join('\n');
+
+  // ⭐ WHAT THE HOST READS IN AN AUTOMATION LANE. The selector's numeric value is an index, and the rig table
+  // is the only thing that knows what that index is CALLED — so the name a player sees comes from the same
+  // row the DSP selects, and the two cannot drift. Empty for every project with no selector.
+  const selectorNames = `${modelSelect ? `   // ⭐ THE CAPTURE'S OWN NAME, FROM THE RIG TABLE, so an automation lane reads "Crunch" rather than "1".
+   // The table is the same one the DSP switches between (see lib/namPlugin.js), so the name and the sound
+   // cannot come from two different lists.
+   if (kParams[ix].id == PARAM_MODEL_SELECT) {
+      snprintf(out, capacity, "%s", kMorpheusRigModels[morpheus_model_index(value)].name);
+      return true;
+   }
+` : ''}${cabSelect ? `   // ⭐ …and the SPEAKER'S name, for the cabinet half of the rig.
+   if (kParams[ix].id == PARAM_CAB_SELECT) {
+      snprintf(out, capacity, "%s", kMorpheusRigCabs[morpheus_cab_index(value)].name);
+      return true;
+   }
+` : ''}`;
+
+  // ⭐ AND THE OTHER DIRECTION. A host that round-trips text would otherwise be refused the very word this
+  // plugin just printed — the same argument the switch's On/Off branch makes below. The branch RETURNS either
+  // way, which matters: without that, a selector's unmatched text would fall through to the On/Off branch and
+  // "On" would silently mean the LAST capture.
+  const selectorParse = `${modelSelect ? `   // ⭐ A CAPTURE SELECTOR ROUND-TRIPS ITS OWN NAMES...
+   if (kParams[ix].id == PARAM_MODEL_SELECT) {
+      for (int i = 0; i < MORPHEUS_RIG_MODELS; ++i) {
+         if (morpheus_text_is_name(text, kMorpheusRigModels[i].name)) { *out = (double)i; return true; }
+      }
+      char *end = NULL;
+      const double v = strtod(text, &end);
+      if (end == text) return false;
+      *out = v < kParams[ix].min ? kParams[ix].min : (v > kParams[ix].max ? kParams[ix].max : v);
+      return true;
+   }
+` : ''}${cabSelect ? `   // ⭐ …and the same for the speaker's.
+   if (kParams[ix].id == PARAM_CAB_SELECT) {
+      for (int i = 0; i < MORPHEUS_RIG_CABS; ++i) {
+         if (morpheus_text_is_name(text, kMorpheusRigCabs[i].name)) { *out = (double)i; return true; }
+      }
+      char *end = NULL;
+      const double v = strtod(text, &end);
+      if (end == text) return false;
+      *out = v < kParams[ix].min ? kParams[ix].min : (v > kParams[ix].max ? kParams[ix].max : v);
+      return true;
+   }
+` : ''}`;
 
   return `// ${name} — a CLAP audio effect.
 //
@@ -175,7 +277,7 @@ static const clap_plugin_descriptor_t s_desc = {
 };
 
 // ── parameters ───────────────────────────────────────────────────────────────────────────────────────
-${paramsCpp(list)}
+${paramsCpp(list)}${selectorHelpers}
 
 // ── the blocks, IN SIGNAL ORDER, for the panel to lay its rows out by ─────────────────────────────────
 // The same list the DSP is wired from, so the panel's order and the audio's order cannot disagree.
@@ -189,7 +291,7 @@ ${stageTableCpp(chain)}
 static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 
 #if MORPHEUS_HAS_CAB
-${cabDspCpp}
+${cabSelect ? cabRigDspCpp : cabDspCpp}
 #endif
 ${chainHas(chain, 'gate') ? `#define MORPHEUS_GATE_OFF_DB ${GATE_OFF_DB}.0\n${gateDspCpp}` : ''}
 ${hasTone ? `\n${toneCpp()}\n` : ''}${extraDsp ? `\n${extraDsp}` : ''}
@@ -225,7 +327,7 @@ typedef struct {
 
 ${stateCpp(chain, list)}${extraState ? `\n${extraState}` : ''}
 #if MORPHEUS_HAS_CAB
-${cabStateCpp}
+${cabSelect ? cabRigStateCpp : cabStateCpp}
 #endif
 
 #if MORPHEUS_HAS_MODEL
@@ -238,7 +340,11 @@ ${cabStateCpp}
    // RAW POINTERS DELIBERATELY. The plugin's storage comes from \`calloc\` and goes back with \`free\`, which
    // runs no destructors — so a \`std::unique_ptr\` member would leak the model every time a host unloaded the
    // plugin. \`get_dsp\` returns a unique_ptr and \`.release()\` hands the ownership over on purpose.
-   nam::DSP *model[2];
+${modelSelect ? `   // ⭐ ONE INSTANCE PER CAPTURE PER CHANNEL, and the shape is the whole point of the rig: every capture is
+   // built in init(), where allocating is allowed, and switching is a pointer swap — never a load on the
+   // audio thread, which is what a player switching mid-song would otherwise be asking for (see lib/rig.js).
+   // The first dimension is MORPHEUS_RIG_MODELS, from the header the table is declared in.
+   nam::DSP *model[MORPHEUS_RIG_MODELS][2];` : `   nam::DSP *model[2];`}
    double sample_rate;
 ${modelSwitch ? `   // ⭐ THE DRY COPY THE MODEL'S SWITCH FADES AGAINST, and it exists because of the model's SHAPE: it runs
    // a whole chunk at once and IN PLACE, so by the time the crossfade wants the signal it replaced, the
@@ -325,7 +431,7 @@ static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double
    (void)plugin;
    const int ix = param_index(id);
    if (ix < 0) return false;
-   if (kParams[ix].stepped) {
+${selectorNames}   if (kParams[ix].stepped) {
       snprintf(out, capacity, "%s", value >= (kParams[ix].min + kParams[ix].max) * 0.5 ? "On" : "Off");
       return true;
    }
@@ -352,7 +458,7 @@ static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const 
    (void)plugin;
    const int ix = param_index(id);
    if (ix < 0) return false;
-   // A SWITCH IS TYPED AS A WORD. "On"/"Off" is what value_to_text just showed the user, so refusing it here
+${selectorParse}   // A SWITCH IS TYPED AS A WORD. "On"/"Off" is what value_to_text just showed the user, so refusing it here
    // would be the plugin rejecting its own spelling — and a host that round-trips text would break on it.
    if (kParams[ix].stepped) {
       if (morpheus_text_is(text, "on")) { *out = kParams[ix].max; return true; }
@@ -400,13 +506,32 @@ ${initCpp(list)}
    for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order[s] = kMorpheusDefaultOrder[s];
    p->model_at = morpheus_model_at(p);
 ${chainHas(chain, 'gate') ? gateInitCpp : ''}
-${cabInitCpp}${extraInit ? `\n${extraInit}` : ''}
+${cabSelect ? cabRigInitCpp : cabInitCpp}${extraInit ? `\n${extraInit}` : ''}
 ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes every coefficient, so a plugin that starts
    // at 0 dB is not silent because its filters were never configured. calloc leaves these at zero, and a
    // zero-coefficient biquad passes nothing.
    for (int i = 0; i < ${TONE_KEYS.length}; ++i) p->tone_last[i] = 1e9;
 ` : ''}#if MORPHEUS_HAS_MODEL
-   p->sample_rate = 48000.0;
+${modelSelect ? `   p->sample_rate = 48000.0;
+   // ⭐ EVERY CAPTURE IS LOADED HERE, ONCE, WHERE ALLOCATING IS ALLOWED. This is the whole point of a rig:
+   // \`get_dsp\` parses JSON and allocates weights, which the audio thread may never do — and a player
+   // switches captures WHILE PLAYING, so the switch has to be a pointer swap (see lib/rig.js). The table is
+   // the same one the selector reports its names from, so what is loaded and what is offered cannot differ.
+   for (int i = 0; i < MORPHEUS_RIG_MODELS; ++i) {
+      try {
+         const nlohmann::json config = nlohmann::json::parse(
+            reinterpret_cast<const char *>(kMorpheusRigModels[i].data),
+            reinterpret_cast<const char *>(kMorpheusRigModels[i].data) + kMorpheusRigModels[i].size);
+         for (int c = 0; c < 2; ++c) p->model[i][c] = nam::get_dsp(config).release();
+      } catch (const std::exception &e) {
+         // ⚠️ ONE CAPTURE THAT WILL NOT LOAD DOES NOT TAKE THE RIG WITH IT, AND THE MESSAGE NAMES WHICH ONE.
+         // The other captures still play and the selector still reaches them; this position plays the dry
+         // signal, which is the same honest degradation the singular model has, one capture at a time.
+         fprintf(stderr, "[%s] could not load the NAM capture %s (%s) — that position plays nothing\\n",
+                 MORPHEUS_MODEL_NAME, kMorpheusRigModels[i].name, e.what());
+         for (int c = 0; c < 2; ++c) { delete p->model[i][c]; p->model[i][c] = NULL; }
+      }
+   }` : `   p->sample_rate = 48000.0;
    try {
       // THE SAME BYTES THE FILE HOLDS, handed to the reference engine. Not a re-serialised model and not a
       // converted weight layout, so what this plugin runs is what the .nam says — which is also what makes
@@ -422,7 +547,7 @@ ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes ev
       fprintf(stderr, "[%s] could not load the NAM model from %s (%s) — running as a gain stage\\n",
               MORPHEUS_MODEL_NAME, MORPHEUS_MODEL_PATH, e.what());
       for (int c = 0; c < 2; ++c) { delete p->model[c]; p->model[c] = NULL; }
-   }
+   }`}
 #endif
    return true;
 }
@@ -430,10 +555,14 @@ ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes ev
 static void plug_destroy(const clap_plugin_t *plugin) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
 #if MORPHEUS_HAS_MODEL
-   // \`free\` runs no destructors, so the models are released here or not at all.
-   for (int c = 0; c < 2; ++c) { delete p->model[c]; p->model[c] = NULL; }
+${modelSelect ? `   // \`free\` runs no destructors, so EVERY capture is released here or not at all — the whole table, not
+   // only the one the selector happened to be on.
+   for (int i = 0; i < MORPHEUS_RIG_MODELS; ++i) {
+      for (int c = 0; c < 2; ++c) { delete p->model[i][c]; p->model[i][c] = NULL; }
+   }` : `   // \`free\` runs no destructors, so the models are released here or not at all.
+   for (int c = 0; c < 2; ++c) { delete p->model[c]; p->model[c] = NULL; }`}
 ${modelSwitch ? '   for (int c = 0; c < 2; ++c) { free(p->model_dry[c]); p->model_dry[c] = NULL; }\n' : ''}#endif
-${cabDestroyCpp}${extraDestroy ? `\n${extraDestroy}` : ''}
+${cabSelect ? cabRigDestroyCpp : cabDestroyCpp}${extraDestroy ? `\n${extraDestroy}` : ''}
    free(plugin->plugin_data);
 }
 
@@ -449,7 +578,12 @@ static bool plug_activate(const clap_plugin_t *plugin, double sr, uint32_t min_f
    // process(). The buffer size is what the host says it will send; a model that has to grow later is a
    // model that allocates on the audio thread.
    const int max_buffer = max_frames ? (int)max_frames : 512;
-   for (int c = 0; c < 2; ++c) if (p->model[c]) p->model[c]->Reset(sr, max_buffer);
+${modelSelect ? `   // ⭐ EVERY CAPTURE IS RESET, not only the selected one: the selector may move to another capture at any
+   // block, and a capture that was never told the sample rate is a capture that answers with the wrong
+   // arithmetic the moment it is picked.
+   for (int i = 0; i < MORPHEUS_RIG_MODELS; ++i) {
+      for (int c = 0; c < 2; ++c) if (p->model[i][c]) p->model[i][c]->Reset(sr, max_buffer);
+   }` : `   for (int c = 0; c < 2; ++c) if (p->model[c]) p->model[c]->Reset(sr, max_buffer);`}
 ${modelSwitch ? `   // ⭐ THE FADE BUFFER IS SIZED HERE, for the same reason and with the same number: the host has just said
    // how large a block it will send, and activate() is a place allocation is allowed. The previous
    // activation's is released first — a host may activate, deactivate and activate again at a new rate.
@@ -832,7 +966,40 @@ ${modelInPath ? '#if MORPHEUS_HAS_MODEL' : '#if 0'}
          // a compile error — so it is a compile error.
          static_assert(sizeof(NAM_SAMPLE) == sizeof(float), "the model runs in place on a float32 port");
          const int model_frames = (int)(chunk_end - chunk_start);
-${modelSwitch ? `         // ⭐ THE AMP IS A SWITCH LIKE EVERY OTHER BLOCK, WITH ONE DIFFERENCE THAT MATTERS: it is the only
+${modelSelect ? (modelSwitch ? `         // ⭐ THE CAPTURE IS CHOSEN BY POINTER, NEVER LOADED — the whole reason the rig exists (see lib/rig.js).
+         // Every capture was built in init(); the selector only says which one runs. \`model_dry\` is per
+         // channel and shared across captures, which is exactly right — it is a copy of the CHUNK's input, the
+         // same signal for every capture, so the fade works whichever one is selected.
+         // ⚠️ THE RAW VALUE, NOT THE SMOOTHED ONE: a stepped control's smoothed value sweeps through the
+         // captures between the old one and the new one, which would play a burst of each on the way.
+         const int model_sel = morpheus_model_index(p->value[IDX_MODEL_SELECT]);
+         const double on_model = p->smoothed[IDX_ON_MODEL];
+         if (model_frames > 0 && on_model > 0.0) {
+            for (int c = 0; c < 2; ++c) {
+               nam::DSP *m = p->model[model_sel][c];
+               if (!m) continue;
+               NAM_SAMPLE *io[1] = {(NAM_SAMPLE *)process->audio_outputs[0].data32[c] + chunk_start};
+               if (on_model >= 1.0 || !p->model_dry[c] || model_frames > (int)p->model_dry_cap) {
+                  m->process(io, io, model_frames);
+                  continue;
+               }
+               for (int k = 0; k < model_frames; ++k) p->model_dry[c][k] = io[0][k];
+               m->process(io, io, model_frames);
+               for (int k = 0; k < model_frames; ++k) {
+                  io[0][k] = (NAM_SAMPLE)(p->model_dry[c][k] + on_model * ((double)io[0][k] - p->model_dry[c][k]));
+               }
+            }
+         }` : `         // ⭐ THE CAPTURE IS CHOSEN BY POINTER, NEVER LOADED — see the rig note in lib/rig.js. There is no
+         // on/off switch in this chain, so the selected capture simply runs.
+         const int model_sel = morpheus_model_index(p->value[IDX_MODEL_SELECT]);
+         if (model_frames > 0) {
+            for (int c = 0; c < 2; ++c) {
+               nam::DSP *m = p->model[model_sel][c];
+               if (!m) continue;
+               NAM_SAMPLE *io[1] = {(NAM_SAMPLE *)process->audio_outputs[0].data32[c] + chunk_start};
+               m->process(io, io, model_frames);
+            }
+         }`) : modelSwitch ? `         // ⭐ THE AMP IS A SWITCH LIKE EVERY OTHER BLOCK, WITH ONE DIFFERENCE THAT MATTERS: it is the only
          // stage that runs a WHOLE CHUNK at once and IN PLACE, so the signal it replaced is gone by the time
          // a crossfade would want it. \`model_dry\` is that copy — sized in activate(), where allocation is
          // allowed. When it is missing the switch still works and simply drops the fade, which is a click

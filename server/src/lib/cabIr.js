@@ -240,8 +240,12 @@ ${right}#endif
  * ⚠️ TWO FILTERS THAT MEAN THE SAME THING ARE TWO FILTERS THAT DRIFT, and the failure is a header promising
  * three entries beside a table that holds two. `resolveCabs` keeps an unusable member so its warning reaches
  * the scaffold (see `cabDataSourceAll`); it has no taps, so it is not a row.
+ *
+ * ⭐ EXPORTED, BECAUSE THE SELECTOR'S RANGE IS THIS SAME COUNT. `scaffoldPlugin` asks it for the number of
+ * speakers the rig offers (see `rigSelectors`), so a cabinet dropped from the table cannot leave a selector
+ * position that convolves nothing — the count, the table and the parameter come from one filter.
  */
-const usableCabs = (cabs) => (Array.isArray(cabs) ? cabs : [])
+export const usableCabs = (cabs) => (Array.isArray(cabs) ? cabs : [])
   .filter((c) => c && c.info && Array.isArray(c.channels) && c.channels.length);
 
 /**
@@ -536,4 +540,103 @@ export const cabStageCpp = `#if MORPHEUS_HAS_CAB
          // AFTER the model and BEFORE the level: a speaker is part of the amp rather than a processor after
          // it, and a cabinet placed after the output control would change its tone when the level moved.
          if (p->cab[c].hist) x = (double)cab_process(&p->cab[c], (float)x);
+#endif`;
+
+// ── the cabinet RIG ──────────────────────────────────────────────────────────────────────────────────────
+// ⭐ A RIG'S CABINETS ARE TABLES OF TAPS, NOT A RUNTIME ENGINE, SO WHAT IS SWAPPED IS THE POINTER AND TWO
+// NUMBERS. Unlike the model — which is a `nam::DSP` built once per capture in init() — a cabinet was never a
+// runtime object: the taps are baked C++ arrays and the state is a ring buffer. So the rig's second speaker
+// needs no second kind of thing, only the same convolution with ITS OWN tap count in the loop bound and the
+// ring wrap. The members genuinely differ in length (a 256-tap close mic beside a 4096-tap room), which is
+// why the count cannot stay the first cabinet's `MORPHEUS_CAB_TAPS`.
+//
+// ⚠️ EVERYTHING BELOW IS EMITTED ONLY FOR A RIG OF TWO OR MORE. A one-cabinet project keeps `cab_t`,
+// `cab_process`, `MORPHEUS_CAB_TAPS` and the singular fragments byte for byte, which is what every existing
+// measurement of the speaker was taken against (see `cabDataSourceAll`).
+
+/**
+ * The ring buffer and the convolution, for one SELECTED member.
+ *
+ * `taps_count` is the member's own tap count, not `MORPHEUS_CAB_TAPS`: the history is allocated for exactly
+ * this many samples, and using the first cabinet's number for a longer one would read past the end of the
+ * array while using it for a shorter one would convolve stale samples that no longer belong to the tail.
+ */
+export const cabRigDspCpp = `typedef struct {
+   float *hist;          // this member's own history, \`taps_count\` long, newest at pos
+   const float *taps;
+   int taps_count;       // THIS member's taps — see the note in lib/cabIr.js
+   int pos;
+} cab_rig_t;
+
+static float cab_rig_process(cab_rig_t *c, float x) {
+   c->hist[c->pos] = x;
+   // ⚠️ ACCUMULATED IN DOUBLE, exactly as the singular convolution is: the -148 dB null against the
+   // JavaScript reference is a property of the summation, not of one cabinet, and a rig member measured in
+   // float would be a different filter from the same taps measured alone.
+   double acc = 0.0;
+   int idx = c->pos;
+   for (int i = 0; i < c->taps_count; ++i) {
+      acc += (double)c->taps[i] * (double)c->hist[idx];
+      idx = idx ? idx - 1 : c->taps_count - 1;
+   }
+   if (++c->pos >= c->taps_count) c->pos = 0;
+   return (float)acc;
+}`;
+
+/** The per-instance state: one history per member per channel, so switching mics does not share a tail. */
+export const cabRigStateCpp = `   // ⭐ ONE CONVOLUTION PER MEMBER PER CHANNEL. Per member, because each speaker has its own tap count and
+   // its own history; per channel, for the same reason the singular cabinet has two — a stereo speaker
+   // applied through one history smears the channels together.
+   cab_rig_t cab[MORPHEUS_RIG_CABS][2];`;
+
+/**
+ * Allocate every member's history in init(), where allocating is allowed.
+ *
+ * ⚠️ A FAILED ALLOCATION IS A FAILED INIT, NOT A SILENT DRY PATH — the singular rule, for the same reason.
+ * It releases every buffer it has taken so far rather than leaving half a rig behind, because a plugin that
+ * half-loaded is a different amplifier rather than a quieter one.
+ */
+export const cabRigInitCpp = `#if MORPHEUS_HAS_CAB
+   for (int i = 0; i < MORPHEUS_RIG_CABS; ++i) {
+      const int taps = (int)kMorpheusRigCabs[i].taps;
+      for (int c = 0; c < 2; ++c) {
+         p->cab[i][c].hist = (float *)calloc((size_t)taps, sizeof(float));
+         p->cab[i][c].pos = 0;
+         p->cab[i][c].taps_count = taps;
+         // ⚠️ A MONO MEMBER'S RIGHT CHANNEL IS THE SAME ARRAY AS ITS LEFT, which is what the table's
+         // \`nullptr\` right entry MEANS (see cabRigTableCpp). It is not a second decode and not silence.
+         p->cab[i][c].taps = (c == 1 && kMorpheusRigCabs[i].right) ? kMorpheusRigCabs[i].right : kMorpheusRigCabs[i].left;
+         if (!p->cab[i][c].hist) {
+            fprintf(stderr, "[%s] could not allocate the cabinet history (%d taps)\\n", kMorpheusRigCabs[i].name, taps);
+            for (int d = 0; d < MORPHEUS_RIG_CABS; ++d) {
+               for (int e = 0; e < 2; ++e) { free(p->cab[d][e].hist); p->cab[d][e].hist = NULL; }
+            }
+            return false;
+         }
+      }
+   }
+#endif`;
+
+/** Release every member's history in destroy(). */
+export const cabRigDestroyCpp = `#if MORPHEUS_HAS_CAB
+   for (int i = 0; i < MORPHEUS_RIG_CABS; ++i) {
+      for (int c = 0; c < 2; ++c) { free(p->cab[i][c].hist); p->cab[i][c].hist = NULL; }
+   }
+#endif`;
+
+/**
+ * The stage, per channel, for a rig.
+ *
+ * ⭐ THE SELECTION IS A POINTER SWAP. `morpheus_cab_index` clamps the parameter to a table row, and the row
+ * decides which taps and which tap count run — no allocation, no parse, nothing but an array subscript on
+ * the audio thread. Switching speakers mid-note is therefore a change of filter between samples, which is
+ * the only shape that works while a player is playing.
+ */
+export const cabRigStageCpp = `#if MORPHEUS_HAS_CAB
+         // AFTER the model and BEFORE the level: a speaker is part of the amp rather than a processor after
+         // it, and a cabinet placed after the output control would change its tone when the level moved.
+         {
+            const int cab_sel = morpheus_cab_index(p->value[IDX_CAB_SELECT]);
+            if (p->cab[cab_sel][c].hist) x = (double)cab_rig_process(&p->cab[cab_sel][c], (float)x);
+         }
 #endif`;
