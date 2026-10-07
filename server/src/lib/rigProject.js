@@ -55,7 +55,18 @@ function half({ files, manifest, listKey, oneKey, match, resolve, usable }) {
   const explicit = Array.isArray(manifest[listKey]) || Boolean(String(manifest[oneKey] || '').trim());
   return {
     auto: !explicit,
-    members: resolved.map((r) => ({ path: r.path, name: r.name, usable: usable(r), id: idOf(files, r.path) })),
+    // ⚠️ THE WARNING TRAVELS WITH THE MEMBER, AND IT IS THE ACTIONABLE HALF. `resolveModelMember` says WHY a
+    // capture cannot be used — "not valid JSON (…)", 'has no "architecture" field' — and a view that only
+    // said "not usable" would send a user looking at a file nothing is wrong with. The generator's own words
+    // are used verbatim rather than paraphrased, so the editor and the build cannot describe one file
+    // differently.
+    members: resolved.map((r) => ({
+      path: r.path,
+      name: r.name,
+      usable: usable(r),
+      id: idOf(files, r.path),
+      reason: (Array.isArray(r.warnings) && r.warnings[0]) || null,
+    })),
     // A file of this kind that the rig does not name. Empty for an automatic rig by construction, because an
     // automatic rig is every file of that kind — so a non-empty list means the rig was frozen.
     others: pathsOf(files, match).filter((p) => !inRig.has(p)).map((p) => ({ path: p, name: rigName(p), id: idOf(files, p) })),
@@ -75,11 +86,11 @@ export function rigView(files, manifest = {}) {
 
   // The generator's OWN warnings, verbatim. A capture the finder kept so its warning could surface is kept
   // here for the same reason: it is the only thing that tells a user why the amp they put in the project is
-  // not in the plugin.
+  // not in the plugin — and the reason is the part they can act on.
   const warnings = [
-    ...models.members.filter((m) => !m.usable).map((m) => `${m.path} is in the rig but not usable — it will be left out of the plugin.`),
-    ...cabs.members.filter((c) => !c.usable).map((c) => `${c.path} is in the rig but not usable — it will be left out of the plugin.`),
-  ];
+    ...models.members.map((m) => m.reason),
+    ...cabs.members.map((c) => c.reason),
+  ].filter(Boolean);
   const usableModelCount = models.members.filter((m) => m.usable).length;
   const usableCabCount = cabs.members.filter((c) => c.usable).length;
   // ⚠️ ONE MEMBER IS NOT A CONTROL, and this says so rather than leaving a person to wonder where the

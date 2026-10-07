@@ -55,8 +55,11 @@ function Half({ title, blurb, side, members, others, onRename, onMove, onOut, on
             </div>
             <div className="flex items-center gap-2 pl-5">
               <span className="text-[10px] text-ink-max font-mono truncate">{m.path}</span>
-              {!m.usable && <span className="text-[10px] text-yellow-500/90 shrink-0">NOT USABLE — it will be left out of the plugin</span>}
+              {!m.usable && <span className="text-[10px] text-yellow-500/90 shrink-0" title={m.reason || ''}>NOT USABLE — it will be left out of the plugin</span>}
             </div>
+            {/* ⚠️ THE REASON, IN THE GENERATOR'S OWN WORDS. "Not usable" is not something a person can act
+                on; "not valid JSON (Unexpected token …)" is. It is the same sentence the build would print. */}
+            {!m.usable && m.reason && <p className="text-[10px] text-yellow-500/80 pl-5 leading-relaxed">{m.reason}</p>}
           </div>
         ))}
       </div>

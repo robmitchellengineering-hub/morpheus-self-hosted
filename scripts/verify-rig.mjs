@@ -96,6 +96,11 @@ check('…and naming one is what freezes the list, which is why the others are l
   [view.models.auto, view.models.others.map((o) => o.name)], [false, ['D']]);
 check('⭐ a capture the rig does not name is SAID, not silently dropped',
   view.warnings.some((w) => /not in the rig/.test(w) && /D/.test(w)), true);
+// ⚠️ AND AN UNUSABLE MEMBER'S REASON SURVIVES, because "not usable" is not something a user can act on —
+// "not valid JSON (Unexpected token …)" is. It is the generator's OWN sentence, so the editor and the build
+// describe one file the same way.
+check('⚠️ an unusable capture is reported WITH THE GENERATOR\'S OWN REASON, not just a flag',
+  view.warnings.some((w) => /models\/broken\.nam/.test(w) && /not valid JSON/.test(w)), true);
 // The one-member note is the app's answer to "where did the Capture control go" — see rigSelectors.
 const oneModelFiles = [manifestOf({ name: 'R' }), { path: 'models/only.nam', content: namFor() }];
 const oneModel = rigView(oneModelFiles, readManifest(oneModelFiles));
