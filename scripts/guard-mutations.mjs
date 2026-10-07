@@ -1917,9 +1917,13 @@ export const MUTATIONS = [
     // output is applied on the plugin's own output, so a block after it is processed by nothing. Letting any
     // permutation through would still be a legal PERMUTATION, which is why the count check above cannot see it
     // and this needs its own assertion.
-    why: 'Accepts an order that moves the amp model, the cabinet or the output — a legal permutation of the chain and an illegal rearrangement of the amplifier.',
-    find: '      if (!morpheus_gui_block_movable(order[s]) && order[s] != s) return false;',
-    replace: '      if (false && !morpheus_gui_block_movable(order[s]) && order[s] != s) return false;',
+    // ⚠️ THE PIVOT RULE, AS A MUTATION — AND IT MUTATES THE RULE ITSELF, NOT A CALL SITE. Since Stage 2 the
+    // rule is enforced at TWO doors (a drag and a loaded session), so a mutation that broke one call would
+    // leave the other enforcing it and the guard would stay green. Breaking the function every door asks is
+    // the mutation that actually tests the claim.
+    why: 'Says every block may move, so the amp model, the cabinet and the output can be dragged anywhere.',
+    find: '   return (strcmp(kind, "model") && strcmp(kind, "cab") && strcmp(kind, "level")) ? 1 : 0;',
+    replace: '   return 1;   // every block may move',
   },
   {
     guard: 'verify-audio-plugin.mjs',

@@ -1410,7 +1410,11 @@ check('…and a blob that is not a permutation is refused, because one block twi
   && /\+\+seen\[order\[s\]\] > 1\) return false;/.test(ampNowSrc), true);
 check('⭐ …and a loaded order takes effect BETWEEN BLOCKS, through the same handover the panel uses',
   /unsigned char stage_order_pending\[MORPHEUS_NUM_STAGES\];/.test(ampNowSrc)
-  && /morpheus_gui_publish\(&p->stage_order_pending_flag\);/.test(ampNowSrc)
+  // ⚠️ ANCHORED ON THE STATE LOAD'S OWN SPELLING, NOT "the plugin publishes a pending order somewhere". Since
+  // Stage 2 there are TWO publishers — a drag and a loaded session — so a bare `morpheus_gui_publish(...)` is
+  // satisfied by the other one, and the mutation that writes a loaded order straight into the running table
+  // went from caught to SURVIVED the moment the second door was added. The mutation harness is what caught it.
+  && /for \(unsigned char s = 0; s < MORPHEUS_NUM_STAGES; \+\+s\) p->stage_order_pending\[s\] = order\[s\];\n   morpheus_gui_publish\(&p->stage_order_pending_flag\);/.test(ampNowSrc)
   && /if \(morpheus_gui_consume\(&p->stage_order_pending_flag\)\) \{/.test(ampNowSrc), true);
 check('…and the offline host can drive that handover, or none of it is provable',
   /--save-state/.test(read('tools/clap-offline/clap_offline.cpp'))
