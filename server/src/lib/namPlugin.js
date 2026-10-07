@@ -26,6 +26,8 @@
 // prerequisite.
 
 /** Where a model usually lives. Not required: any `.nam` in the project will do. */
+import { rigList } from './rig.js';
+
 export const MODEL_DIR = 'models';
 
 /** The generated pair. `ModelData.cpp` is derived; `ModelData.h` is what makes the plugin compile either way. */
@@ -55,15 +57,17 @@ export const NAMCORE_REF = '0b3d3c9';
  * ordering is fixed rather than "whatever the files array happened to hold", because a project with two
  * models must build the same plugin twice.
  */
-export function findModelPath(files, manifest = {}) {
-  const named = typeof manifest.model === 'string' ? manifest.model.trim() : '';
-  if (named) return hasModel(files, named) ? named : null;
+export function findModelPaths(files, manifest = {}) {
+  return rigList({ files, manifest, listKey: 'models', oneKey: 'model', has: hasModel, match: (p) => /\.nam$/i.test(p), rank });
+}
 
-  const candidates = (Array.isArray(files) ? files : [])
-    .filter((f) => f && typeof f.path === 'string' && /\.nam$/i.test(f.path) && String(f.content || '').trim())
-    .map((f) => f.path)
-    .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
-  return candidates[0] || null;
+/**
+ * The FIRST capture — what this function has always returned, and the reason it is defined in terms of the
+ * list above rather than the other way round. One model, many models and no model are one question.
+ */
+export function findModelPath(files, manifest = {}) {
+  const all = findModelPaths(files, manifest);
+  return all.length ? all[0].path : null;
 }
 
 const hasModel = (files, path) => (Array.isArray(files) ? files : [])

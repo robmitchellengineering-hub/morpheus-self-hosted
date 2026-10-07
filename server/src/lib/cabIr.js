@@ -27,6 +27,7 @@
 // first build is usable without reaching for the Output control. See `cabTapGain`, which is the one definition
 // of that rule and the one the checks measure against.
 import { decodeWav } from './audio/wav.js';
+import { rigList } from './rig.js';
 
 /** Where a cabinet usually lives. Not required: any `.wav` in the project will do. */
 export const CAB_DIR = 'models';
@@ -50,15 +51,14 @@ const hasCab = (files, path) => (Array.isArray(files) ? files : [])
   .some((f) => f && f.path === path && f.content !== undefined);
 
 /** The IR this project carries, or null. Named in the manifest, or found the way the model is. */
-export function findCabPath(files, manifest = {}) {
-  const named = typeof manifest.cab === 'string' ? manifest.cab.trim() : '';
-  if (named) return hasCab(files, named) ? named : null;
+export function findCabPaths(files, manifest = {}) {
+  return rigList({ files, manifest, listKey: 'cabs', oneKey: 'cab', has: hasCab, match: (p) => /\.wav$/i.test(p), rank });
+}
 
-  const candidates = (Array.isArray(files) ? files : [])
-    .filter((f) => f && typeof f.path === 'string' && /\.wav$/i.test(f.path))
-    .map((f) => f.path)
-    .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
-  return candidates[0] || null;
+/** The FIRST impulse response — the singular finder, unchanged in what it returns. See findCabPaths. */
+export function findCabPath(files, manifest = {}) {
+  const all = findCabPaths(files, manifest);
+  return all.length ? all[0].path : null;
 }
 
 function rank(path) {
