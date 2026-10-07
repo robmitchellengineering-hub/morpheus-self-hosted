@@ -692,8 +692,8 @@ export const MUTATIONS = [
     // returned literal but a stage's `param`, so the mutation follows the text rather than the shape.
     // ⚠️ REPOINTED when a bypassed block's control had to say so in its own name: the emitted name grew a
     // suffix. The claim is unchanged — the key a parameter is indexed by must stay `output`.
-    find: "out.push({ ...stage.param, name: `${stage.param.name ?? String(manifest.paramName || 'Gain')}${suffix}` });",
-    replace: "out.push({ ...stage.param, key: 'gain', name: `${stage.param.name ?? String(manifest.paramName || 'Gain')}${suffix}` });",
+    find: "out.push({ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain'), module });",
+    replace: "out.push({ ...stage.param, key: 'gain', name: stage.param.name ?? String(manifest.paramName || 'Gain'), module });",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -1029,8 +1029,11 @@ export const MUTATIONS = [
     // SAME AUDIO and costs 2.6x more CPU, so nothing about the output says it happened — the plugin simply
     // stops fitting on the machine it was measured for.
     why: 'Puts the model back to one sample per call, which changes no audio and costs 2.6x the CPU.',
-    find: 'p->model[c]->process(io, io, model_frames);',
-    replace: 'p->model[c]->process(io, io, 1);',
+    // ⚠️ REPOINTED when the model gained a switch: the call is now written three times (the fully-on path,
+    // the fade path and the no-switch fallback), so the find carries the guard that makes it the ONE this
+    // mutation is about — the path every existing proof takes. The claim is unchanged.
+    find: '               if (on_model >= 1.0 || !p->model_dry[c] || model_frames > (int)p->model_dry_cap) {\n                  p->model[c]->process(io, io, model_frames);',
+    replace: '               if (on_model >= 1.0 || !p->model_dry[c] || model_frames > (int)p->model_dry_cap) {\n                  p->model[c]->process(io, io, 1);',
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -2239,17 +2242,58 @@ export const MUTATIONS = [
     // (Repointed when identity became CREATION order rather than a fixed table of known keys — the delay made
     // the table wrong, because a kind that sorts into the middle of it renumbers everything after it.)
     why: 'Identifies the controls by the arrangement instead of by the block that owns them, so reordering a block renumbers every parameter a host has automated.',
-    find: '  return chainParams(chain, manifest).slice().sort((a, b) => ownerOf(a.key) - ownerOf(b.key));',
-    replace: '  return chainParams(chain, manifest).slice();',
+    find: '    return ownerOf(a.key) - ownerOf(b.key);',
+    replace: '    return 0;',
   },
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/board.js',
-    // A BYPASSED BLOCK MUST KEEP ITS CONTROL AND LOSE ITS DSP. Dropping the mark does the opposite of what a
-    // bypass sounds like: the block is still in the signal path, and the switch in the editor is a lie.
-    why: 'Ignores the enabled flag, so a block switched off in the editor is still in the plugin\u2019s signal path.',
+    // A BLOCK SWITCHED OFF KEEPS ITS CONTROL AND ITS DEFAULT. Dropping the mark is the "the plugin ignores
+    // what I drew" failure: the board says a block is off, the plugin opens with it on, and only the sound
+    // says which of the two is right.
+    why: 'Ignores the enabled flag, so a block switched off in the editor opens switched on.',
     find: '    if (item.enabled === false) stage.bypass = true;',
     replace: '    if (false) stage.bypass = true;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // ⭐ THE SAVED STATE IS THE SWITCH'S DEFAULT, and this is the line that carries it. `def: 1` is the
+    // version that looks harmless — every block on out of the box — and is exactly the demo shipping a drive,
+    // a delay and a spring all engaged, which is the measured -4.3 dB that put the default patch under a check.
+    why: 'Ignores the build-time state, so a block switched off in the editor opens switched on.',
+    find: '        def: stage.bypass ? 0 : 1,',
+    replace: '        def: 1,',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // THE SWITCH ITSELF. `if (false)` leaves every block permanently in the path: the control moves, the host
+    // stores it, a panel redraws — and the audio never changes. Nothing else here notices, because every
+    // default is untouched and every null still lands where it did.
+    why: 'Makes the crossfade unconditional, so a block switched off is still fully in the signal path.',
+    find: '    `            if (on_${key} < 1.0) x = dry_${key} + on_${key} * (x - dry_${key});`,',
+    replace: '    `            if (false) x = dry_${key} + on_${key} * (x - dry_${key});`,',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⭐ CLAP'S OWN FLAG, NOT A NAME CONVENTION. Reading it as 0 draws every control as a continuous track —
+    // including a block's switch and, later, a rig's capture selector — so the panel and the host disagree
+    // about what a control IS while both agree about what it is set to.
+    why: 'Draws every control as a track, so a discrete switch is a slider that only lands on its two ends.',
+    find: 'row->stepped = (info.flags & CLAP_PARAM_IS_STEPPED) ? 1 : 0;',
+    replace: 'row->stepped = 0;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/board.js',
+    // ⚠️ A SWITCH HAS NO ENTRY IN ITS BLOCK'S OWN CONTROL TABLE, so an owner lookup that only reads those
+    // tables ranks it 0 and sorts it to the FRONT. Which is not a cosmetic ordering bug: `paramsCpp` derives
+    // the ids from the position, so every control after it moves — the corruption `instanceId` exists for.
+    why: 'Loses the owner of a block\u2019s switch, so reordering the board moves the switches\u2019 parameter ids.',
+    find: '      return keys.includes(key) || stageOnKey(st) === key;',
+    replace: '      return keys.includes(key);',
   },
   {
     guard: 'verify-audio-plugin.mjs',

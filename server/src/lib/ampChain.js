@@ -31,12 +31,16 @@ export const GATE_OFF_DB = -80;
  * `kind` is what a stage DOES; `role` is which parameter drives it. The emitters ask two questions of this
  * list — is there a stage of this kind, and where is the model — instead of branching on a chain's name.
  */
-// ⚠️ A BYPASSED STAGE IS NOT IN THE CHAIN, and this is the one place that decides it. Every emitter asks
-// `chainHas` before writing a block's DSP, so a bypassed tone stack emits no biquads, no filter state and no
-// per-sample work — while its PARAMETERS stay in the list. That split is deliberate and is the whole of
-// bypass: the control keeps its id (a host's automation lane still points at it) and does nothing until the
-// block is switched back on. See lib/board.js.
-export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind === kind && !s.bypass);
+// ⚠️ A STAGE THAT IS SWITCHED OFF IS STILL IN THE CHAIN, and this is the one place that decides it. Every
+// emitter asks `chainHas` before writing a block's DSP, so a block that STARTS switched off still emits its
+// biquads, its state and its body — wrapped in the crossfade its own `on_<key>` control drives (see
+// `blendCpp`). That is what changed when on/off stopped being a BUILD decision: a block's code can no longer
+// be absent, because it has to be there the moment somebody switches it on, and a plugin cannot be recompiled
+// from inside a DAW.
+//
+// `stage.bypass` survives as the block's DEFAULT — the position of its switch at load — which is why a board
+// that was saved with a block switched off still builds a plugin that opens with it off. See `chainParams`.
+export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind === kind);
 
 /**
  * WHERE THE MODEL SITS, so the pre-model/post-model split is DERIVED rather than assumed.
@@ -46,7 +50,42 @@ export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind
  * chain with no model has no middle, and a chain that is only a delay has nothing either side of it. Asking
  * the list where the model is means the next chain does not have to be an amp to be expressed.
  */
-export const modelStageIndex = (chain) => (chain.stages || []).findIndex((s) => s.kind === 'model' && !s.bypass);
+export const modelStageIndex = (chain) => (chain.stages || []).findIndex((s) => s.kind === 'model');
+
+/**
+ * WHETHER A STAGE'S SWITCH EXISTS AT ALL, and the one stage whose does not.
+ *
+ * The OUTPUT LEVEL is applied on the plugin's OUTPUT — after both channels, outside every stage loop — so
+ * there is nothing to blend it with, and "switched off" could only mean unity gain, which is a different
+ * plugin with a level control that silently stopped being one. `board.js` has refused to bypass the Output
+ * block since the board existed; this is the same rule at the level that emits the code.
+ */
+export const canBlend = (stage) => stage.kind !== 'level';
+
+/**
+ * THE SWITCH'S KEY AND THE BLOCK'S LABEL — `on_<key>`, spelled identically for a board stage and for the amp
+ * chain's own stage of the same kind.
+ *
+ * ⚠️ IT IS DERIVED FROM THE STAGE, NEVER FROM A BLOCK CATALOGUE. `board.js`'s labels are UI copy and are free
+ * to change; this name reaches a HOST's parameter list and a saved automation lane, and
+ * `verify-audio-plugin.mjs` asserts that the default board and the legacy `chain: 'amp'` project generate the
+ * same text byte for byte — so the two paths must agree, and the only thing they share is the stage.
+ *
+ * `gain`/`level` are the amp chain's spellings of a block the board calls `input`/`output`, so they map back
+ * to the names a user sees; everything else already carries its block kind.
+ */
+const KIND_NAME = { gain: 'input', level: 'output' };
+export const stageOnKey = (stage) => `on_${stage.param?.key || KIND_NAME[stage.kind] || stage.kind}`;
+
+/** Whether a parameter key is a block's switch. The switches follow every control in the identity order. */
+export const isOnKey = (key) => String(key).startsWith('on_');
+
+/** What a block is CALLED — the stage's own control name when it has one, else the name of its kind. */
+const STAGE_LABEL = {
+  gain: 'Input', level: 'Output', gate: 'Gate', tone: 'Tone',
+  model: 'Amp model', cab: 'Cabinet', delay: 'Delay', spring: 'Spring reverb', drive: 'Drive',
+};
+export const stageLabel = (stage) => stage.param?.name || STAGE_LABEL[stage.kind] || stage.kind;
 
 /** The single-parameter plugin every project got before the chain existed. */
 export const PLAIN_CHAIN = {
@@ -115,35 +154,61 @@ export function chainFor(manifest = {}) {
  */
 export function chainParams(chain, manifest = {}) {
   const out = [];
+  // The blocks' own switches, collected as the stages are walked and APPENDED after every control — see the
+  // note on the return for why the position matters.
+  const switches = [];
   for (const stage of chain.stages || []) {
-    // A BYPASSED BLOCK'S CONTROLS STAY, and they say so. The id must not move (that is the automation lane),
-    // so the parameter cannot be dropped; naming it instead is how the host's control list tells the truth
-    // about a block that is switched off. `def` is read from the stage when the board saved one — a board's
-    // value is the plugin's default, and it has to survive into the generated `kParams` table.
-    const suffix = stage.bypass ? ' (bypassed)' : '';
+    // THE BLOCK A CONTROL BELONGS TO, so a host can group them — and CLAP has a field for exactly this that
+    // has been emitted empty until now. The plugin's own panel groups its rows by it too.
+    const module = stageLabel(stage);
+    // A SWITCHED-OFF BLOCK'S CONTROLS STAY, and they no longer say so in their own names. `"Gate (bypassed)"`
+    // was the same fact told twice, in a string a host reads out as PART OF THE PARAMETER'S NAME — and it is
+    // no longer even true, because the block is reachable from inside the host now. The switch says it.
+    // `def` is read from the stage when the board saved one — a board's value is the plugin's default, and it
+    // has to survive into the generated `kParams` table.
     // ⭐ A STAGE MAY CARRY ITS OWN LIST. An amp chain stage borrows one of two shapes — `param` for one
     // control, `bands` for a tone stack whose three controls are one design — and a block that is not part of
-    // an amplifier has no reason to fit either. `stage.params` is that case: the block's own table, values
-    // already applied, and the names still marked when it is bypassed.
+    // an amplifier has no reason to fit either. `stage.params` is that case: the block's own table.
     if (stage.params) {
-      out.push(...stage.params.map((x) => ({ ...x, name: `${x.name}${suffix}` })));
-      continue;
-    }
-    if (stage.bands) {
+      out.push(...stage.params.map((x) => ({ ...x, module })));
+    } else if (stage.bands) {
       out.push(...stage.bands.map((b) => ({
         key: b.key,
-        name: `${b.label}${suffix}`,
+        name: b.label,
         min: -b.rangeDb,
         max: b.rangeDb,
         def: Number.isFinite(b.def) ? b.def : 0,
         role: 'tone',
         unit: 'dB',
+        module,
       })));
     } else if (stage.param) {
-      out.push({ ...stage.param, name: `${stage.param.name ?? String(manifest.paramName || 'Gain')}${suffix}` });
+      out.push({ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain'), module });
+    }
+    // ⭐ THE BLOCK'S OWN SWITCH. One DISCRETE 0/1 control whose default is the build-time state, so a plugin
+    // built from a board with a block switched off opens with that block off — and a host can turn it on,
+    // which is the whole point: a build decision nobody can reach from inside a DAW is not a control.
+    if (canBlend(stage)) {
+      switches.push({
+        key: stageOnKey(stage),
+        name: `${module} On`,
+        min: 0,
+        max: 1,
+        def: stage.bypass ? 0 : 1,
+        role: 'on',
+        unit: '',
+        module,
+        stepped: true,
+      });
     }
   }
-  return out;
+  // ⚠️ THE SWITCHES ARE APPENDED TO THE WHOLE LIST, NOT INSERTED BESIDE THEIR BLOCKS, and the reason is a
+  // host's saved state: `paramsCpp` turns a parameter's POSITION into its `PARAM_*` id, so a switch placed
+  // beside its block would renumber every control after it and re-point an automation lane at a different
+  // knob. Appending means every project that already exists keeps every id it had. `chainParamsStable` and
+  // `boardParamsStable` sort with the switches last for the same reason, and the panel — which is free to
+  // reorder for display, since it addresses parameters by id — groups each switch back with its own block.
+  return out.concat(switches);
 }
 
 /**
@@ -163,7 +228,15 @@ export function chainParams(chain, manifest = {}) {
  * The order below is the amp chain's existing one, deliberately: this changes which arrangements are
  * POSSIBLE without changing the plugin that already exists.
  */
-export const PARAM_ORDER = ['input', 'gate', 'bass', 'mid', 'treble', 'output'];
+export const PARAM_ORDER = [
+  'input', 'gate', 'bass', 'mid', 'treble', 'output',
+  // ⚠️ THE BLOCKS' SWITCHES ARE APPENDED, AND THIS IS THE LINE THAT COMMENT IS ABOUT. They arrived after
+  // every control that already existed, on purpose: `paramsCpp` derives a parameter's id from its position
+  // here, and a host stores automation against that id — so inserting a switch beside its block would move
+  // every control after it. A board is not ranked by this list (its order is creation order, see
+  // `board.js`'s `boardParamsStable`) but it sorts its switches last for exactly this reason.
+  'on_input', 'on_gate', 'on_tone', 'on_model', 'on_cab',
+];
 
 /** The parameters in their STABLE identity order — see PARAM_ORDER. A stage reorder cannot move a control. */
 export function chainParamsStable(chain, manifest = {}) {
@@ -241,8 +314,11 @@ export function paramsCpp(params) {
   // THE UNIT TRAVELS WITH THE CONTROL. It is what the HOST shows when it draws the parameter, and what the
   // plugin's own panel shows — one string, so a delay can read "340.00 ms" and a mix "25.00 %" instead of
   // every control in every plugin claiming to be decibels. A parameter that declares none is unitless.
+  // ⭐ AND SO DO THE TWO THINGS A HOST NEEDS TO DRAW A CONTROL RATHER THAN A NUMBER: `stepped` is CLAP's own
+  // "this parameter is discrete" flag — a 0/1 switch is not a slider that happens to land on whole numbers —
+  // and `module` is the BLOCK the control belongs to, which is how a host groups an amplifier's rows.
   const rows = params
-    .map((p, i) => `   { ${i + 1}, ${cstr(p.name)}, ${num(p.min)}, ${num(p.max)}, ${num(p.def)}, ${cstr(p.unit || '')} },`)
+    .map((p, i) => `   { ${i + 1}, ${cstr(p.name)}, ${num(p.min)}, ${num(p.max)}, ${num(p.def)}, ${cstr(p.unit || '')}, ${p.stepped ? 1 : 0}, ${cstr(p.module || '')} },`)
     .join('\n');
   return `// The id must not be 0: CLAP_INVALID_ID means "no parameter", so a host treats an event carrying id 0 as
 // malformed. These come from server/src/lib/ampChain.js — one table, used here and by the measurement.
@@ -252,7 +328,7 @@ enum { ${enums} };
 // The array index of each parameter, named, so the process loop cannot index the wrong one.
 ${params.map((p, i) => `#define IDX_${p.key.toUpperCase()} ${i}`).join('\n')}
 
-static const struct { clap_id id; const char *name; double min; double max; double def; const char *unit; } kParams[] = {
+static const struct { clap_id id; const char *name; double min; double max; double def; const char *unit; int stepped; const char *module; } kParams[] = {
 ${rows}
 };`;
 }
@@ -261,8 +337,8 @@ ${rows}
  * The per-instance state: one value and one smoothed value per parameter, plus the filter state.
  *
  * `_params` IS DELIBERATELY UNUSED: what needs state is decided by the CHAIN, not by the parameter list, so
- * that a BYPASSED gate keeps its control and loses its envelope follower. The argument stays for the caller's
- * sake and is named with the underscore the lint rule asks for.
+ * that a block's state follows the block rather than a control that happens to exist. The argument stays for
+ * the caller's sake and is named with the underscore the lint rule asks for.
  */
 export function stateCpp(chain, _params) {
   const lines = [
@@ -281,8 +357,9 @@ export function stateCpp(chain, _params) {
       `   double tone_last[${TONE_KEYS.length}];`,
     );
   }
-  // Keyed on the CHAIN rather than on the parameter, so a bypassed gate keeps its control and loses its
-  // envelope follower — a `gate_t` and a `gate_process` that nothing calls would be dead code in the binary.
+  // Keyed on the CHAIN rather than on the parameter: the block's state follows the BLOCK, so a gate that
+  // starts switched off still has its envelope follower — it needs one the moment its switch closes, and it
+  // may not allocate or re-arm on the audio thread when that happens.
   if (chainHas(chain, 'gate')) lines.push(gateStateCpp);
   return lines.join('\n');
 }
@@ -428,6 +505,34 @@ export function stageDspCpp(stage, params) {
   return [];
 }
 
+/**
+ * ONE STAGE'S DSP, WRAPPED IN ITS OWN SWITCH — the shape both passes emit.
+ *
+ * ⚠️ THE CROSSFADE IS WHY A SWITCHED-OFF BLOCK STILL EMITS ITS CODE. `on == 1` skips the blend line
+ * entirely, so a block that is on is BIT-IDENTICAL to the plugin that had no switch at all — which is what
+ * keeps every measured null (the tone rows in `audio-amp-chain-check`, the runner render checks) exactly
+ * where it was. `on == 0` is `dry + 0 * (x - dry) == dry`, exactly, so a switched-off block is a true bypass
+ * rather than a quiet one. In between it is the same one-pole the other parameters ramp with (~21 ms), which
+ * is what stops a switch from clicking — a hard `if (on)` would not.
+ *
+ * `dry` is taken BEFORE the block's DSP and scoped to its own braces, so two blocks in one channel's path
+ * cannot collide on the name, and `on` is read from the smoothed value the audio thread already owns.
+ */
+export function blendCpp(stage, params) {
+  const lines = stageDspCpp(stage, params);
+  if (!lines.length) return [];
+  const key = stageOnKey(stage);
+  const idx = `IDX_${key.toUpperCase()}`;
+  return [
+    '         {',
+    `            const double dry_${key} = x;`,
+    ...lines,
+    `            const double on_${key} = p->smoothed[${idx}];`,
+    `            if (on_${key} < 1.0) x = dry_${key} + on_${key} * (x - dry_${key});`,
+    '         }',
+  ];
+}
+
 export function chainPreCpp(chain, params) {
   const lines = [];
   const stages = chain.stages || [];
@@ -436,9 +541,7 @@ export function chainPreCpp(chain, params) {
   // asking each parameter what it is. Same list, same order, same output; the difference is that the next
   // chain does not have to be an amp for this to make sense.
   for (const stage of stages.slice(0, at < 0 ? stages.length : at)) {
-    // A bypassed stage contributes nothing to the signal path — see `chainHas`. Its parameters still exist.
-    if (stage.bypass) continue;
-    lines.push(...stageDspCpp(stage, params));
+    lines.push(...blendCpp(stage, params));
   }
   return lines.join('\n');
 }
@@ -461,14 +564,16 @@ export function chainPostCpp(chain, params = [], cabInPath = true) {
   // at all there is no "after the model", so every stage is in the first pass.
   const lines = [];
   for (const stage of (at < 0 ? [] : stages.slice(at + 1))) {
-    if (stage.bypass) continue;
-    lines.push(...stageDspCpp(stage, params));
+    lines.push(...blendCpp(stage, params));
   }
   // ⭐ THE LEGACY CHAIN HAS NO CABINET STAGE AT ALL. Before a board existed, "there is a .wav in the project"
   // and "the speaker is in the signal path" were the same question, so the cabinet's stage was emitted for
   // every chain and its DSP is behind `#if MORPHEUS_HAS_CAB`. Emitting it here — for a chain that does not
   // name one — is what keeps the plain plugin, the amp plugin and the three runner proofs byte-identical.
   // A board never takes this branch: it says what is in the path, and `cabInPath` is derived from that.
+  // ⚠️ AND IT IS DELIBERATELY NOT WRAPPED IN A BLEND. This is the one cabinet with no BLOCK behind it — a
+  // `.wav` in a project that has no Cabinet stage — so there is no switch to read and nothing to fade it
+  // with. It convolves, as it always did; it is not a control.
   if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__CAB_STAGE__');
   return lines.join('\n');
 }

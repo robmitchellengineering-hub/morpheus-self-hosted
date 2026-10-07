@@ -823,8 +823,8 @@ export default function CompilePanel({ open, onClose, project, onCompile, onPrev
                   and the plain plugin has no chain to put it in. */}
               {String(target).startsWith('audio-plugin-') && (<>
                 {/* ⭐ THE FIRST BUTTON, because it is the arrangement everything else sits in: which blocks
-                    there are, in what order, and which are switched off. It is a drawing of the plugin, and
-                    the plugin is generated from it. */}
+                    there are, in what order, and which open switched off. It is a drawing of the plugin, and
+                    the plugin is generated from it — every block keeping its own On/Off switch inside. */}
                 <button onClick={() => setShowBoard(true)} className="w-full flex items-center justify-center gap-2 py-2 border border-primary/40 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs">
                   <Sliders size={14} /> SIGNAL PATH (BOARD)
                 </button>

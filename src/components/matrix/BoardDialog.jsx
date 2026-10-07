@@ -6,8 +6,8 @@ import { base44 } from '@/api/base44Client';
 //
 // ── WHY THIS IS THE THING WORTH HAVING ───────────────────────────────────────────────────────────────────
 // Every commercial multi-effect is a fixed set of blocks in a fixed order with a closed implementation. Here
-// the blocks are GENERATED C++ that belongs to the user, the order is known at compile time (a block that is
-// switched off compiles out), and the plugin and the device image come from this one drawing. The order a
+// the blocks are GENERATED C++ that belongs to the user, the order is known at compile time, and the plugin
+// and the device image come from this one drawing. The order a
 // musician drags is the order the plugin runs — which is the whole feature, and it is also the thing that is
 // easy to get wrong quietly: a block that is drawn but not emitted, or one that is emitted but renumbers the
 // controls a host has automated.
@@ -121,7 +121,8 @@ export default function BoardDialog({ open, onClose, projectId }) {
             This is the plugin&apos;s <span className="text-ink-strong">signal path</span>, top to bottom — the same order
             the audio runs in, and the same order the compiled plugin will use. Move a block with the arrows,
             switch one off without losing its settings, and set its controls here: these are the plugin&apos;s
-            defaults.
+            defaults. Every block also gets its own On/Off switch inside the plugin, so a block switched off here
+            can be turned on while you play — and a block switched off here still opens that way.
           </p>
 
           {view === null && !err && <p className="text-ink-strong">Loading…</p>}
@@ -138,7 +139,7 @@ export default function BoardDialog({ open, onClose, projectId }) {
                     <div className="flex items-center gap-2">
                       <span className="text-ink-max font-mono text-[10px] w-5 text-right">{at + 1}</span>
                       <span className={`font-display tracking-wider ${off ? 'text-ink-strong' : 'text-primary'}`}>{b.label.toUpperCase()}</span>
-                      {off && <span className="text-[10px] text-yellow-500/80">BYPASSED</span>}
+                      {off && <span className="text-[10px] text-yellow-500/80" title="The plugin is built with this block&apos;s own On/Off switch set to Off — it can be switched on inside the plugin">OFF BY DEFAULT</span>}
                       {b.needs && !items.some((i) => i.kind === b.needs) && (
                         <span className="text-[10px] text-ink-max">no {b.needs === 'model' ? '.nam' : '.wav'} in this project</span>
                       )}
@@ -147,7 +148,7 @@ export default function BoardDialog({ open, onClose, projectId }) {
                         <>
                           <button onClick={() => move(at, -1)} disabled={at === 0} className="text-primary/60 hover:text-primary disabled:opacity-20" title="Move up"><ArrowUp size={14} /></button>
                           <button onClick={() => move(at, 1)} disabled={at === items.length - 1} className="text-primary/60 hover:text-primary disabled:opacity-20" title="Move down"><ArrowDown size={14} /></button>
-                          <button onClick={() => toggle(at)} className={off ? 'text-primary/40 hover:text-primary' : 'text-primary'} title={off ? 'Switch on' : 'Bypass'}><Power size={14} /></button>
+                          <button onClick={() => toggle(at)} className={off ? 'text-primary/40 hover:text-primary' : 'text-primary'} title={off ? 'Build it switched on' : 'Build it switched off (the plugin keeps its own switch)'}><Power size={14} /></button>
                           <button onClick={() => remove(at)} className="text-primary/60 hover:text-red-400" title="Remove"><Trash2 size={14} /></button>
                         </>
                       )}

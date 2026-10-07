@@ -261,7 +261,10 @@ export function scaffoldPlugin(files) {
     chain,
     params,
     // THE FILE AND THE BLOCK ARE DIFFERENT QUESTIONS. A legacy project has no board, so both are true and the
-    // generated source is unchanged; a board decides them from its own items.
+    // generated source is unchanged; a board decides them from its own items. ⚠️ AND A BLOCK THAT IS SWITCHED
+    // OFF IS STILL A BLOCK: these say whether the stage EXISTS, not whether it is in the path — the path is
+    // the stage's own `on_<kind>` control now, which the host can move. Only REMOVING a block takes its stage
+    // out of the generated plugin (see `chainHas`).
     modelInPath: useBoard ? chainHas(chain, 'model') : true,
     cabInPath: useBoard ? chainHas(chain, 'cab') : true,
     // ⭐ AND THE BLOCKS' OWN C++, for the kinds that bring some. `board.js` decides what a block contributes

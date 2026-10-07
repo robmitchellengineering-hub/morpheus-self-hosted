@@ -12,16 +12,18 @@
 // and the user discovers it as "my automation controls the wrong knob now". So:
 //
 //   • `instanceId` is a monotonic integer, never reused, assigned once and never derived from position;
-//   • a BYPASSED block keeps its parameters. Bypass is a state, not an absence — dropping the parameter
+//   • a SWITCHED-OFF block keeps its parameters. Bypass is a state, not an absence — dropping the parameter
 //     would renumber every parameter after it, which is the same corruption wearing a different hat. (It is
-//     also why `ampChain.js`'s GATE_OFF_DB is a state rather than a very low threshold.)
+//     also why `ampChain.js`'s GATE_OFF_DB is a state rather than a very low threshold.) And since the
+//     blocks gained their own on/off controls, the saved `enabled` is the DEFAULT of that control rather than
+//     a compile-out: the block is in the plugin either way, so a player can switch it in from the host.
 //
 // ── WHAT IS IN THE CATALOGUE, AND WHAT IS NOT ────────────────────────────────────────────────────────────
 // The six blocks that already exist, because the loop that runs them is proven: input trim, gate, tone
 // stack, the neural model, the cabinet, output level. A delay or a compressor is a NEW block kind and
 // belongs in its own change — the point of a registry is that adding one is a new entry here and no change
 // anywhere else, and that claim is only worth making if it is kept true.
-import { AMP_CHAIN, PLAIN_CHAIN, chainHas, chainParams, modelStageIndex } from './ampChain.js';
+import { AMP_CHAIN, PLAIN_CHAIN, chainHas, chainParams, isOnKey, modelStageIndex, stageOnKey } from './ampChain.js';
 import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
 import { DELAY_MARKER, DELAY_PARAMS, delayBundle } from './delayBlock.js';
 import { SPRING_MARKER, SPRING_PARAMS, springBundle } from './springBlock.js';
@@ -240,8 +242,11 @@ export function nextInstanceId(board) {
 /**
  * The chain the generator emits, from the board.
  *
- * BYPASSED BLOCKS KEEP A STAGE, marked `bypass`, so that the parameter list is the same whether a block is
- * on or off — see the header. `ampChain.js` reads the mark and emits no processing; the parameter stays.
+ * A SWITCHED-OFF BLOCK KEEPS A STAGE, marked `bypass`, so that the parameter list is the same whether a block
+ * is on or off — see the header. `bypass` is the block's DEFAULT now rather than its fate: `ampChain.js`
+ * emits the block's DSP either way, wrapped in the crossfade its own `on_<kind>` control drives, and the
+ * mark only decides which end of that control the plugin opens on. `verify-audio-plugin.mjs` asserts the
+ * demo's default patch is still a null for exactly this reason.
  */
 export function boardChain(board, manifest = {}) {
   const stages = [];
@@ -295,13 +300,32 @@ export function boardParamsStable(board, manifest = {}) {
       // the delay's controls landed before Input and every id in the amp chain moved by three.
       const keys = st.params ? st.params.map((x) => x.key)
         : (st.bands ? st.bands.map((b) => b.key) : (st.param ? [st.param.key] : []));
-      return keys.includes(key);
+      // ⚠️ AND THE BLOCK'S SWITCH BELONGS TO THE SAME BLOCK. It is not in any of those lists — it is
+      // synthesised by `chainParams` — so without this it has no owner, ranks 0, and a board reorder would
+      // move it. Which is exactly what happened: reversing the board reversed the switches' ids.
+      return keys.includes(key) || stageOnKey(st) === key;
     });
     return stage ? owner.get(stage.id) ?? 0 : 0;
   };
   // A stable sort, so the parameters WITHIN one block keep the order that block declares — Time, Feedback,
   // Mix is the order the panel shows and the order the host will list.
-  return chainParams(chain, manifest).slice().sort((a, b) => ownerOf(a.key) - ownerOf(b.key));
+  //
+  // ⚠️ THE BLOCKS' SWITCHES SORT AFTER EVERY CONTROL, exactly where `chainParams` appends them and where
+  // `chainParamsStable` puts them (see `PARAM_ORDER`). `paramsCpp` derives a parameter's id from its
+  // POSITION, so a switch that sorted in beside its block would renumber every control after it — and the
+  // default board would stop generating the amp chain byte for byte. The panel groups each switch back with
+  // its block for display; it addresses them by id, so nothing is lost by having them last in the host's list.
+  //
+  // ⚠️ AND THEY ARE STILL RANKED BY THEIR OWN BLOCK, not left in whatever order the stage list happens to be
+  // in. Two separate keys order this list: controls before switches, and within each group the block's
+  // creation order. Both are needed — the first keeps every existing id where it was, and the second is what
+  // makes reversing the board leave the switches un-moved too.
+  return chainParams(chain, manifest).slice().sort((a, b) => {
+    const as = isOnKey(a.key) ? 1 : 0;
+    const bs = isOnKey(b.key) ? 1 : 0;
+    if (as !== bs) return as - bs;
+    return ownerOf(a.key) - ownerOf(b.key);
+  });
 }
 
 /** The parameters a kind contributes, for the UI to render as controls. */
@@ -383,7 +407,7 @@ export function validateBoard(board, { modelFile = null, cabFile = null } = {}) 
   if (cabFile && !seenKinds.has('cab')) warnings.push(`The board has no Cabinet block, so ${cabFile} is compiled into the plugin but never convolves.`);
 
   const bypassed = items.filter((it) => it?.enabled === false).map((it) => blockKind(it.kind)?.label || it.kind);
-  if (bypassed.length) warnings.push(`Bypassed: ${bypassed.join(', ')}. A bypassed block's controls stay in the plugin — that is what keeps its automation lane pointing at it — and do nothing until it is switched back on.`);
+  if (bypassed.length) warnings.push(`Switched off by default: ${bypassed.join(', ')}. The block is still in the plugin — its controls keep their ids, so a host's automation lane still points at them — and its own On/Off control starts at Off, so it can be switched on from the plugin without a rebuild.`);
 
   return { ok: errors.length === 0, errors, warnings };
 }
