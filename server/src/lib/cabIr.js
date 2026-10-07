@@ -158,6 +158,22 @@ extern const float morpheus_cab_r[];
 }
 
 /**
+ * One channel of an IR as a C++ float array, eight a line.
+ *
+ * Shared by the first cabinet and by every extra one, so two arrays of the same taps cannot differ in layout
+ * for a reason nobody could name. ⚠️ THE TAPS MACRO IS A PARAMETER because each member's array is sized by its
+ * OWN count — the first by the header's `MORPHEUS_CAB_TAPS`, an extra by the count emitted beside it — and a
+ * shared hard-coded macro would silently size every cabinet after the first as the first one.
+ */
+function cabTapsCpp(name, ch, tapsMacro) {
+  const rows = [];
+  for (let i = 0; i < ch.length; i += 8) {
+    rows.push(`   ${Array.from(ch.subarray(i, i + 8), f32).join(', ')},`);
+  }
+  return `const float ${name}[${tapsMacro}] = {\n${rows.join('\n')}\n};`;
+}
+
+/**
  * `Source/CabIr.cpp` — the coefficients.
  *
  * Eight a line. A 4096-tap IR is 512 lines; one per line would be 4096 of them, and a compile error in a file
@@ -173,13 +189,7 @@ export function cabDataSource(info, channels) {
 #endif
 `;
   }
-  const emit = (name, ch) => {
-    const rows = [];
-    for (let i = 0; i < ch.length; i += 8) {
-      rows.push(`   ${Array.from(ch.subarray(i, i + 8), f32).join(', ')},`);
-    }
-    return `const float ${name}[MORPHEUS_CAB_TAPS] = {\n${rows.join('\n')}\n};`;
-  };
+  const emit = (name, ch) => cabTapsCpp(name, ch, 'MORPHEUS_CAB_TAPS');
   // ⚠️ A `${...}` INSIDE A C++ `#if` IS NOT GUARDED — the JavaScript runs first, whatever the preprocessor
   // would later decide. Written the obvious way, `emit('morpheus_cab_r', channels[1])` was evaluated for a
   // MONO impulse response too, and the generator crashed on `undefined.length` before any C++ existed. The
@@ -204,25 +214,117 @@ ${right}#endif
 }
 
 /**
- * Everything the scaffold needs about this project's cabinet, or null when it has none.
+ * `Source/CabIr.cpp` for a whole RIG — one impulse response, several, or none.
+ *
+ * The same shape as `modelDataSourceAll`, for the same reason and with the same guarantee: the first cabinet
+ * is emitted through `cabDataSource`, unchanged, and everything else is appended after it, so a one-cabinet
+ * project's source is byte for byte what it always was. Every proof taken of the plugin's speaker — the
+ * measured pink-noise gain, the null against the JavaScript reference — measured that text.
+ *
+ * ⚠️ AN UNUSABLE CABINET IS DROPPED, NOT EMBEDDED EMPTY. `resolveCabs` keeps it as a member so its warning
+ * reaches the scaffold; a zero-length tap array would convolve the signal with nothing and read to the user as
+ * a cabinet that loads and does not work — which is worse than the warning that says it was left out.
+ */
+export function cabDataSourceAll(cabs) {
+  const rig = (Array.isArray(cabs) ? cabs : [])
+    .filter((c) => c && c.info && Array.isArray(c.channels) && c.channels.length);
+  if (!rig.length) return cabDataSource(null, null);
+
+  const extras = rig.slice(1).map((c, i) => cabExtraCpp(c, i + 2)).join('\n');
+  return `${cabDataSource(rig[0].info, rig[0].channels)}
+#if MORPHEUS_HAS_CAB
+${extras ? `${extras}\n` : ''}${cabRigTableCpp(rig)}#endif
+`;
+}
+
+/** The array a rig member's channel lives in. The first is unsuffixed because it is the symbol that exists. */
+const cabArrayName = (index, side) => `morpheus_cab_${side}${index === 0 ? '' : `_${index + 1}`}`;
+
+/**
+ * One extra cabinet: its own shape macros and its own taps.
+ *
+ * ⚠️ THE MACROS COME BEFORE THE ARRAY THAT READS THEM, because each array is sized by its own tap count. A
+ * second cabinet longer than the first would otherwise be emitted at the first one's length — a compile error,
+ * which is the good kind, but only after a build has been spent.
+ */
+function cabExtraCpp(cab, index) {
+  const taps = `MORPHEUS_CAB_TAPS_${index}`;
+  // ⚠️ THE SAME TRAP `cabDataSource` DOCUMENTS: the right channel is emitted only when there is one, because
+  // a `${...}` inside a C++ `#if` is not guarded — the JavaScript runs before any preprocessor exists, and
+  // `channels[1]` on a mono IR is `undefined`.
+  const right = cab.channels[1]
+    ? `\n${cabTapsCpp(cabArrayName(index - 1, 'r'), cab.channels[1], taps)}`
+    : '';
+  return `// ── cabinet ${index}: ${cab.name} (from ${cab.path})
+// The same decode, normalisation and truncation as the first; these are the facts its own array is sized by.
+#define ${taps} ${cab.info.taps}
+#define MORPHEUS_CAB_CHANNELS_${index} ${cab.info.channels}
+#define MORPHEUS_CAB_RATE_${index} ${Math.round(cab.info.sampleRate)}
+${cabTapsCpp(cabArrayName(index - 1, 'l'), cab.channels[0], taps)}${right}
+`;
+}
+
+/**
+ * THE CABINET RIG, in selector order.
+ *
+ * ⭐ `right` IS `nullptr` RATHER THAN A REPEATED LEFT CHANNEL, so a mono cabinet says so in the table instead
+ * of the runtime having to compare arrays to find out. ⚠️ AND IT IS A JS-TIME CHOICE, NOT A C++ `#if`: a mono
+ * cabinet must emit no `morpheus_cab_r` TEXT AT ALL — the guard asserts exactly that — and the preprocessor
+ * cannot un-print a symbol whose name the generator already wrote. ⚠️ `nullptr` and not `NULL` because this
+ * file includes only `CabIr.h`, which pulls in no `<stddef.h>`, so `NULL` is the one word that does not exist
+ * here; found by compiling the emitted rig rather than by reading it.
+ */
+function cabRigTableCpp(rig) {
+  const rows = rig.map((cab, i) => {
+    const right = cab.channels[1] ? cabArrayName(i, 'r') : 'nullptr';
+    const taps = i === 0 ? 'MORPHEUS_CAB_TAPS' : `MORPHEUS_CAB_TAPS_${i + 1}`;
+    const channels = i === 0 ? 'MORPHEUS_CAB_CHANNELS' : `MORPHEUS_CAB_CHANNELS_${i + 1}`;
+    return `   { ${cString(cab.name)}, ${cabArrayName(i, 'l')}, ${right}, (unsigned int)${taps}, ${channels} },`;
+  }).join('\n');
+  return `#define MORPHEUS_RIG_CABS ${rig.length}
+static const struct { const char *name; const float *left; const float *right; unsigned int taps; int channels; } kMorpheusRigCabs[] = {
+${rows}
+};
+`;
+}
+
+/**
+ * EVERY impulse response this project carries, in the order the rig should offer them.
+ *
+ * The same contract as `resolveModels`, because a rig has two halves and they must behave the same way: the
+ * finder's order is the selector's order, and a `.wav` that is present but unusable stays a MEMBER carrying a
+ * warning rather than quietly vanishing. `cabDataSourceAll` is what drops it from the emitted taps. A player
+ * whose second mic capture is a silent file, or a 5.1 WAV this plugin cannot convolve, needs to be told — not
+ * left counting arrays in a generated header.
+ */
+export function resolveCabs(files, manifest = {}) {
+  return findCabPaths(files, manifest).map(({ path, name }) => resolveCabMember(files, path, name));
+}
+
+/** The FIRST impulse response — what this function has always returned. See resolveCabs. */
+export function resolveCab(files, manifest = {}) {
+  const all = resolveCabs(files, manifest);
+  return all.length ? all[0] : { path: null, info: null, channels: null, warnings: [] };
+}
+
+/**
+ * One member of the cabinet rig, in the shape the singular resolver has always returned.
  *
  * Returns the decoded, normalised, truncated channel data as well as the facts, because the emitter and the
  * proof both need the numbers and neither should decode the file a second time.
  */
-export function resolveCab(files, manifest = {}) {
-  const path = findCabPath(files, manifest);
-  if (!path) return { path: null, info: null, channels: null, warnings: [] };
+function resolveCabMember(files, path, name) {
   const file = files.find((f) => f.path === path);
 
   let wav;
   try {
     wav = decodeCab(file.content, file.encoding || 'base64');
   } catch (err) {
-    return { path, info: null, channels: null, warnings: [`${path} is not a readable WAV file — ${String(err.message).split('\n')[0].slice(0, 120)}. Building the plugin WITHOUT a cabinet.`] };
+    return { path, name, info: null, channels: null, warnings: [`${path} is not a readable WAV file — ${String(err.message).split('\n')[0].slice(0, 120)}. It is left out of the rig; a rig with no usable cabinet convolves nothing.`] };
   }
   const inspected = inspectCab(wav);
   if (!inspected.ok) {
-    return { path, info: null, channels: null, warnings: [`${path} is not a usable cabinet — it ${inspected.reason}. Building the plugin WITHOUT a cabinet.`] };
+    return { path, name, info: null, channels: null, warnings: [`${path} is not a usable cabinet — it ${inspected.reason}. It is left out of the rig; a rig with no usable cabinet convolves nothing.`] };
   }
 
   const warnings = [];
@@ -247,6 +349,7 @@ export function resolveCab(files, manifest = {}) {
   };
   return {
     path,
+    name,
     channels: wav.data.slice(0, inspected.channels).map(normalise),
     info: {
       path,
@@ -285,7 +388,7 @@ export function resolveCab(files, manifest = {}) {
  * this lands a real guitar DI at **-1.0 dB**: no clip, and nothing to turn down before the plugin is usable.
  *
  * Summed across the channels that are actually baked, so a stereo IR keeps a broadband signal's level as a
- * PAIR rather than per channel — see `resolveCab`, which divides every channel by this one number so the
+ * PAIR rather than per channel — see `resolveCabMember`, which divides every channel by this one number so the
  * stereo image is untouched.
  *
  * Returns 1 for silence, which `inspectCab` has already refused — the guard is for the caller's sake.
