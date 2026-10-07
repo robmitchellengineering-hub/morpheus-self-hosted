@@ -255,6 +255,11 @@ const unsigned long morpheus_model_size = sizeof(morpheus_model_data);
  * a new code path would only be trustworthy if the two paths happened to agree. Appending to the singular
  * output makes that agreement structural: nothing above the extras can move without moving them.
  *
+ * ⭐ AND FOR A RIG OF ONE THIS RETURNS THE SINGULAR OUTPUT ENTIRELY — NO TABLE. There is nothing to select
+ * between, so a one-row table would be dead weight; more than that, emitting it would move a one-capture
+ * project's bytes away from what every existing proof measured, which is the one thing this change must not
+ * do. `morpheus_model_data` is the runtime's answer for N == 1; the table is for N >= 2.
+ *
  * ⚠️ A MEMBER WITH NO `info` IS DROPPED HERE, AND THIS IS THE ONLY PLACE IT CAN BE. `resolveModels` keeps it
  * as a member precisely so its warning reaches the scaffold; there are no bytes to embed, and a zero-length
  * array in its place would hand `nam::get_dsp` an empty document for a `.nam` that is sitting right there in
@@ -269,6 +274,9 @@ const unsigned long morpheus_model_size = sizeof(morpheus_model_data);
 export function modelDataSourceAll(models) {
   const rig = (Array.isArray(models) ? models : []).filter((m) => m && m.info);
   if (!rig.length) return modelDataSource(null, null);
+  // ⭐ N == 1 IS THE SINGULAR EMISSION, VERBATIM. A table with one entry is a table nobody can select from, and
+  // emitting it would move a one-capture project's source. Only a rig actually offering a choice gets a table.
+  if (rig.length === 1) return modelDataSource(rig[0].info, rig[0].text);
 
   const extras = rig.slice(1).map((m, i) => modelExtraCpp(m, i + 2)).join('\n');
   return `${modelDataSource(rig[0].info, rig[0].text)}
@@ -305,9 +313,10 @@ const unsigned long morpheus_model_size_${index} = sizeof(${array});
  * which is the only shape that works both in `init()`, where allocating is allowed, and on the audio thread,
  * where it is not. Each entry is the display name a player reads and the array it selects.
  *
- * ⚠️ IT IS EMITTED INSIDE `#if MORPHEUS_HAS_MODEL`, the same guard the extras are under, so a project with no
- * capture generates exactly the translation unit it generated before the rig existed — table and all. That is
- * the whole reason the no-model branch above returns the singular function's output untouched.
+ * ⚠️ IT IS EMITTED ONLY FOR A RIG OF TWO OR MORE, and inside `#if MORPHEUS_HAS_MODEL`, the same guard the
+ * extras are under. A project with no capture, and a project with exactly one, therefore generate exactly the
+ * translation unit they generated before the rig existed — see `modelDataSourceAll`. That byte-identity is the
+ * whole point; a one-row table would buy nothing and cost it.
  */
 function modelRigTableCpp(rig) {
   const rows = rig.map((m, i) => {

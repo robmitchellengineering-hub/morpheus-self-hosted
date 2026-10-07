@@ -221,6 +221,11 @@ ${right}#endif
  * project's source is byte for byte what it always was. Every proof taken of the plugin's speaker — the
  * measured pink-noise gain, the null against the JavaScript reference — measured that text.
  *
+ * ⭐ AND A RIG OF ONE IS THE SINGULAR EMISSION ENTIRELY — NO TABLE. With one speaker there is nothing to
+ * choose between, and the table is exactly the bytes that would stop a one-cabinet project's source matching
+ * what every existing proof measured. `morpheus_cab_l` is the runtime's answer for M == 1; the table is for
+ * M >= 2.
+ *
  * ⚠️ AN UNUSABLE CABINET IS DROPPED, NOT EMBEDDED EMPTY. `resolveCabs` keeps it as a member so its warning
  * reaches the scaffold; a zero-length tap array would convolve the signal with nothing and read to the user as
  * a cabinet that loads and does not work — which is worse than the warning that says it was left out.
@@ -229,6 +234,8 @@ export function cabDataSourceAll(cabs) {
   const rig = (Array.isArray(cabs) ? cabs : [])
     .filter((c) => c && c.info && Array.isArray(c.channels) && c.channels.length);
   if (!rig.length) return cabDataSource(null, null);
+  // ⭐ M == 1 IS THE SINGULAR EMISSION, VERBATIM — the cab half of the same rule, for the same reason.
+  if (rig.length === 1) return cabDataSource(rig[0].info, rig[0].channels);
 
   const extras = rig.slice(1).map((c, i) => cabExtraCpp(c, i + 2)).join('\n');
   return `${cabDataSource(rig[0].info, rig[0].channels)}
@@ -265,7 +272,7 @@ ${cabTapsCpp(cabArrayName(index - 1, 'l'), cab.channels[0], taps)}${right}
 }
 
 /**
- * THE CABINET RIG, in selector order.
+ * THE CABINET RIG, in selector order — emitted only when there are two or more speakers to select between.
  *
  * ⭐ `right` IS `nullptr` RATHER THAN A REPEATED LEFT CHANNEL, so a mono cabinet says so in the table instead
  * of the runtime having to compare arrays to find out. ⚠️ AND IT IS A JS-TIME CHOICE, NOT A C++ `#if`: a mono
