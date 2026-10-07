@@ -23,6 +23,7 @@
 // is not a detail: an exponential sweep's HARMONIC DISTORTION products arrive BEFORE the linear response in
 // the deconvolved output, so a window can throw them away. A linear sweep puts them on top of the IR, where
 // nothing can separate them.
+import { cabTapGain, MAX_CAB_TAPS } from '../cabIr.js';
 import { fftInPlace, nextPow2 } from './dsp.js';
 import { logSweep } from './signals.js';
 
@@ -216,13 +217,23 @@ export function responseDelay({ latencySamples, sweepAt, size }) {
   return ((latencySamples - sweepAt + size / 2) % size) - size / 2;
 }
 
-/** Normalise to a peak of 1.0, as `cabIr.js` does at bake time — and say what the peak was. */
-export function normaliseIr(ir) {
+/**
+ * Scale an IR to the SAME level rule the bake uses — `cabIr.js`'s `cabTapGain` is the one definition, and this
+ * calls it rather than restating it. And say what the file's own peak was.
+ *
+ * ⚠️ IT USED TO NORMALISE TO A PEAK OF 1.0, "as `cabIr.js` does at bake time" — which was true, and was the
+ * bug: a peak says nothing about loudness, so a captured 4x12 came out of `ir make` at whatever level its
+ * tallest sample implied and the plugin baked it +15 dB loud. Following the bake is still the right idea; it
+ * just has to follow the bake's CURRENT rule, which is the gain pink noise sees. The taps are capped at the
+ * same length the bake uses, so a long capture and the plugin agree about what was normalised.
+ */
+export function normaliseIr(ir, sampleRate = IR_SWEEP.sampleRate) {
   let peak = 0;
   for (const v of ir) peak = Math.max(peak, Math.abs(v));
   if (!(peak > 0)) return { ir: Float64Array.from(ir), peak: 0, normalised: false };
+  const gain = cabTapGain([ir], MAX_CAB_TAPS, sampleRate);
   const out = new Float64Array(ir.length);
-  for (let i = 0; i < ir.length; i++) out[i] = ir[i] / peak;
+  for (let i = 0; i < ir.length; i++) out[i] = ir[i] / gain;
   return { ir: out, peak, normalised: true };
 }
 

@@ -26,7 +26,7 @@ import { generatedLinkFlags, generatedSources } from './audio-nam-render-check.m
 import { toneDesign, toneProcess, toneResponseDb } from '../server/src/lib/audio/toneStack.js';
 import { convolveDirect, rms } from '../server/src/lib/audio/dsp.js';
 import { decodeWav } from '../server/src/lib/audio/wav.js';
-import { MAX_CAB_TAPS } from '../server/src/lib/cabIr.js';
+import { cabTapGain, MAX_CAB_TAPS } from '../server/src/lib/cabIr.js';
 import { AMP_CHAIN, GATE_OFF_DB, chainParams } from '../server/src/lib/ampChain.js';
 import { scaffoldPlugin } from '../server/src/lib/audioPluginProject.js';
 import { clapIncludes, compareToReference, readMraw, writeMraw } from './audio-nam-render-check.mjs';
@@ -118,9 +118,12 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
     if (!cab) return null;
     const wav = decodeWav(readFileSync(cab));
     const raw = wav.data[0];
-    let peak = 0;
-    for (const v of raw) peak = Math.max(peak, Math.abs(v));
-    return Float64Array.from(raw.subarray(0, MAX_CAB_TAPS), (v) => v / peak);
+    // ⚠️ THE SAME NORMALISATION THE BAKE USES, FROM THE ONE FUNCTION THAT DEFINES IT. This divided by the
+    // peak as well, so the expectation and the plugin would have gone on agreeing with each other at +15 dB —
+    // two implementations of one level rule, both wrong together, which is exactly what a shared function is
+    // for. `cabTapGain` sums the squares across the channels that get BAKED, so the slice matches resolveCab.
+    const gain = cabTapGain(wav.data.slice(0, Math.min(wav.channels ?? 1, 2)), MAX_CAB_TAPS);
+    return Float64Array.from(raw.subarray(0, MAX_CAB_TAPS), (v) => v / gain);
   })();
   const throughChain = (x) => (cabTaps ? convolveDirect(cabTaps, x).subarray(0, dry.length) : x);
 
@@ -219,7 +222,10 @@ export function ampChainCheck({ pluginDir, clapInclude = null, work, sampleRate 
     // changes the level — a cabinet does, and so does a tone setting — so an absolute comparison reports the
     // SPEAKER as a gate failure. What is the gate's is the difference between how much the quiet part moved
     // and how much the loud part did. Found by running this with a cabinet in the chain, where the loud
-    // section read +21 dB and the check called a working gate a volume control.
+    // section read +21 dB — back when a cabinet was peak-normalised and really did add that much — and the
+    // check called a working gate a volume control. The cabinet is level-matched now (see lib/cabIr.js), so
+    // that particular number is gone, but the reason the comparison is RELATIVE has not changed: any stage
+    // with gain in it moves the loud section, and the gate's job is the difference between the two sections.
     gateRow = { thresholdDb, loudChangeDb, quietChangeDb, relativeDb: quietChangeDb - loudChangeDb };
   }
   return { rows, cabRow, gateRow, sampleRate, frames: dry.length, settledFrom: from };
@@ -366,8 +372,8 @@ if (isMain) {
     const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');
     console.log(`[amp-chain]   ${'gate'.padEnd(11)} at ${r.gateRow.thresholdDb} dB: the quiet section is ${f(r.gateRow.relativeDb)} below the loud one (loud moved ${f(r.gateRow.loudChangeDb)}, the chain's own level)`);
     // ⚠️ AND THE ABSOLUTE LEVELS ARE NOT ASSERTED, only the difference. A chain with a cabinet in it moves the
-    // loud section by +21 dB, which says nothing about the gate — asserting on it was this check calling a
-    // speaker a volume control.
+    // loud section at all (a cabinet is level-matched now, but a tone setting or a drive is not), which says
+    // nothing about the gate — asserting on it was this check calling a speaker a volume control.
     if (!(r.gateRow.relativeDb < -20)) {
       console.error(`[amp-chain] x the gate did not close on the quiet section (${f(r.gateRow.relativeDb)} below the loud one)`);
       process.exit(1);

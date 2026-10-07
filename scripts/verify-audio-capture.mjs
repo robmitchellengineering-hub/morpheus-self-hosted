@@ -451,17 +451,28 @@ function recoveryError(got, want, start) {
 
 const cabinet = speakerLike();
 const take = convolve(irSweep, cabinet);
-const recovered = normaliseIr(deconvolve(take, irSweep, { taps: 2048 }).ir).ir;
-// ⚠️ ALIGNED AS THE WINDOW ALIGNS IT, and normalised on both sides. The window keeps a few samples before the
-// peak, and `ir make` normalises to a peak of 1.0 because a cabinet's absolute level is not the measurement —
-// the SHAPE is. Comparing raw amplitudes would report a scale factor as an error.
+// ⚠️ THE PRODUCT'S LEVEL RULE IS NOT A SHAPE RULE, SO THE COMPARISON PEAK-ALIGNS — IN THE TEST.
+// `normaliseIr` now scales to the gain pink noise sees (the bake's rule, see cabIr.js's `cabTapGain`), and two
+// DIFFERENT signals normalised that way do not land on the same number: one here is the cabinet, the other is
+// a slightly imperfect recovery of it, and their spectra differ enough to move the scale. `recoveryError`
+// compares amplitudes absolutely, so the two have to be brought to a common scale before it is asked anything.
+// That belongs HERE rather than in the product: a test bends its comparison to fit the rule, not the rule to
+// fit a comparison.
+const peakAlign = (a) => {
+  let p = 0;
+  for (const v of a) p = Math.max(p, Math.abs(v));
+  return p > 0 ? Float64Array.from(a, (v) => v / p) : a;
+};
+const recovered = peakAlign(normaliseIr(deconvolve(take, irSweep, { taps: 2048 }).ir).ir);
+// ⚠️ ALIGNED AS THE WINDOW ALIGNS IT. The window keeps a few samples before the peak, which is why the
+// comparison starts a few samples early.
 let cabinetPeak = 0;
 for (let i = 0; i < cabinet.length; i++) if (Math.abs(cabinet[i]) > Math.abs(cabinet[cabinetPeak])) cabinetPeak = i;
-const cabinetNorm = normaliseIr(cabinet).ir;
+const cabinetNorm = peakAlign(normaliseIr(cabinet).ir);
 check('⭐ a known cabinet comes back out of a take of it, to within a few percent',
   recoveryError(recovered, cabinetNorm, Math.max(0, cabinetPeak - 8)) < 0.05, true);
 check('…and the sweep has been REMOVED, not passed through — recovering the sweep is not recovering the cabinet',
-  recoveryError(recovered, normaliseIr(Float64Array.from({ length: 2048 }, (_, i) => irSweep[i + 24000] ?? 0)).ir, 0) > 0.5, true);
+  recoveryError(recovered, peakAlign(normaliseIr(Float64Array.from({ length: 2048 }, (_, i) => irSweep[i + 24000] ?? 0)).ir), 0) > 0.5, true);
 
 const offset = deconvolve(convolve(irSweep, cabinet), irSweep, { taps: 2048, preDelay: 0 });
 check('…and the response is located in the take rather than assumed to start at zero',
