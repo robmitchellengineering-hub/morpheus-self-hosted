@@ -115,7 +115,12 @@ check('⭐ the compile hydrates the bytes immediately BEFORE the pure scaffolder
   compile.indexOf('hydrateCabinets(projectFiles') > 0
   && compile.indexOf('hydrateCabinets(projectFiles') < compile.indexOf('adapter.scaffold('), true);
 check('…with a bounded fetch, so a hung download cannot stall a compile silently',
-  /AbortSignal\.timeout/.test(compile), true);
+  // ⚠️ THE BOUND MOVED WITH THE FETCHER, AND THAT IS THE POINT. It used to be a local `fetchStoredBytes` in
+  // compileProject.js; it is now `storage.js`'s, shared with the rig and board views, which decode a cabinet
+  // to say whether it will convolve. Asserting the old location would have pinned a spelling and gone red
+  // when the code got better — so this asserts the compile uses the SHARED fetcher AND that it is bounded.
+  /import \{ fetchStoredBytes \} from '\.\.\/storage\.js'/.test(compile)
+  && /AbortSignal\.timeout/.test(read('server/src/storage.js')), true);
 check('…and every refusal is a WARNING rather than a thrown compile',
   /for \(const w of hydrated\.warnings\) console\.warn/.test(compile), true);
 const dialog = read('src/components/matrix/CabinetDialog.jsx');

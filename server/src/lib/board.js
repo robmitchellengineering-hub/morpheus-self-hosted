@@ -478,8 +478,40 @@ export function boardBundle(board) {
 }
 
 /** What the UI needs to draw a board: the arrangement, the catalogue, and what is wrong with it. */
-export function boardView(board, { modelFile = null, cabFile = null, manifest = {} } = {}) {
+export function boardView(board, { modelFile = null, cabFile = null, manifest = {}, rig = null } = {}) {
   const check = validateBoard(board, { modelFile, cabFile });
+  // ⭐ THE RIG'S TWO SELECTORS, DRAWN WHERE THE PLUGIN DRAWS THEM.
+  //
+  // The plugin's Amp model and Cabinet blocks each carry a choice control — Capture, Speaker — whose members
+  // come from the rig table (`rigSelectors` in ampChain.js, grouped by `module`). The board editor drew those
+  // two blocks with no controls at all, so the app's picture of the plugin was missing two controls the
+  // plugin actually has. This is the same reading, from the same finders: a capture the generator left out of
+  // the table cannot be offered here either.
+  //
+  // ⚠️ IT IS A DEFAULT, NOT A VALUE THE BOARD SAVES. The selector's compile-time default is always the first
+  // usable member (`rigSelectors` sets `def: 0`), and the member a player picks is runtime state the plugin
+  // keeps — so this row says which members exist and that the plugin opens on the first. Editing it here
+  // would be writing a value the scaffold does not read.
+  // ⚠️ ONLY THE TWO BLOCKS THE RIG BELONGS TO. The first version read "models for a model, cabs for
+  // everything else", which put the Speaker row under Input, the gate and the tone stack too — a drawing of
+  // three cabinets in a signal path that has one. Found by RENDERING the dialog and looking: no compile and
+  // no audio proof can see a control attached to the wrong block.
+  const selectorFor = (kind) => {
+    if (kind !== 'model' && kind !== 'cab') return null;
+    const list = Array.isArray(rig?.[kind === 'model' ? 'models' : 'cabs']) ? rig[kind === 'model' ? 'models' : 'cabs'] : [];
+    if (list.length < 2) return null;
+    return {
+      key: kind === 'model' ? 'model_select' : 'cab_select',
+      name: kind === 'model' ? 'Capture' : 'Speaker',
+      role: 'select',
+      select: true,
+      def: 0,
+      value: 0,
+      min: 0,
+      max: list.length - 1,
+      options: list.map((m) => m.name),
+    };
+  };
   return {
     board: boardJson(board),
     blocks: (board?.items || []).map((it) => {
@@ -493,10 +525,10 @@ export function boardView(board, { modelFile = null, cabFile = null, manifest = 
         needs: entry?.needs || null,
         pinned: entry?.pinned || null,
         enabled: it.enabled !== false,
-        controls: kindControls(it.kind, manifest).map((c) => ({
+        controls: [...kindControls(it.kind, manifest).map((c) => ({
           key: c.key, name: c.name, min: c.min, max: c.max, def: c.def,
           value: Number.isFinite(Number(it.values?.[c.key])) ? Number(it.values[c.key]) : c.def,
-        })),
+        })), selectorFor(it.kind)].filter(Boolean),
       };
     }),
     catalogue: BLOCK_KINDS.map((k) => ({

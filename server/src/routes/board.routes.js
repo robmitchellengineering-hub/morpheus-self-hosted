@@ -17,8 +17,11 @@
 import { Router } from 'express';
 import { prisma } from '../db.js';
 import { requireAuth, blockWidget } from '../auth.js';
-import { PLUGIN_MANIFEST, boardFor, manifestJson, readManifest } from '../lib/audioPluginProject.js';
+import { PLUGIN_MANIFEST, boardFor, manifestWith, readManifest } from '../lib/audioPluginProject.js';
 import { boardJson, boardView, nextInstanceId, validateBoard } from '../lib/board.js';
+import { hydrateCabinets } from '../lib/cabinetFile.js';
+import { rigView } from '../lib/rigProject.js';
+import { fetchStoredBytes } from '../storage.js';
 
 const router = Router();
 
@@ -32,30 +35,32 @@ async function ownedProject(userId, projectId) {
 
 const pluginFiles = (rows) => rows
   .filter((r) => !r.path.startsWith('_compiled/'))
-  .map((r) => ({ path: r.path, content: r.content ?? '' }));
+  .map((r) => ({ path: r.path, content: r.content ?? '', encoding: r.encoding || undefined, file_url: r.file_url || undefined }));
 
 const audioFile = (rows, ext) => (rows.find((r) => new RegExp(`\\.${ext}$`, 'i').test(r.path))?.path || null);
 
 /**
- * The manifest text to write: the user's own file with `board` set, or a complete one if there is no file.
+ * The board as the app draws it — with the rig's own two selectors attached to the blocks they choose.
  *
- * Every other key is left exactly as it was, including any the generator does not know about — the manifest
- * is documented as the user's to edit, and a save that quietly removed a key they added would be worse than
- * one that refused.
+ * ⚠️ THE APP AND THE PANEL HAVE TO NAME THE SAME MEMBERS. The plugin's Amp model and Cabinet blocks each
+ * carry a choice control (Capture, Speaker) drawn from the rig table; the board editor drew those two blocks
+ * with no controls at all, so the app's picture of the plugin was missing two controls the plugin has. They
+ * come from `rigView` — the same finders the emitted table comes from — so a capture the generator dropped
+ * cannot be offered by the editor either.
+ *
+ * ⚠️ AND IT HYDRATES FIRST, exactly as the rig route and the compile do. A cabinet added through the app
+ * keeps its audio in storage with a preview line in `content`, so a view that skipped `hydrateCabinets` would
+ * count that mic as unusable and the Speaker row would vanish from a project that has one.
  */
-function manifestWithBoard(existingContent, manifest, board) {
-  if (existingContent) {
-    try {
-      const parsed = JSON.parse(existingContent);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return `${JSON.stringify({ ...parsed, board }, null, 2)}\n`;
-      }
-    } catch {
-      // A manifest that will not parse is REPLACED rather than preserved around — there is nothing to
-      // preserve, and leaving the broken text in place would mean the board saved and the build ignoring it.
-    }
-  }
-  return manifestJson(manifest, board);
+async function boardForView(rows, board, manifest) {
+  const { files } = await hydrateCabinets(pluginFiles(rows), { fetchBytes: fetchStoredBytes });
+  const rig = rigView(files, manifest);
+  return boardView(board, {
+    modelFile: audioFile(rows, 'nam'),
+    cabFile: audioFile(rows, 'wav'),
+    manifest,
+    rig: rig.selectors,
+  });
 }
 
 // ── Read ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -66,11 +71,7 @@ router.get('/:projectId', async (req, res) => {
     const files = pluginFiles(rows);
     const manifest = readManifest(files);
     const board = boardFor(files);
-    res.json(boardView(board, {
-      modelFile: audioFile(rows, 'nam'),
-      cabFile: audioFile(rows, 'wav'),
-      manifest,
-    }));
+    res.json(await boardForView(rows, board, manifest));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -108,11 +109,9 @@ router.put('/:projectId', async (req, res) => {
 
     const saved = boardJson(incoming);
     const existing = rows.find((r) => r.path === PLUGIN_MANIFEST);
-    // ⚠️ AN EXISTING MANIFEST IS EDITED, NOT REGENERATED. `readManifest` keeps the fields the generator uses
-    // and nothing else, so writing the normalised manifest back would silently drop any key a user added —
-    // and this file is documented as theirs to edit. The board key is set on the file they have; a project
-    // without one gets the complete manifest the scaffolder would have written.
-    const content = manifestWithBoard(existing?.content, manifest, saved);
+    // ⚠️ AN EXISTING MANIFEST IS EDITED, NOT REGENERATED — see `manifestWith`, which the rig route shares.
+    // Two writers for one file is how a generated manifest and an edited one drift apart.
+    const content = manifestWith(existing?.content, manifest, { board: saved });
     if (existing) {
       await prisma.projectFile.update({ where: { id: existing.id }, data: { content, language: 'json' } });
     } else {
@@ -122,11 +121,7 @@ router.put('/:projectId', async (req, res) => {
         },
       });
     }
-    res.json(boardView(incoming, {
-      modelFile: audioFile(rows, 'nam'),
-      cabFile: audioFile(rows, 'wav'),
-      manifest: { ...manifest, board: saved },
-    }));
+    res.json(await boardForView(rows, incoming, { ...manifest, board: saved }));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }

@@ -40,6 +40,35 @@ function Control({ control, value, onChange }) {
   );
 }
 
+// ⭐ THE RIG'S SELECTOR, DRAWN WHERE THE PLUGIN DRAWS IT — under the block whose member it chooses.
+//
+// This row is NOT a control the board saves. The plugin's Capture/Speaker parameter is a runtime choice a
+// player makes in its own panel, and its compile-time default is always the first usable member — so what
+// this says is "these are the members, in this order, and the plugin opens on the first". Drawing it as a
+// slider (the shape every other row has) would be offering an edit that nothing reads.
+//
+// It exists for a concrete reason: the plugin's panel drew a choice control under Amp model and Cabinet and
+// this dialog drew those two blocks with no controls at all, so the app's picture of the plugin was missing
+// two controls the plugin has. Two surfaces, one signal path.
+function Choice({ control }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-[10px] text-primary/50 tracking-[0.2em] font-display w-16 shrink-0 pt-0.5">{control.name.toUpperCase()}</span>
+      <span className="flex-1 flex flex-wrap items-center gap-1">
+        {control.options.map((name, i) => (
+          <strong
+            key={`${name}-${i}`}
+            className={`text-[10px] font-normal px-1.5 py-0.5 border ${i === 0 ? 'border-primary/70 text-primary' : 'border-primary/20 text-ink-max'}`}
+            title={i === 0 ? 'The plugin opens on this one' : 'A player switches to this one in the plugin'}
+          >
+            {name}
+          </strong>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 export default function BoardDialog({ open, onClose, projectId }) {
   const [view, setView] = useState(null);
   const [items, setItems] = useState([]);
@@ -124,6 +153,14 @@ export default function BoardDialog({ open, onClose, projectId }) {
             defaults. Every block also gets its own On/Off switch inside the plugin, so a block switched off here
             can be turned on while you play — and a block switched off here still opens that way.
           </p>
+          <p>
+            The <span className="text-ink-strong">Amp model</span> and <span className="text-ink-strong">Cabinet</span> blocks
+            each name the captures and the mics this project offers, because that is what their own{' '}
+            <strong className="text-primary">Capture</strong> and <strong className="text-primary">Speaker</strong> controls in the
+            plugin choose between. The plugin opens on the first of each and a player switches the rest while playing;
+            which captures and mics there are — and what each is called — is the{' '}
+            <span className="text-ink-strong">RIG</span> dialog.
+          </p>
 
           {view === null && !err && <p className="text-ink-strong">Loading…</p>}
 
@@ -157,12 +194,16 @@ export default function BoardDialog({ open, onClose, projectId }) {
                     {(b.controls || []).length > 0 && (
                       <div className="space-y-1.5 pl-7">
                         {(b.controls || []).map((c) => (
-                          <Control
-                            key={c.key}
-                            control={c}
-                            value={Number.isFinite(Number(item.values?.[c.key])) ? Number(item.values[c.key]) : c.def}
-                            onChange={(v) => setValue(at, c.key, v)}
-                          />
+                          c.select ? (
+                            <Choice key={c.key} control={c} />
+                          ) : (
+                            <Control
+                              key={c.key}
+                              control={c}
+                              value={Number.isFinite(Number(item.values?.[c.key])) ? Number(item.values[c.key]) : c.def}
+                              onChange={(v) => setValue(at, c.key, v)}
+                            />
+                          )
                         ))}
                       </div>
                     )}

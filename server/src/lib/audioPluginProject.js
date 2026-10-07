@@ -161,6 +161,49 @@ export function manifestJson(manifest, board = null) {
 }
 
 /**
+ * The manifest text with a PATCH applied — the ONE writer for a user's own edits to the file.
+ *
+ * WHY IT IS SHARED. `morpheus.plugin.json` now has two editors in the app (the board and the rig) plus the
+ * scaffolder, so three writers for one file is exactly how a generated file and an edited file come to
+ * disagree about the same key. The board route grew the first version of this, and the rig route asked the
+ * same question — so it moved here rather than being copied, which is also what stops the two routes
+ * choosing different answers to "what happens to a key neither of them knows about".
+ *
+ * ⚠️ AN EXISTING MANIFEST IS EDITED, NEVER REGENERATED. `readManifest` keeps the fields the generator uses
+ * and nothing else, so writing the normalised manifest back would silently drop any key a user added — and
+ * this file is documented as theirs to edit. With no file at all there is nothing to preserve, so the
+ * complete manifest the scaffolder would have written is produced instead.
+ *
+ * ⚠️ THREE STATES PER KEY, AND THEY ARE NOT INTERCHANGEABLE: a value sets it, `null` REMOVES it (which is
+ * how a rig editor says "follow the project again"), and an absent key is left exactly as it was. `delete`
+ * rather than an empty value matters here because the finders read an empty `models`/`cabs` list as "did not
+ * ask" — writing `[]` would look like a decision and behave like the opposite.
+ */
+export function manifestWith(existingContent, manifest, patch = {}) {
+  const apply = (base) => {
+    const next = { ...base };
+    for (const [key, value] of Object.entries(patch || {})) {
+      if (value === null || value === undefined) delete next[key];
+      else next[key] = value;
+    }
+    return next;
+  };
+  if (existingContent) {
+    try {
+      const parsed = JSON.parse(existingContent);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return `${JSON.stringify(apply(parsed), null, 2)}\n`;
+      }
+    } catch {
+      // A manifest that will not parse is REPLACED rather than preserved around — there is nothing to
+      // preserve, and leaving the broken text in place would mean the edit saved and the build ignoring it.
+    }
+  }
+  const merged = apply(manifest);
+  return manifestJson(merged, merged.board || null);
+}
+
+/**
  * The board a project should OPEN with: its own when it has one, otherwise the arrangement it ALREADY builds.
  *
  * ⚠️ THE FALLBACK IS A READING, NOT A DEFAULT. A project that asked for the amp chain has to open showing the

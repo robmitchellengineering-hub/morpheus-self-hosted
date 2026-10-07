@@ -120,6 +120,29 @@ export async function downloadFile(fileUrl) {
   return readFile(path.join(LOCAL_ROOT, key));
 }
 
+/**
+ * Bytes from this server's OWN storage, with a timeout — the fetcher for a URL `isOwnStorageUrl` admitted.
+ *
+ * ⚠️ WHY BOTH BRANCHES EXIST, AND WHY IT IS SHARED. A relative `/uploads/…` is the LOCAL driver writing under
+ * this server's own data directory, and `fetch('/uploads/x')` cannot parse a relative URL at all — so a
+ * local install that hydrated a cabinet with the compile's own `fetch` got "Failed to parse URL" as a
+ * WARNING and baked in nothing. An absolute URL is either the S3/R2 bucket or this server's public origin,
+ * and both are reachable over HTTP. `downloadFile` alone is not enough either: with the local driver it
+ * resolves an absolute URL as a filesystem key.
+ *
+ * It lives here rather than beside a caller because two callers already need it — `compileProject` and the
+ * rig/board views, which decode a cabinet to say whether it will convolve — and a second copy of "how to get
+ * a stored file back" is how the app and the build come to disagree about the same cabinet.
+ */
+export async function fetchStoredBytes(fileUrl, { timeoutMs = 20_000 } = {}) {
+  const url = String(fileUrl || '');
+  if (!url) return null;
+  if (url.startsWith('/uploads/')) return downloadFile(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 export { LOCAL_ROOT };
 
 // ── Large-string offload pattern (ported from base44/shared/projectUtils.ts) ──
