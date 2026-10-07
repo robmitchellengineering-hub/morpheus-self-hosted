@@ -445,13 +445,18 @@ enum {
    MORPHEUS_BADGE_BOX = 0,     // outline, dim
    MORPHEUS_BADGE_BAR,         // filled, dim   — a panel recess, a grille line
    MORPHEUS_BADGE_DOT,         // filled circle, green — a knob, a speaker centre
-   MORPHEUS_BADGE_LAMP,        // filled circle, amber — the pilot light, and the one warm thing in it
-   MORPHEUS_BADGE_RING,        // outlined circle
+   MORPHEUS_BADGE_LAMP,        // filled circle, amber — the pilot light, and the middle pedal's knob
+   MORPHEUS_BADGE_RING,        // outlined circle, green
+   MORPHEUS_BADGE_CYAN,        // filled circle, cyan — the third pedal, so no two of them are the same colour
+   // ⚠️ A LINE, WHERE (x,y) IS ONE END AND (w,h) IS THE OFFSET TO THE OTHER — so w or h may be NEGATIVE, which
+   // is what lets the guitar run up to the right at 45 degrees. Axis-aligned rectangles cannot draw a diagonal,
+   // and a staircase of small boxes reads as a staircase.
+   MORPHEUS_BADGE_LINE,
 };
 typedef struct { short x, y, w, h; unsigned char kind; } morpheus_gui_badge_t;
 
 static const morpheus_gui_badge_t kMorpheusBadge[] = {
-   // the amp head: a panel recess with five knobs and a pilot light, and a grille under it
+   // ── the amp head: a panel recess with five knobs and a pilot light, and a grille under it ──
    {0, 0, 120, 50, MORPHEUS_BADGE_BOX},
    {4, 4, 112, 15, MORPHEUS_BADGE_BAR},
    {10, 9, 6, 6, MORPHEUS_BADGE_DOT},
@@ -463,12 +468,18 @@ static const morpheus_gui_badge_t kMorpheusBadge[] = {
    {6, 25, 108, 3, MORPHEUS_BADGE_BAR},
    {6, 32, 108, 3, MORPHEUS_BADGE_BAR},
    {6, 39, 108, 3, MORPHEUS_BADGE_BAR},
-   // the cabinet under it: grille cloth, one speaker
-   {14, 60, 92, 78, MORPHEUS_BADGE_BOX},
-   {18, 64, 84, 70, MORPHEUS_BADGE_BAR},
-   {35, 78, 50, 50, MORPHEUS_BADGE_RING},
-   {55, 98, 10, 10, MORPHEUS_BADGE_DOT},
-   // the pedalboard beside it: three pedals, each with a switch bar and a knob
+   // ── the cabinet: THE SAME WIDTH AS THE HEAD, and a QUAD — four speakers, not one ──
+   {0, 56, 120, 82, MORPHEUS_BADGE_BOX},
+   {4, 60, 112, 74, MORPHEUS_BADGE_BAR},
+   {12, 64, 34, 34, MORPHEUS_BADGE_RING},
+   {68, 64, 34, 34, MORPHEUS_BADGE_RING},
+   {12, 100, 34, 34, MORPHEUS_BADGE_RING},
+   {68, 100, 34, 34, MORPHEUS_BADGE_RING},
+   {24, 76, 10, 10, MORPHEUS_BADGE_DOT},
+   {80, 76, 10, 10, MORPHEUS_BADGE_DOT},
+   {24, 112, 10, 10, MORPHEUS_BADGE_DOT},
+   {80, 112, 10, 10, MORPHEUS_BADGE_DOT},
+   // ── the pedalboard: three pedals, and NO TWO THE SAME COLOUR ──
    {132, 100, 100, 38, MORPHEUS_BADGE_BOX},
    {138, 106, 26, 26, MORPHEUS_BADGE_BOX},
    {167, 106, 26, 26, MORPHEUS_BADGE_BOX},
@@ -477,8 +488,16 @@ static const morpheus_gui_badge_t kMorpheusBadge[] = {
    {175, 110, 10, 4, MORPHEUS_BADGE_BAR},
    {204, 110, 10, 4, MORPHEUS_BADGE_BAR},
    {146, 120, 8, 8, MORPHEUS_BADGE_DOT},
-   {175, 120, 8, 8, MORPHEUS_BADGE_DOT},
-   {204, 120, 8, 8, MORPHEUS_BADGE_DOT},
+   {175, 120, 8, 8, MORPHEUS_BADGE_LAMP},
+   {204, 120, 8, 8, MORPHEUS_BADGE_CYAN},
+   // ── THE GUITAR, leaning in the space above the board, up to the right at 45 degrees ──
+   // The neck first, so the body's outline closes over the end of it rather than the other way round — two
+   // lines, because a guitar neck has a fretboard edge and the two are what make it read as a neck.
+   {158, 82, 60, -60, MORPHEUS_BADGE_LINE},
+   {166, 84, 60, -60, MORPHEUS_BADGE_LINE},
+   {212, 12, 22, 13, MORPHEUS_BADGE_BOX},
+   {134, 62, 36, 36, MORPHEUS_BADGE_RING},
+   {147, 74, 10, 10, MORPHEUS_BADGE_DOT},
 };
 // sizeof, not a count written down twice: a primitive added to the table above cannot be left undrawn.
 #define MORPHEUS_BADGE_PRIMITIVES (sizeof(kMorpheusBadge) / sizeof(kMorpheusBadge[0]))
@@ -519,6 +538,8 @@ static NSColor *morpheusGroupText(void) { return [NSColor colorWithCalibratedRed
 // rather than decorating: the green is what a CONTROL is, so the thing that says where the signal goes next
 // has to be a different colour or the eye reads it as another control.
 static NSColor *morpheusAmber(void) { return [NSColor colorWithCalibratedRed:1.0 green:0.66 blue:0.12 alpha:1.0]; }
+// The third pedal's colour, so the three of them read as three pedals rather than as a row of the same thing.
+static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25 green:0.94 blue:1.0 alpha:1.0]; }
 
 @interface MorpheusPanel : NSView {
   const clap_plugin_t *_plugin;
@@ -690,10 +711,23 @@ static NSColor *morpheusAmber(void) { return [NSColor colorWithCalibratedRed:1.0
         NSRectFill(r);
         break;
       case MORPHEUS_BADGE_DOT:
-      case MORPHEUS_BADGE_LAMP: {
+      case MORPHEUS_BADGE_LAMP:
+      case MORPHEUS_BADGE_CYAN: {
         NSBezierPath *dot = [NSBezierPath bezierPathWithOvalInRect:r];
-        [(b->kind == MORPHEUS_BADGE_LAMP ? morpheusAmber() : morpheusGreen()) setFill];
+        NSColor *ink = b->kind == MORPHEUS_BADGE_LAMP ? morpheusAmber()
+                    : (b->kind == MORPHEUS_BADGE_CYAN ? morpheusCyan() : morpheusGreen());
+        [ink setFill];
         [dot fill];
+        break;
+      }
+      case MORPHEUS_BADGE_LINE: {
+        // (x,y) to (x+w, y+h) — and w is positive here while h is negative, which is the 45 degrees.
+        NSBezierPath *line = [NSBezierPath bezierPath];
+        [line moveToPoint:NSMakePoint(MORPHEUS_BADGE_X + b->x, MORPHEUS_BADGE_Y + b->y)];
+        [line lineToPoint:NSMakePoint(MORPHEUS_BADGE_X + b->x + b->w, MORPHEUS_BADGE_Y + b->y + b->h)];
+        [line setLineWidth:1.5];
+        [morpheusGreen() setStroke];
+        [line stroke];
         break;
       }
       case MORPHEUS_BADGE_RING: {
@@ -959,6 +993,7 @@ struct Panel {
    // The amber the signal path is drawn in: a box's outline when it is open or being dropped on, and the
    // connector between boxes.
    HBRUSH amber;
+   HBRUSH cyan;
 };
 
 const COLORREF kBg = RGB(10, 10, 11);
@@ -972,6 +1007,8 @@ const COLORREF kGroupText = RGB(107, 158, 112);
 // has to be a different colour or the eye reads it as another control. Cocoa's calibrated (1.0, 0.66, 0.12)
 // is this in 8 bits.
 const COLORREF kAmber = RGB(255, 168, 31);
+// The third pedal's colour — see kMorpheusBadge's MORPHEUS_BADGE_CYAN.
+const COLORREF kCyan = RGB(64, 240, 255);
 
 Panel *panel_of(const clap_plugin_t *plugin) { return (Panel *)morpheus_gui_state(plugin); }
 
@@ -1101,10 +1138,21 @@ void paint(HWND hwnd, Panel *p) {
       const morpheus_gui_badge_t *b = &kMorpheusBadge[bi];
       const int bx = MORPHEUS_BADGE_X + b->x, by = MORPHEUS_BADGE_Y + b->y;
       if (b->kind == MORPHEUS_BADGE_BAR) { fill(dc, p->dim, bx, by, b->w, b->h); continue; }
-      if (b->kind == MORPHEUS_BADGE_DOT || b->kind == MORPHEUS_BADGE_LAMP) {
-         HGDIOBJ oldBrush = SelectObject(dc, b->kind == MORPHEUS_BADGE_LAMP ? p->amber : p->green);
+      if (b->kind == MORPHEUS_BADGE_DOT || b->kind == MORPHEUS_BADGE_LAMP || b->kind == MORPHEUS_BADGE_CYAN) {
+         HGDIOBJ oldBrush = SelectObject(dc, b->kind == MORPHEUS_BADGE_LAMP ? p->amber
+                                                : (b->kind == MORPHEUS_BADGE_CYAN ? p->cyan : p->green));
          Ellipse(dc, bx, by, bx + b->w, by + b->h);
          SelectObject(dc, oldBrush);
+         continue;
+      }
+      if (b->kind == MORPHEUS_BADGE_LINE) {
+         // GDI draws a diagonal, so the guitar needs no staircase — MoveToEx/LineTo, and the pen owns the width.
+         HPEN linePen = CreatePen(PS_SOLID, 2, kGreen);
+         HGDIOBJ oldLinePen = SelectObject(dc, linePen);
+         MoveToEx(dc, bx, by, NULL);
+         LineTo(dc, bx + b->w, by + b->h);
+         SelectObject(dc, oldLinePen);
+         DeleteObject(linePen);
          continue;
       }
       HPEN pen = CreatePen(PS_SOLID, b->kind == MORPHEUS_BADGE_RING ? 2 : 1,
@@ -1306,6 +1354,7 @@ bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) 
    p->dim = CreateSolidBrush(kDim);
    p->green = CreateSolidBrush(kGreen);
    p->amber = CreateSolidBrush(kAmber);
+   p->cyan = CreateSolidBrush(kCyan);
    p->font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                          CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
    p->fontBold = CreateFontW(-14, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
@@ -1324,6 +1373,7 @@ void gui_destroy(const clap_plugin_t *plugin) {
    if (p->dim) DeleteObject(p->dim);
    if (p->green) DeleteObject(p->green);
    if (p->amber) DeleteObject(p->amber);
+   if (p->cyan) DeleteObject(p->cyan);
    delete p;
    morpheus_gui_set_state(plugin, nullptr);
 }
@@ -1433,6 +1483,7 @@ struct Panel {
    unsigned long bg, green, dim, text, group;
    // The amber the signal path is drawn in, allocated beside the other colours in gui_set_parent.
    unsigned long amber;
+   unsigned long cyan;
    std::thread thread;
    std::atomic<bool> running;
    int drag;
@@ -1563,9 +1614,17 @@ void paint(Panel *p) {
          XFillRectangle(p->dpy, p->win, p->gc, bx, by, (unsigned)b->w, (unsigned)b->h);
          continue;
       }
-      if (b->kind == MORPHEUS_BADGE_DOT || b->kind == MORPHEUS_BADGE_LAMP) {
-         XSetForeground(p->dpy, p->gc, b->kind == MORPHEUS_BADGE_LAMP ? p->amber : p->green);
+      if (b->kind == MORPHEUS_BADGE_DOT || b->kind == MORPHEUS_BADGE_LAMP || b->kind == MORPHEUS_BADGE_CYAN) {
+         XSetForeground(p->dpy, p->gc, b->kind == MORPHEUS_BADGE_LAMP ? p->amber
+                                        : (b->kind == MORPHEUS_BADGE_CYAN ? p->cyan : p->green));
          XFillArc(p->dpy, p->win, p->gc, bx, by, (unsigned)b->w, (unsigned)b->h, 0, 360 * 64);
+         continue;
+      }
+      if (b->kind == MORPHEUS_BADGE_LINE) {
+         XSetForeground(p->dpy, p->gc, p->green);
+         XSetLineAttributes(p->dpy, p->gc, 2, LineSolid, CapButt, JoinMiter);
+         XDrawLine(p->dpy, p->win, p->gc, bx, by, bx + b->w, by + b->h);
+         XSetLineAttributes(p->dpy, p->gc, 1, LineSolid, CapButt, JoinMiter);
          continue;
       }
       XSetForeground(p->dpy, p->gc, b->kind == MORPHEUS_BADGE_RING ? p->green : p->dim);
@@ -1783,6 +1842,7 @@ bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
    // ⭐ THE AMBER for the signal path and the open box's outline — Cocoa's calibrated (1.0, 0.66, 0.12) in 8
    // bits. It has to differ from the green a CONTROL is, or the eye reads the signal path as a control.
    p->amber = colour(p->dpy, "#ffa81f", WhitePixel(p->dpy, screen));
+   p->cyan = colour(p->dpy, "#40f0ff", WhitePixel(p->dpy, screen));
    p->win = XCreateSimpleWindow(p->dpy, parent, 0, 0, MORPHEUS_PANEL_WIDTH, morpheus_gui_height(p->plugin, p->params), 0,
                                 p->bg, p->bg);
    if (!p->win) return false;
