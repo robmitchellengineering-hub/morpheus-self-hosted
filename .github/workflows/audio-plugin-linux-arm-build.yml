@@ -61,6 +61,27 @@ jobs:
         with:
           node-version: '22'
 
+      # ⭐ THE NEURAL-ENGINE CHECKOUT IS CACHED, BECAUSE ITS `Dependencies/eigen` SUBMODULE IS ON GITLAB.
+      # Eigen is pinned by NAMCore's own tree at the engine pin (both hashes are in the key), so the tree a
+      # clone produces is a permanent, byte-identical object — re-fetching it every dispatch buys nothing and
+      # occasionally fails: GitLab intermittently answers "GitLab is currently unable to handle this request
+      # due to load", and THIS runner died on exactly that on 2026-10-07 (with Windows). The cache is restored
+      # ONCE per job, and this job runs the modelled build four times; the runner script reuses the checkout
+      # only after verifying HEAD is the pinned commit and the eigen submodule is at the commit NAMCore pins
+      # for it. Anything that does not verify is cleared and cloned as before, so a cold or stale cache cannot
+      # change what is built — it can only be slower. ⚠️ The bench below clones its OWN `bench-namcore` from
+      # the default branch and is deliberately NOT this cache: it measures whatever `main` is, so pointing it
+      # at the pin would change what it measures, and that is a separate decision from this one.
+      # ⚠️ THE KEY CARRIES BOTH PINS. The engine pin alone would serve an old eigen tree after NAMCore moved
+      # its submodule; the eigen pin alone would not move when NAMCore did. Moving either one must miss.
+      # ⚠️ AND NO `restore-keys`: a stale entry can never be reused (verification rejects a different pin), so
+      # a partial restore would only download bytes that are then deleted.
+      - name: Cache the neural engine checkout (its eigen submodule is on GitLab)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/namcore
+          key: namcore-${{ runner.os }}-0b3d3c9-bc3b39870ecb690a623a3f49149a358b95c5781d
+
       # Everything else — the apt packages, the wrapper clone, configure, the three builds, the ELF and
       # AArch64 assertions and the packaging — is the target's own step list, executed by this script. See
       # its header for why it does not re-type a single command.

@@ -26,6 +26,7 @@ import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/aud
 import { namRenderCheck } from './audio-nam-render-check.mjs';
 import { ampChainCheck, orderCheck, toggleCheck } from './audio-amp-chain-check.mjs';
 import { demoManifest, demoRigSeed } from './lib/pluginDemo.mjs';
+import { engineCheckoutVerdict } from './lib/engineCache.mjs';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
 
@@ -49,22 +50,51 @@ const OUT = process.env.AUDIO_PLUGIN_BUILD_DIR || join(RUNNER_TEMP, 'audio-plugi
 mkdirSync(OUT, { recursive: true });
 log(`platform ${process.platform}/${process.arch} · building in ${OUT}`);
 
-// ── 0. Make the job look like a fresh runner ────────────────────────────────────────────────────────────
+// ── 0. Make the job look like a fresh runner, except for the one checkout worth keeping ──────────────────
 // THE STEPS CLONE INTO $RUNNER_TEMP AND `git clone` REFUSES A DIRECTORY THAT EXISTS — deliberately, and that
 // refusal is worth keeping: a clone that reused whatever was already there would silently build against a
-// different revision than the pin. But this script is run TWICE in one job now (once for the gain stage, once
-// with a model), and the second run died on
+// different revision than the pin. But this workflow runs the modelled build several times in one job (the
+// gain stage has no engine, then the model, the A2 container, the chain and the demo rig each do), and a
+// later run died on
 //
 //   fatal: destination path '/home/runner/work/_temp/clap-wrapper' already exists and is not an empty directory
 //
-// which is my workflow's fault rather than the steps'. So the two third-party checkouts are cleared here and
-// said out loud, which keeps the refusal and still lets one job prove both shapes.
-for (const dir of ['clap-wrapper', 'namcore']) {
-  const stale = join(RUNNER_TEMP, dir);
-  if (existsSync(stale)) {
-    log(`clearing ${stale} so the steps behave as they would on a fresh runner`);
-    rmSync(stale, { recursive: true, force: true });
+// which is my workflow's fault rather than the steps'. So `clap-wrapper` is still cleared here and said out
+// loud, which keeps the refusal and still lets one job prove every shape.
+//
+// ⭐ `namcore` IS NOW CACHED, AND IT IS VERIFIED RATHER THAN CLEARED. Its `Dependencies/eigen` submodule is
+// hosted on GITLAB, which intermittently answers "GitLab is currently unable to handle this request due to
+// load" — two of the three runners died on exactly that on 2026-10-07 (this one and Windows), and both
+// passed when re-dispatched, because the pin never changes and every build re-fetched a permanently-fixed
+// commit from an unreliable host. The three workflows restore $RUNNER_TEMP/namcore with `actions/cache`,
+// keyed on the engine pin AND the eigen pin. That is worth nothing if a stale tree is reused, so it is
+// reused ONLY when it verifies: HEAD is the pinned commit and the eigen submodule is the commit NAMCore pins
+// for it, header present. The rule the old comment defended still holds — a checkout from a different
+// revision is worse than the outage this fixes — and it holds because anything that does not verify is
+// cleared and cloned exactly as it is today. A cold cache is slower, never wrong, and can still hit GitLab;
+// the fallback is deliberately intact. ⚠️ The restore happens ONCE per job, so this verification runs again
+// on every later build and must keep saying yes — it does, because nothing in a build writes into namcore.
+//
+// `clap-wrapper` is NOT cached, deliberately: it is GitHub-hosted and was not what failed, and caching it
+// would mean a second pin to key and a second verify-then-reuse path for a host that has not fallen over —
+// cache space and a second way to be wrong, for no outage it would remove. The engine, with eigen, is the
+// expensive and unreliable fetch; that is the one worth the cache.
+const wrapper = join(RUNNER_TEMP, 'clap-wrapper');
+if (existsSync(wrapper)) {
+  log(`clearing ${wrapper} so the steps behave as they would on a fresh runner`);
+  rmSync(wrapper, { recursive: true, force: true });
+}
+const engine = join(RUNNER_TEMP, 'namcore');
+if (existsSync(engine)) {
+  const verdict = engineCheckoutVerdict(engine);
+  if (verdict.reuse) {
+    log(`ENGINE CACHE: HIT — reusing the verified checkout at ${engine} (${verdict.reason}); the clone step will skip it`);
+  } else {
+    log(`ENGINE CACHE: MISS — ${verdict.reason}; clearing ${engine} so the target clones it`);
+    rmSync(engine, { recursive: true, force: true });
   }
+} else {
+  log('ENGINE CACHE: MISS — nothing was restored; the target will clone the engine');
 }
 
 // ── 1. Materialise exactly what the target generates ────────────────────────────────────────────────────
