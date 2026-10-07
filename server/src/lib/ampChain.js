@@ -12,6 +12,7 @@
 // describe that plugin, and a chain that turned itself on would silently invalidate every one of them. A
 // project opts in through `morpheus.plugin.json`.
 import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
+import { rigDefaultIndex } from './rig.js';
 
 /**
  * The gate's threshold at its lowest setting, in dB — and at that value the gate is BYPASSED rather than
@@ -267,19 +268,28 @@ export function chainParamsStable(chain, manifest = {}) {
  *
  * ⚠️ FEWER THAN TWO OFFERS NOTHING AT ALL. One choice is not a control, and emitting one would put a
  * parameter into every one-capture project — which is precisely the byte-identity this whole change exists
- * to protect. For the same reason the default is index 0: the FIRST emitted member is what a project with
- * no selector already plays, so a session saved before the rig existed opens on the same sound.
+ * to protect.
+ *
+ * ⭐ THE DEFAULT IS THE MEMBER THE PROJECT MARKED, NOT THE FIRST ONE. `models`/`cabs` are the EMITTED
+ * member lists — the same arrays the tables are built from, so a member the emitter dropped cannot be chosen
+ * — and `rigDefaultIndex` reads the one marked `default: true`. With none marked the index is `0`, which is
+ * the FIRST emitted member and therefore the sound a project with no selector already plays: a session saved
+ * before this field existed opens on exactly the same sound. That is the whole point of the flag — it lets a
+ * project say which member it opens on WITHOUT reordering the list, which is what "the demo's first entry is
+ * its opening sound" used to have to mean.
  *
  * `name` is the CONTROL's label, which is deliberately not the module's: the panel shows the module as a
  * section heading, so a row reading "Amp model" under "Amp model" would say the same word twice.
  */
-export function rigSelectors({ models = 0, cabs = 0 } = {}) {
+export function rigSelectors({ models = [], cabs = [] } = {}) {
+  const m = Array.isArray(models) ? models : [];
+  const c = Array.isArray(cabs) ? cabs : [];
   const out = [];
-  if (models >= 2) {
-    out.push({ key: 'model_select', name: 'Capture', min: 0, max: models - 1, def: 0, role: 'select', kind: 'model', unit: '', module: 'Amp model', stepped: true });
+  if (m.length >= 2) {
+    out.push({ key: 'model_select', name: 'Capture', min: 0, max: m.length - 1, def: rigDefaultIndex(m), role: 'select', kind: 'model', unit: '', module: 'Amp model', stepped: true });
   }
-  if (cabs >= 2) {
-    out.push({ key: 'cab_select', name: 'Speaker', min: 0, max: cabs - 1, def: 0, role: 'select', kind: 'cab', unit: '', module: 'Cabinet', stepped: true });
+  if (c.length >= 2) {
+    out.push({ key: 'cab_select', name: 'Speaker', min: 0, max: c.length - 1, def: rigDefaultIndex(c), role: 'select', kind: 'cab', unit: '', module: 'Cabinet', stepped: true });
   }
   return out;
 }

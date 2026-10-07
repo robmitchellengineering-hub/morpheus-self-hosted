@@ -1413,6 +1413,52 @@ check('…with both selectors sized to the manifest\'s rig rather than to the fi
   /\{ 12, "Capture", 0\.0, 1\.0, 0\.0, "", 1, "Amp model" \}/.test(rigNamedSrc)
   && /\{ 13, "Speaker", 0\.0, 1\.0, 0\.0, "", 1, "Cabinet" \}/.test(rigNamedSrc), true);
 
+console.log('\n20d. ⭐ THE OPENING MEMBER: `default: true` chooses the selector\'s value, not the order');
+// ⚠️ WHY THIS SECTION EXISTS. The rig used to say which member a plugin opens on ONLY by putting it first —
+// `rigSelectors` hardcoded `def: 0` — so choosing an opening sound reordered the control a player reads, and
+// a rig whose best capture is not its first had no way to say so. `default: true` on an entry is that way:
+// `rigEntry` normalises it, the finder carries it on the emitted member, and this row is where it has to
+// become the parameter's default. The LAST member is marked deliberately, so a value that ignored the mark
+// and stayed at 0 cannot pass.
+const rigDefaulted = {
+  name: 'Rig', chain: 'amp',
+  models: [{ path: 'models/a.nam', name: 'Crunch' }, { path: 'models/b.nam', name: 'Hi Gain (TS)', default: true }],
+  cabs: [{ path: 'models/mic-a.wav', name: '545' }, { path: 'models/mic-b.wav', name: 'U87', default: true }],
+};
+const rigDefaultedFiles = audioPlugin.scaffold([...empty,
+  { path: PLUGIN_MANIFEST, content: JSON.stringify(rigDefaulted) },
+  { path: 'models/a.nam', content: LINEAR }, { path: 'models/b.nam', content: LINEAR },
+  { path: 'models/mic-a.wav', content: irB64(synthIr(512, 11)), encoding: 'base64' },
+  { path: 'models/mic-b.wav', content: irB64(synthIr(512, 12)), encoding: 'base64' }]).files;
+const rigDefaultedSrc = generated({ files: rigDefaultedFiles }, 'Source/Plugin.cpp');
+check('⭐ the Capture row carries the MARKED member\'s index as its default — 1, not the 0 it always was',
+  /\{ 12, "Capture", 0\.0, 1\.0, 1\.0, "", 1, "Amp model" \}/.test(rigDefaultedSrc), true);
+check('⭐ …and the Speaker row the same, chosen independently of the capture',
+  /\{ 13, "Speaker", 0\.0, 1\.0, 1\.0, "", 1, "Cabinet" \}/.test(rigDefaultedSrc), true);
+// The row is what a host draws; `initCpp` is what the plugin actually starts on, and it reads the same `def`
+// — so a row that said 1 while init said 0 would be a control that snaps to the wrong capture on load.
+check('…and the plugin INITIALISES both selectors to the marked member, so the panel opens on it too',
+  // The array INDEX is the parameter id minus one: Capture is `PARAM_MODEL_SELECT = 12` at index 11, Speaker
+  // is id 13 at index 12. Asserting the id here would pass against a row that had not moved.
+  /p->value\[11\] = 1\.0; p->smoothed\[11\] = 1\.0;/.test(rigDefaultedSrc)
+  && /p->value\[12\] = 1\.0; p->smoothed\[12\] = 1\.0;/.test(rigDefaultedSrc), true);
+// ⚠️ AND WITH NO MARK THE SAME TWO ROWS ARE UNCHANGED — index 0, which is the sound a session saved before
+// the flag existed already plays. This is the byte-identity rule stated at the selector.
+check('⚠️ …and with NO mark the same rig still opens on index 0, byte-identically',
+  /\{ 12, "Capture", 0\.0, 1\.0, 0\.0, "", 1, "Amp model" \}/.test(rigNamedSrc)
+  && /\{ 13, "Speaker", 0\.0, 1\.0, 0\.0, "", 1, "Cabinet" \}/.test(rigNamedSrc), true);
+// ⚠️ A `default` THAT IS NOT LITERALLY `true` IS IGNORED, NOT FATAL. `readManifest` is the RUNTIME reader
+// for a file the user is invited to edit, so `"yes"`, `1`, `false` and `null` all mean "not the opening
+// member" — the rig still reads, the plugin still builds, and it opens on the first as it always did.
+check('⚠️ a `default` that is not literally true is ignored, for every spelling, and the plugin still builds',
+  ['yes', 1, false, null, 0, 'true'].map((v) => {
+    const src = generated({ files: audioPlugin.scaffold([...empty,
+      { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Rig', chain: 'amp', models: [{ path: 'models/a.nam', name: 'A', default: v }, { path: 'models/b.nam', name: 'B' }] }) },
+      { path: 'models/a.nam', content: LINEAR }, { path: 'models/b.nam', content: LINEAR }]).files }, 'Source/Plugin.cpp');
+    return /\{ 12, "Capture", 0\.0, 1\.0, 0\.0, "", 1, "Amp model" \}/.test(src);
+  }),
+  ['yes', 1, false, null, 0, 'true'].map(() => true));
+
 // ⚠️ A MALFORMED RIG IS IGNORED, NOT FATAL, and `readManifest` is the RUNTIME reader for a file the user is
 // invited to edit — so a hand-edited manifest that gets the shape wrong must build the plugin its FILES imply.
 // It must not throw, and it must not reach the finders half-valid (a shorter rig than was written). `rigEntry`
@@ -2332,21 +2378,24 @@ check('…and the output block LAST, because it is the plugin\'s output and not 
 // one-capture plugin under a page that describes four.
 check('the demo names all four captures, in the order the selector offers them',
   demo.DEMO_CAPTURES.map((c) => c.name), ['Crunch', 'Crunch 2', 'Hi Gain (TS)', 'Hi Gain (RAT)']);
-check('…and all four mics', demo.DEMO_MICS.map((m) => m.name), ['U87', '545', '017 Tube', 'M160']);
+check('…and all four mics, in the order they were captured', demo.DEMO_MICS.map((m) => m.name), ['545', 'U87', '017 Tube', 'M160']);
 const demoManifest = JSON.parse(demo.demoManifest());
 check('⭐ …and the manifest the runners seed carries them as `{ path, name }`, four of each',
   [demoManifest.models, demoManifest.cabs], [demo.DEMO_RIG.models, demo.DEMO_RIG.cabs]);
-// ⚠️ THE ORDER IS THE DEFAULT. A selector opens on index 0 — the generated rows below carry `0.0` as the value
-// — so the first entry of each list is the sound the download makes before anyone touches it. **Crunch through
-// the U87**, which is Rob's chosen opening sound (2026-10-08: *"for now just open with the crunch and the
-// u87"*), not a ranking of the mics.
+// ⭐ THE OPENING SOUND IS A MARK, NOT THE ORDER. Rob chose it (2026-10-08: *"for now just open with the
+// crunch and the u87"*), and the U87 is the SECOND mic in its captured order now — so if this check passed
+// because the marked member happened to be first, it would not be checking anything. Asserted by the
+// `default` flag AND by the emitted rows below, which carry a non-zero default for the Speaker.
 //
-// ⚠️ AND THIS CHECK IS THE ONLY PLACE THAT KNOWS IT. Ordering is the ONLY mechanism there is — `rigSelectors`
-// hardcodes `def: 0` — so the day a rig needs to OPEN on one member while LISTING them in another order, this
-// check and the list above are what will have to change. Asserted rather than assumed so that a reorder is a
-// deliberate act with a failing check behind it, not a silent change to what the download sounds like.
-check('…and the demo opens on the FIRST capture through the FIRST mic — Crunch through the U87',
-  [demoManifest.models[0].name, demoManifest.cabs[0].name], ['Crunch', 'U87']);
+// ⚠️ THIS USED TO SAY ORDERING WAS THE ONLY MECHANISM THERE IS. It was, until `default: true` on an entry
+// landed; the demo used to put U87 first *only* so the plugin would open on it. The list is now free to be
+// the captured order, and this check is what keeps the two facts from being conflated again.
+check('⭐ …and the demo MARKS the capture and the mic it opens on — Crunch through the U87',
+  [demoManifest.models.filter((m) => m.default === true).map((m) => m.name),
+    demoManifest.cabs.filter((c) => c.default === true).map((c) => c.name)],
+  [['Crunch'], ['U87']]);
+check('⭐ …so the mic list is the CAPTURED order rather than an opening sound moved to the front',
+  [demoManifest.cabs.map((c) => c.name), demoManifest.cabs[0].name], [['545', 'U87', '017 Tube', 'M160'], '545']);
 const demoRigFiles = demo.demoRigSeed();
 check('⭐ …every file it names is PRESENT in the repository, and the bytes are the ones a runner seeds',
   [...demo.DEMO_CAPTURES, ...demo.DEMO_MICS].filter(({ file }) => {
@@ -2416,9 +2465,12 @@ check('…with the eight names a player reads, not the filenames the captures ca
 // controls and switches run to id 23. What matters is not the number but that the selectors come AFTER every
 // block control and switch — a selector owns no block, so inserting it in the block order would renumber a
 // host's saved automation. So the check is the rows AND that they are the last two parameters.
+// ⭐ AND THE DEFAULT IS THE MARKED MEMBER'S INDEX, WHICH FOR THE SPEAKER IS 1 — the U87 is the SECOND mic in
+// the captured order, and it is the one the demo opens on. A hardcoded `def: 0` would put `0.0` there and
+// this is the row that would say so.
 check('⭐ …and both selectors, appended after every block control and switch, ranging over the four',
   [/\{ 24, "Capture", 0\.0, 3\.0, 0\.0, "", 1, "Amp model" \}/.test(demoSrcAll),
-    /\{ 25, "Speaker", 0\.0, 3\.0, 0\.0, "", 1, "Cabinet" \}/.test(demoSrcAll),
+    /\{ 25, "Speaker", 0\.0, 3\.0, 1\.0, "", 1, "Cabinet" \}/.test(demoSrcAll),
     // Both selectors read their names from the RIG tables, so the panel and the host show "Crunch", not a path.
     // ⚠️ NOT `!PARAM_MODEL_SELECT`: that enum is the capture selector's id, reused from before the rig existed,
     // and asserting its absence would fail the moment a model is in the project — which is the demo's whole point.

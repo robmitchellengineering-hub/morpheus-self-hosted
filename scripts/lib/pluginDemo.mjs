@@ -41,11 +41,11 @@ export const DEMO_RIG_DIR = 'assets/demo-rig';
  * The four states of the one amplifier, in the order the selector offers them.
  *
  * `file` is the capture's own filename — kept exactly, because it is the file the owner named — and `name` is
- * what a player reads on the `Capture` control. ⚠️ THE ORDER IS THE CONTRACT: the selector opens on the FIRST
- * entry, so this list is also the demo's default sound. Crunch first, as the amp's own cleanest state.
+ * what a player reads on the `Capture` control. ⭐ Crunch is first because it is genuinely the amp's cleanest
+ * state, and it is ALSO marked `default: true` so the demo's opening sound no longer depends on that order.
  */
 export const DEMO_CAPTURES = [
-  { file: 'JCM800 2203_ Crunch.nam', name: 'Crunch' },
+  { file: 'JCM800 2203_ Crunch.nam', name: 'Crunch', default: true },
   { file: 'JCM800 2203_ Crunch 2 (No pre-amp bass cut).nam', name: 'Crunch 2' },
   { file: 'JCM800 2203_ Hi Gain (TS boost).nam', name: 'Hi Gain (TS)' },
   { file: 'JCM800 2203_ Hi Gain (RAT boost).nam', name: 'Hi Gain (RAT)' },
@@ -54,35 +54,38 @@ export const DEMO_CAPTURES = [
 /**
  * The four mics on the one cabinet, in the order the `Speaker` control offers them.
  *
- * Same contract as the captures, and ⚠️ **THE ORDER IS THE CONTRACT — the selector opens on the first entry.**
- * U87 is first because **Rob chose the demo's opening sound** (2026-10-08): *"for now just open with the crunch
- * and the u87"*, while he decides a permanent default after more audio tests. That is not a ranking of the
- * mics.
+ * ⚠️ **THE ORDER IS THE CAPTURED ORDER, NOT THE OPENING SOUND** (`545, U87, 017 Tube, M160`) — and that is
+ * now something this list can say out loud, because the opening member is chosen by a mark rather than by
+ * being first. **Rob chose the demo's opening sound** (2026-10-08): *"for now just open with the crunch and
+ * the u87"*, while he decides a permanent default after more audio tests — so `U87` carries
+ * `default: true` and sits second. That is not a ranking of the mics either; it is the order they were
+ * captured in, which is the honest order to offer them in.
  *
- * ⚠️ ORDERING IS THE ONLY MECHANISM THERE IS. The selector's default is index 0 — `rigSelectors` hardcodes
- * `def: 0` — so choosing which member a plugin OPENS on, independently of the order it lists them in, needs a
- * `default` field the manifest does not have yet. It is a real gap rather than a preference: a rig whose best
- * capture is not its first has no way to say so. Recorded in `PLUGIN-GUI-PLAN.md`.
+ * ⚠️ THE TWO WERE COUPLED AND ARE NOT ANY MORE. `rigSelectors` used to set `def: 0`, so choosing the
+ * opening member MEANT moving it to the front — which is why U87 was briefly first here. The manifest now
+ * carries `default: true` on the entry (`server/src/lib/rig.js`), `rigSelectors` emits THAT member's index as
+ * the parameter's default, and the list is free to stay in its captured order.
  *
  * `name` is the short label a player reads rather than the microphone's own filename.
  */
 export const DEMO_MICS = [
-  { file: 'TF MARSH 4x12 G12M 8ohm U87 3 - Top Boost.wav', name: 'U87' },
   { file: 'TF MARSH 4x12 G12M 8ohm 545 3 - Enhanced.wav', name: '545' },
+  { file: 'TF MARSH 4x12 G12M 8ohm U87 3 - Top Boost.wav', name: 'U87', default: true },
   { file: 'TF MARSH 4x12 G12M 8ohm 017 TUBE 3 - Top Boost.wav', name: '017 Tube' },
   { file: 'TF MARSH 4x12 G12M 8ohm M160 2 - Enhanced.wav', name: 'M160' },
 ];
 
 /**
- * The rig as the manifest spells it — `{ path, name }`, the escape hatch `rig.js` accepts.
+ * The rig as the manifest spells it — `{ path, name }`, the escape hatch `rig.js` accepts, plus
+ * `default: true` on the one member of each half the plugin opens on.
  *
  * ⚠️ THE PATH IS `models/<filename>`, NOT `assets/demo-rig/<filename>`. The path is the one the file has
  * INSIDE the generated plugin project, and `models/` is where both finders look first — the platform that
  * gets this wrong builds a one-capture plugin while the manifest claims four.
  */
 export const DEMO_RIG = {
-  models: DEMO_CAPTURES.map(({ file, name }) => ({ path: `models/${file}`, name })),
-  cabs: DEMO_MICS.map(({ file, name }) => ({ path: `models/${file}`, name })),
+  models: DEMO_CAPTURES.map(({ file, name, default: isDefault }) => ({ path: `models/${file}`, name, ...(isDefault ? { default: true } : {}) })),
+  cabs: DEMO_MICS.map(({ file, name, default: isDefault }) => ({ path: `models/${file}`, name, ...(isDefault ? { default: true } : {}) })),
 };
 
 /** The repository root, so a runner can find the rig without being told where the checkout is. */

@@ -66,6 +66,10 @@ function half({ files, manifest, listKey, oneKey, match, resolve, usable }) {
       usable: usable(r),
       id: idOf(files, r.path),
       reason: (Array.isArray(r.warnings) && r.warnings[0]) || null,
+      // ⭐ WHICH MEMBER THE PLUGIN OPENS ON. Present only when the project marked one, so a rig with no mark
+      // is the same object it was before the flag existed. This is the flag `rigEntry` normalised; the
+      // editor marks the member and `rigSelectors` reads it, and neither re-implements the question.
+      ...(r.default === true ? { default: true } : {}),
     })),
     // A file of this kind that the rig does not name. Empty for an automatic rig by construction, because an
     // automatic rig is every file of that kind — so a non-empty list means the rig was frozen.
@@ -97,6 +101,16 @@ export function rigView(files, manifest = {}) {
   // selector went. It is the same rule `rigSelectors` implements in the generator.
   if (usableModelCount === 1) warnings.push('One capture in the rig: the plugin plays it and has no Capture control. Add a second to switch between them.');
   if (usableCabCount === 1) warnings.push('One mic in the rig: the plugin convolves it and has no Speaker control. Add a second to switch between them.');
+  // ⚠️ A DEFAULT THAT CANNOT BE PLAYED IS SAID RATHER THAN SILENTLY IGNORED. `rigSelectors` counts the marked
+  // member over the EMITTED list, so a mark on an unusable member falls back to the first usable one — the
+  // plugin would open on a different capture than the file names, and without this nothing would say why.
+  for (const [h, label] of [[models, 'capture'], [cabs, 'mic']]) {
+    const marked = h.members.find((m) => m.default === true);
+    const firstUsable = h.members.find((m) => m.usable);
+    if (marked && !marked.usable) {
+      warnings.push(`The ${label} marked as the one the plugin opens on, ${marked.path}, is not usable${firstUsable ? ` — the plugin opens on ${firstUsable.name} instead` : ''}.`);
+    }
+  }
   // A file the project holds and the rig does not name is a silent loss, so it is said out loud — the same
   // warning the board gives for a cabinet that is compiled and never convolves.
   for (const [label, h] of [['capture', models], ['mic', cabs]]) {
@@ -107,10 +121,11 @@ export function rigView(files, manifest = {}) {
 
   // What the plugin will actually offer, which is what the board editor names under Amp model and Cabinet.
   // ⚠️ TAKEN FROM THE SAME TWO LISTS, NOT RESOLVED AGAIN: a second `resolveCabs` would decode every WAV a
-  // second time for a view nobody changed.
+  // second time for a view nobody changed. ⭐ AND THE OPENING MEMBER TRAVELS WITH THEM, so the signal-path
+  // dialog can mark the member the plugin opens on instead of always marking the first.
   const selectors = {
-    models: models.members.filter((m) => m.usable).map(({ path, name }) => ({ path, name })),
-    cabs: cabs.members.filter((c) => c.usable).map(({ path, name }) => ({ path, name })),
+    models: models.members.filter((m) => m.usable).map((m) => ({ path: m.path, name: m.name, ...(m.default === true ? { default: true } : {}) })),
+    cabs: cabs.members.filter((c) => c.usable).map((c) => ({ path: c.path, name: c.name, ...(c.default === true ? { default: true } : {}) })),
   };
 
   return { models, cabs, selectors, warnings };

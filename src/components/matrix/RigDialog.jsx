@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Sliders, X, Upload, Trash2, AlertTriangle, Check, ArrowUp, ArrowDown, Plus, MinusCircle } from 'lucide-react';
+import { Sliders, X, Upload, Trash2, AlertTriangle, Check, ArrowUp, ArrowDown, Plus, MinusCircle, Target } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // THE RIG: one amplifier caught in several of its states, and one cabinet through several mics.
@@ -24,11 +24,23 @@ import { base44 } from '@/api/base44Client';
 // the explicit list, which also freezes the rig: after that, a capture added later is listed under "also in
 // this project" rather than silently joining.
 //
+// ── ⭐ THE ONE THE PLUGIN OPENS ON ────────────────────────────────────────────────────────────────────────
+// The order used to BE the opening sound: the selector's default was always index 0, so choosing which
+// member a plugin opens on meant moving it to the front — which reordered the control a player reads. The
+// member marked here (`default: true` in the manifest, one per list) is what `rigSelectors` sets the
+// Capture/Speaker parameter's default to, so the list can stay in the order the captures were made while the
+// plugin opens on the one that sounds right out of the box. With nothing marked, the plugin opens on the
+// first usable member — what every project did before this existed.
+//
 // ⚠️ IT SAVES INTO THE PROJECT, AND IT DOES NOT COMPILE — the same contract as the board.
 const MAX_NAM_MB = 32;
 const MAX_WAV_MB = 16;
 
-function Half({ title, blurb, side, members, others, onRename, onMove, onOut, onIn, onDelete, busy }) {
+function Half({ title, blurb, side, members, others, onRename, onMove, onOut, onIn, onDelete, onDefault, busy }) {
+  // ⭐ WHICH ONE THE PLUGIN OPENS ON. The marked member when the project marked one, otherwise the first —
+  // which is what `rigSelectors` does in the generator, so the row drawn here is the member that will play.
+  const marked = members.findIndex((m) => m.default === true);
+  const opensOn = marked >= 0 ? marked : 0;
   return (
     <div className="border border-primary/25 px-3 py-3 space-y-2">
       <h4 className="text-[10px] text-primary/60 tracking-[0.2em] font-display">{title}</h4>
@@ -40,6 +52,18 @@ function Half({ title, blurb, side, members, others, onRename, onMove, onOut, on
         {members.map((m, at) => (
           <div key={m.path} className={`border ${m.usable ? 'border-primary/30' : 'border-yellow-500/40'} px-2 py-1.5 space-y-1`}>
             <div className="flex items-center gap-1.5">
+              {/* ⭐ THE OPENING MEMBER. One per list: marking a row clears the mark on its siblings, exactly
+                  as `default: true` on one entry means "not this one" on the rest. The first usable member is
+                  what plays when nothing is marked, so the button is lit on that row too — clicking it is how
+                  a person says so explicitly. */}
+              <button
+                onClick={() => onDefault(side, at)}
+                aria-pressed={at === opensOn}
+                className={`shrink-0 ${at === opensOn ? 'text-primary' : 'text-primary/30 hover:text-primary'}`}
+                title={at === opensOn ? 'The plugin opens on this one' : 'Make this the one the plugin opens on'}
+              >
+                <Target size={13} />
+              </button>
               <span className="text-ink-max font-mono text-[10px] w-4 text-right">{at + 1}</span>
               <input
                 value={m.name}
@@ -54,6 +78,7 @@ function Half({ title, blurb, side, members, others, onRename, onMove, onOut, on
               <button onClick={() => onDelete(side, m)} className="text-primary/60 hover:text-red-400" title="Delete this file from the project"><Trash2 size={13} /></button>
             </div>
             <div className="flex items-center gap-2 pl-5">
+              {at === opensOn && <span className="text-[10px] text-primary shrink-0">THE PLUGIN OPENS ON THIS ONE</span>}
               <span className="text-[10px] text-ink-max font-mono truncate">{m.path}</span>
               {!m.usable && <span className="text-[10px] text-yellow-500/90 shrink-0" title={m.reason || ''}>NOT USABLE — it will be left out of the plugin</span>}
             </div>
@@ -63,6 +88,13 @@ function Half({ title, blurb, side, members, others, onRename, onMove, onOut, on
           </div>
         ))}
       </div>
+
+      {/* ⚠️ AND WHEN NOTHING IS MARKED, SAY WHAT PLAYS ANYWAY. `rigSelectors` falls back to the first USABLE
+          member — not simply the first — so a rig whose opening member is a corrupt file is not silently
+          described wrong here. */}
+      {members.length > 0 && marked < 0 && (
+        <p className="text-[10px] text-ink-max">Nothing is marked, so the plugin opens on the first usable {side === 'models' ? 'capture' : 'mic'}. Mark one to choose.</p>
+      )}
 
       {others.length > 0 && (
         <div className="border-t border-primary/15 pt-2 space-y-1">
@@ -135,6 +167,14 @@ export default function RigDialog({ open, onClose, projectId }) {
     setMembers((m) => ({ ...m, [side]: [...m[side], entry] }));
     setOthers((o) => ({ ...o, [side]: o[side].filter((x) => x.path !== entry.path) }));
   };
+  // ⭐ ONE DEFAULT PER LIST, AND THAT IS WHY THIS IS NOT A TOGGLE. Clicking a member marks it and clears the
+  // mark on its siblings in the same action, so the two lists can never disagree about which member opens —
+  // and the mark is written only when it is `true` (`entryOf`), so opening a project that never marked one
+  // and saving it leaves the manifest byte-for-byte as it was.
+  const markDefault = (side, at) => setMembers((m) => ({
+    ...m,
+    [side]: m[side].map((x, i) => (i === at ? { ...x, default: true } : { ...x, default: false })),
+  }));
   const del = async (side, entry) => {
     if (!entry.id) { setErr(`${entry.path} has no stored row, so it cannot be deleted from here.`); return; }
     setErr(null); setStatus(null); setBusy(true);
@@ -186,9 +226,14 @@ export default function RigDialog({ open, onClose, projectId }) {
     } finally { setBusy(false); }
   };
 
+  // ⭐ THE MARK IS WRITTEN ONLY WHEN IT IS TRUE. `default: false` on the other rows is the editor's own
+  // bookkeeping, not a fact about the rig — and writing it would make a project that never opted in carry a
+  // flag the generator then has to ignore. `rigEntry` would drop it anyway; not sending it is the same
+  // answer said once, at the surface that knows the difference.
+  const entryOf = (m) => ({ path: m.path, name: m.name, ...(m.default === true ? { default: true } : {}) });
   const saveRig = () => save({
-    models: members.models.map((m) => ({ path: m.path, name: m.name })),
-    cabs: members.cabs.map((c) => ({ path: c.path, name: c.name })),
+    models: members.models.map(entryOf),
+    cabs: members.cabs.map(entryOf),
   });
   // ⚠️ CLEARING IS ITS OWN ACTION, because it is the opposite of what saving means. An empty list would read
   // to the finder as "this project did not ask for a rig" and quietly put every file back — so "follow the
@@ -214,9 +259,11 @@ export default function RigDialog({ open, onClose, projectId }) {
           <p>
             One amplifier, captured in several of its states, and one cabinet, heard through several mics. Each
             capture and each mic is a row below; the plugin offers them in this order in its own{' '}
-            <strong className="text-primary">Capture</strong> and <strong className="text-primary">Speaker</strong> controls,
-            and opens on the first of each. The name you type is what a player reads there — a DAW&apos;s automation
-            lane included.
+            <strong className="text-primary">Capture</strong> and <strong className="text-primary">Speaker</strong> controls.
+            The name you type is what a player reads there — a DAW&apos;s automation lane included. Mark one
+            capture and one mic as the default and <strong className="text-primary">the plugin opens on those</strong>:
+            the mark decides the opening sound without moving the member, so the list can stay in the order the
+            captures were made. With none marked, the plugin opens on the first usable one.
           </p>
 
           {view === null && !err && <p className="text-ink-strong">Loading…</p>}
@@ -229,7 +276,7 @@ export default function RigDialog({ open, onClose, projectId }) {
                 side="models"
                 members={members.models}
                 others={others.models}
-                onRename={rename} onMove={move} onOut={out} onIn={into} onDelete={del}
+                onRename={rename} onMove={move} onOut={out} onIn={into} onDelete={del} onDefault={markDefault}
                 busy={busy}
               />
               <Half
@@ -238,7 +285,7 @@ export default function RigDialog({ open, onClose, projectId }) {
                 side="cabs"
                 members={members.cabs}
                 others={others.cabs}
-                onRename={rename} onMove={move} onOut={out} onIn={into} onDelete={del}
+                onRename={rename} onMove={move} onOut={out} onIn={into} onDelete={del} onDefault={markDefault}
                 busy={busy}
               />
 

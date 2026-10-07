@@ -37,6 +37,22 @@ export function rigName(path) {
  * A BARE STRING IS THE COMMON CASE AND AN OBJECT IS THE ESCAPE HATCH: `"models": ["models/clean.nam"]` is
  * what a project written by hand looks like, and `{ path, name }` is for when the file's own name is not what
  * the capture is called — `models/hg-3.nam` being "JCM 800, gain 7".
+ *
+ * ⭐ AND `default: true` ON THE ENTRY IS HOW A PROJECT SAYS WHICH MEMBER THE PLUGIN OPENS ON — the ONE
+ * spelling of it, deliberately a PER-MEMBER flag rather than a top-level key naming a path:
+ *
+ *   • THE FLAG BELONGS ON THE ENTRY, so `rigEntry` — already the single answer to "is this a rig entry" —
+ *     is also the single answer to "is this member the opening one". A top-level `default` key would be a
+ *     SECOND vocabulary beside the list: it would have to name a path, be validated against the same list,
+ *     be spelled once per half (`defaultModel`/`defaultCab`, or a nested object), and then be reconciled when
+ *     the list and the name disagree. Two ways to say the same thing is how a manifest and a generator come
+ *     to disagree, and the member that CARRIES the fact cannot drift from the list it is in.
+ *   • ⚠️ A BARE STRING CANNOT CARRY IT, and that is the honest limit rather than an omission: the string
+ *     spelling says nothing about the opening member, so the first member is it — which is exactly what a
+ *     string manifest means today.
+ *   • It is carried ONLY when it is literally `true`. `false`, `"yes"`, `1` and `null` are ignored rather
+ *     than fatal, the same rule `rigEntryList` applies to every other malformed thing: a hand-edited
+ *     manifest must still build the plugin its files imply.
  */
 export function rigEntry(entry) {
   if (typeof entry === 'string') {
@@ -46,9 +62,30 @@ export function rigEntry(entry) {
   if (entry && typeof entry.path === 'string' && entry.path.trim()) {
     const path = entry.path.trim();
     const named = typeof entry.name === 'string' ? entry.name.trim() : '';
-    return { path, name: named || rigName(path) };
+    const out = { path, name: named || rigName(path) };
+    if (entry.default === true) out.default = true;
+    return out;
   }
   return null;
+}
+
+/**
+ * WHICH MEMBER A SELECTOR OPENS ON, as an index into the list it is given — the member marked `default`, else
+ * the first.
+ *
+ * ⚠️ IT IS ASKED OF THE EMITTED LIST, NOT OF THE MANIFEST. A member marked default that is unusable is
+ * dropped from the emitted rig (see `usableModels`/`usableCabs`), so the index has to be counted over the
+ * members the plugin actually carries; counting over the manifest would point the selector at a different
+ * capture. `-1` (nothing marked) and `0` (the first is marked) both mean "open on the first", which is why
+ * this returns `at > 0 ? at : 0` rather than `at === -1 ? 0 : at`.
+ *
+ * A manifest that marks TWO members is tolerated rather than refused, the same way every other malformed
+ * shape here is: the first marked member that survives wins, so the plugin still builds and still opens on a
+ * member the file named.
+ */
+export function rigDefaultIndex(members) {
+  const at = (Array.isArray(members) ? members : []).findIndex((m) => m && m.default === true);
+  return at > 0 ? at : 0;
 }
 
 /**

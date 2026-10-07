@@ -103,6 +103,8 @@ export function readManifest(files) {
     // turns into an ABSENT key — not `[]`, and not a shorter rig than the file asked for — so a hand-edited
     // manifest cannot fail a build or reach the finders half-valid. `null` and `[]` both mean "did not ask",
     // exactly as `rigList` reads them; the escape hatch `{ path, name }` is `rigEntry`'s, not re-implemented.
+    // ⭐ AND SO IS THE OPENING MEMBER: `{ path, name, default: true }` is carried through unchanged, because the
+    // flag lives ON THE ENTRY (`rig.js`) and this reader whitelists KEYS, not an entry's fields.
     models: rigEntryList(parsed.models) || undefined,
     cabs: rigEntryList(parsed.cabs) || undefined,
     // Which signal path this plugin is. Empty is the plugin every project got before chains existed, and an
@@ -134,6 +136,9 @@ export function readManifest(files) {
  * was scaffolded with, and a project with no rig must produce the byte-identical manifest it produced before
  * the rig existed. They are written after `board`, only when `rigEntryList` accepts them, and normalised
  * through that same validator — so the writer cannot emit a rig the finders would drop on the next build.
+ * ⭐ THE OPENING MEMBER RIDES INSIDE THE ENTRY (`{ path, name, default: true }`) and comes back out the same
+ * way: the writer has no opinion about the flag, exactly as it has none about a name, because `rigEntry` owns
+ * both.
  */
 export function manifestJson(manifest, board = null) {
   // ONE VALIDATOR, AGAIN: what is written is what `readManifest` will accept and what `rigList` will run.
@@ -315,13 +320,17 @@ export function scaffoldPlugin(files) {
   // — it would sort to the front and take every id in the amp chain with it. Appending to the finished list
   // is the one place that is true for the amp chain and the board alike.
   //
-  // ⚠️ THE COUNT IS THE EMITTED MEMBERS, through the SAME filters the emitters use, so a capture the
+  // ⚠️ THE MEMBERS ARE THE EMITTED ONES, through the SAME filters the emitters use, so a capture the
   // generator dropped from the rig cannot leave a selector position that plays nothing. `rigSelectors`
   // returns nothing at all for a rig of fewer than two, which is what keeps a one-capture project's
   // parameter list — and therefore its generated C++ — exactly what it was.
+  //
+  // ⭐ AND THE LISTS ARE HANDED OVER WHOLE RATHER THAN AS COUNTS, because the selector's default is now the
+  // member the project marked `default`, and that mark lives on the member. Passing a count would leave
+  // `rigSelectors` unable to tell the marked member from the first one.
   const selectors = rigSelectors({
-    models: usableModels(models).length,
-    cabs: usableCabs(cabs).length,
+    models: usableModels(models),
+    cabs: usableCabs(cabs),
   });
   const params = (useBoard ? boardParamsStable(board, manifest) : chainParamsStable(chain, manifest)).concat(selectors);
 

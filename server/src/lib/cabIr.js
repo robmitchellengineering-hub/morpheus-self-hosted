@@ -347,7 +347,7 @@ ${rows}
  * left counting arrays in a generated header.
  */
 export function resolveCabs(files, manifest = {}) {
-  return findCabPaths(files, manifest).map(({ path, name }) => resolveCabMember(files, path, name));
+  return findCabPaths(files, manifest).map((entry) => resolveCabMember(files, entry));
 }
 
 /** The FIRST impulse response — what this function has always returned. See resolveCabs. */
@@ -362,18 +362,21 @@ export function resolveCab(files, manifest = {}) {
  * Returns the decoded, normalised, truncated channel data as well as the facts, because the emitter and the
  * proof both need the numbers and neither should decode the file a second time.
  */
-function resolveCabMember(files, path, name) {
+function resolveCabMember(files, { path, name, default: isDefault = false }) {
   const file = files.find((f) => f.path === path);
+  // ⭐ THE OPENING MEMBER TRAVELS WITH THE MEMBER — see `resolveModelMember` in namPlugin.js for why it is
+  // absent rather than `false`, and why an unusable member keeps it.
+  const marked = isDefault === true ? { default: true } : {};
 
   let wav;
   try {
     wav = decodeCab(file.content, file.encoding || 'base64');
   } catch (err) {
-    return { path, name, info: null, channels: null, warnings: [`${path} is not a readable WAV file — ${String(err.message).split('\n')[0].slice(0, 120)}. It is left out of the rig; a rig with no usable cabinet convolves nothing.`] };
+    return { path, name, ...marked, info: null, channels: null, warnings: [`${path} is not a readable WAV file — ${String(err.message).split('\n')[0].slice(0, 120)}. It is left out of the rig; a rig with no usable cabinet convolves nothing.`] };
   }
   const inspected = inspectCab(wav);
   if (!inspected.ok) {
-    return { path, name, info: null, channels: null, warnings: [`${path} is not a usable cabinet — it ${inspected.reason}. It is left out of the rig; a rig with no usable cabinet convolves nothing.`] };
+    return { path, name, ...marked, info: null, channels: null, warnings: [`${path} is not a usable cabinet — it ${inspected.reason}. It is left out of the rig; a rig with no usable cabinet convolves nothing.`] };
   }
 
   const warnings = [];
@@ -399,6 +402,7 @@ function resolveCabMember(files, path, name) {
   return {
     path,
     name,
+    ...marked,
     channels: wav.data.slice(0, inspected.channels).map(normalise),
     info: {
       path,

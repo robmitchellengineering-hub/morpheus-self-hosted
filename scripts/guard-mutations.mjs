@@ -2233,6 +2233,72 @@ export const MUTATIONS = [
     find: "  seed.push({ path: 'morpheus.plugin.json', content: demoManifest() });",
     replace: "  seed.push({ path: 'morpheus.plugin.json', content: `${JSON.stringify({ name: 'Morpheus Plugin', chain: 'amp' }, null, 2)}\n` });",
   },
+  // ── the rig's opening member (2026-10-08) ───────────────────────────────────────────────────────────────
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/rig.js',
+    // ⚠️ THE WHOLE FLAG, AT ITS ONE VALIDATOR. `rigEntry` is the single answer to "is this a rig entry", so a
+    // `default` it stops normalising is a mark that never reaches the finder — and the plugin opens on the
+    // first member again while the manifest still says otherwise. The demo's Speaker row (U87, second of four)
+    // is the visible difference: it would go back to `0.0`.
+    why: 'Drops `default: true` at the single entry validator, so a rig that names its opening member opens on the first one instead.',
+    find: '    if (entry.default === true) out.default = true;',
+    replace: '    if (false) out.default = true;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/ampChain.js',
+    // ⚠️ THE EXACT LINE THIS CHANGE EXISTS TO CHANGE. `def: 0` — the hardcoded opening member — is what made
+    // an opening sound and a list order the same fact.
+    why: 'Hardcodes the Capture selector back to index 0, so the member a project marks as its opening one is ignored.',
+    find: 'def: rigDefaultIndex(m)',
+    replace: 'def: 0',
+  },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/namPlugin.js',
+    // A mark that stops at the finder never reaches `rigSelectors`, so the plugin and the rig editor disagree
+    // about which capture opens — the app marks one, the build opens on another.
+    why: 'Stops the capture finder carrying the opening-member mark, so the editor marks one capture while the plugin emits another.',
+    find: '  const marked = isDefault === true ? { default: true } : {};',
+    replace: '  const marked = {};',
+  },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/cabIr.js',
+    // The same claim on the other half of the rig: the mic.
+    why: 'Stops the cabinet finder carrying the opening-member mark, so the marked mic is silently not the one the plugin opens on.',
+    find: '  const marked = isDefault === true ? { default: true } : {};',
+    replace: '  const marked = {};',
+  },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/rigProject.js',
+    // The app's view is the only place a user can SEE which member opens, so losing the mark here is an editor
+    // that cannot say what the plugin will do — while every emitted row stays correct.
+    why: 'Drops the opening-member mark from the rig view, so the editor cannot show which capture the plugin opens on.',
+    find: '      ...(r.default === true ? { default: true } : {}),',
+    replace: '      ...(r.default === true ? {} : {}),',
+  },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/board.js',
+    // ⚠️ AND THE SIGNAL-PATH DIALOG IS THE SECOND SURFACE. `boardView` marks the opening member from the rig
+    // list it is handed; without this it falls back to index 0 and draws the first as the opening one, while
+    // the RIG dialog and the plugin both say otherwise.
+    why: 'Marks the first member as the one the plugin opens on in the signal-path dialog, whatever the rig marked.',
+    find: '    const def = rigDefaultIndex(list);',
+    replace: '    const def = 0;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/lib/pluginDemo.mjs',
+    // ⚠️ THE DEMO'S OPENING MIC, AS A MARK. U87 is second in the captured order, so losing the mark is a
+    // Speaker row defaulting to `0.0` (the 545) while the notice and the release page say U87.
+    why: 'Takes the default mark off the demo\'s U87, so the free download opens on the 545 while its own notice says it opens on the U87.',
+    find: "name: 'U87', default: true },",
+    replace: "name: 'U87' },",
+  },
   // ── the cabinet capture (2026-10-06) ────────────────────────────────────────────────────────────────────
   {
     guard: 'verify-audio-capture.mjs',
@@ -2550,8 +2616,10 @@ export const MUTATIONS = [
     // usable filter offers a selector position that plays nothing. That is a control a player can pick and
     // hear no change from, and nothing in the generated C++ or the audio proofs can see the app do it.
     why: 'Offers every capture in the rig including the unusable ones, so the app lists a member the plugin will not play.',
-    find: '    models: models.members.filter((m) => m.usable).map(({ path, name }) => ({ path, name })),',
-    replace: '    models: models.members.map(({ path, name }) => ({ path, name })),',
+    // Repointed when the selector list began carrying the opening-member mark: the find names the whole line so
+    // a further field on it cannot leave this mutation silently STALE (H17).
+    find: '    models: models.members.filter((m) => m.usable).map((m) => ({ path: m.path, name: m.name, ...(m.default === true ? { default: true } : {}) })),',
+    replace: '    models: models.members.map((m) => ({ path: m.path, name: m.name, ...(m.default === true ? { default: true } : {}) })),',
   },
   {
     guard: 'verify-rig.mjs',
