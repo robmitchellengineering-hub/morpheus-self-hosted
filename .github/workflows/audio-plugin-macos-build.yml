@@ -88,11 +88,27 @@ jobs:
 
       # `if-no-files-found: error` is the second half of the check: if the standalone's zip is missing, the
       # run fails here rather than passing with three of four artifacts.
-      - name: Keep the packaged plugins, so the run can be inspected rather than believed
+      #
+      # ⚠️ TWO ARTIFACTS, NOT ONE, AND THE SECOND ONE IS THE POINT. This uploaded only the FIRST build — the
+      # plain gain stage — so a no-tag verification run could not hand anybody something worth opening, and the
+      # only way to get the amp build into a person's hands was to republish the PUBLIC `plugin-demo` release.
+      # That is backwards: the build this workflow calls "the one people download" should be the one a run
+      # offers, and publishing should be a separate decision rather than the only way to look at it.
+      - name: Keep the gain-stage build, so every supported shape a run proves can be inspected
         uses: actions/upload-artifact@v4
         with:
           name: audio-plugin-macos
           path: ${{ runner.temp }}/audio-plugin-build/build/assets/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      # ⭐ THE AMP BUILD — nine blocks, a model, and the panel's own switch rows. This is what a person
+      # installs to hear and see the plugin, and it is the same bytes the publish step below would release.
+      - name: Keep the AMP build too — the one a person actually opens
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-plugin-macos-amp
+          path: ${{ runner.temp }}/audio-plugin-nam-build/build/assets/*.zip
           if-no-files-found: error
           retention-days: 7
 

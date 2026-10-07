@@ -325,9 +325,12 @@ export const MUTATIONS = [
     file: '.github/workflows/audio-plugin-macos-build.yml',
     // The run would still be green while shipping three formats of four: the standalone is the one format no
     // local machine has ever built, so a missing zip has to fail the job rather than quietly not be there.
+    // ⚠️ REPOINTED when the workflow grew a SECOND upload — the gain build and the amp build each carry this
+    // setting, so a bare `if-no-files-found` line matched twice. The guard now requires it on EVERY upload
+    // step, which is why removing it from this one is enough to fail.
     why: 'Drops the failure-on-missing-artifact setting, so a run that produced no standalone still uploads three plugins and passes.',
-    find: '          if-no-files-found: error\n',
-    replace: '',
+    find: '          name: audio-plugin-macos\n          path: ${{ runner.temp }}/audio-plugin-build/build/assets/*.zip\n          if-no-files-found: error\n',
+    replace: '          name: audio-plugin-macos\n          path: ${{ runner.temp }}/audio-plugin-build/build/assets/*.zip\n',
   },
   {
     guard: 'verify-audio-plugin.mjs',

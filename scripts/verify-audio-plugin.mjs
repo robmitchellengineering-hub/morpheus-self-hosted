@@ -344,8 +344,19 @@ check('…running the target\'s own steps through the runner script',
   /node scripts\/audio-plugin-macos-runner-build\.mjs/.test(wf), true);
 check('…keeping the packaged plugins, so a run can be inspected rather than believed',
   /upload-artifact@v\d/.test(wf) && /assets\/\*\.zip/.test(wf), true);
-check('…and failing rather than passing with three formats of four',
-  /^\s+if-no-files-found: error$/m.test(wf), true);
+// ⭐ THE AMP BUILD IS AN ARTIFACT TOO, and that is the difference between "look at the plugin" and "publish
+// it": the workflow builds the model build and calls it the one people download, and until this was uploaded a
+// no-tag verification run could only hand out the gain stage — so the only way to SEE the plugin was to
+// repoint the public plugin-demo release.
+check('⭐ …including the AMP build, so a verification run can hand out something worth opening',
+  /name: audio-plugin-macos-amp/.test(wf) && /audio-plugin-nam-build\/build\/assets\/\*\.zip/.test(wf), true);
+// EVERY upload fails on a missing artifact, not merely one of them. With two uploads a plain search for the
+// setting is satisfied by whichever step still has it — the same "a check that never ran reads as a check that
+// passed" shape this file is careful about elsewhere.
+const uploadSteps = (wf.match(/uses: actions\/upload-artifact@v\d/g) || []).length;
+const strictUploads = (wf.match(/^\s+if-no-files-found: error$/gm) || []).length;
+check('…and EVERY upload failing rather than passing with a format missing',
+  uploadSteps > 0 && strictUploads === uploadSteps, true);
 
 // The script must build the TARGET, not a transcription of what the target happens to emit today. A copy
 // of the commands is the failure mode this whole job exists to avoid: it would keep passing after the
