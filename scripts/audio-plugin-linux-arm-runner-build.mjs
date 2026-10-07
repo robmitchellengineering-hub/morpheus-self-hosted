@@ -306,11 +306,19 @@ if (chainCheck) {
   log(`  a saved default is the identity: ${order.defaultSavedIsIdentity ? 'yes' : 'NO'}`
     + `   round-trips: ${order.roundTrip ? 'yes' : 'NO'}`
     + `   malformed refused: ${order.malformedRefused ? 'yes' : 'NO'}`);
+  // ⭐ THE PANEL'S OWN DOOR, on this CPU: the function a DRAG calls, asked the two questions a mouse asks.
+  log(`  a drag is accepted and heard: ${order.drag.accepted ? 'accepted' : 'REFUSED'}`
+    + `   a drag that moves the amp is refused: ${order.pivot.accepted ? 'NO — ACCEPTED' : 'yes'}`
+    + `   and left the sound untouched: ${order.pivot.unchanged ? 'yes' : 'NO'}`);
   if (!order.defaultSavedIsIdentity) { console.error('[audio-plugin-linux-arm] x a fresh plugin does not save the compiled order.'); process.exit(1); }
   if (order.reorderChangesTheSound.identical) { console.error('[audio-plugin-linux-arm] x a loaded order changed nothing — the order is a table nobody walks.'); process.exit(1); }
   if (!order.roundTrip) { console.error('[audio-plugin-linux-arm] x the order did not survive a save/load cycle.'); process.exit(1); }
   if (!order.malformedRefused) { console.error('[audio-plugin-linux-arm] x a malformed order was applied instead of refused.'); process.exit(1); }
-  log('the order is data: it saves, it loads, it is heard, and a bad one is refused');
+  if (!order.drag.accepted) { console.error('[audio-plugin-linux-arm] x a legal drag was refused.'); process.exit(1); }
+  if (order.drag.unchanged) { console.error('[audio-plugin-linux-arm] x a legal drag was accepted and changed nothing.'); process.exit(1); }
+  if (order.pivot.accepted) { console.error('[audio-plugin-linux-arm] x a drag that moves the amp model or the cabinet was ACCEPTED.'); process.exit(1); }
+  if (!order.pivot.unchanged) { console.error('[audio-plugin-linux-arm] x a refused drag changed the sound anyway.'); process.exit(1); }
+  log('the order is data: it saves, it loads, it is heard, a bad one is refused, and the pivot does not move');
   log('the chain is its design, on this CPU');
 }
 

@@ -1912,6 +1912,47 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ THE PIVOT RULE, AS A MUTATION. The amp model and the cabinet are the pivot — Rob's decision — and the
+    // output is applied on the plugin's own output, so a block after it is processed by nothing. Letting any
+    // permutation through would still be a legal PERMUTATION, which is why the count check above cannot see it
+    // and this needs its own assertion.
+    why: 'Accepts an order that moves the amp model, the cabinet or the output — a legal permutation of the chain and an illegal rearrangement of the amplifier.',
+    find: '      if (!morpheus_gui_block_movable(order[s]) && order[s] != s) return false;',
+    replace: '      if (false && !morpheus_gui_block_movable(order[s]) && order[s] != s) return false;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ A DRAG THAT THE PANEL NEVER LEARNS ABOUT. The running order changes and the audio follows it, but the
+    // block column keeps drawing the order the plugin was BUILT with — so the drag looks like it did nothing
+    // while the sound says otherwise. The audio proofs all pass, because the audio is right.
+    why: 'Stops telling the panel about a new order, so the sound changes and the block column does not.',
+    find: '   morpheus_gui_publish(&p->stage_order_pending_flag);\n   // …and the PANEL is told, so the column redraws in the new order rather than showing the drag undone.\n   morpheus_gui_order_names_set(p->stage_order_pending);',
+    replace: '   morpheus_gui_publish(&p->stage_order_pending_flag);',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ AND A SAVED SESSION WOULD REOPEN DRAWING THE WRONG CHAIN. This is the quieter half of the pair above:
+    // nothing is dragged, so nothing looks broken — the project simply comes back showing the compiled order
+    // while playing the saved one.
+    why: 'Leaves the panel on the compiled order when a session loads a saved one.',
+    find: '   morpheus_gui_publish(&p->stage_order_pending_flag);\n   // …and the PANEL is told, so a session that reopens with a saved order DRAWS that order rather than the one\n   // the plugin was compiled with. A panel showing a different chain from the one playing is worse than no\n   // panel at all.\n   morpheus_gui_order_names_set(p->stage_order_pending);',
+    replace: '   morpheus_gui_publish(&p->stage_order_pending_flag);',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ A DRAG THE HOST NEVER HEARS ABOUT. The order changes and sounds right for this session, and the host is
+    // never told the state is dirty — so it saves the order the plugin was built with and the reorder is gone
+    // the moment the project is reopened. Nothing in the audio can see this; only the host can.
+    why: 'Stops marking the host state dirty, so a drag survives the session but not the save.',
+    find: '   if (hs && hs->mark_dirty) hs->mark_dirty(p->host);',
+    replace: '   (void)hs;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
     // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has

@@ -1930,21 +1930,76 @@ check('…and which block a row belongs to, from the module the plugin reports',
   /snprintf\(row->group, sizeof\(row->group\), "%\.63s", info\.module\);/.test(guiLayout), true);
 check('⭐ …and the rows are re-ordered so a block\'s own rows sit together, its switch included',
   /out\[written\]\.first = \(first && raw\[j\]\.group\[0\]\) \? 1 : 0;/.test(guiLayout)
-  && /if \(rows\[i\]\.first\) h \+= MORPHEUS_GROUP_H;/.test(guiLayout), true);
+  && /morpheus_gui_chain_order\(&orderCount\)/.test(guiLayout), true);
 check('⭐ …and a click on a switch TOGGLES it, rather than reading a position off a track it does not have',
   /v = to_default \? r->def : \(r->setting >= \(r->min \+ r->max\) \* 0\.5 \? r->min : r->max\);/.test(guiLayout), true);
-check('…and the panel height is derived from the rows, because a group band is more than a row count',
+
+// ── 25c. THE PANEL BECOMES BLOCKS, AND THE ORDER BECOMES DRAGGABLE (Stage 2/3) ───────────────────────────
+// ⚠️ WHAT THESE PROTECT, AND WHY THEY ARE SHAPED THIS WAY. The panel no longer draws a list of rows: it draws
+// a BOX per block with the amber line between them and the SELECTED block's controls beside them. The reason
+// is a constraint rather than a preference — the panel's height cannot depend on what is open, because
+// set_size/can_resize are false and the host that photographs it answers no host extensions — so the block
+// layer had to become a fixed-size model in the SHARED header, and every backend draws from it.
+check('⭐ …and the blocks are a MODEL in the shared header, so three backends cannot lay out three panels',
+  /typedef struct \{\n   char name\[64\];\n   uint32_t first_row;/.test(guiLayout)
+  && /static uint32_t morpheus_gui_blocks\(/.test(guiLayout)
+  && /out\[nb\]\.movable = morpheus_gui_block_movable\(nb\);/.test(guiLayout)
+  // …and WHETHER A HEADING IS WORTH DRAWING is decided here too. Rob, looking at the first render: "drop it
+  // when it repeats" — a block whose first control shares the block's name printed it twice, once amber and
+  // once white, and the heading read as a second control. One decision, three backends.
+  && /out\[nb\]\.title = strcmp\(out\[nb\]\.name, rows\[i\]\.name\) != 0;/.test(guiLayout), true);
+// ⚠️ THE HEIGHT IS A FUNCTION OF THE CHAIN, NEVER OF WHAT IS OPEN. If it moved when a block was opened, the
+// panel would have to ask the host to resize it — and the offscreen host that photographs this panel cannot,
+// so the change would be unverifiable as well as unimplemented.
+check('⭐ …and the panel height is derived from the BLOCKS and the tallest one, never from what is open',
   /static uint32_t morpheus_gui_height\(const clap_plugin_t \*plugin, const clap_plugin_params_t \*params\)/.test(guiLayout)
-  && /morpheus_gui_total_height\(rows, n\)/.test(guiLayout), true);
+  && /morpheus_gui_total_height\(blocks, nb, morpheus_gui_most_rows\(blocks, nb\)\)/.test(guiLayout)
+  && !/morpheus_gui_total_height\(rows, n\)/.test(guiLayout), true);
+check('…and a box is a target, so a click can open a block without aiming at a 1px border',
+  /static int morpheus_gui_box_at\(const double x, const double y, const uint32_t count\)/.test(guiLayout)
+  && /y >= top && y < top \+ \(double\)MORPHEUS_BOX_H/.test(guiLayout), true);
+// ⭐ THE PIVOT RULE LIVES IN THE PLUGIN, AND THE PANEL ASKS. The amp model, the cabinet and the output are not
+// the panel's to move, and a rule that lived in one view would be a rule the other surfaces do not have.
+check('⭐ …and WHICH blocks may move is asked of the plugin, not decided by the panel',
+  /return \(strcmp\(kind, "model"\) && strcmp\(kind, "cab"\) && strcmp\(kind, "level"\)\) \? 1 : 0;/.test(guiPlugin), true);
+check('…and the plugin refuses an order that moves one of them, even though it is a legal permutation',
+  /if \(!morpheus_gui_block_movable\(order\[s\]\) && order\[s\] != s\) return false;/.test(guiPlugin), true);
+check('…and a drag never moves a pinned block, because the permutation is built over the movable slots only',
+  /if \(blocks\[b\]\.movable\) \{ slot\[nf\] = b; seq\[nf\] = b; \+\+nf; \}/.test(guiLayout), true);
+// …AND A DRAG MUST BE FORWARDED TO THE HOST, or the session would save the order the plugin was BUILT with and
+// the reorder would be forgotten the moment the project was reopened.
+check('⭐ …and the plugin marks the host state dirty, or a drag is forgotten when the session is saved',
+  /hs->mark_dirty\(p->host\);/.test(guiPlugin), true);
+// ⚠️ AND THE PANEL DRAWS THE ORDER THAT IS RUNNING. It used to read the COMPILED block list, which was right
+// only for as long as the order could not change — after a drag the audio would play the new order while the
+// panel redrew the old one, which looks exactly like the drag not working.
+//
+// ⚠️ BOTH PLACES AN ORDER CAN ARRIVE, and the count is the check: a drag (morpheus_gui_set_order) and a saved
+// session loading (plug_state_load). Requiring one occurrence would pass with the other one missing, and the
+// missing one is the quieter bug — a reopened project would draw the compiled chain while playing the saved
+// one.
+check('⭐ …and the block list the panel reads is the RUNNING order, in BOTH places an order can arrive',
+  (guiPlugin.match(/morpheus_gui_order_names_set\(p->stage_order_pending\)/g) || []).length >= 2
+  && !/if \(count\) \*count = MORPHEUS_NUM_BLOCKS;\n   return kMorpheusBlocks;/.test(guiPlugin), true);
 for (const [name, src] of [['Cocoa', guiCpp], ['win32', guiWin], ['X11', guiX11]]) {
-  check(`⭐ …${name} draws a switch for a stepped row, and a name above each block`,
-    /row->stepped/.test(src) && /row->first/.test(src)
-    && /MORPHEUS_SWITCH_W/.test(src) && /MORPHEUS_GROUP_H/.test(src), true);
+  check(`⭐ …${name} draws a switch for a stepped row, and the block column with its amber line`,
+    /row->stepped/.test(src) && /MORPHEUS_SWITCH_W/.test(src) && /blk->title/.test(src)
+    && /morpheus_gui_blocks\(/.test(src) && /morpheus_gui_box_y\(/.test(src), true);
   check(`…${name} refuses to drag a switch — two states have nothing to drag between`,
-    /rows\[row\]\.stepped/.test(src)
-    && /(\(dbl \|\| rows\[row\]\.stepped\)|!rows\[row\]\.stepped\)|rows\[row\]\.stepped \? -1 : row)/.test(src), true);
-  check(`…${name} asks the shared layout where a row is, rather than computing the sum itself`,
-    /morpheus_gui_row_y\(rows, i\)/.test(src) && !/MORPHEUS_PAD \+ MORPHEUS_ROW/.test(src), true);
+    /stepped/.test(src) && /_drag = |drag = /.test(src), true);
+  check(`…${name} takes the box and row hits from the shared layout, rather than computing the sum itself`,
+    /morpheus_gui_box_at\(/.test(src) && /morpheus_gui_row_at\(/.test(src)
+    && /morpheus_gui_row_y\(/.test(src) && !/MORPHEUS_PAD \+ MORPHEUS_ROW/.test(src), true);
+  // ⭐ EVERY BACKEND HAS TO WIRE THE DRAG, not just the one that happens to be developed on. The Mac build is
+  // the only one a person can look at here; the other two are proven by their runners, and a backend that drew
+  // the boxes but never handed the order on would look perfect in a photograph.
+  //
+  // ⚠️ IT READS `blocks[i].movable` AND DOES NOT CALL THE PLUGIN ITSELF. The question is asked once, in
+  // morpheus_gui_blocks, and a backend that asked again would be a second place for the pivot rule to live —
+  // which is the thing the shared model exists to prevent.
+  check(`⭐ …${name} hands a drag to the plugin and shows what the plugin ACCEPTED`,
+    /morpheus_gui_reorder\(/.test(src) && /morpheus_gui_set_order\(/.test(src)
+    && /(blocks\[[a-zA-Z_]+\]\.movable|->movable)/.test(src), true);
 }
 
 // ── 25c. the AMP is a switch too, and it is the one block whose SHAPE makes that awkward ─────────────────
