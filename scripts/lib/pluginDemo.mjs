@@ -54,12 +54,21 @@ export const DEMO_CAPTURES = [
 /**
  * The four mics on the one cabinet, in the order the `Speaker` control offers them.
  *
- * Same contract as the captures: 545 is the default, and `name` is the short label a player reads rather than
- * the microphone's full filename.
+ * Same contract as the captures, and ⚠️ **THE ORDER IS THE CONTRACT — the selector opens on the first entry.**
+ * U87 is first because **Rob chose the demo's opening sound** (2026-10-08): *"for now just open with the crunch
+ * and the u87"*, while he decides a permanent default after more audio tests. That is not a ranking of the
+ * mics.
+ *
+ * ⚠️ ORDERING IS THE ONLY MECHANISM THERE IS. The selector's default is index 0 — `rigSelectors` hardcodes
+ * `def: 0` — so choosing which member a plugin OPENS on, independently of the order it lists them in, needs a
+ * `default` field the manifest does not have yet. It is a real gap rather than a preference: a rig whose best
+ * capture is not its first has no way to say so. Recorded in `PLUGIN-GUI-PLAN.md`.
+ *
+ * `name` is the short label a player reads rather than the microphone's own filename.
  */
 export const DEMO_MICS = [
-  { file: 'TF MARSH 4x12 G12M 8ohm 545 3 - Enhanced.wav', name: '545' },
   { file: 'TF MARSH 4x12 G12M 8ohm U87 3 - Top Boost.wav', name: 'U87' },
+  { file: 'TF MARSH 4x12 G12M 8ohm 545 3 - Enhanced.wav', name: '545' },
   { file: 'TF MARSH 4x12 G12M 8ohm 017 TUBE 3 - Top Boost.wav', name: '017 Tube' },
   { file: 'TF MARSH 4x12 G12M 8ohm M160 2 - Enhanced.wav', name: 'M160' },
 ];

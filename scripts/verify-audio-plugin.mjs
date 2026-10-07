@@ -2332,15 +2332,21 @@ check('…and the output block LAST, because it is the plugin\'s output and not 
 // one-capture plugin under a page that describes four.
 check('the demo names all four captures, in the order the selector offers them',
   demo.DEMO_CAPTURES.map((c) => c.name), ['Crunch', 'Crunch 2', 'Hi Gain (TS)', 'Hi Gain (RAT)']);
-check('…and all four mics', demo.DEMO_MICS.map((m) => m.name), ['545', 'U87', '017 Tube', 'M160']);
+check('…and all four mics', demo.DEMO_MICS.map((m) => m.name), ['U87', '545', '017 Tube', 'M160']);
 const demoManifest = JSON.parse(demo.demoManifest());
 check('⭐ …and the manifest the runners seed carries them as `{ path, name }`, four of each',
   [demoManifest.models, demoManifest.cabs], [demo.DEMO_RIG.models, demo.DEMO_RIG.cabs]);
 // ⚠️ THE ORDER IS THE DEFAULT. A selector opens on index 0 — the generated rows below carry `0.0` as the value
-// — so the first entry of each list is the sound the download makes before anyone touches it. Crunch through
-// the 545, unchanged from the material the rig was captured as.
-check('…and the demo opens on the FIRST capture through the FIRST mic',
-  [demoManifest.models[0].name, demoManifest.cabs[0].name], ['Crunch', '545']);
+// — so the first entry of each list is the sound the download makes before anyone touches it. **Crunch through
+// the U87**, which is Rob's chosen opening sound (2026-10-08: *"for now just open with the crunch and the
+// u87"*), not a ranking of the mics.
+//
+// ⚠️ AND THIS CHECK IS THE ONLY PLACE THAT KNOWS IT. Ordering is the ONLY mechanism there is — `rigSelectors`
+// hardcodes `def: 0` — so the day a rig needs to OPEN on one member while LISTING them in another order, this
+// check and the list above are what will have to change. Asserted rather than assumed so that a reorder is a
+// deliberate act with a failing check behind it, not a silent change to what the download sounds like.
+check('…and the demo opens on the FIRST capture through the FIRST mic — Crunch through the U87',
+  [demoManifest.models[0].name, demoManifest.cabs[0].name], ['Crunch', 'U87']);
 const demoRigFiles = demo.demoRigSeed();
 check('⭐ …every file it names is PRESENT in the repository, and the bytes are the ones a runner seeds',
   [...demo.DEMO_CAPTURES, ...demo.DEMO_MICS].filter(({ file }) => {
