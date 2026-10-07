@@ -2582,6 +2582,16 @@ export const MUTATIONS = [
     find: '        })), selectorFor(it.kind)].filter(Boolean),',
     replace: '        }))].filter(Boolean),',
   },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/board.js',
+    // ⚠️ THE BUG THE RENDER CHECK FOUND, AS A MUTATION. `selectorFor` first read "models for a model, cabs for
+    // everything else", so the Speaker row was drawn under Input, the gate and the tone stack as well — a
+    // picture of three cabinets in a path that has one. Every other check in this file still passed.
+    why: 'Lets every block claim the rig\'s mic list, so the board editor draws a Speaker row under blocks that have no speaker.',
+    find: '    if (kind !== \'model\' && kind !== \'cab\') return null;',
+    replace: '    if (false) return null;',
+  },
 ];
 
 /**

@@ -172,6 +172,13 @@ check('⭐ the Amp model block names the rig\'s captures, so the app draws the c
   modelBlock.controls.filter((c) => c.select).map((c) => [c.key, c.options]), [['model_select', ['Clean', 'Lead']]]);
 check('⭐ …and the Cabinet block names its mics',
   cabBlock.controls.filter((c) => c.select).map((c) => [c.key, c.options]), [['cab_select', ['545', 'U87']]]);
+// ⚠️ AND NOTHING ELSE. The first version attached "cabs for anything that is not a model", so the Speaker row
+// was drawn under Input, the gate and the tone stack too — three cabinets in a path that has one. Found by
+// rendering the dialog; this is the assertion that keeps it from coming back.
+check('⚠️ …and NO other block gets one: a selector belongs to the block it selects',
+  boardView(board, { rig: view.selectors }).blocks
+    .filter((b) => b.kind !== 'model' && b.kind !== 'cab')
+    .flatMap((b) => b.controls.filter((c) => c.select)).length, 0);
 check('one member is not a choice, so a one-capture project draws no extra row at all',
   boardView(board, { rig: { models: [{ path: 'models/a.nam', name: 'Clean' }], cabs: [] } })
     .blocks.flatMap((b) => b.controls.filter((c) => c.select)).length, 0);

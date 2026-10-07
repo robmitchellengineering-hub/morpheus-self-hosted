@@ -492,7 +492,12 @@ export function boardView(board, { modelFile = null, cabFile = null, manifest = 
   // usable member (`rigSelectors` sets `def: 0`), and the member a player picks is runtime state the plugin
   // keeps — so this row says which members exist and that the plugin opens on the first. Editing it here
   // would be writing a value the scaffold does not read.
+  // ⚠️ ONLY THE TWO BLOCKS THE RIG BELONGS TO. The first version read "models for a model, cabs for
+  // everything else", which put the Speaker row under Input, the gate and the tone stack too — a drawing of
+  // three cabinets in a signal path that has one. Found by RENDERING the dialog and looking: no compile and
+  // no audio proof can see a control attached to the wrong block.
   const selectorFor = (kind) => {
+    if (kind !== 'model' && kind !== 'cab') return null;
     const list = Array.isArray(rig?.[kind === 'model' ? 'models' : 'cabs']) ? rig[kind === 'model' ? 'models' : 'cabs'] : [];
     if (list.length < 2) return null;
     return {
