@@ -397,6 +397,15 @@ jobs:
       - name: Brain dump is pinned to the top of the deck
         run: node scripts/verify-deck-widget-order.mjs
 
+      # A widget build may create a backend endpoint at server/src/functions/widget<PascalCase>.js, and a
+      # file there is routed JUST BY EXISTING — no registry to remove. Deleting the widget used to leave it
+      # behind: live, reachable, answering 401 instead of 404. That happened (#439 left widgetEnergySparkline
+      # behind, removed by hand in 1a1922b). This asserts every widget endpoint is invoked by a widget, that
+      # the delete path removes the widget's own (and never a shared) endpoint, and that the path is admitted
+      # to the scoped push — asserted against the real incident as a fixture, not against its own prose.
+      - name: A deleted widget takes its backend endpoint with it
+        run: node scripts/verify-deck-widget-backend.mjs
+
       # The signed-in surface is rendered by NO other gate: every protected route is behind
       # ProtectedRoute, so the `render` job below — which has no session — never fetches those chunks.
       # `#502` put a blank /deck/settings through a fully green pipeline that way (H22). The render

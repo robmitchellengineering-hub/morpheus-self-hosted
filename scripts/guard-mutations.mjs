@@ -252,6 +252,26 @@ export const MUTATIONS = [
     replace: "import { canReorderWidget } from './deckWidgetOrder';",
   },
   {
+    guard: 'verify-deck-widget-backend.mjs',
+    file: 'server/src/lib/widgetBackendFunctions.js',
+    // The claim: an endpoint no widget invokes is REPORTED, so a delete that leaves one behind is
+    // caught. Neutered, the real incident fixture (`widgetEnergySparkline` surviving PR #439) reports
+    // nothing and the leftover file reads as clean — H19's "green because it examined nothing".
+    why: 'Makes orphan detection return nothing, so the endpoint that actually outlived its widget (widgetEnergySparkline, PR #439) reads as owned and the guard goes green on the exact state it exists to catch.',
+    find: '  return [...new Set(fileNames)].filter((name) => !referenced.has(name)).sort();',
+    replace: '  return [];',
+  },
+  {
+    guard: 'verify-deck-widget-backend.mjs',
+    file: 'server/src/lib/widgetBackendFunctions.js',
+    // The other half: the widget's own invocation is what proves the endpoint is the widget's to
+    // remove. Without it a deletion would name nothing (the bug) — and with a looser reader it could
+    // name a function the widget never called. The positive fixtures in section 1 fail on this.
+    why: 'Stops reading the widget\'s own invoke() call, so the endpoint a widget owns is never named for removal and a delete silently leaves it behind — the shipped bug, as a mutation.',
+    find: '  return [...names].sort();',
+    replace: '  return [];',
+  },
+  {
     guard: 'verify-lint-coverage.mjs',
     file: 'eslint.config.js',
     // The root cause, as a mutation: the frontend block stops re-spreading the recommended rules, so

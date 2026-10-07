@@ -99,6 +99,7 @@ const HARD = [
   'verify-onramp.mjs',
   'verify-deck-widget-build.mjs',
   'verify-deck-widget-order.mjs',
+  'verify-deck-widget-backend.mjs',
   'verify-render-check.mjs',
   'verify-audio-plugin.mjs',
   'verify-task-models.mjs',

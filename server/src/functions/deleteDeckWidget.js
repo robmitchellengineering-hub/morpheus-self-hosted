@@ -1,9 +1,19 @@
 // Deletes a Jarvis-built Command Deck widget — the mechanical counterpart
-// to buildDeckWidget.js. Unlike a build, deletion needs no AI: remove one
-// file, remove one line from the shared registry. So this never drives
-// chatWithMorpheus.js's planner/coder/reviewer loop at all — it computes
-// the edit itself and ships it through the same push/merge/deploy/verify
-// pipeline a build uses, reusing those functions directly.
+// to buildDeckWidget.js. Unlike a build, deletion needs no AI: remove the
+// widget's files, remove one line from the shared registry. So this never
+// drives chatWithMorpheus.js's planner/coder/reviewer loop at all — it
+// computes the edit itself and ships it through the same push/merge/deploy/
+// verify pipeline a build uses, reusing those functions directly.
+//
+// "The widget's files" is more than the .jsx. buildDeckWidget.js's authoring
+// contract also lets the build create ONE backend endpoint at
+// server/src/functions/widget<PascalCase>.js, and a file there is ROUTED JUST
+// BY EXISTING (routes/functions.routes.js has no registry to remove) — so a
+// deletion that removed only the .jsx and the registry line left the endpoint
+// live and reachable. That shipped: widgetEnergySparkline.js outlived its
+// widget until `1a1922b` removed it by hand. This now takes the endpoint too,
+// but only when the deleted widget's own source invokes it and no other widget
+// does — see lib/widgetBackendFunctions.js for the ownership rule.
 //
 // Ownership: only the widget's own creator (its DECK_WIDGETS entry's
 // createdBy, set by buildDeckWidget.js's authoring contract) may delete
@@ -26,8 +36,15 @@ import pushSelfDevToGithubHandler from './pushSelfDevToGithub.js';
 import { runMergeSelfDevPr } from './mergeSelfDevPr.js';
 import { runSmokeCheckSelfDev } from './smokeCheckSelfDev.js';
 import { removeWidgetEntry } from '../lib/selfDevRepo.js';
+import { widgetFunctionsToRemove } from '../lib/widgetBackendFunctions.js';
 
 const WIDGETS_DIR = 'src/pages/CommandDeck/widgets/';
+// Where buildDeckWidget.js's authoring contract lets a build put the widget's
+// own backend endpoint: `widget<PascalCase>.js`. Deleting a widget has to take
+// that file too, or it stays routed and live — see widgetBackendFunctions.js for
+// the incident and for why only the deleted widget's OWN (and unshared) endpoint
+// is ever removed.
+const FUNCTIONS_DIR = 'server/src/functions/';
 const DECK_WIDGETS_REGISTRY_PATH = 'src/pages/CommandDeck/deckWidgets.js';
 
 // The widget keys DECK_WIDGETS shipped with before any Jarvis build ever
@@ -121,23 +138,52 @@ async function deleteWidgetInBackground({ selfDevActor, project, requestingUser,
     return finish({ ok: false, message: err.message });
   }
 
+  // The widget's OWN backend endpoint, if its build created one. Resolved from
+  // the widget's own source rather than guessed from `key`: buildDeckWidget.js's
+  // contract names it `widget<PascalCase>` from the widget's purpose, so a guess
+  // from the key would be a different file (or none). Every OTHER widget file is
+  // passed in so an endpoint another widget still calls is never taken with this
+  // one. See lib/widgetBackendFunctions.js.
+  const siblingWidgets = await prisma.projectFile.findMany({
+    where: { project_id: projectId, path: { startsWith: WIDGETS_DIR } },
+    select: { id: true, content: true },
+  });
+  const backendNames = widgetFunctionsToRemove(
+    widgetFile.content,
+    siblingWidgets.filter((f) => f.id !== widgetFile.id).map((f) => f.content),
+  );
+  // Only endpoints that actually exist in the workspace: a widget that names a
+  // function the build never created (or one removed by hand) must not add a
+  // non-existent path to the scope policy, and must not fail the delete.
+  const backendFiles = backendNames.length
+    ? await prisma.projectFile.findMany({
+      where: { project_id: projectId, path: { in: backendNames.map((n) => `${FUNCTIONS_DIR}${n}.js`) } },
+      select: { id: true, path: true },
+    })
+    : [];
+
   await updateJob(job.id, { status: 'building', message: 'Removing the widget from the registry…' });
   await prisma.$transaction([
     prisma.projectFile.update({ where: { id: registryFile.id }, data: { content: newRegistryContent } }),
     prisma.projectFile.delete({ where: { id: widgetFile.id } }),
+    ...(backendFiles.length
+      ? [prisma.projectFile.deleteMany({ where: { id: { in: backendFiles.map((f) => f.id) } } })]
+      : []),
   ]);
 
   // Ad-hoc, per-call policy object (not a registered id) — enginePolicy.js's
-  // resolvePolicy() already accepts either. Scoped to exactly these two
-  // paths for THIS delete only, so nothing else in the repo is even
-  // diffable or deletable no matter what else is going on in the shared
-  // workspace.
+  // resolvePolicy() already accepts either. Scoped to exactly these paths for
+  // THIS delete only, so nothing else in the repo is even diffable or deletable
+  // no matter what else is going on in the shared workspace. The widget's own
+  // backend endpoint is one of those paths: leaving it out is what left the file
+  // behind, still routed, the last time a widget was deleted.
   const scopePolicy = {
     id: 'widget_delete',
     widgetKey: key,
     allowPathPrefixes: [
       new RegExp(`^${escapeRegex(widgetPath)}$`),
       new RegExp(`^${escapeRegex(DECK_WIDGETS_REGISTRY_PATH)}$`),
+      ...backendFiles.map((f) => new RegExp(`^${escapeRegex(f.path)}$`)),
     ],
   };
 
@@ -192,10 +238,16 @@ async function deleteWidgetInBackground({ selfDevActor, project, requestingUser,
   // Anything below the wait usually never runs, with no exception to catch. The user's Deck already
   // stopped showing the widget (its instance row is deleted before the build starts), so all that is
   // left to do durably is log it and reach a terminal status.
-  await logUsage(selfDevActor.id, 'deck_widget_delete', projectId, project.name, { widgetKey: key, requestingUserId: requestingUser.id });
+  await logUsage(selfDevActor.id, 'deck_widget_delete', projectId, project.name, {
+    widgetKey: key,
+    requestingUserId: requestingUser.id,
+    // The widget's own backend endpoint(s) that went with it — recorded so a
+    // future "why is this function gone?" has an answer that is not a guess.
+    removedFunctions: backendFiles.map((f) => f.path),
+  });
   const finished = await finish({
     ok: true,
-    message: `Removed — "${key}" is off your Deck now, and its code finishes leaving production when the deploy lands (about two minutes).`,
+    message: `Removed — "${key}" is off your Deck now, and its code finishes leaving production when the deploy lands (about two minutes).${backendFiles.length ? ' Its backend endpoint went with it.' : ''}`,
   });
 
   // ── BEST EFFORT from here down ─────────────────────────────────────────────
