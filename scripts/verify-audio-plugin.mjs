@@ -1991,8 +1991,13 @@ for (const [name, src] of [['Cocoa', guiCpp], ['win32', guiWin], ['X11', guiX11]
     && /morpheus_gui_blocks\(/.test(src) && /morpheus_gui_box_y\(/.test(src), true);
   // …and the BADGE, in every backend. Its geometry is shared, so a backend that skipped the loop would simply
   // have an empty corner on one platform — which no compile and no audio proof can see.
+  //
+  // ⚠️ THE LOOP ITSELF IS THE ASSERTION, not "the file mentions kMorpheusBadge". The first version asked only
+  // for the array's NAME, which the loop body contains — so a loop that never ran (or ran zero times) still
+  // passed. The bound and the index have to be there.
   check(`…${name} draws the badge from the shared geometry, and the wordmark under it`,
-    /kMorpheusBadge/.test(src) && /MORPHEUS_BADGE_WORD/.test(src), true);
+    /for \(size_t bi = 0; bi < MORPHEUS_BADGE_PRIMITIVES; \+\+bi\)/.test(src)
+    && /kMorpheusBadge\[bi\]/.test(src) && /MORPHEUS_BADGE_WORD/.test(src), true);
   check(`…${name} refuses to drag a switch — two states have nothing to drag between`,
     /stepped/.test(src) && /_drag = |drag = /.test(src), true);
   check(`…${name} takes the box and row hits from the shared layout, rather than computing the sum itself`,

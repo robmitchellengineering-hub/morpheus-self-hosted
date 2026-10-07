@@ -1957,6 +1957,17 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE BADGE, AND THE LOOP THAT DRAWS IT. The check asserts the loop's BOUND, not that the array is
+    // named somewhere in the file — the array's name is inside the loop body, so a loop that ran zero times
+    // would have satisfied the first version of it. A backend with an empty corner compiles and sounds
+    // identical, which is why nothing else can see this.
+    why: 'Draws no badge on the Mac panel: the loop runs zero times, so the corner is empty and nothing else changes.',
+    find: '  // ── THE BADGE, and the wordmark under it ──────────────────────────────────────────────────────────────\n  // The geometry is in the shared header so the three backends draw one picture; what is here is the four\n  // primitives it is made of. It sits in the space the controls do not reach, which is why the panel\'s fixed\n  // height is a gift rather than a compromise.\n  for (size_t bi = 0; bi < MORPHEUS_BADGE_PRIMITIVES; ++bi) {',
+    replace: '  for (size_t bi = 0; bi < 0; ++bi) {',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
     // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has
