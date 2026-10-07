@@ -1891,6 +1891,26 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ THE ORDER IS DATA ONLY IF THE DSP WALKS IT. Emitting the table and then reading the COMPILED default
+    // is the exact shape of "a table nobody walks": every other proof in the repository passes, because every
+    // one of them renders the default order — where the two tables are identical by construction.
+    why: 'Walks the compiled default instead of the running order, so a saved chain order is ignored.',
+    find: '            for (unsigned char s = 0; s < p->model_at; ++s) {\n               x = morpheus_stage_dsp(p, c, x, (int)p->stage_order[s]);\n            }',
+    replace: '            for (unsigned char s = 0; s < p->model_at; ++s) {\n               x = morpheus_stage_dsp(p, c, x, (int)kMorpheusDefaultOrder[s]);\n            }',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ AND A REORDER MUST TAKE EFFECT BETWEEN BLOCKS. Writing a loaded order straight into the table the
+    // audio thread is walking would let a reorder land mid-block — half the block on one order, half on
+    // another — which is the one outcome a permutation must never produce. Nothing would report it.
+    why: 'Applies a loaded order directly to the running table instead of handing it over, so a reorder can land mid-block.',
+    find: '   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order_pending[s] = order[s];\n   morpheus_gui_publish(&p->stage_order_pending_flag);',
+    replace: '   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order[s] = order[s];',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
     // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has

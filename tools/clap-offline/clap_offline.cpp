@@ -134,9 +134,59 @@ static std::string jsonEscape(const char *s) {
   return out;
 }
 
+// ── state, for the one proof that needs it ───────────────────────────────────────────────────────────
+// CLAP's state extension talks to STREAMS, not files, so a round-trip needs a buffer behind them. This is the
+// whole of it: a cursor over bytes in, and an append onto bytes out. It exists because the chain order is a
+// value the plugin SAVES now — and "it saves it" is only a claim until something loads it back and renders.
+struct MemStream {
+  const std::vector<uint8_t> *in = nullptr;
+  std::vector<uint8_t> *out = nullptr;
+  uint64_t at = 0;
+};
+
+static int64_t mem_read(const clap_istream_t *stream, void *buffer, uint64_t size) {
+  MemStream *m = (MemStream *)stream->ctx;
+  const uint64_t left = m->in->size() - m->at;
+  const uint64_t n = size < left ? size : left;
+  if (n == 0) return 0;
+  std::memcpy(buffer, m->in->data() + m->at, (size_t)n);
+  m->at += n;
+  return (int64_t)n;
+}
+
+static int64_t mem_write(const clap_ostream_t *stream, const void *buffer, uint64_t size) {
+  MemStream *m = (MemStream *)stream->ctx;
+  const uint8_t *p = (const uint8_t *)buffer;
+  m->out->insert(m->out->end(), p, p + size);
+  return (int64_t)size;
+}
+
+/** The whole file, or empty when it cannot be read — one helper so the two call sites cannot drift. */
+static bool readFileBytes(const char *path, std::vector<uint8_t> &into) {
+  FILE *f = std::fopen(path, "rb");
+  if (!f) return false;
+  std::fseek(f, 0, SEEK_END);
+  const long n = std::ftell(f);
+  std::fseek(f, 0, SEEK_SET);
+  into.resize(n > 0 ? (size_t)n : 0);
+  const bool ok = into.empty() || std::fread(into.data(), 1, into.size(), f) == into.size();
+  std::fclose(f);
+  return ok;
+}
+
+static bool writeFileBytes(const char *path, const std::vector<uint8_t> &bytes) {
+  FILE *f = std::fopen(path, "wb");
+  if (!f) return false;
+  const bool ok = bytes.empty() || std::fwrite(bytes.data(), 1, bytes.size(), f) == bytes.size();
+  std::fclose(f);
+  return ok;
+}
+
 int main(int argc, char **argv) {
   const char *inPath = nullptr;
   const char *outPath = nullptr;
+  const char *saveStatePath = nullptr;
+  const char *loadStatePath = nullptr;
   uint32_t blockSize = 256;
   bool listParams = false;
   std::vector<std::pair<clap_id, double>> setParams;
@@ -148,6 +198,8 @@ int main(int argc, char **argv) {
     else if (a == "--out") outPath = next();
     else if (a == "--blocksize") { const char *v = next(); if (v) blockSize = (uint32_t)std::atoi(v); }
     else if (a == "--list-params") listParams = true;
+    else if (a == "--save-state") saveStatePath = next();
+    else if (a == "--load-state") loadStatePath = next();
     else if (a == "--param") {
       const char *v = next();
       if (!v) { std::fprintf(stderr, "clap_offline: --param needs ID=VALUE\n"); return 2; }
@@ -197,6 +249,20 @@ int main(int argc, char **argv) {
       (const clap_plugin_latency_t *)plugin->get_extension(plugin, CLAP_EXT_LATENCY);
   const clap_plugin_audio_ports_t *ports =
       (const clap_plugin_audio_ports_t *)plugin->get_extension(plugin, CLAP_EXT_AUDIO_PORTS);
+  const clap_plugin_state_t *state =
+      (const clap_plugin_state_t *)plugin->get_extension(plugin, CLAP_EXT_STATE);
+
+  // ⭐ THE ORDER, LOADED BEFORE A SINGLE BLOCK IS PROCESSED. The plugin hands it to its audio thread through a
+  // pending slot and swaps it in at the top of the next block, so a load that happens here is in force for the
+  // whole render — which is what makes "a reorder is heard" testable rather than assumed.
+  if (loadStatePath) {
+    if (!state) { std::fprintf(stderr, "clap_offline: --load-state, but the plugin has no state extension\n"); return 1; }
+    std::vector<uint8_t> blob;
+    if (!readFileBytes(loadStatePath, blob)) { std::fprintf(stderr, "clap_offline: cannot read %s\n", loadStatePath); return 1; }
+    MemStream m; m.in = &blob;
+    const clap_istream_t is = {&m, mem_read};
+    if (!state->load(plugin, &is)) { std::fprintf(stderr, "clap_offline: state->load() refused %s\n", loadStatePath); return 1; }
+  }
 
   // How many channels does the plugin actually want? Asking beats assuming: a plugin that declares one port of
   // two channels and is handed a mono buffer will process whatever is in it, and the bench would then report on
@@ -331,6 +397,18 @@ int main(int argc, char **argv) {
 
   const auto processEnd = std::chrono::steady_clock::now();
   const double processSeconds = std::chrono::duration<double>(processEnd - processStart).count();
+
+  // ⭐ AND SAVED AFTER THE LAST BLOCK, which is where a host saves it. The bytes must be the ORDER THAT RAN,
+  // not the compiled default — a session that saved a reordered chain and loaded the default back would be a
+  // reorder that silently undid itself, and nothing but a round-trip can tell those two apart.
+  if (saveStatePath) {
+    if (!state) { std::fprintf(stderr, "clap_offline: --save-state, but the plugin has no state extension\n"); return 1; }
+    std::vector<uint8_t> blob;
+    MemStream m; m.out = &blob;
+    const clap_ostream_t os = {&m, mem_write};
+    if (!state->save(plugin, &os)) { std::fprintf(stderr, "clap_offline: state->save() failed\n"); return 1; }
+    if (!writeFileBytes(saveStatePath, blob)) { std::fprintf(stderr, "clap_offline: cannot write %s\n", saveStatePath); return 1; }
+  }
 
   plugin->stop_processing(plugin);
   plugin->deactivate(plugin);

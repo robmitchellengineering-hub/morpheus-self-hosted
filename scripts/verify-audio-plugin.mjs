@@ -1319,28 +1319,93 @@ check('…and a plain plugin has no gate code at all', /gate_process/.test(plain
 // every check that only looks for its PRESENCE still passes — which is exactly what happened: the cabinet was
 // emitted BEFORE the model while its own comment said "after the model", so a speaker was being convolved in
 // front of the amplifier that drives it. Found by reading the emitted chain, not by a check.
-const ampLoopNow = ampNowSrc.slice(ampNowSrc.indexOf('static clap_process_status plug_process'));
-// Infinity when the needle is absent, so a missing stage FAILS the comparison instead of crashing the guard
-// — a guard that throws is a guard whose output nobody reads.
-const at = (needle) => {
-  const i = ampLoopNow.indexOf(needle);
-  return i < 0 ? Infinity : i;
+// ⭐ THE ORDER, READ FROM THE TABLE THE DSP ACTUALLY WALKS (2026-10-07). It used to be asserted by finding each
+// stage's function name inside the emitted process loop, which stopped meaning anything the moment the loop
+// became a walk over an order table — and it failed in the dangerous direction: two of these checks went on
+// PASSING VACUOUSLY, because `indexOf` on a needle that is no longer in the body returns -1 and every
+// comparison against -1 held (KNOWN-HAZARDS H19: a check that never ran reads as a check that passed).
+const stageIdOrder = (src) => {
+  const ids = (/#define MORPHEUS_NUM_STAGES \d+\nenum \{\n([\s\S]*?)\n\};/.exec(src)?.[1] || '')
+    .split(',').map((l) => l.trim()).filter(Boolean)
+    .map((l) => l.split('=')[0].trim());
+  const kinds = (src.match(/static const char \*const kMorpheusStageKinds\[MORPHEUS_NUM_STAGES\] = \{([\s\S]*?)\};/)?.[1] || '')
+    .split(',').map((s) => s.trim().replace(/^"|"$/g, '')).filter(Boolean);
+  const order = (src.match(/static const unsigned char kMorpheusDefaultOrder\[MORPHEUS_NUM_STAGES\] = \{([\s\S]*?)\};/)?.[1] || '')
+    .split(',').map((s) => s.trim()).filter(Boolean).map(Number);
+  // The KINDS, in the order the DSP walks them, so a stage in the wrong place fails here rather than nowhere.
+  return order.map((i) => kinds[i]);
 };
+// A block's IDENTITY is deliberately not compared: a board's stage id is its `instanceId` and a legacy
+// project's is its kind, so the two texts legitimately differ by that one token and nothing else.
+const normaliseStageIds = (src) => {
+  const ids = (/#define MORPHEUS_NUM_STAGES \d+\nenum \{\n([\s\S]*?)\n\};/.exec(src)?.[1] || '')
+    .split(',').map((l) => l.trim()).filter(Boolean)
+    .map((l) => l.split('=')[0].trim());
+  // Longest first, so `STAGE_1` cannot bite the front of `STAGE_10`; the replacement carries the ENUM
+  // POSITION, so the two texts are compared by what each id means rather than by how long its name is.
+  const pairs = ids.map((id, i) => [id, i]).sort((a, b) => b[0].length - a[0].length);
+  let out = src;
+  for (const [id, i] of pairs) out = out.split(id).join(`MORPHEUS_STAGE_N${i}`);
+  return out;
+};
+const ampOrder = stageIdOrder(ampNowSrc);
+// A chain six stages deep is where a stage ends up in the wrong place and every check that only looks for its
+// PRESENCE still passes — which is exactly what happened once: the cabinet was emitted BEFORE the model while
+// its own comment said "after the model", so a speaker was convolved in front of the amplifier driving it.
 check('⭐ the chain runs input, gate, tone, model, cabinet, output in that order',
-  at('IDX_INPUT') < at('gate_process')
-  && at('gate_process') < at('biquad_process(&p->tone[c][0]')
-  && at('biquad_process(&p->tone[c][2]') < at('#if MORPHEUS_HAS_MODEL')
-  && at('p->model[c]->process') < at('cab_process')
-  && at('cab_process') < ampLoopNow.lastIndexOf('IDX_OUTPUT'), true);
+  ampOrder.join(' · '), 'gain · gate · tone · model · cab · level');
 // A gate anywhere but first is gating what the stages after it added, and cannot un-add it.
-check('…and the gate is before everything that amplifies', at('gate_process') < at('p->model[c]->process'), true);
+check('…and the gate is before everything that amplifies',
+  ampOrder.indexOf('gate') < ampOrder.indexOf('model') && ampOrder.indexOf('gate') < ampOrder.indexOf('cab'), true);
+// …and the order is the one the DSP RUNS, not a table nobody reads: every stage it names has a case, so a
+// block cannot be in the signal path and unreachable — the failure the old post-model pass produced.
+check('…and every stage in the order has a case in the dispatch, so none can silently vanish',
+  (/#define MORPHEUS_NUM_STAGES \d+\nenum \{\n([\s\S]*?)\n\};/.exec(ampNowSrc)?.[1] || '')
+    .split(',').map((l) => l.trim().split('=')[0].trim()).filter(Boolean)
+    .every((id) => new RegExp(`case ${id}:`).test(ampNowSrc)), true);
 const withModelAndCab = generated(audioPlugin.scaffold([
   ...ampSeedNow, { path: 'models/amp.nam', content: '{"architecture":"Linear","weights":[1.0],"sample_rate":48000}' },
   { path: 'models/cab.wav', content: (await import('../server/src/lib/audio/wav.js')).encodeWav({ sampleRate: 48000, data: new Float64Array(256).fill(0.1), format: 'float32' }).toString('base64'), encoding: 'base64' },
 ]), 'Source/Plugin.cpp');
-const bothLoop = withModelAndCab.slice(withModelAndCab.indexOf('static clap_process_status plug_process'));
+const bothOrder = stageIdOrder(withModelAndCab);
 check('…with a model AND a cabinet, the cabinet is still last of the two',
-  bothLoop.indexOf('p->model[c]->process') < bothLoop.indexOf('cab_process'), true);
+  bothOrder.indexOf('model') < bothOrder.indexOf('cab') && bothOrder.indexOf('cab') < bothOrder.indexOf('level'), true);
+
+// ⭐ THE ORDER IS DATA THE DSP WALKS, NOT A TABLE BESIDE IT (2026-10-07, PLUGIN-GUI-PLAN.md Stage 1).
+// The checks above assert WHAT the order is; these assert that the running plugin actually uses it, and that a
+// host's session can save and restore it. The behavioural half — load a different order, hear it, save it back
+// — cannot run here: it needs a compiler, and the guards job installs nothing. It is `--order` in
+// scripts/audio-amp-chain-check.mjs, run by the Linux ARM runner.
+check('⭐ the process loop walks p->stage_order, not the compiled table',
+  /for \(unsigned char s = 0; s < p->model_at; \+\+s\) \{\n\s*x = morpheus_stage_dsp\(p, c, x, \(int\)p->stage_order\[s\]\);/
+    .test(ampNowSrc)
+  && /for \(unsigned char s = p->model_at; s < MORPHEUS_NUM_STAGES; \+\+s\)/.test(ampNowSrc), true);
+check('…and the dispatch addresses a stage BY ID, so a case is reached because the order named it',
+  /static inline double morpheus_stage_dsp\(plugin_t \*p, int c, double x, int stage\) \{\n   switch \(stage\) \{/.test(ampNowSrc), true);
+check('…and every parameter\'s own switch still wraps it, so the default stays bit-identical',
+  /const double dry_on_tone = x;/.test(ampNowSrc) && /if \(on_on_tone < 1\.0\) x = dry_on_tone \+ on_on_tone \* \(x - dry_on_tone\);/.test(ampNowSrc), true);
+
+// ⭐ AND A HOST CAN SAVE IT. Until Stage 1 the plugin had NO state extension at all — nothing but the host's
+// parameter values survived a session — which is why the order could not be a value in the first place.
+check('⭐ the plugin registers a state extension, so a session can carry the order',
+  /if \(!strcmp\(id, CLAP_EXT_STATE\)\) return &s_state;/.test(ampNowSrc), true);
+check('…and it saves the RUNNING order, not the compiled default, or a reorder would silently undo itself',
+  /return morpheus_write_all\(stream, p->stage_order, MORPHEUS_NUM_STAGES\);/.test(ampNowSrc), true);
+check('…with a magic and a version, so a blob from another build is refused rather than interpreted',
+  /#define MORPHEUS_STATE_MAGIC 0x4D4F5250u/.test(ampNowSrc) && /#define MORPHEUS_STATE_VERSION 1u/.test(ampNowSrc), true);
+check('…and a blob of the wrong length is refused, because a permutation of the wrong length indexes past the table',
+  /if \(count != \(uint32_t\)MORPHEUS_NUM_STAGES\) return false;/.test(ampNowSrc), true);
+check('…and a blob that is not a permutation is refused, because one block twice is a wrong sound, not an error',
+  /if \(order\[s\] >= MORPHEUS_NUM_STAGES\) return false;/.test(ampNowSrc)
+  && /\+\+seen\[order\[s\]\] > 1\) return false;/.test(ampNowSrc), true);
+check('⭐ …and a loaded order takes effect BETWEEN BLOCKS, through the same handover the panel uses',
+  /unsigned char stage_order_pending\[MORPHEUS_NUM_STAGES\];/.test(ampNowSrc)
+  && /morpheus_gui_publish\(&p->stage_order_pending_flag\);/.test(ampNowSrc)
+  && /if \(morpheus_gui_consume\(&p->stage_order_pending_flag\)\) \{/.test(ampNowSrc), true);
+check('…and the offline host can drive that handover, or none of it is provable',
+  /--save-state/.test(read('tools/clap-offline/clap_offline.cpp'))
+  && /--load-state/.test(read('tools/clap-offline/clap_offline.cpp'))
+  && /CLAP_EXT_STATE/.test(read('tools/clap-offline/clap_offline.cpp')), true);
 
 console.log('\n22. the chain is proven on a Pi-class CPU, with an impulse response nobody owns');
 const cabGen = read('scripts/make-test-cab.mjs');
@@ -1407,8 +1472,8 @@ const ampFromChain = generated(audioPlugin.scaffold([
   { path: 'morpheus.plugin.json', content: JSON.stringify({ chain: 'amp' }) },
   { path: 'models/amp.nam', content: LINEAR },
 ]), 'Source/Plugin.cpp');
-check('⭐ the default board generates the amp chain, byte for byte',
-  boardSrc(boardItems()) === ampFromChain && ampFromChain.length > 20000, true);
+check('⭐ the default board generates the amp chain, up to the identity of a block',
+  normaliseStageIds(boardSrc(boardItems())) === normaliseStageIds(ampFromChain) && ampFromChain.length > 20000, true);
 
 // ⭐ THE CORRUPTION, ASSERTED DIRECTLY: the controls must not move when the blocks do.
 const boardReversed = [...boardItems()].reverse();
@@ -1422,18 +1487,14 @@ check('…and the ids are the amp chain\'s own order, not the arrangement\'s',
   // board then reversed the switches' ids while every other check still passed.
   'input,gate,bass,mid,treble,output,on_input,on_gate,on_tone,on_model,on_cab');
 
-// A block after the model has to be EMITTED after the model. This is the one that bit before the board
-// existed: the post-model pass knew how to emit exactly one kind, so anything else placed there vanished.
-const toneLate = boardSrc(moved(boardItems(), 'tone', null));
-const bodyLate = toneLate.slice(toneLate.indexOf('static clap_process_status plug_process'));
-check('⭐ a tone stack placed after the model is emitted after the model',
-  bodyLate.indexOf('biquad_process(&p->tone[c][0]') > bodyLate.indexOf('p->model[c]->process'), true);
-check('…and one placed before it is emitted before it',
-  (() => {
-    const s = boardSrc(boardItems());
-    const b = s.slice(s.indexOf('static clap_process_status plug_process'));
-    return b.indexOf('biquad_process(&p->tone[c][0]') < b.indexOf('p->model[c]->process');
-  })(), true);
+// A block after the model has to RUN after the model. This is the one that bit before the board existed: the
+// post-model pass knew how to emit exactly one kind, so anything else placed there vanished from the plugin.
+const boardOrder = stageIdOrder(boardSrc(boardItems()));
+const toneLateOrder = stageIdOrder(boardSrc(moved(boardItems(), 'tone', null)));
+check('⭐ a tone stack placed after the model runs after the model',
+  toneLateOrder.indexOf('tone') > toneLateOrder.indexOf('model'), true);
+check('…and one placed before it runs before it',
+  boardOrder.indexOf('tone') < boardOrder.indexOf('model'), true);
 
 // ⚠️ BYPASS IS A SWITCH NOW, NOT AN ABSENCE — AND THIS SECTION CHANGED SHAPE WITH IT (2026-10-07).
 // It used to be a BUILD decision: a switched-off block emitted no DSP at all, and its control's NAME admitted
@@ -1571,18 +1632,14 @@ check('…with the parameters it declared, at the defaults the board saved',
 check('…and the tone stack still has its OWN three bands, not the delay\'s',
   /\{ 3, "Bass", -12\.0, 12\.0, 0\.0, "dB", 0, "Tone" \}/.test(withDelay), true);
 
-// ⭐ WHERE THE BLOCK SITS IS THE BLOCK'S BUSINESS. A delay after the model has to be emitted after the model —
-// this is the pass split, and a stage the second pass cannot emit is a stage that vanishes from the plugin.
-const delayLate = boardSrc(delayBoard('output'));
-const lateBody = delayLate.slice(delayLate.indexOf('static clap_process_status plug_process'));
-check('⭐ a delay placed after the model is emitted after the model',
-  lateBody.indexOf('delay_process(&p->delay[c]') > lateBody.indexOf('p->model[c]->process'), true);
-check('…and one placed before it is emitted before it',
-  (() => {
-    const early = boardSrc(delayBoard('model'));
-    const b = early.slice(early.indexOf('static clap_process_status plug_process'));
-    return b.indexOf('delay_process(&p->delay[c]') < b.indexOf('p->model[c]->process');
-  })(), true);
+// ⭐ WHERE THE BLOCK SITS IS THE BLOCK'S BUSINESS. A delay after the model has to RUN after the model — this
+// is the pass split, and a stage the second pass cannot express is a stage that vanishes from the plugin.
+const delayLateOrder = stageIdOrder(boardSrc(delayBoard('output')));
+check('⭐ a delay placed after the model runs after the model',
+  delayLateOrder.indexOf('delay') > delayLateOrder.indexOf('model'), true);
+const delayEarlyOrder = stageIdOrder(boardSrc(delayBoard('model')));
+check('…and one placed before it runs before it',
+  delayEarlyOrder.indexOf('delay') < delayEarlyOrder.indexOf('model'), true);
 
 // ⚠️ A SWITCH ON A BLOCK WHOSE DSP IS A WHOLE STRUCT RATHER THAN A LINE. The same contract as every other
 // block, and the same rewrite: the controls keep their names, the switch is what makes the block inert, and
@@ -1794,11 +1851,19 @@ for (const tool of ['scripts/audio-nam-render-check.mjs', 'scripts/audio-testben
   // of this passed with the hand-written list restored, because the same file globs the engine's sources too.
   // And the LIST shape is the thing that went stale: a bare `'Source/Plugin.cpp'` in an array of sources. A
   // tool that patches that file by name for its own self-test is a different thing and stays.
+  //
+  // ⚠️ (2026-10-07) …AND SO IS A TOOL THAT READS THE GENERATED SOURCE TO ASSERT ON IT, which the order check
+  // now does: it parses the stage table straight out of the emitted C++. Banning the name everywhere made that
+  // indistinguishable from a hand-written compile list, so the literal is forbidden inside a COMPILER
+  // INVOCATION — the thing that actually broke, twice. `fromGlob` is the clause with the teeth, and the
+  // mutation that restores the hand-written list breaks it (guard-mutations: "Puts the hand-written source
+  // list back").
+  const compileRegion = [...src.matchAll(/spawnSync\([\s\S]{0,800}?\], \{/g)].map((m) => m[0]).join('\n');
   const fromGlob = tool.includes('audio-nam-render-check')
     ? /\.\.\.generatedSources\(pluginDir\)/.test(src)
     : /generatedSources\((projectDir|pluginDir)\)/.test(src);
   check(`${tool} takes the plugin's sources from the platform's own rule, not from a list of names`,
-    fromGlob && !/'Source\/Plugin\.cpp'/.test(src), true);
+    fromGlob && compileRegion.length > 0 && !/'Source\/Plugin\.cpp'/.test(compileRegion), true);
 }
 check('…and the output queue is remembered, because CLAP hands it over in process() and nowhere else',
   /p->out_events = process->out_events;/.test(guiPlugin) && /p->out_events = out;/.test(guiPlugin), true);
