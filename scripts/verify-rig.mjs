@@ -25,6 +25,7 @@ import { ampBoard, boardChain, boardView, validateBoard } from '../server/src/li
 import { blocksCpp, rigSelectors, stageLabel } from '../server/src/lib/ampChain.js';
 import { rigName } from '../server/src/lib/rig.js';
 import { isCapturePath, rigPatch, rigView } from '../server/src/lib/rigProject.js';
+import { hydrateCabinets } from '../server/src/lib/cabinetFile.js';
 import { encodeWav } from '../server/src/lib/audio/wav.js';
 
 let failures = 0;
@@ -186,6 +187,25 @@ check('…and a board with no rig at all is unchanged',
   boardView(board, {}).blocks.flatMap((b) => b.controls.filter((c) => c.select)).length, 0);
 check('…and the board still validates the way it always did',
   validateBoard(board, { modelFile: 'models/a.nam', cabFile: 'models/mic-a.wav' }).ok, true);
+
+console.log('\n6. ⭐ A MIC ADDED THROUGH THE APP IS USABLE — the view hydrates storage, as the compile does');
+// ⚠️ WHY THIS SECTION EXISTS. `cabinet.routes.js` puts a cabinet's audio in STORAGE and leaves a one-line
+// preview in `content`, deliberately — a 16 MB WAV does not belong in a text column. `rigView` decodes every
+// `.wav` to say whether it will convolve, so a view that read `content` directly would call every uploaded
+// mic unusable and the Speaker row would vanish from a project that has one, while the compile — which
+// hydrates first — baked it in perfectly. Two surfaces disagreeing about one file is the drift this module
+// exists to prevent. The route calls `hydrateCabinets`; this proves the two pieces compose, which a route
+// cannot be asked in the no-install guards job.
+const storedMic = { path: 'models/stored.wav', content: 'Cabinet impulse response: 1234 bytes. The audio is in storage, not here.', file_url: '/uploads/stored.wav' };
+const cold = rigView([manifestOf({ name: 'R' }), storedMic], readManifest([manifestOf({ name: 'R' }), storedMic]));
+const { files: warm, warnings: hydrateWarnings } = await hydrateCabinets([storedMic], {
+  env: {}, fetchBytes: async () => Buffer.from(IR(40, 7), 'base64'),
+});
+const hot = rigView([manifestOf({ name: 'R' }), ...warm], readManifest([manifestOf({ name: 'R' }), ...warm]));
+check('without hydration a stored mic reads as unusable, which is what the app would have shown',
+  cold.cabs.members[0].usable, false);
+check('⭐ …and with it the rig offers the mic, so the Speaker control is there',
+  [hydrateWarnings.length, warm[0].encoding, hot.cabs.members[0].usable], [0, 'base64', true]);
 check('…and a capture path is recognised by the route that owns it, so a delete cannot be pointed at a source file',
   [isCapturePath('models/a.nam'), isCapturePath('Source/Plugin.cpp')], [true, false]);
 check('…and a filename becomes a name a player can read',

@@ -2584,6 +2584,17 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-rig.mjs',
+    file: 'server/src/lib/cabinetFile.js',
+    // ⚠️ THE OTHER BUG THE RENDER CHECK FOUND. A mic added through the app keeps its audio in storage with a
+    // preview line in `content`; the rig view decodes every `.wav` to say whether it will convolve, so a view
+    // built without hydration reports every uploaded mic unusable and the Speaker row disappears — while the
+    // compile, which hydrates, bakes it in. This is the line that turns stored bytes into content.
+    why: 'Leaves a stored cabinet\'s preview text in place instead of its bytes, so a mic uploaded through the app reads as unusable in the editor that added it.',
+    find: '      out.push({ ...file, content: Buffer.from(bytes).toString(\'base64\'), encoding: \'base64\', file_url: undefined });',
+    replace: '      out.push({ ...file, content: file.content });',
+  },
+  {
+    guard: 'verify-rig.mjs',
     file: 'server/src/lib/board.js',
     // ⚠️ THE BUG THE RENDER CHECK FOUND, AS A MUTATION. `selectorFor` first read "models for a model, cabs for
     // everything else", so the Speaker row was drawn under Input, the gate and the tone stack as well — a

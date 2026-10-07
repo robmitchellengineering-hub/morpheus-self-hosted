@@ -9,21 +9,9 @@ import { hydrateCabinets } from '../lib/cabinetFile.js';
 import { renderWorkflow } from '../lib/compile-targets/workflow-renderer.js';
 import { renderUserManual, manualDownloads } from '../lib/appUserManual.js';
 import { getGithubToken, createRepo, pushFiles, ghHeaders, ghJson } from '../lib/github.js';
+import { fetchStoredBytes } from '../storage.js';
 import { assessProjectDivergence } from '../lib/repoDivergence.js';
 import { repoAhead, compileDivergenceWarning } from '../lib/projectDivergence.js';
-
-/**
- * Bytes from this server's own storage, with a timeout.
- *
- * THE URL HAS ALREADY BEEN CHECKED against the storage prefixes lib/cabinetFile.js derives, so this fetches
- * something this server wrote rather than an address out of a database row. It is still bounded: a hung
- * response would otherwise stall a compile with no explanation.
- */
-async function fetchStoredBytes(url) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
-}
 
 const GH_API = 'https://api.github.com';
 

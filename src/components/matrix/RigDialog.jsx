@@ -31,7 +31,7 @@ const MAX_WAV_MB = 16;
 function Half({ title, blurb, side, members, others, onRename, onMove, onOut, onIn, onDelete, busy }) {
   return (
     <div className="border border-primary/25 px-3 py-3 space-y-2">
-      <div className="text-[10px] text-primary/60 tracking-[0.2em] font-display">{title}</div>
+      <h4 className="text-[10px] text-primary/60 tracking-[0.2em] font-display">{title}</h4>
       <p className="text-[10px] text-ink-max leading-relaxed">{blurb}</p>
 
       {members.length === 0 && <p className="text-yellow-500/90 text-[11px]">None in the rig yet.</p>}
@@ -45,7 +45,7 @@ function Half({ title, blurb, side, members, others, onRename, onMove, onOut, on
                 value={m.name}
                 onChange={(e) => onRename(side, at, e.target.value)}
                 spellCheck={false}
-                className="flex-1 min-w-0 bg-transparent border border-primary/25 focus:border-primary/70 outline-none text-[11px] px-1.5 py-0.5 text-ink-strong"
+                className="flex-1 min-w-0 bg-transparent border border-primary/25 focus:border-primary/70 outline-none text-[11px] px-1.5 py-0.5 text-ink-max"
                 placeholder="the name a player reads"
               />
               <button onClick={() => onMove(side, at, -1)} disabled={at === 0} className="text-primary/60 hover:text-primary disabled:opacity-20" title="Earlier in the list"><ArrowUp size={13} /></button>
@@ -66,7 +66,7 @@ function Half({ title, blurb, side, members, others, onRename, onMove, onOut, on
           <div className="text-[10px] text-primary/50 tracking-[0.15em] font-display">ALSO IN THIS PROJECT</div>
           {others.map((o) => (
             <div key={o.path} className="flex items-center gap-1.5">
-              <span className="text-ink-strong text-[11px] truncate flex-1">{o.name}</span>
+              <span className="text-ink-max text-[11px] truncate flex-1">{o.name}</span>
               <span className="text-[10px] text-ink-max font-mono truncate max-w-[45%]">{o.path}</span>
               <button onClick={() => onIn(side, o)} disabled={busy} className="text-primary/70 hover:text-primary disabled:opacity-30" title="Add it to the rig"><Plus size={13} /></button>
               <button onClick={() => onDelete(side, o)} className="text-primary/60 hover:text-red-400" title="Delete this file from the project"><Trash2 size={13} /></button>
@@ -211,7 +211,7 @@ export default function RigDialog({ open, onClose, projectId }) {
           <p>
             One amplifier, captured in several of its states, and one cabinet, heard through several mics. Each
             capture and each mic is a row below; the plugin offers them in this order in its own{' '}
-            <span className="text-primary">Capture</span> and <span className="text-primary">Speaker</span> controls,
+            <strong className="text-primary">Capture</strong> and <strong className="text-primary">Speaker</strong> controls,
             and opens on the first of each. The name you type is what a player reads there — a DAW&apos;s automation
             lane included.
           </p>

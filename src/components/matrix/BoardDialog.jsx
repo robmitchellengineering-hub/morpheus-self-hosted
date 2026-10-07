@@ -56,13 +56,13 @@ function Choice({ control }) {
       <span className="text-[10px] text-primary/50 tracking-[0.2em] font-display w-16 shrink-0 pt-0.5">{control.name.toUpperCase()}</span>
       <span className="flex-1 flex flex-wrap items-center gap-1">
         {control.options.map((name, i) => (
-          <span
+          <strong
             key={`${name}-${i}`}
-            className={`text-[10px] px-1.5 py-0.5 border ${i === 0 ? 'border-primary/70 text-primary' : 'border-primary/20 text-ink-max'}`}
+            className={`text-[10px] font-normal px-1.5 py-0.5 border ${i === 0 ? 'border-primary/70 text-primary' : 'border-primary/20 text-ink-max'}`}
             title={i === 0 ? 'The plugin opens on this one' : 'A player switches to this one in the plugin'}
           >
             {name}
-          </span>
+          </strong>
         ))}
       </span>
     </div>
@@ -156,7 +156,7 @@ export default function BoardDialog({ open, onClose, projectId }) {
           <p>
             The <span className="text-ink-strong">Amp model</span> and <span className="text-ink-strong">Cabinet</span> blocks
             each name the captures and the mics this project offers, because that is what their own{' '}
-            <span className="text-primary">Capture</span> and <span className="text-primary">Speaker</span> controls in the
+            <strong className="text-primary">Capture</strong> and <strong className="text-primary">Speaker</strong> controls in the
             plugin choose between. The plugin opens on the first of each and a player switches the rest while playing;
             which captures and mics there are — and what each is called — is the{' '}
             <span className="text-ink-strong">RIG</span> dialog.

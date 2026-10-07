@@ -19,7 +19,9 @@ import { prisma } from '../db.js';
 import { requireAuth, blockWidget } from '../auth.js';
 import { PLUGIN_MANIFEST, boardFor, manifestWith, readManifest } from '../lib/audioPluginProject.js';
 import { boardJson, boardView, nextInstanceId, validateBoard } from '../lib/board.js';
+import { hydrateCabinets } from '../lib/cabinetFile.js';
 import { rigView } from '../lib/rigProject.js';
+import { fetchStoredBytes } from '../storage.js';
 
 const router = Router();
 
@@ -33,7 +35,7 @@ async function ownedProject(userId, projectId) {
 
 const pluginFiles = (rows) => rows
   .filter((r) => !r.path.startsWith('_compiled/'))
-  .map((r) => ({ path: r.path, content: r.content ?? '' }));
+  .map((r) => ({ path: r.path, content: r.content ?? '', encoding: r.encoding || undefined, file_url: r.file_url || undefined }));
 
 const audioFile = (rows, ext) => (rows.find((r) => new RegExp(`\\.${ext}$`, 'i').test(r.path))?.path || null);
 
@@ -45,9 +47,14 @@ const audioFile = (rows, ext) => (rows.find((r) => new RegExp(`\\.${ext}$`, 'i')
  * with no controls at all, so the app's picture of the plugin was missing two controls the plugin has. They
  * come from `rigView` — the same finders the emitted table comes from — so a capture the generator dropped
  * cannot be offered by the editor either.
+ *
+ * ⚠️ AND IT HYDRATES FIRST, exactly as the rig route and the compile do. A cabinet added through the app
+ * keeps its audio in storage with a preview line in `content`, so a view that skipped `hydrateCabinets` would
+ * count that mic as unusable and the Speaker row would vanish from a project that has one.
  */
-function boardForView(rows, board, manifest) {
-  const rig = rigView(pluginFiles(rows), manifest);
+async function boardForView(rows, board, manifest) {
+  const { files } = await hydrateCabinets(pluginFiles(rows), { fetchBytes: fetchStoredBytes });
+  const rig = rigView(files, manifest);
   return boardView(board, {
     modelFile: audioFile(rows, 'nam'),
     cabFile: audioFile(rows, 'wav'),
@@ -64,7 +71,7 @@ router.get('/:projectId', async (req, res) => {
     const files = pluginFiles(rows);
     const manifest = readManifest(files);
     const board = boardFor(files);
-    res.json(boardForView(rows, board, manifest));
+    res.json(await boardForView(rows, board, manifest));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -114,7 +121,7 @@ router.put('/:projectId', async (req, res) => {
         },
       });
     }
-    res.json(boardForView(rows, incoming, { ...manifest, board: saved }));
+    res.json(await boardForView(rows, incoming, { ...manifest, board: saved }));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }

@@ -23,8 +23,10 @@ import multer from 'multer';
 import { prisma } from '../db.js';
 import { requireAuth, blockWidget } from '../auth.js';
 import { PLUGIN_MANIFEST, manifestWith, readManifest } from '../lib/audioPluginProject.js';
+import { hydrateCabinets } from '../lib/cabinetFile.js';
 import { MODEL_DIR, inspectModel } from '../lib/namPlugin.js';
 import { isCapturePath, rigPatch, rigView } from '../lib/rigProject.js';
+import { fetchStoredBytes } from '../storage.js';
 
 /**
  * The largest capture this accepts. A `.nam` is JSON and the biggest real ones are a few megabytes; this is
@@ -46,8 +48,30 @@ async function ownedProject(userId, projectId) {
 const pluginFiles = (rows) => rows
   .filter((r) => !r.path.startsWith('_compiled/'))
   // ⚠️ THE ROW ID TRAVELS WITH THE FILE. The view is the only place the app can learn the id of the row its
-  // Remove button is for, and the delete route scopes on both the id and the project.
-  .map((r) => ({ id: r.id, path: r.path, content: r.content ?? '' }));
+  // Remove button is for, and the delete route scopes on both the id and the project. `encoding` travels for
+  // `hydrateCabinets`'s sake — it is how an already-hydrated row says so.
+  .map((r) => ({ id: r.id, path: r.path, content: r.content ?? '', encoding: r.encoding || undefined, file_url: r.file_url || undefined }));
+
+/**
+ * The project's files, with every STORED cabinet's bytes fetched.
+ *
+ * ⚠️ WITHOUT THIS A MIC ADDED THROUGH THIS VERY DIALOG READS AS UNUSABLE. `cabinet.routes.js` puts the audio
+ * in storage and leaves a one-line preview in `content` — deliberately, because a 16 MB WAV does not belong
+ * in a text column. `rigView` decodes each `.wav` to say whether it will convolve, so a preview line decodes
+ * to rubbish and the row is reported "not usable" while the COMPILE, which hydrates first (see
+ * `compileProject.js`), bakes it in perfectly. Two surfaces disagreeing about one file is the exact drift
+ * `rigProject.js` exists to prevent, so the view hydrates through the same function the compile does.
+ */
+async function hydratedFiles(rows) {
+  const { files, warnings } = await hydrateCabinets(pluginFiles(rows), { fetchBytes: fetchStoredBytes });
+  return { files, warnings };
+}
+
+/** The view, with any hydration warning in front of its own — a cabinet the build cannot get is the first thing to say. */
+const viewOf = (files, manifest, warnings = []) => {
+  const view = rigView(files, manifest);
+  return { ...view, warnings: [...warnings, ...view.warnings] };
+};
 
 /** The manifest as it will be AFTER the patch, so the answer to a save is the rig the build will see. */
 function patched(manifest, patch) {
@@ -64,7 +88,8 @@ router.get('/:projectId', async (req, res) => {
   try {
     await ownedProject(req.user.id, req.params.projectId);
     const rows = await prisma.projectFile.findMany({ where: { project_id: req.params.projectId } });
-    res.json(rigView(pluginFiles(rows), readManifest(pluginFiles(rows))));
+    const { files, warnings } = await hydratedFiles(rows);
+    res.json(viewOf(files, readManifest(files), warnings));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -75,7 +100,7 @@ router.put('/:projectId', async (req, res) => {
   try {
     const project = await ownedProject(req.user.id, req.params.projectId);
     const rows = await prisma.projectFile.findMany({ where: { project_id: project.id } });
-    const files = pluginFiles(rows);
+    const { files, warnings } = await hydratedFiles(rows);
     const manifest = readManifest(files);
 
     const check = rigPatch(req.body || {}, { files });
@@ -97,7 +122,7 @@ router.put('/:projectId', async (req, res) => {
         },
       });
     }
-    res.json(rigView(files, next));
+    res.json(viewOf(files, next, warnings));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -139,8 +164,8 @@ router.post('/:projectId/model', upload.single('file'), async (req, res) => {
     }
 
     const rows = await prisma.projectFile.findMany({ where: { project_id: project.id } });
-    const files = pluginFiles(rows);
-    res.json({ path, ...rigView(files, readManifest(files)) });
+    const { files, warnings } = await hydratedFiles(rows);
+    res.json({ path, ...viewOf(files, readManifest(files), warnings) });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -158,8 +183,8 @@ router.delete('/:projectId/model/:fileId', async (req, res) => {
     await prisma.projectFile.delete({ where: { id: row.id } });
 
     const rows = await prisma.projectFile.findMany({ where: { project_id: req.params.projectId } });
-    const files = pluginFiles(rows);
-    res.json(rigView(files, readManifest(files)));
+    const { files, warnings } = await hydratedFiles(rows);
+    res.json(viewOf(files, readManifest(files), warnings));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
