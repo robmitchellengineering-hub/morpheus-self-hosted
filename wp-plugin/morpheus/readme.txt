@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.7
+Stable tag: 0.8.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,19 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.8 =
+* Fixed: **a page-builder shortcode was being served as the meta description.** A product category's
+  description is written in the page builder, so the stored value is `[html_block id="2419"]` — and the plugin
+  stripped HTML without running shortcodes, so those literal characters reached `<meta name="description">`,
+  `og:description` and `twitter:description` on `/product-category/backline/`, `/instruments/` and
+  `/accessories/`. Shortcodes are now RENDERED before the text is taken, so the tag carries the sentence the
+  description actually contains; an unknown shortcode is removed rather than printed. Archive descriptions are
+  also cut to a search result's width on a word boundary.
+* Fixed: **`/shop/` and its paged views had no meta description at all.** A post-type archive carries no
+  description of its own, and the term → template → tagline chain had nothing to say, so the tag was omitted.
+  The shop's own WordPress page — the one place that copy is written — is now a source, in the same order the
+  SEO panel uses: the description set in Morpheus, then the excerpt, then the page body.
 
 = 0.8.7 =
 * Added: Morpheus now describes ARCHIVES too — the shop, product categories, tags and the blog index. Until now

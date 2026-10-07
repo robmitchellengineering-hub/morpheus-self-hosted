@@ -368,6 +368,75 @@ ok( strpos( $archive_head, 'property="og:type" content="website"' ) !== false, '
 ok( strpos( $archive_head, 'name="robots"' ) === false, 'an archive emits NO robots tag, because the theme already does' );
 ok( strpos( $archive_head, 'LocalBusiness' ) === false && strpos( $archive_head, 'BreadcrumbList' ) === false, '…and no LocalBusiness or BreadcrumbList, which the theme already emits' );
 
+// ⚠️ A DESCRIPTION WRITTEN IN THE PAGE BUILDER IS RENDERED, NOT PRINTED RAW — and this is the exact shape that
+// was LIVE. A product category's description on the store is the shortcode `[html_block id="2419"]`, and the
+// strip-only version served those literal characters as the meta description, og:description and
+// twitter:description of `/product-category/backline/`, `/instruments/` and `/accessories/` — found by fetching
+// the live pages, 2026-10-07. Registering a shortcode here is what reproduces the shape; the assertion is that
+// the RENDERED sentence reaches the tag and the shortcode appears nowhere in the head.
+add_shortcode( 'harness_block', function () {
+	return '<p>Valiant Music offers backline rentals that are tuned, tested, and ready to play.</p>';
+} );
+wp_update_term( $cat_id, 'category', array( 'description' => '[harness_block]' ) );
+$GLOBALS['wp_query'] = new WP_Query( array( 'cat' => $cat_id ) );
+ob_start();
+do_action( 'wp_head' );
+$shortcode_head = ob_get_clean();
+ok( strpos( $shortcode_head, 'name="description" content="Valiant Music offers backline rentals' ) !== false, 'a shortcode description is RENDERED into the meta tag, not printed as the shortcode itself' );
+ok( strpos( $shortcode_head, '[harness_block]' ) === false, '…and the raw shortcode appears nowhere in the head' );
+
+// An UNKNOWN shortcode must not become brackets in a search result either: it survives do_shortcode() and is
+// then removed, leaving whatever real text was around it.
+wp_update_term( $cat_id, 'category', array( 'description' => 'Real words first. [harness_not_registered id="9"]' ) );
+$GLOBALS['wp_query'] = new WP_Query( array( 'cat' => $cat_id ) );
+ob_start();
+do_action( 'wp_head' );
+$unknown_head = ob_get_clean();
+ok( strpos( $unknown_head, 'name="description" content="Real words first."' ) !== false, 'an unknown shortcode is removed, leaving the real text that was around it' );
+ok( strpos( $unknown_head, 'harness_not_registered' ) === false, '…and never reaches the head' );
+
+// ⭐ THE SHOP ARCHIVE, WHICH IS A POST-TYPE ARCHIVE WITH NO TERM AT ALL. Its words live on the WordPress page
+// WooCommerce serves the archive from — the only place an operator can write them, because the `product` post
+// type carries no description. Live, `/shop/` and `/shop/page/2/` had NO meta description until this.
+$shop_id = function_exists( 'wc_get_page_id' ) ? (int) wc_get_page_id( 'shop' ) : 0;
+if ( $shop_id > 0 ) {
+	wp_update_post( array( 'ID' => $shop_id, 'post_excerpt' => 'Vinyl, guitars and repairs from the Brunswick Heads shop.' ) );
+	$GLOBALS['wp_query']                      = new WP_Query( array( 'post_type' => 'product' ) );
+	$GLOBALS['wp_query']->is_post_type_archive = true;
+	$GLOBALS['wp_query']->is_archive          = true;
+	ob_start();
+	do_action( 'wp_head' );
+	$shop_head = ob_get_clean();
+	ok( strpos( $shop_head, 'name="description" content="Vinyl, guitars and repairs' ) !== false, 'the shop archive describes itself from its OWN page' );
+	ok( strpos( $shop_head, 'property="og:description" content="Vinyl, guitars and repairs' ) !== false, '…and the social tags carry the same sentence' );
+	// The Morpheus SEO field on that page beats its raw copy — the same order the SEO panel uses.
+	update_post_meta( $shop_id, '_morpheus_seo_description', 'Shop the store from anywhere.' );
+	$GLOBALS['wp_query'] = new WP_Query( array( 'post_type' => 'product' ) );
+	$GLOBALS['wp_query']->is_post_type_archive = true;
+	$GLOBALS['wp_query']->is_archive          = true;
+	ob_start();
+	do_action( 'wp_head' );
+	$shop_meta_head = ob_get_clean();
+	ok( strpos( $shop_meta_head, 'name="description" content="Shop the store from anywhere."' ) !== false, 'a description set in Morpheus on that page wins over its raw copy' );
+	delete_post_meta( $shop_id, '_morpheus_seo_description' );
+	// And a shop page nobody has written anything on invents NOTHING — no fabricated "Browse our products".
+	wp_update_post( array( 'ID' => $shop_id, 'post_excerpt' => '', 'post_content' => '' ) );
+	$GLOBALS['wp_query'] = new WP_Query( array( 'post_type' => 'product' ) );
+	$GLOBALS['wp_query']->is_post_type_archive = true;
+	$GLOBALS['wp_query']->is_archive          = true;
+	ob_start();
+	do_action( 'wp_head' );
+	$shop_bare_head = ob_get_clean();
+	$site_tagline   = trim( (string) get_bloginfo( 'description' ) );
+	if ( $site_tagline === '' ) {
+		ok( strpos( $shop_bare_head, 'name="description"' ) === false, 'a shop page with no copy and no tagline emits NO description rather than an invented one' );
+	} else {
+		ok( strpos( $shop_bare_head, 'name="description" content="' . esc_attr( $site_tagline ) . '"' ) !== false, 'a shop page with no copy falls back to the site tagline' );
+	}
+} else {
+	ok( false, 'WooCommerce shop page missing — the shop-archive description assertions could not run' );
+}
+
 // A term with no description of its own falls back to the site tagline — a sentence somebody actually wrote —
 // and never to a generated one.
 wp_update_term( $cat_id, 'category', array( 'description' => '' ) );

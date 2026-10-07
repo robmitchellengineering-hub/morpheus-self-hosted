@@ -205,8 +205,17 @@ check('the plugin describes ARCHIVES as well as single posts',
   has(seo, 'self::is_archive_view()') && has(seo, 'private static function emit_archive_head()'), true);
 check('…and an archive canonical ignores the query string, which is what collapses ?orderby= near-duplicates',
   has(seo, 'private static function archive_canonical()') && has(seo, 'user_trailingslashit( \'page/\' . $paged )'), true);
-check('…from a real source, in order, and nothing invented when all three are empty',
-  has(seo, "term_description( $term->term_id, $term->taxonomy )") && has(seo, "$tagline === '' ? '' : $tagline"), true);
+check('…from a real source, in order, and nothing invented when all four are empty',
+  has(seo, "term_description( $term->term_id, $term->taxonomy )")
+  && has(seo, "wc_get_page_id( 'shop' )")
+  && has(seo, "$tagline === '' ? '' : $tagline"), true);
+// A description written in the page builder is a SHORTCODE, and the strip-only version served those literal
+// characters as the meta description of three live category pages (`[html_block id="2419"]`). Both halves are
+// asserted: the registered one is RENDERED, and a leftover shortcode-shaped token is removed — because
+// `strip_shortcodes()` only knows the REGISTERED ones and passes the rest straight through, which the Playground
+// harness proved on the first run of that assertion.
+check('…and a page-builder shortcode is RENDERED into the tag, not printed as the shortcode itself',
+  has(seo, 'do_shortcode( $raw )') && has(seo, "preg_replace( '/\\[[a-z0-9_-]+"), true);
 
 check('the packer refuses to publish an undeliverable build',
   has(packer, 'undeliverable(live, next)') && has(packer, 'REFUSING TO PUBLISH'), true);
