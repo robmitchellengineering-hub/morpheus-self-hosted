@@ -1050,7 +1050,11 @@ check('…and the model is still behind the flag, so the source does not change 
 // The per-sample calls were not merely slow: they were the entire reason the null was -144 dB instead of
 // exact, so the "worse" number was being reported as the plugin's accuracy.
 check('⭐ the model is called ONCE PER BLOCK, not once per sample',
-  /p->model\[c\]->process\(io, io, model_frames\)/.test(ampSrc), true);
+  // ⚠️ ANCHORED TO THE FULLY-ON PATH, AND THAT IS NOT PEDANTRY. `model_frames` now appears in three places —
+  // the three ways through the switch — so a bare search for the call passed while the path every real
+  // session takes processed ONE sample per call. The guard that was supposed to catch this had gone blind to
+  // the mutation it exists for, which is exactly what the mutation harness is for.
+  /on_model >= 1\.0 \|\| !p->model_dry\[c\] \|\| model_frames > \(int\)p->model_dry_cap\) \{\s*p->model\[c\]->process\(io, io, model_frames\);/.test(ampSrc), true);
 check('…with the chunk it was given, and the count is that and not a literal 1',
   /const int model_frames = \(int\)\(chunk_end - chunk_start\);/.test(ampSrc)
   && !/->process\(mip, mop, 1\)/.test(ampSrc), true);
