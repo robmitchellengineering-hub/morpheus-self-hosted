@@ -22,6 +22,7 @@ import { readFileSync, existsSync, unlinkSync, mkdirSync, mkdtempSync, rmSync, w
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
+import { manifestJson } from '../server/src/lib/audioPluginProject.js';
 import audioPluginWindows from '../server/src/lib/compile-targets/audio-plugin-windows.js';
 import audioPluginLinux from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { getCompileTarget, listCompileTargets } from '../server/src/lib/compile-targets/index.js';
@@ -1361,6 +1362,106 @@ check('⭐ a two-cabinet rig preloads one convolution per member per channel, ea
   && /morpheus_cab_index\(p->value\[IDX_CAB_SELECT\]\)/.test(twoCabSrc), true);
 check('…and the speaker selector is its own discrete control, under the Cabinet block',
   /\{ 12, "Speaker", 0\.0, 1\.0, 0\.0, "", 1, "Cabinet" \}/.test(twoCabSrc) && !/PARAM_MODEL_SELECT/.test(twoCabSrc), true);
+
+console.log('\n20c. ⭐ THE RIG IS READ FROM THE MANIFEST — the names a project asks for reach the table');
+// ⚠️ WHY THIS SECTION EXISTS. `rig.js` held the `models`/`cabs` spelling and `rigList` ran it, but
+// `readManifest` is a WHITELIST and did not carry the two keys — so the rig was UNREACHABLE through the real
+// path: a project asking for `Crunch` and `Hi Gain (TS)` still got every `.nam` in the tree labelled from its
+// FILENAME, a selector offering `JCM800 2203 Crunch 2 (No pre amp bass cut)`, which is not a name. These
+// assertions catch it at the reader, at the writer, and in the emitted table; the last one is what keeps every
+// project that has no rig generating exactly the manifest text it generated before the rig existed.
+const rigNamed = {
+  name: 'Rig', chain: 'amp',
+  models: [{ path: 'models/a.nam', name: 'Crunch' }, { path: 'models/b.nam', name: 'Hi Gain (TS)' }],
+  cabs: [{ path: 'models/mic-a.wav', name: '545' }, { path: 'models/mic-b.wav', name: 'U87' }],
+};
+// ⚠️ A THIRD CAPTURE THE MANIFEST DOES NOT NAME, and it is the whole point of this fixture: the fallback
+// search would find all three and name them from the files, so a check that only asserted the two names would
+// pass against the broken reader. The count is what proves the LIST decided.
+const rigNamedFiles = audioPlugin.scaffold([...empty,
+  { path: PLUGIN_MANIFEST, content: JSON.stringify(rigNamed) },
+  { path: 'models/a.nam', content: LINEAR }, { path: 'models/b.nam', content: LINEAR }, { path: 'models/zzz.nam', content: LINEAR },
+  { path: 'models/mic-a.wav', content: irB64(synthIr(512, 11)), encoding: 'base64' },
+  { path: 'models/mic-b.wav', content: irB64(synthIr(512, 12)), encoding: 'base64' }]).files;
+const rigNamedHdr = generated({ files: rigNamedFiles }, 'Source/ModelData.h');
+const rigNamedData = generated({ files: rigNamedFiles }, 'Source/ModelData.cpp');
+const rigNamedCabHdr = generated({ files: rigNamedFiles }, 'Source/CabIr.h');
+const rigNamedCabData = generated({ files: rigNamedFiles }, 'Source/CabIr.cpp');
+const rigNamedSrc = generated({ files: rigNamedFiles }, 'Source/Plugin.cpp');
+
+check('⭐ the runtime reader carries `models` through, with the NAME the manifest asked for',
+  readManifest([{ path: PLUGIN_MANIFEST, content: JSON.stringify(rigNamed) }]).models,
+  [{ path: 'models/a.nam', name: 'Crunch' }, { path: 'models/b.nam', name: 'Hi Gain (TS)' }]);
+check('…and `cabs` too, the same way',
+  readManifest([{ path: PLUGIN_MANIFEST, content: JSON.stringify(rigNamed) }]).cabs,
+  [{ path: 'models/mic-a.wav', name: '545' }, { path: 'models/mic-b.wav', name: 'U87' }]);
+check('⭐ …so the rig is the manifest\'s LIST, not a search of the files: the unnamed capture is NOT in it',
+  [rigNamedHdr.includes('#define MORPHEUS_RIG_MODELS 2'), /"Crunch"/.test(rigNamedData),
+    /"Hi Gain \(TS\)"/.test(rigNamedData), /Zzz/.test(rigNamedData)],
+  [true, true, true, false]);
+check('…and the cabinets are named from the manifest as well',
+  [rigNamedCabHdr.includes('#define MORPHEUS_RIG_CABS 2'), /"545"/.test(rigNamedCabData), /"U87"/.test(rigNamedCabData)],
+  [true, true, true]);
+check('…with both selectors sized to the manifest\'s rig rather than to the file tree',
+  /\{ 12, "Capture", 0\.0, 1\.0, 0\.0, "", 1, "Amp model" \}/.test(rigNamedSrc)
+  && /\{ 13, "Speaker", 0\.0, 1\.0, 0\.0, "", 1, "Cabinet" \}/.test(rigNamedSrc), true);
+
+// ⚠️ A MALFORMED RIG IS IGNORED, NOT FATAL, and `readManifest` is the RUNTIME reader for a file the user is
+// invited to edit — so a hand-edited manifest that gets the shape wrong must build the plugin its FILES imply.
+// It must not throw, and it must not reach the finders half-valid (a shorter rig than was written). `rigEntry`
+// in `rig.js` is the ONE validator for an entry; `rigEntryList` is only its list-shaped question.
+const malformedRig = [
+  ['a bare string, where the key must be a list', 'models/a.nam'],
+  ['a number', 5],
+  ['an object', { path: 'models/a.nam' }],
+  ['a list with a bad member beside a good one', ['models/a.nam', 5]],
+  ['an entry that names no path', [{ name: 'Crunch' }]],
+  ['an empty list', []],
+];
+const malformedSeed = (v) => [...empty,
+  { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Rig', chain: 'amp', models: v }) },
+  { path: 'models/a.nam', content: LINEAR }];
+check('⚠️ a malformed rig does not throw, and leaves the key ABSENT rather than half-valid',
+  malformedRig.map(([, v]) => {
+    try {
+      return readManifest([{ path: PLUGIN_MANIFEST, content: JSON.stringify({ models: v }) }]).models === undefined;
+    } catch { return 'threw'; }
+  }),
+  malformedRig.map(() => true));
+check('…and the plugin it builds is the one its FILES imply, not a rig the manifest did not ask for',
+  // The fallback finds the single `.nam`, which is the ORDINARY one-capture plugin: `MORPHEUS_HAS_MODEL` is
+  // set and there is no rig table at all. That is the same shape a project with no `models` key produces.
+  malformedRig.map(([, v]) => {
+    const hdr = generated({ files: audioPlugin.scaffold(malformedSeed(v)).files }, 'Source/ModelData.h');
+    return hdr.includes('#define MORPHEUS_HAS_MODEL 1') && !hdr.includes('MORPHEUS_RIG_MODELS');
+  }),
+  malformedRig.map(() => true));
+
+// The WRITER, which the scaffold and the board route share. The rig keys go last and only when there is one,
+// so a project with no rig produces the byte-identical manifest text it produced before this key existed.
+const NO_RIG_MANIFEST = `{
+  "name": "Morpheus Plugin",
+  "vendor": "Morpheus",
+  "version": "1.0.0",
+  "id": "nz.morpheus.morpheus.plugin",
+  "parameter": "Gain",
+  "description": "",
+  "auType": "aufx",
+  "auSubtype": "MorM",
+  "auManufacturer": "Morp",
+  "model": "",
+  "chain": "",
+  "cab": ""
+}
+`;
+check('⭐ the writer emits `models`/`cabs` only when there is a rig, and LAST',
+  Object.keys(JSON.parse(manifestJson({ ...readManifest(empty), models: rigNamed.models, cabs: rigNamed.cabs }))).slice(-2),
+  ['models', 'cabs']);
+check('…and writes neither key when there is none',
+  Object.keys(JSON.parse(manifestJson(readManifest(empty)))).filter((k) => k === 'models' || k === 'cabs'),
+  []);
+check('⭐ …so a no-rig manifest is BYTE-IDENTICAL to the text this writer produced before the rig existed',
+  manifestJson(readManifest(empty)), NO_RIG_MANIFEST);
 
 console.log('\n21. the gate, and the ORDER of a chain that is now six stages deep');
 const ampChainMod = await import('../server/src/lib/ampChain.js');

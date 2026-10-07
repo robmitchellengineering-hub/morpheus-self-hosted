@@ -52,6 +52,29 @@ export function rigEntry(entry) {
 }
 
 /**
+ * A manifest's rig LIST — the `models`/`cabs` spelling — validated, or null.
+ *
+ * ⚠️ ONE VALIDATOR, NOT TWO. `rigEntry` above is the single answer to "is this a rig entry", and this is only
+ * the list-shaped question around it: a list is a rig when it is a non-empty ARRAY whose every member is an
+ * entry. Anything else — a number, a string, an object, `null`, `[]`, or an array with one bad member — is
+ * `null`, which means "this manifest did not ask for a rig". It is deliberately NOT a refusal and NOT a
+ * filtered-shorter rig: `readManifest` is the runtime reader, and a manifest that is malformed in part has to
+ * behave exactly like one that never mentioned the key, so the finders fall back to the files. Throwing would
+ * fail a compile over a hand-edited JSON file; silently dropping one member would build a rig the file did not
+ * ask for. `rig.js` holds this rule so the runtime reader does not grow a second opinion about what an entry is.
+ */
+export function rigEntryList(value) {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const out = [];
+  for (const entry of value) {
+    const e = rigEntry(entry);
+    if (!e) return null;
+    out.push(e);
+  }
+  return out;
+}
+
+/**
  * The rig a manifest asks for, in the order the selector should offer it.
  *
  * ⚠️ THREE SPELLINGS, IN PRECEDENCE ORDER, AND THE ORDER IS THE WHOLE CONTRACT:
