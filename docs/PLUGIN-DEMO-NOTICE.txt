@@ -14,9 +14,11 @@ owner's own captures — his amp, his cabinet — included with the build; no th
 licence covers them. To switch between them, use the Capture and Speaker controls in
 the plugin's own panel — or the host's parameter list, where they are the last two
 parameters, of the same names. Capture chooses the amp's state (Crunch, Crunch 2,
-Hi Gain (TS), Hi Gain (RAT)); Speaker chooses the mic on the cabinet (U87, 545,
+Hi Gain (TS), Hi Gain (RAT)); Speaker chooses the mic on the cabinet (545, U87,
 017 Tube, M160). IT OPENS ON CRUNCH THROUGH THE U87 — a chosen starting point
-rather than a ranking, and both lists are offered in that same order.
+rather than a ranking. The opening capture and mic are named as the project's
+defaults rather than being first in their lists, so the lists stay in the order
+the captures were made.
 
 It is NOT the product. What Morpheus makes for you is a plugin built in your own
 repository, around your own model, with your own cabinet — see morpheus.nz.

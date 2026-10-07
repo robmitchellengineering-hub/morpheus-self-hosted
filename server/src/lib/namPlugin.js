@@ -471,7 +471,7 @@ export function namPlan(files, manifest) {
  * and they are deliberately two fields on one object.
  */
 export function resolveModels(files, manifest = {}) {
-  return findModelPaths(files, manifest).map(({ path, name }) => resolveModelMember(files, manifest, path, name));
+  return findModelPaths(files, manifest).map((entry) => resolveModelMember(files, manifest, entry));
 }
 
 /**
@@ -484,13 +484,20 @@ export function resolveModel(files, manifest = {}) {
 }
 
 /** One member of the rig, in the shape the singular resolver has always returned. */
-function resolveModelMember(files, manifest, path, name) {
+function resolveModelMember(files, manifest, { path, name, default: isDefault = false }) {
+  // ⭐ THE OPENING MEMBER TRAVELS WITH THE MEMBER, so `rigSelectors` can point the Capture control at the
+  // capture the project named rather than at the first one. It is kept on an UNUSABLE member too — the same
+  // reason the member itself is kept — so the editor can say "this is the one you marked, and it cannot be
+  // played" instead of silently opening on something else. Absent rather than `false`, so a member that is
+  // not the default is byte-for-byte the object it was before this field existed.
+  const marked = isDefault === true ? { default: true } : {};
   const text = String((files.find((f) => f.path === path) || {}).content || '');
   const inspected = inspectModel(text);
   if (!inspected.ok) {
     return {
       path,
       name,
+      ...marked,
       info: null,
       text: null,
       warnings: [`${path} is not a usable NAM model — ${inspected.reason}. It is left out of the rig; a rig with no usable capture is a stereo gain stage.`],
@@ -499,6 +506,7 @@ function resolveModelMember(files, manifest, path, name) {
   return {
     path,
     name,
+    ...marked,
     text,
     info: {
       path,

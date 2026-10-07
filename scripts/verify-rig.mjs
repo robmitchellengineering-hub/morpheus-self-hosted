@@ -112,6 +112,12 @@ const files = RIG_FILES.slice(1);
 check('a good list is normalised through the one entry validator',
   rigPatch({ models: [{ path: 'models/a.nam' }, 'models/c.nam'] }, { files }).patch,
   { models: [{ path: 'models/a.nam', name: 'A' }, { path: 'models/c.nam', name: 'C' }] });
+// ⭐ AND A SAVE CARRIES THE OPENING MEMBER, WITHOUT A SECOND SPELLING. The dialog sends `default: false` on
+// the rows it is NOT marking (its own bookkeeping); `rigEntry` drops anything that is not `true`, so the patch
+// that reaches the manifest has the mark in exactly one place.
+check('⭐ a save carries the opening member through, and drops a `default` that is not true',
+  rigPatch({ models: [{ path: 'models/a.nam', name: 'Clean', default: true }, { path: 'models/c.nam', name: 'Lead', default: false }] }, { files }).patch,
+  { models: [{ path: 'models/a.nam', name: 'Clean', default: true }, { path: 'models/c.nam', name: 'Lead' }] });
 check('⚠️ a path the project does not hold is an ERROR — the finder would drop it',
   rigPatch({ models: ['models/nope.nam'] }, { files }).errors.length, 1);
 check('⚠️ a duplicate is an ERROR — two selector positions playing one capture',
@@ -152,12 +158,87 @@ check('⭐ …and the app offers EXACTLY those names, in that order — the corr
   [view.selectors.models.map((m) => m.name), view.selectors.cabs.map((c) => c.name)],
   [tableNames(modelData, 'morpheus_model_data'), tableNames(cabData, 'morpheus_cab_l')]);
 check('…and the selectors the generator appends are sized to that same count',
-  rigSelectors({ models: view.selectors.models.length, cabs: view.selectors.cabs.length }).map((s) => [s.key, s.max, s.module]),
+  rigSelectors({ models: view.selectors.models, cabs: view.selectors.cabs }).map((s) => [s.key, s.max, s.module]),
   [['model_select', 1, 'Amp model'], ['cab_select', 1, 'Cabinet']]);
 check('…which is the parameters the generated plugin actually carries',
   [/\{ 12, "Capture", 0\.0, 1\.0, 0\.0, "", 1, "Amp model" \}/.test(pluginSrc),
     /\{ 13, "Speaker", 0\.0, 1\.0, 0\.0, "", 1, "Cabinet" \}/.test(pluginSrc)],
   [true, true]);
+// ⭐ AND A RIG WITH NO MARK STILL OPENS ON THE FIRST — index 0, the sound every project had before the flag
+// existed. This is the byte-identity rule at the level of the selector: the emitted rows above carry `0.0`
+// because nothing was marked, not because `rigSelectors` cannot say otherwise.
+check('⭐ …and with nothing marked the default is still index 0, the first usable member',
+  rigSelectors({ models: view.selectors.models, cabs: view.selectors.cabs }).map((s) => s.def), [0, 0]);
+
+console.log('\n4b. ⭐ THE OPENING MEMBER IS A MARK ON THE ENTRY, INDEPENDENT OF THE ORDER');
+// ⚠️ WHY THIS SECTION EXISTS. The order of the list USED to be the only way to say which member the plugin
+// opens on, so choosing an opening sound moved a member in the control a player reads. `default: true` on an
+// entry decouples the two: `rigEntry` normalises the flag, the finder carries it, and `rigSelectors` emits
+// that member's INDEX as the parameter's default. These assertions are the reader, the writer, the app's view
+// and the emitted selector — the four places the mark has to survive.
+const RIG_DEFAULTED = {
+  ...RIG_MANIFEST,
+  models: [
+    { path: 'models/a.nam', name: 'Clean' },
+    // ⚠️ THE UNUSABLE MEMBER IS FIRST, and the marked one is LAST, so an index computed over the MANIFEST
+    // would be 2 while the emitted list needs 1. The two can only agree if the index is counted over the
+    // emitted members, which is what `rigSelectors`/`rigDefaultIndex` do.
+    { path: 'models/broken.nam', name: 'Broken' },
+    { path: 'models/c.nam', name: 'Lead', default: true },
+  ],
+  cabs: [
+    { path: 'models/mic-a.wav', name: '545' },
+    { path: 'models/mic-b.wav', name: 'U87', default: true },
+  ],
+};
+const defaultedFiles = [manifestOf(RIG_DEFAULTED), ...RIG_FILES.slice(1)];
+const defaultedView = rigView(defaultedFiles, readManifest(defaultedFiles));
+check('⭐ the reader carries the mark through — `{ path, name, default: true }` survives readManifest',
+  readManifest(defaultedFiles).models, RIG_DEFAULTED.models);
+check('…and the view marks that member, so the editor can say which one the plugin opens on',
+  [defaultedView.models.members.map((m) => m.default === true), defaultedView.cabs.members.map((c) => c.default === true)],
+  [[false, false, true], [false, true]]);
+check('⭐ …and the emitted selector opens on the MARKED member\'s index in the EMITTED list, not 0 and not the manifest index',
+  rigSelectors({ models: defaultedView.selectors.models, cabs: defaultedView.selectors.cabs }).map((s) => [s.key, s.def, s.max]),
+  [['model_select', 1, 1], ['cab_select', 1, 1]]);
+check('…and the parameters the plugin carries really do open there',
+  (() => {
+    const files = audioPlugin.scaffold(defaultedFiles).files;
+    const src = generated({ files }, 'Source/Plugin.cpp');
+    return [/\{ 12, "Capture", 0\.0, 1\.0, 1\.0, "", 1, "Amp model" \}/.test(src),
+      /\{ 13, "Speaker", 0\.0, 1\.0, 1\.0, "", 1, "Cabinet" \}/.test(src)];
+  })(), [true, true]);
+// ⭐ THE MANIFEST WRITER CARRIES IT, through the same `rigEntryList` that already normalises a name. A project
+// that opened on its third capture must be able to say so after a save, and the flag must not acquire a
+// second spelling on the way out.
+const writtenDefault = JSON.parse(manifestWith(null, { ...readManifest(defaultedFiles), board: null }, {}));
+check('⭐ …and the ONE manifest writer emits the mark on the same entry, so a save cannot lose it',
+  writtenDefault.models, RIG_DEFAULTED.models);
+check('…and a project with no mark writes no `default` key at all — the byte-identity rule',
+  JSON.parse(manifestJson({ ...readManifest(RIG_FILES) })).models,
+  [{ path: 'models/a.nam', name: 'Clean' }, { path: 'models/broken.nam', name: 'Broken' }, { path: 'models/c.nam', name: 'Lead' }]);
+// ⚠️ A MARK ON AN UNUSABLE MEMBER FALLS BACK AND SAYS SO. `rigSelectors` counts the mark over the emitted
+// list, so a capture the plugin cannot play cannot be the one it opens on — and a user who marked it is told
+// rather than left wondering why the plugin opens on a different capture than the file names.
+const unusableDefault = { ...RIG_MANIFEST, models: [{ path: 'models/broken.nam', name: 'Broken', default: true }, { path: 'models/a.nam', name: 'Clean' }, { path: 'models/c.nam', name: 'Lead' }] };
+const unusableFiles = [manifestOf(unusableDefault), ...RIG_FILES.slice(1)];
+const unusableView = rigView(unusableFiles, readManifest(unusableFiles));
+check('⚠️ a mark on an UNUSABLE member falls back to the first usable one, and the view says why',
+  [rigSelectors({ models: unusableView.selectors.models, cabs: [] }).map((s) => s.def),
+    unusableView.warnings.some((w) => /broken\.nam/.test(w) && /opens on Clean instead/.test(w))],
+  [[0], true]);
+// ⚠️ A `default` THAT IS NOT `true` IS IGNORED, NOT FATAL. `rigEntry` is the ONE validator and the runtime
+// reader is handed a file a user is invited to edit — so `"yes"`, `1`, `false` and `null` all mean "not the
+// opening member", and the rig still reads. Asserted for each spelling so a loosening of the test is visible.
+check('⚠️ a `default` that is not literally true is ignored rather than fatal, for every spelling',
+  ['yes', 1, false, null, {}].map((v) => {
+    try {
+      const files = [manifestOf({ models: [{ path: 'models/a.nam', name: 'A', default: v }] })];
+      const m = readManifest(files).models;
+      return m === undefined ? 'dropped' : JSON.stringify(m);
+    } catch { return 'threw'; }
+  }),
+  ['yes', 1, false, null, {}].map(() => JSON.stringify([{ path: 'models/a.nam', name: 'A' }])));
 
 console.log('\n5. ⭐ THE BOARD EDITOR AND THE PLUGIN DRAW ONE SIGNAL PATH');
 // The board is the document; the plugin's block list is emitted from the SAME stage list the DSP walks, so
@@ -178,6 +259,14 @@ check('⭐ the Amp model block names the rig\'s captures, so the app draws the c
   modelBlock.controls.filter((c) => c.select).map((c) => [c.key, c.options]), [['model_select', ['Clean', 'Lead']]]);
 check('⭐ …and the Cabinet block names its mics',
   cabBlock.controls.filter((c) => c.select).map((c) => [c.key, c.options]), [['cab_select', ['545', 'U87']]]);
+// ⭐ AND IT MARKS THE MEMBER THE PLUGIN ACTUALLY OPENS ON. This is the second surface that draws the choice,
+// so a `def` hardcoded to 0 here would tell a user the plugin opens on the first capture while the RIG dialog
+// and the generated plugin both open on the marked one — two surfaces disagreeing about one plugin.
+check('⭐ …and it marks the member the project marked as the opening one, not always the first',
+  boardView(board, { rig: defaultedView.selectors }).blocks
+    .filter((b) => b.kind === 'model' || b.kind === 'cab')
+    .map((b) => [b.kind, b.controls.find((c) => c.select)?.def]),
+  [['model', 1], ['cab', 1]]);
 // ⚠️ AND NOTHING ELSE. The first version attached "cabs for anything that is not a model", so the Speaker row
 // was drawn under Input, the gate and the tone stack too — three cabinets in a path that has one. Found by
 // rendering the dialog; this is the assertion that keeps it from coming back.

@@ -43,9 +43,11 @@ function Control({ control, value, onChange }) {
 // ⭐ THE RIG'S SELECTOR, DRAWN WHERE THE PLUGIN DRAWS IT — under the block whose member it chooses.
 //
 // This row is NOT a control the board saves. The plugin's Capture/Speaker parameter is a runtime choice a
-// player makes in its own panel, and its compile-time default is always the first usable member — so what
-// this says is "these are the members, in this order, and the plugin opens on the first". Drawing it as a
-// slider (the shape every other row has) would be offering an edit that nothing reads.
+// player makes in its own panel, and its compile-time default is the member the RIG dialog marked as the one
+// the plugin opens on — the first usable member when none is marked. So what this says is "these are the
+// members, in this order, and the plugin opens on this one". Drawing it as a slider (the shape every other
+// row has) would be offering an edit that nothing reads; WHICH member opens is set in the RIG dialog, which
+// is where the members themselves are chosen.
 //
 // It exists for a concrete reason: the plugin's panel drew a choice control under Amp model and Cabinet and
 // this dialog drew those two blocks with no controls at all, so the app's picture of the plugin was missing
@@ -58,8 +60,8 @@ function Choice({ control }) {
         {control.options.map((name, i) => (
           <strong
             key={`${name}-${i}`}
-            className={`text-[10px] font-normal px-1.5 py-0.5 border ${i === 0 ? 'border-primary/70 text-primary' : 'border-primary/20 text-ink-max'}`}
-            title={i === 0 ? 'The plugin opens on this one' : 'A player switches to this one in the plugin'}
+            className={`text-[10px] font-normal px-1.5 py-0.5 border ${i === control.def ? 'border-primary/70 text-primary' : 'border-primary/20 text-ink-max'}`}
+            title={i === control.def ? 'The plugin opens on this one' : 'A player switches to this one in the plugin'}
           >
             {name}
           </strong>
@@ -157,7 +159,8 @@ export default function BoardDialog({ open, onClose, projectId }) {
             The <span className="text-ink-strong">Amp model</span> and <span className="text-ink-strong">Cabinet</span> blocks
             each name the captures and the mics this project offers, because that is what their own{' '}
             <strong className="text-primary">Capture</strong> and <strong className="text-primary">Speaker</strong> controls in the
-            plugin choose between. The plugin opens on the first of each and a player switches the rest while playing;
+            plugin choose between. The plugin opens on the member marked as the opening one in the RIG dialog
+            (the first when none is marked) and a player switches the rest while playing;
             which captures and mics there are — and what each is called — is the{' '}
             <span className="text-ink-strong">RIG</span> dialog.
           </p>

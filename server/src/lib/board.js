@@ -24,6 +24,7 @@
 // belongs in its own change — the point of a registry is that adding one is a new entry here and no change
 // anywhere else, and that claim is only worth making if it is kept true.
 import { AMP_CHAIN, PLAIN_CHAIN, chainHas, chainParams, isOnKey, modelStageIndex, stageOnKey } from './ampChain.js';
+import { rigDefaultIndex } from './rig.js';
 import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
 import { DELAY_MARKER, DELAY_PARAMS, delayBundle } from './delayBlock.js';
 import { SPRING_MARKER, SPRING_PARAMS, springBundle } from './springBlock.js';
@@ -488,10 +489,10 @@ export function boardView(board, { modelFile = null, cabFile = null, manifest = 
   // plugin actually has. This is the same reading, from the same finders: a capture the generator left out of
   // the table cannot be offered here either.
   //
-  // ⚠️ IT IS A DEFAULT, NOT A VALUE THE BOARD SAVES. The selector's compile-time default is always the first
-  // usable member (`rigSelectors` sets `def: 0`), and the member a player picks is runtime state the plugin
-  // keeps — so this row says which members exist and that the plugin opens on the first. Editing it here
-  // would be writing a value the scaffold does not read.
+  // ⚠️ IT IS A DEFAULT, NOT A VALUE THE BOARD SAVES. The selector's compile-time default is the member the
+  // project marked `default` — the first usable one when nothing is marked (`rigDefaultIndex`) — and the
+  // member a player picks is runtime state the plugin keeps. So this row says which members exist and which
+  // one the plugin opens on; editing it here would be writing a value the scaffold does not read.
   // ⚠️ ONLY THE TWO BLOCKS THE RIG BELONGS TO. The first version read "models for a model, cabs for
   // everything else", which put the Speaker row under Input, the gate and the tone stack too — a drawing of
   // three cabinets in a signal path that has one. Found by RENDERING the dialog and looking: no compile and
@@ -500,13 +501,14 @@ export function boardView(board, { modelFile = null, cabFile = null, manifest = 
     if (kind !== 'model' && kind !== 'cab') return null;
     const list = Array.isArray(rig?.[kind === 'model' ? 'models' : 'cabs']) ? rig[kind === 'model' ? 'models' : 'cabs'] : [];
     if (list.length < 2) return null;
+    const def = rigDefaultIndex(list);
     return {
       key: kind === 'model' ? 'model_select' : 'cab_select',
       name: kind === 'model' ? 'Capture' : 'Speaker',
       role: 'select',
       select: true,
-      def: 0,
-      value: 0,
+      def,
+      value: def,
       min: 0,
       max: list.length - 1,
       options: list.map((m) => m.name),
