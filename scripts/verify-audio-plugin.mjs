@@ -1113,8 +1113,18 @@ check('…and the assertion is a bit-exact bypass plus a real difference, not a 
   /row\.offVsRemoved\.identical \|\| row\.offVsRemoved\.nullDb <= -200/.test(chainCheckSrc)
   && /row\.onVsRemoved\.identical \|\| !\(row\.onVsRemoved\.nullDb > -60\)/.test(chainCheckSrc), true);
 check('…and the ARM runner dispatches it, because a Linux build is where the panel and the switch land',
-  /import \{ ampChainCheck, toggleCheck \}/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs'))
+  // ⚠️ THE IMPORT LIST IS MATCHED AS A LIST, NOT AS A FROZEN STRING. It was `/import \{ ampChainCheck,
+  // toggleCheck \}/`, so adding a third proof to the same import turned this red for a reason that has nothing
+  // to do with what it claims — the shape of an import line is not the behaviour being protected.
+  /import \{[^}]*\btoggleCheck\b[^}]*\} from '\.\/audio-amp-chain-check\.mjs';/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs'))
   && /toggleCheck\(\{ work: join\(OUT, 'toggle-check'\) \}\)/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs')), true);
+// ⭐ AND THE ORDER ROUND-TRIP IS DISPATCHED THERE TOO — the proof that cannot pass vacuously. Every other audio
+// proof on that runner renders the DEFAULT order, so all of them would still pass if the order table were
+// ignored; this is the only one that loads a different order and checks the sound changed.
+check('⭐ …and the chain-order round-trip is dispatched there, because a default-order render cannot see the table',
+  /import \{[^}]*\borderCheck\b[^}]*\} from '\.\/audio-amp-chain-check\.mjs';/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs'))
+  && /orderCheck\(\{ work: join\(OUT, 'order-check'\) \}\)/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs'))
+  && /if \(order\.reorderChangesTheSound\.identical\)/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs')), true);
 // The bench's self-test proves the bench can fail by breaking the plugin's output gain. It finds that line by
 // shape, so if the plugin's shape moves and the bench's pattern does not, the self-test silently stops
 // patching anything — the bench would then pass a broken plugin and report that as proof it works.
