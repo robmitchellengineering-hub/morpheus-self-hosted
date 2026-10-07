@@ -22,8 +22,9 @@
 //      are the part that is genuinely ours, and a plugin without them is not a usable starting point.
 
 import {
-  GATE_OFF_DB, PLAIN_CHAIN, blocksCpp, chainHas, chainParamsStable, chainPreCpp, chainPostCpp, eventCpp, gateDspCpp,
-  gateInitCpp, gateStageCpp, initCpp, paramsCpp, smoothCpp, smoothOneCpp, stateCpp, toneCpp, toneUpdateCpp,
+  GATE_OFF_DB, PLAIN_CHAIN, blocksCpp, chainHas, chainParamsStable, eventCpp, gateDspCpp, legacyCabCpp,
+  gateInitCpp, gateStageCpp, initCpp, paramsCpp, smoothCpp, smoothOneCpp, stageDispatchCpp, stageTableCpp,
+  stateCpp, toneCpp, toneUpdateCpp,
 } from './ampChain.js';
 // The band count only, for the two loops that reset filter state. The filters themselves are emitted by
 // ampChain.js, which reads this same module so the design and the build cannot disagree.
@@ -180,6 +181,11 @@ ${paramsCpp(list)}
 // The same list the DSP is wired from, so the panel's order and the audio's order cannot disagree.
 ${blocksCpp(chain)}
 
+// ── the chain order AS DATA, and its compiled default ────────────────────────────────────────────────
+// Emitted HERE, before \`plugin_t\`, because the struct sizes its own order table from MORPHEUS_NUM_STAGES.
+// The dispatch that walks the order is emitted after the struct — see stageDispatchCpp.
+${stageTableCpp(chain)}
+
 static inline double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 
 #if MORPHEUS_HAS_CAB
@@ -200,6 +206,22 @@ typedef struct {
    double gui_value[MORPHEUS_NUM_PARAMS];
    volatile unsigned char gui_pending[MORPHEUS_NUM_PARAMS];
    const clap_output_events_t *out_events;
+
+   // ── THE CHAIN ORDER, AND WHERE THE MODEL SITS IN IT ────────────────────────────────────────────────
+   // ⚠️ THE ORDER IS PER-INSTANCE STATE, NOT A CONSTANT, and that is the whole of Stage 1.
+   // \`kMorpheusDefaultOrder\` is what a fresh instance starts with; a host's saved session can replace it
+   // through the state extension below. It is ONE document that the plugin's panel, the app's board editor
+   // and a phone talking to a headless Pi all read and write — see lib/ampChain.js.
+   //
+   // \`stage_order_pending\` is why a reorder is safe to hand over from another thread: the audio thread swaps
+   // it in at the top of its next block, so a reorder takes effect BETWEEN BLOCKS and never mid-note. Half a
+   // block on one order and half on another is the one outcome a permutation must never produce.
+   unsigned char stage_order[MORPHEUS_NUM_STAGES];
+   unsigned char stage_order_pending[MORPHEUS_NUM_STAGES];
+   volatile unsigned char stage_order_pending_flag;
+   // Where the model stage sits in the RUNNING order, or MORPHEUS_NUM_STAGES when this chain has no model.
+   // Recomputed whenever the order changes rather than searched every block.
+   unsigned char model_at;
 
 ${stateCpp(chain, list)}${extraState ? `\n${extraState}` : ''}
 #if MORPHEUS_HAS_CAB
@@ -227,6 +249,11 @@ ${modelSwitch ? `   // ⭐ THE DRY COPY THE MODEL'S SWITCH FADES AGAINST, and it
    uint32_t model_dry_cap;` : ''}
 #endif
 } ${'plugin_t'};
+
+// ── THE CHAIN ORDER, AS DATA, AND THE DISPATCH THAT WALKS IT ─────────────────────────────────────────
+// The order is a table now rather than the shape of the emitted code, so a host's saved session can replace
+// it and a drag in a panel can write it. See lib/ampChain.js — this is Stage 1 of PLUGIN-GUI-PLAN.md.
+${emitStages(stageDispatchCpp(chain, list))}
 
 // ── audio ports ──────────────────────────────────────────────────────────────────────────────────────
 static uint32_t audio_ports_count(const clap_plugin_t *plugin, bool is_input) { return 1; }
@@ -368,6 +395,10 @@ static bool plug_init(const clap_plugin_t *plugin) {
    ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
 ${initCpp(list)}
    p->fs = 48000.0;
+   // THE DEFAULT ORDER, and where the model sits in it. A fresh instance runs the signal order the generator
+   // emitted; only a host restoring a saved session replaces it (see the state extension below).
+   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order[s] = kMorpheusDefaultOrder[s];
+   p->model_at = morpheus_model_at(p);
 ${chainHas(chain, 'gate') ? gateInitCpp : ''}
 ${cabInitCpp}${extraInit ? `\n${extraInit}` : ''}
 ${hasTone ? `   // A sentinel rather than a value: the first frame recomputes every coefficient, so a plugin that starts
@@ -544,6 +575,100 @@ extern "C" void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, 
    }
 }
 
+// ── THE STATE EXTENSION — the first thing this plugin has ever saved ─────────────────────────────────
+// ⚠️ UNTIL Stage 1 THERE WAS NO STATE EXTENSION AT ALL: nothing but the host's own parameter values survived
+// a session, so a chain order had nowhere to live. That is the reason the order could not be a value, and
+// therefore the reason a drag in a panel could not work. What is saved is the ORDER — one byte per stage —
+// so the plugin, the app's board editor and a phone talking to a headless Pi can all edit one document.
+//
+// ⚠️ THE PARAMETERS ARE DELIBERATELY NOT IN HERE. CLAP hosts already save and restore parameter values
+// through the params extension, and a second copy would be two sources of truth that disagree the moment a
+// host restores one and not the other.
+//
+// ⚠️ AND IT IS A FORMAT, NOT A MEMCPY OF THE STRUCT. A host may save on one machine and load on another, so
+// everything is written field by field, little-endian, with a magic and a version — a blob from a future
+// build is refused rather than interpreted.
+#define MORPHEUS_STATE_MAGIC 0x4D4F5250u   /* 'MORP' */
+#define MORPHEUS_STATE_VERSION 1u
+
+// CLAP's streams are counted writes, not writes: a short write is legal, so these loop until the buffer is
+// done rather than assuming one call is the whole of it.
+static bool morpheus_write_all(const clap_ostream_t *stream, const void *src, uint64_t n) {
+   const char *at = (const char *)src;
+   while (n > 0) {
+      const int64_t wrote = stream->write(stream, at, n);
+      if (wrote <= 0) return false;
+      at += wrote;
+      n -= (uint64_t)wrote;
+   }
+   return true;
+}
+
+static bool morpheus_read_all(const clap_istream_t *stream, void *dst, uint64_t n) {
+   char *at = (char *)dst;
+   while (n > 0) {
+      const int64_t got = stream->read(stream, at, n);
+      if (got <= 0) return false;
+      at += got;
+      n -= (uint64_t)got;
+   }
+   return true;
+}
+
+static bool morpheus_u32_write(const clap_ostream_t *stream, uint32_t v) {
+   const unsigned char b[4] = {(unsigned char)(v & 0xFFu), (unsigned char)((v >> 8) & 0xFFu),
+                               (unsigned char)((v >> 16) & 0xFFu), (unsigned char)((v >> 24) & 0xFFu)};
+   return morpheus_write_all(stream, b, 4);
+}
+
+static bool morpheus_u32_read(const clap_istream_t *stream, uint32_t *out) {
+   unsigned char b[4];
+   if (!morpheus_read_all(stream, b, 4)) return false;
+   *out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+   return true;
+}
+
+static bool plug_state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream) {
+   const ${'plugin_t'} *p = (const ${'plugin_t'} *)plugin->plugin_data;
+   if (!morpheus_u32_write(stream, MORPHEUS_STATE_MAGIC)) return false;
+   if (!morpheus_u32_write(stream, MORPHEUS_STATE_VERSION)) return false;
+   if (!morpheus_u32_write(stream, (uint32_t)MORPHEUS_NUM_STAGES)) return false;
+   // THE RUNNING ORDER, NOT THE DEFAULT ONE: a session that saved a reordered chain and loaded the compiled
+   // order back would be a reorder that silently undid itself.
+   return morpheus_write_all(stream, p->stage_order, MORPHEUS_NUM_STAGES);
+}
+
+static bool plug_state_load(const clap_plugin_t *plugin, const clap_istream_t *stream) {
+   ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
+   uint32_t magic = 0, version = 0, count = 0;
+   if (!morpheus_u32_read(stream, &magic) || !morpheus_u32_read(stream, &version)) return false;
+   if (magic != MORPHEUS_STATE_MAGIC || version != MORPHEUS_STATE_VERSION) return false;
+   if (!morpheus_u32_read(stream, &count)) return false;
+   // A BLOB FROM A DIFFERENT BUILD IS REFUSED, NOT PARTLY APPLIED. The stage count belongs to the BUILD — a
+   // project with a delay has one more stage than one without — so a permutation of the wrong length would
+   // index past the end of the table. Refusing leaves the compiled order running: a plugin that works.
+   if (count != (uint32_t)MORPHEUS_NUM_STAGES) return false;
+   unsigned char order[MORPHEUS_NUM_STAGES];
+   if (!morpheus_read_all(stream, order, MORPHEUS_NUM_STAGES)) return false;
+   // ⚠️ IT MUST BE A PERMUTATION, and this is the check that makes the dispatch above total. One byte per
+   // stage with no repeats means every case is reached exactly once; a duplicate would run one block twice
+   // and drop another — a wrong SOUND rather than an error, which is what a corrupted or hand-edited file
+   // produces. \`seen\` counts rather than flags so the test is the count, not the shape.
+   unsigned char seen[MORPHEUS_NUM_STAGES];
+   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) seen[s] = 0;
+   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) {
+      if (order[s] >= MORPHEUS_NUM_STAGES) return false;
+      if (++seen[order[s]] > 1) return false;
+   }
+   // HANDED OVER, NOT WRITTEN. The audio thread swaps it in at the top of its next block, so a reorder takes
+   // effect BETWEEN BLOCKS — see the note on \`stage_order_pending\` in plugin_t.
+   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order_pending[s] = order[s];
+   morpheus_gui_publish(&p->stage_order_pending_flag);
+   return true;
+}
+
+static const clap_plugin_state_t s_state = {.save = plug_state_save, .load = plug_state_load};
+
 // The output queue, remembered rather than asked for. CLAP hands it to process() and to params.flush() and
 // nowhere else, and a plugin whose own GUI changes a parameter needs it between blocks.
 static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_process_t *process) {
@@ -554,6 +679,13 @@ static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_
    // read, rather than on the main thread where it was written.
    for (uint32_t k = 0; k < MORPHEUS_NUM_PARAMS; ++k) {
       if (morpheus_gui_consume(&p->gui_pending[k])) p->value[k] = p->gui_value[k];
+   }
+   // THE ORDER A HOST RESTORED, APPLIED HERE — the same handover as the GUI values above, and for the same
+   // reason plus one more: a reorder must take effect BETWEEN BLOCKS, never mid-note. Swapping a table the
+   // audio thread is walking would run part of a block on one order and part on another.
+   if (morpheus_gui_consume(&p->stage_order_pending_flag)) {
+      for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order[s] = p->stage_order_pending[s];
+      p->model_at = morpheus_model_at(p);
    }
    const uint32_t nev = process->in_events->size(process->in_events);
 
@@ -572,7 +704,7 @@ static clap_process_status plug_process(const clap_plugin_t *plugin, const clap_
       const uint32_t chunk_start = i;
       const uint32_t chunk_end = next_ev_frame;
 
-      // ── PASS 1 — everything per-sample that comes BEFORE the model ────────────────────────────────────
+      // ── PASS 1 — every stage BEFORE the model, in the running order ───────────────────────────────────
       // ⭐ IT IS WRITTEN STRAIGHT INTO THE OUTPUT BUFFER, which is not a shortcut: that port is float32 and
       // NAM_SAMPLE is float (asserted below), so the model can then run IN PLACE over the chunk and the
       // plugin needs no scratch buffer, no allocation and no field in plugin_t. In place is safe with this
@@ -592,7 +724,11 @@ ${hasTone ? `${toneUpdateCpp()}\n` : ''}         double in_l = process->audio_in
          // a different route would be a stereo image that moves when a control does.
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${emitStages(chainPreCpp(chain, list))}
+            // ⭐ THE ORDER WALK, and the reason this is a loop rather than written-out code: the order is a
+            // VALUE now, so a block can be on either side of the model without the plugin being rebuilt.
+            for (unsigned char s = 0; s < p->model_at; ++s) {
+               x = morpheus_stage_dsp(p, c, x, (int)p->stage_order[s]);
+            }
             process->audio_outputs[0].data32[c][i] = (float)x;
          }
       }
@@ -657,7 +793,13 @@ ${smoothOneCpp('IDX_OUTPUT')}
          double in_r = process->audio_outputs[0].data32[1][k];
          for (int c = 0; c < 2; ++c) {
             double x = (c == 0) ? in_l : in_r;
-${emitStages(chainPostCpp(chain, list, cabInPath))}
+            // ⭐ THE ORDER WALK, resumed on the other side of the model. \`model_at\` is where the model sits
+            // in the RUNNING order, so a block that was dragged across it changes which pass it runs in —
+            // which is exactly what "a delay in front of the amp" means.
+            for (unsigned char s = p->model_at; s < MORPHEUS_NUM_STAGES; ++s) {
+               x = morpheus_stage_dsp(p, c, x, (int)p->stage_order[s]);
+            }
+${emitStages(legacyCabCpp(chain, cabInPath))}
             if (c == 0) in_l = x; else in_r = x;
          }
          // The output level is applied last, so moving it changes how loud the plugin is and NOT how hard
@@ -679,6 +821,9 @@ static const void *plug_get_extension(const clap_plugin_t *plugin, const char *i
    if (!strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &s_audio_ports;
    if (!strcmp(id, CLAP_EXT_PARAMS)) return &s_params;
    if (!strcmp(id, CLAP_EXT_GUI)) return morpheus_gui_extension();
+   // ⭐ THE ORDER A HOST SAVES. Without this the chain order would be a value with nowhere to live, which is
+   // exactly why the plugin had none before Stage 1 — see the state block above.
+   if (!strcmp(id, CLAP_EXT_STATE)) return &s_state;
    return NULL;
 }
 

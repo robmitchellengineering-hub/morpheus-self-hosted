@@ -554,49 +554,138 @@ export function blendCpp(stage, params) {
   ];
 }
 
-export function chainPreCpp(chain, params) {
-  const lines = [];
+export const stageId = (stage) =>
+  `MORPHEUS_STAGE_${String(stage.id || stage.kind).replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}`;
+
+/**
+ * THE CHAIN ORDER, AS DATA — the table the DSP walks, and the dispatch that walks it.
+ *
+ * ⚠️ THIS REPLACED TWO STRAIGHT-LINE PASSES (`chainPreCpp` / `chainPostCpp`), and the reason is the GUI and
+ * the Pi remote rather than the CPU. The order used to be a BUILD INPUT: those two functions emitted the
+ * stages before the model and after it, as C++ written out in the board's order. An order that exists only in
+ * the generated source cannot be changed by a drag in a panel, cannot be saved in a host's session, and
+ * cannot be read by a phone talking to a headless Pi. So it is a table, and `p->stage_order` is what runs.
+ *
+ * THE DEFAULT IS THE IDENTITY, and that is what keeps every existing proof valid: the generator already emits
+ * the stages in signal order, so the compiled default is 0,1,2,… — the same sequence the old straight-line
+ * code ran, through the same `blendCpp` bodies with the same `on == 1` skip. The arithmetic is not merely
+ * equivalent; it is the same operations in the same order.
+ *
+ * ⚠️ THE MODEL IS IN THE TABLE BUT NOT IN THE SWITCH. It is the one stage that is not per-sample — it runs
+ * once per chunk and IN PLACE, which is why the process loop is split around it at all. Its case is
+ * deliberately empty: its POSITION in the order is what decides which side of it a block runs on, and it has
+ * no per-sample DSP of its own. The output level's case is empty for a different reason — it is applied on
+ * the plugin's OUTPUT, after both channels.
+ */
+export function stageTableCpp(chain) {
   const stages = chain.stages || [];
   const at = modelStageIndex(chain);
-  // EVERY STAGE BEFORE THE MODEL, in the order the chain declares — not in parameter order, and not by
-  // asking each parameter what it is. Same list, same order, same output; the difference is that the next
-  // chain does not have to be an amp for this to make sense.
-  for (const stage of stages.slice(0, at < 0 ? stages.length : at)) {
-    lines.push(...blendCpp(stage, params));
-  }
-  return lines.join('\n');
+  return `// ── the chain order, AS DATA ─────────────────────────────────────────────────────────────────────────
+// One id per stage, in the chain's own declaration order. The dispatch below does not care what this order
+// is — it walks \`p->stage_order\`, which starts as the table here and which a host's saved session may
+// replace. See lib/ampChain.js for why this is a table rather than two written-out passes.
+//
+// ⚠️ THIS HALF IS EMITTED BEFORE \`plugin_t\` AND THE DISPATCH AFTER IT, and that is the only reason there
+// are two functions: the struct sizes itself from MORPHEUS_NUM_STAGES, and the dispatch needs the struct.
+#define MORPHEUS_NUM_STAGES ${stages.length}
+enum {
+${stages.map((s, i) => `   ${stageId(s)} = ${i}`).join(',\n')}
+};
+
+// 255 is "this chain has no such stage" — not a stage number, and compared against, never indexed with.
+#define MORPHEUS_NO_MODEL_STAGE 255
+${at < 0 ? '#define MORPHEUS_MODEL_STAGE MORPHEUS_NO_MODEL_STAGE' : `#define MORPHEUS_MODEL_STAGE ${stageId(stages[at])}`}
+
+// The compiled default: the order the generator emitted the stages in, which is the signal order.
+static const unsigned char kMorpheusDefaultOrder[MORPHEUS_NUM_STAGES] = {
+${stages.map((_, i) => `   ${i},`).join('\n')}
+};
+
+// ⭐ WHAT EACH STAGE IS, alongside WHERE it runs. The id table above is identity — for a board it is the
+// block's \`instanceId\`, which is deliberately opaque. This is the KIND, so anything holding only an order can
+// still say what it is looking at, and so a check can assert the ORDER OF KINDS instead of searching the
+// process loop for function names — which is a spelling, not a behaviour, and went on passing vacuously the
+// moment the dispatch moved out of the loop (see KNOWN-HAZARDS.md H19).
+static const char *const kMorpheusStageKinds[MORPHEUS_NUM_STAGES] = {
+${stages.map((s) => `   ${cstr(s.kind)},`).join('\n')}
+};`;
 }
 
 /**
- * The stages AFTER the model. The cabinet is the only one, and it is last of the three because a speaker is
- * driven by the amp: convolving before the model would put a cabinet in front of the amplifier.
+ * THE DISPATCH THAT WALKS THE ORDER — emitted after `plugin_t`, because it takes one.
  *
- * ⚠️ THE MODEL USED TO BE EMITTED HERE TOO, AND IT IS NOT ANY MORE. It sat between the tone stack and the
- * cabinet as an inline `#if MORPHEUS_HAS_MODEL` block, which was the right PLACE and the wrong SHAPE: it ran
- * one sample at a time, inside a per-sample loop, per channel. Splitting the chain here is what lets the
- * template call the engine once per block instead of once per sample — see audioPluginTemplate.js, which
- * owns that loop and the measurement behind it.
+ * ⚠️ THE CASES ARE ADDRESSED BY ID, NOT BY POSITION, and that is what makes the order a VALUE: a case is
+ * reached because `p->stage_order` named it, not because it happened to be written third. Each case carries
+ * its own `blendCpp` braces, so `on == 1` still skips its blend line exactly as it did when this was
+ * straight-line code — which is what keeps every measured null exactly where it was.
  */
-export function chainPostCpp(chain, params = [], cabInPath = true) {
+export function stageDispatchCpp(chain, params) {
   const stages = chain.stages || [];
-  const at = modelStageIndex(chain);
-  // EVERY STAGE AFTER THE MODEL, in the chain's own order — the mirror of chainPreCpp, and the reason a tone
-  // stack placed after the amp now exists in the plugin instead of quietly disappearing. With no model stage
-  // at all there is no "after the model", so every stage is in the first pass.
-  const lines = [];
-  for (const stage of (at < 0 ? [] : stages.slice(at + 1))) {
-    lines.push(...blendCpp(stage, params));
-  }
-  // ⭐ THE LEGACY CHAIN HAS NO CABINET STAGE AT ALL. Before a board existed, "there is a .wav in the project"
-  // and "the speaker is in the signal path" were the same question, so the cabinet's stage was emitted for
-  // every chain and its DSP is behind `#if MORPHEUS_HAS_CAB`. Emitting it here — for a chain that does not
-  // name one — is what keeps the plain plugin, the amp plugin and the three runner proofs byte-identical.
-  // A board never takes this branch: it says what is in the path, and `cabInPath` is derived from that.
-  // ⚠️ AND IT IS DELIBERATELY NOT WRAPPED IN A BLEND. This is the one cabinet with no BLOCK behind it — a
-  // `.wav` in a project that has no Cabinet stage — so there is no switch to read and nothing to fade it
-  // with. It convolves, as it always did; it is not a control.
-  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__CAB_STAGE__');
-  return lines.join('\n');
+  const cases = stages
+    .map((stage) => {
+      const id = stageId(stage);
+      if (stage.kind === 'model') {
+        return [
+          `      case ${id}:`,
+          '         // NOT A PER-SAMPLE STAGE. The model runs once per chunk, in place, in plug_process — see the',
+          '         // note above. Its position in the order is what decides which side of it a block runs on.',
+          '         break;',
+        ].join('\n');
+      }
+      if (stage.kind === 'level') {
+        return [
+          `      case ${id}:`,
+          '         // NOT A PER-SAMPLE STAGE. The output level is applied on the plugin\'s OUTPUT, after both',
+          '         // channels, so it cannot be a stage inside one channel\'s path.',
+          '         break;',
+        ].join('\n');
+      }
+      const body = blendCpp(stage, params);
+      if (!body.length) return `      case ${id}:\n         break;`;
+      return `      case ${id}:\n${body.join('\n')}\n         break;`;
+    })
+    .join('\n');
+  return `// WHERE THE MODEL SITS **IN THE ORDER THAT IS RUNNING**, which is not a constant any more: an order
+// loaded from a saved session can have put a block on the other side of it. Returns MORPHEUS_NUM_STAGES when
+// there is no model stage, which makes the first pass every stage and the second pass empty — exactly what
+// the old straight-line code did for a chain with no model in it.
+static inline unsigned char morpheus_model_at(const ${'plugin_t'} *p) {
+   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) {
+      if (p->stage_order[s] == MORPHEUS_MODEL_STAGE) return s;
+   }
+   return MORPHEUS_NUM_STAGES;
+}
+
+// ONE STAGE'S DSP, addressed by ID rather than by position — which is the whole point of the table. \`x\` is the
+// sample and the result replaces it. Each case carries its own \`blendCpp\` braces, so \`on == 1\` still skips
+// its blend line exactly as it did when this was straight-line code.
+static inline double morpheus_stage_dsp(${'plugin_t'} *p, int c, double x, int stage) {
+   switch (stage) {
+${cases}
+      default:
+         break;
+   }
+   return x;
+}`;
+}
+
+/**
+ * THE CABINET A PROJECT HAS AND THE CHAIN DOES NOT NAME — a `.wav` in a project with no Cabinet block.
+ *
+ * Before a board existed, "there is a .wav in the project" and "the speaker is in the signal path" were the
+ * same question, so the cabinet was emitted for every chain and its DSP is behind `#if MORPHEUS_HAS_CAB`.
+ * Emitting it for a chain that does not name one is what keeps the plain plugin, the amp plugin and the three
+ * runner proofs generating the same plugin. A board never takes this branch: it says what is in the path, and
+ * `cabInPath` is derived from that.
+ *
+ * ⚠️ IT IS DELIBERATELY NOT A STAGE AND NOT WRAPPED IN A BLEND. There is no BLOCK behind it — no stage id in
+ * the order table, and therefore nothing a reorder can move — so there is no switch to read and nothing to
+ * fade it with. It convolves, as it always did; it is not a control. It is emitted after the order walk,
+ * which is where it has always run.
+ */
+export function legacyCabCpp(chain, cabInPath = true) {
+  const stages = chain.stages || [];
+  return cabInPath && !stages.some((s) => s.kind === 'cab') ? '__CAB_STAGE__' : '';
 }
 
 /** Every parameter stepped one sample toward its target. */

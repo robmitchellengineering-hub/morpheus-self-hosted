@@ -312,6 +312,116 @@ export function toggleCheck({ work, clapInclude = null, sampleRate = 48000, seco
   return { rows, sampleRate, frames: dry.length };
 }
 
+/**
+ * THE CHAIN ORDER AS DATA — saved, loaded, and HEARD.
+ *
+ * ⭐ WHY THIS EXISTS. "The order is a value now" is a claim about the plugin's behaviour, and every other proof
+ * in this file renders the DEFAULT order — so all of them would still pass if the order table were ignored
+ * completely. This is the one that cannot: it loads a different order through CLAP's state extension and
+ * asserts the render CHANGES, then saves it back and asserts the bytes round-trip.
+ *
+ * ⚠️ THE DRIVE IS WHAT MAKES A REORDER AUDIBLE, and that is not a detail — a tone stack and a delay are both
+ * linear and time invariant, so they COMMUTE and swapping them changes nothing any null test can see. The
+ * drive's clipper is the nonlinearity that makes "before" and "after" two different sounds, so the permutation
+ * swapped here is the delay and the drive, not two filters.
+ */
+export function orderCheck({ work, clapInclude = null, sampleRate = 48000, seconds = 0.5 }) {
+  mkdirSync(work, { recursive: true });
+  const clap = clapInclude || clapIncludes();
+  const dry = withFades(logSweep({ f1: 40, f2: 10000, sampleRate, seconds, amplitude: 0.25 }), { samples: 64 });
+  const stereo = new Float32Array(dry.length * 2);
+  for (let i = 0; i < dry.length; i++) { stereo[i * 2] = dry[i]; stereo[i * 2 + 1] = dry[i]; }
+  const dryPath = join(work, 'dry-order.mraw');
+  writeMraw(dryPath, sampleRate, 2, stereo);
+
+  const items = [
+    { instanceId: 1, kind: 'input', enabled: true, values: {} },
+    { instanceId: 2, kind: 'drive', enabled: true, values: {} },
+    { instanceId: 3, kind: 'delay', enabled: true, values: { delay_mix: 60, delay_feedback: 40 } },
+    { instanceId: 4, kind: 'output', enabled: true, values: {} },
+  ];
+  const dir = join(work, 'order');
+  const { files } = scaffoldPlugin([
+    { path: 'README.md', content: '# order check\n' },
+    { path: 'morpheus.plugin.json', content: JSON.stringify({ name: 'Order', board: { nextInstanceId: 99, items } }) },
+  ]);
+  for (const f of files) {
+    const dest = join(dir, f.path);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, f.content);
+  }
+  const src = files.find((f) => f.path === 'Source/Plugin.cpp').content;
+  const bin = buildHost({ pluginDir: dir, clapInclude: clap, work: dir });
+
+  // THE STAGE IDS COME FROM THE PLUGIN'S OWN TABLE, never from a guess about what the generator emitted: an
+  // order addresses stages BY ID, so a test that invented the ids would be testing its own arithmetic.
+  const ids = (/#define MORPHEUS_NUM_STAGES \d+\nenum \{\n([\s\S]*?)\n\};/.exec(src)?.[1] || '')
+    .split(',').map((l) => l.trim()).filter(Boolean).map((l) => l.split('=')[0].trim());
+  const kinds = (src.match(/static const char \*const kMorpheusStageKinds\[MORPHEUS_NUM_STAGES\] = \{([\s\S]*?)\};/)?.[1] || '')
+    .split(',').map((s) => s.trim().replace(/^"|"$/g, '')).filter(Boolean);
+
+  const render = (label, statePath = null, savePath = null) => {
+    const outPath = join(work, `order-${label}.mraw`);
+    const args = ['--in', dryPath, '--out', outPath, '--blocksize', '64'];
+    if (statePath) args.push('--load-state', statePath);
+    if (savePath) args.push('--save-state', savePath);
+    const run = spawnSync(bin, args, { encoding: 'utf8' });
+    if (run.status !== 0) {
+      console.error(`[amp-chain] x the order render failed for "${label}":\n${(run.stderr || '').slice(-1000)}`);
+      process.exit(1);
+    }
+    return readMraw(outPath).data[0];
+  };
+
+  // The state blob, built HERE rather than by the plugin — see Source/Plugin.cpp for the format: a magic, a
+  // version, a count, then one byte per stage. Writing it by hand is the point: a plugin that only ever read
+  // its own output would round-trip a bug perfectly.
+  const blobFor = (permutation) => {
+    const b = Buffer.alloc(12 + permutation.length);
+    b.writeUInt32LE(0x4D4F5250, 0);
+    b.writeUInt32LE(1, 4);
+    b.writeUInt32LE(permutation.length, 8);
+    Buffer.from(permutation).copy(b, 12);
+    return b;
+  };
+
+  const identity = ids.map((_, i) => i);
+  const driveAt = kinds.indexOf('drive');
+  const delayAt = kinds.indexOf('delay');
+  const swapped = identity.slice();
+  swapped[driveAt] = identity[delayAt];
+  swapped[delayAt] = identity[driveAt];
+
+  const defaultRender = render('default');
+  const savedDefault = join(work, 'state-default.bin');
+  render('default-save', null, savedDefault);
+
+  const swapPath = join(work, 'state-swap.bin');
+  writeFileSync(swapPath, blobFor(swapped));
+  const permutedRender = render('permuted', swapPath);
+
+  const savedAfter = join(work, 'state-after.bin');
+  render('permuted-save', swapPath, savedAfter);
+
+  // A DUPLICATE IS NOT A PERMUTATION, and the plugin must refuse it rather than run one block twice and drop
+  // another — a wrong SOUND with no error is what a corrupted file would otherwise produce.
+  const badPath = join(work, 'state-bad.bin');
+  writeFileSync(badPath, blobFor([0, 1, 1, 3]));
+  const badRun = spawnSync(bin, ['--in', dryPath, '--out', join(work, 'order-bad.mraw'), '--load-state', badPath], { encoding: 'utf8' });
+
+  return {
+    ids, kinds, identity, swapped,
+    // The compiled default, saved: it must be the identity, not a special case that only works when unset.
+    defaultSavedIsIdentity: readFileSync(savedDefault).equals(blobFor(identity)),
+    // The reorder has to CHANGE the sound, or the order is a table nobody walks.
+    reorderChangesTheSound: compareToReference(defaultRender, permutedRender),
+    // …and it has to survive a save/load cycle EXACTLY.
+    roundTrip: readFileSync(savedAfter).equals(blobFor(swapped)),
+    malformedRefused: badRun.status !== 0,
+    sampleRate, frames: dry.length,
+  };
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────────────────────────────────────────
 function arg(name, fallback = null) {
   const at = process.argv.indexOf(`--${name}`);
@@ -350,7 +460,29 @@ if (isMain) {
     console.log('[amp-chain] every block\'s switch is a true bypass, and every switch does something\n');
     process.exit(0);
   }
-  if (!pluginDir) { console.error('[amp-chain] --plugin is required (or --toggle, which needs no plugin)'); process.exit(2); }
+  // ── the chain order as data: saved, loaded and heard ───────────────────────────────────────────────────
+  if (process.argv.includes('--order')) {
+    const o = orderCheck({ work: join(work, 'order'), clapInclude: arg('clap-include'), seconds: Number(arg('seconds', '0.5')) });
+    console.log('[amp-chain] the chain order, as data — saved, loaded, and heard:');
+    console.log(`[amp-chain]   stages          ${o.kinds.join(' · ')}`);
+    console.log(`[amp-chain]   default order   ${o.identity.join(',')}`);
+    console.log(`[amp-chain]   loaded order    ${o.swapped.join(',')}  (delay and drive exchanged)`);
+    const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} dB` : 'identical');
+    console.log(`[amp-chain]   a saved default IS the identity order:   ${o.defaultSavedIsIdentity ? 'yes' : 'NO'}`);
+    console.log(`[amp-chain]   the reorder changes the sound by:        ${f(o.reorderChangesTheSound.nullDb)}`);
+    console.log(`[amp-chain]   the loaded order saves back byte for byte: ${o.roundTrip ? 'yes' : 'NO'}`);
+    console.log(`[amp-chain]   a malformed order is refused, not applied:  ${o.malformedRefused ? 'yes' : 'NO'}`);
+    console.log(JSON.stringify({ ok: o.defaultSavedIsIdentity && o.roundTrip && o.malformedRefused && !o.reorderChangesTheSound.identical, ...o }));
+    let bad = 0;
+    if (!o.defaultSavedIsIdentity) { console.error('[amp-chain] x a fresh plugin does not save the compiled order'); bad++; }
+    if (o.reorderChangesTheSound.identical) { console.error('[amp-chain] x a loaded order changed nothing — the order is a table nobody walks'); bad++; }
+    if (!o.roundTrip) { console.error('[amp-chain] x the order did not survive a save/load cycle'); bad++; }
+    if (!o.malformedRefused) { console.error('[amp-chain] x a malformed order was applied instead of refused'); bad++; }
+    if (bad) process.exit(1);
+    console.log('[amp-chain] the order is data: it saves, it loads, it is heard, and a bad one is refused\n');
+    process.exit(0);
+  }
+  if (!pluginDir) { console.error('[amp-chain] --plugin is required (or --toggle/--order, which need no plugin)'); process.exit(2); }
   const maxNullDb = Number(arg('max-null-db', '-120'));
   const r = ampChainCheck({
     pluginDir,

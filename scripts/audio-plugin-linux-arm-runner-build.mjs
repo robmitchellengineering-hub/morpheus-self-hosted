@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import audioPlugin, { LINUX_ASSETS } from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { namRenderCheck } from './audio-nam-render-check.mjs';
-import { ampChainCheck, toggleCheck } from './audio-amp-chain-check.mjs';
+import { ampChainCheck, orderCheck, toggleCheck } from './audio-amp-chain-check.mjs';
 import { demoManifest } from './lib/pluginDemo.mjs';
 
 const log = (m) => console.log(`[audio-plugin-linux-arm] ${m}`);
@@ -291,6 +291,26 @@ if (chainCheck) {
     }
   }
   log('every switch is a true bypass, and every switch does something');
+
+  // ⭐ AND THE CHAIN ORDER IS DATA, on this CPU. Every proof above renders the DEFAULT order, so all of them
+  // would still pass if the order table were ignored completely — this is the one that cannot. It loads a
+  // permutation through the plugin's own CLAP state extension and asserts the render CHANGES, that a saved
+  // default IS the identity, that a loaded order round-trips byte for byte, and that a malformed one is
+  // refused. It swaps the DRIVE and the DELAY deliberately: two filters commute, so permuting them would be
+  // inaudible and would prove nothing.
+  console.log('\n[audio-plugin-linux-arm] > the chain order saves, loads, and is heard');
+  const order = orderCheck({ work: join(OUT, 'order-check') });
+  log(`  stages ${order.kinds.join(' · ')}`);
+  log(`  default ${order.identity.join(',')} -> loaded ${order.swapped.join(',')}`
+    + `   the reorder changes the sound by ${order.reorderChangesTheSound.identical ? 'NOTHING' : `${order.reorderChangesTheSound.nullDb.toFixed(1)} dB`}`);
+  log(`  a saved default is the identity: ${order.defaultSavedIsIdentity ? 'yes' : 'NO'}`
+    + `   round-trips: ${order.roundTrip ? 'yes' : 'NO'}`
+    + `   malformed refused: ${order.malformedRefused ? 'yes' : 'NO'}`);
+  if (!order.defaultSavedIsIdentity) { console.error('[audio-plugin-linux-arm] x a fresh plugin does not save the compiled order.'); process.exit(1); }
+  if (order.reorderChangesTheSound.identical) { console.error('[audio-plugin-linux-arm] x a loaded order changed nothing — the order is a table nobody walks.'); process.exit(1); }
+  if (!order.roundTrip) { console.error('[audio-plugin-linux-arm] x the order did not survive a save/load cycle.'); process.exit(1); }
+  if (!order.malformedRefused) { console.error('[audio-plugin-linux-arm] x a malformed order was applied instead of refused.'); process.exit(1); }
+  log('the order is data: it saves, it loads, it is heard, and a bad one is refused');
   log('the chain is its design, on this CPU');
 }
 

@@ -770,11 +770,12 @@ export const MUTATIONS = [
     // own comment said "after the model", so a speaker was convolved in front of the amplifier driving it.
     // Every check that only looks for a stage's PRESENCE passed.
     why: 'Emits a marker nothing replaces instead of the cabinet\u2019s stage, so the speaker is not in the path at all \u2014 the shape the defect really had, where the cabinet\u2019s line and the model\u2019s were one apart.',
-    // ⚠️ REPOINTED TWICE, and both times by the emitted text moving rather than the claim. The cabinet is
-    // emitted by chainPostCpp, and since a board can take it out of the path that emission is a guarded push.
-    // The property this protects is unchanged: the cabinet's DSP must be emitted, and after the model.
-    find: "  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__CAB_STAGE__');",
-    replace: "  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__MODEL_STAGE__');",
+    // ⚠️ REPOINTED THREE TIMES, and every time by the emitted text moving rather than the claim. It was
+    // emitted by `chainPostCpp`; when the chain order became DATA (2026-10-07) the legacy cabinet moved to its
+    // own `legacyCabCpp`, because it is the one cabinet with no stage behind it and so nothing a reorder can
+    // move. The property this protects is unchanged: the cabinet's DSP must be emitted, and after the model.
+    find: "  return cabInPath && !stages.some((s) => s.kind === 'cab') ? '__CAB_STAGE__' : '';",
+    replace: "  return cabInPath && !stages.some((s) => s.kind === 'cab') ? '__MODEL_STAGE__' : '';",
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -1888,6 +1889,26 @@ export const MUTATIONS = [
     why: 'Puts the hand-written source list back into the render check, so a generated file the list does not know about breaks the link.',
     find: '    ...generatedSources(pluginDir),',
     replace: "    join(pluginDir, 'Source', 'Plugin.cpp'),\n    join(pluginDir, 'Source', 'PluginEntry.cpp'),\n    join(pluginDir, 'Source', 'ModelData.cpp'),",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ THE ORDER IS DATA ONLY IF THE DSP WALKS IT. Emitting the table and then reading the COMPILED default
+    // is the exact shape of "a table nobody walks": every other proof in the repository passes, because every
+    // one of them renders the default order — where the two tables are identical by construction.
+    why: 'Walks the compiled default instead of the running order, so a saved chain order is ignored.',
+    find: '            for (unsigned char s = 0; s < p->model_at; ++s) {\n               x = morpheus_stage_dsp(p, c, x, (int)p->stage_order[s]);\n            }',
+    replace: '            for (unsigned char s = 0; s < p->model_at; ++s) {\n               x = morpheus_stage_dsp(p, c, x, (int)kMorpheusDefaultOrder[s]);\n            }',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/audioPluginTemplate.js',
+    // ⚠️ AND A REORDER MUST TAKE EFFECT BETWEEN BLOCKS. Writing a loaded order straight into the table the
+    // audio thread is walking would let a reorder land mid-block — half the block on one order, half on
+    // another — which is the one outcome a permutation must never produce. Nothing would report it.
+    why: 'Applies a loaded order directly to the running table instead of handing it over, so a reorder can land mid-block.',
+    find: '   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order_pending[s] = order[s];\n   morpheus_gui_publish(&p->stage_order_pending_flag);',
+    replace: '   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order[s] = order[s];',
   },
   {
     guard: 'verify-audio-plugin.mjs',
