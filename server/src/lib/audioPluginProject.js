@@ -16,7 +16,7 @@ import {
   auSubtypeCode, cmakeLists, entrySource, pluginSource, pluginId, fourCharCode,
 } from './audioPluginTemplate.js';
 import {
-  MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSource, modelHeader, resolveModel,
+  MODEL_DATA_HEADER, MODEL_DATA_SOURCE, modelDataSourceAll, modelHeader, resolveModels,
 } from './namPlugin.js';
 import { PLAIN_CHAIN, chainFor, chainHas, chainParamsStable } from './ampChain.js';
 import { ampBoard, boardBundle, boardChain, boardJson, boardParamsStable, readBoard, validateBoard } from './board.js';
@@ -25,7 +25,7 @@ import {
   pluginGuiApple, pluginGuiLayout, pluginGuiStub, pluginGuiWindows, pluginGuiX11,
 } from './pluginGui.js';
 import {
-  CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSource, cabHeader, resolveCab,
+  CAB_DATA_HEADER, CAB_DATA_SOURCE, cabDataSourceAll, cabHeader, resolveCabs,
 } from './cabIr.js';
 import { cloneFiles, hasFile, getFileContent, parsePackageJson } from './compile-targets/utils.js';
 
@@ -204,23 +204,32 @@ export function scaffoldPlugin(files) {
   // starting point — it is DERIVED from the `.nam` in the project, and leaving it alone would mean replacing
   // `models/amp.nam` and rebuilding produced the old amp. Its own header says it is generated, for the same
   // reason: a user who edits it should know before they lose it, not after.
-  const model = resolveModel(files, manifest);
-  for (const w of model.warnings) warnings.push(w);
+  const models = resolveModels(files, manifest);
+  for (const m of models) for (const w of m.warnings) warnings.push(w);
   const replace = (path, content) => {
     const at = out.findIndex((f) => f.path === path);
     if (at === -1) out.push({ path, content });
     else out[at] = { path, content };
     if (!generated.includes(path)) generated.push(path);
   };
-  replace(MODEL_DATA_HEADER, modelHeader(model.info));
-  replace(MODEL_DATA_SOURCE, modelDataSource(model.info, model.text));
+  // ⭐ THE FIRST USABLE CAPTURE, WHICH IS NOT NECESSARILY models[0], AND THE DIFFERENCE IS A PLUGIN THAT LIES.
+  // `resolveModels` keeps a member it cannot use so its warning is surfaced (see namPlugin.js), but
+  // `modelDataSourceAll` emits no bytes for it and starts the rig at the first member that HAS some — so the
+  // header and the CMakeLists question must be asked of that same member. Asking `models[0]` would write
+  // `MORPHEUS_HAS_MODEL 0` beside a `.cpp` that embeds a model: a plugin that builds, loads and plays
+  // nothing. ⚠️ For one capture — the case that must stay byte-identical — the two are the same object, and
+  // for none they are both null.
+  const modelInfo = models.find((m) => m && m.info)?.info ?? null;
+  replace(MODEL_DATA_HEADER, modelHeader(modelInfo, models));
+  replace(MODEL_DATA_SOURCE, modelDataSourceAll(models));
 
   // The cabinet is DERIVED from the `.wav` in the project, exactly like the model, so it is rewritten for the
   // same reason: replacing `models/cab.wav` and rebuilding has to produce the new speaker.
-  const cab = resolveCab(files, manifest);
-  for (const w of cab.warnings) warnings.push(w);
-  replace(CAB_DATA_HEADER, cabHeader(cab.info));
-  replace(CAB_DATA_SOURCE, cabDataSource(cab.info, cab.channels));
+  const cabs = resolveCabs(files, manifest);
+  for (const c of cabs) for (const w of c.warnings) warnings.push(w);
+  const cabInfo = cabs.find((c) => c && c.info && Array.isArray(c.channels) && c.channels.length)?.info ?? null;
+  replace(CAB_DATA_HEADER, cabHeader(cabInfo, cabs));
+  replace(CAB_DATA_SOURCE, cabDataSourceAll(cabs));
 
   // ── the board, when the project has one ────────────────────────────────────────────────────────────────
   // A board arrives FROM THE USER — it is edited in the app and written back to the manifest — so it is the
@@ -229,7 +238,7 @@ export function scaffoldPlugin(files) {
   // in a warning. Silently fixing a user's arrangement is how a plugin comes back different from the one
   // they drew.
   const board = readBoard(manifest);
-  const boardCheck = board ? validateBoard(board, { modelFile: model.info?.path || null, cabFile: cab.info?.path || null }) : null;
+  const boardCheck = board ? validateBoard(board, { modelFile: modelInfo?.path || null, cabFile: cabInfo?.path || null }) : null;
   if (boardCheck) {
     for (const w of boardCheck.warnings) warnings.push(w);
     for (const e of boardCheck.errors) warnings.push(`The board was not used: ${e}`);
@@ -284,10 +293,10 @@ export function scaffoldPlugin(files) {
     // The CMakeLists is the one generated file that DOES differ with and without a model: with one it compiles
     // the reference engine into the plugin, without one there is nothing to compile. The plugin source itself
     // does not differ — see namPlugin.js's note on why that matters for the test bench.
-    hasModel: Boolean(model.info),
-    hasCab: Boolean(cab.info),
-    modelPath: model.info ? model.info.path : null,
-    modelArchitecture: model.info ? model.info.architecture : null,
+    hasModel: Boolean(modelInfo),
+    hasCab: Boolean(cabInfo),
+    modelPath: modelInfo ? modelInfo.path : null,
+    modelArchitecture: modelInfo ? modelInfo.architecture : null,
   }));
 
   // The entry file exports three symbols that our Plugin.cpp defines. Over somebody else's source that
