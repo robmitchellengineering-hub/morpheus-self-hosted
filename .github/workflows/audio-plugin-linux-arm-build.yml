@@ -206,6 +206,12 @@ jobs:
             redistribute; drop your own `.wav` in and it is live. **It draws its own control panel** — the plugin
             owns the sliders, so the standalone app has knobs rather than an empty window, and a DAW shows them
             instead of its generic parameter list. Every control is in its own units (dB, %, ms).
+
+            ⚠️ **The standalone monitors your audio input** — with a live microphone and the speakers
+            up, an amp model in a monitoring host is a feedback loop and it will howl. Use headphones, or a
+            DAW (where the host decides monitoring). And it is a captured high-gain amp: with the gate at its
+            lowest setting it has a noise floor of its own, so raise GATE to about -40 dB to silence it
+            between notes.
           files: |
             ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/build/assets/*.zip
             ${{ runner.temp }}/BUILD-PROOF-linux-arm.txt

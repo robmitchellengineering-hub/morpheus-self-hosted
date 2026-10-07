@@ -32,6 +32,20 @@ These builds are unsigned. macOS will quarantine them, and Windows SmartScreen
 will warn once. See the user manual for what each platform's warning means and
 how to get past it.
 
+Two noises that are not faults
+------------------------------
+THE STANDALONE MONITORS YOUR INPUT. It passes whatever your microphone or interface
+hears through the plugin and out of your speakers, amplified by the amp model — so
+with a live microphone and the speakers up it is a feedback loop, and it will howl.
+Use headphones, or mute the input, or use the VST3/AU/CLAP inside a DAW instead:
+there the host decides monitoring and this cannot happen.
+
+AND THIS IS A CAPTURED HIGH-GAIN AMPLIFIER, WHICH IS HONEST ABOUT IT. With no input
+at all it has a noise floor of its own, and the GATE ships at its lowest setting —
+which is OFF, not merely gentle — so nothing is gating that floor between notes.
+That is the capture you asked for, not a defect in the plugin. Raise GATE to about
+-40 dB and it goes quiet when you stop playing, exactly as a real gate would.
+
 Terms
 -----
 Morpheus is published source, not open source. Copyright (c) 2026 Rob Mitchell.
