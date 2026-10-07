@@ -770,11 +770,12 @@ export const MUTATIONS = [
     // own comment said "after the model", so a speaker was convolved in front of the amplifier driving it.
     // Every check that only looks for a stage's PRESENCE passed.
     why: 'Emits a marker nothing replaces instead of the cabinet\u2019s stage, so the speaker is not in the path at all \u2014 the shape the defect really had, where the cabinet\u2019s line and the model\u2019s were one apart.',
-    // ⚠️ REPOINTED TWICE, and both times by the emitted text moving rather than the claim. The cabinet is
-    // emitted by chainPostCpp, and since a board can take it out of the path that emission is a guarded push.
-    // The property this protects is unchanged: the cabinet's DSP must be emitted, and after the model.
-    find: "  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__CAB_STAGE__');",
-    replace: "  if (cabInPath && !stages.some((s) => s.kind === 'cab')) lines.push('__MODEL_STAGE__');",
+    // ⚠️ REPOINTED THREE TIMES, and every time by the emitted text moving rather than the claim. It was
+    // emitted by `chainPostCpp`; when the chain order became DATA (2026-10-07) the legacy cabinet moved to its
+    // own `legacyCabCpp`, because it is the one cabinet with no stage behind it and so nothing a reorder can
+    // move. The property this protects is unchanged: the cabinet's DSP must be emitted, and after the model.
+    find: "  return cabInPath && !stages.some((s) => s.kind === 'cab') ? '__CAB_STAGE__' : '';",
+    replace: "  return cabInPath && !stages.some((s) => s.kind === 'cab') ? '__MODEL_STAGE__' : '';",
   },
   {
     guard: 'verify-audio-plugin.mjs',
