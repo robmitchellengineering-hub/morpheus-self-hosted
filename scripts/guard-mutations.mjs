@@ -1958,6 +1958,27 @@ export const MUTATIONS = [
   {
     guard: 'verify-audio-plugin.mjs',
     file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE ONE PREDICATE THAT TELLS A CHOICE FROM A SWITCH. The rig's selectors are DISCRETE, like a block's
+    // On/Off switch, so CLAP's stepped flag cannot tell them apart — the count can. A row that answered "not a
+    // choice" would draw a three-way selector as a two-state pill, which is a control that lies about what it
+    // does, and the sound would still be right: nothing but the picture would show it.
+    why: 'Draws every stepped row as a switch again, so a capture selector becomes an On/Off pill.',
+    find: 'static int morpheus_gui_is_choice(const morpheus_gui_row_t *row) { return row->choices > 1; }',
+    replace: 'static int morpheus_gui_is_choice(const morpheus_gui_row_t *row) { (void)row; return 0; }',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ AND THE COUNT MUST COME FROM THE PLUGIN. Answering it from anywhere else — a convention, CLAP's
+    // stepped flag, a guess — is how the panel and the audio come to disagree about how many captures a rig
+    // has, which is the failure the whole rig stage exists to prevent.
+    why: 'Never asks the plugin how many choices a parameter has, so the panel cannot know a rig has three captures.',
+    find: '      row->choices = morpheus_gui_choice_count(info.id);',
+    replace: '      row->choices = 0;',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
     // ⚠️ THE BADGE, AND THE LOOP THAT DRAWS IT. The check asserts the loop's BOUND, not that the array is
     // named somewhere in the file — the array's name is inside the loop body, so a loop that ran zero times
     // would have satisfied the first version of it. A backend with an empty corner compiles and sounds

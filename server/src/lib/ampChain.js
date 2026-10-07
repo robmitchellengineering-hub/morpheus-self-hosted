@@ -236,12 +236,52 @@ export const PARAM_ORDER = [
   // every control after it. A board is not ranked by this list (its order is creation order, see
   // `board.js`'s `boardParamsStable`) but it sorts its switches last for exactly this reason.
   'on_input', 'on_gate', 'on_tone', 'on_model', 'on_cab',
+  // ⭐ AND THE RIG'S TWO SELECTORS COME AFTER EVEN THE SWITCHES, for exactly the reason above. They exist
+  // only for a rig that offers a choice — `rigSelectors` below emits one only for two or more usable members
+  // — so a one-capture project has no parameter here at all. This list is the ORDER, not the contents; the
+  // scaffold appends the selectors it built to the end of the parameter list (`audioPluginProject.js`), which
+  // is what fixes their ids. Putting them here as well is what stops a future rearrangement from sorting
+  // them somewhere a host's lane would have to move for.
+  'model_select', 'cab_select',
 ];
 
 /** The parameters in their STABLE identity order — see PARAM_ORDER. A stage reorder cannot move a control. */
 export function chainParamsStable(chain, manifest = {}) {
   const rank = (k) => { const at = PARAM_ORDER.indexOf(k); return at < 0 ? PARAM_ORDER.length : at; };
   return chainParams(chain, manifest).slice().sort((a, b) => rank(a.key) - rank(b.key));
+}
+
+/**
+ * THE RIG'S TWO SELECTORS — one DISCRETE control per half of the rig, and only when there is a choice.
+ *
+ * ⭐ THEY ARE PARAMETERS RATHER THAN A MODE, because a host's automation lane is the only place a player can
+ * switch capture or mic without reaching for the mouse. `stepped` is CLAP's own discreteness flag (see
+ * `paramsCpp`), so a DAW draws a list rather than a slider that happens to land on whole numbers, and
+ * `module` puts the control under the block it selects — the same two fields a block switch carries, which
+ * is why the panel already knows how to draw one (see `pluginGui.js`'s row layout).
+ *
+ * ⚠️ THE COUNT IS THE USABLE MEMBERS, NOT THE FILES. `resolveModels` keeps a capture it cannot use so its
+ * warning reaches the scaffold (see namPlugin.js), and `modelDataSourceAll` then drops it from the emitted
+ * rig — so the table, and therefore the selector's range, describes exactly the rows that exist. A corrupt
+ * `.nam` must not leave a selector position that loads nothing.
+ *
+ * ⚠️ FEWER THAN TWO OFFERS NOTHING AT ALL. One choice is not a control, and emitting one would put a
+ * parameter into every one-capture project — which is precisely the byte-identity this whole change exists
+ * to protect. For the same reason the default is index 0: the FIRST emitted member is what a project with
+ * no selector already plays, so a session saved before the rig existed opens on the same sound.
+ *
+ * `name` is the CONTROL's label, which is deliberately not the module's: the panel shows the module as a
+ * section heading, so a row reading "Amp model" under "Amp model" would say the same word twice.
+ */
+export function rigSelectors({ models = 0, cabs = 0 } = {}) {
+  const out = [];
+  if (models >= 2) {
+    out.push({ key: 'model_select', name: 'Capture', min: 0, max: models - 1, def: 0, role: 'select', kind: 'model', unit: '', module: 'Amp model', stepped: true });
+  }
+  if (cabs >= 2) {
+    out.push({ key: 'cab_select', name: 'Speaker', min: 0, max: cabs - 1, def: 0, role: 'select', kind: 'cab', unit: '', module: 'Cabinet', stepped: true });
+  }
+  return out;
 }
 
 const cstr = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;

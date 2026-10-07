@@ -60,6 +60,10 @@ export const PANEL = {
   // strip above the first row of each block that carries the block's name — the thing that answers "I can't
   // tell what's what", which is why it is height rather than a colour.
   groupH: 20, switchW: 44, switchH: 16,
+  // ⭐ THE CHOICE. A selector is not a switch: it is the current member's NAME with an arrow either side, and
+  // the arrows have to be wide enough to read as targets rather than as decoration. Decided here with the rest
+  // of the geometry, so the three backends cannot draw three different controls — see MORPHEUS_CHOICE_X.
+  choiceArrowW: 18, choiceArrowH: 14,
   maxRows: 256, maxBlocks: 64,
   // ⭐ THE BADGE, in the space under the controls: an amp head, a cabinet and a pedalboard, drawn from the same
   // primitives as everything else. Rob: "In that spare space You could add a cool looking amp head cab and
@@ -102,6 +106,15 @@ bool morpheus_gui_set_order(const clap_plugin_t *plugin, const uint32_t *order, 
 // Whether the block at this index may be dragged. The PLUGIN answers, because which blocks are the pivot is a
 // fact about the chain and not about the panel — the panel must not be the only thing that knows.
 int morpheus_gui_block_movable(uint32_t index);
+// ⭐ ⭐ AND WHICH CONTROLS ARE A CHOICE OF N. CLAP's own flag says a control is DISCRETE
+// (CLAP_PARAM_IS_STEPPED); it does not say whether that means two states called On and Off or a list of named
+// members. So the panel asks the plugin: \`choice_count\` answers N, or 0 for anything that is not a choice — a
+// 0/1 switch included — and \`choice_name\` names one member, or NULL. Both read the rig table the DSP switches
+// between and value_to_text names, so a control cannot offer a capture the plugin would not play.
+// ⚠️ A RIG OF ONE HAS NO TABLE AT ALL (see namPlugin.js), and both of these are written to compile and answer
+// "no choice" without it — see morpheus_gui_choice_count in Plugin.cpp.
+int morpheus_gui_choice_count(clap_id id);
+const char *morpheus_gui_choice_name(clap_id id, int index);
 }
 
 // ── the layout, and the only place a row's position is written down ──────────────────────────────────────
@@ -124,6 +137,24 @@ int morpheus_gui_block_movable(uint32_t index);
 // slider that will not move.
 #define MORPHEUS_SWITCH_W ${PANEL.switchW}
 #define MORPHEUS_SWITCH_H ${PANEL.switchH}
+// ⭐ A CHOICE IS NOT A SWITCH EITHER. A three-member selector drawn as a two-state pill is a control that lies
+// about what it does, so a choice is the current member's NAME with a left and a right arrow. It SPANS THE
+// WHOLE VALUE SIDE OF THE ROW rather than a slider's track, because a name is longer than a number and the two
+// arrows have to sit either side of it — which is also why it does not repeat the name in the readout column.
+//
+// The four numbers below are the whole geometry, decided here for the same reason everything else is: three
+// backends that each laid out their own arrows would eventually disagree about where a click on one lands.
+#define MORPHEUS_CHOICE_X MORPHEUS_CONTROL_X
+#define MORPHEUS_CHOICE_RIGHT (MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD)
+#define MORPHEUS_CHOICE_W (MORPHEUS_CHOICE_RIGHT - MORPHEUS_CHOICE_X)
+#define MORPHEUS_CHOICE_ARROW_W ${PANEL.choiceArrowW}
+#define MORPHEUS_CHOICE_ARROW_H ${PANEL.choiceArrowH}
+// ⚠️ A FIXED LEFT EDGE, NOT A CENTRED STRING. Centring means measuring the text, and the three platforms
+// measure it with three different calls (X11 only when a font was loaded) — the same reason
+// MORPHEUS_BADGE_WORD_X is a left edge. So the name sits just inside the left arrow.
+#define MORPHEUS_CHOICE_NAME_X (MORPHEUS_CHOICE_X + MORPHEUS_CHOICE_ARROW_W + 10)
+// The x a click splits at: the LEFT half steps DOWN the list, the right half steps UP.
+#define MORPHEUS_CHOICE_MID_X (MORPHEUS_CHOICE_X + MORPHEUS_CHOICE_W / 2)
 // The most rows a panel will draw. Every backend allocates this on the stack ONCE and the row builder is the
 // only thing that writes it, so the three of them cannot disagree about the bound.
 #define MORPHEUS_GUI_MAX_ROWS ${PANEL.maxRows}
@@ -152,6 +183,10 @@ typedef struct {
    double setting;           // the raw value, so a switch can draw its position without re-reading anything
    double min, max, def;     // the range, so acting on a click never re-reads the params extension
    int stepped;              // CLAP_PARAM_IS_STEPPED: draw a SWITCH, not a track
+   // ⭐ HOW MANY MEMBERS THIS CONTROL CHOOSES BETWEEN, or 0 when it is not a choice. A SELECTOR IS STEPPED TOO
+   // — it is discrete — so \`stepped\` alone would draw it as a two-state pill; the plugin answers this from the
+   // rig table, which is the only thing that knows the members' names (see morpheus_gui_choice_count).
+   int choices;
    int first;                // the first row of its block — the block layer groups on this
    char name[64];
    char value[64];
@@ -237,6 +272,9 @@ static uint32_t morpheus_gui_rows(const clap_plugin_t *plugin, const clap_plugin
       // ⚠️ CLAP'S OWN FLAG, NOT A CONVENTION OF OURS. \`CLAP_PARAM_IS_STEPPED\` is how the plugin says "this
       // control is discrete", and reading it here is what makes the panel draw the same control the host does.
       row->stepped = (info.flags & CLAP_PARAM_IS_STEPPED) ? 1 : 0;
+      // ⭐ AND WHETHER THAT DISCRETENESS MEANS "A CHOICE OF N". A block's switch is stepped and answers 0 here,
+      // so it stays a switch; a capture or speaker selector answers its member count and is drawn as a choice.
+      row->choices = morpheus_gui_choice_count(info.id);
       // %.63s RATHER THAN %s: the field is 64 bytes and a host's parameter name is up to 256, so the
       // truncation is INTENDED — and gcc says so at -Wformat-truncation, on a build where clap-wrapper turns
       // warnings into errors. Saying how much to take is both quieter and a more honest statement of intent.
@@ -411,18 +449,82 @@ static double morpheus_gui_x_of(const double t) {
 }
 
 /**
+ * ⭐ WHETHER A ROW IS A CHOICE of N named members, rather than a switch or a track.
+ *
+ * A choice is STEPPED as well, so the predicate is NOT \`stepped\`: it is the count the plugin answered, and
+ * "more than one" rather than "at least one" because one member is not a control — a rig of one emits no
+ * selector at all (see ampChain.js's rigSelectors), and a row that arrived with a single member could only be
+ * drawn as a choice that has nowhere to go. ONE place, so three backends cannot disagree about which control
+ * they are drawing.
+ */
+static int morpheus_gui_is_choice(const morpheus_gui_row_t *row) { return row->choices > 1; }
+
+/**
+ * ⭐ THE NAME A CHOICE SHOWS: the plugin's own \`value_to_text\`, which is the string a host draws in its
+ * automation lane and is where the panel reads its value column from too. The rig table is the FALLBACK, for a
+ * control whose display text is missing, and the two read the SAME table (see params_value_to_text and
+ * morpheus_gui_choice_name) — so the name in the control and the name in the readout cannot be two captures.
+ */
+static void morpheus_gui_choice_text(const morpheus_gui_row_t *row, char *out, const size_t capacity) {
+   if (row->value[0]) {
+      snprintf(out, capacity, "%s", row->value);
+      return;
+   }
+   int index = (int)(row->setting + 0.5);
+   if (index < 0) index = 0;
+   const char *name = morpheus_gui_choice_name(row->id, index);
+   snprintf(out, capacity, "%s", name ? name : "");
+}
+
+/**
+ * ⭐ THE THREE CORNERS OF A CHOICE ARROW, as x0,y0,x1,y1,x2,y2.
+ *
+ * \`left\` is the arrow that steps DOWN the list and points at the row's left edge; the other points at the right
+ * edge and steps UP. Both triangles are mirrored HERE, once, so the Mac panel and the Windows panel cannot end
+ * up pointing in different directions — the same argument the whole shared header makes for the geometry.
+ */
+static void morpheus_gui_choice_arrow(const int left, const uint32_t row_y, int *out) {
+   const int mid = (int)row_y + MORPHEUS_ROW / 2;
+   const int top = mid - MORPHEUS_CHOICE_ARROW_H / 2;
+   const int bot = top + MORPHEUS_CHOICE_ARROW_H;
+   const int apex = left ? MORPHEUS_CHOICE_X : MORPHEUS_CHOICE_RIGHT;
+   const int base = left ? MORPHEUS_CHOICE_X + MORPHEUS_CHOICE_ARROW_W
+                         : MORPHEUS_CHOICE_RIGHT - MORPHEUS_CHOICE_ARROW_W;
+   out[0] = apex; out[1] = mid;
+   out[2] = base; out[3] = top;
+   out[4] = base; out[5] = bot;
+}
+
+/**
  * Put a row's control where the click asked, or back to its default. Values go through Plugin.cpp.
  *
  * ⚠️ A SWITCH IGNORES WHERE INSIDE THE ROW the click landed. It has two states, and making a user hit the
  * right half of a switch is making them miss it; the row is the target and the click is the toggle. A
  * double-click still returns the control to its DEFAULT — which for a block's switch is the state the project
  * was built with, so a player can undo a switch without knowing what it was.
+ *
+ * ⭐ AND A CHOICE DOES USE WHERE THE CLICK LANDED, because it has a direction: the left half steps DOWN the
+ * list and the right half steps UP. That is also what makes the two arrows work — they are the halves, drawn
+ * — without the panel having to hit-test them separately and risk disagreeing with the picture.
  */
 static void morpheus_gui_set_row(const clap_plugin_t *plugin, const morpheus_gui_row_t *rows,
                                  const uint32_t row, const double t, const bool to_default) {
    const morpheus_gui_row_t *r = &rows[row];
    double v;
-   if (r->stepped) {
+   if (morpheus_gui_is_choice(r)) {
+      // ⚠️ CLAMPED AT THE ENDS, NOT WRAPPED, and the reason is not arbitrary: the plugin's own index helpers
+      // clamp (morpheus_model_index / morpheus_cab_index), so a panel that wrapped would let a click reach a
+      // capture the value-to-index conversion then refuses — the panel and the audio would disagree about the
+      // last step. It also keeps the ends honest: one step left from the first capture is the first capture,
+      // not a jump across the rig to the last one. A double-click still returns to the plugin's own default.
+      int i = (int)(r->setting + 0.5);
+      if (to_default) i = (int)(r->def + 0.5);
+      else if (t < MORPHEUS_CHOICE_MID_X) --i;
+      else ++i;
+      if (i < 0) i = 0;
+      if (i > r->choices - 1) i = r->choices - 1;
+      v = (double)i;
+   } else if (r->stepped) {
       v = to_default ? r->def : (r->setting >= (r->min + r->max) * 0.5 ? r->min : r->max);
    } else {
       const double span = r->max - r->min;
@@ -669,7 +771,26 @@ static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25
       const CGFloat y = (CGFloat)morpheus_gui_row_y(i);
       [[NSString stringWithUTF8String:row->name] drawAtPoint:NSMakePoint(MORPHEUS_LABEL_X, y + 3) withAttributes:nameAttrs];
 
-      if (row->stepped) {
+      if (morpheus_gui_is_choice(row)) {
+        // ── A CHOICE OF N, not a switch and not a track. The current member's NAME sits in the control, with a
+        // triangle either side of it; the arrows come from the shared geometry (morpheus_gui_choice_arrow), so
+        // this backend and the other two point the same way and a click on the left half steps DOWN the list.
+        int tri[6];
+        for (int a = 1; a >= 0; --a) {
+          morpheus_gui_choice_arrow(a, (uint32_t)y, tri);
+          NSBezierPath *arrow = [NSBezierPath bezierPath];
+          [arrow moveToPoint:NSMakePoint(tri[0], tri[1])];
+          [arrow lineToPoint:NSMakePoint(tri[2], tri[3])];
+          [arrow lineToPoint:NSMakePoint(tri[4], tri[5])];
+          [arrow closePath];
+          [morpheusGreen() setFill];
+          [arrow fill];
+        }
+        char choice[64];
+        morpheus_gui_choice_text(row, choice, sizeof(choice));
+        [[NSString stringWithUTF8String:choice]
+          drawAtPoint:NSMakePoint(MORPHEUS_CHOICE_NAME_X, y + 2) withAttributes:valueAttrs];
+      } else if (row->stepped) {
         // ── a SWITCH, not a track. The row is the target, so the switch does not have to be hit precisely;
         // the knob sits at the end the current state names, and the text on the right says it in words.
         const NSRect pill = NSMakeRect(MORPHEUS_CONTROL_X, y + (MORPHEUS_ROW - MORPHEUS_SWITCH_H) / 2.0,
@@ -704,9 +825,13 @@ static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25
         [knob stroke];
       }
 
-      NSString *shown = [NSString stringWithUTF8String:row->value];
-      const NSSize size = [shown sizeWithAttributes:valueAttrs];
-      [shown drawAtPoint:NSMakePoint(MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.width, y + 2) withAttributes:valueAttrs];
+      // The readout on the right — and a CHOICE has none, because its readout IS the name drawn in the control
+      // above; printing the same name twice in one row reads as a defect rather than as a value.
+      if (!morpheus_gui_is_choice(row)) {
+        NSString *shown = [NSString stringWithUTF8String:row->value];
+        const NSSize size = [shown sizeWithAttributes:valueAttrs];
+        [shown drawAtPoint:NSMakePoint(MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.width, y + 2) withAttributes:valueAttrs];
+      }
     }
   }
 
@@ -1104,7 +1229,31 @@ void paint(HWND hwnd, Panel *p) {
          SetTextColor(dc, kText);
          TextOutA(dc, MORPHEUS_LABEL_X, y + 3, row->name, (int)strlen(row->name));
 
-         if (row->stepped) {
+         if (morpheus_gui_is_choice(row)) {
+            // ── A CHOICE OF N, not a switch and not a track: the current member's NAME with a triangle either
+            // side, from the shared geometry — so a click on the left half steps DOWN the list, exactly as the
+            // picture says. GDI fills a Polygon with the current brush and outlines it with the current pen.
+            int tri[6];
+            for (int a = 1; a >= 0; --a) {
+               morpheus_gui_choice_arrow(a, (uint32_t)y, tri);
+               POINT pts[3];
+               pts[0].x = tri[0]; pts[0].y = tri[1];
+               pts[1].x = tri[2]; pts[1].y = tri[3];
+               pts[2].x = tri[4]; pts[2].y = tri[5];
+               HGDIOBJ oldArrowBrush = SelectObject(dc, p->green);
+               HPEN arrowPen = CreatePen(PS_SOLID, 1, kGreen);
+               HGDIOBJ oldArrowPen = SelectObject(dc, arrowPen);
+               Polygon(dc, pts, 3);
+               SelectObject(dc, oldArrowPen);
+               SelectObject(dc, oldArrowBrush);
+               DeleteObject(arrowPen);
+            }
+            char choice[64];
+            morpheus_gui_choice_text(row, choice, sizeof(choice));
+            SelectObject(dc, p->fontBold);
+            SetTextColor(dc, kGreen);
+            TextOutA(dc, MORPHEUS_CHOICE_NAME_X, y + 2, choice, (int)strlen(choice));
+         } else if (row->stepped) {
             // ── a SWITCH. The row is the target, so the pill does not have to be hit precisely: a click
             // anywhere on the row toggles it, and the text on the right says which state it moved to.
             const int sy = y + (MORPHEUS_ROW - MORPHEUS_SWITCH_H) / 2;
@@ -1136,11 +1285,14 @@ void paint(HWND hwnd, Panel *p) {
             DeleteObject(pen);
          }
 
-         SelectObject(dc, p->fontBold);
-         SetTextColor(dc, kGreen);
-         SIZE size = {0, 0};
-         GetTextExtentPoint32A(dc, row->value, (int)strlen(row->value), &size);
-         TextOutA(dc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.cx, y + 2, row->value, (int)strlen(row->value));
+         // The readout on the right — and a CHOICE has none: its readout IS the name drawn in the control above.
+         if (!morpheus_gui_is_choice(row)) {
+            SelectObject(dc, p->fontBold);
+            SetTextColor(dc, kGreen);
+            SIZE size = {0, 0};
+            GetTextExtentPoint32A(dc, row->value, (int)strlen(row->value), &size);
+            TextOutA(dc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.cx, y + 2, row->value, (int)strlen(row->value));
+         }
       }
    }
    // ── THE BADGE, and the wordmark under it ──────────────────────────────────────────────────────────────
@@ -1582,7 +1734,26 @@ void paint(Panel *p) {
          XSetForeground(p->dpy, p->gc, p->text);
          put(p->dpy, p->win, p->gc, MORPHEUS_LABEL_X, y + 13, row->name);
 
-         if (row->stepped) {
+         if (morpheus_gui_is_choice(row)) {
+            // ── A CHOICE OF N, not a switch and not a track: the current member's NAME with a triangle either
+            // side, from the shared geometry, so a click on the left half steps DOWN the list exactly as the
+            // picture says. ⚠️ X11'S TEXT Y IS A BASELINE, so the name sits at y + 13 like every other string
+            // in this backend — the other two draw top-of-text and use y + 2.
+            int tri[6];
+            for (int a = 1; a >= 0; --a) {
+               morpheus_gui_choice_arrow(a, (uint32_t)y, tri);
+               XPoint pts[3];
+               pts[0].x = (short)tri[0]; pts[0].y = (short)tri[1];
+               pts[1].x = (short)tri[2]; pts[1].y = (short)tri[3];
+               pts[2].x = (short)tri[4]; pts[2].y = (short)tri[5];
+               XSetForeground(p->dpy, p->gc, p->green);
+               XFillPolygon(p->dpy, p->win, p->gc, pts, 3, Convex, CoordModeOrigin);
+            }
+            char choice[64];
+            morpheus_gui_choice_text(row, choice, sizeof(choice));
+            XSetForeground(p->dpy, p->gc, p->green);
+            put(p->dpy, p->win, p->gc, MORPHEUS_CHOICE_NAME_X, y + 13, choice);
+         } else if (row->stepped) {
             // ── a SWITCH. The row is the target, so the pill does not have to be hit precisely.
             const int sy = y + (MORPHEUS_ROW - MORPHEUS_SWITCH_H) / 2;
             const int on = row->setting >= (row->min + row->max) * 0.5;
@@ -1607,9 +1778,12 @@ void paint(Panel *p) {
             XDrawArc(p->dpy, p->win, p->gc, knobX - MORPHEUS_KNOB_R, y + 7, MORPHEUS_KNOB_R * 2, MORPHEUS_KNOB_R * 2, 0, 360 * 64);
          }
 
-         int textW = p->font ? XTextWidth(p->font, row->value, (int)strlen(row->value)) : 0;
-         XSetForeground(p->dpy, p->gc, p->green);
-         put(p->dpy, p->win, p->gc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - textW, y + 13, row->value);
+         // The readout on the right — and a CHOICE has none: its readout IS the name drawn in the control above.
+         if (!morpheus_gui_is_choice(row)) {
+            int textW = p->font ? XTextWidth(p->font, row->value, (int)strlen(row->value)) : 0;
+            XSetForeground(p->dpy, p->gc, p->green);
+            put(p->dpy, p->win, p->gc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - textW, y + 13, row->value);
+         }
       }
    }
 
