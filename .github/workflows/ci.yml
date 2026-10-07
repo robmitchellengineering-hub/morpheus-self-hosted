@@ -422,6 +422,14 @@ jobs:
       - name: The audio-plugin target generates a project that builds
         run: node scripts/verify-audio-plugin.mjs
 
+      # The APP side of the same document, and the failure it catches is invisible above: a corrupt `.nam` is
+      # KEPT by the resolver (so its warning can surface) and DROPPED by the emitter — so an app that listed
+      # the manifest would offer a member the plugin does not play. Also that a save cannot be silently
+      # shortened, that the manifest writer edits the user's file rather than regenerating it, and that the
+      # board editor and the plugin draw one signal path.
+      - name: The rig is one document, read the same way by the app and the plugin
+        run: node scripts/verify-rig.mjs
+
       # The measurement library: every assertion is a signal whose answer is known independently (a coherent
       # sine's FFT peak is N/2; a pure sine's THD is zero; 8-bit SQNR is 6.02N + 1.76). It is the engine the
       # plugin test bench, the capture rig and the quantization playground all stand on, so it is checked on

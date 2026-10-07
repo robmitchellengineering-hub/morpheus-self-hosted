@@ -2542,6 +2542,46 @@ export const MUTATIONS = [
     find: '    return { ...live, text: live.text + evt.text };',
     replace: '    return live;',
   },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/rigProject.js',
+    // ⚠️ THE FORMAT THE RIG EDITOR EXISTS TO GET RIGHT. `resolveModels` KEEPS a capture it cannot use so its
+    // warning can surface, and the emitter DROPS it — so a view built from the manifest instead of from the
+    // usable filter offers a selector position that plays nothing. That is a control a player can pick and
+    // hear no change from, and nothing in the generated C++ or the audio proofs can see the app do it.
+    why: 'Offers every capture in the rig including the unusable ones, so the app lists a member the plugin will not play.',
+    find: '    models: models.members.filter((m) => m.usable).map(({ path, name }) => ({ path, name })),',
+    replace: '    models: models.members.map(({ path, name }) => ({ path, name })),',
+  },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/rigProject.js',
+    // A save that "succeeds" while the finder drops what it named is the worst of both: the user is told it
+    // saved, and the next compile builds a shorter rig. The route refuses rather than repairs for this reason.
+    why: 'Accepts a capture path the project does not hold, so a save is reported as saved and the next compile silently drops it.',
+    find: '      if (!present(e.path)) { errors.push(`${e.path} is not a file in this project.`); continue; }',
+    replace: '      if (false) { errors.push(`${e.path} is not a file in this project.`); continue; }',
+  },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/audioPluginProject.js',
+    // ⚠️ THE HISTORICAL BUG, AS A MUTATION. The board route grew this writer because regenerating the manifest
+    // from `readManifest` silently drops every key the generator does not know about — and this file is
+    // documented as the user's to edit. The rig route shares the writer, so dropping this line breaks both.
+    why: 'Regenerates the manifest from the normalised read instead of editing the user\'s file, so any key the user added is silently deleted by a save.',
+    find: '        return `${JSON.stringify(apply(parsed), null, 2)}\\n`;',
+    replace: '        return `${JSON.stringify(apply(manifest), null, 2)}\\n`;',
+  },
+  {
+    guard: 'verify-rig.mjs',
+    file: 'server/src/lib/board.js',
+    // ⭐ THE DIVERGENCE STAGE 5 IS ABOUT, AS ONE LINE. The plugin's panel draws a Capture/Speaker choice under
+    // the Amp model and Cabinet blocks; without this the app draws both blocks with no controls at all, so the
+    // two surfaces describe different plugins while every other check stays green.
+    why: 'Stops the board editor naming the rig\'s captures and mics, so the app draws two blocks the plugin gives controls to.',
+    find: '        })), selectorFor(it.kind)].filter(Boolean),',
+    replace: '        }))].filter(Boolean),',
+  },
 ];
 
 /**

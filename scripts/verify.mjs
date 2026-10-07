@@ -102,6 +102,7 @@ const HARD = [
   'verify-deck-widget-backend.mjs',
   'verify-render-check.mjs',
   'verify-audio-plugin.mjs',
+  'verify-rig.mjs',
   'verify-task-models.mjs',
   'verify-task-ladder.mjs',
   'verify-audio-measure.mjs',

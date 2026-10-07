@@ -323,6 +323,14 @@ const functions = {
   // writes (`morpheus.plugin.json`), both belong on the server; see server/src/routes/board.routes.js.
   getBoard: (projectId) => apiFetch(`/board/${projectId}`),
   saveBoard: (projectId, board) => apiFetch(`/board/${projectId}`, { method: 'PUT', body: board }),
+
+  // The rig — the N captures and M mics one project carries, named and ordered. The same document as the
+  // board (`morpheus.plugin.json`) and so the same reason for a route; the `.nam` upload is multipart and
+  // therefore also here. See server/src/routes/rig.routes.js.
+  getRig: (projectId) => apiFetch(`/rig/${projectId}`),
+  saveRig: (projectId, rig) => apiFetch(`/rig/${projectId}`, { method: 'PUT', body: rig }),
+  addCapture: (projectId, form) => apiFetch(`/rig/${projectId}/model`, { method: 'POST', body: form }),
+  deleteCapture: (projectId, fileId) => apiFetch(`/rig/${projectId}/model/${fileId}`, { method: 'DELETE' }),
 };
 
 const integrations = {
