@@ -1089,6 +1089,21 @@ check('…and it compares the settled tail, not the ramp', /SETTLE_FRACTION = 0\
 const chainThreshold = chainCheckSrc.match(/arg\('max-null-db', '(-?\d+)'\)/);
 check('…with a threshold the measured numbers actually clear',
   Boolean(chainThreshold) && Number(chainThreshold[1]) <= -120, true);
+// ⭐ AND THE SWITCHES ARE PROVEN AS AUDIO TOO, not only as text. `--toggle` builds each block three ways —
+// switched off, engaged, and removed from the board entirely — and requires the switched-off build to be
+// BIT-IDENTICAL to the one without the block. That is the claim the panel and the parameter table make, and
+// the only place it can actually be checked is here, at the sample.
+check('⭐ …and a block switched off is proven to be the plugin WITHOUT it, as audio',
+  /export function toggleCheck\(/.test(chainCheckSrc)
+  && /scaffoldPlugin\(seed\)/.test(chainCheckSrc)
+  && /offVsRemoved: compareToReference\(gone, off\)/.test(chainCheckSrc)
+  && /onVsRemoved: compareToReference\(gone, on\)/.test(chainCheckSrc), true);
+check('…and the assertion is a bit-exact bypass plus a real difference, not a threshold on both',
+  /row\.offVsRemoved\.identical \|\| row\.offVsRemoved\.nullDb <= -200/.test(chainCheckSrc)
+  && /row\.onVsRemoved\.identical \|\| !\(row\.onVsRemoved\.nullDb > -60\)/.test(chainCheckSrc), true);
+check('…and the ARM runner dispatches it, because a Linux build is where the panel and the switch land',
+  /import \{ ampChainCheck, toggleCheck \}/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs'))
+  && /toggleCheck\(\{ work: join\(OUT, 'toggle-check'\) \}\)/.test(read('scripts/audio-plugin-linux-arm-runner-build.mjs')), true);
 // The bench's self-test proves the bench can fail by breaking the plugin's output gain. It finds that line by
 // shape, so if the plugin's shape moves and the bench's pattern does not, the self-test silently stops
 // patching anything — the bench would then pass a broken plugin and report that as proof it works.

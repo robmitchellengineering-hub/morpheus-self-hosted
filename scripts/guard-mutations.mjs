@@ -888,6 +888,16 @@ export const MUTATIONS = [
     replace: 'if (false) {',
   },
   {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'scripts/audio-plugin-linux-arm-runner-build.mjs',
+    // ⭐ THE SWITCH PROOF, ON THE CPU THE PLUGIN SHIPS TO. Replacing the call with an empty row list is the
+    // H17 shape exactly: the loop runs zero times, nothing fails, and the run still says the switches are a
+    // true bypass — a check that never ran reading as a check that passed.
+    why: 'Stops dispatching the toggle proof, so a build that never compared a switched-off block to its absence reports that it did.',
+    find: "  const toggles = toggleCheck({ work: join(OUT, 'toggle-check') });",
+    replace: '  const toggles = { rows: [] };',
+  },
+  {
     guard: 'verify-artifact-save-background.mjs',
     file: 'server/src/functions/getBuildProof.js',
     // ⭐ The whole point of the feature: the panel shows the BUILD'S text. A panel that composed its own
