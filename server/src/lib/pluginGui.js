@@ -490,14 +490,26 @@ static const morpheus_gui_badge_t kMorpheusBadge[] = {
    {146, 120, 8, 8, MORPHEUS_BADGE_DOT},
    {175, 120, 8, 8, MORPHEUS_BADGE_LAMP},
    {204, 120, 8, 8, MORPHEUS_BADGE_CYAN},
-   // ── THE GUITAR, leaning in the space above the board, up to the right at 45 degrees ──
-   // The neck first, so the body's outline closes over the end of it rather than the other way round — two
-   // lines, because a guitar neck has a fretboard edge and the two are what make it read as a neck.
-   {158, 82, 60, -60, MORPHEUS_BADGE_LINE},
-   {166, 84, 60, -60, MORPHEUS_BADGE_LINE},
-   {212, 12, 22, 13, MORPHEUS_BADGE_BOX},
-   {134, 62, 36, 36, MORPHEUS_BADGE_RING},
-   {147, 74, 10, 10, MORPHEUS_BADGE_DOT},
+   // ── THE GUITAR: A FLYING V, leaning in the space above the board, up to the right at 45 degrees ──
+   // ⚠️ IT IS AN OUTLINE, NOT A SHAPE. A round body on a straight neck read as a lollipop — Rob: "the guitar
+   // looks nothing like a guitar" — because what makes a guitar recognisable at this size is its SILHOUETTE.
+   // The V's two wings sweep back from the joint with the notch between them, and that concave back edge is
+   // the whole shape; nothing else here would say "guitar" at 100 pixels.
+   //
+   // The coordinates are COMPUTED, not eyeballed: a Flying V in its own frame, rotated 45 degrees and placed.
+   // The rotation is the reason MORPHEUS_BADGE_LINE exists — an axis-aligned rectangle cannot draw a diagonal.
+   {166, 52, -34, 11, MORPHEUS_BADGE_LINE},
+   {132, 63, 30, 1, MORPHEUS_BADGE_LINE},
+   {162, 64, 1, 30, MORPHEUS_BADGE_LINE},
+   {163, 94, 11, -34, MORPHEUS_BADGE_LINE},
+   {174, 60, -8, -8, MORPHEUS_BADGE_LINE},
+   {168, 54, 36, -37, MORPHEUS_BADGE_LINE},
+   {172, 58, 37, -36, MORPHEUS_BADGE_LINE},
+   {201, 14, 9, -9, MORPHEUS_BADGE_LINE},
+   {210, 5, 11, 11, MORPHEUS_BADGE_LINE},
+   {221, 16, -9, 9, MORPHEUS_BADGE_LINE},
+   {212, 25, -11, -11, MORPHEUS_BADGE_LINE},
+   {174, 44, 8, 8, MORPHEUS_BADGE_DOT},
 };
 // sizeof, not a count written down twice: a primitive added to the table above cannot be left undrawn.
 #define MORPHEUS_BADGE_PRIMITIVES (sizeof(kMorpheusBadge) / sizeof(kMorpheusBadge[0]))
