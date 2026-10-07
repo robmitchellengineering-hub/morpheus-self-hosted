@@ -2317,11 +2317,39 @@ check('…with one of each block the board allows only one of',
 check('…and the output block LAST, because it is the plugin\'s output and not a stage in the path',
   demo.DEMO_BLOCKS[demo.DEMO_BLOCKS.length - 1], 'output');
 
+// ⭐ THE RIG — FOUR CAPTURES AND FOUR MICS, IN THE REPO, NAMED ON THE CONTROLS. The demo shipped ONE model and
+// no cabinet because no capture could be redistributed. It now ships the project owner's own JCM 800 2203 in
+// four states through one G12M 4x12 in four mics. Two ways that regresses silently, and both are asserted
+// here: the manifest names fewer than the rig the release page claims, or it names a file that is not in the
+// checkout — the finders then fall back to whatever `.nam`/`.wav` the project happens to hold, which is a
+// one-capture plugin under a page that describes four.
+check('the demo names all four captures, in the order the selector offers them',
+  demo.DEMO_CAPTURES.map((c) => c.name), ['Crunch', 'Crunch 2', 'Hi Gain (TS)', 'Hi Gain (RAT)']);
+check('…and all four mics', demo.DEMO_MICS.map((m) => m.name), ['545', 'U87', '017 Tube', 'M160']);
+const demoManifest = JSON.parse(demo.demoManifest());
+check('⭐ …and the manifest the runners seed carries them as `{ path, name }`, four of each',
+  [demoManifest.models, demoManifest.cabs], [demo.DEMO_RIG.models, demo.DEMO_RIG.cabs]);
+// ⚠️ THE ORDER IS THE DEFAULT. A selector opens on index 0 — the generated rows below carry `0.0` as the value
+// — so the first entry of each list is the sound the download makes before anyone touches it. Crunch through
+// the 545, unchanged from the material the rig was captured as.
+check('…and the demo opens on the FIRST capture through the FIRST mic',
+  [demoManifest.models[0].name, demoManifest.cabs[0].name], ['Crunch', '545']);
+const demoRigFiles = demo.demoRigSeed();
+check('⭐ …every file it names is PRESENT in the repository, and the bytes are the ones a runner seeds',
+  [...demo.DEMO_CAPTURES, ...demo.DEMO_MICS].filter(({ file }) => {
+    const p = join(REPO, demo.DEMO_RIG_DIR, file);
+    const seeded = demoRigFiles.find((f) => f.path === `models/${file}`);
+    if (!existsSync(p) || !seeded) return true;
+    // A manifest that names a path the project does not hold builds a plugin from the finders' fallback, so
+    // the check is the SEED — the exact content a runner pushes into `models/` — against the file on disk.
+    return seeded.content !== readFileSync(p).toString(seeded.encoding === 'base64' ? 'base64' : 'utf8');
+  }), []);
+
 // The manifest is what the runner scripts seed, so the thing to assert is the plugin it produces.
 const demoFiles = [
   { path: 'README.md', content: '# demo\n' },
   { path: 'morpheus.plugin.json', content: demo.demoManifest() },
-  { path: 'models/amp.nam', content: '{"architecture":"Linear","weights":[1.0],"sample_rate":48000}' },
+  ...demo.demoRigSeed(),
 ];
 const demoScaffold = audioPlugin.scaffold(demoFiles);
 const demoParams = demoScaffold.generated.join(' ');
@@ -2355,6 +2383,40 @@ check('…so a block with no controls of its own still draws between the blocks 
 check('…and the layout groups by that order rather than by first appearance',
   /morpheus_gui_chain_order\(&orderCount\)/.test(guiLayout)
   && /if \(strcmp\(raw\[j\]\.group, order\[g\]\)\) continue;/.test(guiLayout), true);
+
+// ⭐ AND THE PROJECT THE RUNNERS ACTUALLY BUILD carries the four and the four: the counts in the generated
+// headers, the eight DISPLAY names in the emitted tables, and the two selectors. The block-order checks above
+// would all still pass on a one-capture plugin, because the rig is a list appended to the parameter table.
+const demoModelHdr = generated(demoScaffold, 'Source/ModelData.h');
+const demoCabHdr = generated(demoScaffold, 'Source/CabIr.h');
+const demoModelData = generated(demoScaffold, 'Source/ModelData.cpp');
+const demoCabData = generated(demoScaffold, 'Source/CabIr.cpp');
+const demoSrcAll = generated(demoScaffold, 'Source/Plugin.cpp');
+check('⭐ the generated demo carries all four captures and all four cabinets',
+  [demoModelHdr.includes('#define MORPHEUS_RIG_MODELS 4'), demoCabHdr.includes('#define MORPHEUS_RIG_CABS 4')],
+  [true, true]);
+check('…with the eight names a player reads, not the filenames the captures came with',
+  [...['Crunch', 'Crunch 2', 'Hi Gain (TS)', 'Hi Gain (RAT)'].filter((n) => !demoModelData.includes(`"${n}"`)),
+    ...['545', 'U87', '017 Tube', 'M160'].filter((n) => !demoCabData.includes(`"${n}"`))], []);
+// ⚠️ THE IDS ARE 24 AND 25, NOT 12 AND 13, AND THE DIFFERENCE IS THE BOARD. 12/13 is the four-block
+// `chain: 'amp'` shape these selectors were first proven on; the demo is the NINE-block board, whose own
+// controls and switches run to id 23. What matters is not the number but that the selectors come AFTER every
+// block control and switch — a selector owns no block, so inserting it in the block order would renumber a
+// host's saved automation. So the check is the rows AND that they are the last two parameters.
+check('⭐ …and both selectors, appended after every block control and switch, ranging over the four',
+  [/\{ 24, "Capture", 0\.0, 3\.0, 0\.0, "", 1, "Amp model" \}/.test(demoSrcAll),
+    /\{ 25, "Speaker", 0\.0, 3\.0, 0\.0, "", 1, "Cabinet" \}/.test(demoSrcAll),
+    // Both selectors read their names from the RIG tables, so the panel and the host show "Crunch", not a path.
+    // ⚠️ NOT `!PARAM_MODEL_SELECT`: that enum is the capture selector's id, reused from before the rig existed,
+    // and asserting its absence would fail the moment a model is in the project — which is the demo's whole point.
+    /kMorpheusRigModels\[index\]\.name/.test(demoSrcAll) && /kMorpheusRigCabs\[index\]\.name/.test(demoSrcAll)],
+  [true, true, true]);
+check('…and they are the LAST two parameters, so adding a block cannot move a control\'s automation id',
+  (() => {
+    const ids = [...demoSrcAll.matchAll(/\{ (\d+), "([^"]+)", /g)].map((m) => Number(m[1]));
+    const last = Math.max(...ids);
+    return [last, ids.filter((n) => n === last - 1).length, ids.length];
+  })(), [25, 1, 25]);
 
 // ⚠️ AND THE THREE RUNNERS MUST SEED THAT, NOT THEIR OWN COPY. Three hand-written manifests is how macOS and
 // Windows published an amp while Linux published a gain knob, so the import is the claim: if a script stops
@@ -2395,6 +2457,14 @@ check('…with the gate, the trim, the tone stack and the level all at their neu
 check('every runner seeds the shared definition rather than its own manifest',
   demoRunners.filter((f) => !/from '\.\/lib\/pluginDemo\.mjs'/.test(runnerText[f])
     || !/seed\.push\(\{ path: 'morpheus\.plugin\.json', content: demoManifest\(\) \}\)/.test(runnerText[f])), []);
+// ⭐ AND EVERY RUNNER MUST BE ABLE TO SEED THE RIG ITSELF, from one list. A runner that kept the shared manifest
+// but read its own eight filenames is how one platform would ship three captures under a page that says four —
+// the same failure the manifest guard above exists for, one level down.
+check('…and every runner seeds the rig from the repository, not from its own file list',
+  demoRunners.filter((f) => !/import \{[^}]*\bdemoRigSeed\b[^}]*\} from '\.\/lib\/pluginDemo\.mjs'/.test(runnerText[f])
+    || !/const rig = demoRigSeed\(\)/.test(runnerText[f])
+    || !/seed\.push\(\.\.\.rig\)/.test(runnerText[f])
+    || !/--demo-rig/.test(runnerText[f])), []);
 check('…and every one of them can carry a cabinet, which is what a demo needs to sound like an amplifier',
   demoRunners.filter((f) => !/--cab/.test(runnerText[f])), []);
 

@@ -2140,8 +2140,10 @@ export const MUTATIONS = [
     // ⚠️ NO ESCAPES IN THIS ONE. The first version ended at the `\n` of the template literal, and a `\n` inside
     // a single-quoted string in THIS file is a real newline — so the find matched nothing and the mutation was
     // reported STALE, which is a claim that quietly stops being checked. The shorter string cannot drift that way.
-    find: '{ name, board: boardJson(DEMO_BOARD) }, null, 2',
-    replace: '{ name }, null, 2',
+    // ⚠️ AND IT NAMES THE RIG TOO, so it still matches after the demo gained `models`/`cabs`: a find of just the
+    // board would have gone stale the moment the manifest grew, which is the same silent-stale failure again.
+    find: 'name, board: boardJson(DEMO_BOARD), models: DEMO_RIG.models, cabs: DEMO_RIG.cabs,',
+    replace: 'name, models: DEMO_RIG.models, cabs: DEMO_RIG.cabs,',
   },
   {
     guard: 'verify-audio-plugin.mjs',

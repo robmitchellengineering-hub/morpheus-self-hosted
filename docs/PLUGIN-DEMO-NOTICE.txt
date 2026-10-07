@@ -4,15 +4,18 @@ MORPHEUS AUDIO PLUGIN — DEMO BUILD
 What this is
 ------------
 A prebuilt Morpheus audio plugin, published so you can hear what the plugin route
-produces before you compile one of your own. It is the whole rig: a neural amp model
-from NeuralAmpModelerCore, into a drive, a three-band tone stack and a spring reverb,
-with a delay — nine blocks, in the order a pedalboard would have them.
+produces before you compile one of your own. It is the whole rig: a Marshall JCM 800
+2203 captured in four states, through a Marshall G12M 4x12 captured with four mics,
+into a drive, a three-band tone stack, a delay and a spring reverb — nine blocks, in
+the order a pedalboard would have them.
 
-THERE IS NO CABINET IN THIS BUILD. The cabinet block is in the signal path and inert,
-because every good guitar-cabinet impulse response in the wild is either a commercial
-product or carries no right to redistribute it. The plugin says so when you build
-your own — "There is a Cabinet block but no .wav in this project" — and dropping a
-.wav into the project makes it live.
+ALL FOUR CAPTURES AND ALL FOUR CABINETS ARE IN THIS BUILD. They are the project
+owner's own captures — his amp, his cabinet — included with the build; no third-party
+licence covers them. To switch between them, use the Capture and Speaker controls in
+the plugin's own panel — or the host's parameter list, where they are the last two
+parameters, of the same names. Capture chooses the amp's state (Crunch, Crunch 2,
+Hi Gain (TS), Hi Gain (RAT)); Speaker chooses the mic on the cabinet (545, U87,
+017 Tube, M160). The demo opens on the first of each.
 
 It is NOT the product. What Morpheus makes for you is a plugin built in your own
 repository, around your own model, with your own cabinet — see morpheus.nz.
@@ -62,11 +65,15 @@ writes FOR you: projects and builds produced from your own prompts belong to you
 It also does not cover the third-party components below, whose own licences are
 more permissive and govern their own code.
 
-The model in this build
------------------------
-wavenet_a1_standard.nam, taken from NeuralAmpModelerCore's example_models at the
-commit this plugin pins. NeuralAmpModelerCore is MIT licensed, and so is that
-example set; it is not a Morpheus model and we claim no rights in it.
+The rig in this build
+---------------------
+The four captures are the project owner's own recordings of his JCM 800 2203, and the
+four impulse responses are his own captures of the G12M 4x12. They are the owner's own
+work and are included with this build; no third-party licence applies to them and none
+is claimed for them. They are not third-party material.
+
+The engine that plays a capture is NeuralAmpModelerCore, which is MIT licensed. The
+build fetches and compiles it; it is not stored in this repository.
 
   https://github.com/sdatkinson/NeuralAmpModelerCore
 
