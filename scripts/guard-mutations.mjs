@@ -1961,6 +1961,36 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-pairing.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // The shop is a POST-TYPE archive with no term, so the description chain had nothing to say and `/shop/`
+    // served no meta description at all. The page WooCommerce serves that archive from is the one place the copy
+    // is written; pointing at a different page is the realistic version of getting this wrong.
+    why: 'Points the shop description at the CART page instead of the shop page, so `/shop/` describes itself with the wrong page\'s words.',
+    find: "\t\t$id = (int) wc_get_page_id( 'shop' );",
+    replace: "\t\t$id = (int) wc_get_page_id( 'cart' );",
+  },
+  {
+    guard: 'verify-pairing.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // ⭐ THE LIVE DEFECT: a category description written in the page builder is the shortcode
+    // `[html_block id="2419"]`, and the strip-only version served those literal characters as the meta
+    // description of three live category pages. Not rendering it is exactly what shipped.
+    why: 'Stops rendering shortcodes, so a page-builder description reaches the meta tag as `[html_block id="2419"]` — the live defect.',
+    find: '\t\t\t$raw = do_shortcode( $raw );',
+    replace: '\t\t\t$raw = $raw;',
+  },
+  {
+    guard: 'verify-pairing.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // `strip_shortcodes()` only removes REGISTERED shortcodes — it builds its pattern from `$shortcode_tags` — so
+    // without this sweep an unregistered one passes through and lands in the tag. The harness caught exactly this
+    // on the first run of the assertion: the registered case passed and the unknown one did not.
+    why: 'Drops the sweep for UNREGISTERED shortcodes, so one from a deactivated plugin reaches the meta tag as brackets.',
+    find: "\t\t\t$raw = preg_replace( '/\\[[a-z0-9_-]+(?:\\s[^\\]]*)?\\]/i', ' ', $raw );",
+    replace: '\t\t\t$raw = $raw;',
+  },
+  {
+    guard: 'verify-pairing.mjs',
     file: 'scripts/lib/wpPluginRelease.mjs',
     // ⭐ THE BUG THAT COST ROB A ROUND TRIP: a plugin change with no version bump is published, hashed and
     // served, and NO site is ever offered it — because every update channel compares versions. This predicate is

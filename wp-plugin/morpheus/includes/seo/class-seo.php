@@ -1327,18 +1327,100 @@ class Morpheus_SEO {
 	}
 
 	/**
+	 * The page that carries a post-type archive's own copy, when there is one — or null.
+	 *
+	 * ⚠️ WOOCOMMERCE KEEPS `/shop/`'s WORDS ON A REAL PAGE, and that is the only place an operator can write
+	 * them: the `product` post type itself has no description, so `/shop/` and `/shop/page/2/` rendered with no
+	 * meta description at all while `/blog/` and `/` had one — verified by fetching the live store, 2026-10-07.
+	 * The page is not synthesised and nothing is generated from the product list; it is the same page WordPress
+	 * serves the archive from, so its words are the operator's own, which is the rule this whole chain follows.
+	 */
+	private static function archive_backing_page() {
+		if ( ! is_post_type_archive() ) {
+			return null;
+		}
+		$type = get_query_var( 'post_type' );
+		if ( is_array( $type ) ) {
+			$type = reset( $type );
+		}
+		// Only WooCommerce's shop is known to work this way. Another post type would need its own mapping
+		// here rather than a guess, because a wrong page is a wrong description on a live site.
+		if ( 'product' !== (string) $type || ! function_exists( 'wc_get_page_id' ) ) {
+			return null;
+		}
+		$id = (int) wc_get_page_id( 'shop' );
+		if ( $id <= 0 ) {
+			return null;
+		}
+		$page = get_post( $id );
+		return $page instanceof WP_Post ? $page : null;
+	}
+
+	/**
+	 * Plain text for a meta tag, from a source that may be RICH: shortcodes rendered, tags stripped,
+	 * whitespace collapsed, and cut at the length a meta description is actually for.
+	 *
+	 * ⚠️ RENDERED, NOT DISCARDED — THE LITERAL SHORTCODE WAS LIVE. A product category's description on the store
+	 * is the page-builder shortcode `[html_block id="2419"]`, and `wp_strip_all_tags` does not run shortcodes, so
+	 * those characters reached three tags on `/product-category/backline/`:
+	 *
+	 *     <meta name="description" content="[html_block id=&quot;2419&quot;]" />
+	 *
+	 * — fetched from the live site, 2026-10-07, which is how it was found. Rendering the operator's own block is
+	 * what turns that tag back into a sentence; simply stripping it would leave the archive with NO description
+	 * instead, which is why this does not just widen the strip.
+	 *
+	 * ⚠️ `strip_shortcodes()` IS NOT ENOUGH ON ITS OWN, AND THE HARNESS PROVED IT. It builds its pattern from
+	 * `$shortcode_tags` — the REGISTERED shortcodes — so `[a_plugin_that_was_deactivated id="1"]` passes it
+	 * through untouched and reaches the tag as those characters. That is the same defect one step further out,
+	 * so a leftover shortcode-shaped token is removed by pattern. It cannot be told apart from a bracketed word
+	 * like `[sic]`; a leaked shortcode in a search result is the worse of the two, so the token goes.
+	 *
+	 * `wp_html_excerpt()` is what truncates, not `substr`: it cuts on a word boundary and respects multibyte
+	 * text, and the live block's own first sentence is well past a search result's width.
+	 */
+	private static function plain_text( $raw ) {
+		$raw = (string) $raw;
+		if ( $raw === '' ) {
+			return '';
+		}
+		if ( strpos( $raw, '[' ) !== false ) {
+			$raw = do_shortcode( $raw );
+			$raw = strip_shortcodes( $raw );
+			$raw = preg_replace( '/\[[a-z0-9_-]+(?:\s[^\]]*)?\]/i', ' ', $raw );
+		}
+		$txt = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $raw ) ) );
+		if ( $txt === '' ) {
+			return '';
+		}
+		return trim( wp_html_excerpt( $txt, self::DESC_MAX, '…' ) );
+	}
+
+	/**
 	 * What an archive should say about itself — from a real source, in order, or nothing.
 	 *
-	 * ⚠️ THREE SOURCES AND NO FOURTH. The term's own description is what somebody wrote about THAT category; the
-	 * site-wide description template is what the operator asked for by name; the tagline is a sentence that already
-	 * exists. If all three are empty the tag is omitted rather than filled with a generated sentence — the same
-	 * rule as `og:image` and the same rule as the schema, and for the same reason: a claim nobody made.
+	 * ⚠️ FOUR SOURCES AND NO FIFTH. The term's own description is what somebody wrote about THAT category; a
+	 * post-type archive's own PAGE is what somebody wrote about the shop; the site-wide description template is
+	 * what the operator asked for by name; the tagline is a sentence that already exists. If all four are empty
+	 * the tag is omitted rather than filled with a generated sentence — the same rule as `og:image` and the same
+	 * rule as the schema, and for the same reason: a claim nobody made.
 	 */
 	private static function archive_description() {
 		if ( is_category() || is_tag() || is_tax() ) {
 			$term = get_queried_object();
 			if ( $term instanceof WP_Term ) {
-				$own = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( (string) term_description( $term->term_id, $term->taxonomy ) ) ) );
+				$own = self::plain_text( term_description( $term->term_id, $term->taxonomy ) );
+				if ( $own !== '' ) {
+					return $own;
+				}
+			}
+		}
+		$page = self::archive_backing_page();
+		if ( $page ) {
+			// The operator's own field first, then the excerpt, then the body — the same order
+			// `apply_template()` uses, so a value set in the SEO panel beats the raw page copy.
+			foreach ( array( get_post_meta( $page->ID, self::META_DESC, true ), $page->post_excerpt, $page->post_content ) as $raw ) {
+				$own = self::plain_text( $raw );
 				if ( $own !== '' ) {
 					return $own;
 				}
