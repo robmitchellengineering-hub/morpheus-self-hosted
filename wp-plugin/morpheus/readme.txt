@@ -2,9 +2,9 @@
 Contributors: morpheusnz
 Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
-Tested up to: 6.8
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.8.8
+Stable tag: 0.8.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,27 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.8.9 =
+* Fixed: **the site's own schema nodes were nested inside the page's.** Every page emitted its JSON-LD as
+  `[{the page},[{Organization},{WebSite}]]` — a list inside a list, on every page of every site since 0.7.1.
+  A consumer that flattens arrays of arrays (Google does) read it anyway; one that does not silently dropped
+  both site nodes from every page. The three nodes are now siblings in one flat array. Nothing could see it
+  before: the tests checked that the `@type` strings were present and that the block parsed, and a nested
+  array satisfies both. There is now a test for the SHAPE, and a guard that fails in CI if it regresses.
+* Fixed: **deleting the plugin left most of its settings behind.** Uninstall removed two options while five
+  more survived — SEO templates, fix history, the pairing record, the traffic toggle — so a delete and
+  reinstall inherited the previous site's configuration without saying so. It now removes every option the
+  plugin stores and flushes the traffic rewrite rule, and a guard reads the option constants out of the
+  plugin's own source so a new one cannot be forgotten.
+* Fixed: **the traffic module was invisible to `/status`.** `Morpheus_Traffic::public_status()` was written to
+  be "what the /status route adds" and was called from nowhere, so a build's IndexNow capability could only be
+  discovered by making a signed call — while clean, SEO, store, export and pairing all report themselves there.
+* Fixed: the TRAFFIC tab was missing from the list of tabs greyed out when no site is connected, so it looked
+  usable and then answered "connect your site first".
+* Fixed: the health-check path list was parsed twice, once inline in the deploy module and once in a Settings
+  method that nothing called. One rule, one implementation.
+* Updated: `Tested up to` said 6.8 while the plugin has been running on WordPress 7.1.
 
 = 0.8.8 =
 * Fixed: **a page-builder shortcode was being served as the meta description.** A product category's

@@ -222,6 +222,16 @@ class Morpheus_REST {
 			'export'     => array(
 				'theme' => true,
 			),
+			// Whether this build has the traffic module (IndexNow submissions)
+			// and whether they are switched on. Same reasoning as `clean`: a
+			// build capability, readable without a signed call, so the TRAFFIC
+			// tab can say "update the plugin" rather than send a request an
+			// older build would refuse. `Morpheus_Traffic::public_status()` was
+			// written for this and had no caller until 2026-10-08 — the module
+			// was invisible to the one surface that asks what a build can do.
+			'traffic'    => class_exists( 'Morpheus_Traffic' )
+				? Morpheus_Traffic::public_status()
+				: array( 'available' => false, 'enabled' => false ),
 			// kept flat for older callers
 			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
 			'armed'      => (bool) $s['armed'],

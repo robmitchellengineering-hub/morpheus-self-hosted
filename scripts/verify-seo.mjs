@@ -895,6 +895,24 @@ check('the no-Yoast harness asserts the Organization node renders', has(noYoastH
 check('…and asserts no LocalBusiness renders', has(noYoastHarness, 'no LocalBusiness node is emitted'), true);
 check('…and asserts every JSON-LD block parses', has(noYoastHarness, 'every JSON-LD block parses as JSON'), true);
 
+// ⭐ AND THE SHAPE OF THE NODE LIST — the defect that shipped on every page of every site.
+//
+// `emit_schema()` appended `site_entity_nodes()` (a LIST of two nodes) as a single element, so the head
+// carried `[{…WebPage…},[{…Organization…},{…WebSite…}]]`. Every check above is satisfied by that shape: all
+// three `@type` strings are present, and a nested array is valid JSON. It was live from 0.7.1 until
+// 2026-10-08 and was found by reading the live bytes, not by any gate.
+//
+// These pin the exact regression rather than a spelling: a `foreach` that copies the list in element by
+// element is correct behaviour and must stay green, so the negative check names the append that was the bug.
+// The rendered shape is asserted in tests/harness-noyoast.php, and the coupling below keeps that assertion
+// from being deleted while this one still passes.
+check('the site node LIST is never appended as one element (the 2026-10-08 defect)',
+  /\$nodes\[\]\s*=\s*\$site\b/.test(seoCode), false);
+check('…the page node and the site nodes are merged into ONE flat list',
+  /array_merge\(\s*array\(\s*\$node\s*\)\s*,\s*self::site_entity_nodes\(\)\s*\)/.test(seoCode), true);
+check('…and the harness refuses a nested node list', has(noYoastHarness, 'no JSON-LD node list is nested inside another'), true);
+check('…and asserts the three nodes are top-level siblings', has(noYoastHarness, 'three TOP-LEVEL nodes'), true);
+
 // ── 9. robots.txt advertises a sitemap that exists ─────────────────────────
 //
 // The live failure: a site removed Yoast, `/sitemap_index.xml` started 404ing,

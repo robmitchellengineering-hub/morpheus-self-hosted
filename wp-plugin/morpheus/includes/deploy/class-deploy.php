@@ -342,13 +342,13 @@ class Morpheus_Deploy {
 		$base = rtrim( $this->s['site_url'] ?: home_url(), '/' );
 		$fatal = array( 'There has been a critical error', 'Error establishing a database connection' );
 
-		$paths = array( '/' );
-		foreach ( preg_split( '/\r\n|\r|\n/', (string) ( $this->s['health_paths'] ?? '' ) ) as $l ) {
-			$l = trim( $l );
-			if ( $l !== '' && $l !== '/' ) {
-				$paths[] = $l;
-			}
-		}
+		// ONE implementation of the health-path format, shared with the Settings
+		// screen. This used to repeat the split-and-trim inline while
+		// `Morpheus_Settings::health_paths_array()` had no caller at all — two
+		// copies of one rule, one of them dead (§2.5 of the 2026-10-08 audit).
+		// The root path is this check's OWN default; the settings screen does not
+		// add one, which is why the merge is here and not in the helper.
+		$paths = array_merge( array( '/' ), Morpheus_Settings::health_paths_array( $this->s['health_paths'] ?? '' ) );
 		$paths = array_slice( array_unique( $paths ), 0, 15 );
 
 		$checks = array();

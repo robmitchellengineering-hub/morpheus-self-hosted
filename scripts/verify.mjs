@@ -73,6 +73,7 @@ const HARD = [
   'verify-app-capability-creds.mjs',
   'verify-dock.mjs',
   'verify-plugin-pack.mjs',
+  'verify-plugin-uninstall.mjs',
   'verify-prod-sql.mjs',
   'verify-billing-clamp.mjs',
   'verify-guards-no-install.mjs',

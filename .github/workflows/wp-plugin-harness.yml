@@ -3,7 +3,7 @@
 # WHY THIS EXISTS
 #
 # `wp-plugin/morpheus/tests/run.sh` boots a real WordPress through WordPress Playground (WASM PHP — no Docker,
-# no system PHP) seven times: with WooCommerce and Yoast, with WooCommerce and NO SEO plugin, the plugin
+# no system PHP) six times: with WooCommerce and Yoast, with WooCommerce and NO SEO plugin, the plugin
 # upgrader, site maintenance, the dock, and CLEAN MY SITE. It asserts the REST routes, the security helpers,
 # and — the part that matters here — **what the plugin actually renders into `<head>`**.
 #
@@ -13,7 +13,7 @@
 # count. The same audit then found every archive — `/shop/`, product categories, tags, the blog index — had no
 # canonical, no description and no social tags at all. Both were fixed; neither was caught by anything.
 #
-# MANUAL ONLY, DELIBERATELY, AND THAT IS THE WHOLE COST DECISION. Seven WordPress boots download the PHP/WP
+# MANUAL ONLY, DELIBERATELY, AND THAT IS THE WHOLE COST DECISION. Six WordPress boots download the PHP/WP
 # images and install WooCommerce, so a run is minutes rather than seconds — on every PR that is exactly the
 # spend Rob asked to stop. Dispatch it by hand when the plugin, the SEO module, or the store module changes:
 #
@@ -44,7 +44,7 @@ jobs:
   harness:
     name: plugin harness (WordPress Playground, PHP ${{ inputs.php_version }})
     runs-on: ubuntu-latest
-    # Seven boots, each downloading images the first time and installing WooCommerce. Generous, because a
+    # Six boots, each downloading images the first time and installing WooCommerce. Generous, because a
     # cold cache is slow; bounded, because a hang must not hold a runner for the hour default.
     timeout-minutes: 40
     steps:
@@ -65,7 +65,7 @@ jobs:
             ~/.npm/_npx
           key: wp-playground-${{ inputs.php_version }}-${{ runner.os }}
 
-      # THE SCRIPT IS THE STEP. `run.sh` does `php -l` on every file first, then each of the seven boots in
+      # THE SCRIPT IS THE STEP. `run.sh` does `php -l` on every file first, then each of the six boots in
       # its own WordPress, and fails on the first one that fails. Nothing is re-typed here for the same reason
       # the audio-plugin runners do not re-type their build commands: a second copy of a command is a second
       # thing to keep in step with the first.

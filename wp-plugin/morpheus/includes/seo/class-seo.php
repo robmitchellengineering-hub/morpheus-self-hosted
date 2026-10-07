@@ -1528,11 +1528,20 @@ class Morpheus_SEO {
 				}
 			}
 		}
-		$nodes = array( $node );
-		$site  = self::site_entity_nodes();
-		if ( $site ) {
-			$nodes[] = $site;
-		}
+		// ONE FLAT array of nodes. `site_entity_nodes()` returns a LIST of two
+		// (Organization, WebSite), so appending it as a single element — which is
+		// what this did until 2026-10-08 — nested a list inside the list:
+		// `[{…page…},[{…Organization…},{…WebSite…}]]`. That shipped on every page
+		// of every site. Conforming consumers flatten arrays of arrays, so Google
+		// most likely read it anyway; a consumer that does not dropped both site
+		// nodes, silently, from every page.
+		//
+		// Nothing could see it: the substring assertions in
+		// `tests/harness-noyoast.php` are satisfied by a nested array, and so is
+		// "every block parses" — a nested array is valid JSON. The harness now
+		// asserts the SHAPE (flat top level, three nodes), which is the assertion
+		// that has to go red if this ever regresses. Merge, do not append.
+		$nodes = array_merge( array( $node ), self::site_entity_nodes() );
 		echo "\t<script type=\"application/ld+json\">" . wp_json_encode( $nodes ) . "</script>\n";
 	}
 
