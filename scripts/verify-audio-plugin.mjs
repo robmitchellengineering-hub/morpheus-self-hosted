@@ -1989,6 +1989,10 @@ for (const [name, src] of [['Cocoa', guiCpp], ['win32', guiWin], ['X11', guiX11]
   check(`⭐ …${name} draws a switch for a stepped row, and the block column with its amber line`,
     /row->stepped/.test(src) && /MORPHEUS_SWITCH_W/.test(src) && /blk->title/.test(src)
     && /morpheus_gui_blocks\(/.test(src) && /morpheus_gui_box_y\(/.test(src), true);
+  // …and the BADGE, in every backend. Its geometry is shared, so a backend that skipped the loop would simply
+  // have an empty corner on one platform — which no compile and no audio proof can see.
+  check(`…${name} draws the badge from the shared geometry, and the wordmark under it`,
+    /kMorpheusBadge/.test(src) && /MORPHEUS_BADGE_WORD/.test(src), true);
   check(`…${name} refuses to drag a switch — two states have nothing to drag between`,
     /stepped/.test(src) && /_drag = |drag = /.test(src), true);
   check(`…${name} takes the box and row hits from the shared layout, rather than computing the sum itself`,

@@ -61,6 +61,11 @@ export const PANEL = {
   // tell what's what", which is why it is height rather than a colour.
   groupH: 20, switchW: 44, switchH: 16,
   maxRows: 256, maxBlocks: 64,
+  // ⭐ THE BADGE, in the space under the controls: an amp head, a cabinet and a pedalboard, drawn from the same
+  // primitives as everything else. Rob: "In that spare space You could add a cool looking amp head cab and
+  // pedal board in morpheus style as a bit of a logo for the plugin with the morpheus from the homepage under
+  // the picture." It is DECORATION — it reads no parameter, answers no click, and every project gets it.
+  badgeX: 178, badgeY: 186, badgeW: 232, badgeH: 138,
 };
 
 /**
@@ -425,6 +430,69 @@ static void morpheus_gui_set_row(const clap_plugin_t *plugin, const morpheus_gui
    }
    morpheus_gui_param_set(plugin, r->id, v);
 }
+// ── THE BADGE ────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠️ IT IS A TABLE OF PRIMITIVES, NOT THREE DRAWINGS. One geometry, drawn by each backend with the rectangle
+// and circle calls it already has — so the Windows badge and the Mac badge cannot drift into two pictures,
+// which is the same reason the rows and the blocks live here.
+//
+// Coordinates are relative to the badge's own top-left; a backend adds MORPHEUS_BADGE_X and _Y. It is
+// DECORATION: it reads no parameter, answers no click, and every project gets the same one.
+#define MORPHEUS_BADGE_X ${PANEL.badgeX}
+#define MORPHEUS_BADGE_Y ${PANEL.badgeY}
+#define MORPHEUS_BADGE_W ${PANEL.badgeW}
+#define MORPHEUS_BADGE_H ${PANEL.badgeH}
+enum {
+   MORPHEUS_BADGE_BOX = 0,     // outline, dim
+   MORPHEUS_BADGE_BAR,         // filled, dim   — a panel recess, a grille line
+   MORPHEUS_BADGE_DOT,         // filled circle, green — a knob, a speaker centre
+   MORPHEUS_BADGE_LAMP,        // filled circle, amber — the pilot light, and the one warm thing in it
+   MORPHEUS_BADGE_RING,        // outlined circle
+};
+typedef struct { short x, y, w, h; unsigned char kind; } morpheus_gui_badge_t;
+
+static const morpheus_gui_badge_t kMorpheusBadge[] = {
+   // the amp head: a panel recess with five knobs and a pilot light, and a grille under it
+   {0, 0, 120, 50, MORPHEUS_BADGE_BOX},
+   {4, 4, 112, 15, MORPHEUS_BADGE_BAR},
+   {10, 9, 6, 6, MORPHEUS_BADGE_DOT},
+   {28, 9, 6, 6, MORPHEUS_BADGE_DOT},
+   {46, 9, 6, 6, MORPHEUS_BADGE_DOT},
+   {64, 9, 6, 6, MORPHEUS_BADGE_DOT},
+   {82, 9, 6, 6, MORPHEUS_BADGE_DOT},
+   {104, 8, 8, 8, MORPHEUS_BADGE_LAMP},
+   {6, 25, 108, 3, MORPHEUS_BADGE_BAR},
+   {6, 32, 108, 3, MORPHEUS_BADGE_BAR},
+   {6, 39, 108, 3, MORPHEUS_BADGE_BAR},
+   // the cabinet under it: grille cloth, one speaker
+   {14, 60, 92, 78, MORPHEUS_BADGE_BOX},
+   {18, 64, 84, 70, MORPHEUS_BADGE_BAR},
+   {35, 78, 50, 50, MORPHEUS_BADGE_RING},
+   {55, 98, 10, 10, MORPHEUS_BADGE_DOT},
+   // the pedalboard beside it: three pedals, each with a switch bar and a knob
+   {132, 100, 100, 38, MORPHEUS_BADGE_BOX},
+   {138, 106, 26, 26, MORPHEUS_BADGE_BOX},
+   {167, 106, 26, 26, MORPHEUS_BADGE_BOX},
+   {196, 106, 26, 26, MORPHEUS_BADGE_BOX},
+   {146, 110, 10, 4, MORPHEUS_BADGE_BAR},
+   {175, 110, 10, 4, MORPHEUS_BADGE_BAR},
+   {204, 110, 10, 4, MORPHEUS_BADGE_BAR},
+   {146, 120, 8, 8, MORPHEUS_BADGE_DOT},
+   {175, 120, 8, 8, MORPHEUS_BADGE_DOT},
+   {204, 120, 8, 8, MORPHEUS_BADGE_DOT},
+};
+// sizeof, not a count written down twice: a primitive added to the table above cannot be left undrawn.
+#define MORPHEUS_BADGE_PRIMITIVES (sizeof(kMorpheusBadge) / sizeof(kMorpheusBadge[0]))
+
+// ⭐ AND THE WORDMARK UNDER IT, which is the one part that has to be TEXT: the homepage's mark is mono,
+// letter-spaced and green, so this is the same claim in the font the panel already uses. Each backend draws
+// the string itself because a string is the one genuinely per-platform thing here.
+#define MORPHEUS_BADGE_WORD "M O R P H E U S"
+// ⚠️ A LEFT EDGE, NOT A CENTRE. Centring means measuring the string, and the three platforms measure it with
+// three different calls (and X11 only if a font was loaded) — so the one thing that would drift between the
+// Mac badge and the Windows badge is the one thing that has to be text. The spacing is in the string instead.
+#define MORPHEUS_BADGE_WORD_X (MORPHEUS_BADGE_X + 58)
+#define MORPHEUS_BADGE_WORD_Y (MORPHEUS_BADGE_Y + MORPHEUS_BADGE_H + 12)
+
 #endif  // MORPHEUS_PLUGIN_GUI_LAYOUT_H
 `;
 
@@ -607,6 +675,50 @@ static NSColor *morpheusAmber(void) { return [NSColor colorWithCalibratedRed:1.0
       const NSSize size = [shown sizeWithAttributes:valueAttrs];
       [shown drawAtPoint:NSMakePoint(MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.width, y + 2) withAttributes:valueAttrs];
     }
+  }
+
+  // ── THE BADGE, and the wordmark under it ──────────────────────────────────────────────────────────────
+  // The geometry is in the shared header so the three backends draw one picture; what is here is the four
+  // primitives it is made of. It sits in the space the controls do not reach, which is why the panel's fixed
+  // height is a gift rather than a compromise.
+  for (size_t bi = 0; bi < MORPHEUS_BADGE_PRIMITIVES; ++bi) {
+    const morpheus_gui_badge_t *b = &kMorpheusBadge[bi];
+    const NSRect r = NSMakeRect(MORPHEUS_BADGE_X + b->x, MORPHEUS_BADGE_Y + b->y, b->w, b->h);
+    switch (b->kind) {
+      case MORPHEUS_BADGE_BAR:
+        [morpheusDim() setFill];
+        NSRectFill(r);
+        break;
+      case MORPHEUS_BADGE_DOT:
+      case MORPHEUS_BADGE_LAMP: {
+        NSBezierPath *dot = [NSBezierPath bezierPathWithOvalInRect:r];
+        [(b->kind == MORPHEUS_BADGE_LAMP ? morpheusAmber() : morpheusGreen()) setFill];
+        [dot fill];
+        break;
+      }
+      case MORPHEUS_BADGE_RING: {
+        NSBezierPath *ring = [NSBezierPath bezierPathWithOvalInRect:r];
+        [ring setLineWidth:1.5];
+        [morpheusGreen() setStroke];
+        [ring stroke];
+        break;
+      }
+      default: {
+        NSBezierPath *box = [NSBezierPath bezierPathWithRect:r];
+        [box setLineWidth:1.0];
+        [morpheusDim() setStroke];
+        [box stroke];
+        break;
+      }
+    }
+  }
+  {
+    NSDictionary *wordAttrs = @{
+      NSFontAttributeName: [NSFont monospacedSystemFontOfSize:13 weight:NSFontWeightBold],
+      NSForegroundColorAttributeName: morpheusGreen(),
+    };
+    [[NSString stringWithUTF8String:MORPHEUS_BADGE_WORD]
+      drawAtPoint:NSMakePoint(MORPHEUS_BADGE_WORD_X, MORPHEUS_BADGE_WORD_Y) withAttributes:wordAttrs];
   }
 }
 
@@ -982,6 +1094,32 @@ void paint(HWND hwnd, Panel *p) {
          TextOutA(dc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - size.cx, y + 2, row->value, (int)strlen(row->value));
       }
    }
+   // ── THE BADGE, and the wordmark under it ──────────────────────────────────────────────────────────────
+   // The geometry is in the shared header, so this is the same picture the Mac panel draws — see
+   // kMorpheusBadge. GDI's Rectangle draws with the current pen and brush, so an outline is a NULL_BRUSH.
+   for (size_t bi = 0; bi < MORPHEUS_BADGE_PRIMITIVES; ++bi) {
+      const morpheus_gui_badge_t *b = &kMorpheusBadge[bi];
+      const int bx = MORPHEUS_BADGE_X + b->x, by = MORPHEUS_BADGE_Y + b->y;
+      if (b->kind == MORPHEUS_BADGE_BAR) { fill(dc, p->dim, bx, by, b->w, b->h); continue; }
+      if (b->kind == MORPHEUS_BADGE_DOT || b->kind == MORPHEUS_BADGE_LAMP) {
+         HGDIOBJ oldBrush = SelectObject(dc, b->kind == MORPHEUS_BADGE_LAMP ? p->amber : p->green);
+         Ellipse(dc, bx, by, bx + b->w, by + b->h);
+         SelectObject(dc, oldBrush);
+         continue;
+      }
+      HPEN pen = CreatePen(PS_SOLID, b->kind == MORPHEUS_BADGE_RING ? 2 : 1,
+                           b->kind == MORPHEUS_BADGE_RING ? kGreen : kDim);
+      HGDIOBJ oldPen = SelectObject(dc, pen);
+      HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+      if (b->kind == MORPHEUS_BADGE_RING) Ellipse(dc, bx, by, bx + b->w, by + b->h);
+      else Rectangle(dc, bx, by, bx + b->w, by + b->h);
+      SelectObject(dc, oldBrush);
+      SelectObject(dc, oldPen);
+      DeleteObject(pen);
+   }
+   SelectObject(dc, p->fontBold);
+   SetTextColor(dc, kGreen);
+   TextOutA(dc, MORPHEUS_BADGE_WORD_X, MORPHEUS_BADGE_WORD_Y, MORPHEUS_BADGE_WORD, (int)strlen(MORPHEUS_BADGE_WORD));
    EndPaint(hwnd, &ps);
 }
 
@@ -1411,6 +1549,37 @@ void paint(Panel *p) {
          put(p->dpy, p->win, p->gc, MORPHEUS_PANEL_WIDTH - MORPHEUS_PAD - textW, y + 13, row->value);
       }
    }
+
+   // ── THE BADGE, and the wordmark under it ──────────────────────────────────────────────────────────────
+   // The geometry is in the shared header, so this is the same picture the Mac panel draws — see
+   // kMorpheusBadge. Xlib has no per-call pen, so the arcs get the hairline set above and the boxes set their
+   // own width; the wordmark's x is a LEFT EDGE for the reason MORPHEUS_BADGE_WORD_X gives.
+   XSetLineAttributes(p->dpy, p->gc, 1, LineSolid, CapButt, JoinMiter);
+   for (size_t bi = 0; bi < MORPHEUS_BADGE_PRIMITIVES; ++bi) {
+      const morpheus_gui_badge_t *b = &kMorpheusBadge[bi];
+      const int bx = MORPHEUS_BADGE_X + b->x, by = MORPHEUS_BADGE_Y + b->y;
+      if (b->kind == MORPHEUS_BADGE_BAR) {
+         XSetForeground(p->dpy, p->gc, p->dim);
+         XFillRectangle(p->dpy, p->win, p->gc, bx, by, (unsigned)b->w, (unsigned)b->h);
+         continue;
+      }
+      if (b->kind == MORPHEUS_BADGE_DOT || b->kind == MORPHEUS_BADGE_LAMP) {
+         XSetForeground(p->dpy, p->gc, b->kind == MORPHEUS_BADGE_LAMP ? p->amber : p->green);
+         XFillArc(p->dpy, p->win, p->gc, bx, by, (unsigned)b->w, (unsigned)b->h, 0, 360 * 64);
+         continue;
+      }
+      XSetForeground(p->dpy, p->gc, b->kind == MORPHEUS_BADGE_RING ? p->green : p->dim);
+      if (b->kind == MORPHEUS_BADGE_RING) {
+         XSetLineAttributes(p->dpy, p->gc, 2, LineSolid, CapButt, JoinMiter);
+         XDrawArc(p->dpy, p->win, p->gc, bx, by, (unsigned)b->w, (unsigned)b->h, 0, 360 * 64);
+         XSetLineAttributes(p->dpy, p->gc, 1, LineSolid, CapButt, JoinMiter);
+      } else {
+         XDrawRectangle(p->dpy, p->win, p->gc, bx, by, (unsigned)b->w, (unsigned)b->h);
+      }
+   }
+   XSetForeground(p->dpy, p->gc, p->green);
+   put(p->dpy, p->win, p->gc, MORPHEUS_BADGE_WORD_X, MORPHEUS_BADGE_WORD_Y + 10, MORPHEUS_BADGE_WORD);
+
    XFlush(p->dpy);
 }
 
