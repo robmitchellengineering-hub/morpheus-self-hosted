@@ -13,10 +13,19 @@
 // Two features with the same shape are two features someone can learn once.
 //
 // ── WHAT IS NOT HIDDEN: THE NORMALISATION ────────────────────────────────────────────────────────────────
-// Impulse responses arrive at wildly different levels, so the taps are normalised to a PEAK OF 1.0 at bake
-// time and the original peak is recorded in the header. A level change that nobody wrote down is the kind of
-// thing that gets discovered six months later as "the cabinet sounds quieter than the amp"; this one is in
-// the header, in the proof file, and in the manual.
+// Impulse responses arrive at wildly different levels, so the taps are re-scaled at bake time and BOTH
+// numbers are recorded — the file's own peak, and the gain this build applied. A level change that nobody
+// wrote down is the kind of thing that gets discovered six months later as "the cabinet sounds quieter than
+// the amp"; this one is in the header, in the proof file, and in the manual.
+//
+// ⚠️ AND THE TARGET IS PROGRAMME MATERIAL, NOT A PEAK — WHICH IT WAS, AND THAT WAS WRONG. Peak normalisation
+// fixes a waveform's tallest sample and says nothing about its LOUDNESS, so a real 4x12 IR with 4096 taps of
+// tail came out about +15 dB LOUDER than the amplifier it is supposed to be the speaker of: measured through
+// the demo chain on a Marshall G12M pack, cabinet off -10.7 dBFS RMS and cabinet on +5.1 dBFS RMS with a peak
+// of +18.8 dBFS — clipping, the moment the cabinet was switched on. A plugin that does that is not a cabinet.
+// The taps are scaled to the gain PINK NOISE sees instead, so the speaker keeps a musical signal's level and a
+// first build is usable without reaching for the Output control. See `cabTapGain`, which is the one definition
+// of that rule and the one the checks measure against.
 import { decodeWav } from './audio/wav.js';
 
 /** Where a cabinet usually lives. Not required: any `.wav` in the project will do. */
@@ -131,12 +140,16 @@ export function cabHeader(info) {
 #define MORPHEUS_CAB_TAPS ${info.taps}
 #define MORPHEUS_CAB_CHANNELS ${info.channels}
 #define MORPHEUS_CAB_RATE ${Math.round(info.sampleRate)}
-// The peak of the FILE, before the normalisation below. Written down because a level change nobody
-// recorded is the kind of thing found six months later as "the cabinet is quieter than the amp".
+// The peak of the FILE, before the normalisation below, and the gain this build applied to it. Written down
+// because a level change nobody recorded is the kind of thing found six months later as "the cabinet is
+// quieter than the amp".
 #define MORPHEUS_CAB_SOURCE_PEAK ${info.sourcePeak.toFixed(9)}
+// The gain this build applied to the file's samples, in dB. Positive means the taps were made LOUDER.
+#define MORPHEUS_CAB_APPLIED_DB ${Number(info.appliedGainDb ?? 0).toFixed(4)}
 #define MORPHEUS_CAB_NORMALISED ${info.sourcePeak === 1 ? 0 : 1}${info.truncated ? `\n#define MORPHEUS_CAB_TRUNCATED 1` : ''}
 
-// The taps themselves, normalised so the loudest is 1.0 — see lib/cabIr.js.
+// The taps themselves, scaled to the gain PINK NOISE sees — so the cabinet keeps a musical signal's level
+// rather than setting it from its tallest sample. See lib/cabIr.js; the applied gain is above.
 extern const float morpheus_cab_l[];
 #if MORPHEUS_CAB_CHANNELS == 2
 extern const float morpheus_cab_r[];
@@ -226,9 +239,10 @@ export function resolveCab(files, manifest = {}) {
   }
 
   const taps = inspected.truncatedTo;
+  const gain = cabTapGain(wav.data.slice(0, inspected.channels), taps);
   const normalise = (ch) => {
     const out = new Float32Array(taps);
-    for (let i = 0; i < taps; i++) out[i] = ch[i] / inspected.peak;
+    for (let i = 0; i < taps; i++) out[i] = ch[i] / gain;
     return out;
   };
   return {
@@ -240,10 +254,64 @@ export function resolveCab(files, manifest = {}) {
       channels: inspected.channels,
       sampleRate: wav.sampleRate,
       sourcePeak: inspected.peak,
+      // The gain the bake applied, in dB — a POSITIVE number here means the taps were made LOUDER than the
+      // file, which is what a quiet IR gets. Written down for the same reason the source peak is.
+      appliedGainDb: -20 * Math.log10(gain),
       truncated: inspected.truncated,
     },
     warnings,
   };
+}
+
+/**
+ * THE ONE RULE FOR A BAKED IR'S LEVEL, in a function so the baker and the checks cannot disagree about it.
+ *
+ * ⚠️ IT IS THE GAIN FOR PROGRAMME MATERIAL, AND GETTING THIS WRONG IS WHY A CABINET USED TO CLIP. The taps
+ * are scaled so the convolution leaves a BROADBAND MUSICAL signal at the level it arrived at — the level of
+ * PINK noise, which is the standard stand-in for music because it carries equal power per octave, the way a
+ * guitar's spectrum roughly does.
+ *
+ * Three ways to set this, and the two obvious ones are both wrong:
+ *   • A PEAK OF 1.0 (what this did): fixes a waveform's tallest sample and says nothing about its loudness. A
+ *     real 4x12 IR with 4096 taps of tail came out **+15 dB loud**, and clipped the moment it was switched on.
+ *   • UNIT ENERGY, `sqrt(sum of squares)` — the textbook "RMS normalisation": exact for WHITE noise and
+ *     **7 dB short for a guitar**, because a speaker puts its energy in the low mids while white noise spreads
+ *     it evenly. Measured: a real guitar DI came out **+7.2 dB** through a cabinet normalised this way.
+ *   • THE LOUDEST FREQUENCY, a "a speaker never boosts" rule: safe, and **6 dB too quiet**.
+ *
+ * ✨ AND PINK NOISE NEEDS NO REFERENCE BUFFER. Pink noise carries equal power per octave, so a set of
+ * LOG-SPACED frequencies weights every octave equally — and the mean of |H(f)|² over them IS the pink-noise
+ * power gain. No FFT, no seeded noise, no fixture. Measured on a Marshall G12M pack through the demo chain,
+ * this lands a real guitar DI at **-1.0 dB**: no clip, and nothing to turn down before the plugin is usable.
+ *
+ * Summed across the channels that are actually baked, so a stereo IR keeps a broadband signal's level as a
+ * PAIR rather than per channel — see `resolveCab`, which divides every channel by this one number so the
+ * stereo image is untouched.
+ *
+ * Returns 1 for silence, which `inspectCab` has already refused — the guard is for the caller's sake.
+ */
+export function cabTapGain(channels, taps = MAX_CAB_TAPS, sampleRate = 48000) {
+  // 30 Hz to 16 kHz, a twentieth of an octave apart. Below and above that a guitar cabinet has nothing to
+  // say, and a twentieth of an octave is fine enough that the mean is stable — the same range and step the
+  // measurement above used, deliberately, so the number in this comment is the number this code computes.
+  let power = 0;
+  let bins = 0;
+  for (let f = 30; f <= 16000; f *= 1.05) {
+    const w = (2 * Math.PI * f) / sampleRate;
+    for (const ch of channels) {
+      const n = Math.min(taps, ch.length);
+      let re = 0;
+      let im = 0;
+      for (let i = 0; i < n; i++) {
+        re += ch[i] * Math.cos(w * i);
+        im += ch[i] * Math.sin(w * i);
+      }
+      power += re * re + im * im;
+    }
+    bins++;
+  }
+  const gain = bins > 0 ? Math.sqrt(power / bins) : 0;
+  return gain > 0 ? gain : 1;
 }
 
 // ── the emitted C++ ──────────────────────────────────────────────────────────────────────────────────────

@@ -62,7 +62,8 @@ the speaker without colouring it. If all you have is the whole rig, capture it a
    node scripts/audio-capture.mjs ir make --recorded my-take.wav --sweep ir-sweep.wav --out my-cab.wav
    ```
 
-   You get a 4096-tap IR, normalised to a peak of 1.0, plus a report: where the sweep's response sits in your
+   You get a 4096-tap IR, scaled so a guitar keeps its level through it (see lib/cabIr.js), plus a report:
+   where the sweep's response sits in your
    take, how long the tail runs, and how closely the two ways of locating the response agree — which is what
    says this really is a capture. (⚠️ Neither is your interface's round-trip latency: the recording does not
    contain the moment the sweep was *sent*, so that number is not knowable from these two files.)

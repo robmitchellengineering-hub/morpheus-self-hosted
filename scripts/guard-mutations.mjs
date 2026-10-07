@@ -807,7 +807,7 @@ export const MUTATIONS = [
     guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-amp-chain-check.mjs',
     // ⭐ The metric that reported a SPEAKER as a gate failure: with a cabinet in the chain the loud section
-    // moves +21 dB, so an absolute comparison calls a working gate a volume control.
+    // moves the level, so an absolute comparison calls a working gate a volume control.
     why: 'Measures the gate against the dry signal instead of relative to the loud section, so the cabinet\u2019s own gain reads as a gate that never opens.',
     find: '    gateRow = { thresholdDb, loudChangeDb, quietChangeDb, relativeDb: quietChangeDb - loudChangeDb };',
     replace: '    gateRow = { thresholdDb, loudChangeDb, quietChangeDb, relativeDb: quietChangeDb };',
@@ -879,6 +879,16 @@ export const MUTATIONS = [
     why: 'Accepts a silent impulse response, which is a plugin that produces silence and says nothing about why.',
     find: "  if (!(peak > 0)) return { ok: false, reason: 'is silent (every sample is zero)' };",
     replace: '  if (false) return { ok: false, reason: "is silent" };',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/cabIr.js',
+    // ⭐ THE LEVEL RULE, AS A MUTATION. Leaving the taps at the file's own level looks harmless, and every
+    // guard that existed before this one still passes — they measured shapes and nulls, never loudness, which
+    // is exactly how a cabinet came to be +15 dB loud and clip the moment it was switched on.
+    why: 'Stops normalising the cabinet, so a baked IR keeps whatever level the file arrived at and a dense one clips.',
+    find: '  const gain = bins > 0 ? Math.sqrt(power / bins) : 0;',
+    replace: '  const gain = 1;',
   },
 
   {

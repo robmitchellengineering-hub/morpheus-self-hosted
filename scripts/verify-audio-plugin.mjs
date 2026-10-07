@@ -1191,9 +1191,34 @@ const irB64 = (data, sampleRate = 48000) => encodeWav({ sampleRate, data, format
 const cabSeed = (b64) => [...empty, { path: PLUGIN_MANIFEST, content: JSON.stringify({ name: 'Amp', chain: 'amp' }) }, { path: 'models/cab.wav', content: b64, encoding: 'base64' }];
 
 const mono = cabMod.resolveCab(cabSeed(irB64(synthIr(4800, 800))), {});
-check('a mono .wav in the project is found, decoded and normalised to a peak of 1.0',
-  mono.info?.channels === 1 && mono.info.taps === 4096 && Math.abs(mono.info.sourcePeak - 0.4) < 0.2
-  && Math.abs(Math.max(...Array.from(mono.channels[0], Math.abs)) - 1) < 1e-6, true);
+// ⚠️ NOT "NORMALISED TO A PEAK OF 1.0" ANY MORE, AND THAT ASSERTION WAS THE BUG IN WRITING. It pinned the
+// exact policy that made a real cabinet +15 dB loud and clip: it asserted the loudest SAMPLE is 1.0, which
+// says nothing about loudness. The claim that matters is the one a player notices — a cabinet must not move
+// the level of programme material — so the test is a measured gain, not a sample value.
+const monoGainDb = (() => {
+  const taps = mono.channels[0];
+  // Pink noise carries equal power per octave, so log-spaced bins weight each octave equally and the mean of
+  // |H(f)|^2 over them is the pink-noise power gain — the same identity `cabTapGain` uses, written out here
+  // independently, so this is a SECOND implementation rather than the function checking itself.
+  let power = 0;
+  let bins = 0;
+  for (let f = 30; f <= 16000; f *= 1.05) {
+    const w = (2 * Math.PI * f) / 48000;
+    let re = 0;
+    let im = 0;
+    for (let i = 0; i < taps.length; i++) { re += taps[i] * Math.cos(w * i); im += taps[i] * Math.sin(w * i); }
+    power += re * re + im * im;
+    bins++;
+  }
+  return 20 * Math.log10(Math.sqrt(power / bins));
+})();
+check('a mono .wav in the project is found, decoded and used as the cabinet',
+  mono.info?.channels === 1 && mono.info.taps === 4096 && Math.abs(mono.info.sourcePeak - 0.4) < 0.2, true);
+check('⭐ …and scaled so PROGRAMME MATERIAL keeps its level, not so its loudest sample is 1.0',
+  Math.abs(monoGainDb) < 1.5, true);
+check('…and the gain it applied is recorded, because an unrecorded level change is the one nobody finds',
+  Number.isFinite(mono.info.appliedGainDb)
+  && /#define MORPHEUS_CAB_APPLIED_DB -?[0-9]/.test(cabMod.cabHeader(mono.info)), true);
 // 4800 samples is longer than the direct-convolution cap, and the tail it drops is SAID rather than dropped.
 check('…a longer file is truncated to the cap, and the scaffold says so',
   mono.info.truncated === true && mono.warnings.some((w) => /only the first 4096/.test(w)), true);
@@ -1341,7 +1366,7 @@ check('…and renders the chain against its design when asked, with a threshold 
   /ampChainCheck\(\{ pluginDir: OUT, cab: cabArg \|\| null, gateCase: true/.test(armRun)
   && /-120 dB this check requires/.test(armRun), true);
 // ⭐ THE GATE IS MEASURED RELATIVE TO THE LOUD SECTION. Everything else in the chain changes the level — a
-// cabinet moves it by +21 dB — so an absolute comparison reports the SPEAKER as a gate failure. That is
+// cabinet used to move it by +21 dB — an absolute comparison reported the SPEAKER as a gate failure. That is
 // exactly what happened the first time this ran with a cabinet in the chain.
 check('⭐ the gate is measured relative to the loud section, not against the dry signal',
   /relativeDb: quietChangeDb - loudChangeDb/.test(read('scripts/audio-amp-chain-check.mjs')), true);
