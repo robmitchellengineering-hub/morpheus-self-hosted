@@ -530,11 +530,30 @@ extern "C" void morpheus_gui_set_state(const clap_plugin_t *plugin, void *state)
    p->gui = state;
 }
 
-// The panel's block list, in signal order — see kMorpheusBlocks above. Declared in PluginGuiLayout.h, and
-// nothing else in this file uses it: the panel does the grouping.
+// ⚠️ THE **RUNNING** ORDER, NOT THE COMPILED ONE. This used to return kMorpheusBlocks — the order the project
+// was built with — which was right for exactly as long as the order could not change. Now that a drag can
+// change it, a panel that drew the compiled order would show the player their drag being undone while the
+// audio played the new one. It is filled on first use and kept in step by the two places that set an order
+// (morpheus_gui_set_order and plug_state_load), both of which run on the main thread — the same thread every
+// panel call comes from, so the array is never read and written at once.
+static const char *s_gui_order_names[MORPHEUS_NUM_STAGES];
+static int s_gui_order_names_valid = 0;
+
+static void morpheus_gui_order_names_set(const unsigned char *order) {
+   for (uint32_t i = 0; i < (uint32_t)MORPHEUS_NUM_STAGES; ++i) s_gui_order_names[i] = kMorpheusBlocks[order[i]];
+   s_gui_order_names_valid = 1;
+}
+
+// The panel's block list, in signal order. Declared in PluginGuiLayout.h; the panel does the grouping.
 extern "C" const char *const *morpheus_gui_chain_order(uint32_t *count) {
    if (count) *count = MORPHEUS_NUM_BLOCKS;
-   return kMorpheusBlocks;
+   // A FRESH INSTANCE RUNS THE ORDER IT WAS BUILT WITH, so the identity is the right first answer.
+   if (!s_gui_order_names_valid) {
+      unsigned char identity[MORPHEUS_NUM_STAGES];
+      for (uint32_t i = 0; i < (uint32_t)MORPHEUS_NUM_STAGES; ++i) identity[i] = (unsigned char)i;
+      morpheus_gui_order_names_set(identity);
+   }
+   return s_gui_order_names;
 }
 
 /**
@@ -575,6 +594,50 @@ extern "C" void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, 
    }
 }
 
+// ── the panel's half of the chain order ──────────────────────────────────────────────────────────────
+// ⭐ THE PANEL MAY REORDER THE CHAIN, and these two are the only door it has. \`order\` is a permutation of the
+// INDICES into kMorpheusBlocks — and that array is generated from the same stage list as the enum above, in
+// the same order, so index i IS stage id i and a permutation of one is a permutation of the other.
+//
+// ⚠️ THE PIVOT RULE LIVES HERE AND NOT IN THE PANEL. The panel is one view; a host, a preset and a phone will
+// all want to write this same document, and a rule that lived in one of them would be a rule the others do
+// not have. The panel ASKS which blocks may move rather than deciding.
+extern "C" int morpheus_gui_block_movable(uint32_t index) {
+   if (index >= (uint32_t)MORPHEUS_NUM_STAGES) return 0;
+   const char *kind = kMorpheusStageKinds[index];
+   // The amp model and the cabinet are the PIVOT — every other block is positioned relative to them, so
+   // "the delay in front of the amp" and "the delay in the loop" are two different sounds and both are
+   // reachable. The output level is applied on the plugin's OUTPUT, after both channels, so a block placed
+   // after it is processed by nothing at all.
+   return (strcmp(kind, "model") && strcmp(kind, "cab") && strcmp(kind, "level")) ? 1 : 0;
+}
+
+extern "C" bool morpheus_gui_set_order(const clap_plugin_t *plugin, const uint32_t *order, uint32_t count) {
+   ${'plugin_t'} *p = (${'plugin_t'} *)plugin->plugin_data;
+   if (count != (uint32_t)MORPHEUS_NUM_STAGES) return false;
+   unsigned char seen[MORPHEUS_NUM_STAGES];
+   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) seen[s] = 0;
+   for (uint32_t s = 0; s < count; ++s) {
+      if (order[s] >= count) return false;
+      if (++seen[order[s]] > 1) return false;
+      // AND A PINNED BLOCK DOES NOT MOVE — refused even though it is a legal permutation of the chain,
+      // because it is not a legal rearrangement of the amplifier.
+      if (!morpheus_gui_block_movable(order[s]) && order[s] != s) return false;
+   }
+   // ⚠️ HANDED OVER, NOT WRITTEN, for the reason the parameters are: the audio thread swaps it in at the top
+   // of its next block, so a drag takes effect BETWEEN BLOCKS and never mid-note.
+   for (uint32_t s = 0; s < count; ++s) p->stage_order_pending[s] = (unsigned char)order[s];
+   morpheus_gui_publish(&p->stage_order_pending_flag);
+   // …and the PANEL is told, so the column redraws in the new order rather than showing the drag undone.
+   morpheus_gui_order_names_set(p->stage_order_pending);
+   // ⭐ AND THE HOST IS TOLD, or the session would save the order the plugin was BUILT with and the drag would
+   // be forgotten the moment the project was reopened. That is the other half of the state extension: \`save\`
+   // gives the host the bytes, and \`mark_dirty\` is what makes it ask for them.
+   const clap_host_state_t *hs = (const clap_host_state_t *)p->host->get_extension(p->host, CLAP_EXT_STATE);
+   if (hs && hs->mark_dirty) hs->mark_dirty(p->host);
+   return true;
+}
+
 // ── THE STATE EXTENSION — the first thing this plugin has ever saved ─────────────────────────────────
 // ⚠️ UNTIL Stage 1 THERE WAS NO STATE EXTENSION AT ALL: nothing but the host's own parameter values survived
 // a session, so a chain order had nowhere to live. That is the reason the order could not be a value, and
@@ -590,6 +653,11 @@ extern "C" void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, 
 // build is refused rather than interpreted.
 #define MORPHEUS_STATE_MAGIC 0x4D4F5250u   /* 'MORP' */
 #define MORPHEUS_STATE_VERSION 1u
+
+// ⚠️ DECLARED HERE, DEFINED WITH THE REST OF THE PANEL'S INTERFACE FURTHER DOWN, because plug_state_load needs
+// it: the pivot rule is applied at BOTH doors an order can come through — a drag and a saved session — and a
+// rule enforced at one door is not a rule.
+extern "C" int morpheus_gui_block_movable(uint32_t index);
 
 // CLAP's streams are counted writes, not writes: a short write is legal, so these loop until the buffer is
 // done rather than assuming one call is the whole of it.
@@ -659,11 +727,24 @@ static bool plug_state_load(const clap_plugin_t *plugin, const clap_istream_t *s
    for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) {
       if (order[s] >= MORPHEUS_NUM_STAGES) return false;
       if (++seen[order[s]] > 1) return false;
+      // ⚠️ AND THE PIVOT DOES NOT MOVE HERE EITHER. The panel indexes the block column by POSITION, so it asks
+      // "may the block at position 4 move?" — which is only the same question as "may THIS block move?" while
+      // the pinned blocks keep their positions. A legal permutation that swapped the cabinet with a delay would
+      // leave the panel labelling one block as locked while the audio ran a different arrangement.
+      //
+      // ONE RULE, APPLIED AT EVERY DOOR. It lives in morpheus_gui_block_movable (declared below) and it is
+      // checked here as well as in morpheus_gui_set_order, because a saved session is the other way an order
+      // arrives and a rule enforced at one door is not a rule.
+      if (!morpheus_gui_block_movable(order[s]) && order[s] != s) return false;
    }
    // HANDED OVER, NOT WRITTEN. The audio thread swaps it in at the top of its next block, so a reorder takes
    // effect BETWEEN BLOCKS — see the note on \`stage_order_pending\` in plugin_t.
    for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) p->stage_order_pending[s] = order[s];
    morpheus_gui_publish(&p->stage_order_pending_flag);
+   // …and the PANEL is told, so a session that reopens with a saved order DRAWS that order rather than the one
+   // the plugin was compiled with. A panel showing a different chain from the one playing is worse than no
+   // panel at all.
+   morpheus_gui_order_names_set(p->stage_order_pending);
    return true;
 }
 

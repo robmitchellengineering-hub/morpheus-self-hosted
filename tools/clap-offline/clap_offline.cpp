@@ -182,11 +182,19 @@ static bool writeFileBytes(const char *path, const std::vector<uint8_t> &bytes) 
   return ok;
 }
 
+// ⭐ THE PLUGIN'S OWN ORDER DOOR, and the reason it is declared here: it is the thing a DRAG calls, so
+// exercising it is the only way the pivot rule can be asserted as BEHAVIOUR. A guard that greps for the rule
+// proves the text is there; this proves the plugin refuses.
+extern "C" bool morpheus_gui_set_order(const clap_plugin_t *plugin, const uint32_t *order, uint32_t count);
+
 int main(int argc, char **argv) {
   const char *inPath = nullptr;
   const char *outPath = nullptr;
   const char *saveStatePath = nullptr;
   const char *loadStatePath = nullptr;
+  const char *setOrder = nullptr;
+  bool orderAsked = false;
+  bool orderAccepted = false;
   uint32_t blockSize = 256;
   bool listParams = false;
   std::vector<std::pair<clap_id, double>> setParams;
@@ -200,6 +208,7 @@ int main(int argc, char **argv) {
     else if (a == "--list-params") listParams = true;
     else if (a == "--save-state") saveStatePath = next();
     else if (a == "--load-state") loadStatePath = next();
+    else if (a == "--set-order") setOrder = next();
     else if (a == "--param") {
       const char *v = next();
       if (!v) { std::fprintf(stderr, "clap_offline: --param needs ID=VALUE\n"); return 2; }
@@ -262,6 +271,25 @@ int main(int argc, char **argv) {
     MemStream m; m.in = &blob;
     const clap_istream_t is = {&m, mem_read};
     if (!state->load(plugin, &is)) { std::fprintf(stderr, "clap_offline: state->load() refused %s\n", loadStatePath); return 1; }
+  }
+
+  // ⭐ AND THE PANEL'S DOOR, EXERCISED AS A DRAG WOULD. `--set-order "0,2,1,3"` is a permutation of the BLOCK
+  // indices the plugin itself reports — the same list a drag computes over — so this asks the pivot rule the
+  // exact question a mouse would. The verdict goes out in the JSON, because "refused" is a RESULT here and not
+  // an error: a test that asserts a refusal has to be able to see one.
+  if (setOrder) {
+    std::vector<uint32_t> perm;
+    const char *at = setOrder;
+    while (*at) {
+      char *end = nullptr;
+      const long v = std::strtol(at, &end, 10);
+      if (end == at) break;
+      perm.push_back((uint32_t)v);
+      at = end;
+      while (*at == ',' || *at == ' ') ++at;
+    }
+    orderAsked = true;
+    orderAccepted = morpheus_gui_set_order(plugin, perm.data(), (uint32_t)perm.size());
   }
 
   // How many channels does the plugin actually want? Asking beats assuming: a plugin that declares one port of
@@ -418,8 +446,12 @@ int main(int argc, char **argv) {
   // Reported on stdout as one more field of the same JSON line, so a caller reads the plugin's identity and
   // how long it took in the same parse. `audioSeconds` is what the render was worth, so the real-time factor
   // is a division the caller does rather than two numbers it has to be trusted to combine correctly.
-  std::printf("{\"processSeconds\":%.9f,\"audioSeconds\":%.9f,\"frames\":%u,\"sampleRate\":%u,\"blockSize\":%u}\n",
+  std::printf("{\"processSeconds\":%.9f,\"audioSeconds\":%.9f,\"frames\":%u,\"sampleRate\":%u,\"blockSize\":%u",
               processSeconds, (double)in.frames / (double)in.sampleRate, in.frames, in.sampleRate, blockSize);
+  // The order verdict travels with the timing report rather than on a line of its own, so a caller that asked
+  // for one parses once — and a caller that did not ask sees no field, rather than a field that says "false".
+  if (orderAsked) std::printf(",\"orderAccepted\":%s", orderAccepted ? "true" : "false");
+  std::printf("}\n");
 
   if (!mrawWrite(outPath, in.sampleRate, portChannels, rendered)) return 1;
   return 0;

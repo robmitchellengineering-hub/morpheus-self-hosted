@@ -334,11 +334,16 @@ export function orderCheck({ work, clapInclude = null, sampleRate = 48000, secon
   const dryPath = join(work, 'dry-order.mraw');
   writeMraw(dryPath, sampleRate, 2, stereo);
 
+  // ⚠️ THE BOARD HAS A MODEL, AND IT IS THERE FOR THE PIVOT. Without a pinned block, the "refuses to move the
+  // amp" half of this proof would have nothing to refuse — and a rule with no case that exercises it is a rule
+  // nobody has tested. It needs no `.nam`: the model STAGE is in the chain whether or not a capture is
+  // embedded, and the pivot is about that stage's POSITION.
   const items = [
     { instanceId: 1, kind: 'input', enabled: true, values: {} },
     { instanceId: 2, kind: 'drive', enabled: true, values: {} },
-    { instanceId: 3, kind: 'delay', enabled: true, values: { delay_mix: 60, delay_feedback: 40 } },
-    { instanceId: 4, kind: 'output', enabled: true, values: {} },
+    { instanceId: 3, kind: 'model', enabled: true, values: {} },
+    { instanceId: 4, kind: 'delay', enabled: true, values: { delay_mix: 60, delay_feedback: 40 } },
+    { instanceId: 5, kind: 'output', enabled: true, values: {} },
   ];
   const dir = join(work, 'order');
   const { files } = scaffoldPlugin([
@@ -385,6 +390,24 @@ export function orderCheck({ work, clapInclude = null, sampleRate = 48000, secon
     return b;
   };
 
+  // ⭐ THE PANEL'S OWN DOOR, and it is a different door from `--load-state`: this calls the function a DRAG
+  // calls. A refusal is a RESULT here rather than an error — the plugin answers in the JSON, because a test
+  // that asserts a refusal has to be able to see one.
+  const orderRun = (label, order) => {
+    const outPath = join(work, `order-${label}.mraw`);
+    const run = spawnSync(bin, ['--in', dryPath, '--out', outPath, '--blocksize', '64', '--set-order', order.join(',')], { encoding: 'utf8' });
+    if (run.status !== 0) {
+      console.error(`[amp-chain] x the order render failed for "${label}":\n${(run.stderr || '').slice(-800)}`);
+      process.exit(1);
+    }
+    // ⚠️ THE LAST JSON LINE, NOT THE FIRST. The host reports the plugin's DESCRIPTOR as JSON before it renders
+    // anything, so taking the first one reads the descriptor and finds no verdict in it — which looks exactly
+    // like a refusal. That mistake is already recorded in this repo against the test bench, which is why it is
+    // spelled out here: the host's last object is the report.
+    const line = (run.stdout || '').split('\n').filter((l) => l.trim().startsWith('{')).pop();
+    return { data: readMraw(outPath).data[0], accepted: line ? JSON.parse(line).orderAccepted === true : null };
+  };
+
   const identity = ids.map((_, i) => i);
   const driveAt = kinds.indexOf('drive');
   const delayAt = kinds.indexOf('delay');
@@ -404,13 +427,26 @@ export function orderCheck({ work, clapInclude = null, sampleRate = 48000, secon
   render('permuted-save', swapPath, savedAfter);
 
   // A DUPLICATE IS NOT A PERMUTATION, and the plugin must refuse it rather than run one block twice and drop
-  // another — a wrong SOUND with no error is what a corrupted file would otherwise produce.
+  // another — a wrong SOUND with no error is what a corrupted file would otherwise produce. The blob is the
+  // length of THIS chain, because a wrong length is refused earlier and would exercise a different check.
+  const badOrder = identity.slice();
+  badOrder[1] = badOrder[0];
   const badPath = join(work, 'state-bad.bin');
-  writeFileSync(badPath, blobFor([0, 1, 1, 3]));
+  writeFileSync(badPath, blobFor(badOrder));
   const badRun = spawnSync(bin, ['--in', dryPath, '--out', join(work, 'order-bad.mraw'), '--load-state', badPath], { encoding: 'utf8' });
 
+  // ⭐ AND THE PIVOT, AS BEHAVIOUR RATHER THAN AS TEXT. These two ask the plugin the question a MOUSE would:
+  // one reorders two movable blocks, and one swaps the amp model with the delay — a legal PERMUTATION and an
+  // illegal rearrangement of the amplifier. Rob's decision: "amp and cab pivot point".
+  const legal = orderRun('drag-legal', swapped);
+  const modelAt = kinds.indexOf('model');
+  const pivotMoved = identity.slice();
+  pivotMoved[modelAt] = identity[modelAt + 1];
+  pivotMoved[modelAt + 1] = identity[modelAt];
+  const illegal = orderRun('drag-pivot', pivotMoved);
+
   return {
-    ids, kinds, identity, swapped,
+    ids, kinds, identity, swapped, pivotMoved,
     // The compiled default, saved: it must be the identity, not a special case that only works when unset.
     defaultSavedIsIdentity: readFileSync(savedDefault).equals(blobFor(identity)),
     // The reorder has to CHANGE the sound, or the order is a table nobody walks.
@@ -418,6 +454,11 @@ export function orderCheck({ work, clapInclude = null, sampleRate = 48000, secon
     // …and it has to survive a save/load cycle EXACTLY.
     roundTrip: readFileSync(savedAfter).equals(blobFor(swapped)),
     malformedRefused: badRun.status !== 0,
+    // ⚠️ THE SECOND HALF OF EACH IS THE ONE THAT MATTERS. "It returned false" is not enough: a plugin that
+    // refuses a pivot move and applies it anyway is worse than one that accepts, because the refusal is what
+    // the panel draws and the sound would contradict it.
+    drag: { accepted: legal.accepted, unchanged: compareToReference(defaultRender, legal.data).identical },
+    pivot: { accepted: illegal.accepted, unchanged: compareToReference(defaultRender, illegal.data).identical },
     sampleRate, frames: dry.length,
   };
 }
@@ -472,14 +513,27 @@ if (isMain) {
     console.log(`[amp-chain]   the reorder changes the sound by:        ${f(o.reorderChangesTheSound.nullDb)}`);
     console.log(`[amp-chain]   the loaded order saves back byte for byte: ${o.roundTrip ? 'yes' : 'NO'}`);
     console.log(`[amp-chain]   a malformed order is refused, not applied:  ${o.malformedRefused ? 'yes' : 'NO'}`);
-    console.log(JSON.stringify({ ok: o.defaultSavedIsIdentity && o.roundTrip && o.malformedRefused && !o.reorderChangesTheSound.identical, ...o }));
+    console.log(`[amp-chain]   a DRAG is accepted, and heard:             ${o.drag.accepted ? 'accepted' : 'REFUSED'}, ${o.drag.unchanged ? 'BUT CHANGED NOTHING' : `moved the sound by ${o.reorderChangesTheSound.nullDb === null ? 'a different amount' : `${(o.reorderChangesTheSound.nullDb).toFixed(1)} dB`}`}`);
+    console.log(`[amp-chain]   a drag that moves the AMP is refused:      ${o.pivot.accepted ? 'ACCEPTED' : 'refused'}, and left the sound ${o.pivot.unchanged ? 'exactly as it was' : 'CHANGED'}`);
+    console.log(JSON.stringify({
+      ok: o.defaultSavedIsIdentity && o.roundTrip && o.malformedRefused && !o.reorderChangesTheSound.identical
+        && o.drag.accepted && !o.drag.unchanged && !o.pivot.accepted && o.pivot.unchanged,
+      ...o,
+    }));
     let bad = 0;
     if (!o.defaultSavedIsIdentity) { console.error('[amp-chain] x a fresh plugin does not save the compiled order'); bad++; }
     if (o.reorderChangesTheSound.identical) { console.error('[amp-chain] x a loaded order changed nothing — the order is a table nobody walks'); bad++; }
     if (!o.roundTrip) { console.error('[amp-chain] x the order did not survive a save/load cycle'); bad++; }
     if (!o.malformedRefused) { console.error('[amp-chain] x a malformed order was applied instead of refused'); bad++; }
+    // ⭐ THE PANEL'S OWN DOOR. A drag has to be accepted AND heard; a drag that moves the pivot has to be
+    // refused AND leave the sound untouched — the refusal is what the panel draws, so a plugin that refused and
+    // applied it anyway would put the panel and the audio in disagreement with no error anywhere.
+    if (!o.drag.accepted) { console.error('[amp-chain] x a legal drag was refused'); bad++; }
+    if (o.drag.unchanged) { console.error('[amp-chain] x a legal drag was accepted and changed nothing'); bad++; }
+    if (o.pivot.accepted) { console.error('[amp-chain] x a drag that moves the amp model or the cabinet was ACCEPTED'); bad++; }
+    if (!o.pivot.unchanged) { console.error('[amp-chain] x a refused drag changed the sound anyway'); bad++; }
     if (bad) process.exit(1);
-    console.log('[amp-chain] the order is data: it saves, it loads, it is heard, and a bad one is refused\n');
+    console.log('[amp-chain] the order is data: it saves, it loads, it is heard, a bad one is refused, and the pivot does not move\n');
     process.exit(0);
   }
   if (!pluginDir) { console.error('[amp-chain] --plugin is required (or --toggle/--order, which need no plugin)'); process.exit(2); }
