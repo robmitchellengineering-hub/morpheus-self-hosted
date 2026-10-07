@@ -334,6 +334,27 @@ ${rows}
 }
 
 /**
+ * THE BLOCK LIST the panel groups its rows by, in SIGNAL ORDER.
+ *
+ * ⚠️ THE NAMES MUST BE THE ONES `chainParams` PUT ON THE CONTROLS' `module`, because that is the only thing
+ * the panel has to match a row to a block — so both come from `stageLabel` and neither is written out twice.
+ *
+ * ⚠️ AND THE PANEL CANNOT DERIVE THIS FROM THE PARAMETER LIST. Grouping rows by where a block first appears
+ * there puts a block WITH NO CONTROLS OF ITS OWN at the bottom, because its only parameter is its switch and
+ * the switches are appended (deliberately, so a host's automation ids do not move). The amp model and the
+ * cabinet — the two blocks in the middle of the signal path — therefore drew BELOW the delay and the spring
+ * reverb, which is not the order anything runs in. Found by photographing the panel with
+ * tools/clap-gui-host, which is the only thing that could have found it.
+ */
+export function blocksCpp(chain) {
+  const names = (chain.stages || []).map(stageLabel);
+  return `#define MORPHEUS_NUM_BLOCKS ${names.length}
+static const char *const kMorpheusBlocks[] = {
+${names.map((n) => `   ${cstr(n)},`).join('\n')}
+};`;
+}
+
+/**
  * The per-instance state: one value and one smoothed value per parameter, plus the filter state.
  *
  * `_params` IS DELIBERATELY UNUSED: what needs state is decided by the CHAIN, not by the parameter list, so

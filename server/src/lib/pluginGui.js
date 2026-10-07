@@ -81,6 +81,9 @@ extern "C" {
 void *morpheus_gui_state(const clap_plugin_t *plugin);
 void morpheus_gui_set_state(const clap_plugin_t *plugin, void *state);
 void morpheus_gui_param_set(const clap_plugin_t *plugin, clap_id id, double value);
+// The blocks IN SIGNAL ORDER, from the plugin's own chain — see kMorpheusBlocks in Plugin.cpp. The panel
+// groups its rows by this rather than by where a block first appears in the parameter list; that was the bug.
+const char *const *morpheus_gui_chain_order(uint32_t *count);
 }
 
 // ── the layout, and the only place a row's position is written down ──────────────────────────────────────
@@ -186,9 +189,29 @@ static uint32_t morpheus_gui_rows(const clap_plugin_t *plugin, const clap_plugin
       }
    }
    uint32_t written = 0;
-   for (uint32_t i = 0; i < nr; ++i) {
-      // Has this block already been emitted? Asked of the RAW rows, so the answer does not depend on how many
-      // of the block's rows fitted in \`max\`.
+   // ⭐ THE BLOCKS THE PLUGIN NAMES, IN SIGNAL ORDER — which is the order the audio runs in and the order a
+   // player drew, not the order the parameters happen to be listed in. See morpheus_gui_chain_order.
+   uint32_t orderCount = 0;
+   const char *const *order = morpheus_gui_chain_order(&orderCount);
+   for (uint32_t g = 0; g < orderCount && written < max; ++g) {
+      int first = 1;
+      for (uint32_t j = 0; j < nr && written < max; ++j) {
+         if (strcmp(raw[j].group, order[g])) continue;
+         out[written] = raw[j];
+         // A block with no name — every project that predates the board — gets no band, rather than a blank
+         // one. The height arithmetic reads this same flag, so the two cannot disagree.
+         out[written].first = (first && raw[j].group[0]) ? 1 : 0;
+         first = 0;
+         ++written;
+      }
+   }
+   // AND THEN ANYTHING THE TABLE DID NOT NAME, in the order the plugin listed it. A chain with no order table,
+   // or a module the plugin grew without telling the panel, still draws — a row that is never emitted is a
+   // control a user cannot reach, which is worse than one in the wrong place.
+   for (uint32_t i = 0; i < nr && written < max; ++i) {
+      int named = 0;
+      for (uint32_t g = 0; g < orderCount; ++g) if (!strcmp(raw[i].group, order[g])) { named = 1; break; }
+      if (named) continue;
       int seen = 0;
       for (uint32_t j = 0; j < i; ++j) if (!strcmp(raw[j].group, raw[i].group)) { seen = 1; break; }
       if (seen) continue;
@@ -196,8 +219,6 @@ static uint32_t morpheus_gui_rows(const clap_plugin_t *plugin, const clap_plugin
       for (uint32_t j = i; j < nr && written < max; ++j) {
          if (strcmp(raw[j].group, raw[i].group)) continue;
          out[written] = raw[j];
-         // A block with no name — every project that predates the board — gets no band, rather than a blank
-         // one. The height arithmetic reads this same flag, so the two cannot disagree.
          out[written].first = (first && raw[j].group[0]) ? 1 : 0;
          first = 0;
          ++written;
