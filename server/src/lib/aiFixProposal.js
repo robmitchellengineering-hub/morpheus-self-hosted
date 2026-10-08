@@ -28,6 +28,23 @@ const MAX_STRING = 400;
  * reason about the paraphrase. The menu is quoted EXACTLY, including the argument names,
  * so an invented argument is a visible mistake rather than a plausible one.
  */
+/**
+ * The shape of the answer. Passed to the model, which is why it is written as instructions
+ * rather than as a validator — `validateProposal()` below is the validator, and it does not
+ * trust this to have been obeyed.
+ */
+export const PROPOSAL_SCHEMA = {
+  type: 'object',
+  properties: {
+    op: { type: 'string', description: 'The one operation available for this finding, copied exactly.' },
+    args: { type: 'object', description: 'Only the arguments the operation declares above.' },
+    why: { type: 'string', description: 'One sentence, in plain words, for the site owner.' },
+    cannot: { type: 'string', description: 'Set this INSTEAD of op/args when the operation cannot honestly fix this finding, and say what to do instead.' },
+  },
+  required: ['why'],
+  additionalProperties: false,
+};
+
 export function buildProposalPrompt({ finding, menu, site } = {}) {
   const f = finding || {};
   const m = menu || {};

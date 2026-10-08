@@ -385,7 +385,8 @@ check('…and the app reads them into the undo line', /cleanQuarantineEvidence\(
 for (const helper of ['isPluginTooOld']) {
   check(`${helper} is imported wherever it is used`, new RegExp(`import \\{[^}]*\\b${helper}\\b[^}]*\\} from`).test(jsHandler), true);
 }
-check('the app sends only the finding id', /wpCall\(conn, 'fix', \{ id \}\)/.test(jsClient), true);
+check('the app sends the finding id, and a proposal only when the operator approved one',
+  /wpCall\(conn, 'fix', proposal \? \{ id, proposal \} : \{ id \}\)/.test(jsClient), true);
 check('the quarantine target is chosen by the plugin, not sent by the caller', /quarantine_target\( \$file \)/.test(stripPhp(phpFixes)) && !/body\['path'\]/.test(phpRest), true);
 
 // Every mechanism a registry entry names must exist, or the operator meets

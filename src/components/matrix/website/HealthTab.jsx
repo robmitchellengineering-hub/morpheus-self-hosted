@@ -363,7 +363,7 @@ function FixBox({
                 <div className="text-[10px] text-ink-max leading-relaxed break-words">{asked.describe}</div>
                 {asked.proposal.why ? (
                   <div className="text-[10px] text-ink-max leading-relaxed break-words">
-                    <span className="text-primary/70">Why: </span>{asked.proposal.why}
+                    <span className="font-medium">Why: </span>{asked.proposal.why}
                   </div>
                 ) : null}
                 <div className="flex items-center gap-2">
