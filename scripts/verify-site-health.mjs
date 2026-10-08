@@ -515,10 +515,10 @@ check('selection is still off for controls (the rule the fix has to work with)',
   /button, a, select, \.no-select \{/.test(cssSrc) && /user-select: none;/.test(cssSrc), true);
 // Comments stripped, and the match anchored to `className=`: the comment explaining this
 // very fix BEGINS with the word `select-text`, so a raw scan collected the explanation as
-// if it were the code and the mutation below SURVIVED. That is H19 exactly — the same trap
-// this file's copy check already records twice. A check satisfied by its own comment is a
-// check that proves nothing.
-const panelCode = panelSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+// if it were the code and the mutation below SURVIVED. `panelCode` already exists above for
+// the effect-hook checks — deliberately REUSED, not redeclared: a second `const` of the same
+// name is a SyntaxError, and a guard that cannot parse exits non-zero, which every mutation
+// run then counts as the guard catching it. `mutate-guards` reported that as `baseline red`.
 check('…and the group text opts back IN, so it can be copied at all',
   (panelCode.match(/className="select-text/g) || []).length >= 4, true);
 check('…including the message, the file:line and the raw lines',
