@@ -259,6 +259,9 @@ export const KNOWN_GREEN_CONSTANTS = [
   "src/components/matrix/website/HealthTab.jsx|text-primary/45 border-primary/20",
   "src/components/matrix/website/PagesTab.jsx|w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50",
   "src/components/matrix/website/PagesTab.jsx|w-full bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50",
+  // DECIDED 2026-10-08: the redirects panel's button — a green CONTROL (a press), not
+  // prose. The brand green marks structure, and this is structure.
+  "src/components/matrix/website/RedirectsPanel.jsx|inline-flex items-center justify-center gap-1.5 px-3 h-[26px] border border-primary/30 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary disabled:opacity-40 shrink-0",
   "src/components/matrix/website/SearchConsolePanel.jsx|inline-flex items-center gap-1.5 px-2.5 h-[28px] border border-primary/25 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary/50 disabled:opacity-40 disabled:hover:border-primary/25",
   "src/components/matrix/website/SearchConsolePanel.jsx|text-[9px] text-primary/35 uppercase tracking-wider",
   "src/components/matrix/website/SeoTab.jsx|border border-primary/30 text-primary/75 hover:border-primary hover:text-primary",

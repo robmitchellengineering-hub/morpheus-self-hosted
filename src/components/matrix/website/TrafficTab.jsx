@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Loader2, Send, RefreshCw, Check, AlertTriangle, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useTaskRunner, useTaskResult } from '../TaskRunner';
+import RedirectsPanel from './RedirectsPanel';
 
 // TRAFFIC tab of the WEBSITE panel — the first workflow: tell IndexNow about a
 // URL when it goes live or changes, and keep a record of what was submitted and
@@ -210,6 +211,16 @@ export default function TrafficTab({ projectId }) {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* REDIRECTS — the second workflow on this tab, and the other half of
+              search presence: what search engines are told about a URL, and what
+              happens when one they already know about stops existing. The 404 log
+              is the reason it sits here rather than in its own tab: it is the list
+              of addresses that need a rule. */}
+          <div className="border-t border-primary/15 pt-3 space-y-2">
+            <div className="text-primary/40 uppercase tracking-wider">Redirects &amp; missing pages</div>
+            <RedirectsPanel projectId={projectId} />
           </div>
 
           {/* Not built. Named, not omitted — an absent half reads as a finished whole. */}

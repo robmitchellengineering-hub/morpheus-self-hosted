@@ -50,14 +50,25 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   // search engine is an outward action on the operator's live site, and an embed
   // that only manages metadata should not be able to do it.
   //
-  // Exactly ONE function, because that is exactly what the surface calls:
-  // trafficAction is the single dispatcher (status | ledger | backfill |
-  // settings) and the tab invokes nothing else. getWordPressStore is deliberately
-  // NOT here — unlike the SEO surface, which reads the site's context before it
-  // can write, the traffic tab needs no site state, and a scope entry nothing
-  // invokes is privilege handed out for free. verify-traffic.mjs asserts this
-  // list matches the tab's actual invokes, so the two cannot drift apart.
-  traffic: ['trafficAction'],
+  // TWO functions, because the surface now calls two, and the list is asserted
+  // against the surface's actual invokes by verify-traffic.mjs so it cannot drift:
+  //   * trafficAction  — the IndexNow dispatcher (status | ledger | backfill | settings)
+  //     and the tab invokes nothing else for it;
+  //   * wordPressRedirects — the redirect rules and the 404 log, added 2026-10-08.
+  //
+  // ⚠️ THAT SECOND ONE IS A DELIBERATE WIDENING OF AN EXISTING SCOPE, and it is the
+  // kind this file's own note asks to be reviewed rather than assumed: a traffic
+  // token can now change how the site ANSWERS a URL, not just what it tells an index
+  // about one. It belongs here because the scope already means "this site's search
+  // presence", and a redirect rule is the other half of exactly that — keeping a URL
+  // that search engines already know about from becoming a dead end. It is still
+  // scoped to the operator's own site, and the plugin refuses the rules that could
+  // lock them out. Anything that writes FILES or applies updates stays out.
+  //
+  // getWordPressStore is deliberately NOT here — unlike the SEO surface, which reads
+  // the site's context before it can write, this tab needs no store state, and a
+  // scope entry nothing invokes is privilege handed out for free.
+  traffic: ['trafficAction', 'wordPressRedirects'],
 };
 
 // DELIBERATELY ABSENT FROM EVERY SCOPE ABOVE: dockAction.

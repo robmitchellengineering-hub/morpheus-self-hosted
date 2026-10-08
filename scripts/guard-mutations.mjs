@@ -2831,6 +2831,16 @@ export const MUTATIONS = [
     find: '\t\t\t\t\tstatus_header( 410 );',
     replace: '\t\t\t\t\twp_redirect( home_url(), 302 );\n\t\t\t\t\tstatus_header( 410 );',
   },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'server/src/lib/widgetToken.js',
+    // The scope entry the redirects panel needs. Without it the panel 403s for every
+    // dock token — and the check reads BOTH tab files precisely so a function invoked
+    // in a component the guard never opened cannot slip in unverified.
+    why: 'Drops the redirects function from the traffic scope, so the panel it is invoked from is refused for every dock token.',
+    find: "  traffic: ['trafficAction', 'wordPressRedirects'],",
+    replace: "  traffic: ['trafficAction'],",
+  },
 ];
 
 /**

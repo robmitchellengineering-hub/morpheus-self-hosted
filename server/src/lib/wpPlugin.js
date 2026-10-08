@@ -264,6 +264,24 @@ export async function wpTraffic(conn, action, data = {}) {
 }
 
 /**
+ * Redirects and the 404 log (plugin 0.9.2+): `wpCall(conn, 'redirects', …)`.
+ *
+ * The plugin owns the rule list AND the log — it is the only place that sees a 404,
+ * so the grouping and the bound are decided there and this side only reads and
+ * writes rules. `id` travels beside `data` because update/delete name one rule and
+ * a rule is not a field of the thing being edited.
+ *
+ * A build older than the release that added the route answers 400
+ * `unknown_action`; `wordPressRedirects` turns that into "update the plugin"
+ * rather than showing the operator a sentence about action names.
+ */
+export const MIN_REDIRECTS_PLUGIN_VERSION = '0.9.2';
+
+export async function wpRedirects(conn, action, data = {}, id = '') {
+  return wpCall(conn, 'redirects', { action, data, ...(id ? { id } : {}) });
+}
+
+/**
  * One-tap dock setup (plugin 0.8.2+).
  *
  * The site owns the dock: it holds the token and it decides whether to print.
