@@ -1032,6 +1032,14 @@ jobs:
       - name: Site maintenance policy rules
         run: node scripts/verify-site-maintenance.mjs
 
+      # The deploy tab's UNDO. The plugin's /rollback route was registered and
+      # tested from the day the Deploy module shipped and nothing in the app ever
+      # called it, while `delivery/wordpress.js` advertised `supports: ['rollback']`
+      # for a button that did not exist. Now it is wired: route, action name,
+      # confirmation gate and both refusal shapes are asserted across the boundary.
+      - name: WordPress deploy undo
+        run: node scripts/verify-wp-rollback.mjs
+
       # What makes a merge verified at all: the named gates must have RUN, not
       # merely have failed to fail. A green deploy preview with no CI run behind
       # it reads as "passing" to the merge engine — which is how #258 and #259

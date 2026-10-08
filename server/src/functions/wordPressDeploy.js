@@ -10,17 +10,20 @@
 //             separate `merge` poll, self-dev style)
 //   merge   — poll the PR's checks; squash-merge on green, then fire the
 //             plugin's deploy webhook so the live site pulls the new tree
+//   rollback— UNDO: restore the files the plugin's LAST deploy changed, from the
+//             snapshot it took first. Live write; the plugin does not gate it on
+//             `armed`, so it requires `confirm: true`.
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { resolveWordpressDelivery, loadProjectFiles } from '../lib/pluginProject.js';
-import { wpStatus } from '../lib/wpPlugin.js';
+import { wpStatus, wpRollback } from '../lib/wpPlugin.js';
 import { logUsage } from '../lib/projectUtils.js';
 import { policyIdForUser, forceAllowed, assertWithinVelocity, assertRepoAllowed } from '../lib/tenantPolicy.js';
 
-const ALLOWED = new Set(['status', 'verify', 'dry_run', 'ship', 'merge']);
+const ALLOWED = new Set(['status', 'verify', 'dry_run', 'ship', 'merge', 'rollback']);
 const wp = getDeliveryAdapter('wordpress');
 
 export default async function handler({ user, body }) {
-  const { projectId, action, prNumber, force = false } = body || {};
+  const { projectId, action, prNumber, force = false, confirm = false } = body || {};
   if (!projectId) throw Object.assign(new Error('projectId required'), { status: 400 });
   if (!ALLOWED.has(action)) throw Object.assign(new Error(`Unknown deploy action: ${action}`), { status: 400 });
 
@@ -59,6 +62,36 @@ export default async function handler({ user, body }) {
       });
     }
     return result;
+  }
+
+  if (action === 'rollback') {
+    // UNDO: restore the snapshot the plugin took before its last deploy. No
+    // arguments — the plugin owns which deploy that is, so there is no id for
+    // this side to name or get wrong.
+    //
+    // ⚠️ THIS WRITES TO THE LIVE SITE, AND THE PLUGIN'S `armed` SWITCH DOES NOT
+    // GATE IT. Only `handle_deploy` tests `armed`; `handle_rollback` never does.
+    // That is defensible — undoing an armed deploy is a return to a known state —
+    // but it means a disarmed site still changes files when this runs, so it
+    // requires the same explicit confirmation every other live write here does,
+    // and DeployTab says so in the operator's own words.
+    if (confirm !== true) {
+      throw Object.assign(new Error('confirm:true is required — UNDO restores files on the live site'), { status: 400 });
+    }
+    const res = await wpRollback(conn);
+    if (res.status === 0) {
+      throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || 'no response'}`), { status: 502 });
+    }
+    // A refusal comes back as the plugin's own payload (`nothing_to_roll_back`,
+    // `snapshot_missing`), and the plugin's sentence is the one the operator
+    // reads. Only a real restore is worth recording.
+    if (res.ok && res.data?.ok) {
+      await logUsage(user.id, 'wp_deploy_rollback', projectId, project.name, {
+        rolledBack: res.data.rolled_back_deploy || null,
+        commit: res.data.commit || null,
+      });
+    }
+    return { httpStatus: res.status, ...(res.data || {}) };
   }
 
   const files = await loadProjectFiles(projectId, user.id);

@@ -41,6 +41,12 @@ if ( class_exists( 'Morpheus_REST' ) ) {
 $routes = rest_get_server()->get_routes();
 ok( isset( $routes['/morpheus/v1/deploy'] ), 'route /morpheus/v1/deploy registered' );
 ok( isset( $routes['/morpheus/v1/status'] ), 'route /morpheus/v1/status registered' );
+// The undo. It was registered and tested from the day the Deploy module shipped
+// and NOTHING in the app called it, so it went unasserted here while
+// `delivery/wordpress.js` advertised `supports: ['rollback']` for a button that
+// did not exist — the app side is wired now (DeployTab → wordPressDeploy →
+// wpRollback), and this is the plugin half of that pair.
+ok( isset( $routes['/morpheus/v1/rollback'] ), 'route /morpheus/v1/rollback registered' );
 
 echo "\n== helpers: deny-list ==\n";
 $denied = array( 'wp-config.php', 'a/wp-config.php', 'wp-content/uploads/2024/x.jpg', '.htaccess', '.env.production', 'x/.git/config', '.user.ini', 'wp-content/cache/x.php' );

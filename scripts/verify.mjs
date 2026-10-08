@@ -83,6 +83,7 @@ const HARD = [
   'verify-site-health.mjs',
   'verify-clean-site.mjs',
   'verify-site-maintenance.mjs',
+  'verify-wp-rollback.mjs',
   'verify-merge-gates.mjs',
   'verify-operator-drive.mjs',
   'verify-proving-ground.mjs',

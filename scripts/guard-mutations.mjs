@@ -2864,6 +2864,14 @@ export const MUTATIONS = [
     why: 'Drops the redirects function from the traffic scope, so the panel it is invoked from is refused for every dock token.',
     find: "  traffic: ['trafficAction', 'wordPressRedirects'],",
     replace: "  traffic: ['trafficAction'],",
+    guard: 'verify-wp-rollback.mjs',
+    file: 'server/src/functions/wordPressDeploy.js',
+    // The confirmation gate on a LIVE WRITE. With it gone the action runs on the plugin's say-so alone —
+    // and because only the plugin's deploy handler tests `armed`, this route changes files on a site that
+    // is deliberately not armed, which is precisely why the explicit confirm exists.
+    why: 'Removes the explicit confirmation from the deploy undo, so a single call restores files on a live site that is not armed.',
+    find: '    if (confirm !== true) {',
+    replace: '    if (false) {',
   },
 ];
 
