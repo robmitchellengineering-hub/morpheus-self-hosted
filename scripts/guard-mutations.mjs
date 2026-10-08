@@ -2068,6 +2068,18 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE CRASH ITSELF, AS A MUTATION. This is the line the three crash reports point at: a font asked for
+    // inside the DRAW path and put straight into a dictionary LITERAL, where nil does not mean "no font" but
+    // `NSInvalidArgumentException` — raised on the HOST's main thread, 30 times a second, in GarageBand's own
+    // process. It is also the mutation that has to fail the `no font while drawing` check while every other
+    // panel check stays green, which is why the check is written on `drawRect:`'s body rather than on the file.
+    why: 'Puts a font factory back inside drawRect:, where a nil font raises out of the dictionary literal and takes the host (GarageBand) down with it.',
+    find: '  NSDictionary *valueAttrs = _valueAttrs;',
+    replace: '  NSDictionary *valueAttrs = @{ NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium], NSForegroundColorAttributeName: morpheusGreen() };',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
     // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has
