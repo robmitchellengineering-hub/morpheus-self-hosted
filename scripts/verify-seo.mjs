@@ -915,13 +915,20 @@ check('…and asserts the three nodes are top-level siblings', has(noYoastHarnes
 
 // ── 8b. the panel works on the SITE's content types, not a hard-coded three ──
 //
-// The live failure: the store publishes a `services` CPT and a `portfolio`
-// archive. Head tags WERE emitted for both (`emit_head()` keys off
-// `is_singular()`), but the panel could not list, audit or bulk-fill either,
-// because the set of types was the constant `array( 'post', 'page', 'product' )`.
-// Live symptom: `/services/equipment-repairs/` carried a description built from
-// its own first words including "Home / Services /", and `/portfolio/` had none —
+// The live failure: the store publishes a `services` CPT whose head tags WERE
+// emitted (`emit_head()` keys off `is_singular()`) while the panel could not list,
+// audit or bulk-fill it, because the set of types was the constant
+// `array( 'post', 'page', 'product' )`. Live symptom: `/services/equipment-repairs/`
+// carried a description built from its own first words including "Home / Services /",
 // with nothing in the panel able to say so.
+//
+// ⚠️ THE SAME THEME ALSO PUBLISHES A `portfolio` ARCHIVE, AND IT IS NOT INCLUDED —
+// deliberately, and measured rather than assumed. WordPress builds its sitemap from
+// types it is told are public, and live `/wp-sitemap-posts-services-1.xml` answers
+// 200 while `…-portfolio-1.xml` answers 404. So `portfolio` is a type the site keeps
+// off the public web; the derivation respects that instead of overriding it. If Rob
+// decides the panel should work on it anyway, both this and the helper's doc change
+// together.
 //
 // Source contracts here; `tests/harness-noyoast.php` registers a real CPT and
 // asserts the DEFAULT list and context include it, and the coupling below keeps

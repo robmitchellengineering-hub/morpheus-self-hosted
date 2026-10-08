@@ -93,8 +93,13 @@ function store_req( $action, $data, $secret ) {
 // `is_singular()`, not off a type list), but the panel could not LIST it, audit it
 // or bulk-fill it, because the set of types was the hard-coded
 // `array( 'post', 'page', 'product' )`. The visible result: that page's meta
-// description was its own first words, including "Home / Services /", and
-// `/portfolio/` had none at all — with nothing in the panel able to say so.
+// description was its own first words, including "Home / Services /", with nothing
+// in the panel able to say so.
+//
+// That theme's `portfolio` archive is a SEPARATE case and is deliberately NOT
+// covered here: it is registered as not public (measured — its sitemap 404s where
+// `services`' answers 200), so the derivation leaves it alone. This fixture is the
+// public kind, which is the one the audit's live symptom was about.
 //
 // A type of the site's own is registered and published here, which turns "the
 // panel works on what the site publishes" into a claim about a REAL WordPress

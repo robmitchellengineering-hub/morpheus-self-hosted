@@ -190,13 +190,21 @@ function morpheus_purge_caches() {
  * The site's PUBLIC content types — the set the SEO and traffic modules work on.
  *
  * This was a hard-coded `array( 'post', 'page', 'product' )` in both modules until
- * 2026-10-08, and it is wrong for the site it runs on. The live store publishes a
- * `services` CPT and a `portfolio` archive: both are in the sitemap, both get head
- * tags because `emit_head()` keys off `is_singular()` — and NEITHER could be
- * listed, audited or bulk-filled from the SEO panel, nor announced to IndexNow.
- * The visible result was a services page whose meta description was its own first
- * words including "Home / Services /", and a `/portfolio/` with none at all, with
- * nothing in the panel able to say so.
+ * 2026-10-08, and it is wrong for the site it runs on: the live store publishes a
+ * `services` CPT whose head tags were being emitted all along (`emit_head()` keys
+ * off `is_singular()`), while the panel could not list, audit or bulk-fill it, and
+ * IndexNow was never told when one was published. The visible result was a services
+ * page whose meta description was its own first words including "Home / Services /",
+ * with nothing in the panel able to say so.
+ *
+ * ⚠️ AND IT FOLLOWS THE SITE'S OWN `public` FLAG, RATHER THAN SECOND-GUESSING IT.
+ * The same theme also registers a `portfolio` archive, and it does NOT come out of
+ * this function: WordPress's sitemap is built from exactly `public => true` types,
+ * and on the live store `/wp-sitemap-posts-services-1.xml` answers 200 while
+ * `…-portfolio-1.xml` answers 404. So `portfolio` is one the site itself keeps out
+ * of the public web, and it stays out of the panel and out of what we submit to an
+ * index. Listing it would mean overriding the site's own declaration — a product
+ * decision, not a bug, and it is with Rob.
  *
  * Derived rather than assumed, because which types exist is a property of the
  * SITE, not of this plugin. What is NOT derived is what to leave out: WordPress

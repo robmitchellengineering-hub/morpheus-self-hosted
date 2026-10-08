@@ -89,9 +89,10 @@ class Morpheus_SEO {
 	// Content that can be indexed and therefore needs SEO. This used to be the
 	// constant `array( 'post', 'page', 'product' )` — see
 	// `morpheus_public_post_types()` in includes/helpers.php for why that is now
-	// derived from the site instead: the live store publishes a `services` CPT and
-	// a `portfolio` archive, and neither could be listed, audited or bulk-filled
-	// here while the set was hard-coded.
+	// derived from the site instead: the live store publishes a `services` CPT that
+	// could not be listed, audited or bulk-filled here while the set was hard-coded.
+	// The same helper deliberately keeps OUT a type the site registers as not
+	// public (the theme's `portfolio` archive), and says how that was measured.
 
 	// Site-wide templates — the "Titles & Meta" defaults every SEO plugin has:
 	// what the title and description look like for content nobody has set by

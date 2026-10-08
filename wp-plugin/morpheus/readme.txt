@@ -76,17 +76,18 @@ answering a health check.
 == Changelog ==
 
 = 0.9.0 =
-* Fixed: **the SEO panel could not see the site's own content types.** The set of post types was the
-  hard-coded `post`, `page`, `product`, so a site publishing a `services` custom type or a `portfolio`
-  archive had no way to list, audit or bulk-fill them — even though their head tags were being emitted
-  all along. The live symptom: a services page whose meta description was its own first words including
-  "Home / Services /", and a `/portfolio/` with no description at all, with nothing in the panel able to
-  say so. The types are now derived from what the site actually publishes — WordPress's public post
-  types, with attachments and WordPress's own internal public types excluded — so the panel works on the
-  site's content rather than on an assumption about it.
-* Fixed: **TRAFFIC announced only those same three types to IndexNow**, so publishing anything else was
-  never submitted: a page in the site's sitemap that no index was ever told about. Both modules now read
-  one shared list, so the two cannot drift apart.
+* Fixed: **the SEO panel could not see the site's own content type.** The set of post types was the
+  hard-coded `post`, `page`, `product`, so a site publishing a `services` custom type — reachable, in the
+  sitemap, and getting head tags all along — had no way to list, audit or bulk-fill it. The live symptom:
+  that page's meta description was its own first words including "Home / Services /", and nothing in the
+  panel could say so. The types are now derived from what the site actually publishes: WordPress's PUBLIC
+  post types, with attachments and WordPress's own internal public types excluded.
+* The derivation follows the SITE's own `public` flag rather than second-guessing it. Measured on the live
+  store: `/wp-sitemap-posts-services-1.xml` answers 200 (so `services` is public and is now listed) while
+  `…-portfolio-1.xml` answers 404 — the theme registers its `portfolio` archive as **not public**, so it is
+  deliberately left out of the panel and out of what gets submitted to an index.
+* Fixed: **TRAFFIC announced only `post`, `page` and `product` to IndexNow**, so publishing anything else was
+  never submitted. Both modules now read one shared list, so the two cannot drift apart.
 
 = 0.8.9 =
 * Fixed: **the site's own schema nodes were nested inside the page's.** Every page emitted its JSON-LD as
