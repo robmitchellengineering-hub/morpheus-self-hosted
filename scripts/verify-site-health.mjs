@@ -315,8 +315,12 @@ check('…and the config goes back if the log will not move',
   /The log file could not be moved to/.test(fixesPhp) && /restore_file_backup\( \$backup, \$config \)/.test(fixesPhp), true);
 
 const errorPanel = read('src/components/matrix/website/ErrorLogPanel.jsx');
-check('…and the panel says it reads the configured log, not a different one',
-  /this panel reads either way/.test(errorPanel) && /is configured to write its log to/.test(errorPanel), false);
+// TWO checks, not one `A && B === false`: that form passes whether the file says the
+// right thing or the wrong one, which is exactly what the mutation run proved — it
+// SURVIVED its own sabotage. A claim has to be able to fail on its own.
+check('…and the panel says it reads the configured log', /this panel reads either way/.test(errorPanel), true);
+check('…and no longer claims to be reading a different file from the one WordPress writes',
+  /is configured to write its log to/.test(errorPanel), false);
 
 console.log('\n9. every finding can be acted on')
 
