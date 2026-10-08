@@ -971,6 +971,7 @@ class Morpheus_Health {
 					'line'     => $e['line'],
 					'message'  => $e['message'],
 					'count'    => 0,
+					'note'     => isset( $e['note'] ) ? $e['note'] : '',
 					'first_at' => $e['at'],
 					'last_at'  => $e['at'],
 					'samples'  => array(),
@@ -986,6 +987,21 @@ class Morpheus_Health {
 			if ( count( $groups[ $key ]['samples'] ) < self::LOG_SAMPLES ) {
 				$groups[ $key ]['samples'][] = $e['raw'];
 			}
+		}
+
+		// THE COUNT IS THE DIAGNOSIS, and it only exists here.
+		//
+		// `parse_log_line()` can only say WHAT a line is; one database outage and forty of
+		// them are the same line. The difference — a host restarting MySQL at a quiet hour,
+		// or a fault that keeps happening — is in how many, and how far apart, and that is
+		// only known once the lines are grouped. Rob asked exactly this: *"if you cant see
+		// the number how do you make the classification"*. It cannot, so it does not: the
+		// sentence is finished here.
+		foreach ( $groups as $gkey => $g ) {
+			if ( '' === (string) $g['note'] ) {
+				continue;
+			}
+			$groups[ $gkey ]['note'] = $g['note'] . ' ' . self::downtime_scale( $g['count'], $g['first_at'], $g['last_at'] );
 		}
 
 		// Newest first: the log is append-only, so reading it backwards is what an
@@ -1016,6 +1032,56 @@ class Morpheus_Health {
 	 * Morpheus_Clean::served_is_the_file() is: a rule reachable only through a boot is a
 	 * rule nobody can prove.
 	 */
+	/**
+	 * How BAD is it — one, or a pattern? The half of the sentence the line cannot carry.
+	 *
+	 * A single connection failure is what a host restarting MySQL looks like from PHP, and
+	 * it is usually nothing. The same message forty times across an afternoon is a fault,
+	 * and the times are what a host needs. Neither reading is invented: both are stated as
+	 * what the SHAPE of the evidence looks like, with the times quoted, and the operator
+	 * decides.
+	 *
+	 * PUBLIC and pure, like downtime_reason(), so the harness can exercise each shape
+	 * without a boot.
+	 */
+	public static function downtime_scale( $count, $first_at, $last_at ) {
+		$count = (int) $count;
+		$first = self::log_stamp( $first_at );
+		$last  = self::log_stamp( $last_at );
+
+		if ( $count <= 1 || ! $first || ! $last ) {
+			return $count <= 1
+				? 'Seen once. One of these is usually the database server being restarted — often by your host, at a quiet hour — and it matters only if it repeats.'
+				: 'Seen ' . $count . ' times in the part of the log Morpheus read.';
+		}
+
+		$minutes = (int) round( abs( $last - $first ) / 60 );
+		$when    = gmdate( 'j M Y H:i', $last ) . ' UTC';
+
+		if ( $minutes <= 10 ) {
+			return 'Seen ' . $count . ' times within ' . max( 1, $minutes ) . ' minute' . ( 1 === $minutes ? '' : 's' )
+				. ', ending ' . $when . '. A burst that tight is what a database restart looks like from PHP.';
+		}
+
+		return 'Seen ' . $count . ' times between ' . gmdate( 'j M Y H:i', $first ) . ' and ' . $when
+			. ' — a spread that wide is not a restart, it is a fault that keeps happening. These times are what your host needs.';
+	}
+
+	/** A log timestamp (`[08-Oct-2026 13:07:57 UTC]`, unbracketed) as a Unix time, or 0. */
+	private static function log_stamp( $at ) {
+		$at = is_string( $at ) ? trim( $at ) : '';
+		if ( '' === $at ) {
+			return 0;
+		}
+		foreach ( array( 'd-M-Y H:i:s T', 'd-M-Y H:i:s', 'Y-m-d H:i:s' ) as $format ) {
+			$d = DateTime::createFromFormat( $format, $at );
+			if ( $d instanceof DateTime ) {
+				return (int) $d->getTimestamp();
+			}
+		}
+		return 0;
+	}
+
 	public static function downtime_reason( $line ) {
 		$shapes = array(
 			'mysqli_real_connect()'                     => 'PHP could not reach the database server. While this is happening WordPress answers every page with "Error establishing a database connection" — visitors saw an error, not a slow site.',

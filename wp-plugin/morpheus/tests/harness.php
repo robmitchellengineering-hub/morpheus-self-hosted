@@ -1219,6 +1219,13 @@ ok( false !== Morpheus_Health::downtime_reason( 'Allowed memory size of 26843545
 $parsed = Morpheus_Health::parse_log_line( $mysql );
 ok( ( $parsed['level'] ?? '' ) === 'fatal', 'log: …and the line is raised above the warnings', $parsed );
 ok( ! empty( $parsed['note'] ), 'log: …with a sentence the panel can show' );
+// THE COUNT IS THE DIAGNOSIS. One outage and forty are the same LINE; only the count and
+// the spread tell a host restart from a fault that keeps happening.
+ok( strpos( Morpheus_Health::downtime_scale( 1, '08-Oct-2026 13:07:57 UTC', '08-Oct-2026 13:07:57 UTC' ), 'Seen once' ) !== false, 'log: one outage reads as a single event' );
+ok( strpos( Morpheus_Health::downtime_scale( 3, '08-Oct-2026 13:07:57 UTC', '08-Oct-2026 13:09:02 UTC' ), 'within 1 minute' ) !== false, 'log: a tight burst reads as a restart' );
+$spread = Morpheus_Health::downtime_scale( 12, '08-Oct-2026 03:00:00 UTC', '08-Oct-2026 13:07:57 UTC' );
+ok( strpos( $spread, 'not a restart' ) !== false && strpos( $spread, '12 times' ) !== false, 'log: a wide spread reads as a fault, with the times', $spread );
+ok( strpos( Morpheus_Health::downtime_scale( 5, '', '' ), '5 times' ) !== false, 'log: an unreadable timestamp falls back to the count, not to a guess' );
 
 // A post type that is `public` but has no single view — exactly what a page builder
 // registers — must not be treated as content a search engine should hear about.

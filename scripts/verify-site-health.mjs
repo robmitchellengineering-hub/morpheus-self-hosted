@@ -338,6 +338,16 @@ check('…and the level is raised to it',
   /if \( false !== \$downtime \) \{\s*\$out\['level'\] = 'fatal';/.test(healthCode), true);
 // A PHP "Warning:" must not talk a known outage back down to a warning.
 check('…and a PHP `Warning:` cannot lower it again', /'fatal' === \$out\['level'\]/.test(healthCode), true);
+// ⚠️ AND THE COUNT, or the classification is only half a diagnosis: one database outage
+// and forty are the same LINE. Rob asked exactly this — *"if you cant see the number how do
+// you make the classification"* — and the answer is that the line cannot, so the sentence is
+// finished at GROUP time, where the count and the spread finally exist.
+check('…the sentence is finished where the count exists, not at the line',
+  /downtime_scale\( \$g\['count'\], \$g\['first_at'\], \$g\['last_at'\] \)/.test(healthCode), true);
+check('…and a single outage and a spread are told APART',
+  /'Seen once\./.test(healthCode) && /not a restart, it is a fault that keeps happening/.test(healthCode), true);
+check('…and an unparseable timestamp says the count, never a guess',
+  /Seen ' \. \$count \. ' times in the part of the log Morpheus read/.test(healthCode), true);
 check('…and the panel shows Morpheus\'s sentence, not only the log\'s words',
   /g\.note \?/.test(read('src/components/matrix/website/ErrorLogPanel.jsx')), true);
 

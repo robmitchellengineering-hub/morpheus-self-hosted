@@ -3097,6 +3097,25 @@ export const MUTATIONS = [
   {
     guard: 'verify-site-health.mjs',
     file: 'wp-plugin/morpheus/includes/class-health.php',
+    // ⚠️ ROB'S QUESTION AS A MUTATION: *"if you cant see the number how do you make the
+    // classification"*. The line cannot — so the sentence is finished at GROUP time, where
+    // the count exists. Drop that and one outage reads exactly like forty.
+    why: 'Stops the count reaching the sentence, so a single database blip reads like a recurring fault.',
+    find: "\t\t\t$groups[ $gkey ]['note'] = $g['note'] . ' ' . self::downtime_scale( $g['count'], $g['first_at'], $g['last_at'] );",
+    replace: "\t\t\t$groups[ $gkey ]['note'] = $g['note'];",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // And the reading itself: a spread across ten hours called a restart is the panel
+    // telling the owner not to bother, about the one thing worth a ticket.
+    why: 'Calls a spread-out fault a restart, telling the owner to ignore the thing worth reporting.',
+    find: "\t\t\t. ' — a spread that wide is not a restart, it is a fault that keeps happening. These times are what your host needs.';",
+    replace: "\t\t\t. ' — which looks like a restart.';",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
     // And the next line down: a PHP "Warning:" must not talk it back down.
     why: 'Lets the PHP severity keyword overwrite a known outage, putting it back among the warnings.',
     find: "\t\tif ( 'fatal' === $out['level'] ) {",
