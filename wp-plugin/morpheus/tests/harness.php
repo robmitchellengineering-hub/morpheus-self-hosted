@@ -1206,6 +1206,30 @@ file_put_contents( $wp_config, $config_before );
 ok( file_get_contents( $wp_config ) === $config_before, 'log: wp-config.php is byte-identical to how this boot found it' );
 if ( null === $log_was ) { @unlink( $log_default ); } else { file_put_contents( $log_default, $log_was ); }
 
+// ── the site was down is not a warning, and a builder template is not a page ──
+//
+// Both rules come from one real site's evidence, 2026-10-08: a database outage written as
+// "PHP Warning:" and sitting inside twenty routine ones, and fifteen builder artefacts
+// pinged to IndexNow as if they were pages.
+$mysql = '[08-Oct-2026 13:07:57 UTC] PHP Warning:  mysqli_real_connect(): (HY000/2002): No such file or directory in /var/www/wp-includes/class-wpdb.php on line 1990';
+ok( is_string( Morpheus_Health::downtime_reason( $mysql ) ), 'log: a database outage is recognised' );
+ok( false === Morpheus_Health::downtime_reason( '[01-Oct-2026 07:42:21 UTC] Automatic updates complete.' ), 'log: routine cron lines are not called downtime' );
+ok( false !== Morpheus_Health::downtime_reason( 'Allowed memory size of 268435456 bytes exhausted' ), 'log: a request killed for memory is downtime' );
+// The level, not just the table: a PHP "Warning:" must not put an outage back among the noise.
+$parsed = Morpheus_Health::parse_log_line( $mysql );
+ok( ( $parsed['level'] ?? '' ) === 'fatal', 'log: …and the line is raised above the warnings', $parsed );
+ok( ! empty( $parsed['note'] ), 'log: …with a sentence the panel can show' );
+
+// A post type that is `public` but has no single view — exactly what a page builder
+// registers — must not be treated as content a search engine should hear about.
+register_post_type( 'morpheus_harness_builder', array( 'public' => true, 'publicly_queryable' => false, 'rewrite' => false, 'label' => 'Builder' ) );
+$types = morpheus_public_post_types();
+ok( ! in_array( 'morpheus_harness_builder', $types, true ), 'traffic: a public type with no single view is not announced', $types );
+ok( in_array( 'post', $types, true ) && in_array( 'page', $types, true ), 'traffic: posts and pages still are' );
+ok( false === Morpheus_Traffic::announceable( 1, 'https://example.test/?elementor_library=default-kit' ), 'traffic: a permalink with no path is refused' );
+ok( false === Morpheus_Traffic::announceable( 1, 'https://example.test/' ), 'traffic: the bare home URL is refused' );
+ok( true === Morpheus_Traffic::announceable( 1, 'https://example.test/a-real-page/' ), 'traffic: a real page is announced' );
+
 // ── redirects, and the 404 log ──────────────────────────────────────────────
 //
 // A redirect list is the one content feature that can take a site DOWN: a rule

@@ -68,6 +68,13 @@ function Group({ g, openKey, setOpenKey, path }) {
           <span className="select-text min-w-0 flex-1 text-[11px] text-ink-max break-words">{g.message}</span>
           <span className="shrink-0 text-[10px] text-ink-max">×{g.count}</span>
         </div>
+        {/* The plugin's own sentence, when the line is one of the shapes that mean the
+            SITE WAS DOWN. Rendered apart from the log's words — this is Morpheus talking,
+            not the log — because "the database was unreachable" is the one thing an owner
+            must not have to interpret. */}
+        {g.note ? (
+          <div className="select-text text-[9px] text-red-400/90 leading-relaxed break-words">{g.note}</div>
+        ) : null}
         {(g.file || g.last_at) && (
           <div className="select-text text-[10px] text-ink-max break-all">
             {g.file ? <span className="font-mono">{g.file}{g.line ? `:${g.line}` : ''}</span> : null}

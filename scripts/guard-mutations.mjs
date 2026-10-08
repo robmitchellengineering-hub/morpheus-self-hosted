@@ -3030,6 +3030,79 @@ export const MUTATIONS = [
     replace: "self::KEY_CHECK_TTL",
   },
   {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/helpers.php',
+    // ⚠️ THE BUG ROB'S LEDGER EXPOSED. A page builder registers its templates as `public`,
+    // so a list built on `public => true` handed fifteen of them to IndexNow as pages.
+    why: 'Goes back to accepting any type with no single view, so builder templates are announced as pages.',
+    find: '\t\tif ( empty( $type->publicly_queryable ) ) {',
+    replace: '\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/helpers.php',
+    // A site that has asked to keep a type out of search should not be argued with.
+    why: 'Ignores the site\'s own exclude_from_search, so a type it keeps out of search is announced anyway.',
+    find: '\t\tif ( ! empty( $type->exclude_from_search ) ) {',
+    replace: '\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/helpers.php',
+    // No rewrite means get_permalink() returns `?post_type=slug` — the exact shape in the ledger.
+    why: 'Accepts a type whose permalink is a query string, which is what reached IndexNow as a "page".',
+    find: '\t\tif ( empty( $type->rewrite ) ) {',
+    replace: '\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // The VALUE check, which is what actually caught the shape.
+    why: 'Announces a permalink that is nothing but a query string, which is the tell that it is not a page.',
+    find: "\t\tif ( '' === trim( $path, '/' ) ) {",
+    replace: '\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // A shop page is `post_type=page`, so no post-type rule can ever exclude it.
+    why: 'Announces the store\'s utility pages, so the cart and the account page are offered to search engines.',
+    find: "\t\tif ( function_exists( 'wc_get_page_id' ) ) {\n\t\t\tforeach ( array( 'cart', 'checkout', 'myaccount', 'terms' ) as $key ) {",
+    replace: "\t\tif ( false ) {\n\t\t\tforeach ( array( 'cart', 'checkout', 'myaccount', 'terms' ) as $key ) {",
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // The seam, so anything else is not a guess.
+    why: 'Removes the filter, so another shop or plugin has no way to exclude its own pages.',
+    find: "\t\treturn (bool) apply_filters( 'morpheus_announce_url', true, (int) $post_id, (string) $url );",
+    replace: '\t\treturn (bool) true;',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // A half-fix: the backfill is how every one of those fifteen got in.
+    why: 'Leaves the backfill ungated, so the next run submits every builder template again.',
+    find: '\t\t\tif ( $url && self::announceable( $id, $url ) && ! isset( $done[ $url ] ) ) {',
+    replace: '\t\t\tif ( $url && ! isset( $done[ $url ] ) ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // ⚠️ A DATABASE OUTAGE FILED AS A WARNING, which is how it stayed invisible.
+    why: 'Stops raising a recognised outage above the warnings, so the site being down reads as routine noise.',
+    find: "\t\tif ( false !== $downtime ) {\n\t\t\t$out['level'] = 'fatal';",
+    replace: "\t\tif ( false ) {\n\t\t\t$out['level'] = 'fatal';",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // And the next line down: a PHP "Warning:" must not talk it back down.
+    why: 'Lets the PHP severity keyword overwrite a known outage, putting it back among the warnings.',
+    find: "\t\tif ( 'fatal' === $out['level'] ) {",
+    replace: '\t\tif ( false ) {',
+  },
+  {
     guard: 'verify-site-health.mjs',
     file: 'wp-plugin/morpheus/includes/class-health.php',
     // ⚠️ THE COUPLING THIS WHOLE CHANGE TURNS ON. The relocate fix points WP_DEBUG_LOG

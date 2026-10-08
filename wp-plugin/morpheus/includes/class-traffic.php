@@ -213,10 +213,49 @@ class Morpheus_Traffic {
 		}
 	}
 
+	/**
+	 * Is this URL one a search engine should be TOLD about?
+	 *
+	 * The type filter above answers it for post types; this answers it for the URL that
+	 * came out of one, because two things only show up in the value:
+	 *
+	 *   * a permalink with no path is `?post_type=slug`, which is what get_permalink()
+	 *     returns for a type with no rewrite. It resolves, so it looks like a page in a
+	 *     ledger — fifteen of them reached IndexNow from a real site before this existed;
+	 *   * the store's own utility pages. Nobody wants the cart in an index, and a shop
+	 *     page is `post_type=page`, so no post-type rule can ever exclude it.
+	 *
+	 * `morpheus_announce_url` is the seam for anything else — another shop, a membership
+	 * plugin, a one-off "thank you" page — because a list of slugs would be a guess and a
+	 * filter is not.
+	 */
+	public static function announceable( $post_id, $url ) {
+		$path = (string) wp_parse_url( (string) $url, PHP_URL_PATH );
+		if ( '' === trim( $path, '/' ) ) {
+			return false;
+		}
+		if ( function_exists( 'wc_get_page_id' ) ) {
+			foreach ( array( 'cart', 'checkout', 'myaccount', 'terms' ) as $key ) {
+				$page = (int) wc_get_page_id( $key );
+				if ( $page > 0 && $page === (int) $post_id ) {
+					return false;
+				}
+			}
+		}
+		/**
+		 * Filters whether Morpheus announces one URL to IndexNow.
+		 *
+		 * @param bool   $announce Whether to submit it.
+		 * @param int    $post_id  The post the URL came from.
+		 * @param string $url      The permalink.
+		 */
+		return (bool) apply_filters( 'morpheus_announce_url', true, (int) $post_id, (string) $url );
+	}
+
 	/** Cron: submit one post's permalink and record the outcome. */
 	public static function run_submission( $post_id ) {
 		$url = get_permalink( (int) $post_id );
-		if ( ! $url ) {
+		if ( ! $url || ! self::announceable( $post_id, $url ) ) {
 			return;
 		}
 		self::submit( array( $url ), 'publish' );
@@ -375,7 +414,7 @@ class Morpheus_Traffic {
 		$urls = array();
 		foreach ( $query->posts as $id ) {
 			$url = get_permalink( $id );
-			if ( $url && ! isset( $done[ $url ] ) ) {
+			if ( $url && self::announceable( $id, $url ) && ! isset( $done[ $url ] ) ) {
 				$urls[] = $url;
 			}
 		}

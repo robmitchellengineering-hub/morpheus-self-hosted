@@ -254,6 +254,28 @@ check('the key handler runs before WordPress\'s canonical redirect',
 check('a failed key check is cached briefly, not for an hour',
   /self::KEY_CHECK_MISS_TTL/.test(plugin) && /\$out\['served'\] \? self::KEY_CHECK_TTL : self::KEY_CHECK_MISS_TTL/.test(plugin), true);
 
+// ── a URL is announced only if a search engine should hear about it ─────────
+//
+// Rob's own ledger, 2026-10-08: 216 URLs submitted, and fifteen of them were builder
+// internals — `?elementor_library=default-kit`, `?cms_block=equipment-repair`,
+// `woodmart_layout/product-archive-layout/` — plus `/cart/`, `/my-account/` and
+// `/wishlist/`. `public => true` is not the question that matters, and no post-type rule
+// can ever exclude a shop's utility PAGES.
+const helpersIdx = read('wp-plugin/morpheus/includes/helpers.php')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+check('the post-type question is not `public`', /publicly_queryable/.test(helpersIdx), true);
+check('…a type the SITE keeps out of search is skipped', /! empty\( \$type->exclude_from_search \)/.test(helpersIdx), true);
+check('…and a type with no rewrite is skipped, because its permalink is a query string',
+  /empty\( \$type->rewrite \)/.test(helpersIdx), true);
+check('a URL that is nothing but a query string is refused',
+  /'' === trim\( \$path, '\/' \)/.test(plugin), true);
+check('…and the store\'s own utility pages are refused', /wc_get_page_id/.test(plugin), true);
+check('…with a FILTER, so another shop is not a guess', /morpheus_announce_url/.test(plugin), true);
+// TWO call sites — the publish path and the backfill. Missing one is a half-fix that the
+// ledger would show again on the very next backfill.
+check('…applied on BOTH paths: publishing and the backfill',
+  (plugin.match(/self::announceable\(/g) || []).length >= 2, true);
+
 // The version is bumped in all three places verify-pairing also checks.
 //
 // Asserted as "at or beyond 0.7.0", NOT equality. This capability SHIPPED in
