@@ -219,6 +219,41 @@ check('the publish hook is wired', has(plugin, "add_action( 'transition_post_sta
 check('the submission runs on cron, so publishing never waits on IndexNow', has(plugin, 'wp_schedule_single_event'), true);
 check('the feature is off until the operator turns it on', has(plugin, "'enabled' => ! empty( \$o['enabled'] )"), true);
 
+// The key URL depends on two things source-reading alone would miss, and both were
+// wrong on a live site (valiantmusic.com.au, 2026-10-08 — the panel correctly said
+// "NOT confirmed served" and the cause was ours, not the host's).
+//
+// Read through stripComments, like the checks above: this file's own prose quotes
+// `flush_rewrite_rules()` while explaining why it is needed, and a raw scan would
+// collect the explanation as if it were the code (H19's shape).
+const bootstrapCode = stripComments(bootstrap);
+//
+// 1) Rewrite rules are SERVED FROM AN OPTION. `add_rewrite_rule()` only fills
+//    memory; the option is rebuilt by a flush. The activation hook flushes, and
+//    WordPress does NOT run activation hooks when it UPDATES a plugin — so a rule
+//    added in a new version stayed inert on every site that updated, and the only
+//    cure was a manual Settings → Permalinks save. The proof it was the stale
+//    option and not the rule: core's own /wp-sitemap.xml answered 200 (the option
+//    is present) while a 32-hex .txt answered the theme's 404 with ~121 KB of HTML
+//    (the rule is not in it), where this handler's own refusal is a BARE 404.
+check('a version change flushes the rewrite rules, so a new rule is not inert',
+  /add_action\( 'wp_loaded'/.test(bootstrapCode)
+  && /get_option\( 'morpheus_rewrite_version' \) === MORPHEUS_VERSION/.test(bootstrapCode)
+  && /flush_rewrite_rules\(\)/.test(bootstrapCode), true);
+// 2) `redirect_canonical` is registered on template_redirect at priority 10 by
+//    core's default-filters, which load before any plugin — so at the default
+//    priority it answered a correct key URL with a 301 to `/<key>.txt/` first, and
+//    this handler only ran on the redirected request. The key was served, through
+//    a hop nothing asked for; priority 1 serves it directly, as class-redirects.php
+//    already does for the same reason.
+check('the key handler runs before WordPress\'s canonical redirect',
+  /add_action\( 'template_redirect', array\( __CLASS__, 'maybe_serve_key' \), 1 \)/.test(plugin), true);
+// 3) A FAILED key check must not be cached like a good one: the operator fixes the
+//    rewrite, the panel re-asks, and it has to notice — not keep telling them it is
+//    still broken for up to an hour with nothing to say the answer was old.
+check('a failed key check is cached briefly, not for an hour',
+  /self::KEY_CHECK_MISS_TTL/.test(plugin) && /\$out\['served'\] \? self::KEY_CHECK_TTL : self::KEY_CHECK_MISS_TTL/.test(plugin), true);
+
 // The version is bumped in all three places verify-pairing also checks.
 //
 // Asserted as "at or beyond 0.7.0", NOT equality. This capability SHIPPED in
