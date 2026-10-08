@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.3
+Stable tag: 0.9.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,25 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.4 =
+* New: **Morpheus can move your error log out of the web root, in one press.** WordPress's standard debug block
+  is `define( 'WP_DEBUG_LOG', true )`, and true means `wp-content/debug.log` — **inside** the site, where a web
+  server hands it out as plain text to anyone who asks for it. Most hosts do. Until now Morpheus could only
+  rename a log that was *already* being served, and WordPress recreates the file at the old path on the next
+  warning, so that was a chore you repeated. HEALTH now reports a log that is written inside the web root
+  **before** it is exposed, and offers to point `WP_DEBUG_LOG` at a file **beside** the site and move the
+  existing log there. Nothing is deleted and debugging stays on: you keep the log, the web stops being able to
+  reach it. Which is the point — a log is for you, not for whoever asks.
+* It refuses, changing nothing, when it cannot **prove** the new location is outside the web root, when
+  wp-config.php has no single `WP_DEBUG_LOG` line it can safely rewrite, or when a file already sits at the
+  destination. The original wp-config.php is backed up first and restored automatically if the change does not
+  read back; if the log will not move, the config goes back too.
+* Fixed: the ERROR LOG panel now **follows `WP_DEBUG_LOG`**. It used to open `wp-content/debug.log`
+  unconditionally and only *note* that WordPress was logging somewhere else, so a site that had already moved
+  its log showed an empty panel. Moving a log without this would have blinded the reader it was moved for.
+* The public-log check follows `WP_DEBUG_LOG` too, so a log pointed at some other path inside the site — which
+  the check used to be blind to — is now reported like any other.
 
 = 0.9.3 =
 * Fixed: **a health finding that was Morpheus's, not your host's.** WordPress's REST API test attaches *your*

@@ -258,3 +258,62 @@ function morpheus_public_post_types() {
 
 	return array_merge( $out, $rest );
 }
+
+/**
+ * Where WordPress actually writes its error log.
+ *
+ * The standard debug block is `define( 'WP_DEBUG_LOG', true )`, and TRUE means
+ * `wp-content/debug.log` — INSIDE the web root, on every WordPress site, reachable
+ * by anyone who asks unless the host happens to block it. It may also be a path,
+ * and a site whose previous developer pointed it somewhere sensible logs there.
+ *
+ * WHY THIS FUNCTION EXISTS AT ALL. The reader used to open
+ * `wp-content/debug.log` unconditionally and merely NOTE the configured path in a
+ * footnote ("Morpheus reads the file CLEAN MY SITE judges served or not"). That was
+ * survivable while nothing moved the log. It is not survivable now: the
+ * "move the error log outside the web root" fix repoints `WP_DEBUG_LOG`, and
+ * without a single shared resolver that fix would blind the reader it was written
+ * for — a site would stop leaking its log and stop being able to read it, which is
+ * a worse trade than the leak.
+ *
+ * WordPress's own rule, from `wp_debug_mode()`: a string is used as the path,
+ * `true` means the content directory. Anything else (false, unset) means no file.
+ */
+function morpheus_debug_log_file() {
+	$configured = defined( 'WP_DEBUG_LOG' ) ? WP_DEBUG_LOG : false;
+	if ( is_string( $configured ) && '' !== $configured ) {
+		return $configured;
+	}
+	return trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+}
+
+/**
+ * The URL a file is reachable at, or null when nothing on the web can reach it.
+ *
+ * This is the question the whole relocate fix turns on: a log is safe to leave
+ * logging exactly when no URL serves it. It is a CONTAINMENT test rather than a
+ * guess from the filename — the file is reachable only if it sits under `ABSPATH`,
+ * which is the only tree the site's front controller serves from.
+ *
+ * The default path is answered by `content_url()` rather than by the containment
+ * test, deliberately: `WP_CONTENT_DIR` can be moved or symlinked, and the leak
+ * check that has always asked about `wp-content/debug.log` must keep asking exactly
+ * the same question it asked before.
+ */
+function morpheus_debug_log_url( $file ) {
+	$file = wp_normalize_path( (string) $file );
+
+	$default = trailingslashit( wp_normalize_path( WP_CONTENT_DIR ) ) . 'debug.log';
+	if ( $file === $default ) {
+		return content_url( 'debug.log' );
+	}
+
+	$root = trailingslashit( wp_normalize_path( ABSPATH ) );
+	if ( '' !== $file && 0 === strpos( $file, $root ) ) {
+		return site_url( '/' . ltrim( substr( $file, strlen( $root ) ), '/' ) );
+	}
+
+	// Outside the web root: no URL reaches it, which is the point of putting it there.
+	return null;
+}
+

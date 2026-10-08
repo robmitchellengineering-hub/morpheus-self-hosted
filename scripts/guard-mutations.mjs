@@ -3029,6 +3029,108 @@ export const MUTATIONS = [
     find: "$out['served'] ? self::KEY_CHECK_TTL : self::KEY_CHECK_MISS_TTL",
     replace: "self::KEY_CHECK_TTL",
   },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // ⚠️ THE COUPLING THIS WHOLE CHANGE TURNS ON. The relocate fix points WP_DEBUG_LOG
+    // at a file outside the web root; this is the line that makes the reader open THAT
+    // file. Revert it to the hard-coded default and the plugin stops leaking the log
+    // and stops being able to read it — a fix that blinds the person it was made for.
+    why: 'Makes the error-log reader open the default path again, so a site whose log was moved out of the web root shows an empty panel while it is logging.',
+    find: "\t\t$file  = morpheus_debug_log_file();",
+    replace: "\t\t$file  = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-clean.php',
+    // The public-log check has to ask about the file WordPress is WRITING. Asked about
+    // the default path instead, a log pointed at any other path inside the root is
+    // invisible to it — and a log legitimately moved outside the root gets probed at a
+    // URL that no longer means anything.
+    why: 'Points the public-log check back at the default URL, so a log written anywhere else is never judged.',
+    find: "\t\t$url  = morpheus_debug_log_url( $file );",
+    replace: "\t\t$url  = content_url( 'debug.log' );",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/helpers.php',
+    // Reachability is a CONTAINMENT test. Make it a "the path is non-empty" test and
+    // every file is reachable, including one outside the web root — so the fix cannot
+    // recognize its own work and reports the same site as broken forever.
+    why: 'Drops the containment test, so a log outside the web root is treated as reachable and the fix can never see that it worked.',
+    find: "\tif ( '' !== $file && 0 === strpos( $file, $root ) ) {",
+    replace: "\tif ( '' !== $file ) {",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // ⚠️ THE REFUSAL THAT KEEPS THIS FROM BEING THEATRE. Being outside WordPress's own
+    // tree is not being outside the web root — a site at public_html/blog/ has a served
+    // parent. Stop consulting the document root and Morpheus will happily move a log
+    // from one readable place to another and call it fixed.
+    why: 'Treats an empty document root as a real one, so the fix\'s answer depends on which PHP the host runs.',
+    find: "\t\t$docroot     = ( '' !== $docroot_raw ) ? realpath( $docroot_raw ) : false;",
+    replace: "\t\t$docroot     = realpath( $docroot_raw );",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // ⚠️ THE REFUSAL THAT KEEPS THIS FROM BEING THEATRE. Being outside WordPress's own
+    // tree is not being outside the web root — a site at public_html/blog/ has a served
+    // parent. Disable the containment test and Morpheus will happily move a log from one
+    // readable place to another and call it fixed.
+    why: 'Disables the containment test, so a log is moved to a directory that is still inside the web root.',
+    find: "\t\tif ( $real === $docroot || 0 === strpos( $real . '/', $docroot . '/' ) ) {",
+    replace: "\t\tif ( false ) {",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // Nothing is overwritten. The destination is a file Morpheus chose the NAME of, but
+    // an operator's own morpheus-debug.log sitting there is theirs, not ours to replace.
+    why: 'Removes the "a file is already there" refusal, so the fix overwrites whatever is at the destination.',
+    find: "\t\tif ( file_exists( $dest ) ) {\n\t\t\treturn array( 'ok' => false, 'id' => $id, 'code' => 'TARGET_EXISTS', 'error' => 'There is already a file at ' . $dest . ', and Morpheus will not overwrite it. Move or rename that file, then check again. Nothing was changed.' );\n\t\t}\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // PHP takes the FIRST definition and refuses the second, so an added line would be
+    // dead code that reads like a fix. Two lines means Morpheus cannot know which one
+    // WordPress uses — so it must refuse, not pick.
+    why: 'Stops refusing an ambiguous WP_DEBUG_LOG, so Morpheus rewrites one of two definitions and changes whichever line it happened to match.',
+    find: "\t\tif ( $count > 1 ) {",
+    replace: "\t\tif ( false ) {",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // The two halves are one change. If the log will not move, a config pointing at a
+    // file that is not there is worse than either half alone, so the config goes back.
+    why: 'Leaves wp-config.php pointing at a log that was never moved, so WordPress logs to a path that does not exist.',
+    find: "\t\tif ( ! $moved ) {\n\t\t\tself::restore_file_backup( $backup, $config );\n\t\t\treturn array( 'ok' => true, 'id' => $id, 'did' => 'attempted', 'verified' => false, 'restored' => true, 'error' => 'The log file could not be moved to ' . $dest . ', so wp-config.php was restored from the backup. Nothing was changed.' );\n\t\t}\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // The finding's id is the contract with the registry. Rename it and the scan emits a
+    // finding with no action — the description-with-no-button state the registry exists
+    // to prevent — while every other check stays green.
+    why: 'Renames the finding, so the scan reports a log in the web root with no action attached to it.',
+    find: "\t\t\t\t'id'          => 'morpheus_debug_log_in_web_root',",
+    replace: "\t\t\t\t'id'          => 'morpheus_debug_log_public_path',",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // The panel used to say, in a footnote, that it was reading a DIFFERENT file from the
+    // one WordPress was configured to write. That was honest then; it is false now, and
+    // it is the sentence that would make an operator think their moved log is unreadable.
+    why: 'Puts back the "this is not the file WordPress writes" footnote, so a moved log reads as unreadable.',
+    find: 'outside the site, and is what this panel reads either way.',
+    replace: 'and this is {log.path}. Morpheus reads the file CLEAN MY SITE judges served or not.',
+  },
 ];
 
 /**

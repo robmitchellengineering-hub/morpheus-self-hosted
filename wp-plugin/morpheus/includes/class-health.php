@@ -365,6 +365,28 @@ class Morpheus_Health {
 			'source'      => 'morpheus',
 		);
 
+		// 3b. And where the log is WRITTEN matters as much as whether it is printed.
+		//     `WP_DEBUG_LOG` defaults to `true`, which means wp-content/debug.log —
+		//     inside the web root, on every WordPress site that was ever debugged by
+		//     somebody who then left. Most hosts serve it as plain text; the site
+		//     this was built against blocks it with a 403, which is a host setting
+		//     away from not doing that. The leak check elsewhere in this plugin only
+		//     fires once the URL is ALREADY serving the file; this is the check that
+		//     can act before it is, and it clears itself once the log lives outside
+		//     the root, because then no URL reaches it.
+		$log_file = morpheus_debug_log_file();
+		$log_url  = morpheus_debug_log_url( $log_file );
+		$logging  = ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG );
+		if ( $logging && null !== $log_url ) {
+			$checks[] = array(
+				'id'          => 'morpheus_debug_log_in_web_root',
+				'label'       => 'The error log is not inside the web root',
+				'status'      => 'recommended',
+				'description' => 'Debug logging is on and WordPress writes it to ' . self::display_path( $log_file ) . ', which is inside the site. Nothing executes a .log, so a web server hands it out as plain text to anyone who asks for it — full server paths, plugin and theme versions, database error text and sometimes credentials. Whether your host is serving it today is a separate question (Morpheus checks that too); this is the setting that decides whether it can. Morpheus can point WP_DEBUG_LOG at a file outside the web root and move the log that is there now, so you keep the logging and lose the exposure.',
+				'source'      => 'morpheus',
+			);
+		}
+
 		// 4. A loopback is what every one of WordPress's async tests depends on,
 		//    and what a scheduled update depends on being able to survive.
 		$loop = self::loopback_check();
@@ -779,6 +801,20 @@ class Morpheus_Health {
 	const LOG_SAMPLES = 3;
 
 	/**
+	 * A path for the panel: relative when it is inside the site, absolute when it is
+	 * not. The second case is the whole point of the relocate fix — an operator
+	 * cannot find a file they are only told is "outside the web root".
+	 */
+	private static function display_path( $file ) {
+		$file = wp_normalize_path( (string) $file );
+		$root = trailingslashit( wp_normalize_path( ABSPATH ) );
+		if ( '' !== $file && 0 === strpos( $file, $root ) ) {
+			return substr( $file, strlen( $root ) );
+		}
+		return $file;
+	}
+
+	/**
 	 * The PHP error log, parsed and grouped. THE OTHER HALF OF A CHECK THAT ONLY
 	 * LOOKED.
 	 *
@@ -819,11 +855,16 @@ class Morpheus_Health {
 	public static function log_tail( $args = array() ) {
 		$want  = isset( $args['lines'] ) ? (int) $args['lines'] : self::LOG_TAIL_LINES;
 		$want  = max( 1, min( self::LOG_TAIL_LINES, $want ) );
-		$file  = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+		// THE file WordPress is writing — see morpheus_debug_log_file(). This used
+		// to be the literal default path, so a site that logs elsewhere showed an
+		// empty panel with a footnote saying so. That was survivable while nothing
+		// moved the log; it is not survivable now that Morpheus offers to move it
+		// out of the web root, because the fix would blind the reader.
+		$file  = morpheus_debug_log_file();
 
 		$out = array(
 			'ok'            => true,
-			'path'          => 'wp-content/debug.log',
+			'path'          => self::display_path( $file ),
 			'exists'        => false,
 			'readable'      => false,
 			'bytes'         => 0,
@@ -843,9 +884,13 @@ class Morpheus_Health {
 			'configured'    => null,
 		);
 
-		$configured = defined( 'WP_DEBUG_LOG' ) ? WP_DEBUG_LOG : false;
-		if ( is_string( $configured ) && '' !== $configured && $configured !== $file ) {
-			$out['configured'] = $configured;
+		// Which file this is, for the panel: relative when it is inside the site,
+		// ABSOLUTE when it is not — because a path outside the web root is the one
+		// thing an operator has to be able to find, and "wp-content/debug.log" would
+		// be a lie about what was read.
+		$default = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+		if ( $file !== $default ) {
+			$out['configured'] = $file;
 		}
 
 		if ( ! file_exists( $file ) ) {

@@ -256,6 +256,81 @@ const fixesPhp = read('wp-plugin/morpheus/includes/class-fixes.php')
   .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 check('…and nothing still blames a security plugin or the host for it', /Something is intercepting/.test(fixesPhp), false);
 
+// ── the error log's path is ONE fact, and three places have to agree on it ──
+//
+// The relocate fix repoints WP_DEBUG_LOG at a file outside the web root. If the
+// reader kept opening the default path it would go blind on exactly the sites the
+// fix helped — a log that is no longer leaked and no longer readable by the person
+// who owns it. So the path is resolved in ONE place and every reader uses it, and
+// that is a claim about behaviour rather than a style preference.
+//
+// Comments are stripped for all three: this whole change is heavily commented with
+// the very function names being asserted, and a raw scan would collect the
+// explanation as if it were the code (H19's shape, twice in this file already).
+const strip = (p) => read(p).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const pluginCode = strip('wp-plugin/morpheus/includes/class-health.php');
+const cleanCode = strip('wp-plugin/morpheus/includes/class-clean.php');
+const helpersCode = strip('wp-plugin/morpheus/includes/helpers.php');
+
+check('the log path is resolved in one place', /function morpheus_debug_log_file\(\)/.test(helpersCode), true);
+// The URL is a CONTAINMENT test: reachable only if the file sits under ABSPATH.
+// A name-based rule ("anything called debug.log is a leak") would be false on every
+// site that has already moved its log out, which is precisely the state this fix
+// creates — it has to recognize its own work.
+check('…and the URL of that path is a containment test, not a name check',
+  /function morpheus_debug_log_url\(/.test(helpersCode) && /0 === strpos\( \$file, \$root \) /.test(helpersCode), true);
+check('the error-log reader opens the file WordPress is writing',
+  /\$file\s*=\s*morpheus_debug_log_file\(\);/.test(pluginCode), true);
+check('…and the public-log check follows it too',
+  /\$file = morpheus_debug_log_file\(\);/.test(cleanCode) && /\$url  = morpheus_debug_log_url\( \$file \);/.test(cleanCode), true);
+// A log outside the web root has no URL, so there is nothing to fetch and nothing to
+// guess about. Without this the check would return null ("cannot judge") and report
+// an unknown on every site the fix had just cleaned up.
+check('…and a log no URL can reach is judged safe, not unknown',
+  /if \( null === \$url \) \{/.test(cleanCode), true);
+
+check('a log written inside the web root is reported', /'morpheus_debug_log_in_web_root'/.test(pluginCode), true);
+check('…only when logging is on AND the file is reachable by URL',
+  /\$logging  = \( defined\( 'WP_DEBUG_LOG' \) && WP_DEBUG_LOG \);/.test(pluginCode) && /\$logging && null !== \$log_url/.test(pluginCode), true);
+
+check('the fix is registered as automatic, with its own mechanism',
+  /'morpheus_debug_log_in_web_root' => array\(\s*'kind'\s*=>\s*'auto'[\s\S]{0,1500}?'fix'\s*=>\s*'relocate_debug_log'/.test(fixesPhp), true);
+// Prove the destination, or refuse. Being outside WordPress's own tree is not the
+// same as being outside the web root — a site can live at public_html/blog/, where
+// the WordPress root's parent is still served.
+// Asserted on the CONDITIONS, not on the error codes: `TARGET_IN_WEB_ROOT` survives in
+// the message after its branch is disabled, so a string check would prove nothing.
+check('…and it will not move a log it cannot PROVE is out of reach',
+  /DOCUMENT_ROOT/.test(fixesPhp)
+  && /false === \$docroot \|\| false === \$real/.test(fixesPhp)
+  && /0 === strpos\( \$real \. '\/', \$docroot \. '\/' \)/.test(fixesPhp), true);
+// Present but EMPTY is unknown, not `/`. The Playground sets exactly that, and
+// `realpath( '' )` has returned the working directory in the wild — so the guard's
+// answer would depend on which PHP the host runs.
+check('…and an empty document root counts as unknown, not as the filesystem root',
+  /'' !== \$docroot_raw/.test(fixesPhp), true);
+check('…and it will not overwrite a file that is already there',
+  /TARGET_EXISTS/.test(fixesPhp) && /will not overwrite it/.test(fixesPhp), true);
+// WP_DEBUG_LOG already exists on every site that was ever debugged, and PHP will not
+// define a constant twice — so this CHANGES the line, and refuses both when it is
+// missing and when it is ambiguous, rather than adding a second one that never runs.
+// Asserted on the CONDITIONS, not on the error strings: the codes appear in the
+// messages either way, so a string check would survive disabling the branch.
+check('…and it changes the existing define rather than adding a dead second one',
+  /function wp_config_set_define\(/.test(fixesPhp)
+  && /if \( 0 === \$count \) \{/.test(fixesPhp)
+  && /if \( \$count > 1 \) \{/.test(fixesPhp), true);
+check('…and the config goes back if the log will not move',
+  /The log file could not be moved to/.test(fixesPhp) && /restore_file_backup\( \$backup, \$config \)/.test(fixesPhp), true);
+
+const errorPanel = read('src/components/matrix/website/ErrorLogPanel.jsx');
+// TWO checks, not one `A && B === false`: that form passes whether the file says the
+// right thing or the wrong one, which is exactly what the mutation run proved — it
+// SURVIVED its own sabotage. A claim has to be able to fail on its own.
+check('…and the panel says it reads the configured log', /this panel reads either way/.test(errorPanel), true);
+check('…and no longer claims to be reading a different file from the one WordPress writes',
+  /is configured to write its log to/.test(errorPanel), false);
+
 console.log('\n9. every finding can be acted on')
 
 // The pure mapper is the ONLY path from the plugin's registry to a button, so if
