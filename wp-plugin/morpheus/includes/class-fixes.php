@@ -878,15 +878,25 @@ class Morpheus_Fixes {
 	 */
 	private static function debug_log_target() {
 		$parent = dirname( rtrim( wp_normalize_path( ABSPATH ), '/' ) );
-		if ( '' === $parent || '/' === $parent || ! is_dir( $parent ) || ! is_writable( $parent ) ) {
+		// Only "is there somewhere to write" is decided here. The filesystem root is
+		// NOT refused on principle: a WordPress installed at `/` (containers, some
+		// one-click images) still deserves a log outside its own tree, and the
+		// containment test below is the real gate — `/` fails it when it is the
+		// document root, which is the only case where writing there would be useless.
+		if ( ! is_dir( $parent ) || ! is_writable( $parent ) ) {
 			return array(
 				'code'  => 'NO_TARGET',
 				'error' => 'Morpheus could not find a writable directory beside ' . ABSPATH . ' to put the log in, so nothing was changed — the log is still where it was.',
 			);
 		}
 
-		$docroot = isset( $_SERVER['DOCUMENT_ROOT'] ) ? realpath( (string) $_SERVER['DOCUMENT_ROOT'] ) : false;
-		$real    = realpath( $parent );
+		// Present-but-empty counts as unknown, not as `/`: the WordPress Playground
+		// sets DOCUMENT_ROOT to the empty string, and `realpath( '' )` is documented
+		// to return false but has returned the working directory in the wild. A guard
+		// whose answer depends on which PHP a host runs is not a guard.
+		$docroot_raw = isset( $_SERVER['DOCUMENT_ROOT'] ) ? (string) $_SERVER['DOCUMENT_ROOT'] : '';
+		$docroot     = ( '' !== $docroot_raw ) ? realpath( $docroot_raw ) : false;
+		$real        = realpath( $parent );
 		if ( false === $docroot || false === $real ) {
 			return array(
 				'code'  => 'UNPROVEN_TARGET',
@@ -903,7 +913,7 @@ class Morpheus_Fixes {
 			);
 		}
 
-		return array( 'file' => $real . '/morpheus-debug.log' );
+		return array( 'file' => rtrim( $real, '/' ) . '/morpheus-debug.log' );
 	}
 
 	/**

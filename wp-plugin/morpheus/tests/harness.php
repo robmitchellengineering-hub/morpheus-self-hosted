@@ -1154,6 +1154,21 @@ file_put_contents( $wp_config, $fixture );
 
 $dest = rtrim( dirname( rtrim( ABSPATH, '/' ) ), '/' ) . '/morpheus-debug.log';
 
+// The document root is the whole proof, and the Playground does not populate it (it
+// sets an EMPTY STRING, where every real SAPI sets a path) — so the harness supplies
+// it, and asserts BOTH halves. A guard that only ever runs with its evidence present
+// is a guard nobody has seen bite.
+$docroot_was = $_SERVER['DOCUMENT_ROOT'] ?? null;
+
+unset( $_SERVER['DOCUMENT_ROOT'] );
+file_put_contents( $wp_config, $fixture );
+$unproven = Morpheus_Fixes::apply( 'morpheus_debug_log_in_web_root' );
+ok( ( $unproven['code'] ?? '' ) === 'UNPROVEN_TARGET', 'log: with no document root to check against, the fix refuses', $unproven );
+ok( file_get_contents( $wp_config ) === $fixture, 'log: …and wp-config.php was not touched' );
+ok( file_exists( $log_default ), 'log: …and the log was left exactly where it was' );
+
+$_SERVER['DOCUMENT_ROOT'] = rtrim( ABSPATH, '/' );
+
 // A file already at the destination stops it BEFORE wp-config.php is touched. This is
 // the check that keeps the fix from overwriting something that is not ours, and it is
 // asserted on wp-config.php itself, not only on the answer.
@@ -1169,14 +1184,24 @@ if ( is_writable( dirname( $dest ) ) ) {
 	ok( strpos( (string) file_get_contents( $wp_config ), "'" . $dest . "'" ) !== false, 'log: wp-config.php now points at the new path' );
 	ok( ! file_exists( $log_default ) && file_exists( $dest ), 'log: the log moved rather than being copied or deleted' );
 	ok( file_get_contents( $dest ) === "PHP Warning: morpheus harness fixture\n", 'log: every line of the log survived the move' );
-	// And it recognizes its own work: asked again, it says so instead of moving again.
+	// And it recognizes its own work: the new path has no URL, which is the property
+	// that clears the finding, so asking again is a no-op rather than a second move.
 	ok( null === morpheus_debug_log_url( $dest ), 'log: nothing on the web can reach the new path' );
+	// A second run in THIS request cannot move it again: PHP will not redefine the
+	// constant, so the fix still sees the old path and finds a file at the destination
+	// — and the destination guard refuses, which is the correct answer here. A real
+	// second request reads the new wp-config and reports "already outside the web
+	// root" instead. Asserted because it is also the case that would silently append
+	// or overwrite if that guard were missing.
+	$again = Morpheus_Fixes::apply( 'morpheus_debug_log_in_web_root' );
+	ok( ( $again['code'] ?? '' ) === 'TARGET_EXISTS' && file_exists( $dest ), 'log: a second run in the same request cannot move it twice', $again );
 
 	// Put both halves back, so this boot leaves the tree as it found it.
 	if ( file_exists( $dest ) ) { @rename( $dest, $log_default ); }
 } else {
 	ok( false, 'log: the harness could not write beside ABSPATH, so the move was NOT proven', dirname( $dest ) );
 }
+if ( null === $docroot_was ) { unset( $_SERVER['DOCUMENT_ROOT'] ); } else { $_SERVER['DOCUMENT_ROOT'] = $docroot_was; }
 file_put_contents( $wp_config, $config_before );
 ok( file_get_contents( $wp_config ) === $config_before, 'log: wp-config.php is byte-identical to how this boot found it' );
 if ( null === $log_was ) { @unlink( $log_default ); } else { file_put_contents( $log_default, $log_was ); }
