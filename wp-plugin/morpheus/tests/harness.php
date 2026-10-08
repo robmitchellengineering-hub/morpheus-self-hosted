@@ -1236,7 +1236,60 @@ ok( in_array( 'post', $types, true ) && in_array( 'page', $types, true ), 'traff
 ok( false === Morpheus_Traffic::announceable( 1, 'https://example.test/?elementor_library=default-kit' ), 'traffic: a permalink with no path is refused' );
 ok( false === Morpheus_Traffic::announceable( 1, 'https://example.test/' ), 'traffic: the bare home URL is refused' );
 ok( true === Morpheus_Traffic::announceable( 1, 'https://example.test/a-real-page/' ), 'traffic: a real page is announced' );
+// ── AI FIX: the vocabulary, and the gate in front of it ─────────────────────
+//
+// The model chooses; the PLUGIN decides. Every refusal below is the reason an AI-authored
+// change cannot reach a live site without being something this build can perform, verify
+// and undo — and a refusal is asserted as hard as a success, because a gate nobody has
+// seen close is not a gate.
+$menu     = Morpheus_Fixes::ai_operations();
+$registry = Morpheus_Fixes::registry();
+$ai_ids   = array();
+foreach ( $registry as $rid => $entry ) {
+	if ( ! empty( $entry['ai'] ) ) { $ai_ids[] = $rid; }
+}
+ok( $ai_ids !== array(), 'ai: at least one finding offers a mechanism (parser sanity)', $ai_ids );
+$no_op = array();
+foreach ( $ai_ids as $rid ) {
+	if ( empty( $menu[ $rid ]['op'] ) || empty( $menu[ $rid ]['args'] ) ) { $no_op[] = $rid; }
+}
+ok( $no_op === array(), 'ai: every finding offered the button has an operation AND its arguments', $no_op );
+ok( ( $registry['php_default_timezone']['kind'] ?? '' ) === 'guided', 'ai: an AI finding stays guided, so no bulk run can ever include it' );
 
+$config_was = file_get_contents( $wp_config );
+$wrong_op = Morpheus_Fixes::apply( 'php_default_timezone', array( 'op' => 'deactivate_plugin', 'args' => array( 'plugin' => 'akismet/akismet.php' ) ) );
+ok( ( $wrong_op['code'] ?? '' ) === 'AI_OP_NOT_ALLOWED', 'ai: an operation this finding does not allow is refused', $wrong_op );
+ok( file_get_contents( $wp_config ) === $config_was, 'ai: …and wp-config.php was not touched' );
+
+$bad_tz = Morpheus_Fixes::apply( 'php_default_timezone', array( 'op' => 'wp_config_timezone', 'args' => array( 'timezone' => 'Mars/Olympus_Mons' ) ) );
+ok( ( $bad_tz['code'] ?? '' ) === 'BAD_TIMEZONE', 'ai: a timezone PHP does not know is refused', $bad_tz );
+
+$no_ai = Morpheus_Fixes::apply( 'php_version', array( 'op' => 'wp_config_timezone', 'args' => array( 'timezone' => 'UTC' ) ) );
+ok( ( $no_ai['code'] ?? '' ) === 'NO_AI_ACTION', 'ai: a finding with no mechanism is refused, not guessed at', $no_ai );
+
+// The pure rule, exercised directly — the refusals are the part that decides whether a
+// live config gets edited at all.
+$ins = Morpheus_Fixes::wp_config_set_timezone( "<?php\n/* That's all, stop editing! */\n", 'Australia/Sydney' );
+ok( strpos( (string) ( $ins['body'] ?? '' ), "date_default_timezone_set( 'Australia/Sydney' );" ) !== false, 'ai: the line is written' );
+ok( strpos( (string) ( $ins['body'] ?? '' ), 'date_default_timezone_set' ) < strpos( (string) ( $ins['body'] ?? '' ), "/* That's all" ), 'ai: …ABOVE the stop-editing marker, not below it' );
+$rep = Morpheus_Fixes::wp_config_set_timezone( "date_default_timezone_set( 'UTC' );\n", 'Australia/Sydney' );
+ok( strpos( (string) ( $rep['body'] ?? '' ), "date_default_timezone_set( 'Australia/Sydney' );" ) !== false
+	&& strpos( (string) ( $rep['body'] ?? '' ), "'UTC'" ) === false, 'ai: an existing line is replaced, not duplicated' );
+$two = Morpheus_Fixes::wp_config_set_timezone( "date_default_timezone_set( 'UTC' );\ndate_default_timezone_set( 'UTC' );\n", 'Australia/Sydney' );
+ok( ( $two['code'] ?? '' ) === 'AMBIGUOUS_CALL', 'ai: two timezone lines are refused, not guessed between' );
+
+// End to end, against a real wp-config.php — then put back, so this boot leaves it as found.
+$tz_was = get_option( 'timezone_string' );
+update_option( 'timezone_string', 'Australia/Sydney' );
+file_put_contents( $wp_config, $config_was );
+$done = Morpheus_Fixes::apply( 'php_default_timezone', array( 'op' => 'wp_config_timezone', 'args' => array( 'timezone' => 'Australia/Sydney' ) ) );
+ok( ! empty( $done['ok'] ) && ! empty( $done['verified'] ), 'ai: the timezone was written and verified', $done );
+ok( strpos( (string) file_get_contents( $wp_config ), "date_default_timezone_set( 'Australia/Sydney' );" ) !== false, 'ai: wp-config.php carries the line' );
+$mismatch = Morpheus_Fixes::apply( 'php_default_timezone', array( 'op' => 'wp_config_timezone', 'args' => array( 'timezone' => 'Europe/Paris' ) ) );
+ok( ( $mismatch['code'] ?? '' ) === 'TZ_MISMATCH', 'ai: a timezone the SITE disagrees with is refused', $mismatch );
+file_put_contents( $wp_config, $config_was );
+if ( false === $tz_was || '' === $tz_was ) { update_option( 'timezone_string', '' ); } else { update_option( 'timezone_string', $tz_was ); }
+ok( file_get_contents( $wp_config ) === $config_was, 'ai: wp-config.php is byte-identical to how this boot found it' );
 // ── redirects, and the 404 log ──────────────────────────────────────────────
 //
 // A redirect list is the one content feature that can take a site DOWN: a rule

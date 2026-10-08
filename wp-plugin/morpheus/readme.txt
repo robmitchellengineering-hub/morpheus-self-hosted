@@ -92,6 +92,25 @@ answering a health check.
   words what happened: *"PHP could not reach the database server. While this is happening WordPress answers every
   page with 'Error establishing a database connection' — visitors saw an error, not a slow site."*
 
+= 0.9.6 =
+* New: **AI FIX.** A finding that used to end in instructions can now end in a button. Press it and Morpheus
+  works out what it would do, shows you the exact change in plain words, and **changes nothing until you press
+  apply**. It is the answer to the findings that had no automatic fix: instead of a list of steps to hand to
+  someone, you get a proposal you can read and accept.
+* **The model does not get to invent anything.** The operations it may choose from live in the plugin — one per
+  finding, each something this build can perform, verify and put back. The model picks one and fills in the
+  arguments; the plugin checks the operation against the one that finding actually allows, and every argument
+  against the site's own state (a timezone against PHP's own list, and against the timezone the site already
+  reports) before a single file is touched. Anything else is a refusal that names itself.
+* **Morpheus saying no is a real answer.** When the operation cannot honestly resolve the finding, it says so
+  and explains what to do instead — and offers no button. Most findings on a WordPress site are fixed by a
+  person, and that is a good outcome, not a failure.
+* AI findings stay **guided**: they are never swept into a bulk fix, and applying one is always a separate press
+  with the proposal on screen.
+* First mechanism: **write the PHP timezone into wp-config.php**, for the site whose PHP clock disagrees with the
+  WordPress clock it already set. It goes through the same rails as every other config edit — backed up first,
+  written atomically, read back, and restored automatically if it does not verify.
+
 = 0.9.5 =
 * Fixed: **the error log can be copied.** The panel's rows were buttons, and selection is turned off on
   every button in this product (deliberately, so Android does not pop a highlight menu on controls) — so

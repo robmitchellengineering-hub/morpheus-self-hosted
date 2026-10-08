@@ -100,6 +100,11 @@ class Morpheus_Health {
 			'auto_updates'      => self::auto_updates(),
 			'host'              => $host,
 			'async_not_run'     => array_merge( self::async_tests(), self::session_bound_not_run() ),
+			// WHAT MORPHEUS MAY PROPOSE, per finding — the vocabulary, sent with the
+			// scan so the app can ask a model a question it cannot widen. It comes from
+			// the plugin's own registry (Morpheus_Fixes::ai_operations()) rather than
+			// from the request, which is what keeps the bound on the side that writes.
+			'ai_operations'     => class_exists( 'Morpheus_Fixes' ) ? Morpheus_Fixes::ai_operations() : array(),
 			'can'               => self::capability( $host ),
 		);
 		$result['cached'] = false;

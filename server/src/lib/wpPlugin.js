@@ -382,8 +382,11 @@ export async function wpMaintenance(conn, { action = 'plan', targets = [], dryRu
  * needs a human step. A plugin older than 0.6.3 has no /fix route, which is the
  * same "too old" shape as /health and is reported the same way.
  */
-export async function wpFix(conn, id) {
-  return wpCall(conn, 'fix', { id });
+export async function wpFix(conn, id, proposal = null) {
+  // A proposal is the operator having seen exactly what Morpheus will do and pressed
+  // apply. It travels as data and is re-validated by the PLUGIN against the site's own
+  // state before anything is written — this client is a pipe, not a gate.
+  return wpCall(conn, 'fix', proposal ? { id, proposal } : { id });
 }
 
 /**
