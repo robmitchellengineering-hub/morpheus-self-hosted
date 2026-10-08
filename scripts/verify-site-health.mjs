@@ -31,6 +31,7 @@ import {
   severityRank, describeAge, SEVERITY_ORDER, SOURCE_LABELS, STALE_AFTER_HOURS,
   normaliseFix, FIX_KINDS,
 } from '../server/src/lib/siteHealth.js';
+import { errorLogAsText } from '../src/lib/errorLogText.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -500,6 +501,66 @@ check('…and the fetch is wired to a press', /onClick=\{run\}/.test(panelCode) 
 check('…rendering the plugin\'s own reason rather than an empty list',
   /NOT_READ/.test(panelSrc) && /not_read/.test(panelSrc), true);
 check('…and offering no way to clear or delete the log', /clear the log|CLEAR LOG|DELETE/i.test(panelSrc), false);
+
+// ── the readout has to be TAKABLE, not just readable ────────────────────────
+//
+// Rob, 2026-10-08: *"I can see them all they are on screen it just wont let me select
+// them"* — and *"I see they are individual things you have to open to copy"*. The cause
+// was two files meeting: index.css turns selection OFF on every <button> (deliberately,
+// for the Android highlight menu), and the whole group row — message, file, timestamp —
+// was INSIDE the toggle button. So the evidence lived in a control. A screen whose whole
+// purpose is "here is the evidence" must hand it over.
+const cssSrc = read('src/index.css');
+check('selection is still off for controls (the rule the fix has to work with)',
+  /button, a, select, \.no-select \{/.test(cssSrc) && /user-select: none;/.test(cssSrc), true);
+check('…and the group text opts back IN, so it can be copied at all',
+  (panelSrc.match(/select-text/g) || []).length >= 3, true);
+check('…including the message, the file:line and the raw lines',
+  /select-text[^>]*text-\[11px\]/.test(panelSrc) && /select-text text-\[10px\][^>]*break-all/.test(panelSrc), true);
+
+// The mobile half: selection is not something anyone can drag across a hundred groups.
+const logText = read('src/lib/errorLogText.js');
+check('there is a COPY ALL, and it copies the whole readout', /COPY ALL/.test(panelSrc) && /errorLogAsText\(log\)/.test(panelSrc), true);
+check('…only offered when there is something it could have read',
+  /\{!log\.not_read \?/.test(panelSrc), true);
+// The async clipboard API needs a SECURE CONTEXT and the dock lives inside other people's
+// pages, some of them http — so a clipboard-only button would silently do nothing there.
+check('…and it still works where the clipboard API is unavailable',
+  /execCommand\('copy'\)/.test(panelSrc) && /navigator\.clipboard/.test(panelSrc), true);
+check('…and says so when even that fails, instead of pretending',
+  /would not let Morpheus reach the clipboard/.test(panelSrc), true);
+
+// The pure formatter, called with a fixture: the text is asserted, not a label in the
+// component (H19 — a check that greps for a button is satisfied by the button).
+const exampleLog = {
+  path: '/home/acct/morpheus-debug.log',
+  configured: '/home/acct/morpheus-debug.log',
+  bytes: 1842176,
+  lines_read: 400,
+  lines_in_tail: 1107,
+  truncated: true,
+  modified: '2026-10-08T05:13:44Z',
+  counts: { fatal: 0, warning: 20, notice: 1, deprecated: 12, other: 367 },
+  groups_total: 52,
+  groups: [
+    { level: 'warning', count: 34, message: 'Cron reschedule event error', file: 'wp-includes/cron.php', line: 512, last_at: '2026-10-01 07:42:21', samples: ['[01-Oct-2026 07:42:21 UTC] Cron reschedule event error'] },
+  ],
+};
+const asText = errorLogAsText(exampleLog);
+check('the formatter names the file it read', asText.includes('/home/acct/morpheus-debug.log'), true);
+check('…states what was read, not just what it found',
+  asText.includes('newest 400 lines of a 1799 KB file') && asText.includes('more on the server than this'), true);
+check('…says a bound bit rather than showing a partial list as the whole story',
+  asText.includes('Showing the 1 most frequent of 52'), true);
+check('…carries the group, its count, its file:line and its own words',
+  asText.includes('[warning] x34') && asText.includes('wp-includes/cron.php:512') && asText.includes('Cron reschedule event error'), true);
+check('…and is empty rather than wrong when there is no log',
+  errorLogAsText(null) === '', true);
+
+// The second defect the relocate fix exposed: this line told the operator the full log was
+// in wp-content/debug.log — false on every site whose log has been moved out of the root.
+check('the "more like this" line names the real path, not the old default',
+  /wp-content\/debug\.log'/.test(panelSrc) === false && /more like this in/.test(panelSrc), true);
 
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

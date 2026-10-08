@@ -795,8 +795,17 @@ class Morpheus_Health {
 	const LOG_TAIL_BYTES = 262144; // 256 KB, sought from the END
 	/** Newest lines kept for the panel. */
 	const LOG_TAIL_LINES = 400;
-	/** Distinct signatures returned after grouping. */
-	const LOG_MAX_GROUPS = 40;
+	/**
+	 * Distinct signatures returned after grouping.
+	 *
+	 * ⚠️ 40 WAS TOO LOW, and it failed the way a bound always fails: silently, on a real
+	 * site. Rob's log had **52** distinct problems and the panel showed 40 — so twelve
+	 * were invisible to the operator AND to anyone they pasted it to, with one grey line
+	 * as the only hint. Bounded output is right; a bound that hides a quarter of a real
+	 * log while looking complete is not. The cap is now high enough that an ordinary site
+	 * never meets it, and it is still REPORTED when it bites (`groups_total`).
+	 */
+	const LOG_MAX_GROUPS = 100;
 	/** Raw lines kept per signature, so a group can be opened without shipping the whole log. */
 	const LOG_SAMPLES = 3;
 
