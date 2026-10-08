@@ -879,6 +879,14 @@ jobs:
       - name: Plugin pack determinism
         run: node scripts/verify-plugin-pack.mjs
 
+      # What the plugin installs, deleting it removes. `uninstall.php` dropped two
+      # options and left five (SEO templates, fix history, pairing record, traffic
+      # toggle) until 2026-10-08, so a delete-then-reinstall inherited the old
+      # site's settings. The guard reads the option constants out of the plugin's
+      # own source, so a new store that nobody adds to uninstall.php fails here.
+      - name: Plugin uninstall completeness
+        run: node scripts/verify-plugin-uninstall.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,

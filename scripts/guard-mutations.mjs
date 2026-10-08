@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 64;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 65;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 62;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 63;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -2707,6 +2707,48 @@ export const MUTATIONS = [
     find: '    if (kind !== \'model\' && kind !== \'cab\') return null;',
     replace: '    if (false) return null;',
   },
+  {
+    guard: 'verify-seo.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // ⚠️ THE LIVE DEFECT OF 2026-10-08, AS A MUTATION. `emit_schema()` appended `site_entity_nodes()` — a LIST
+    // of two — as ONE element, so every page of every site emitted `[{…page…},[{…Organization…},{…WebSite…}]]`.
+    // Nothing could see it: all three `@type` substrings are present, and a nested array is valid JSON, so the
+    // harness's substring and "parses" assertions stayed green. The rendered shape is now asserted by
+    // tests/harness-noyoast.php — proven red on this exact mutation (175/177, the two failures being the shape
+    // assertions) — and this entry pins the same claim in CI, which has no PHP.
+    why: 'Puts the site-entity list back as ONE element of the node array — the nested JSON-LD that shipped on every page, which substring and parse assertions cannot see.',
+    find: '\t\t$nodes = array_merge( array( $node ), self::site_entity_nodes() );',
+    replace: '\t\t$nodes = array( $node );\n\t\t$site  = self::site_entity_nodes();\n\t\tif ( $site ) {\n\t\t\t$nodes[] = $site;\n\t\t}',
+  },
+  {
+    guard: 'verify-plugin-uninstall.mjs',
+    file: 'wp-plugin/morpheus/uninstall.php',
+    // The residue bug itself, as one line: dropping a `delete_option` is exactly how five stores
+    // survived a delete-then-reinstall (SEO templates, fix history, pairing record, traffic toggle)
+    // while the file still looked like a complete uninstall.
+    why: 'Drops one option from the uninstall list, so deleting and reinstalling the plugin inherits the previous site\'s SEO templates.',
+    find: "delete_option( 'morpheus_seo_defaults' );  // Morpheus_SEO::DEFAULTS_OPTION\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-rest.php',
+    // `Morpheus_Traffic::public_status()` was written to be the module's public /status half and had no
+    // caller, so the capability was invisible to the one payload that answers "what can this build do?"
+    // while every sibling module appeared there. Dropping the key is exactly the state before the fix.
+    why: 'Removes the traffic key from the /status payload, leaving the module invisible to the surface that reports what a build can do.',
+    find: "\t\t\t'traffic'    => class_exists( 'Morpheus_Traffic' )\n\t\t\t\t? Morpheus_Traffic::public_status()\n\t\t\t\t: array( 'available' => false, 'enabled' => false ),\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'src/components/matrix/WebsitePanel.jsx',
+    // The tab is plugin-backed, so with no site connected its only possible answer is "connect first".
+    // Leaving it out of the gate list made it the one tab that looked available and then refused.
+    why: 'Takes TRAFFIC out of the greyed-tab list, so the button looks usable on a project with no site connected.',
+    find: "['deploy', 'health', 'shop', 'pages', 'seo', 'traffic']",
+    replace: "['deploy', 'health', 'shop', 'pages', 'seo']",
+  },
 ];
 
 /**
@@ -2740,5 +2782,17 @@ export const NOT_YET_PROVEN = [
  * that every file MATCHES a lint block and never that the block's rules were still switched on. It now
  * also asserts each `rules:` block re-spreads the recommended set, so the falsification is a plain
  * text edit (drop the spread) and the guard joins the proven pile.
+ *
+ * 64 → 63 on 2026-10-08: `verify-seo.mjs` sat in the unproven pile while the thing it guards shipped a live
+ * defect for eleven releases — `emit_schema()` nested the site's two JSON-LD nodes inside the page node's
+ * array, so every page of every site emitted `[{…page…},[{…Organization…},{…WebSite…}]]`. Its checks all
+ * passed on that shape, because they assert substrings and that the block parses, and a nested array does
+ * both. It now also pins the node-list SHAPE, and the mutation added with it IS the old code, so the claim
+ * is provable by a text edit.
+ *
+ * 63 → 62 on the same day: `verify-traffic.mjs` was also in the pile, while the thing it guards had a
+ * documented-but-dead half — `Morpheus_Traffic::public_status()` was written to be "what the /status
+ * route adds" and was called from nowhere, so the module could not be seen by the payload that reports
+ * what a build can do. The key is now there and the guard asserts it, so the claim is text-editable.
  */
-export const UNPROVEN_BASELINE = 64;
+export const UNPROVEN_BASELINE = 62;

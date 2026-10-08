@@ -97,7 +97,12 @@ export default function WebsitePanel({ open, onClose, projectId, onConnectedChan
         <div className="flex flex-wrap border-b border-primary/15 shrink-0 text-[11px]">
           {TABS.map((t) => {
             const Icon = t.icon;
-            const gated = ['deploy', 'health', 'shop', 'pages', 'seo'].includes(t.id) ? !connected : false;
+            // TRAFFIC belongs in this list: it is served by the plugin, so on a
+            // project with no site connected the button could only render
+            // "Connect your site in the Setup tab first." It was missing until
+            // 2026-10-08, so it looked usable and then refused — the one tab
+            // whose greyed state disagreed with its siblings.
+            const gated = ['deploy', 'health', 'shop', 'pages', 'seo', 'traffic'].includes(t.id) ? !connected : false;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`shrink-0 basis-[96px] px-3 h-[42px] flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-primary border-b-2 border-primary' : gated ? 'text-primary/25' : 'text-primary/45'}`}>

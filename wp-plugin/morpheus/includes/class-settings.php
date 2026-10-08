@@ -143,8 +143,16 @@ class Morpheus_Settings {
 		return $val ? str_repeat( '•', 12 ) : '';
 	}
 
-	public static function health_paths_array() {
-		$raw = self::get( 'health_paths' );
+	/**
+	 * The health paths, one per line, trimmed, blanks dropped.
+	 *
+	 * The optional argument exists so the DEPLOY module can parse the settings it
+	 * was CONSTRUCTED with instead of re-reading the option. It used to
+	 * re-implement this split-and-trim inline while this method had no caller at
+	 * all — two copies of one format rule, which is the shape H17 warns about.
+	 */
+	public static function health_paths_array( $raw = null ) {
+		$raw = ( null === $raw ) ? self::get( 'health_paths' ) : $raw;
 		$out = array();
 		foreach ( preg_split( '/\r\n|\r|\n/', (string) $raw ) as $l ) {
 			$l = trim( $l );

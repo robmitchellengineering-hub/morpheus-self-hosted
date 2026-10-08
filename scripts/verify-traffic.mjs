@@ -168,6 +168,21 @@ check('the app panel has a TRAFFIC tab', has(panel, "id: 'traffic'"), true);
 check('the dock mounts the SAME component', has(embed, "import TrafficTab from '@/components/matrix/website/TrafficTab'") && has(embed, '<TrafficTab'), true);
 check('the dock has a traffic tab gated on the traffic scope', has(embed, "scope: 'traffic', id: 'traffic'"), true);
 check('a widget token can carry the traffic scope', has(embedTab, "id: 'traffic'"), true);
+// The tab is served by the plugin, so on a project with no site connected its only
+// possible answer is "connect first". It was absent from this list until 2026-10-08,
+// so it looked available and then refused — the one tab disagreeing with its siblings.
+check('the panel greys TRAFFIC out when no site is connected', /const gated = \[[^\]]*'traffic'[^\]]*\]/.test(panel), true);
+
+// 3e. the capability is visible on /status, not only through a signed call.
+// `Morpheus_Traffic::public_status()` documents itself as "the public half: what the
+// /status route adds" and was called from NOWHERE, so the module was invisible to the
+// one payload that answers "what can this build do?" — while clean, seo, store, export
+// and pairing all appear there. Asserted on both halves: the key exists, and it is that
+// method rather than a second copy of its two fields.
+const restPhp = read('wp-plugin/morpheus/includes/class-rest.php');
+check('the status payload carries a traffic key', /'traffic'\s*=>/.test(restPhp), true);
+check('…and it comes from the module\'s own public_status()', /Morpheus_Traffic::public_status\(\)/.test(restPhp), true);
+check('…guarded, so a build without the module still answers', /class_exists\( 'Morpheus_Traffic' \)/.test(restPhp), true);
 
 // 3e. the plugin is wired, not merely present on disk.
 const bootstrap = read('wp-plugin/morpheus/morpheus.php');

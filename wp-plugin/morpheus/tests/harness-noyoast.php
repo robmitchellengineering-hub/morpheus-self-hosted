@@ -311,6 +311,53 @@ foreach ( $ld_blocks as $block ) {
 }
 ok( $bad_json === 0, 'every JSON-LD block parses as JSON (' . count( $ld_blocks ) . ' block(s))' );
 
+// ⭐⭐ AND THE SHAPE, WHICH IS THE HALF NOTHING WAS CHECKING.
+//
+// `emit_schema()` appended `site_entity_nodes()` — a LIST of two nodes — as a
+// single element, so every page emitted
+//   [ {…WebPage…}, [ {…Organization…}, {…WebSite…} ] ]
+// Conforming consumers flatten an array of arrays, so Google most likely read it
+// anyway; a consumer that does not silently dropped both site nodes from every
+// page. That shipped on every page of every site from 0.7.1 until 2026-10-08.
+//
+// EVERY ASSERTION ABOVE PASSES ON THE NESTED SHAPE — the three substrings are
+// present, and a nested array is valid JSON — which is exactly why it was found
+// by a human reading the live bytes rather than by this file. So decode the top
+// level and refuse a list inside the list. This is the assertion that has to go
+// red if the shape regresses; prove it by putting `$nodes[] = $site` back.
+$top_level_types = array();
+$nested_lists    = 0;
+foreach ( $ld_blocks as $block ) {
+	$decoded = json_decode( $block, true );
+	if ( ! is_array( $decoded ) ) {
+		continue;
+	}
+	// A bare node object is a shape we would accept; a list of nodes is the one
+	// we emit. Anything that is neither is not a node.
+	if ( isset( $decoded['@type'] ) ) {
+		$decoded = array( $decoded );
+	}
+	foreach ( $decoded as $entry ) {
+		if ( ! is_array( $entry ) || ! isset( $entry['@type'] ) ) {
+			$nested_lists++;
+			continue;
+		}
+		$top_level_types[] = $entry['@type'];
+	}
+}
+ok( 0 === $nested_lists, 'no JSON-LD node list is nested inside another (' . $nested_lists . ' nested entries)' );
+
+// The page node and the site's two nodes are siblings in ONE flat array. Sorted,
+// because the order carries no meaning and asserting it would break on a
+// harmless reshuffle while proving nothing.
+$expected_top = array( 'Organization', 'WebPage', 'WebSite' );
+$found_top    = $top_level_types;
+sort( $found_top );
+ok(
+	$expected_top === $found_top,
+	'the page, Organization and WebSite nodes are three TOP-LEVEL nodes (found: ' . implode( ', ', $top_level_types ) . ')'
+);
+
 // ⭐ EXACTLY ONE CANONICAL, AND IT CARRIES OUR VALUE.
 //
 // This was a KNOWN FINDING that asserted only "at least one" and reported the count, because the duplicate came
