@@ -318,10 +318,9 @@ check('…and it will not overwrite a file that is already there',
 // missing and when it is ambiguous, rather than adding a second one that never runs.
 // Asserted on the CONDITIONS, not on the error strings: the codes appear in the
 // messages either way, so a string check would survive disabling the branch.
+const defineRule = fixesPhp.slice(fixesPhp.indexOf('function wp_config_set_define'), fixesPhp.indexOf('function wp_config_value_is'));
 check('…and it changes the existing define rather than adding a dead second one',
-  /function wp_config_set_define\(/.test(fixesPhp)
-  && /if \( 0 === \$count \) \{/.test(fixesPhp)
-  && /if \( \$count > 1 \) \{/.test(fixesPhp), true);
+  /if \( 0 === \$count \) \{/.test(defineRule) && /if \( \$count > 1 \) \{/.test(defineRule), true);
 check('…and the config goes back if the log will not move',
   /The log file could not be moved to/.test(fixesPhp) && /restore_file_backup\( \$backup, \$config \)/.test(fixesPhp), true);
 
@@ -609,14 +608,20 @@ check('the scan carries the vocabulary, from the plugin', /'ai_operations'\s*=>\
 // against the operation the finding itself allows.
 check('a proposal is refused when it asks for an operation this finding does not allow',
   /AI_OP_NOT_ALLOWED/.test(fixesCode) && /\$asked !== \$allowed/.test(fixesCode), true);
+// The CONDITION, not the words around it: `timezone_identifiers_list()` also appears in
+// the menu's own description of the argument, so a check for the name was satisfied by
+// the prose describing the rule while the rule itself was disabled. Asserted on the call.
 check('…and an argument is checked against the site, not taken on trust',
-  /timezone_identifiers_list\(\)/.test(fixesCode) && /BAD_TIMEZONE/.test(fixesCode), true);
+  /! in_array\( \$tz, timezone_identifiers_list\(\), true \)/.test(fixesCode) && /BAD_TIMEZONE/.test(fixesCode), true);
 check('…through the same rails as every other config edit (backup, read back, restore)',
   /function ai_wp_config_timezone/.test(fixesCode)
   && /self::backup_file\( \$file \)/.test(fixesCode)
   && /self::restore_file_backup\( \$backup, \$file \)/.test(fixesCode), true);
+// Scoped to THIS rule: `if ( $count > 1 )` is the same line in the WP_DEBUG_LOG rewrite,
+// so an unscoped check stayed green while this one's refusal was disabled.
+const tzRule = fixesCode.slice(fixesCode.indexOf('function wp_config_set_timezone'));
 check('…and the rule that rewrites the line is pure and refuses an ambiguous file',
-  /public static function wp_config_set_timezone/.test(fixesCode) && /if \( \$count > 1 \) \{/.test(fixesCode), true);
+  /function wp_config_set_timezone\( \$body, \$timezone \) \{/.test(tzRule) && /if \( \$count > 1 \) \{/.test(tzRule), true);
 // An `ai` finding stays GUIDED: nothing is swept into FIX ALL, and nothing applies itself.
 check('an AI finding is still `guided`, so no bulk run can ever include it',
   /'ai'\s*=>\s*true/.test(fixesCode) && aiIds.length > 0
