@@ -345,6 +345,29 @@ export async function wpFix(conn, id) {
 }
 
 /**
+ * Undo the plugin's LAST deploy — restore the snapshot it took before writing.
+ *
+ * The plugin owns which deploy that is: `rollback_last()` reads its own
+ * `morpheus_deploy_last` option and derives the snapshot directory itself, so
+ * NOTHING is passed. That is deliberate rather than lazy — there is one snapshot
+ * worth returning to, and an id the app could name would be an id the app could
+ * get wrong.
+ *
+ * The route has existed and been tested since the Deploy module shipped; nothing
+ * in the app called it until 2026-10-08, so `delivery/wordpress.js` advertised
+ * `supports: ['rollback']` for a button that did not exist.
+ *
+ * Two refusals cross the wire as ordinary payloads (the plugin answers non-2xx
+ * with `{ ok:false, error, message }`): `nothing_to_roll_back` (400) and
+ * `snapshot_missing` (410 — the plugin keeps the last 5, so an old record's
+ * snapshot can age out). The caller renders the plugin's own sentence rather
+ * than inventing one.
+ */
+export async function wpRollback(conn) {
+  return wpCall(conn, 'rollback', {});
+}
+
+/**
  * Force the plugin's OWN update check (plugin 0.6.4+), and report what is true.
  *
  * The plugin caches the published manifest and WordPress caches its own update

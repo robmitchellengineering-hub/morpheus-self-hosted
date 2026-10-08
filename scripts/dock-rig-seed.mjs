@@ -42,6 +42,21 @@ const WP_SITE_URL = (process.env.DOCK_RIG_WP_URL || 'http://localhost:4600').rep
 const WP_SECRET = process.env.DOCK_RIG_WP_SECRET || 'dock-rig-local-shared-secret';
 const TOKEN_LABEL = 'dock-rig';
 
+// The DEPLOY tab will not render its controls until `resolveWordpressDelivery`
+// resolves a REPO and a GitHub token for the project — without both it shows
+// "not ready", so its UNDO button never mounts and no browser check could reach
+// it. The rig therefore seeds a repo name and a token.
+//
+// ⚠️ THE TOKEN IS OBVIOUSLY FAKE, ON PURPOSE. A fixture is committed code and a
+// `ghp_…`-shaped string in the repository is exactly what stopped the frontend
+// deploying once before (Netlify's smart detection scans repo code, and its error
+// named neither the file nor the string). `verify-no-secret-fixtures.mjs` fails
+// the build for that shape. Nothing in the rig ever sends this value anywhere:
+// the only GitHub call a DEPLOY drive would make is opening a PR, which is not
+// driven here.
+const RIG_REPO = process.env.DOCK_RIG_REPO || 'dock-rig/fixture-site';
+const RIG_GH_TOKEN = 'dock-rig-fake-github-token-0000';
+
 const ALL_SCOPES = Object.keys(WIDGET_SCOPE_FUNCTIONS); // chat, deploy, store, seo, traffic
 
 const user = await prisma.user.upsert({
@@ -61,7 +76,7 @@ const existing = await prisma.project.findFirst({ where: { created_by_id: user.i
 const project = existing
   ? await prisma.project.update({
     where: { id: existing.id },
-    data: { compile_target: 'web-app', status: 'ready' },
+    data: { compile_target: 'web-app', status: 'ready', github_repo: RIG_REPO, github_token: encrypt(RIG_GH_TOKEN) },
     select: { id: true, name: true, compile_target: true },
   })
   : await prisma.project.create({
@@ -72,6 +87,8 @@ const project = existing
       compile_target: 'web-app',
       status: 'ready',
       project_type: 'frontend',
+      github_repo: RIG_REPO,
+      github_token: encrypt(RIG_GH_TOKEN),
     },
     select: { id: true, name: true, compile_target: true },
   });

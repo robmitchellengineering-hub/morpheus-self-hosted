@@ -259,6 +259,90 @@ check "…with the site's own reason, not a generic one" \
   "$(ev "document.body.textContent.includes('the host answers with something that is not this file')")" "true"
 fixture "clear=attempts&mode=fallback"
 
+# ── 2d. DEPLOY: the undo, in a real browser ───────────────────────────────
+#
+# The undo was added on 2026-10-08. The plugin's /rollback route had existed and
+# been tested under Playground since the Deploy module shipped, and NOTHING in the
+# app had ever called it — so this section is the first thing to put the control in
+# front of a person.
+#
+# The check worth having is the SECOND one: the panel must not send anything until
+# UNDO NOW is pressed. A confirm that has already sent its request is exactly the
+# failure this two-step shape exists to prevent, and it is invisible to any check
+# that only looks at the end state.
+echo
+echo "DEPLOY tab (the undo: render, confirm, then one signed POST):"
+rollback_posts() { local n; n="$(grep -c 'POST /rollback' "$WP_LOG" 2>/dev/null)"; echo "${n:-0}"; }
+fixture_deploy() { curl -s "$SITE_ORIGIN/__fixture/deploy?$1" >/dev/null; }
+# NOT `wait_for` with a substituted comparison: its argument is expanded ONCE by
+# the shell, so `$(rollback_posts) > 3` freezes at call time and passes on the
+# first pass whatever the log says. That is a check that cannot fail (H17), so the
+# count is re-read inside the loop.
+wait_rollback() { # label, baseline
+  local label="$1" base="$2" i
+  for i in $(seq 1 30); do
+    [ "$(rollback_posts)" -gt "$base" ] && { echo "  ok    $label"; return 0; }
+    sleep 1
+  done
+  echo "  FAIL  $label — no new POST /rollback within 30s"
+  FAILURES=$((FAILURES + 1))
+  return 1
+}
+open_deploy() {
+  pwr goto "$FULL_URL" >/dev/null
+  sleep 2
+  ev "(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='DEPLOY');if(!b)return false;b.click();return true})()" >/dev/null
+  sleep 2
+}
+has_undo() { ev "!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('UNDO THIS DEPLOY'))"; }
+
+fixture_deploy "last=landed&rollback=ok"
+open_deploy
+# If the fixture project has no repo or no GitHub token the tab says "not ready"
+# and every check below would fail for a reason that is not the control — say so.
+check "the deploy panel resolved its repo and token (not the not-ready state)" \
+  "$(ev "!document.body.innerText.includes('Finish Setup first')")" "true"
+check "the undo IS offered after a deploy that landed" "$(has_undo)" "true"
+
+RB_BASE="$(rollback_posts)"
+pw click "getByRole('button', { name: 'UNDO THIS DEPLOY' })" >/dev/null
+sleep 1
+check "the confirm says nothing has been sent yet" \
+  "$(ev "document.body.textContent.includes('Nothing has been sent yet')")" "true"
+check "…and warns that it writes while the plugin is NOT armed" \
+  "$(ev "document.body.textContent.includes('not armed')")" "true"
+check "arming the confirm sent NOTHING (the delta is zero)" "$(rollback_posts)" "${RB_BASE:-0}"
+
+pw click "getByRole('button', { name: 'UNDO NOW' })" >/dev/null
+wait_rollback "…and UNDO NOW is what reaches the site (a new signed POST /rollback)" "${RB_BASE:-0}"
+wait_for "the panel reported the restore" "document.body.innerText.includes('Restored')"
+check "…and does not offer a second undo for the same deploy" "$(has_undo)" "false"
+
+echo
+echo "…and it is NOT offered after a deploy the plugin already rolled back:"
+# A failed health check makes the plugin roll the deploy back AND record
+# success:false, so an undo offered then would restore a snapshot onto the state
+# it came from and report health — a no-op wearing a success.
+fixture_deploy "last=rolled_back&rollback=ok"
+open_deploy
+check "no undo for a deploy that did not land" "$(has_undo)" "false"
+
+echo
+echo "…and a snapshot that has aged out is refused in the site's own words:"
+fixture_deploy "last=landed&rollback=gone"
+open_deploy
+check "the undo is offered while the record says it landed" "$(has_undo)" "true"
+RB_GONE="$(rollback_posts)"
+pw click "getByRole('button', { name: 'UNDO THIS DEPLOY' })" >/dev/null
+sleep 1
+pw click "getByRole('button', { name: 'UNDO NOW' })" >/dev/null
+wait_rollback "the refusal came back from the site" "${RB_GONE:-0}"
+wait_for "…and is rendered as an aged-out snapshot, not a generic failure" \
+  "document.body.textContent.includes('snapshot has aged out')"
+check "…and no restore is claimed" "$(ev "!document.body.textContent.includes('Restored to')")" "true"
+
+fixture_deploy "last=landed&rollback=ok"
+
 # ── 3. CHAT: a message in, a reply out ────────────────────────────────────
 echo
 echo "CHAT tab (a widget token calling chatWithMorpheus → the mock model):"

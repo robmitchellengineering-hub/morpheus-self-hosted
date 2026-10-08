@@ -63,6 +63,22 @@ const FALLBACK_BODY = '<!doctype html><html><head><title>Page not found</title><
 /** What the URL would answer — the same bytes the GET route below sends. */
 const debugLogBody = () => (debugLogMode === 'served' ? DEBUG_LOG_BODY : FALLBACK_BODY);
 
+// The DEPLOY tab's undo. `last` mirrors what the real plugin reports for its most
+// recent deploy — `handle_status()` reads the `morpheus_deploy_last` option, and
+// `DeployTab` gates its UNDO control on `last.success`. `rollback` decides what
+// POST /rollback answers, because the two refusals have different remedies and
+// the panel must render them differently:
+//   ok   — the restore runs (the plugin's own success payload)
+//   gone — `snapshot_missing` / 410: the retention window has passed
+let deployState = {
+  last: { success: true, deploy_id: 'dock-rig-deploy-1', commit: 'abc1234def', at: '2026-10-07T22:00:00Z' },
+  rollback: 'ok',
+};
+const DEPLOY_LAST_LANDED = { success: true, deploy_id: 'dock-rig-deploy-1', commit: 'abc1234def', at: '2026-10-07T22:00:00Z' };
+// A deploy the plugin ALREADY rolled back after a failed health check: it stays in
+// `morpheus_deploy_last` with success:false, which is why the control is gated.
+const DEPLOY_LAST_ROLLED_BACK = { ...DEPLOY_LAST_LANDED, success: false };
+
 /**
  * Is the URL serving the file that is on disk? Two real requests, not a guess:
  * one for the URL, and the disk body is the fixture above. This mirrors
@@ -416,7 +432,28 @@ async function respond(req, res, raw) {
       home_url: `http://localhost:${PORT}`,
       store: { available: true, woocommerce: { version: '9.4.1' } },
       seo: { available: true, owns_head: true, active_plugin: 'none' },
+      // The shape `handle_status()` actually returns for `deploy` — the DEPLOY
+      // tab reads `last` from here to decide whether an undo exists at all.
+      deploy: {
+        configured: true,
+        armed: false,
+        repo: 'dock-rig/fixture-site',
+        branch: 'main',
+        last: deployState.last,
+      },
     });
+  }
+
+  // Flip the deploy fixture from the drive script: whether the last deploy
+  // landed, and how the site answers a rollback.
+  if (req.method === 'GET' && path === '/__fixture/deploy') {
+    const last = url.searchParams.get('last');
+    if (last === 'landed') deployState.last = { ...DEPLOY_LAST_LANDED };
+    if (last === 'rolled_back') deployState.last = { ...DEPLOY_LAST_ROLLED_BACK };
+    const rb = url.searchParams.get('rollback');
+    if (rb === 'ok' || rb === 'gone') deployState.rollback = rb;
+    console.log(`[mock-wp] FIXTURE deploy last.success=${deployState.last.success} rollback=${deployState.rollback}`);
+    return json(res, 200, deployState);
   }
 
   if (req.method !== 'POST') return json(res, 404, { code: 'rest_no_route', message: 'No route was found matching the URL and request method.' });
@@ -453,6 +490,21 @@ async function respond(req, res, raw) {
     return json(res, 200, { ok: true, action: asAction });
   }
   if (path === `${NS}/deploy`) return json(res, 200, { ok: true, dry_run: true, note: 'mock-wp: deploy is a no-op in the rig' });
+  // The undo. A real restore is not something a mock can do, so this answers with
+  // the plugin's own success payload — but the REFUSAL is real, because that is
+  // where the panel's honesty lives: `snapshot_missing` must read differently from
+  // a transport failure, and the drive script proves the panel says so.
+  if (path === `${NS}/rollback`) {
+    if (deployState.rollback === 'gone') {
+      return json(res, 410, { ok: false, error: 'snapshot_missing', message: "That deploy's snapshot is gone." });
+    }
+    return json(res, 200, {
+      ok: true,
+      rolled_back_deploy: deployState.last?.deploy_id || null,
+      commit: deployState.last?.commit || null,
+      health: { ok: true, checks: [] },
+    });
+  }
   if (path === `${NS}/traffic`) return json(res, 200, { ok: true, action: asAction, submitted: 0 });
   if (path === `${NS}/updates`) return json(res, 200, { ok: true, updates: { plugins: 1, themes: 0, core: 0 } });
   if (path === `${NS}/maintenance`) return json(res, 200, { ok: true, action: asAction, targets: [] });
