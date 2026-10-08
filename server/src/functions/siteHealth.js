@@ -13,6 +13,11 @@
 //   fix    — apply ONE finding, by id, that the site's own registry marks `auto`
 //   updates— force the plugin's own update check
 //   apply  — apply the updates the policy allows, one snapshotted target at a time
+//   logs   — the site's PHP error log, READ rather than merely measured
+//            (lib/siteScan.js's readErrorLog). Read-only, and there is no action
+//            that clears, rotates or truncates it: the operator's evidence is not
+//            ours to delete. Its own request because a log tail is unbounded in
+//            principle where the scan is cached for five minutes.
 //
 // There is deliberately NO bulk apply action for CLEAN MY SITE beyond `fix`: a
 // modified core file, a modified plugin file, an admin account and a cron hook
@@ -20,7 +25,7 @@
 // and removing an account are the owner's decisions.
 import { prisma } from '../db.js';
 import { getWpConnection, wpFix, wpUpdates } from '../lib/wpPlugin.js';
-import { scanSite, scanCleanSite } from '../lib/siteScan.js';
+import { scanSite, scanCleanSite, readErrorLog } from '../lib/siteScan.js';
 import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
 import { applyAllowedUpdates } from '../lib/siteApply.js';
 import { describePolicy, nextRunAt, allowedKinds, runSummary, POLICY_DEFAULTS } from '../lib/siteMaintenance.js';
@@ -33,7 +38,7 @@ import { quarantineEvidence, undoLine } from '../lib/robotsQuarantine.js';
 import { isPluginTooOld } from '../lib/siteHealth.js';
 import { cleanQuarantineEvidence, cleanUndoLine } from '../lib/siteClean.js';
 
-const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'updates', 'clean']);
+const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'updates', 'clean', 'logs']);
 
 export default async function handler({ user, body, req }) {
   const { projectId, action } = body || {};
@@ -180,6 +185,18 @@ export default async function handler({ user, body, req }) {
     // applies one finding the site's own registry marks `auto` — and every one
     // of those renames a file and reports the undo.
     return scanCleanSite(user, projectId, { force: body?.force === true });
+  }
+
+  if (action === 'logs') {
+    // THE SITE'S ERROR LOG. Read-only, and its own request: a log is the one file
+    // on a site that can be gigabytes, and the health scan is cached for five
+    // minutes — folding the two together would either ship log text on every panel
+    // open or make the log view five minutes stale. The panel has its own button.
+    //
+    // Deliberately NO sibling action that clears, rotates or truncates the log.
+    // An operator's evidence is not ours to delete, and a "clear log" button would
+    // be the easiest way for this product to destroy the thing it was asked to show.
+    return readErrorLog(user, projectId, { lines: body?.lines });
   }
 
   const scan = await scanSite(user, projectId, { force: body?.force === true });

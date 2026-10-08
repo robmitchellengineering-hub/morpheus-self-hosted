@@ -250,6 +250,10 @@ export const KNOWN_GREEN_CONSTANTS = [
   "src/components/matrix/PipelineRunner.jsx|text-primary",
   "src/components/matrix/ProjectBar.jsx|flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors",
   "src/components/matrix/website/CodeTab.jsx|w-full bg-black/30 border border-primary/20 px-2.5 h-[36px] text-[12px] text-primary focus:outline-none focus:border-primary/50",
+  // DECIDED 2026-10-08: the error-log panel's button, character-for-character the
+  // same control HealthTab already declares below. It is a green CONTROL (a press),
+  // not prose — the brand green marks structure, and this is structure.
+  "src/components/matrix/website/ErrorLogPanel.jsx|inline-flex items-center justify-center gap-1.5 px-3 h-[32px] border border-primary/30 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary disabled:opacity-40 shrink-0",
   "src/components/matrix/website/HealthTab.jsx|inline-flex items-center justify-center gap-1.5 px-3 h-[32px] border border-primary/30 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary disabled:opacity-40 shrink-0",
   "src/components/matrix/website/HealthTab.jsx|text-[9px] text-primary/35 uppercase tracking-wider",
   "src/components/matrix/website/HealthTab.jsx|text-primary/45 border-primary/20",

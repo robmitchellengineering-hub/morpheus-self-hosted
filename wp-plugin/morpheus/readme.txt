@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.0
+Stable tag: 0.9.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,22 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.1 =
+* New: **the site's error log, read rather than merely measured.** This plugin has always opened
+  `wp-content/debug.log` — to decide whether your web server is SERVING it, by comparing its bytes with the
+  URL's. That answers "is this file a leak" and nothing else: nothing read the errors themselves, so the
+  question an owner actually has — what is going wrong on my site? — had no answer in Morpheus or in
+  wp-admin. HEALTH → ERROR LOG now shows it: one row per distinct fault with a count, most frequent first,
+  each row expanding to the raw log lines it saw, plus every line that was read.
+* It is bounded to the newest part of the file — it seeks from the END and caps the bytes, the lines and the
+  number of distinct faults — and it SAYS when it stopped short, so a truncated list can never be read as a
+  complete one.
+* Reading it changes nothing on the site, and there is deliberately **no button anywhere that clears,
+  truncates or rotates the log**: an operator's evidence is not ours to delete.
+* A missing log is reported as missing, an unreadable one as unreadable, and an empty one as empty — never
+  as "no errors". WordPress only writes a log while `WP_DEBUG_LOG` is on, and an empty list would be the
+  most dangerous possible reading of that.
 
 = 0.9.0 =
 * Fixed: **the SEO panel could not see the site's own content type.** The set of post types was the

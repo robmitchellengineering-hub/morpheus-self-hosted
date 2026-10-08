@@ -163,8 +163,20 @@ class Morpheus_REST {
 			return new WP_REST_Response( Morpheus_Clean::scan( $force ), 200 );
 		}
 
+		if ( 'logs' === $action ) {
+			if ( ! class_exists( 'Morpheus_Health' ) ) {
+				return self::err( 'unsupported', 'This build of the Morpheus plugin has no error-log reader. Update the plugin.', 501 );
+			}
+			// Read-only by contract: Morpheus_Health::log_tail() must never write.
+			// A separate action from `health` because a log tail is unbounded in
+			// principle and the scan is cached for five minutes: folding the two
+			// together would either ship log text with every panel open or make the
+			// panel's log view five minutes stale.
+			return new WP_REST_Response( Morpheus_Health::log_tail( $body ), 200 );
+		}
+
 		if ( 'health' !== $action ) {
-			return self::err( 'unknown_action', 'action must be health or clean.', 400 );
+			return self::err( 'unknown_action', 'action must be health, clean or logs.', 400 );
 		}
 
 		if ( ! class_exists( 'Morpheus_Health' ) ) {

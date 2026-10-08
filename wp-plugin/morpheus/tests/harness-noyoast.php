@@ -867,6 +867,82 @@ ok( ( $scan_own['fix']['kind'] ?? '' ) === 'auto', 'robots: the finding carries 
 ok( ( $scan_own['fix']['label'] ?? '' ) === 'Quarantine the stale robots.txt', 'robots: the action is the quarantine' );
 ok( ! empty( $scan_own['fix']['warning'] ), 'robots: the consequence is stated BEFORE the button' );
 
+// ── the error log, READ rather than merely measured ─────────────────────────
+//
+// CLEAN MY SITE has always opened wp-content/debug.log — to decide whether the web
+// server is SERVING it, by comparing its bytes with the URL's. That answers "is this
+// file a leak" and nothing else: nothing read the errors, so "what is breaking?"
+// had no answer anywhere. This writes a real log, with one fault repeated, and
+// asserts what the reader makes of it — INCLUDING the two ways it must not answer:
+// an absent file is not "no errors", and a file past the tail is reported as
+// truncated rather than silently cut.
+$log_file = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+$log_had  = file_exists( $log_file );
+$log_was  = $log_had ? file_get_contents( $log_file ) : null;
+
+file_put_contents( $log_file, implode( "\n", array(
+	'[01-Oct-2026 10:00:00 UTC] PHP Notice:  Function _load_textdomain_just_in_time was called incorrectly.',
+	'[01-Oct-2026 10:00:01 UTC] PHP Warning:  Undefined array key "price" in ' . ABSPATH . 'wp-content/themes/woodmart-child/functions.php on line 41',
+	'[01-Oct-2026 10:00:02 UTC] PHP Warning:  Undefined array key "price" in ' . ABSPATH . 'wp-content/themes/woodmart-child/functions.php on line 41',
+	'[01-Oct-2026 10:00:03 UTC] PHP Warning:  Undefined array key "price" in ' . ABSPATH . 'wp-content/themes/woodmart-child/functions.php on line 41',
+	'[01-Oct-2026 10:00:04 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function wc_get_sku() in ' . ABSPATH . 'wp-content/plugins/x/x.php:88',
+	'not a PHP error at all - something else wrote this line',
+) ) . "\n" );
+
+$log = Morpheus_Health::log_tail( array( 'lines' => 50 ) );
+ok( $log['exists'] === true && $log['readable'] === true, 'log: a real file is read' );
+ok( $log['not_read'] === null, 'log: "nothing to read" is NOT claimed when there is something to read' );
+ok( ( $log['counts']['warning'] ?? 0 ) === 3, 'log: three warnings are counted as three' );
+ok( ( $log['counts']['fatal'] ?? 0 ) === 1 && ( $log['counts']['notice'] ?? 0 ) === 1, 'log: a fatal and a notice are told apart' );
+ok( ( $log['counts']['other'] ?? 0 ) === 1, 'log: a line that is not a PHP error is kept, not dropped' );
+ok( $log['groups_total'] === 4, 'log: the repeated warning is ONE group, not three' );
+// The two counts are different facts, and the first version of the reader conflated
+// them — it reported the lines in the bytes it READ under a name the panel rendered
+// as "showing the newest N lines". A number that overstates what the operator is
+// looking at is the same defect as a silent truncation.
+ok( $log['lines_read'] === 6, 'log: the lines returned are counted as what they are' );
+ok( $log['lines_in_tail'] === 6, 'log: …and a small file has nothing beyond them' );
+
+$first = isset( $log['groups'][0] ) ? $log['groups'][0] : array();
+ok( ( $first['count'] ?? 0 ) === 3, 'log: the most frequent group leads' );
+ok( ( $first['file'] ?? '' ) === 'wp-content/themes/woodmart-child/functions.php', 'log: the file is relative to the site, not an absolute server path' );
+ok( ( $first['line'] ?? 0 ) === 41, 'log: the line the log itself names is kept' );
+ok( ( $first['message'] ?? '' ) === 'Undefined array key "price"', 'log: the message is the log\'s own words, without the "in file on line" tail' );
+ok( count( $first['samples'] ?? array() ) === 3, 'log: a group carries its own raw lines' );
+ok( ( $log['entries'][0] ?? '' ) === 'not a PHP error at all - something else wrote this line', 'log: the newest line comes first' );
+
+// AN ABSENT FILE IS NOT "NO ERRORS" — the reading this whole feature exists to avoid.
+unlink( $log_file );
+$missing = Morpheus_Health::log_tail();
+ok( $missing['exists'] === false, 'log: a missing file is reported as missing' );
+ok( $missing['not_read'] === 'missing', 'log: …with its own reason, so the panel cannot show an empty list as all clear' );
+ok( $missing['groups'] === array() && $missing['entries'] === array(), 'log: …and claims nothing about errors it never read' );
+
+// THE BOUND. A log is the one file on a site that can be gigabytes, so the reader
+// seeks from the END and reports when it stopped short.
+$filler = '[01-Oct-2026 11:00:00 UTC] PHP Warning:  Filler warning for the tail bound in ' . ABSPATH . 'wp-content/plugins/x/x.php on line 7' . "\n";
+$fh = fopen( $log_file, 'wb' );
+for ( $i = 0; $i < 3000; $i++ ) {
+	fwrite( $fh, $filler ); // ~440 KB, past LOG_TAIL_BYTES
+}
+fclose( $fh );
+$big = Morpheus_Health::log_tail( array( 'lines' => 10 ) );
+ok( $big['bytes'] > Morpheus_Health::LOG_TAIL_BYTES, 'log: the fixture really is bigger than the tail bound' );
+ok( $big['truncated'] === true, 'log: a file past the tail is REPORTED as truncated, never silently cut' );
+ok( count( $big['entries'] ) === 10, 'log: …and only the newest lines asked for are returned' );
+ok( $big['lines_read'] === 10, 'log: …the count of what was returned is the count of what was returned' );
+ok( $big['lines_in_tail'] > $big['lines_read'], 'log: …and the tail it read holds far more — which is exactly what truncated means' );
+ok( ( $big['groups'][0]['message'] ?? '' ) === 'Filler warning for the tail bound', 'log: …and what it did read still parses' );
+
+// Leave the site exactly as it was found — a harness that leaves a fixture behind is
+// the thing run.sh's own trap warns about.
+if ( $log_had ) {
+	file_put_contents( $log_file, $log_was );
+} else {
+	@unlink( $log_file );
+}
+ok( $log_had ? file_get_contents( $log_file ) === $log_was : ! file_exists( $log_file ), 'log: the site is left exactly as it was found' );
+
 // ── the fix ────────────────────────────────────────────────────────────────
 
 // 5. A file that is not the one being served is REFUSED: moving it would look

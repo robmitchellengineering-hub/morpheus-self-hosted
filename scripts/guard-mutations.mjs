@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 62;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 63;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 61;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 62;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -2755,6 +2755,35 @@ export const MUTATIONS = [
     find: "\t\t\t'post_type'      => morpheus_public_post_types(),\n",
     replace: "\t\t\t'post_type'      => array( 'post', 'page', 'product' ),\n",
   },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // THE BOUND. A log is the one file on a site that can be gigabytes, and this is
+    // the guard clause that makes the reader seek from the END instead of pulling
+    // the whole thing into memory on a request.
+    why: 'Removes the tail bound, so the error-log reader pulls the whole file instead of seeking from the end.',
+    find: 'if ( $read < $size ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // READ-ONLY IS THE WHOLE CONTRACT. A log is the operator's evidence, and this is
+    // the shape that would destroy it the moment the file is missing.
+    why: 'Makes the log reader delete the file when it is absent, so reading evidence could destroy it.',
+    find: "\t\t\t$out['not_read'] = 'missing';",
+    replace: "\t\t\t@unlink( $file );\n\t\t\t$out['not_read'] = 'missing';",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // THE PANEL MUST NOT READ ON OPEN. A log tail can be megabytes, and opening a tab
+    // is not a request to read it — this is the effect that would make every health
+    // panel view pull the whole log.
+    why: 'Reads the log when the panel mounts, so simply opening the health tab pulls a log that can be megabytes.',
+    find: '  const [log, setLog] = useState(null);',
+    replace: '  useEffect(() => { run(); }, []);\n  const [log, setLog] = useState(null);',
+  },
 ];
 
 /**
@@ -2800,5 +2829,12 @@ export const NOT_YET_PROVEN = [
  * documented-but-dead half — `Morpheus_Traffic::public_status()` was written to be "what the /status
  * route adds" and was called from nowhere, so the module could not be seen by the payload that reports
  * what a build can do. The key is now there and the guard asserts it, so the claim is text-editable.
+ *
+ * 62 → 61 on 2026-10-08: `verify-site-health.mjs` was in the pile — a health screen that is BELIEVED, with
+ * no mutation proving its claims could fail. The error-log reader added three: the tail bound (seek from the
+ * END, never the whole file), the read-only contract (reading evidence must not be able to destroy it), and
+ * the panel's "fetch only on the press". The first version of that last check was ALSO satisfied by its own
+ * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
+ * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 62;
+export const UNPROVEN_BASELINE = 61;
