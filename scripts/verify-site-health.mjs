@@ -513,10 +513,18 @@ check('…and offering no way to clear or delete the log', /clear the log|CLEAR 
 const cssSrc = read('src/index.css');
 check('selection is still off for controls (the rule the fix has to work with)',
   /button, a, select, \.no-select \{/.test(cssSrc) && /user-select: none;/.test(cssSrc), true);
+// Comments stripped, and the match anchored to `className=`: the comment explaining this
+// very fix BEGINS with the word `select-text`, so a raw scan collected the explanation as
+// if it were the code and the mutation below SURVIVED. That is H19 exactly — the same trap
+// this file's copy check already records twice. A check satisfied by its own comment is a
+// check that proves nothing.
+const panelCode = panelSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 check('…and the group text opts back IN, so it can be copied at all',
-  (panelSrc.match(/select-text/g) || []).length >= 3, true);
+  (panelCode.match(/className="select-text/g) || []).length >= 4, true);
 check('…including the message, the file:line and the raw lines',
-  /select-text[^>]*text-\[11px\]/.test(panelSrc) && /select-text text-\[10px\][^>]*break-all/.test(panelSrc), true);
+  /className="select-text min-w-0 flex-1 text-\[11px\]/.test(panelCode)
+  && /className="select-text text-\[10px\] text-ink-max break-all"/.test(panelCode)
+  && /className="select-text text-\[10px\][^"]*whitespace-pre-wrap"/.test(panelCode), true);
 
 // The mobile half: selection is not something anyone can drag across a hundred groups.
 const logText = read('src/lib/errorLogText.js');
