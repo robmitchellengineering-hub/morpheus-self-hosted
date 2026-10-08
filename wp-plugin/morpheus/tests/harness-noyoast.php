@@ -86,10 +86,54 @@ function store_req( $action, $data, $secret ) {
 	return rest_do_request( $r );
 }
 
+// ── the site's OWN content types ─────────────────────────────────────────────
+//
+// The live store publishes a `services` CPT — `/services/equipment-repairs/` is in
+// its sitemap. Head tags ARE emitted for it (`emit_head()` keys off
+// `is_singular()`, not off a type list), but the panel could not LIST it, audit it
+// or bulk-fill it, because the set of types was the hard-coded
+// `array( 'post', 'page', 'product' )`. The visible result: that page's meta
+// description was its own first words, including "Home / Services /", with nothing
+// in the panel able to say so.
+//
+// That theme's `portfolio` archive is a SEPARATE case and is deliberately NOT
+// covered here: it is registered as not public (measured — its sitemap 404s where
+// `services`' answers 200), so the derivation leaves it alone. This fixture is the
+// public kind, which is the one the audit's live symptom was about.
+//
+// A type of the site's own is registered and published here, which turns "the
+// panel works on what the site publishes" into a claim about a REAL WordPress
+// rather than about a source string — and makes it fail if the list is ever
+// hard-coded again.
+register_post_type( 'services', array( 'public' => true, 'label' => 'Services' ) );
+$svc_id = wp_insert_post( array(
+	'post_title'   => 'Equipment repairs',
+	'post_content' => 'We repair instruments.',
+	'post_status'  => 'publish',
+	'post_type'    => 'services',
+) );
+ok( $svc_id > 0 && get_post_status( $svc_id ) === 'publish', 'fixture: a public CPT of the site\'s own is published' );
+
 $ctx = seo_req( 'context', array(), $SECRET )->get_data();
 ok( ( $ctx['owns_head'] ?? null ) === true, 'context: owns_head true' );
 ok( array_key_exists( 'active_plugin', $ctx ) && $ctx['active_plugin'] === null, 'context: active_plugin null' );
 ok( ! empty( $ctx['limits']['title_max'] ), 'context: length guidance is exposed to the widget' );
+
+$ctx_types = isset( $ctx['post_types'] ) && is_array( $ctx['post_types'] ) ? $ctx['post_types'] : array();
+ok( in_array( 'services', $ctx_types, true ), 'context: the site\'s own CPT is one of the types the panel works on' );
+ok( in_array( 'post', $ctx_types, true ) && in_array( 'page', $ctx_types, true ), 'context: post and page are still in the list' );
+ok( ! in_array( 'attachment', $ctx_types, true ), 'context: attachment is NOT treated as indexable content' );
+ok( ! in_array( 'wp_block', $ctx_types, true ), 'context: WordPress\'s own internal public types are not content either' );
+
+// NO `types` argument on purpose: the point is the DEFAULT the panel gets. Passing
+// the type explicitly would pass on the old hard-coded default too (list_content
+// filters whatever it is given by post_type_exists), so it would prove nothing.
+$listed      = seo_req( 'list_content', array( 'limit' => 20 ), $SECRET )->get_data();
+$listed_ids  = array();
+foreach ( (array) ( $listed['items'] ?? array() ) as $row ) {
+	$listed_ids[] = (int) ( $row['id'] ?? 0 );
+}
+ok( in_array( $svc_id, $listed_ids, true ), 'list_content: an item of the site\'s own CPT appears in the SEO list by DEFAULT' );
 
 echo "\n== no-Yoast boot: read/write lands in OUR keys ==\n";
 $id = wp_insert_post( array(
@@ -822,6 +866,82 @@ ok( ( $scan_own['status'] ?? '' ) === 'recommended', 'robots: a stale served fil
 ok( ( $scan_own['fix']['kind'] ?? '' ) === 'auto', 'robots: the finding carries an automatic fix' );
 ok( ( $scan_own['fix']['label'] ?? '' ) === 'Quarantine the stale robots.txt', 'robots: the action is the quarantine' );
 ok( ! empty( $scan_own['fix']['warning'] ), 'robots: the consequence is stated BEFORE the button' );
+
+// ── the error log, READ rather than merely measured ─────────────────────────
+//
+// CLEAN MY SITE has always opened wp-content/debug.log — to decide whether the web
+// server is SERVING it, by comparing its bytes with the URL's. That answers "is this
+// file a leak" and nothing else: nothing read the errors, so "what is breaking?"
+// had no answer anywhere. This writes a real log, with one fault repeated, and
+// asserts what the reader makes of it — INCLUDING the two ways it must not answer:
+// an absent file is not "no errors", and a file past the tail is reported as
+// truncated rather than silently cut.
+$log_file = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+$log_had  = file_exists( $log_file );
+$log_was  = $log_had ? file_get_contents( $log_file ) : null;
+
+file_put_contents( $log_file, implode( "\n", array(
+	'[01-Oct-2026 10:00:00 UTC] PHP Notice:  Function _load_textdomain_just_in_time was called incorrectly.',
+	'[01-Oct-2026 10:00:01 UTC] PHP Warning:  Undefined array key "price" in ' . ABSPATH . 'wp-content/themes/woodmart-child/functions.php on line 41',
+	'[01-Oct-2026 10:00:02 UTC] PHP Warning:  Undefined array key "price" in ' . ABSPATH . 'wp-content/themes/woodmart-child/functions.php on line 41',
+	'[01-Oct-2026 10:00:03 UTC] PHP Warning:  Undefined array key "price" in ' . ABSPATH . 'wp-content/themes/woodmart-child/functions.php on line 41',
+	'[01-Oct-2026 10:00:04 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function wc_get_sku() in ' . ABSPATH . 'wp-content/plugins/x/x.php:88',
+	'not a PHP error at all - something else wrote this line',
+) ) . "\n" );
+
+$log = Morpheus_Health::log_tail( array( 'lines' => 50 ) );
+ok( $log['exists'] === true && $log['readable'] === true, 'log: a real file is read' );
+ok( $log['not_read'] === null, 'log: "nothing to read" is NOT claimed when there is something to read' );
+ok( ( $log['counts']['warning'] ?? 0 ) === 3, 'log: three warnings are counted as three' );
+ok( ( $log['counts']['fatal'] ?? 0 ) === 1 && ( $log['counts']['notice'] ?? 0 ) === 1, 'log: a fatal and a notice are told apart' );
+ok( ( $log['counts']['other'] ?? 0 ) === 1, 'log: a line that is not a PHP error is kept, not dropped' );
+ok( $log['groups_total'] === 4, 'log: the repeated warning is ONE group, not three' );
+// The two counts are different facts, and the first version of the reader conflated
+// them — it reported the lines in the bytes it READ under a name the panel rendered
+// as "showing the newest N lines". A number that overstates what the operator is
+// looking at is the same defect as a silent truncation.
+ok( $log['lines_read'] === 6, 'log: the lines returned are counted as what they are' );
+ok( $log['lines_in_tail'] === 6, 'log: …and a small file has nothing beyond them' );
+
+$first = isset( $log['groups'][0] ) ? $log['groups'][0] : array();
+ok( ( $first['count'] ?? 0 ) === 3, 'log: the most frequent group leads' );
+ok( ( $first['file'] ?? '' ) === 'wp-content/themes/woodmart-child/functions.php', 'log: the file is relative to the site, not an absolute server path' );
+ok( ( $first['line'] ?? 0 ) === 41, 'log: the line the log itself names is kept' );
+ok( ( $first['message'] ?? '' ) === 'Undefined array key "price"', 'log: the message is the log\'s own words, without the "in file on line" tail' );
+ok( count( $first['samples'] ?? array() ) === 3, 'log: a group carries its own raw lines' );
+ok( ( $log['entries'][0] ?? '' ) === 'not a PHP error at all - something else wrote this line', 'log: the newest line comes first' );
+
+// AN ABSENT FILE IS NOT "NO ERRORS" — the reading this whole feature exists to avoid.
+unlink( $log_file );
+$missing = Morpheus_Health::log_tail();
+ok( $missing['exists'] === false, 'log: a missing file is reported as missing' );
+ok( $missing['not_read'] === 'missing', 'log: …with its own reason, so the panel cannot show an empty list as all clear' );
+ok( $missing['groups'] === array() && $missing['entries'] === array(), 'log: …and claims nothing about errors it never read' );
+
+// THE BOUND. A log is the one file on a site that can be gigabytes, so the reader
+// seeks from the END and reports when it stopped short.
+$filler = '[01-Oct-2026 11:00:00 UTC] PHP Warning:  Filler warning for the tail bound in ' . ABSPATH . 'wp-content/plugins/x/x.php on line 7' . "\n";
+$fh = fopen( $log_file, 'wb' );
+for ( $i = 0; $i < 3000; $i++ ) {
+	fwrite( $fh, $filler ); // ~440 KB, past LOG_TAIL_BYTES
+}
+fclose( $fh );
+$big = Morpheus_Health::log_tail( array( 'lines' => 10 ) );
+ok( $big['bytes'] > Morpheus_Health::LOG_TAIL_BYTES, 'log: the fixture really is bigger than the tail bound' );
+ok( $big['truncated'] === true, 'log: a file past the tail is REPORTED as truncated, never silently cut' );
+ok( count( $big['entries'] ) === 10, 'log: …and only the newest lines asked for are returned' );
+ok( $big['lines_read'] === 10, 'log: …the count of what was returned is the count of what was returned' );
+ok( $big['lines_in_tail'] > $big['lines_read'], 'log: …and the tail it read holds far more — which is exactly what truncated means' );
+ok( ( $big['groups'][0]['message'] ?? '' ) === 'Filler warning for the tail bound', 'log: …and what it did read still parses' );
+
+// Leave the site exactly as it was found — a harness that leaves a fixture behind is
+// the thing run.sh's own trap warns about.
+if ( $log_had ) {
+	file_put_contents( $log_file, $log_was );
+} else {
+	@unlink( $log_file );
+}
+ok( $log_had ? file_get_contents( $log_file ) === $log_was : ! file_exists( $log_file ), 'log: the site is left exactly as it was found' );
 
 // ── the fix ────────────────────────────────────────────────────────────────
 

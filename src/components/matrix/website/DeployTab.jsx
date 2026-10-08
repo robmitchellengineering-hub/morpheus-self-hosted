@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Rocket, Loader2, Check, AlertTriangle, GitBranch, ShieldCheck, ShieldAlert, FileDiff, ExternalLink, GitPullRequest } from 'lucide-react';
+import { Rocket, Loader2, Check, AlertTriangle, GitBranch, ShieldCheck, ShieldAlert, FileDiff, ExternalLink, GitPullRequest, RotateCcw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 // DEPLOY tab of the WEBSITE panel — ship this project's code to the
@@ -34,6 +34,12 @@ export default function DeployTab({ projectId }) {
   const [merge, setMerge] = useState(null);
   const pollRef = useRef(null);
 
+  // UNDO — the plugin's snapshot of its own last deploy. Two-step, inline: the
+  // button only arms the confirm panel, and nothing is sent until UNDO NOW.
+  const [undo, setUndo] = useState(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoConfirming, setUndoConfirming] = useState(false);
+
   const load = useCallback(async () => {
     if (!projectId) return;
     setLoading(true); setErr(null);
@@ -47,7 +53,7 @@ export default function DeployTab({ projectId }) {
     } finally { setLoading(false); }
   }, [projectId]);
 
-  useEffect(() => { setVerify(null); setDiff(null); setShip(null); setMerge(null); load(); }, [load]);
+  useEffect(() => { setVerify(null); setDiff(null); setShip(null); setMerge(null); setUndo(null); setUndoConfirming(false); load(); }, [load]);
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
 
   useEffect(() => {
@@ -95,6 +101,21 @@ export default function DeployTab({ projectId }) {
       if (data.blocked) setErr('Syntax check failed — fix the code (in chat) and try again.');
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setShipping(false); }
+  };
+
+  // UNDO. `confirm: true` is not decoration: the server refuses the action
+  // without it, and the plugin ignores `armed` here — so this is the one press on
+  // the tab that changes live files on a site that is not armed, and the panel
+  // above says so before the button exists.
+  const runUndo = async () => {
+    setUndoing(true); setErr(null); setUndo(null);
+    try {
+      const { data } = await base44.functions.invoke('wordPressDeploy', { projectId, action: 'rollback', confirm: true });
+      setUndo(data);
+      setUndoConfirming(false);
+      load(); // the plugin's `last` record changes, so re-read it
+    } catch (e) { setErr(e?.data?.error || e.message); }
+    finally { setUndoing(false); }
   };
 
   const busy = shipping || merge?.phase === 'polling';
@@ -212,6 +233,80 @@ export default function DeployTab({ projectId }) {
               </div>
             )}
           </div>
+
+          {/* UNDO — the snapshot the plugin took before its last deploy.
+              Shown only when that deploy LANDED (`success === true`): after a
+              failed health check the plugin has ALREADY rolled the deploy back
+              and records `success: false`, so an undo then would restore a
+              snapshot onto the state it came from and report health — a no-op
+              wearing a success.
+
+              ⚠️ And it says out loud that this writes while NOT armed, because it
+              does: only the plugin's deploy handler tests `armed`. */}
+          {state.plugin?.last?.success === true && (
+            <div className="border-t border-primary/15 pt-4 space-y-2">
+              <div className="text-[10px] text-primary/40 uppercase tracking-wider">Undo the last deploy</div>
+              <div className="text-[11px] text-ink-max leading-relaxed">
+                {state.plugin.last.commit
+                  ? <>The plugin applied commit <span className="font-mono">{String(state.plugin.last.commit).slice(0, 7)}</span>. Undoing restores every file that deploy changed and removes the files it added.</>
+                  : <>The plugin applied its last deploy. Undoing restores every file that deploy changed and removes the files it added.</>}
+              </div>
+
+              {undo && !undo.error && (
+                <div className="border border-primary/25 px-3 py-2 text-[11px] text-ink-max leading-relaxed">
+                  <div className="flex items-center gap-1.5">
+                    <Check size={12} className="text-primary" />
+                    Restored{undo.commit ? <> to <span className="font-mono">{String(undo.commit).slice(0, 7)}</span></> : null}.
+                  </div>
+                  {undo.ok === false && (
+                    <div className="text-yellow-500/90 mt-1">The site did not answer its health check straight after the restore — open it and look before doing anything else.</div>
+                  )}
+                </div>
+              )}
+
+              {undo && undo.error && (
+                <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] text-red-300/90 leading-relaxed">
+                  {undo.error === 'snapshot_missing'
+                    ? 'That deploy\u2019s snapshot has aged out \u2014 the plugin keeps the last five, so this one can no longer be undone from here.'
+                    : (undo.message || 'The plugin refused the undo.')}
+                </div>
+              )}
+
+              {undoConfirming ? (
+                // Step two of two. Nothing has been sent: UNDO NOW is the only
+                // thing that calls the server.
+                <div className="border border-yellow-500/30 px-3 py-2.5 space-y-2">
+                  <div className="text-[11px] text-ink-max leading-relaxed">
+                    Restore the live site to where that deploy started? This rewrites files immediately — and it does so even while the plugin is <span className="text-ink-max">not armed</span>, because Armed gates new deploys and not this.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={runUndo} disabled={undoing}
+                      className="flex items-center gap-1.5 text-[11px] px-3 py-2 border border-yellow-500/40 text-yellow-500/90 hover:border-yellow-500 disabled:opacity-40">
+                      {undoing ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                      {undoing ? 'RESTORING' : 'UNDO NOW'}
+                    </button>
+                    <button onClick={() => setUndoConfirming(false)} disabled={undoing}
+                      className="text-[11px] px-3 py-2 border border-primary/40 text-primary/80 hover:border-primary disabled:opacity-40">
+                      CANCEL
+                    </button>
+                  </div>
+                  <div className="text-[10px] text-ink-max leading-relaxed">
+                    Nothing has been sent yet. The plugin restores from the snapshot it took before writing, then re-checks that the site still answers.
+                  </div>
+                </div>
+              ) : undo && !undo.error ? null : (
+                // No second press for the same deploy: the plugin keeps one
+                // `morpheus_deploy_last` and does not clear it after a manual
+                // rollback, so the record still says the deploy landed and a
+                // re-press would restore the same snapshot again. The result
+                // above stands in its place until the panel is reloaded.
+                <button onClick={() => setUndoConfirming(true)} disabled={busy || undoing}
+                  className="flex items-center gap-1.5 text-[11px] px-3 py-2 border border-primary/40 text-primary/80 hover:border-primary hover:text-primary disabled:opacity-40">
+                  <RotateCcw size={12} /> UNDO THIS DEPLOY
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="border border-primary/20 bg-primary/[0.03] px-3 py-2.5 text-[10px] text-ink-max leading-relaxed">
             To make changes, use <span className="text-ink-max">chat</span> in this project — they land in the file tree, then ship here. The plugin only writes to the live server when <span className="text-ink-max">Armed</span> in Settings → Morpheus.

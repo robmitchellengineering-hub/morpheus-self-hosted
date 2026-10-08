@@ -143,13 +143,26 @@ check('the plugin answers exactly the actions the app can send', pluginActions, 
 check('the app refuses an action the plugin does not have', TRAFFIC_ACTIONS.includes('delete_everything'), false);
 
 // 3b. the widget scope must be exactly what the tab invokes — no free privilege.
+//
+// ⚠️ THE TAB IS TWO FILES NOW. Redirects live in their own component (the panel is
+// large and the tab was already long), so a check that read only TrafficTab.jsx would
+// have gone on passing while the new function's scope entry was unverified — the
+// "a check that never ran reads as a check that passed" shape, one file over.
 const tokenSrc = read('server/src/lib/widgetToken.js');
+const redirectsPanel = read('src/components/matrix/website/RedirectsPanel.jsx');
 const scopeBlock = (tokenSrc.match(/traffic: \[([^\]]*)\]/) || ['', ''])[1];
 const scopeFns = uniq([...scopeBlock.matchAll(/'([A-Za-z0-9_]+)'/g)].map((m) => m[1]));
-const invoked = uniq([...tab.matchAll(/functions\.invoke\(\s*'([A-Za-z0-9_]+)'/g)].map((m) => m[1]));
-check('the tab invokes exactly one function (parser sanity)', invoked, ['trafficAction']);
-check('the traffic scope lists exactly what the tab invokes', scopeFns, invoked);
+const invoked = uniq([
+  ...[...tab.matchAll(/functions\.invoke\(\s*'([A-Za-z0-9_]+)'/g)].map((m) => m[1]),
+  ...[...redirectsPanel.matchAll(/functions\.invoke\(\s*'([A-Za-z0-9_]+)'/g)].map((m) => m[1]),
+]);
+check('the surface invokes exactly the two functions this scope grants (parser sanity)', invoked, ['trafficAction', 'wordPressRedirects']);
+check('the traffic scope lists exactly what the surface invokes', scopeFns, invoked);
 check('the traffic scope does not borrow the SEO scope\'s functions', scopeFns.includes('wordPressSeoAction'), false);
+// The widening is deliberate (see widgetToken.js) — what must NOT creep in is a
+// function that writes FILES or applies updates, which is a different power.
+check('…and grants nothing that writes files or applies updates',
+  scopeFns.filter((f) => /Deploy|Apply|Fix|Maintenance/i.test(f)), []);
 
 // 3c. the caps on both sides are one fact in two files.
 const num = (src, re) => { const m = src.match(re); return m ? Number(m[1]) : null; };
@@ -158,6 +171,18 @@ check('the batch cap agrees across the boundary', [num(plugin, /MAX_BATCH\s*=\s*
 check('the backfill cap agrees across the boundary', [num(plugin, /MAX_BACKFILL\s*=\s*(\d+)/), MAX_BACKFILL], [MAX_BACKFILL, MAX_BACKFILL]);
 check('our batch cap is not claimed to be the spec\'s (it documents 10,000)', has(plugin, '10,000 URLs per post'), true);
 check('the lib does not claim 100 is the spec ceiling either', has(read('server/src/lib/indexNow.js'), 'NOT IndexNow\'s'), true);
+
+// 3c-ii. WHICH pages get announced is the site's business, not a constant.
+//
+// The same hard-coded `array( 'post', 'page', 'product' )` lived here as well as
+// in the SEO module, so publishing the store's `services` CPT never told IndexNow
+// about it — a page that is in the sitemap and reachable, handed to the index by
+// nothing. Both modules now read one helper, so the two lists cannot drift apart
+// either.
+check('the traffic module no longer declares a post-type constant', /const POST_TYPES\s*=/.test(plugin), false);
+check('…no call site still reads the old constant', /self::POST_TYPES/.test(plugin), false);
+check('…and no hard-coded three-type list survives in it', /array\(\s*'post'\s*,\s*'page'\s*,\s*'product'\s*\)/.test(plugin), false);
+check('…it announces the site\'s own public types instead', /morpheus_public_post_types\(\)/.test(plugin), true);
 
 // 3d. one component, mounted by both surfaces — the dock must not fork a tab.
 const panel = read('src/components/matrix/WebsitePanel.jsx');

@@ -287,6 +287,13 @@ jobs:
       - name: Guards are install-free
         run: node scripts/verify-guards-no-install.mjs
 
+      # Uptime: what Morpheus may say about whether a site was up. The arithmetic is
+      # a pure module and is asserted by CALLING it — a site nobody has checked must
+      # not read as 0%, a timeout on our side must not read as the site's 500, and an
+      # outage happening right now must not be withheld until it recovers.
+      - name: Site uptime claims
+        run: node scripts/verify-site-uptime.mjs
+
       # The H9 drift guard's runtime verification — real assertions against the
       # module, not a syntax check. server/src/lib/selfDevDrift.js is pure, so
       # this needs no dependencies.
@@ -887,6 +894,14 @@ jobs:
       - name: Plugin uninstall completeness
         run: node scripts/verify-plugin-uninstall.mjs
 
+      # Redirects and the 404 log. A redirect list is the one content feature that
+      # can take a site down — a rule matching wp-admin locks the owner out of the
+      # screen they would fix it on — so the refusals are asserted, not the features:
+      # the protected paths (checked twice, at save and at match), the destination
+      # shapes, the loops, and the log's least-hit eviction policy.
+      - name: Redirects and the 404 log
+        run: node scripts/verify-redirects.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,
@@ -1023,6 +1038,14 @@ jobs:
       # happens exactly once, and the report never claims work it did not do.
       - name: Site maintenance policy rules
         run: node scripts/verify-site-maintenance.mjs
+
+      # The deploy tab's UNDO. The plugin's /rollback route was registered and
+      # tested from the day the Deploy module shipped and nothing in the app ever
+      # called it, while `delivery/wordpress.js` advertised `supports: ['rollback']`
+      # for a button that did not exist. Now it is wired: route, action name,
+      # confirmation gate and both refusal shapes are asserted across the boundary.
+      - name: WordPress deploy undo
+        run: node scripts/verify-wp-rollback.mjs
 
       # What makes a merge verified at all: the named gates must have RUN, not
       # merely have failed to fail. A green deploy preview with no CI run behind

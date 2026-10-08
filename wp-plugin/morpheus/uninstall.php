@@ -37,6 +37,8 @@ delete_option( 'morpheus_pairing' );       // Morpheus_Pairing::OPTION
 delete_option( 'morpheus_pairing_rate' );  // Morpheus_Pairing::RATE_OPTION
 delete_option( 'morpheus_fix_attempts' );  // Morpheus_Fixes::ATTEMPTS_OPTION
 delete_option( 'morpheus_traffic' );       // Morpheus_Traffic::OPTION
+delete_option( 'morpheus_redirects' );     // Morpheus_Redirects::OPTION
+delete_option( 'morpheus_404_log' );       // Morpheus_Redirects::LOG_OPTION
 
 // The traffic module registers a rewrite rule that serves the IndexNow key file.
 // Deactivating does not remove it from the stored `rewrite_rules` option, and the

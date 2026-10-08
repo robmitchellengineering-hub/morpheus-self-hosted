@@ -74,6 +74,7 @@ const HARD = [
   'verify-dock.mjs',
   'verify-plugin-pack.mjs',
   'verify-plugin-uninstall.mjs',
+  'verify-redirects.mjs',
   'verify-prod-sql.mjs',
   'verify-billing-clamp.mjs',
   'verify-guards-no-install.mjs',
@@ -82,6 +83,7 @@ const HARD = [
   'verify-site-health.mjs',
   'verify-clean-site.mjs',
   'verify-site-maintenance.mjs',
+  'verify-wp-rollback.mjs',
   'verify-merge-gates.mjs',
   'verify-operator-drive.mjs',
   'verify-proving-ground.mjs',
@@ -138,6 +140,7 @@ const HARD = [
   'verify-plan-reconciliation.mjs',
   'verify-applied-ops.mjs',
   'verify-broker-minting.mjs',
+  'verify-site-uptime.mjs',
   'boot-smoke.mjs',
 ];
 

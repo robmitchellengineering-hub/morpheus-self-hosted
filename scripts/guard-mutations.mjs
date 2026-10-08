@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 62;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 63;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 60;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 61;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -2068,42 +2068,6 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/pluginGui.js',
-    // ⚠️ THE CRASH ITSELF, AS A MUTATION. This is the line the three crash reports point at: a font asked for
-    // inside the DRAW path and put straight into a dictionary LITERAL, where nil does not mean "no font" but
-    // `NSInvalidArgumentException` — raised on the HOST's main thread, 30 times a second, in GarageBand's own
-    // process. It is also the mutation that has to fail the `no font while drawing` check while every other
-    // panel check stays green, which is why the check is written on `drawRect:`'s body rather than on the file.
-    why: 'Puts a font factory back inside drawRect:, where a nil font raises out of the dictionary literal and takes the host (GarageBand) down with it.',
-    find: '  NSDictionary *valueAttrs = s_valueAttrs;',
-    replace: '  NSDictionary *valueAttrs = @{ NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium], NSForegroundColorAttributeName: morpheusGreen() };',
-  },
-  {
-    guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/pluginGui.js',
-    // ⚠️ THE SECOND CRASH, AS A MUTATION — the one the FIRST fix caused and every check stayed green through.
-    // `morpheusAttrsOwned` exists because this file is compiled without ARC, so the factory's autoreleased
-    // dictionary has to be retained by hand; drop the ownership on ONE of the six and the host's run loop frees
-    // it at the end of the iteration the panel was created in. The next draw then messages dead objects and
-    // GarageBand dies instantly. Nothing static can see it — it is an ownership property — so the guard asserts
-    // the call, and this proves the assertion can fail.
-    why: 'Stops owning one of the six attribute dictionaries, so the host\'s run loop frees it and the next draw segfaults in NSStringDrawing.',
-    find: '  s_wordAttrs = morpheusAttrsOwned(morpheusAttrs(13, NSFontWeightBold, morpheusGreen()));',
-    replace: '  s_wordAttrs = morpheusAttrs(13, NSFontWeightBold, morpheusGreen());',
-  },
-  {
-    guard: 'verify-audio-plugin.mjs',
-    file: '.github/workflows/audio-plugin-macos-build.yml',
-    // ⚠️ A GATE IS NOT A GATE WHEN IT CAN BE UNWIRED QUIETLY. The step this removes is the only thing in any
-    // pipeline that RUNS the panel; without it the repository is back to the state that shipped three crashes
-    // past a fully green build, with every static check still passing. Deleting a step leaves no trace in the
-    // diff of anything the guard reads — which is precisely why the guard reads the workflow.
-    why: 'Deletes the step that runs the panel in the build users get, so nothing anywhere executes it again.',
-    find: '      - name: Run the panel the way a host does, and fail if it does not survive it\n        run: node scripts/audio-plugin-panel-render.mjs\n        env:\n          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build',
-    replace: '      # (the panel is never run)',
-  },
-  {
-    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
     // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has
@@ -2749,6 +2713,259 @@ export const MUTATIONS = [
     find: "['deploy', 'health', 'shop', 'pages', 'seo', 'traffic']",
     replace: "['deploy', 'health', 'shop', 'pages', 'seo']",
   },
+  {
+    guard: 'verify-seo.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // THE HARD-CODED LIST, restored at the one site that decides what the panel's
+    // main list contains. The live store's `services` CPT and `portfolio` archive
+    // are public and in the sitemap, and this is the line that kept both out of
+    // the SEO tab — including the page whose description was its own first words.
+    why: 'Puts the three-type list back as the default for the SEO content list, so the site\'s own public post types vanish from the panel.',
+    find: ': morpheus_public_post_types();',
+    replace: ": array( 'post', 'page', 'product' );",
+  },
+  {
+    guard: 'verify-seo.mjs',
+    file: 'wp-plugin/morpheus/includes/helpers.php',
+    // WordPress reports `attachment` as public, and an attachment has no title
+    // tag or meta description to write. Dropping the exclusion would hand every
+    // image in the media library to the SEO panel as indexable content.
+    why: 'Stops excluding attachments from the derived content types, so every media item is offered to the SEO panel as content with a title tag.',
+    find: "\t\t'attachment',\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // The same constant lived here: publishing the store's `services` CPT never
+    // told IndexNow about a page that is in the sitemap and reachable.
+    why: 'Puts the traffic module back on the hard-coded three types, so the site\'s own public post types are never announced to an index.',
+    find: "\t\t\t'post_type'      => morpheus_public_post_types(),\n",
+    replace: "\t\t\t'post_type'      => array( 'post', 'page', 'product' ),\n",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // THE BOUND. A log is the one file on a site that can be gigabytes, and this is
+    // the guard clause that makes the reader seek from the END instead of pulling
+    // the whole thing into memory on a request.
+    why: 'Removes the tail bound, so the error-log reader pulls the whole file instead of seeking from the end.',
+    find: 'if ( $read < $size ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // READ-ONLY IS THE WHOLE CONTRACT. A log is the operator's evidence, and this is
+    // the shape that would destroy it the moment the file is missing.
+    why: 'Makes the log reader delete the file when it is absent, so reading evidence could destroy it.',
+    find: "\t\t\t$out['not_read'] = 'missing';",
+    replace: "\t\t\t@unlink( $file );\n\t\t\t$out['not_read'] = 'missing';",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // THE PANEL MUST NOT READ ON OPEN. A log tail can be megabytes, and opening a tab
+    // is not a request to read it — this is the effect that would make every health
+    // panel view pull the whole log.
+    why: 'Reads the log when the panel mounts, so simply opening the health tab pulls a log that can be megabytes.',
+    find: '  const [log, setLog] = useState(null);',
+    replace: '  useEffect(() => { run(); }, []);\n  const [log, setLog] = useState(null);',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // ⚠️ THE LOCKOUT. A rule matching wp-admin takes the owner out of the screen they
+    // would fix it on, and there is no way back from inside WordPress. This is the
+    // save-time refusal; the match-time one below it is the second belt.
+    why: 'Stops refusing a redirect on the WordPress admin surface, so a saved rule can lock the owner out of wp-admin.',
+    find: 'if ( self::is_protected( $from ) ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // The second belt: a rule that reached the option by any other route still cannot
+    // take the owner out of wp-admin, because the match path refuses it too.
+    why: 'Stops the match-time protection, so a rule already stored can redirect wp-admin itself.',
+    find: 'if ( self::is_protected( $path ) ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // A protocol-relative destination (`//evil.example`) is an external host wearing a
+    // site-relative costume, which is why it is refused rather than trimmed.
+    why: 'Accepts a protocol-relative destination, so a rule can silently point at another host.',
+    find: "if ( 0 === strpos( $to, '//' ) ) {",
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // THE EVICTION POLICY. Reversing this sort turns "drop the least-hit" into "drop
+    // the most-hit": a scanner's thousand one-off paths would then evict the URL forty
+    // visitors a day are hitting — the exact failure the bound exists to avoid.
+    why: 'Reverses the log ordering, so a 404 flood evicts the busiest real broken link instead of the rarest probe.',
+    find: '\t\t\treturn $hb - $ha;',
+    replace: '\t\t\treturn $ha - $hb;',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // 410 is an ANSWER, not a redirect. The guard slices the branch and refuses any
+    // Location header inside it — so a "410" that actually redirects cannot pass.
+    why: 'Puts a redirect inside the 410 branch, so a page marked Gone also sends a Location header.',
+    find: '\t\t\t\t\tstatus_header( 410 );',
+    replace: '\t\t\t\t\twp_redirect( home_url(), 302 );\n\t\t\t\t\tstatus_header( 410 );',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'server/src/lib/widgetToken.js',
+    // The scope entry the redirects panel needs. Without it the panel 403s for every
+    // dock token — and the check reads BOTH tab files precisely so a function invoked
+    // in a component the guard never opened cannot slip in unverified.
+    why: 'Drops the redirects function from the traffic scope, so the panel it is invoked from is refused for every dock token.',
+    find: "  traffic: ['trafficAction', 'wordPressRedirects'],",
+    replace: "  traffic: ['trafficAction'],",
+  },
+  {
+    guard: 'verify-wp-rollback.mjs',
+    file: 'server/src/functions/wordPressDeploy.js',
+    // The confirmation gate on a LIVE WRITE. With it gone the action runs on the plugin's say-so alone —
+    // and because only the plugin's deploy handler tests `armed`, this route changes files on a site that
+    // is deliberately not armed, which is precisely why the explicit confirm exists.
+    why: 'Removes the explicit confirmation from the deploy undo, so a single call restores files on a live site that is not armed.',
+    find: '    if (confirm !== true) {',
+    replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // A site that never answered is NOT the site returning a 500. The remedies differ —
+    // one is DNS/TLS/host, the other is the site's own code — so this is the branch that
+    // keeps "we could not reach it" from being reported as "it is broken".
+    why: 'Treats a site that never answered as an HTTP error, so a network failure is reported as the site\'s own fault.',
+    find: 'if (status === 0) {',
+    replace: 'if (false) {',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // "We did not look" must never be 0% (a site nobody has checked reading as broken)
+    // and never 100% (reading as perfect).
+    why: 'Reports a window with no checks as 0% uptime, so a site nobody has ever checked reads as permanently down.',
+    find: 'out.uptime[`${days}d`] = null;',
+    replace: 'out.uptime[`${days}d`] = 0;',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // An outage happening RIGHT NOW is the one an owner most needs to see, and it is the
+    // one a naive implementation withholds until it recovers.
+    why: 'Drops an outage that has not recovered yet, so a site that is down this minute reports no incidents.',
+    find: '    open.duration_ms = durationBetween(open.started_at, null, now);\n    out.incidents.push(open);',
+    replace: '    open.duration_ms = durationBetween(open.started_at, null, now);',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/functions/siteUptime.js',
+    // The row is written AFTER the probe returns, so stamping it when it finished makes
+    // a five-second response look freshly checked — the one number the panel shows as
+    // "checked N minutes ago".
+    why: 'Stamps the check when the row is written rather than when the probe started, so a slow site looks freshly checked.',
+    find: 'checkedAt: startedAt',
+    replace: 'checkedAt: new Date()',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptimeStore.js',
+    // H11: the migration ships with the code and production applies additive SQL by hand,
+    // so for a while the table does not exist. Throwing there would break a page nobody
+    // expects this to break.
+    why: 'Throws when the uptime table has not been migrated yet, instead of reporting that there is no history.',
+    find: 'if (isMissingUptimeTable(err)) return [];',
+    replace: 'if (false) return [];',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/siteUptimeSchedule.js',
+    // THE DUE-CHECK. Removing it makes every tick re-check every connected site, so a
+    // restart, a missed tick or a manual CHECK NOW in the panel produces a burst of
+    // duplicate observations — and the interval stops being a floor and becomes noise.
+    why: 'Checks every connected site on every tick instead of only the ones that are due, so history fills with duplicates.',
+    find: 'if (!lastMs || (now - lastMs) >= intervalMs()) due.push({ site, lastMs });',
+    replace: 'due.push({ site, lastMs });',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptimeStore.js',
+    // ⚠️ THE BUG THE BROWSER FOUND, AS A MUTATION. A generated client that predates the
+    // model makes `prisma.siteUptimeCheck` UNDEFINED rather than throwing, so reading
+    // `.create` off it is a TypeError — which reached the panel as "Cannot read
+    // properties of undefined (reading 'count')" while every source check passed.
+    why: 'Reads the uptime table straight off the client instead of asking for the delegate, so a client that predates the model crashes the panel.',
+    find: "  const db = uptimeDelegate();\n  if (!db) return null; // client not regenerated yet — see the header\n  try {\n    const row = await db.create({",
+    replace: '  try {\n    const row = await prisma.siteUptimeCheck.create({',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/lib/widgetToken.js',
+    // The scope entry the uptime panel needs, and the reason it is an explicit list:
+    // removing it makes the panel 403 for every dock token while the app keeps working,
+    // which is exactly the kind of difference a browser would find and a source read
+    // would not.
+    why: 'Drops the uptime function from the deploy scope, so the panel it is invoked from is refused for every dock token.',
+    find: "  deploy: ['wordPressDeploy', 'siteHealth', 'siteUptime'],",
+    replace: "  deploy: ['wordPressDeploy', 'siteHealth'],",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE CRASH ITSELF, AS A MUTATION. This is the line the three crash reports point at: a font asked for
+    // inside the DRAW path and put straight into a dictionary LITERAL, where nil does not mean "no font" but
+    // `NSInvalidArgumentException` — raised on the HOST's main thread, 30 times a second, in GarageBand's own
+    // process. It is also the mutation that has to fail the `no font while drawing` check while every other
+    // panel check stays green, which is why the check is written on `drawRect:`'s body rather than on the file.
+    why: 'Puts a font factory back inside drawRect:, where a nil font raises out of the dictionary literal and takes the host (GarageBand) down with it.',
+    find: '  NSDictionary *valueAttrs = s_valueAttrs;',
+    replace: '  NSDictionary *valueAttrs = @{ NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium], NSForegroundColorAttributeName: morpheusGreen() };',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE SECOND CRASH, AS A MUTATION — the one the FIRST fix caused and every check stayed green through.
+    // `morpheusAttrsOwned` exists because this file is compiled without ARC, so the factory's autoreleased
+    // dictionary has to be retained by hand; drop the ownership on ONE of the six and the host's run loop frees
+    // it at the end of the iteration the panel was created in. The next draw then messages dead objects and
+    // GarageBand dies instantly. Nothing static can see it — it is an ownership property — so the guard asserts
+    // the call, and this proves the assertion can fail.
+    why: 'Stops owning one of the six attribute dictionaries, so the host\'s run loop frees it and the next draw segfaults in NSStringDrawing.',
+    find: '  s_wordAttrs = morpheusAttrsOwned(morpheusAttrs(13, NSFontWeightBold, morpheusGreen()));',
+    replace: '  s_wordAttrs = morpheusAttrs(13, NSFontWeightBold, morpheusGreen());',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-macos-build.yml',
+    // ⚠️ A GATE IS NOT A GATE WHEN IT CAN BE UNWIRED QUIETLY. The step this removes is the only thing in any
+    // pipeline that RUNS the panel; without it the repository is back to the state that shipped three crashes
+    // past a fully green build, with every static check still passing. Deleting a step leaves no trace in the
+    // diff of anything the guard reads — which is precisely why the guard reads the workflow.
+    why: 'Deletes the step that runs the panel in the build users get, so nothing anywhere executes it again.',
+    find: '      - name: Run the panel the way a host does, and fail if it does not survive it\n        run: node scripts/audio-plugin-panel-render.mjs\n        env:\n          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build',
+    replace: '      # (the panel is never run)',
+  },
+  {
+    guard: 'verify-dock.mjs',
+    file: 'server/src/routes/uploads.routes.js',
+    // ⚠️ THE LIVE BUG OF 2026-10-08, AS A MUTATION. The dock renders the SHOP tab, so
+    // picking a product photo there posts to /uploads — which mounted `blockWidget` and
+    // refused every scoped token. The button was offered and could never work, and Rob
+    // found it ("Photos are not uploading anymore") rather than a check.
+    why: 'Puts the upload route back behind blockWidget, so the dock product-photo button is refused for every scoped token.',
+    find: "router.post('/', requireAuth, allowStoreUpload, upload.single('file'), async (req, res) => {",
+    replace: "router.post('/', requireAuth, blockWidget, upload.single('file'), async (req, res) => {",
+  },
 ];
 
 /**
@@ -2794,5 +3011,12 @@ export const NOT_YET_PROVEN = [
  * documented-but-dead half — `Morpheus_Traffic::public_status()` was written to be "what the /status
  * route adds" and was called from nowhere, so the module could not be seen by the payload that reports
  * what a build can do. The key is now there and the guard asserts it, so the claim is text-editable.
+ *
+ * 62 → 61 on 2026-10-08: `verify-site-health.mjs` was in the pile — a health screen that is BELIEVED, with
+ * no mutation proving its claims could fail. The error-log reader added three: the tail bound (seek from the
+ * END, never the whole file), the read-only contract (reading evidence must not be able to destroy it), and
+ * the panel's "fetch only on the press". The first version of that last check was ALSO satisfied by its own
+ * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
+ * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 62;
+export const UNPROVEN_BASELINE = 60;

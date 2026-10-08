@@ -154,6 +154,21 @@ CREATE TABLE "site_maintenance_policies" (
 );
 
 -- CreateTable
+CREATE TABLE "site_uptime_checks" (
+    "id" TEXT NOT NULL,
+    "project_id" TEXT NOT NULL,
+    "created_by_id" TEXT NOT NULL,
+    "checked_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "ok" BOOLEAN NOT NULL,
+    "status_code" INTEGER NOT NULL DEFAULT 0,
+    "latency_ms" INTEGER NOT NULL DEFAULT 0,
+    "plugin_version" TEXT,
+    "error" TEXT,
+
+    CONSTRAINT "site_uptime_checks_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "projects" (
     "id" TEXT NOT NULL,
     "created_by_id" TEXT NOT NULL,
@@ -1248,8 +1263,14 @@ CREATE TABLE "deck_life_files" (
     CONSTRAINT "deck_life_files_pkey" PRIMARY KEY ("id")
 );
 
+CREATE INDEX "site_uptime_checks_project_id_checked_at_idx" ON "site_uptime_checks"("project_id", "checked_at");
+
 CREATE INDEX "deck_life_files_life_stream_id_idx" ON "deck_life_files"("life_stream_id");
 
 ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_life_stream_id_fkey" FOREIGN KEY ("life_stream_id") REFERENCES "deck_life_streams"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "site_uptime_checks" ADD CONSTRAINT "site_uptime_checks_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "site_uptime_checks" ADD CONSTRAINT "site_uptime_checks_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

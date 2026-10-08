@@ -25,7 +25,14 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   // new scope would silently withhold Health from every existing dock token for
   // no gain in safety. The moment a fix/apply action exists it lands under the
   // same reasoning and gets its own review.
-  deploy: ['wordPressDeploy', 'siteHealth'],
+  //
+  // siteUptime joined it on 2026-10-08 for the same reason and is recorded rather
+  // than assumed: it READS the site's /status and records an observation in
+  // MORPHEUS's own table. It writes nothing to the site at all — the smallest
+  // privilege in this list — and it belongs on the surface that already shows a
+  // site's health, because "has it been answering?" is the first question about
+  // one. Anything that writes files or applies updates stays out.
+  deploy: ['wordPressDeploy', 'siteHealth', 'siteUptime'],
   store: ['getWordPressStore', 'wordPressStoreAction', 'generateProductCopy', 'analyzeProductPhoto'],
   // SEO is its own scope rather than part of `store`: an embed that only runs
   // the shop shouldn't also be able to rewrite every page's search metadata.
@@ -50,14 +57,25 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   // search engine is an outward action on the operator's live site, and an embed
   // that only manages metadata should not be able to do it.
   //
-  // Exactly ONE function, because that is exactly what the surface calls:
-  // trafficAction is the single dispatcher (status | ledger | backfill |
-  // settings) and the tab invokes nothing else. getWordPressStore is deliberately
-  // NOT here — unlike the SEO surface, which reads the site's context before it
-  // can write, the traffic tab needs no site state, and a scope entry nothing
-  // invokes is privilege handed out for free. verify-traffic.mjs asserts this
-  // list matches the tab's actual invokes, so the two cannot drift apart.
-  traffic: ['trafficAction'],
+  // TWO functions, because the surface now calls two, and the list is asserted
+  // against the surface's actual invokes by verify-traffic.mjs so it cannot drift:
+  //   * trafficAction  — the IndexNow dispatcher (status | ledger | backfill | settings)
+  //     and the tab invokes nothing else for it;
+  //   * wordPressRedirects — the redirect rules and the 404 log, added 2026-10-08.
+  //
+  // ⚠️ THAT SECOND ONE IS A DELIBERATE WIDENING OF AN EXISTING SCOPE, and it is the
+  // kind this file's own note asks to be reviewed rather than assumed: a traffic
+  // token can now change how the site ANSWERS a URL, not just what it tells an index
+  // about one. It belongs here because the scope already means "this site's search
+  // presence", and a redirect rule is the other half of exactly that — keeping a URL
+  // that search engines already know about from becoming a dead end. It is still
+  // scoped to the operator's own site, and the plugin refuses the rules that could
+  // lock them out. Anything that writes FILES or applies updates stays out.
+  //
+  // getWordPressStore is deliberately NOT here — unlike the SEO surface, which reads
+  // the site's context before it can write, this tab needs no store state, and a
+  // scope entry nothing invokes is privilege handed out for free.
+  traffic: ['trafficAction', 'wordPressRedirects'],
 };
 
 // DELIBERATELY ABSENT FROM EVERY SCOPE ABOVE: dockAction.

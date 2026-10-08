@@ -41,6 +41,12 @@ if ( class_exists( 'Morpheus_REST' ) ) {
 $routes = rest_get_server()->get_routes();
 ok( isset( $routes['/morpheus/v1/deploy'] ), 'route /morpheus/v1/deploy registered' );
 ok( isset( $routes['/morpheus/v1/status'] ), 'route /morpheus/v1/status registered' );
+// The undo. It was registered and tested from the day the Deploy module shipped
+// and NOTHING in the app called it, so it went unasserted here while
+// `delivery/wordpress.js` advertised `supports: ['rollback']` for a button that
+// did not exist — the app side is wired now (DeployTab → wordPressDeploy →
+// wpRollback), and this is the plugin half of that pair.
+ok( isset( $routes['/morpheus/v1/rollback'] ), 'route /morpheus/v1/rollback registered' );
 
 echo "\n== helpers: deny-list ==\n";
 $denied = array( 'wp-config.php', 'a/wp-config.php', 'wp-content/uploads/2024/x.jpg', '.htaccess', '.env.production', 'x/.git/config', '.user.ini', 'wp-content/cache/x.php' );
@@ -1105,6 +1111,102 @@ $restore = Morpheus_Maintenance::restore( 'file', 'wp-config.php', $file_backups
 file_put_contents( $wp_config, $before );
 ok( file_get_contents( $wp_config ) === $before, 'fixes: wp-config.php is byte-identical to how this boot found it' );
 foreach ( $file_backups as $b ) { Morpheus_Maintenance::delete_snapshot( $b['name'] ); }
+
+// ── redirects, and the 404 log ──────────────────────────────────────────────
+//
+// A redirect list is the one content feature that can take a site DOWN: a rule
+// matching wp-admin locks the owner out of the screen they would fix it on. So the
+// assertions here are mostly REFUSALS, and the log's eviction policy — the part that
+// decides whether a flood of scanner probes can push out a real broken link.
+echo "\n== redirects: the admin surface is never redirectable ==\n";
+ok( Morpheus_Redirects::is_protected( 'wp-admin' ), 'redirects: wp-admin is protected' );
+ok( Morpheus_Redirects::is_protected( '/wp-admin/' ), 'redirects: …with or without slashes' );
+ok( Morpheus_Redirects::is_protected( 'wp-admin/post.php' ), 'redirects: …and everything under it' );
+ok( Morpheus_Redirects::is_protected( 'wp-login.php' ), 'redirects: the login form is protected' );
+ok( Morpheus_Redirects::is_protected( 'wp-json/morpheus/v1/status' ), 'redirects: the REST API is protected' );
+ok( Morpheus_Redirects::is_protected( 'wp-content/morpheus-state/snapshots' ), 'redirects: the plugin state directory is protected' );
+ok( ! Morpheus_Redirects::is_protected( 'shop' ), 'redirects: an ordinary page is not' );
+
+echo "\n== redirects: paths and destinations ==\n";
+ok( Morpheus_Redirects::normalise_path( '/old/' ) === '/old', 'redirects: a trailing slash is not a different page' );
+ok( Morpheus_Redirects::normalise_path( 'old' ) === '/old', 'redirects: a missing leading slash is the same page' );
+ok( Morpheus_Redirects::normalise_path( '/a//b' ) === '/a/b', 'redirects: doubled slashes collapse' );
+ok( Morpheus_Redirects::normalise_path( '/x?orderby=price' ) === '/x', 'redirects: the query string is not part of the path' );
+ok( Morpheus_Redirects::safe_target( '/new' ) === '/new', 'redirects: a site path is a valid destination' );
+ok( Morpheus_Redirects::safe_target( 'https://elsewhere.example/x' ) === 'https://elsewhere.example/x', 'redirects: an absolute https address is valid' );
+ok( Morpheus_Redirects::safe_target( 'javascript:alert(1)' ) === false, 'redirects: javascript: is refused' );
+ok( Morpheus_Redirects::safe_target( '//evil.example/x' ) === false, 'redirects: a protocol-relative address is refused' );
+ok( Morpheus_Redirects::safe_target( 'mailto:a@b.example' ) === false, 'redirects: mailto: is refused' );
+
+echo "\n== redirects: what a rule may not do ==\n";
+$r = Morpheus_Redirects::clean_rule( array( 'from' => 'wp-admin', 'to' => '/somewhere', 'status' => 301 ) );
+ok( is_wp_error( $r ) && $r->get_error_code() === 'protected_from', 'redirects: a rule on wp-admin is refused with a reason' );
+$r = Morpheus_Redirects::clean_rule( array( 'from' => '/a', 'to' => '/a', 'status' => 301 ) );
+ok( is_wp_error( $r ) && $r->get_error_code() === 'self_redirect', 'redirects: a self-redirect is refused' );
+$r = Morpheus_Redirects::clean_rule( array( 'from' => '/a', 'to' => 'javascript:alert(1)', 'status' => 301 ) );
+ok( is_wp_error( $r ) && $r->get_error_code() === 'bad_to', 'redirects: an unscriptable destination is refused' );
+$r = Morpheus_Redirects::clean_rule( array( 'from' => '/a', 'to' => '/b', 'status' => 999 ) );
+ok( is_wp_error( $r ) && $r->get_error_code() === 'bad_status', 'redirects: an invented status is refused' );
+$r = Morpheus_Redirects::clean_rule( array( 'from' => '/a', 'to' => '/b', 'status' => 301 ), array( array( 'id' => 'x', 'from' => '/b', 'to' => '/a' ) ) );
+ok( is_wp_error( $r ) && $r->get_error_code() === 'loop', 'redirects: a two-rule loop is refused by name' );
+
+echo "\n== redirects: create, refuse a duplicate, delete ==\n";
+$made = Morpheus_Redirects::create( array( 'from' => '/old-product', 'to' => '/new-product', 'status' => 301 ) );
+ok( ! empty( $made['ok'] ) && $made['rule']['from'] === '/old-product', 'redirects: a rule is created' );
+$again = Morpheus_Redirects::create( array( 'from' => '/old-product/', 'to' => '/elsewhere', 'status' => 302 ) );
+ok( is_wp_error( $again ) && $again->get_error_code() === 'duplicate', 'redirects: the same path twice is refused (slashes are not a difference)' );
+$gone = Morpheus_Redirects::clean_rule( array( 'from' => '/retired', 'to' => '', 'status' => 410 ) );
+ok( ! is_wp_error( $gone ) && $gone['to'] === '', 'redirects: a 410 needs no destination' );
+$del = Morpheus_Redirects::delete( $made['rule']['id'] );
+ok( ! empty( $del['ok'] ) && count( $del['rules'] ) === 0, 'redirects: a rule is deleted' );
+$nope = Morpheus_Redirects::delete( 'nosuchid' );
+ok( is_wp_error( $nope ), 'redirects: deleting what is not there is refused, not silently ignored' );
+
+echo "\n== the 404 log: grouped, bounded, and it keeps the busiest ==\n";
+Morpheus_Redirects::clear_log();
+Morpheus_Redirects::record_404( '/missing-page' );
+$snap = Morpheus_Redirects::log_rows();
+ok( count( $snap['rows'] ) === 1 && $snap['rows'][0]['hits'] === 1, 'log: a 404 is recorded once' );
+Morpheus_Redirects::record_404( '/missing-page' );
+$snap = Morpheus_Redirects::log_rows();
+ok( count( $snap['rows'] ) === 1 && $snap['rows'][0]['hits'] === 1, 'log: the same path immediately again is THROTTLED, not counted twice' );
+sleep( Morpheus_Redirects::LOG_THROTTLE_SECONDS + 1 );
+Morpheus_Redirects::record_404( '/missing-page' );
+$snap = Morpheus_Redirects::log_rows();
+ok( $snap['rows'][0]['hits'] === 2, 'log: …and is counted once the window has passed' );
+
+// THE EVICTION POLICY, SEEDED RATHER THAN LOOPED. The throttle is a write-rate guard,
+// so forty hits fired in a tight loop are recorded as ONE — a loop here would test the
+// throttle and call it the policy. The log is written as the site would have it after a
+// busy day, then ONE new path arrives while the log is already at its cap.
+$seed = array( array(
+	'path' => '/dead-product-link', 'hits' => 40,
+	'first_at' => gmdate( 'c', time() - 3600 ), 'last_at' => gmdate( 'c' ), 'last_ts' => time() - 60, 'referrer' => '',
+) );
+for ( $i = 0; $i < Morpheus_Redirects::MAX_LOG - 1; $i++ ) {
+	$seed[] = array(
+		'path' => '/scanner-probe-' . $i, 'hits' => 1,
+		'first_at' => gmdate( 'c' ), 'last_at' => gmdate( 'c' ), 'last_ts' => time() - 120, 'referrer' => '',
+	);
+}
+update_option( Morpheus_Redirects::LOG_OPTION, array( 'rows' => $seed, 'total' => 500, 'since' => gmdate( 'c' ) ), false );
+ok( count( Morpheus_Redirects::log_rows()['rows'] ) === Morpheus_Redirects::MAX_LOG, 'log: the fixture fills the log to its cap' );
+
+Morpheus_Redirects::record_404( '/one-more-missing-page' );
+$snap  = Morpheus_Redirects::log_rows();
+$paths = array_column( $snap['rows'], 'path' );
+$probes = 0;
+foreach ( $paths as $p ) {
+	if ( 0 === strpos( (string) $p, '/scanner-probe-' ) ) { $probes++; }
+}
+ok( count( $snap['rows'] ) === Morpheus_Redirects::MAX_LOG, 'log: it stays bounded at the cap' );
+ok( in_array( '/dead-product-link', $paths, true ), 'log: a flood of unique probes does NOT evict the busiest real 404' );
+ok( $snap['rows'][0]['path'] === '/dead-product-link', 'log: the busiest path leads the reading order' );
+ok( $probes === Morpheus_Redirects::MAX_LOG - 2, 'log: exactly ONE one-hit probe is evicted instead of it' );
+ok( in_array( '/one-more-missing-page', $paths, true ), 'log: and the new arrival is kept, so the log is not frozen' );
+$cleared = Morpheus_Redirects::clear_log();
+ok( ! empty( $cleared['ok'] ) && $cleared['cleared'] >= 1, 'log: clearing reports how many rows it cleared' );
+ok( count( Morpheus_Redirects::log_rows()['rows'] ) === 0, 'log: …and the log is empty afterwards' );
 
 echo "==== $pass passed, $fail failed ====\n";
 exit( $fail === 0 ? 0 : 1 );

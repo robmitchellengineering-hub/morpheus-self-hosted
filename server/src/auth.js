@@ -101,6 +101,33 @@ export function blockWidget(req, res, next) {
   next();
 }
 
+// THE ONE NON-FUNCTION ROUTE A SCOPED WIDGET TOKEN MAY REACH: a file upload from the
+// STORE surface.
+//
+// WHY. The dock renders the SHOP tab (src/pages/Embed.jsx), and adding a product there
+// means picking a photo — which posts to /uploads and was refused with "This endpoint
+// is not available to a scoped token." The button was offered and could NEVER work:
+// Rob hit it 2026-10-08 ("Photos are not uploading anymore"), and it is the same defect
+// this codebase fixes wherever else it appears — a control that cannot do the thing it
+// appears to do.
+//
+// WHY IT IS SAFE. The store scope already lets that token CREATE PRODUCTS on the live
+// site and sideload images into WordPress (`wordPressStoreAction`), and read a photo
+// with a model (`analyzeProductPhoto`). Putting the bytes in the owner's own storage is
+// strictly less than what the same token may already do.
+//
+// WHY THE OTHER TWO ARE STILL REFUSED. A token without the `store` scope never sees the
+// SHOP tab, so it has no reason to upload; and a DEVICE token is personal rather than
+// project-scoped — it carries no projectId to bound an upload to, and nothing in the
+// device flow asks for one.
+export function allowStoreUpload(req, res, next) {
+  if (req.device) return res.status(403).json({ error: 'This endpoint is not available to a scoped token.' });
+  if (req.widget && !((req.widget.scopes || []).includes('store'))) {
+    return res.status(403).json({ error: 'This endpoint is not available to a scoped token.' });
+  }
+  next();
+}
+
 export function publicUser(user) {
   if (!user) return null;
   const { password_hash, otp_code, ...rest } = user;
