@@ -79,6 +79,13 @@ class Morpheus_Fixes {
 				'fix'   => 'wp_config_define',
 				'args'  => array( 'name' => 'WP_DEBUG_DISPLAY', 'value' => 'false' ),
 			),
+			'morpheus_debug_log_in_web_root' => array(
+				'kind'    => 'auto',
+				'label'   => 'Move the error log outside the web root',
+				'does'    => 'Points WP_DEBUG_LOG at a file beside your site instead of inside it, and moves the log that is there now. NOTHING IS DELETED and debugging stays on — you keep the log, the web stops being able to hand it out. Refuses, and changes nothing, when it cannot prove the new location is outside the web root or cannot find the line that sets WP_DEBUG_LOG.',
+				'warning' => 'wp-config.php is edited and the existing log file is renamed to a path outside the web root. Both are reversible: the original wp-config.php is backed up first and restored automatically if the change does not verify, and the log keeps every line it had.',
+				'fix'     => 'relocate_debug_log',
+			),
 
 			// ── Settings WordPress already owns ─────────────────────────────
 			'search_engine_visibility' => array(
@@ -680,6 +687,9 @@ class Morpheus_Fixes {
 			case 'wp_config_define':
 				$result = self::fix_wp_config_define( $id, $entry['args']['name'], $entry['args']['value'] );
 				break;
+			case 'relocate_debug_log':
+				$result = self::fix_relocate_debug_log( $id );
+				break;
 			case 'set_option':
 				$result = self::fix_set_option( $id, $entry['args']['name'], $entry['args']['value'] );
 				break;
@@ -760,6 +770,199 @@ class Morpheus_Fixes {
 			return array( 'ok' => true, 'id' => $id, 'did' => 'attempted', 'verified' => false, 'restored' => true, 'error' => 'The change did not verify, so wp-config.php was restored from the backup.' );
 		}
 		return array( 'ok' => true, 'id' => $id, 'did' => 'added define( \'' . $name . '\' ) to wp-config.php', 'verified' => true, 'restored' => false, 'error' => null );
+	}
+
+	/**
+	 * Move the error log out of the web root, and point WordPress at the new path.
+	 *
+	 * WHY NOT fix_wp_config_define(): that one ADDS a define when it is absent. This
+	 * one has to CHANGE an existing one — every site that has ever been debugged
+	 * already has `define( 'WP_DEBUG_LOG', true )` — and PHP will not let a constant
+	 * be defined twice, so an added line would be dead code that looks like a fix.
+	 *
+	 * The ORDER is the safety story, and it is why this is not a one-liner:
+	 *   1. prove where the file may go, BEFORE touching anything;
+	 *   2. refuse if the destination already exists, so nothing is overwritten;
+	 *   3. back wp-config.php up, rewrite the one line, read it back;
+	 *   4. only then move the log — and put BOTH back if either half fails.
+	 * Nothing here deletes: the log keeps every line it had, and the config is
+	 * restorable in one step from the backup the maintenance screen already lists.
+	 */
+	private static function fix_relocate_debug_log( $id ) {
+		$file = morpheus_debug_log_file();
+		if ( null === morpheus_debug_log_url( $file ) ) {
+			return array( 'ok' => true, 'id' => $id, 'did' => 'already outside the web root', 'verified' => true, 'restored' => false, 'error' => null );
+		}
+
+		$target = self::debug_log_target();
+		if ( isset( $target['error'] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => $target['code'], 'error' => $target['error'] );
+		}
+		$dest = $target['file'];
+
+		// Refuse BEFORE touching wp-config. A half-applied change that points the
+		// constant at a file we then refuse to write is worse than no change at all:
+		// WordPress would log to a path that does not exist and the old file would
+		// still be reachable.
+		if ( file_exists( $dest ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'TARGET_EXISTS', 'error' => 'There is already a file at ' . $dest . ', and Morpheus will not overwrite it. Move or rename that file, then check again. Nothing was changed.' );
+		}
+
+		$config = self::wp_config_path();
+		if ( ! $config ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_WP_CONFIG', 'error' => 'Morpheus cannot find wp-config.php to edit. Nothing was changed.' );
+		}
+		$original = @file_get_contents( $config );
+		if ( false === $original ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'UNREADABLE', 'error' => 'wp-config.php could not be read. Nothing was changed.' );
+		}
+
+		$rewritten = self::wp_config_set_define( $original, 'WP_DEBUG_LOG', "'" . $dest . "'" );
+		if ( isset( $rewritten['error'] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => $rewritten['code'], 'error' => $rewritten['error'] );
+		}
+
+		$backup = self::backup_file( $config );
+		if ( is_wp_error( $backup ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_BACKUP', 'error' => 'No backup of wp-config.php could be taken, so Morpheus did not touch it: ' . $backup->get_error_message() );
+		}
+
+		if ( ! self::write_atomic( $config, $rewritten['body'] ) ) {
+			self::restore_file_backup( $backup, $config );
+			return array( 'ok' => false, 'id' => $id, 'code' => 'WRITE_FAILED', 'error' => 'wp-config.php could not be written; the original was put back. Nothing was changed.' );
+		}
+
+		if ( ! self::wp_config_value_is( $config, 'WP_DEBUG_LOG', $dest ) ) {
+			self::restore_file_backup( $backup, $config );
+			return array( 'ok' => true, 'id' => $id, 'did' => 'attempted', 'verified' => false, 'restored' => true, 'error' => 'The WP_DEBUG_LOG line did not read back as the new path, so wp-config.php was restored from the backup. Nothing was changed.' );
+		}
+
+		// Half two: the log itself. Renamed, never deleted — and if it will not move,
+		// the config goes back, because a config pointing at a file that is not there
+		// is a worse state than either half alone.
+		$moved = true;
+		if ( is_file( $file ) ) {
+			$moved = @rename( $file, $dest );
+			if ( $moved ) {
+				$moved = ( ! file_exists( $file ) && file_exists( $dest ) );
+			}
+		}
+		if ( ! $moved ) {
+			self::restore_file_backup( $backup, $config );
+			return array( 'ok' => true, 'id' => $id, 'did' => 'attempted', 'verified' => false, 'restored' => true, 'error' => 'The log file could not be moved to ' . $dest . ', so wp-config.php was restored from the backup. Nothing was changed.' );
+		}
+
+		return array(
+			'ok'       => true,
+			'id'       => $id,
+			'did'      => is_file( $dest )
+				? 'moved the error log to ' . $dest . ' and pointed WP_DEBUG_LOG at it'
+				: 'pointed WP_DEBUG_LOG at ' . $dest . ' — there was no log file to move yet',
+			'verified' => true,
+			'restored' => false,
+			'error'    => null,
+		);
+	}
+
+	/**
+	 * Where the log may go: beside the site, PROVEN to be outside the web root.
+	 *
+	 * "Beside" is `dirname(ABSPATH)` — the account directory on shared hosting, with
+	 * the site in `public_html/` under it. Being outside WordPress's own tree is NOT
+	 * the same as being outside the web root: a site can live at
+	 * `public_html/blog/`, and then the WordPress root's parent is still served. So
+	 * the destination is accepted only when the server says where its document root
+	 * is AND the destination is genuinely outside it. When that cannot be proven,
+	 * Morpheus refuses: putting a log somewhere it might still be readable is a fix
+	 * that changes nothing while looking like one that worked.
+	 */
+	private static function debug_log_target() {
+		$parent = dirname( rtrim( wp_normalize_path( ABSPATH ), '/' ) );
+		if ( '' === $parent || '/' === $parent || ! is_dir( $parent ) || ! is_writable( $parent ) ) {
+			return array(
+				'code'  => 'NO_TARGET',
+				'error' => 'Morpheus could not find a writable directory beside ' . ABSPATH . ' to put the log in, so nothing was changed — the log is still where it was.',
+			);
+		}
+
+		$docroot = isset( $_SERVER['DOCUMENT_ROOT'] ) ? realpath( (string) $_SERVER['DOCUMENT_ROOT'] ) : false;
+		$real    = realpath( $parent );
+		if ( false === $docroot || false === $real ) {
+			return array(
+				'code'  => 'UNPROVEN_TARGET',
+				'error' => 'Morpheus could not confirm that ' . $parent . ' is outside the web root — the server did not say where its document root is. It will not move a log somewhere it cannot prove is unreachable, so nothing was changed.',
+			);
+		}
+
+		$docroot = rtrim( wp_normalize_path( $docroot ), '/' );
+		$real    = wp_normalize_path( $real );
+		if ( $real === $docroot || 0 === strpos( $real . '/', $docroot . '/' ) ) {
+			return array(
+				'code'  => 'TARGET_IN_WEB_ROOT',
+				'error' => $real . ' is still inside the web root (' . $docroot . '), so moving the log there would change nothing. Nothing was changed.',
+			);
+		}
+
+		return array( 'file' => $real . '/morpheus-debug.log' );
+	}
+
+	/**
+	 * Rewrite ONE existing define() in wp-config.php, or refuse.
+	 *
+	 * Pure: takes the file's text and returns the new text, so the rule can be
+	 * exercised without a WordPress boot. It REFUSES rather than guesses when the
+	 * line is not there (it may be set from a file Morpheus cannot see, or by the
+	 * host) and when it appears more than once (PHP would use the first, and
+	 * rewriting the wrong one silently changes a config that was not the subject).
+	 *
+	 * PUBLIC and pure for the same reason `Morpheus_Clean::served_is_the_file()` is:
+	 * the harness has to be able to call the rule directly. Testing it only through a
+	 * boot would leave the two refusals — the ones that decide whether Morpheus edits a
+	 * live config at all — reachable only on a site that happens to have two
+	 * WP_DEBUG_LOG lines.
+	 */
+	public static function wp_config_set_define( $body, $name, $value ) {
+		$pattern = '/define\s*\(\s*([\'"])' . preg_quote( $name, '/' ) . '\1\s*,\s*[^;]*?\s*\)\s*;/i';
+		$count   = preg_match_all( $pattern, $body );
+
+		if ( 0 === $count ) {
+			return array(
+				'code'  => 'NO_DEFINE',
+				'error' => 'Morpheus could not find a define( \'' . $name . '\' ) line in wp-config.php — it may be set from another file, or by your host. It will not guess at a config line, so nothing was changed.',
+			);
+		}
+		if ( $count > 1 ) {
+			return array(
+				'code'  => 'AMBIGUOUS_DEFINE',
+				'error' => 'wp-config.php mentions ' . $name . ' more than once, and PHP would use whichever comes first. Morpheus will not choose for you, so nothing was changed.',
+			);
+		}
+
+		$line      = "define( '" . $name . "', " . $value . ' );';
+		$rewritten = preg_replace_callback( $pattern, function () use ( $line ) {
+			// A callback, not a replacement string: a path is data, and in a
+			// replacement string `$1` or a backslash in someone's directory name
+			// would be read as a backreference.
+			return $line;
+		}, $body, 1 );
+
+		if ( ! is_string( $rewritten ) || $rewritten === $body ) {
+			return array( 'code' => 'NO_CHANGE', 'error' => 'Morpheus could not rewrite the ' . $name . ' line in wp-config.php. Nothing was changed.' );
+		}
+		return array( 'body' => $rewritten );
+	}
+
+	/** Does wp-config.php now set $name to the string $value? Read back from the FILE. */
+	private static function wp_config_value_is( $file, $name, $value ) {
+		$body = @file_get_contents( $file );
+		if ( ! is_string( $body ) ) {
+			return false;
+		}
+		$pattern = '/define\s*\(\s*([\'"])' . preg_quote( $name, '/' ) . '\1\s*,\s*([\'"])(.*?)\2\s*\)\s*;/i';
+		if ( ! preg_match( $pattern, $body, $m ) ) {
+			return false;
+		}
+		return trim( $m[3] ) === $value;
 	}
 
 	private static function fix_set_option( $id, $name, $value ) {

@@ -146,8 +146,9 @@ export default function ErrorLogPanel({ projectId }) {
 
               {log.configured ? (
                 <div className="text-[10px] text-yellow-500/85 leading-relaxed">
-                  WordPress is configured to write its log to <span className="font-mono">{log.configured}</span>, and this is
-                  {' '}<span className="font-mono">{log.path}</span>. Morpheus reads the file CLEAN MY SITE judges served or not.
+                  WordPress writes its log to <span className="font-mono">{log.path}</span> rather than its default
+                  {' '}<span className="font-mono">wp-content/debug.log</span> — which is what you want if it is
+                  outside the site, and is what this panel reads either way.
                 </div>
               ) : null}
 

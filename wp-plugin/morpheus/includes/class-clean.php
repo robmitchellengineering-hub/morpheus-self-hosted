@@ -564,8 +564,13 @@ class Morpheus_Clean {
 	 *                    Otherwise: file, url, exists, empty, served, size, mtime.
 	 */
 	public static function debug_log_state() {
-		$file = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
-		$url  = content_url( 'debug.log' );
+		// THE file WordPress is writing, not the default one — see
+		// morpheus_debug_log_file(). Following the constant matters twice over: a
+		// log repointed out of the web root must not be reported as a leak at a URL
+		// nothing serves any more, and a log pointed at some OTHER path inside the
+		// root is a leak this check used to be blind to.
+		$file = morpheus_debug_log_file();
+		$url  = morpheus_debug_log_url( $file );
 		$base = array(
 			'file'   => $file,
 			'url'    => $url,
@@ -588,6 +593,12 @@ class Morpheus_Clean {
 		$base['empty']  = ( '' === trim( $on_disk ) );
 		$base['size']   = (int) @filesize( $file );
 		$base['mtime']  = (int) @filemtime( $file );
+
+		if ( null === $url ) {
+			// Outside the web root: no URL can reach it, which is exactly why it was
+			// moved there. Nothing to fetch, and nothing to guess about.
+			return $base;
+		}
 
 		$served = self::fetch( add_query_arg( 'morpheus-verify', time(), $url ), 8 );
 		if ( null === $served ) {
