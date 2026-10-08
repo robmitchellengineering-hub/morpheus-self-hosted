@@ -52,6 +52,24 @@ wait_for() { # label, js-expression that returns true when ready
   return 1
 }
 
+# Wait for a monotonic counter — a line count in the mock's own log — to pass a
+# baseline. **`wait_for` cannot do this, and silently cannot:** its argument is
+# expanded by the shell ONCE, so `wait_for "…" "$(health_posts) > ${BASE:-0}"`
+# freezes as a literal `7 > 6` and `ev` answers true on the FIRST iteration,
+# whatever the log says afterwards. Three checks passed that way — a check that
+# cannot fail, which is H17 wearing the rig's uniform. Pass the counter FUNCTION
+# and the baseline, so the count is re-read inside the loop.
+wait_grew() { # label, counter-function-name, baseline
+  local label="$1" counter="$2" base="$3" i
+  for i in $(seq 1 30); do
+    [ "$("$counter")" -gt "$base" ] && { echo "  ok    $label"; return 0; }
+    sleep 1
+  done
+  echo "  FAIL  $label — no growth past $base within 30s (still $("$counter"))"
+  FAILURES=$((FAILURES + 1))
+  return 1
+}
+
 TABS_JS="['CHAT','DEPLOY','HEALTH','SHOP','PAGES','SEO','TRAFFIC'].filter(t=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===t)).join('|')"
 health_posts() { local n; n="$(grep -c 'POST /health' "$WP_LOG" 2>/dev/null)"; echo "${n:-0}"; }
 # Counts of the CLEAN action specifically. Deltas, never absolutes: the mock's log
@@ -90,7 +108,7 @@ CLEAN_PRE="$(clean_scans)"
 check "HEALTH is clickable" \
   "$(ev "(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='HEALTH');if(!b)return false;b.click();return true})()")" "true"
 wait_for "the scan reports a headline" "document.body.innerText.includes('Site health') && /([Nn]othing critical|[Ee]very check passed|needs? fixing)/.test(document.body.innerText)"
-wait_for "the scan reached the site (a new signed POST /health)" "$(health_posts) > ${BASE:-0}"
+wait_grew "the scan reached the site (a new signed POST /health)" health_posts "${BASE:-0}"
 check "wordPress version reached the panel" "$(ev "document.body.innerText.includes('WP 6.7.1')")" "true"
 check "the site's own finding reached the panel" "$(ev "document.body.innerText.includes('Debug mode')")" "true"
 
@@ -98,7 +116,7 @@ echo
 echo "RESCAN (a click inside the tab, not just a render):"
 BEFORE="$(health_posts)"
 ev "(()=>{const b=[...document.querySelectorAll('button')].find(x=>/RESCAN/.test(x.textContent));if(!b)return false;b.click();return true})()" >/dev/null
-wait_for "RESCAN made a second signed round trip" "$(health_posts) > ${BEFORE:-0}"
+wait_grew "RESCAN made a second signed round trip" health_posts "${BEFORE:-0}"
 
 # ── 2b. CLEAN MY SITE: its own scan, then ONE press that quarantines ──────
 #
@@ -114,7 +132,7 @@ check "the clean scan did NOT run when the tab opened (two presses, not one)" "$
 check "SCAN MY SITE is there" \
   "$(ev "!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('SCAN MY SITE'))")" "true"
 pw click "getByRole('button', { name: 'SCAN MY SITE' })" >/dev/null
-wait_for "the clean scan reached the site (a new action=clean POST)" "$(clean_scans) > ${CLEAN_BASE:-0}"
+wait_grew "the clean scan reached the site (a new action=clean POST)" clean_scans "${CLEAN_BASE:-0}"
 wait_for "the clean findings rendered" "document.body.innerText.includes('CLEAN MY SITE') && /can be quarantined|need looking at now|worth reviewing/.test(document.body.innerText)"
 check "the auto finding is shown" "$(ev "document.body.innerText.includes('No PHP file is sitting in the uploads folder')")" "true"
 # A critical finding's evidence is OPEN, not collapsed behind a summary: the paths
@@ -274,20 +292,6 @@ echo
 echo "DEPLOY tab (the undo: render, confirm, then one signed POST):"
 rollback_posts() { local n; n="$(grep -c 'POST /rollback' "$WP_LOG" 2>/dev/null)"; echo "${n:-0}"; }
 fixture_deploy() { curl -s "$SITE_ORIGIN/__fixture/deploy?$1" >/dev/null; }
-# NOT `wait_for` with a substituted comparison: its argument is expanded ONCE by
-# the shell, so `$(rollback_posts) > 3` freezes at call time and passes on the
-# first pass whatever the log says. That is a check that cannot fail (H17), so the
-# count is re-read inside the loop.
-wait_rollback() { # label, baseline
-  local label="$1" base="$2" i
-  for i in $(seq 1 30); do
-    [ "$(rollback_posts)" -gt "$base" ] && { echo "  ok    $label"; return 0; }
-    sleep 1
-  done
-  echo "  FAIL  $label — no new POST /rollback within 30s"
-  FAILURES=$((FAILURES + 1))
-  return 1
-}
 open_deploy() {
   pwr goto "$FULL_URL" >/dev/null
   sleep 2
@@ -314,7 +318,7 @@ check "…and warns that it writes while the plugin is NOT armed" \
 check "arming the confirm sent NOTHING (the delta is zero)" "$(rollback_posts)" "${RB_BASE:-0}"
 
 pw click "getByRole('button', { name: 'UNDO NOW' })" >/dev/null
-wait_rollback "…and UNDO NOW is what reaches the site (a new signed POST /rollback)" "${RB_BASE:-0}"
+wait_grew "…and UNDO NOW is what reaches the site (a new signed POST /rollback)" rollback_posts "${RB_BASE:-0}"
 wait_for "the panel reported the restore" "document.body.innerText.includes('Restored')"
 check "…and does not offer a second undo for the same deploy" "$(has_undo)" "false"
 
@@ -336,7 +340,7 @@ RB_GONE="$(rollback_posts)"
 pw click "getByRole('button', { name: 'UNDO THIS DEPLOY' })" >/dev/null
 sleep 1
 pw click "getByRole('button', { name: 'UNDO NOW' })" >/dev/null
-wait_rollback "the refusal came back from the site" "${RB_GONE:-0}"
+wait_grew "the refusal came back from the site" rollback_posts "${RB_GONE:-0}"
 wait_for "…and is rendered as an aged-out snapshot, not a generic failure" \
   "document.body.textContent.includes('snapshot has aged out')"
 check "…and no restore is claimed" "$(ev "!document.body.textContent.includes('Restored to')")" "true"
