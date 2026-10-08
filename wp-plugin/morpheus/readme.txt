@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.2
+Stable tag: 0.9.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,25 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.3 =
+* Fixed: **a health finding that was Morpheus's, not your host's.** WordPress's REST API test attaches *your*
+  login to a request the site makes to itself. Morpheus's scan is a signed request with no login, so that
+  request arrived with no nonce, WordPress treated it as logged out by its own rule, and the test answered
+  401 — on every site, whatever the host did. Morpheus reported it as "something is intercepting /wp-json/ —
+  usually a security plugin or the host", which sent owners to their host and their security plugin about a
+  finding we had made. It is now reported as **not run**, with the reason and where to answer it, and the
+  check that *can* be answered from here — whether the site can reach its own REST API — is unchanged.
+* Fixed: **the IndexNow key file was never served after an update.** Rewrite rules are read from an option
+  that only a flush rebuilds, and WordPress does not run a plugin's activation hook when it **updates** it.
+  A rule added in a release therefore never reached a site that updated into it: the key URL returned a 404,
+  and the TRAFFIC tab was right to say "NOT confirmed served" while every line of the code looked correct.
+  Rules are now flushed once per version, on the first request after an update — no Permalinks visit needed.
+* Fixed: the key URL answers **200 directly**. WordPress's canonical redirect was answering it with a 301 to
+  `/<key>.txt/` first, because it is not a page and not a file. The key handler now runs before it.
+* Fixed: a key check that **failed** was cached for an hour, so fixing the rewrite left the panel saying it
+  was still broken with nothing to say the answer was old. A failure is now re-asked within a minute; only a
+  success is trusted for the hour.
 
 = 0.9.2 =
 * New: **redirects, and a 404 log.** Nothing in this plugin managed a redirect, and nothing recorded a 404:

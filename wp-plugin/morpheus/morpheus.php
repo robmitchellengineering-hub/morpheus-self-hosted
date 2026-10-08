@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Deploy, Store, SEO and Traffic, plus the admin-only Morpheus dock printed on the site itself.
- * Version:           0.9.2
+ * Version:           0.9.3
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -77,7 +77,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // was offered an update it already had. class-updates.php warns about exactly
 // that outcome in its own comment ("a stale response here would nag every site
 // forever") and it was a stale CONSTANT, not a stale response.
-define( 'MORPHEUS_VERSION', '0.9.2' );
+define( 'MORPHEUS_VERSION', '0.9.3' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -118,6 +118,37 @@ register_activation_hook( __FILE__, function () {
 	// A key to host, and a rewrite rule to serve it: IndexNow authenticates the
 	// submission with a file on the site, so both must exist before the first one.
 	Morpheus_Traffic::activate();
+} );
+
+/**
+ * A new rewrite rule reaches a site only if somebody FLUSHES it.
+ *
+ * `add_rewrite_rule()` puts a rule in memory for the current request; WordPress
+ * serves from the `rewrite_rules` OPTION, which is rebuilt only by a flush. The
+ * activation hook does that — and **WordPress does not run activation hooks when
+ * it UPDATES a plugin.** So every site that updated into the traffic feature kept
+ * a rewrite table that had never heard of the IndexNow key rule: the code was
+ * right, the option was stale, and the key URL 404'd. Found live on
+ * valiantmusic.com.au on 2026-10-08 — the key file had never been served, the
+ * only cure was a manual Settings → Permalinks save, and the panel was correctly
+ * reporting "NOT confirmed served" the whole time.
+ *
+ * Stamped by version, so it costs one option read per request and one flush per
+ * release. It runs on `wp_loaded` rather than `admin_init` on purpose: a site
+ * that is never opened in wp-admin still has to serve its key, and Morpheus's own
+ * signed REST calls are front-end requests, so the site heals itself the first
+ * time anything talks to it.
+ */
+add_action( 'wp_loaded', function () {
+	if ( get_option( 'morpheus_rewrite_version' ) === MORPHEUS_VERSION ) {
+		return;
+	}
+	Morpheus_Traffic::register_rewrite();
+	flush_rewrite_rules();
+	// Autoloaded, deliberately: the hook above reads it on every request, so a
+	// non-autoloaded stamp would cost one extra query per page load on every site
+	// and save nothing.
+	update_option( 'morpheus_rewrite_version', MORPHEUS_VERSION );
 } );
 
 add_action( 'admin_menu', array( 'Morpheus_Settings', 'register_menu' ) );

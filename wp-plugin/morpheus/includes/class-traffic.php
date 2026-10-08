@@ -35,7 +35,14 @@ class Morpheus_Traffic {
 	const MAX_LEDGER    = 500;   // rows kept, newest first — bounded so it cannot grow forever
 	const MAX_BATCH     = 100;   // OUR conservative cap, not IndexNow's: the spec documents up to 10,000 URLs per post
 	const MAX_BACKFILL  = 200;   // URLs per backfill run, so one click cannot blast a whole site
-	const KEY_CHECK_TTL = 3600;  // seconds to trust a key-served check
+	const KEY_CHECK_TTL = 3600;  // seconds to trust a key-served check that SUCCEEDED
+
+	// A FAILED check is not trusted for an hour. It was, and that is the wrong
+	// half to cache long: the moment the operator fixes the rewrite (saving
+	// Permalinks, updating the plugin), the panel kept telling them it was still
+	// broken for up to an hour, with nothing on screen to say the answer was old.
+	// A miss is cheap to re-ask and worth re-asking.
+	const KEY_CHECK_MISS_TTL = 60;
 
 	// Post types whose publication is worth telling an index about. Derived from
 	// the site, not hard-coded — see `morpheus_public_post_types()` in
@@ -46,7 +53,15 @@ class Morpheus_Traffic {
 		add_action( 'transition_post_status', array( __CLASS__, 'on_transition' ), 10, 3 );
 		add_action( self::CRON_HOOK, array( __CLASS__, 'run_submission' ), 10, 1 );
 		add_action( 'init', array( __CLASS__, 'register_rewrite' ) );
-		add_action( 'template_redirect', array( __CLASS__, 'maybe_serve_key' ) );
+		// PRIORITY 1, before WordPress's own template_redirect work. `redirect_canonical`
+		// is registered on the same hook at the default 10 by core's default-filters,
+		// which load before any plugin — so it ran FIRST and answered a correct key URL
+		// with a 301 to `/<key>.txt/`, only then reaching this handler on the redirected
+		// request. The key was served (and IndexNow follows redirects), but a key URL
+		// that 200s directly is the correct shape, and it should not depend on what the
+		// canonical redirect decides about a file that is not a page. class-redirects.php
+		// hooks priority 1 for exactly this reason.
+		add_action( 'template_redirect', array( __CLASS__, 'maybe_serve_key' ), 1 );
 	}
 
 	/** Activation: make sure there is a key and the rewrite rule is registered. */
@@ -158,7 +173,10 @@ class Morpheus_Traffic {
 			$body          = trim( (string) wp_remote_retrieve_body( $res ) );
 			$out['served'] = ( 200 === $out['status'] && $body === $key );
 		}
-		set_transient( self::KEY_CHECK, $out, self::KEY_CHECK_TTL );
+		// Cache the answer for as long as it deserves: an hour when the key is
+		// being served (nothing is going to change), a minute when it is not
+		// (because the operator may be fixing it right now).
+		set_transient( self::KEY_CHECK, $out, $out['served'] ? self::KEY_CHECK_TTL : self::KEY_CHECK_MISS_TTL );
 		return $out;
 	}
 

@@ -99,7 +99,7 @@ class Morpheus_Health {
 			'updates'           => $updates,
 			'auto_updates'      => self::auto_updates(),
 			'host'              => $host,
-			'async_not_run'     => self::async_tests(),
+			'async_not_run'     => array_merge( self::async_tests(), self::session_bound_not_run() ),
 			'can'               => self::capability( $host ),
 		);
 		$result['cached'] = false;
@@ -146,7 +146,17 @@ class Morpheus_Health {
 		$registered = $site_health->get_tests();
 		$out        = array();
 
+		// Tests that measure the CALLER'S SESSION rather than the site. Running
+		// them here does not report on the site, it reports on the fact that a
+		// signed scan has no logged-in user — see session_bound_tests(). They go
+		// to the not-run list instead, with the reason, so the panel says "not
+		// checked" rather than a verdict the scan cannot honestly reach.
+		$session_bound = self::session_bound_tests();
+
 		foreach ( (array) ( $registered['direct'] ?? array() ) as $id => $test ) {
+			if ( isset( $session_bound[ $id ] ) ) {
+				continue;
+			}
 			$callback = self::resolve_test_callback( $site_health, $test );
 			if ( ! $callback ) {
 				continue;
@@ -253,6 +263,55 @@ class Morpheus_Health {
 				'label'  => self::plain( $test['label'] ?? $id ),
 				// The honest reason, shown in the panel next to the name.
 				'reason' => $covered[ $id ] ?? 'WordPress runs this one from the browser as a logged-in administrator; a signed server scan cannot. Check it in Tools → Site Health.',
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * WordPress's DIRECT tests whose answer belongs to the browser's session.
+	 *
+	 * WordPress's `rest_availability` test does not merely fetch a URL: it makes a
+	 * request from the site to its own REST API carrying the CURRENT USER'S
+	 * cookies plus an `X-WP-Nonce`, then asks for `context=edit`, which only a
+	 * logged-in editor may see. Run it from the Site Health screen and it passes.
+	 *
+	 * Run it from here and it CANNOT pass, on any site, whatever the host does:
+	 * this scan arrives as a signed POST from Morpheus's backend, so there is no
+	 * logged-in user, `$_COOKIE` is empty, and the nonce it mints is for nobody.
+	 * WordPress's own rule for "cookie auth was used but no nonce arrived" is to
+	 * de-authenticate the request, so its permission check answers
+	 * `401 rest_forbidden_context` — every time. Verified on a live site: the
+	 * public route answers 200, a WRONG nonce answers 403, and only the missing
+	 * nonce produces the 401 we were reporting as a site problem.
+	 *
+	 * It was reported as "Something is intercepting /wp-json/ — usually a security
+	 * plugin or the host", which sent the operator to their host about a finding
+	 * Morpheus had manufactured. A test that can only fail where we run it is not
+	 * a finding; it is a not-run, and it is listed as one.
+	 */
+	private static function session_bound_tests() {
+		return array(
+			'rest_availability' => 'This one is answered by the browser as you: WordPress makes a request from the site to its own REST API carrying YOUR cookies and a REST nonce, and asks for a context only a logged-in editor may see. A signed server scan has no user session, so that request arrives with no nonce, WordPress treats it as logged out by its own rule, and the answer is 401 on every site regardless of host. Open Tools → Site Health while logged in to answer it.',
+		);
+	}
+
+	/** The session-bound tests as not-run rows, labelled from WordPress's own registration. */
+	private static function session_bound_not_run() {
+		self::admin_includes();
+		$labels = array();
+		if ( class_exists( 'WP_Site_Health' ) ) {
+			$registered = WP_Site_Health::get_instance()->get_tests();
+			foreach ( (array) ( $registered['direct'] ?? array() ) as $id => $test ) {
+				$labels[ $id ] = $test['label'] ?? $id;
+			}
+		}
+		$out = array();
+		foreach ( self::session_bound_tests() as $id => $reason ) {
+			$out[] = array(
+				'id'     => (string) $id,
+				'label'  => self::plain( $labels[ $id ] ?? $id ),
+				'reason' => $reason,
 			);
 		}
 		return $out;

@@ -234,6 +234,27 @@ check('a forced scan bypasses the cache', /if \( ! \$force \) \{/.test(plugin), 
 // disagreed: critical vs recommended for the same fact).
 check('the cron check is not duplicated', /morpheus_cron/.test(plugin), false);
 check('the async tests WordPress cannot let us run are reported', /async_not_run/.test(plugin), true);
+// A test that can only fail where we run it is not a finding. WordPress's own
+// `rest_availability` test attaches the CALLER'S login to a request the site makes
+// to its own REST API, then asks for a context only a logged-in editor may see. A
+// signed scan has no session, so that request carries no nonce, WordPress
+// de-authenticates it by its own rule, and the answer is 401 on EVERY site no
+// matter what the host does. It was reported as "something is intercepting
+// /wp-json/ — usually a security plugin or the host", which sent the operator to
+// their host about a finding Morpheus had manufactured. Found live 2026-10-08.
+check('a test that measures the caller\'s session is skipped, not run',
+  /if \( isset\( \$session_bound\[ \$id \] \) \) \{\s*continue;\s*\}/.test(plugin), true);
+check('…and it is skipped by the list of session-bound ids', /\$session_bound\s*=\s*self::session_bound_tests\(\)/.test(plugin)
+  && /'rest_availability' => /.test(plugin), true);
+check('…and it is reported as NOT RUN, with the reason, rather than as a verdict',
+  /array_merge\( self::async_tests\(\), self::session_bound_not_run\(\) \)/.test(plugin), true);
+// The other half of the same claim: the copy that accused the host is gone.
+// Comments are stripped first — the entry's own comment QUOTES the sentence it
+// replaced while explaining why, and a raw scan collects that explanation as if it
+// were still the copy (the trap verify-traffic.mjs and verify-seo.mjs both record).
+const fixesPhp = read('wp-plugin/morpheus/includes/class-fixes.php')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+check('…and nothing still blames a security plugin or the host for it', /Something is intercepting/.test(fixesPhp), false);
 
 console.log('\n9. every finding can be acted on')
 

@@ -402,11 +402,20 @@ class Morpheus_Fixes {
 			),
 			'rest_availability' => array(
 				'kind'  => 'guided',
-				'label' => 'Ask your host about the REST API being blocked',
-				'does'  => 'Something is intercepting /wp-json/ — usually a security plugin or the host.',
+				'label' => 'Check the REST API yourself, logged in',
+				// NO ACCUSATION. This entry said "Something is intercepting
+				// /wp-json/ — usually a security plugin or the host", and that is
+				// an answer to a question Morpheus had asked wrongly: the test
+				// attaches the caller's login, so a scan with no login gets 401 no
+				// matter what the host does (see Morpheus_Health::session_bound_tests()).
+				// It stays here for sites still running a build that reports the
+				// finding; the wording now sends the operator to the one screen
+				// that can actually answer it, before their host.
+				'does'  => 'This is WordPress asking its own REST API for a context only a logged-in editor may see, with your login attached. A scan running without a login gets 401 whatever the host does, which is why older builds of this plugin reported a "blocked REST API" that was not blocked. Morpheus checks the public REST API itself — the "site can reach itself" check — and if that passes, nothing is intercepting /wp-json/.',
 				'steps' => array(
-					array( 'text' => 'Check your security plugin for a "disable REST API" setting.', 'link' => admin_url( 'plugins.php' ) ),
-					array( 'text' => 'If no plugin is doing it, send the finding above to your host.' ),
+					array( 'text' => 'Open Tools → Site Health while logged in. If this test passes there, the 401 came from the scan having no login, not from your site.', 'link' => admin_url( 'site-health.php' ) ),
+					array( 'text' => 'If it fails there too, check your security plugin for a "disable REST API" setting.', 'link' => admin_url( 'plugins.php' ) ),
+					array( 'text' => 'Only then ask your host — whether /wp-json/ is blocked for requests the server makes to itself.' ),
 				),
 			),
 			'dotorg_communication' => array(

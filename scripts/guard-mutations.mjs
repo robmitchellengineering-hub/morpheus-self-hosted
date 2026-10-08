@@ -2966,6 +2966,69 @@ export const MUTATIONS = [
     find: "router.post('/', requireAuth, allowStoreUpload, upload.single('file'), async (req, res) => {",
     replace: "router.post('/', requireAuth, blockWidget, upload.single('file'), async (req, res) => {",
   },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // ⚠️ THE FALSE FINDING OF 2026-10-08, AS A MUTATION. This skip IS the fix. Without it the
+    // signed, session-less scan runs WordPress's `rest_availability` test, whose loopback
+    // carries no nonce because there is no logged-in user, so WordPress de-authenticates it by
+    // its own rule and answers 401 — on EVERY site, whatever the host does. The panel then
+    // reported it as "something is intercepting /wp-json/ — usually a security plugin or the
+    // host", which is the shape H19 warns about one level up: a check whose failure is caused
+    // by the way we run it.
+    why: 'Runs the session-bound REST test again, so the scan reports a 401 it manufactured as a site problem.',
+    find: "\t\t\tif ( isset( $session_bound[ $id ] ) ) {\n\t\t\t\tcontinue;\n\t\t\t}\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // The other half of the same claim: a test we did not run has to be REPORTED as not-run.
+    // Dropping it from the list makes it vanish, and absent reads exactly like passing.
+    why: 'Drops the session-bound test from the not-run list, so a test that never ran disappears instead of being named.',
+    find: "\t\t\t'async_not_run'     => array_merge( self::async_tests(), self::session_bound_not_run() ),",
+    replace: "\t\t\t'async_not_run'     => self::async_tests(),",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // THE COPY IS THE HARM. The verdict was wrong; this sentence is what turned it into work for
+    // the operator and a support ticket for their host.
+    why: 'Puts the accusation back into the copy, sending the operator to their host and their security plugin about a finding Morpheus made.',
+    find: "\t\t\t\t'label' => 'Check the REST API yourself, logged in',",
+    replace: "\t\t\t\t'label' => 'Something is intercepting /wp-json/',",
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/morpheus.php',
+    // ⚠️ THE LIVE DEFECT OF 2026-10-08. Rewrite rules are SERVED FROM AN OPTION, and only a flush
+    // rebuilds it. The activation hook flushes — and WordPress does not run activation hooks when
+    // it UPDATES a plugin. So a rule added in a release never reached any site that updated into
+    // it: the IndexNow key URL 404'd on valiantmusic.com.au, the panel correctly said "NOT
+    // confirmed served", and every source-level check stayed green because the code was right.
+    why: 'Removes the version-stamped flush, so a rewrite rule added in a release never reaches a site that updated into it.',
+    find: "\tflush_rewrite_rules();\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // `redirect_canonical` sits on template_redirect at 10 and core registers it before any plugin,
+    // so at the default priority it answered a correct key URL with a 301 to `/<key>.txt/` before
+    // this handler could serve it. Verified live: the 301 carried `x-redirect-by: WordPress`.
+    why: 'Puts the key handler back at the default priority, where the canonical redirect answers the key URL with a 301 before it can serve it.',
+    find: "\t\tadd_action( 'template_redirect', array( __CLASS__, 'maybe_serve_key' ), 1 );",
+    replace: "\t\tadd_action( 'template_redirect', array( __CLASS__, 'maybe_serve_key' ) );",
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // A FAILED answer is the wrong half to cache long: the operator fixes the rewrite and the panel
+    // keeps telling them it is broken, with nothing on screen saying the answer is an hour old.
+    why: 'Caches a failed key check for an hour again, so the panel reports a key the operator has just fixed as still broken.',
+    find: "$out['served'] ? self::KEY_CHECK_TTL : self::KEY_CHECK_MISS_TTL",
+    replace: "self::KEY_CHECK_TTL",
+  },
 ];
 
 /**
