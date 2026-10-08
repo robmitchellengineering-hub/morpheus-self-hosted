@@ -887,6 +887,14 @@ jobs:
       - name: Plugin uninstall completeness
         run: node scripts/verify-plugin-uninstall.mjs
 
+      # Redirects and the 404 log. A redirect list is the one content feature that
+      # can take a site down — a rule matching wp-admin locks the owner out of the
+      # screen they would fix it on — so the refusals are asserted, not the features:
+      # the protected paths (checked twice, at save and at match), the destination
+      # shapes, the loops, and the log's least-hit eviction policy.
+      - name: Redirects and the 404 log
+        run: node scripts/verify-redirects.mjs
+
       # The guard on the script that holds production DB credentials. A guard
       # that lets a DROP through is worse than no script at all, because the
       # operator stops checking by hand — so the refusal rules are asserted,

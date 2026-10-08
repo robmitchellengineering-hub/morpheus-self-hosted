@@ -244,6 +244,13 @@ class Morpheus_REST {
 			'traffic'    => class_exists( 'Morpheus_Traffic' )
 				? Morpheus_Traffic::public_status()
 				: array( 'available' => false, 'enabled' => false ),
+			// Whether this build has the redirects module and how many rules it
+			// holds — a build capability plus a count the panel can show without a
+			// signed call. Deliberately NOT the 404 log: that is site activity, not
+			// a property of the build, and /status is unauthenticated.
+			'redirects'  => class_exists( 'Morpheus_Redirects' )
+				? Morpheus_Redirects::public_status()
+				: array( 'available' => false, 'enabled' => false, 'rules' => 0 ),
 			// kept flat for older callers
 			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
 			'armed'      => (bool) $s['armed'],

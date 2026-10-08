@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Deploy, Store, SEO and Traffic, plus the admin-only Morpheus dock printed on the site itself.
- * Version:           0.9.1
+ * Version:           0.9.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -77,7 +77,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // was offered an update it already had. class-updates.php warns about exactly
 // that outcome in its own comment ("a stale response here would nag every site
 // forever") and it was a stale CONSTANT, not a stale response.
-define( 'MORPHEUS_VERSION', '0.9.1' );
+define( 'MORPHEUS_VERSION', '0.9.2' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -100,6 +100,7 @@ require_once MORPHEUS_DIR . 'includes/deploy/class-deploy.php';
 require_once MORPHEUS_DIR . 'includes/store/class-store.php';
 require_once MORPHEUS_DIR . 'includes/seo/class-seo.php';
 require_once MORPHEUS_DIR . 'includes/class-traffic.php';
+require_once MORPHEUS_DIR . 'includes/class-redirects.php';
 require_once MORPHEUS_DIR . 'includes/class-dock.php';
 
 register_activation_hook( __FILE__, function () {
@@ -126,6 +127,7 @@ add_action( 'rest_api_init', array( 'Morpheus_REST', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_Store', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_SEO', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_Traffic', 'register_routes' ) );
+add_action( 'rest_api_init', array( 'Morpheus_Redirects', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_Pairing', 'register_routes' ) );
 add_action( 'rest_api_init', array( 'Morpheus_Export', 'register_routes' ) );
 // The one-tap dock setup the owner's own Morpheus account calls. Signed like the
@@ -140,6 +142,9 @@ add_action( 'init', array( 'Morpheus_SEO', 'bootstrap' ) );
 Morpheus_Updates::init();
 // Traffic: the IndexNow submission on publish and the ledger that proves it.
 Morpheus_Traffic::init();
+// Redirects: the rule list applied before the theme, and the 404 log that tells
+// you which rule to write. See includes/class-redirects.php.
+Morpheus_Redirects::init();
 // Dock: the floating panel button, printed on the site's own pages — for a
 // signed-in administrator only. See includes/class-dock.php.
 Morpheus_Dock::init();

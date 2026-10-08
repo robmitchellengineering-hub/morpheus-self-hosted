@@ -2784,6 +2784,53 @@ export const MUTATIONS = [
     find: '  const [log, setLog] = useState(null);',
     replace: '  useEffect(() => { run(); }, []);\n  const [log, setLog] = useState(null);',
   },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // ⚠️ THE LOCKOUT. A rule matching wp-admin takes the owner out of the screen they
+    // would fix it on, and there is no way back from inside WordPress. This is the
+    // save-time refusal; the match-time one below it is the second belt.
+    why: 'Stops refusing a redirect on the WordPress admin surface, so a saved rule can lock the owner out of wp-admin.',
+    find: 'if ( self::is_protected( $from ) ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // The second belt: a rule that reached the option by any other route still cannot
+    // take the owner out of wp-admin, because the match path refuses it too.
+    why: 'Stops the match-time protection, so a rule already stored can redirect wp-admin itself.',
+    find: 'if ( self::is_protected( $path ) ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // A protocol-relative destination (`//evil.example`) is an external host wearing a
+    // site-relative costume, which is why it is refused rather than trimmed.
+    why: 'Accepts a protocol-relative destination, so a rule can silently point at another host.',
+    find: "if ( 0 === strpos( $to, '//' ) ) {",
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // THE EVICTION POLICY. Reversing this sort turns "drop the least-hit" into "drop
+    // the most-hit": a scanner's thousand one-off paths would then evict the URL forty
+    // visitors a day are hitting — the exact failure the bound exists to avoid.
+    why: 'Reverses the log ordering, so a 404 flood evicts the busiest real broken link instead of the rarest probe.',
+    find: '\t\t\treturn $hb - $ha;',
+    replace: '\t\t\treturn $ha - $hb;',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // 410 is an ANSWER, not a redirect. The guard slices the branch and refuses any
+    // Location header inside it — so a "410" that actually redirects cannot pass.
+    why: 'Puts a redirect inside the 410 branch, so a page marked Gone also sends a Location header.',
+    find: '\t\t\t\t\tstatus_header( 410 );',
+    replace: '\t\t\t\t\twp_redirect( home_url(), 302 );\n\t\t\t\t\tstatus_header( 410 );',
+  },
 ];
 
 /**
