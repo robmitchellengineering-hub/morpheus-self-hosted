@@ -220,15 +220,24 @@ function morpheus_purge_caches() {
  * @return string[] Post type names, `post` and `page` first, then the rest sorted.
  */
 function morpheus_public_post_types() {
-	$out = array();
-	foreach ( array( 'post', 'page' ) as $core ) {
-		if ( post_type_exists( $core ) ) {
-			$out[] = $core;
-		}
-	}
-
-	// Everything WordPress calls public but that is not content a search engine
-	// should be given a title and a description for.
+	// `public => true` IS NOT THE QUESTION.
+	//
+	// A page builder registers its own templates and blocks as public, and a real site's
+	// IndexNow submissions came back with `?elementor_library=default-kit`,
+	// `?cms_block=equipment-repair` and `woodmart_layout/product-archive-layout/` in them
+	// (2026-10-08) — fifteen internal builder artefacts pinged to Bing and Yandex as if
+	// they were pages, plus `/cart/`, `/my-account/` and `/wishlist/`.
+	//
+	// The question is "is this a URL a search engine should be told about?", and the
+	// answer is three properties, none of which is `public`:
+	//
+	//   publicly_queryable     — it has a single view at all (a builder library does not);
+	//   ! exclude_from_search  — the SITE has not asked to keep it out of search;
+	//   a rewrite              — or get_permalink() hands back `?post_type=slug`, which
+	//                            is the tell: a URL with no path is not a page.
+	//
+	// `post` and `page` are exempt from the rewrite test because their permalink comes
+	// from the permalink structure rather than from the type's own rewrite argument.
 	$not_content = array(
 		'attachment',
 		'revision',
@@ -247,12 +256,29 @@ function morpheus_public_post_types() {
 		'wp_pattern',
 	);
 
+	$out = array();
+	foreach ( array( 'post', 'page' ) as $core ) {
+		if ( post_type_exists( $core ) ) {
+			$out[] = $core;
+		}
+	}
+
 	$rest = array();
-	foreach ( (array) get_post_types( array( 'public' => true ), 'names' ) as $type ) {
-		if ( in_array( $type, $out, true ) || in_array( $type, $not_content, true ) ) {
+	foreach ( (array) get_post_types( array( 'public' => true ), 'objects' ) as $type ) {
+		$name = isset( $type->name ) ? (string) $type->name : '';
+		if ( '' === $name || in_array( $name, $out, true ) || in_array( $name, $not_content, true ) ) {
 			continue;
 		}
-		$rest[] = $type;
+		if ( empty( $type->publicly_queryable ) ) {
+			continue;
+		}
+		if ( ! empty( $type->exclude_from_search ) ) {
+			continue;
+		}
+		if ( empty( $type->rewrite ) ) {
+			continue;
+		}
+		$rest[] = $name;
 	}
 	sort( $rest );
 

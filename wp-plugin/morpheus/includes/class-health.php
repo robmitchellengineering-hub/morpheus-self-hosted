@@ -976,6 +976,7 @@ class Morpheus_Health {
 					'line'     => $e['line'],
 					'message'  => $e['message'],
 					'count'    => 0,
+					'note'     => isset( $e['note'] ) ? $e['note'] : '',
 					'first_at' => $e['at'],
 					'last_at'  => $e['at'],
 					'samples'  => array(),
@@ -991,6 +992,21 @@ class Morpheus_Health {
 			if ( count( $groups[ $key ]['samples'] ) < self::LOG_SAMPLES ) {
 				$groups[ $key ]['samples'][] = $e['raw'];
 			}
+		}
+
+		// THE COUNT IS THE DIAGNOSIS, and it only exists here.
+		//
+		// `parse_log_line()` can only say WHAT a line is; one database outage and forty of
+		// them are the same line. The difference — a host restarting MySQL at a quiet hour,
+		// or a fault that keeps happening — is in how many, and how far apart, and that is
+		// only known once the lines are grouped. Rob asked exactly this: *"if you cant see
+		// the number how do you make the classification"*. It cannot, so it does not: the
+		// sentence is finished here.
+		foreach ( $groups as $gkey => $g ) {
+			if ( '' === (string) $g['note'] ) {
+				continue;
+			}
+			$groups[ $gkey ]['note'] = $g['note'] . ' ' . self::downtime_scale( $g['count'], $g['first_at'], $g['last_at'] );
 		}
 
 		// Newest first: the log is append-only, so reading it backwards is what an
@@ -1011,6 +1027,85 @@ class Morpheus_Health {
 	}
 
 	/**
+	 * Does this line say the SITE WAS DOWN? Returns the sentence to show, or false.
+	 *
+	 * Kept as a table with a reason each rather than a severity keyword, because none of
+	 * these carries one: PHP writes a database outage as "PHP Warning:", and so does a
+	 * deprecated function call. The panel shows the reason beside the group.
+	 *
+	 * PUBLIC and pure so the harness can exercise the table directly, the same reason
+	 * Morpheus_Clean::served_is_the_file() is: a rule reachable only through a boot is a
+	 * rule nobody can prove.
+	 */
+	/**
+	 * How BAD is it — one, or a pattern? The half of the sentence the line cannot carry.
+	 *
+	 * A single connection failure is what a host restarting MySQL looks like from PHP, and
+	 * it is usually nothing. The same message forty times across an afternoon is a fault,
+	 * and the times are what a host needs. Neither reading is invented: both are stated as
+	 * what the SHAPE of the evidence looks like, with the times quoted, and the operator
+	 * decides.
+	 *
+	 * PUBLIC and pure, like downtime_reason(), so the harness can exercise each shape
+	 * without a boot.
+	 */
+	public static function downtime_scale( $count, $first_at, $last_at ) {
+		$count = (int) $count;
+		$first = self::log_stamp( $first_at );
+		$last  = self::log_stamp( $last_at );
+
+		if ( $count <= 1 || ! $first || ! $last ) {
+			return $count <= 1
+				? 'Seen once. One of these is usually the database server being restarted — often by your host, at a quiet hour — and it matters only if it repeats.'
+				: 'Seen ' . $count . ' times in the part of the log Morpheus read.';
+		}
+
+		$minutes = (int) round( abs( $last - $first ) / 60 );
+		$when    = gmdate( 'j M Y H:i', $last ) . ' UTC';
+
+		if ( $minutes <= 10 ) {
+			return 'Seen ' . $count . ' times within ' . max( 1, $minutes ) . ' minute' . ( 1 === $minutes ? '' : 's' )
+				. ', ending ' . $when . '. A burst that tight is what a database restart looks like from PHP.';
+		}
+
+		return 'Seen ' . $count . ' times between ' . gmdate( 'j M Y H:i', $first ) . ' and ' . $when
+			. ' — a spread that wide is not a restart, it is a fault that keeps happening. These times are what your host needs.';
+	}
+
+	/** A log timestamp (`[08-Oct-2026 13:07:57 UTC]`, unbracketed) as a Unix time, or 0. */
+	private static function log_stamp( $at ) {
+		$at = is_string( $at ) ? trim( $at ) : '';
+		if ( '' === $at ) {
+			return 0;
+		}
+		foreach ( array( 'd-M-Y H:i:s T', 'd-M-Y H:i:s', 'Y-m-d H:i:s' ) as $format ) {
+			$d = DateTime::createFromFormat( $format, $at );
+			if ( $d instanceof DateTime ) {
+				return (int) $d->getTimestamp();
+			}
+		}
+		return 0;
+	}
+
+	public static function downtime_reason( $line ) {
+		$shapes = array(
+			'mysqli_real_connect()'                     => 'PHP could not reach the database server. While this is happening WordPress answers every page with "Error establishing a database connection" — visitors saw an error, not a slow site.',
+			'Error establishing a database connection'  => 'The database was unreachable when a page was requested. This is the visitor-facing face of a database outage.',
+			'MySQL server has gone away'                => 'The connection to the database was dropped mid-request.',
+			'Lost connection to MySQL server'           => 'The connection to the database was dropped mid-request.',
+			'Allowed memory size'                       => 'A request ran out of memory and was killed before it finished. On a shop that is usually a page or an admin action that cannot complete.',
+			'Maximum execution time'                    => 'A request was killed for taking too long. That is a page or an admin action that never returned.',
+			'upstream'                                  => 'The host\'s own proxy could not reach the site — often a PHP worker restart or an overloaded server, and it is the host\'s to explain.',
+		);
+		foreach ( $shapes as $needle => $why ) {
+			if ( false !== stripos( $line, $needle ) ) {
+				return $why;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * One line of a PHP error log.
 	 *
 	 * The shape WordPress writes is
@@ -1018,16 +1113,39 @@ class Morpheus_Health {
 	 * but a log accumulates whatever anything on the site wrote, so an unrecognised
 	 * line is kept as `other` with its own text rather than dropped — the point of
 	 * reading a log is not to filter it down to the lines we anticipated.
+	 *
+	 * PUBLIC and pure so the harness can exercise the LEVEL, not only the signature table:
+	 * the bug this fixes was a database outage being written down as a warning, and a
+	 * table nobody can call proves nothing about that.
 	 */
-	private static function parse_log_line( $line ) {
+	public static function parse_log_line( $line ) {
 		$out = array( 'at' => '', 'level' => 'other', 'message' => trim( (string) $line ), 'file' => '', 'line' => 0, 'raw' => (string) $line );
 
+		// THE SITE WAS DOWN, which is a different thing from a warning.
+		//
+		// A handful of PHP messages mean the site could not serve a request at all — the
+		// database unreachable, memory exhausted, a request killed for running too long —
+		// and they are written with the same words as the noise around them ("PHP
+		// Warning:"). Left as warnings they sit inside twenty routine ones: that is how a
+		// database outage on a real shop stayed invisible among 52 problems (2026-10-08,
+		// `mysqli_real_connect(): (HY000/2002): No such file or directory`). Raised, and
+		// given a sentence the panel can show, because "the site was down" is the one
+		// thing an owner must not have to interpret.
+		$downtime = self::downtime_reason( (string) $line );
+		if ( false !== $downtime ) {
+			$out['level'] = 'fatal';
+			$out['note']  = $downtime;
+		}
+
 		if ( ! preg_match( '/^\[([^\]]+)\]\s+(?:PHP\s+)?(Fatal error|Parse error|Recoverable fatal error|Warning|Notice|Deprecated|Strict Standards)\s*:\s*(.*)$/i', (string) $line, $m ) ) {
+			// Keeps the level and the note: an unusual shape is still a site that went down.
 			return $out;
 		}
 
 		$sev = strtolower( $m[2] );
-		if ( false !== strpos( $sev, 'fatal' ) || false !== strpos( $sev, 'parse' ) ) {
+		if ( 'fatal' === $out['level'] ) {
+			// Already raised as downtime — a PHP "Warning:" must not talk it back down.
+		} elseif ( false !== strpos( $sev, 'fatal' ) || false !== strpos( $sev, 'parse' ) ) {
 			$out['level'] = 'fatal';
 		} elseif ( false !== strpos( $sev, 'warning' ) ) {
 			$out['level'] = 'warning';

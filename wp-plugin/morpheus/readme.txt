@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.6
+Stable tag: 0.9.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,23 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.7 =
+* Fixed: **Morpheus was telling search engines about pages that are not pages.** A real site's submission ledger
+  came back with fifteen builder internals in it — `?elementor_library=default-kit`, `?cms_block=equipment-repair`,
+  `woodmart_layout/product-archive-layout/` — plus `/cart/`, `/my-account/` and `/wishlist/`. A page builder
+  registers its templates and blocks as *public*, which is the test this used; the question that matters is
+  whether a URL has a single view at all, whether the site has asked to keep it out of search, and whether it has
+  a real permalink. A permalink that comes back as nothing but a query string is the tell, and it is refused now.
+* The store's own utility pages — cart, checkout, account, terms — are never announced, and there is a
+  `morpheus_announce_url` filter for anything else (another shop, a membership plugin, a one-off thank-you page),
+  because a list of slugs would be a guess.
+* Fixed: **"the site was down" is no longer filed as a warning.** A handful of PHP messages mean the site could
+  not serve a request at all — the database unreachable, memory exhausted, a request killed for running too long —
+  and PHP writes them with the same words as the noise around them. A database outage on a real shop sat inside
+  twenty routine warnings, invisible. They are raised above the noise now, and the ERROR LOG panel says in plain
+  words what happened: *"PHP could not reach the database server. While this is happening WordPress answers every
+  page with 'Error establishing a database connection' — visitors saw an error, not a slow site."*
 
 = 0.9.6 =
 * New: **AI FIX.** A finding that used to end in instructions can now end in a button. Press it and Morpheus
