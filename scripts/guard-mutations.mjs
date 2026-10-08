@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 61;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 62;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 60;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 61;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -2955,6 +2955,17 @@ export const MUTATIONS = [
     find: '      - name: Run the panel the way a host does, and fail if it does not survive it\n        run: node scripts/audio-plugin-panel-render.mjs\n        env:\n          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build',
     replace: '      # (the panel is never run)',
   },
+  {
+    guard: 'verify-dock.mjs',
+    file: 'server/src/routes/uploads.routes.js',
+    // ⚠️ THE LIVE BUG OF 2026-10-08, AS A MUTATION. The dock renders the SHOP tab, so
+    // picking a product photo there posts to /uploads — which mounted `blockWidget` and
+    // refused every scoped token. The button was offered and could never work, and Rob
+    // found it ("Photos are not uploading anymore") rather than a check.
+    why: 'Puts the upload route back behind blockWidget, so the dock product-photo button is refused for every scoped token.',
+    find: "router.post('/', requireAuth, allowStoreUpload, upload.single('file'), async (req, res) => {",
+    replace: "router.post('/', requireAuth, blockWidget, upload.single('file'), async (req, res) => {",
+  },
 ];
 
 /**
@@ -3008,4 +3019,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 61;
+export const UNPROVEN_BASELINE = 60;

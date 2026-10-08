@@ -365,6 +365,30 @@ check('the snippet is still offered beside it', has(read('src/components/matrix/
 check('the tab explains itself when the site is not connected',
   has(read('src/components/matrix/website/EmbedTab.jsx'), 'Connect your site in Setup first'), true);
 
+// ── the SHOP tab's photo upload, which could never work ─────────────────────
+//
+// The dock renders SHOP (src/pages/Embed.jsx), and adding a product there means picking
+// a photo — ShopTab posts it to /uploads, which mounted `blockWidget`. So the button was
+// offered and ALWAYS refused with "This endpoint is not available to a scoped token."
+// Rob hit it on 2026-10-08 ("Photos are not uploading anymore"). It is the defect this
+// codebase fixes wherever it appears: a control that cannot do what it looks like it does.
+//
+// It is allowed with the STORE scope and nothing else — that token already creates
+// products on the live site and sideloads images into WordPress, so putting the bytes in
+// the owner's own storage is strictly less than what it may already do.
+console.log('\nThe store scope can upload a product photo, and nothing else can');
+const authSrc = read('server/src/auth.js');
+const uploadsRoute = read('server/src/routes/uploads.routes.js');
+// ⚠️ TIGHTENED after a mutation SURVIVED: `/requireAuth, allowStoreUpload/` is also
+// satisfied by the IMPORT line, so the check stayed green with the route back behind
+// blockWidget — a check passing for a reason unrelated to its subject.
+check('the upload ROUTE accepts a scoped widget token',
+  uploadsRoute.includes("router.post('/', requireAuth, allowStoreUpload"), true);
+check('…but only one carrying the store scope', /\(req\.widget\.scopes \|\| \[\]\)\.includes\('store'\)/.test(authSrc), true);
+check('…and a device token is still refused outright', /if \(req\.device\) return res\.status\(403\)/.test(authSrc), true);
+check('…while every other scoped route still blocks both kinds',
+  /export function blockWidget\(req, res, next\) \{\n  if \(req\.widget \|\| req\.device\)/.test(authSrc), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log(`\n${failures} FAILED\n`);
