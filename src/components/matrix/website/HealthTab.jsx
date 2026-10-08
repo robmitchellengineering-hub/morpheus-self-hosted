@@ -454,7 +454,7 @@ function LastAttempt({ line, outcome }) {
 /** One finding, rendered so the server's own source label is unmissable. */
 function Finding({
   t, quiet = false, siteName, siteUrl, fixBusy = false, fixPaused = false, fixResult,
-  onFix, onRescan, scanning = false, onJumpToUpdates,
+  onFix, onPropose, onRescan, scanning = false, onJumpToUpdates,
   // CLEAN MY SITE withholds the control on a finding that already reads `good`:
   // a check that passed must not offer a press that changes the site, or the
   // buttons on screen stop agreeing with the set the bulk press applies. The
@@ -511,7 +511,7 @@ function Finding({
       ) : null}
       {/* The action, when the payload carries one — and nothing at all when it does not. */}
       {t.fix && withFix ? (
-        <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult} onPropose={proposeFix}
+        <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult} onPropose={onPropose}
           onFix={onFix} onRescan={onRescan} scanning={scanning}
           onJumpToUpdates={onJumpToUpdates} siteName={siteName} siteUrl={siteUrl} />
       ) : null}
@@ -1152,6 +1152,7 @@ export default function HealthTab({ projectId }) {
                       fixPaused={fixAllRunning}
                       fixResult={fixResults[t.id]}
                       onFix={applyFix}
+                      onPropose={proposeFix}
                       onRescan={() => run(true)}
                       scanning={loading}
                       onJumpToUpdates={jumpToUpdates} />
@@ -1331,6 +1332,7 @@ export default function HealthTab({ projectId }) {
                         fixPaused={cleanRunning || fixAllRunning}
                         fixResult={fixResults[t.id]}
                         onFix={applyFix}
+                      onPropose={proposeFix}
                         onRescan={() => runClean(true)}
                         scanning={cleanLoading} />
                     ))}
@@ -1345,6 +1347,7 @@ export default function HealthTab({ projectId }) {
                             fixPaused={cleanRunning || fixAllRunning}
                             fixResult={fixResults[t.id]}
                             onFix={applyFix}
+                      onPropose={proposeFix}
                             onRescan={() => runClean(true)}
                             scanning={cleanLoading} />
                         )) : null}
