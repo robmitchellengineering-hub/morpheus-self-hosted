@@ -96,6 +96,27 @@ jobs:
         env:
           AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build
 
+      # ⭐ AND NOW THE PANEL ITSELF, RUN THE WAY A HOST RUNS IT — the check NO pipeline had, and the reason
+      # three crashes in one day went through every gate this repository owned. A compile is happy. A guard
+      # reading the source is happy. An offscreen render is happy too, if it keeps one autorelease pool for the
+      # whole run — and that is exactly what `tools/clap-gui-host` did, so a dictionary cached without being
+      # retained stayed alive by accident while every real host freed it and died on the next draw. GarageBand
+      # crashed instantly, twice, on two builds, with everything green.
+      #
+      # This step renders the panel twice — plainly, and with the pool drained between creating it and drawing
+      # it, which is what a run loop does every iteration. Both must draw. It is the difference between green
+      # and a segfault on the build that shipped, and it costs about a minute beside a build measured in tens.
+      #
+      # ⚠️ ON THE RIG BUILD, deliberately: it is the one people download and the one with every control on it.
+      # ⚠️ AND ONLY ON THIS PLATFORM. The other two panels are C++ over GDI and X11 — there is no autorelease
+      # pool and no dictionary literal to be nil in, so the class of bug this exists for cannot occur there,
+      # and a Windows runner minute is 2x and a macOS one 10x. `verify-audio-plugin` still covers all three
+      # statically on every pull request.
+      - name: Run the panel the way a host does, and fail if it does not survive it
+        run: node scripts/audio-plugin-panel-render.mjs
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build
+
 
       # `if-no-files-found: error` is the second half of the check: if the standalone's zip is missing, the
       # run fails here rather than passing with three of four artifacts.

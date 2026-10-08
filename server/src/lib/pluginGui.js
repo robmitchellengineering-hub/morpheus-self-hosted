@@ -655,21 +655,26 @@ static NSColor *morpheusAmber(void) { return [NSColor colorWithCalibratedRed:1.0
 // The third pedal's colour, so the three of them read as three pedals rather than as a row of the same thing.
 static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25 green:0.94 blue:1.0 alpha:1.0]; }
 
-// ⚠️ THE FONT IS THE ONE ATTRIBUTE THAT CANNOT BE NIL — AND IT IS WHAT KILLED THE HOST, ON TWO BUILDS.
+// ⚠️ THE PANEL'S INK IS BUILT ONCE AND OWNED FOR THE LIFE OF THE PROCESS. TWO CRASHES TAUGHT THIS, AND THE
+// SECOND ONE WAS CAUSED BY THE FIX FOR THE FIRST.
 //
-// A nil COLOUR is harmless: \`[nil setFill]\` is a no-op, so a colour factory that fails paints nothing and the
-// panel still works. A nil FONT inside a dictionary literal is not. \`@{…}\` compiles to
-// \`+[NSDictionary dictionaryWithObjects:forKeys:count:]\`, which RAISES on a nil value, and an exception raised
-// inside \`drawRect:\` reaches AppKit's own handler and takes the whole HOST down with it — GarageBand died at
-// 12:10 on 2026-10-08 with \`attempt to insert nil object from objects[0]\`, the standalone died the same way at
-// 11:59, and the PREVIOUS build died identically on 2026-10-07. Three reports, one instruction:
-// \`-[MorpheusPanel drawRect:]\`, in the literal that carried \`monospacedSystemFontOfSize:\`.
+//   1. THE NIL FONT. The attributes were built INSIDE \`drawRect:\` — five fonts asked for 30 times a second.
+//      A nil COLOUR is harmless (\`[nil setFill]\` is a no-op) but a nil FONT inside a dictionary literal is not:
+//      \`@{…}\` compiles to \`+[NSDictionary dictionaryWithObjects:forKeys:count:]\`, which RAISES on a nil value,
+//      and an exception raised inside \`drawRect:\` reaches AppKit's own handler and takes the HOST down with it.
+//      GarageBand 2026-10-08 12:10, the standalone 11:59, and the build BEFORE those on 2026-10-07 — three
+//      reports, all in that one literal.
 //
-// SO THE ATTRIBUTES ARE BUILT ONCE, AT PANEL CREATION, FROM A FONT THAT IS ALLOWED TO FAIL. \`drawRect:\` runs 30
-// times a second (the \`_timer\` below), and asking AppKit for five fonts and five dictionaries on every one of
-// those frames was both the crash and the waste. A font that cannot be made falls back; if none can be made the
-// attribute is simply left out, because a missing font is a cosmetic default and a raised exception is a crash.
-// The panel always draws.
+//   2. THE DEAD DICTIONARY, which is what moving them out of \`drawRect:\` caused. THIS FILE IS COMPILED WITHOUT
+//      ARC — there is no \`-fobjc-arc\` in the generated CMakeLists and the shipped binary carries no
+//      \`objc_storeStrong\`. So \`_nameAttrs = morpheusAttrs(…)\` stored an AUTORELEASED dictionary and did not
+//      retain it: the run loop drained its pool at the end of the iteration the panel was created in, the
+//      dictionary and its font were freed, and the next draw messaged dead objects — SIGSEGV inside
+//      NSStringDrawing, instantly, the first time the editor was opened. The compile-and-render check did not
+//      see it because that harness never drains a pool; a host does, every iteration.
+//
+// So: built once, at panel creation, and OWNED. They are immutable, identical for every instance, and six small
+// dictionaries — one shared copy is the right amount of memory as well as the safe one.
 static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight, NSColor *color) {
   NSFont *font = [NSFont monospacedSystemFontOfSize:size weight:weight];
   if (!font) font = [NSFont userFixedPitchFontOfSize:size];
@@ -678,6 +683,37 @@ static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight
   if (!font) return @{ NSForegroundColorAttributeName: color };
   if (!color) return @{ NSFontAttributeName: font };
   return @{ NSFontAttributeName: font, NSForegroundColorAttributeName: color };
+}
+
+// ⚠️ OWNERSHIP, SPELLED OUT FOR BOTH BUILD MODES, so this file cannot be wrong about which one it is in.
+// Without ARC the factory's autoreleased result has to be retained or it dies with the pool (crash 2 above);
+// with ARC the assignment is enough and \`retain\` is not even available. \`__has_feature\` is the compiler's own
+// answer rather than a guess about the flags the build happens to carry today.
+static NSDictionary *morpheusAttrsOwned(NSDictionary *attrs) {
+#if __has_feature(objc_arc)
+  return attrs;
+#else
+  return [attrs retain];   // never released: these live as long as the process does, deliberately
+#endif
+}
+
+static NSDictionary *s_nameAttrs = nil;
+static NSDictionary *s_valueAttrs = nil;
+static NSDictionary *s_boxAttrs = nil;
+static NSDictionary *s_titleAttrs = nil;
+static NSDictionary *s_lockAttrs = nil;
+static NSDictionary *s_wordAttrs = nil;
+
+// Called from -initWithPlugin:, on the main thread, while the panel is being created — NEVER from drawRect:.
+// The guard below makes it idempotent, so a second panel instance costs nothing and cannot double-build.
+static void morpheusAttrsBuild(void) {
+  if (s_nameAttrs) return;
+  s_nameAttrs = morpheusAttrsOwned(morpheusAttrs(10, NSFontWeightRegular, morpheusText()));
+  s_valueAttrs = morpheusAttrsOwned(morpheusAttrs(11, NSFontWeightMedium, morpheusGreen()));
+  s_boxAttrs = morpheusAttrsOwned(morpheusAttrs(11, NSFontWeightBold, morpheusGroupText()));
+  s_titleAttrs = morpheusAttrsOwned(morpheusAttrs(11, NSFontWeightBold, morpheusAmber()));
+  s_lockAttrs = morpheusAttrsOwned(morpheusAttrs(8, NSFontWeightRegular, morpheusDim()));
+  s_wordAttrs = morpheusAttrsOwned(morpheusAttrs(13, NSFontWeightBold, morpheusGreen()));
 }
 
 @interface MorpheusPanel : NSView {
@@ -690,14 +726,6 @@ static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight
   double _pressY;         // where it was pressed, so a CLICK can be told from a DRAG
   BOOL _moved;            // past the threshold: a drag, not a click
   NSTimer *_timer;
-  // Built once in -initWithPlugin:, never in drawRect:. See morpheusAttrs for why this is a correctness
-  // property and not a micro-optimisation.
-  NSDictionary *_nameAttrs;
-  NSDictionary *_valueAttrs;
-  NSDictionary *_boxAttrs;
-  NSDictionary *_titleAttrs;
-  NSDictionary *_lockAttrs;
-  NSDictionary *_wordAttrs;
 }
 - (instancetype)initWithPlugin:(const clap_plugin_t *)plugin params:(const clap_plugin_params_t *)params;
 - (void)start;
@@ -718,14 +746,9 @@ static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight
     // THE FIRST BLOCK OPENS, not none: a panel that opens with nothing selected shows no control at all,
     // which reads as a plugin that has none.
     _open = 0;
-    // ⚠️ BUILT ONCE, AND THIS IS THE LINE THE CRASH MOVED TO. Five fonts were asked for on every frame the
-    // panel drew; here they are asked for once, on the main thread, with a fallback. See morpheusAttrs.
-    _nameAttrs = morpheusAttrs(10, NSFontWeightRegular, morpheusText());
-    _valueAttrs = morpheusAttrs(11, NSFontWeightMedium, morpheusGreen());
-    _boxAttrs = morpheusAttrs(11, NSFontWeightBold, morpheusGroupText());
-    _titleAttrs = morpheusAttrs(11, NSFontWeightBold, morpheusAmber());
-    _lockAttrs = morpheusAttrs(8, NSFontWeightRegular, morpheusDim());
-    _wordAttrs = morpheusAttrs(13, NSFontWeightBold, morpheusGreen());
+    // ⚠️ BUILT ONCE, OWNED, AND NEVER FROM drawRect:. See morpheusAttrs for the two crashes this line stands
+    // on — the nil font, and the autoreleased dictionary that was the fix for it.
+    morpheusAttrsBuild();
     [self start];
   }
   return self;
@@ -752,13 +775,14 @@ static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight
   (void)dirty;
   [morpheusBg() setFill];
   NSRectFill(self.bounds);
-  // ⚠️ THE PANEL'S INK IS PREBUILT IN -initWithPlugin:. NOTHING BELOW MAY ASK FOR A FONT. This method runs 30
-  // times a second on a HOST PROCESS's main thread, so a nil font in a dictionary literal here does not
-  // degrade the panel — it terminates GarageBand. Three crash reports say so; morpheusAttrs is the fix.
-  NSDictionary *nameAttrs = _nameAttrs;
-  NSDictionary *valueAttrs = _valueAttrs;
-  NSDictionary *boxAttrs = _boxAttrs;
-  NSDictionary *titleAttrs = _titleAttrs;
+  // ⚠️ PREBUILT AND OWNED, IN -initWithPlugin:. NOTHING BELOW MAY ASK FOR A FONT OR BUILD AN ATTRIBUTE. This
+  // method runs 30 times a second on a HOST PROCESS's main thread: a nil font here terminates the host, and a
+  // borrowed dictionary here is freed by the run loop's next drain. Both have shipped; morpheusAttrsBuild is
+  // what stands between this file and a fourth crash report.
+  NSDictionary *nameAttrs = s_nameAttrs;
+  NSDictionary *valueAttrs = s_valueAttrs;
+  NSDictionary *boxAttrs = s_boxAttrs;
+  NSDictionary *titleAttrs = s_titleAttrs;
 
   morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
   morpheus_gui_block_t blocks[MORPHEUS_GUI_MAX_BLOCKS];
@@ -782,7 +806,7 @@ static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight
     // refused to move with no explanation reads as a bug rather than as a rule.
     if (!blocks[b].movable) {
       [[NSString stringWithUTF8String:"LOCKED"] drawAtPoint:NSMakePoint(MORPHEUS_BOX_X + MORPHEUS_BOX_W - 54, top + 9)
-                                            withAttributes:_lockAttrs];
+                                            withAttributes:s_lockAttrs];
     }
     // THE AMBER LINE, as a connector between boxes — which is what makes the column read as a signal path
     // rather than as a list of headings.
@@ -922,7 +946,7 @@ static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight
     }
   }
   [[NSString stringWithUTF8String:MORPHEUS_BADGE_WORD]
-    drawAtPoint:NSMakePoint(MORPHEUS_BADGE_WORD_X, MORPHEUS_BADGE_WORD_Y) withAttributes:_wordAttrs];
+    drawAtPoint:NSMakePoint(MORPHEUS_BADGE_WORD_X, MORPHEUS_BADGE_WORD_Y) withAttributes:s_wordAttrs];
 }
 
 - (void)mouseDown:(NSEvent *)event {
