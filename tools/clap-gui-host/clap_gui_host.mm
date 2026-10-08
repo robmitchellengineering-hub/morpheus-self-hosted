@@ -18,7 +18,13 @@
 //       tools/clap-gui-host/clap_gui_host.mm <plugin>/Source/Plugin.cpp <plugin>/Source/PluginEntry.cpp \
 //       <plugin>/Source/PluginGui.mm -framework Cocoa -framework QuartzCore -o /tmp/clap_gui_host
 //
-// Run:  /tmp/clap_gui_host --out board.png [--id nz.morpheus.plugin] [--wait 0.5] [--click x,y ...]
+// Run:  /tmp/clap_gui_host --out board.png [--id nz.morpheus.plugin] [--wait 0.5] [--click x,y ...] [--drain-pool]
+//
+// ⚠️ `--drain-pool` MODELS THE HOST'S RUN LOOP, AND WITHOUT IT THIS TOOL CANNOT SEE A USE-AFTER-FREE. A host
+// drains an autorelease pool at the end of every iteration; the panel is created in one iteration and drawn in
+// a later one, so anything it caches for the draw must be OWNED. This harness otherwise keeps a single pool for
+// the whole run and holds a borrowed object alive by accident. That is not hypothetical: an instant SIGSEGV in
+// NSStringDrawing shipped past a green render because every check here never drained a pool.
 //
 // \`--click\` presses the panel at a point in the PANEL's own coordinates, and may be given more than once:
 // open a block, then step a control inside it. Each press is the same event the window would deliver, so the
@@ -56,10 +62,18 @@ int main(int argc, char **argv) {
     // interaction: open a block, then step a control inside it.
     double clickX[8], clickY[8];
     int clicks = 0;
+    // ── `--drain-pool`: BE THE HOST, NOT A CONVENIENT LIE ABOUT ONE ──────────────────────────────────────
+    // ⚠️ WITHOUT THIS THE TOOL CANNOT SEE A USE-AFTER-FREE, AND ONE SHIPPED PAST A GREEN RENDER (#595, the
+    // instant SIGSEGV on opening the editor). A host drains an autorelease pool at the end of EVERY run-loop
+    // iteration; the panel is created in one iteration and drawn in a later one, so anything it caches for the
+    // draw has to be OWNED. This harness keeps one pool for the whole run, which keeps a borrowed object alive
+    // by accident — so a caller asking "does the panel survive a host's run loop" must ask for it explicitly.
+    bool drainPool = false;
     for (int i = 1; i < argc; ++i) {
       if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
       else if (!strcmp(argv[i], "--id") && i + 1 < argc) wanted = argv[++i];
       else if (!strcmp(argv[i], "--wait") && i + 1 < argc) wait = atof(argv[++i]);
+      else if (!strcmp(argv[i], "--drain-pool")) drainPool = true;
       else if (!strcmp(argv[i], "--click") && i + 1 < argc) {
         if (clicks >= 8 || sscanf(argv[++i], "%lf,%lf", &clickX[clicks], &clickY[clicks]) != 2) {
           fprintf(stderr, "--click wants a point as x,y (at most eight of them)\n");
@@ -69,7 +83,7 @@ int main(int argc, char **argv) {
       }
     }
     if (!out) {
-      fprintf(stderr, "usage: clap_gui_host --out <shot.png> [--id <plugin-id>] [--wait <seconds>] [--click x,y ...]\n");
+      fprintf(stderr, "usage: clap_gui_host --out <shot.png> [--id <plugin-id>] [--wait <seconds>] [--drain-pool] [--click x,y ...]\n");
       return 2;
     }
 
@@ -118,6 +132,9 @@ int main(int argc, char **argv) {
       fprintf(stderr, "FAIL: the panel does not support the Cocoa window API\n");
       return 1;
     }
+    // The pool the host's run loop would have drained. Held open across create/set_parent/show on purpose: the
+    // panel is created in one iteration, so everything it caches there dies at the end of THAT iteration.
+    NSAutoreleasePool *setupPool = drainPool ? [[NSAutoreleasePool alloc] init] : nil;
     if (!gui->create(plugin, CLAP_WINDOW_API_COCOA, false)) {
       fprintf(stderr, "FAIL: create() refused the Cocoa API\n");
       return 1;
@@ -147,6 +164,13 @@ int main(int argc, char **argv) {
     }
     // The panel draws on a timer and needs a run-loop turn (or several) before the first frame is real —
     // and the same is true in a DAW, which is why the timer runs in common modes.
+    // ⚠️ THE DRAIN, AND THE RETAIN THAT MAKES IT A FAIR TEST. `content` is autoreleased and this harness uses
+    // it after the drain, so it is owned here — a variable belonging to the harness must not be what the drain
+    // kills, or the crash would be the tool's and not the plugin's.
+    if (drainPool) {
+      [content retain];
+      [setupPool drain];
+    }
     [window makeKeyAndOrderFront:nil];
     NSDate *until = [NSDate dateWithTimeIntervalSinceNow:wait];
     while ([until timeIntervalSinceNow] > 0) {

@@ -2330,10 +2330,26 @@ check('…and every font in the Cocoa panel comes from ONE builder that FALLS BA
   && /if \(!font\) font = \[NSFont userFixedPitchFontOfSize:size\];/.test(guiCpp)
   && /if \(!font && !color\) return @\{\};/.test(guiCpp), true);
 check('…and the panel\'s ink is built ONCE, at creation, from that builder — not per frame',
-  /_nameAttrs = morpheusAttrs\(10, NSFontWeightRegular, morpheusText\(\)\);/.test(guiCpp)
-  && /_valueAttrs = morpheusAttrs\(11, NSFontWeightMedium, morpheusGreen\(\)\);/.test(guiCpp)
-  && /_wordAttrs = morpheusAttrs\(13, NSFontWeightBold, morpheusGreen\(\)\);/.test(guiCpp)
+  /s_nameAttrs = morpheusAttrsOwned\(morpheusAttrs\(10, NSFontWeightRegular, morpheusText\(\)\)\);/.test(guiCpp)
+  && /s_valueAttrs = morpheusAttrsOwned\(morpheusAttrs\(11, NSFontWeightMedium, morpheusGreen\(\)\)\);/.test(guiCpp)
+  && /s_wordAttrs = morpheusAttrsOwned\(morpheusAttrs\(13, NSFontWeightBold, morpheusGreen\(\)\)\);/.test(guiCpp)
   && !/withAttributes:@\{/.test(cocoaDraw), true);
+// ⚠️ AND THEY MUST BE **OWNED**, WHICH IS THE SECOND CRASH AND THE REASON THIS IS A GUARD AND NOT A COMMENT.
+// Moving the attributes out of drawRect: introduced a use-after-free: `PluginGui.mm` is compiled WITHOUT ARC
+// (no `-fobjc-arc` in the generated CMakeLists, and no `objc_storeStrong` in the shipped binary), so
+// `_nameAttrs = morpheusAttrs(…)` stored an AUTORELEASED dictionary without retaining it. The host's run loop
+// drains its pool at the end of the iteration the panel was created in, the dictionary and its font are freed,
+// and the next draw messages dead objects — SIGSEGV in NSStringDrawing, instantly, on the first opening of the
+// editor. **Every check in this file was green while that shipped**, because a compile and an offscreen render
+// never drain a pool. Only a HOST does, every iteration (`tools/clap-gui-host --drain-pool` now models it).
+const ownedCalls = guiCpp.match(/= morpheusAttrsOwned\(/g) || [];
+check('⭐ …and all six dictionaries are OWNED, because this file is built WITHOUT ARC and the run loop drains',
+  ownedCalls.length === 6
+  && /static NSDictionary \*s_nameAttrs = nil;/.test(guiCpp)
+  && /#if __has_feature\(objc_arc\)/.test(guiCpp)
+  && /return \[attrs retain\];/.test(guiCpp)
+  // …and the shape that crashed — a borrowed dictionary in an ivar — is not what came back.
+  && !/NSDictionary \*_(name|value|box|title|lock|word)Attrs;/.test(guiCpp), true);
 check('⭐ …and the 30 Hz redraw timer follows the WINDOW: hidden stops it, shown starts it again',
   /- \(void\)start \{[\s\S]{0,240}if \(_timer\) return;/.test(guiCpp)
   && /bool gui_show\(const clap_plugin_t \*plugin\) \{[\s\S]{0,240}\[view start\];/.test(guiCpp)

@@ -2075,8 +2075,21 @@ export const MUTATIONS = [
     // process. It is also the mutation that has to fail the `no font while drawing` check while every other
     // panel check stays green, which is why the check is written on `drawRect:`'s body rather than on the file.
     why: 'Puts a font factory back inside drawRect:, where a nil font raises out of the dictionary literal and takes the host (GarageBand) down with it.',
-    find: '  NSDictionary *valueAttrs = _valueAttrs;',
+    find: '  NSDictionary *valueAttrs = s_valueAttrs;',
     replace: '  NSDictionary *valueAttrs = @{ NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium], NSForegroundColorAttributeName: morpheusGreen() };',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE SECOND CRASH, AS A MUTATION — the one the FIRST fix caused and every check stayed green through.
+    // `morpheusAttrsOwned` exists because this file is compiled without ARC, so the factory's autoreleased
+    // dictionary has to be retained by hand; drop the ownership on ONE of the six and the host's run loop frees
+    // it at the end of the iteration the panel was created in. The next draw then messages dead objects and
+    // GarageBand dies instantly. Nothing static can see it — it is an ownership property — so the guard asserts
+    // the call, and this proves the assertion can fail.
+    why: 'Stops owning one of the six attribute dictionaries, so the host\'s run loop frees it and the next draw segfaults in NSStringDrawing.',
+    find: '  s_wordAttrs = morpheusAttrsOwned(morpheusAttrs(13, NSFontWeightBold, morpheusGreen()));',
+    replace: '  s_wordAttrs = morpheusAttrs(13, NSFontWeightBold, morpheusGreen());',
   },
   {
     guard: 'verify-audio-plugin.mjs',
