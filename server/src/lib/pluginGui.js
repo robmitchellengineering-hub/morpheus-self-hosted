@@ -655,6 +655,31 @@ static NSColor *morpheusAmber(void) { return [NSColor colorWithCalibratedRed:1.0
 // The third pedal's colour, so the three of them read as three pedals rather than as a row of the same thing.
 static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25 green:0.94 blue:1.0 alpha:1.0]; }
 
+// ⚠️ THE FONT IS THE ONE ATTRIBUTE THAT CANNOT BE NIL — AND IT IS WHAT KILLED THE HOST, ON TWO BUILDS.
+//
+// A nil COLOUR is harmless: \`[nil setFill]\` is a no-op, so a colour factory that fails paints nothing and the
+// panel still works. A nil FONT inside a dictionary literal is not. \`@{…}\` compiles to
+// \`+[NSDictionary dictionaryWithObjects:forKeys:count:]\`, which RAISES on a nil value, and an exception raised
+// inside \`drawRect:\` reaches AppKit's own handler and takes the whole HOST down with it — GarageBand died at
+// 12:10 on 2026-10-08 with \`attempt to insert nil object from objects[0]\`, the standalone died the same way at
+// 11:59, and the PREVIOUS build died identically on 2026-10-07. Three reports, one instruction:
+// \`-[MorpheusPanel drawRect:]\`, in the literal that carried \`monospacedSystemFontOfSize:\`.
+//
+// SO THE ATTRIBUTES ARE BUILT ONCE, AT PANEL CREATION, FROM A FONT THAT IS ALLOWED TO FAIL. \`drawRect:\` runs 30
+// times a second (the \`_timer\` below), and asking AppKit for five fonts and five dictionaries on every one of
+// those frames was both the crash and the waste. A font that cannot be made falls back; if none can be made the
+// attribute is simply left out, because a missing font is a cosmetic default and a raised exception is a crash.
+// The panel always draws.
+static NSDictionary *morpheusAttrs(const CGFloat size, const NSFontWeight weight, NSColor *color) {
+  NSFont *font = [NSFont monospacedSystemFontOfSize:size weight:weight];
+  if (!font) font = [NSFont userFixedPitchFontOfSize:size];
+  if (!font) font = [NSFont systemFontOfSize:size];
+  if (!font && !color) return @{};
+  if (!font) return @{ NSForegroundColorAttributeName: color };
+  if (!color) return @{ NSFontAttributeName: font };
+  return @{ NSFontAttributeName: font, NSForegroundColorAttributeName: color };
+}
+
 @interface MorpheusPanel : NSView {
   const clap_plugin_t *_plugin;
   const clap_plugin_params_t *_params;
@@ -665,8 +690,17 @@ static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25
   double _pressY;         // where it was pressed, so a CLICK can be told from a DRAG
   BOOL _moved;            // past the threshold: a drag, not a click
   NSTimer *_timer;
+  // Built once in -initWithPlugin:, never in drawRect:. See morpheusAttrs for why this is a correctness
+  // property and not a micro-optimisation.
+  NSDictionary *_nameAttrs;
+  NSDictionary *_valueAttrs;
+  NSDictionary *_boxAttrs;
+  NSDictionary *_titleAttrs;
+  NSDictionary *_lockAttrs;
+  NSDictionary *_wordAttrs;
 }
 - (instancetype)initWithPlugin:(const clap_plugin_t *)plugin params:(const clap_plugin_params_t *)params;
+- (void)start;
 - (void)stop;
 @end
 
@@ -684,15 +718,31 @@ static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25
     // THE FIRST BLOCK OPENS, not none: a panel that opens with nothing selected shows no control at all,
     // which reads as a plugin that has none.
     _open = 0;
-    // ⚠️ COMMON MODES, NOT THE DEFAULT MODE. A scheduled timer fires in NSDefaultRunLoopMode, which STOPS
-    // while a window is being dragged or a DAW is in a modal loop — so the knobs would freeze mid-drag, which
-    // reads as a broken plugin. This is the one line that makes the panel feel alive.
-    _timer = [NSTimer timerWithTimeInterval:1.0 / 30.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
-    [[NSRunLoop currentRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
+    // ⚠️ BUILT ONCE, AND THIS IS THE LINE THE CRASH MOVED TO. Five fonts were asked for on every frame the
+    // panel drew; here they are asked for once, on the main thread, with a fallback. See morpheusAttrs.
+    _nameAttrs = morpheusAttrs(10, NSFontWeightRegular, morpheusText());
+    _valueAttrs = morpheusAttrs(11, NSFontWeightMedium, morpheusGreen());
+    _boxAttrs = morpheusAttrs(11, NSFontWeightBold, morpheusGroupText());
+    _titleAttrs = morpheusAttrs(11, NSFontWeightBold, morpheusAmber());
+    _lockAttrs = morpheusAttrs(8, NSFontWeightRegular, morpheusDim());
+    _wordAttrs = morpheusAttrs(13, NSFontWeightBold, morpheusGreen());
+    [self start];
   }
   return self;
 }
 
+// ⚠️ COMMON MODES, NOT THE DEFAULT MODE. A scheduled timer fires in NSDefaultRunLoopMode, which STOPS while a
+// window is being dragged or a DAW is in a modal loop — so the knobs would freeze mid-drag, which reads as a
+// broken plugin. This is the one line that makes the panel feel alive.
+- (void)start {
+  if (_timer) return;
+  _timer = [NSTimer timerWithTimeInterval:1.0 / 30.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
+  [[NSRunLoop currentRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
+}
+
+// ⚠️ THE TIMER STOPS WITH THE PANEL, NOT ONLY WITH THE PLUGIN. A hidden view is never drawn, so a timer that
+// keeps asking for a redraw is pure heat — and it is exposure: every frame that does reach AppKit while a
+// window is going away is another chance to be handed the nil this whole change exists to survive.
 - (void)stop { [_timer invalidate]; _timer = nil; }
 - (void)tick:(NSTimer *)t { (void)t; [self setNeedsDisplay:YES]; }
 - (BOOL)isFlipped { return YES; }                    // row 0 at the top, so the arithmetic reads like the layout
@@ -702,22 +752,13 @@ static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25
   (void)dirty;
   [morpheusBg() setFill];
   NSRectFill(self.bounds);
-  NSDictionary *nameAttrs = @{
-    NSFontAttributeName: [NSFont monospacedSystemFontOfSize:10 weight:NSFontWeightRegular],
-    NSForegroundColorAttributeName: morpheusText(),
-  };
-  NSDictionary *valueAttrs = @{
-    NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium],
-    NSForegroundColorAttributeName: morpheusGreen(),
-  };
-  NSDictionary *boxAttrs = @{
-    NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightBold],
-    NSForegroundColorAttributeName: morpheusGroupText(),
-  };
-  NSDictionary *titleAttrs = @{
-    NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightBold],
-    NSForegroundColorAttributeName: morpheusAmber(),
-  };
+  // ⚠️ THE PANEL'S INK IS PREBUILT IN -initWithPlugin:. NOTHING BELOW MAY ASK FOR A FONT. This method runs 30
+  // times a second on a HOST PROCESS's main thread, so a nil font in a dictionary literal here does not
+  // degrade the panel — it terminates GarageBand. Three crash reports say so; morpheusAttrs is the fix.
+  NSDictionary *nameAttrs = _nameAttrs;
+  NSDictionary *valueAttrs = _valueAttrs;
+  NSDictionary *boxAttrs = _boxAttrs;
+  NSDictionary *titleAttrs = _titleAttrs;
 
   morpheus_gui_row_t rows[MORPHEUS_GUI_MAX_ROWS];
   morpheus_gui_block_t blocks[MORPHEUS_GUI_MAX_BLOCKS];
@@ -741,10 +782,7 @@ static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25
     // refused to move with no explanation reads as a bug rather than as a rule.
     if (!blocks[b].movable) {
       [[NSString stringWithUTF8String:"LOCKED"] drawAtPoint:NSMakePoint(MORPHEUS_BOX_X + MORPHEUS_BOX_W - 54, top + 9)
-                                            withAttributes:@{
-        NSFontAttributeName: [NSFont monospacedSystemFontOfSize:8 weight:NSFontWeightRegular],
-        NSForegroundColorAttributeName: morpheusDim(),
-      }];
+                                            withAttributes:_lockAttrs];
     }
     // THE AMBER LINE, as a connector between boxes — which is what makes the column read as a signal path
     // rather than as a list of headings.
@@ -883,14 +921,8 @@ static NSColor *morpheusCyan(void) { return [NSColor colorWithCalibratedRed:0.25
       }
     }
   }
-  {
-    NSDictionary *wordAttrs = @{
-      NSFontAttributeName: [NSFont monospacedSystemFontOfSize:13 weight:NSFontWeightBold],
-      NSForegroundColorAttributeName: morpheusGreen(),
-    };
-    [[NSString stringWithUTF8String:MORPHEUS_BADGE_WORD]
-      drawAtPoint:NSMakePoint(MORPHEUS_BADGE_WORD_X, MORPHEUS_BADGE_WORD_Y) withAttributes:wordAttrs];
-  }
+  [[NSString stringWithUTF8String:MORPHEUS_BADGE_WORD]
+    drawAtPoint:NSMakePoint(MORPHEUS_BADGE_WORD_X, MORPHEUS_BADGE_WORD_Y) withAttributes:_wordAttrs];
 }
 
 - (void)mouseDown:(NSEvent *)event {
@@ -1055,6 +1087,7 @@ bool gui_show(const clap_plugin_t *plugin) {
   if (!view) return false;
   [view setHidden:NO];
   [view setNeedsDisplay:YES];
+  [view start];      // ⚠️ the timer follows the WINDOW, not the plugin's lifetime — see -start/-stop
   return true;
 }
 
@@ -1062,6 +1095,7 @@ bool gui_hide(const clap_plugin_t *plugin) {
   MorpheusPanel *view = panel_of(plugin);
   if (!view) return false;
   [view setHidden:YES];
+  [view stop];       // a hidden panel is never drawn, so a 30 Hz redraw is heat — and exposure
   return true;
 }
 

@@ -2307,6 +2307,38 @@ for (const [name, src] of [['Cocoa', guiCpp], ['win32', guiWin], ['X11', guiX11]
     && /(blocks\[[a-zA-Z_]+\]\.movable|->movable)/.test(src), true);
 }
 
+// ── 25b-bis. ⚠️ THE PANEL MUST NOT ASK FOR A FONT WHILE IT IS DRAWING — THIS IS A CRASH REPORT, NOT A STYLE
+// RULE. ─────────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// `drawRect:` runs 30 times a second on the HOST's main thread, and the attribute dictionaries it needs were
+// built inside it, each carrying a font from `monospacedSystemFontOfSize:weight:`. When that factory returns
+// nil — it does: three reports, 2026-10-07 and two on 2026-10-08 — the dictionary LITERAL raises
+// `attempt to insert nil object from objects[0]`, the exception reaches AppKit's own handler, and the host dies
+// by SIGILL. GarageBand went down with it at 12:10, the standalone at 11:59, and **the build BEFORE that
+// change died the same way on 2026-10-07**, so nothing about a download caused it. A nil COLOUR never showed
+// the bug, because `[nil setFill]` is a no-op — only the font could throw.
+//
+// So these assert WHERE the font is asked for, not how the panel looks: ONE builder with fallbacks, called once
+// from -initWithPlugin:, and never from the draw path. `cocoaDraw` is the whole body, and an empty match FAILS
+// rather than passing — a check that never ran must not read as a check that passed (H17).
+const cocoaDraw = (guiCpp.match(/-\s*\(void\)drawRect:\(NSRect\)dirty\s*\{([\s\S]*?)\n\}/) || [])[1] || '';
+check('⭐ the Cocoa panel asks for NO font while drawing — a nil one there is an exception that kills the HOST',
+  cocoaDraw.length > 400 && !/NSFont/.test(cocoaDraw), true);
+check('…and every font in the Cocoa panel comes from ONE builder that FALLS BACK instead of handing back a nil',
+  (guiCpp.match(/\[NSFont (monospacedSystemFontOfSize|userFixedPitchFontOfSize|systemFontOfSize):/g) || []).length === 3
+  && /static NSDictionary \*morpheusAttrs\(/.test(guiCpp)
+  && /if \(!font\) font = \[NSFont userFixedPitchFontOfSize:size\];/.test(guiCpp)
+  && /if \(!font && !color\) return @\{\};/.test(guiCpp), true);
+check('…and the panel\'s ink is built ONCE, at creation, from that builder — not per frame',
+  /_nameAttrs = morpheusAttrs\(10, NSFontWeightRegular, morpheusText\(\)\);/.test(guiCpp)
+  && /_valueAttrs = morpheusAttrs\(11, NSFontWeightMedium, morpheusGreen\(\)\);/.test(guiCpp)
+  && /_wordAttrs = morpheusAttrs\(13, NSFontWeightBold, morpheusGreen\(\)\);/.test(guiCpp)
+  && !/withAttributes:@\{/.test(cocoaDraw), true);
+check('⭐ …and the 30 Hz redraw timer follows the WINDOW: hidden stops it, shown starts it again',
+  /- \(void\)start \{[\s\S]{0,240}if \(_timer\) return;/.test(guiCpp)
+  && /bool gui_show\(const clap_plugin_t \*plugin\) \{[\s\S]{0,240}\[view start\];/.test(guiCpp)
+  && /bool gui_hide\(const clap_plugin_t \*plugin\) \{[\s\S]{0,240}\[view stop\];/.test(guiCpp), true);
+
 // ── 25c. the AMP is a switch too, and it is the one block whose SHAPE makes that awkward ─────────────────
 // Every other block is per-sample, so its crossfade is a line. The model runs a WHOLE CHUNK at once and IN
 // PLACE, so by the time a fade wants the signal it replaced the buffer holds the model's output. That is what
