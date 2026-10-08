@@ -145,7 +145,10 @@ add_action( 'wp_loaded', function () {
 	}
 	Morpheus_Traffic::register_rewrite();
 	flush_rewrite_rules();
-	update_option( 'morpheus_rewrite_version', MORPHEUS_VERSION, false );
+	// Autoloaded, deliberately: the hook above reads it on every request, so a
+	// non-autoloaded stamp would cost one extra query per page load on every site
+	// and save nothing.
+	update_option( 'morpheus_rewrite_version', MORPHEUS_VERSION );
 } );
 
 add_action( 'admin_menu', array( 'Morpheus_Settings', 'register_menu' ) );

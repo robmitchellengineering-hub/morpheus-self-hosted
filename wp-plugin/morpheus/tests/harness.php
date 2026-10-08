@@ -990,7 +990,20 @@ $statuses = array_unique( array_column( $health['tests'], 'status' ) );
 ok( count( array_diff( $statuses, array( 'good', 'recommended', 'critical', 'unknown' ) ) ) === 0, 'health: every test status is one WordPress defines' );
 $ids = array_column( $health['tests'], 'id' );
 ok( in_array( 'php_version', $ids, true ), 'health: a known core test is present, so these are really WordPress\'s tests' );
-ok( count( $health['async_not_run'] ?? array() ) === 6, 'health: the six async tests are reported as not run' );
+// The not-run list is WordPress's async tests PLUS the direct test that needs the
+// caller's session. Asserted by ID rather than by count: a count of 6 was correct
+// until `rest_availability` joined it, and a number that has to be edited every time
+// the list changes is a check that punishes the fix instead of testing it.
+$not_run_ids = array_column( (array) ( $health['async_not_run'] ?? array() ), 'id' );
+$registered_async = class_exists( 'WP_Site_Health' )
+	? array_keys( (array) ( WP_Site_Health::get_instance()->get_tests()['async'] ?? array() ) )
+	: array();
+ok( $registered_async && count( array_diff( $registered_async, $not_run_ids ) ) === 0, 'health: every async test WordPress cannot let us run is reported as not run', $not_run_ids );
+// A signed scan has no login, so this one can only ever answer 401 here. It must be
+// reported as NOT RUN and must not appear as a verdict — reporting it as a finding
+// is what sent an owner to their host about a problem Morpheus had made.
+ok( in_array( 'rest_availability', $not_run_ids, true ), 'health: the session-bound REST test is reported as not run' );
+ok( ! in_array( 'rest_availability', $ids, true ), 'health: …and is NOT among the tests that ran, so its 401 is never a finding' );
 ok( ! empty( $health['async_not_run'][0]['reason'] ), 'health: each not-run test says why, so an absent test is not read as a passing one' );
 ok( is_bool( $health['can']['update_files'] ?? null ), 'health: the site states whether its files can be written' );
 ok( in_array( ( $health['host']['filesystem_method'] ?? '' ), array( 'direct', 'ftpext', 'ftpsockets', 'ssh2' ), true ), 'health: the filesystem method is reported' );
