@@ -2068,18 +2068,6 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/pluginGui.js',
-    // ⚠️ THE CRASH ITSELF, AS A MUTATION. This is the line the three crash reports point at: a font asked for
-    // inside the DRAW path and put straight into a dictionary LITERAL, where nil does not mean "no font" but
-    // `NSInvalidArgumentException` — raised on the HOST's main thread, 30 times a second, in GarageBand's own
-    // process. It is also the mutation that has to fail the `no font while drawing` check while every other
-    // panel check stays green, which is why the check is written on `drawRect:`'s body rather than on the file.
-    why: 'Puts a font factory back inside drawRect:, where a nil font raises out of the dictionary literal and takes the host (GarageBand) down with it.',
-    find: '  NSDictionary *valueAttrs = _valueAttrs;',
-    replace: '  NSDictionary *valueAttrs = @{ NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium], NSForegroundColorAttributeName: morpheusGreen() };',
-  },
-  {
-    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
     // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has
@@ -2930,6 +2918,42 @@ export const MUTATIONS = [
     why: 'Drops the uptime function from the deploy scope, so the panel it is invoked from is refused for every dock token.',
     find: "  deploy: ['wordPressDeploy', 'siteHealth', 'siteUptime'],",
     replace: "  deploy: ['wordPressDeploy', 'siteHealth'],",
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE CRASH ITSELF, AS A MUTATION. This is the line the three crash reports point at: a font asked for
+    // inside the DRAW path and put straight into a dictionary LITERAL, where nil does not mean "no font" but
+    // `NSInvalidArgumentException` — raised on the HOST's main thread, 30 times a second, in GarageBand's own
+    // process. It is also the mutation that has to fail the `no font while drawing` check while every other
+    // panel check stays green, which is why the check is written on `drawRect:`'s body rather than on the file.
+    why: 'Puts a font factory back inside drawRect:, where a nil font raises out of the dictionary literal and takes the host (GarageBand) down with it.',
+    find: '  NSDictionary *valueAttrs = s_valueAttrs;',
+    replace: '  NSDictionary *valueAttrs = @{ NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium], NSForegroundColorAttributeName: morpheusGreen() };',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: 'server/src/lib/pluginGui.js',
+    // ⚠️ THE SECOND CRASH, AS A MUTATION — the one the FIRST fix caused and every check stayed green through.
+    // `morpheusAttrsOwned` exists because this file is compiled without ARC, so the factory's autoreleased
+    // dictionary has to be retained by hand; drop the ownership on ONE of the six and the host's run loop frees
+    // it at the end of the iteration the panel was created in. The next draw then messages dead objects and
+    // GarageBand dies instantly. Nothing static can see it — it is an ownership property — so the guard asserts
+    // the call, and this proves the assertion can fail.
+    why: 'Stops owning one of the six attribute dictionaries, so the host\'s run loop frees it and the next draw segfaults in NSStringDrawing.',
+    find: '  s_wordAttrs = morpheusAttrsOwned(morpheusAttrs(13, NSFontWeightBold, morpheusGreen()));',
+    replace: '  s_wordAttrs = morpheusAttrs(13, NSFontWeightBold, morpheusGreen());',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-macos-build.yml',
+    // ⚠️ A GATE IS NOT A GATE WHEN IT CAN BE UNWIRED QUIETLY. The step this removes is the only thing in any
+    // pipeline that RUNS the panel; without it the repository is back to the state that shipped three crashes
+    // past a fully green build, with every static check still passing. Deleting a step leaves no trace in the
+    // diff of anything the guard reads — which is precisely why the guard reads the workflow.
+    why: 'Deletes the step that runs the panel in the build users get, so nothing anywhere executes it again.',
+    find: '      - name: Run the panel the way a host does, and fail if it does not survive it\n        run: node scripts/audio-plugin-panel-render.mjs\n        env:\n          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build',
+    replace: '      # (the panel is never run)',
   },
 ];
 
