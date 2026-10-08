@@ -2354,6 +2354,18 @@ check('⭐ …and the 30 Hz redraw timer follows the WINDOW: hidden stops it, sh
   /- \(void\)start \{[\s\S]{0,240}if \(_timer\) return;/.test(guiCpp)
   && /bool gui_show\(const clap_plugin_t \*plugin\) \{[\s\S]{0,240}\[view start\];/.test(guiCpp)
   && /bool gui_hide\(const clap_plugin_t \*plugin\) \{[\s\S]{0,240}\[view stop\];/.test(guiCpp), true);
+// ⭐ AND THE RUNTIME CHECK MUST RUN WHERE A USER'S PLUGIN IS BUILT, NOT ONLY HERE.
+//
+// Everything above is static: it can refuse a shape ("no font in drawRect:", "the dictionaries are owned") but
+// nothing static can prove a panel SURVIVES a run loop — that is what the two crashes were, and both passed
+// every check in this file while they shipped. So the macOS runner — the workflow that builds the plugin people
+// download — renders the panel with a host's pool drained. Deleting that step would leave this repository with
+// the same hole it had this morning, and a check that stopped running is H17, so the step's presence is
+// asserted here and a mutation removes it.
+check('⭐ …and the workflow that BUILDS the plugin RUNS its panel, with a host\'s pool drained',
+  /node scripts\/audio-plugin-panel-render\.mjs/.test(wf)
+  && /--drain-pool/.test(read('tools/clap-gui-host/clap_gui_host.mm'))
+  && /--drain-pool/.test(read('scripts/audio-plugin-panel-render.mjs')), true);
 
 // ── 25c. the AMP is a switch too, and it is the one block whose SHAPE makes that awkward ─────────────────
 // Every other block is per-sample, so its crossfade is a line. The model runs a WHOLE CHUNK at once and IN

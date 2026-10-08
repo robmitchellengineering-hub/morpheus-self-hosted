@@ -2093,6 +2093,17 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-audio-plugin.mjs',
+    file: '.github/workflows/audio-plugin-macos-build.yml',
+    // ⚠️ A GATE IS NOT A GATE WHEN IT CAN BE UNWIRED QUIETLY. The step this removes is the only thing in any
+    // pipeline that RUNS the panel; without it the repository is back to the state that shipped three crashes
+    // past a fully green build, with every static check still passing. Deleting a step leaves no trace in the
+    // diff of anything the guard reads — which is precisely why the guard reads the workflow.
+    why: 'Deletes the step that runs the panel in the build users get, so nothing anywhere executes it again.',
+    find: '      - name: Run the panel the way a host does, and fail if it does not survive it\n        run: node scripts/audio-plugin-panel-render.mjs\n        env:\n          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build',
+    replace: '      # (the panel is never run)',
+  },
+  {
+    guard: 'verify-audio-plugin.mjs',
     file: 'scripts/audio-nam-render-check.mjs',
     // ⚠️ AND A GLOB ALONE IS NOT ENOUGH. Globbing every .cpp AND .mm fed the COCOA panel to gcc on Linux,
     // which answered "cannot execute 'cc1objplus'" — there is no Objective-C++ front end there. The rule has
