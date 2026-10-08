@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 62;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 63;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 61;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 62;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -2749,6 +2749,122 @@ export const MUTATIONS = [
     find: "['deploy', 'health', 'shop', 'pages', 'seo', 'traffic']",
     replace: "['deploy', 'health', 'shop', 'pages', 'seo']",
   },
+  {
+    guard: 'verify-seo.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // THE HARD-CODED LIST, restored at the one site that decides what the panel's
+    // main list contains. The live store's `services` CPT and `portfolio` archive
+    // are public and in the sitemap, and this is the line that kept both out of
+    // the SEO tab — including the page whose description was its own first words.
+    why: 'Puts the three-type list back as the default for the SEO content list, so the site\'s own public post types vanish from the panel.',
+    find: ': morpheus_public_post_types();',
+    replace: ": array( 'post', 'page', 'product' );",
+  },
+  {
+    guard: 'verify-seo.mjs',
+    file: 'wp-plugin/morpheus/includes/helpers.php',
+    // WordPress reports `attachment` as public, and an attachment has no title
+    // tag or meta description to write. Dropping the exclusion would hand every
+    // image in the media library to the SEO panel as indexable content.
+    why: 'Stops excluding attachments from the derived content types, so every media item is offered to the SEO panel as content with a title tag.',
+    find: "\t\t'attachment',\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // The same constant lived here: publishing the store's `services` CPT never
+    // told IndexNow about a page that is in the sitemap and reachable.
+    why: 'Puts the traffic module back on the hard-coded three types, so the site\'s own public post types are never announced to an index.',
+    find: "\t\t\t'post_type'      => morpheus_public_post_types(),\n",
+    replace: "\t\t\t'post_type'      => array( 'post', 'page', 'product' ),\n",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // THE BOUND. A log is the one file on a site that can be gigabytes, and this is
+    // the guard clause that makes the reader seek from the END instead of pulling
+    // the whole thing into memory on a request.
+    why: 'Removes the tail bound, so the error-log reader pulls the whole file instead of seeking from the end.',
+    find: 'if ( $read < $size ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // READ-ONLY IS THE WHOLE CONTRACT. A log is the operator's evidence, and this is
+    // the shape that would destroy it the moment the file is missing.
+    why: 'Makes the log reader delete the file when it is absent, so reading evidence could destroy it.',
+    find: "\t\t\t$out['not_read'] = 'missing';",
+    replace: "\t\t\t@unlink( $file );\n\t\t\t$out['not_read'] = 'missing';",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // THE PANEL MUST NOT READ ON OPEN. A log tail can be megabytes, and opening a tab
+    // is not a request to read it — this is the effect that would make every health
+    // panel view pull the whole log.
+    why: 'Reads the log when the panel mounts, so simply opening the health tab pulls a log that can be megabytes.',
+    find: '  const [log, setLog] = useState(null);',
+    replace: '  useEffect(() => { run(); }, []);\n  const [log, setLog] = useState(null);',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // ⚠️ THE LOCKOUT. A rule matching wp-admin takes the owner out of the screen they
+    // would fix it on, and there is no way back from inside WordPress. This is the
+    // save-time refusal; the match-time one below it is the second belt.
+    why: 'Stops refusing a redirect on the WordPress admin surface, so a saved rule can lock the owner out of wp-admin.',
+    find: 'if ( self::is_protected( $from ) ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // The second belt: a rule that reached the option by any other route still cannot
+    // take the owner out of wp-admin, because the match path refuses it too.
+    why: 'Stops the match-time protection, so a rule already stored can redirect wp-admin itself.',
+    find: 'if ( self::is_protected( $path ) ) {',
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // A protocol-relative destination (`//evil.example`) is an external host wearing a
+    // site-relative costume, which is why it is refused rather than trimmed.
+    why: 'Accepts a protocol-relative destination, so a rule can silently point at another host.',
+    find: "if ( 0 === strpos( $to, '//' ) ) {",
+    replace: 'if ( false ) {',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // THE EVICTION POLICY. Reversing this sort turns "drop the least-hit" into "drop
+    // the most-hit": a scanner's thousand one-off paths would then evict the URL forty
+    // visitors a day are hitting — the exact failure the bound exists to avoid.
+    why: 'Reverses the log ordering, so a 404 flood evicts the busiest real broken link instead of the rarest probe.',
+    find: '\t\t\treturn $hb - $ha;',
+    replace: '\t\t\treturn $ha - $hb;',
+  },
+  {
+    guard: 'verify-redirects.mjs',
+    file: 'wp-plugin/morpheus/includes/class-redirects.php',
+    // 410 is an ANSWER, not a redirect. The guard slices the branch and refuses any
+    // Location header inside it — so a "410" that actually redirects cannot pass.
+    why: 'Puts a redirect inside the 410 branch, so a page marked Gone also sends a Location header.',
+    find: '\t\t\t\t\tstatus_header( 410 );',
+    replace: '\t\t\t\t\twp_redirect( home_url(), 302 );\n\t\t\t\t\tstatus_header( 410 );',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'server/src/lib/widgetToken.js',
+    // The scope entry the redirects panel needs. Without it the panel 403s for every
+    // dock token — and the check reads BOTH tab files precisely so a function invoked
+    // in a component the guard never opened cannot slip in unverified.
+    why: 'Drops the redirects function from the traffic scope, so the panel it is invoked from is refused for every dock token.',
+    find: "  traffic: ['trafficAction', 'wordPressRedirects'],",
+    replace: "  traffic: ['trafficAction'],",
+  },
 ];
 
 /**
@@ -2794,5 +2910,12 @@ export const NOT_YET_PROVEN = [
  * documented-but-dead half — `Morpheus_Traffic::public_status()` was written to be "what the /status
  * route adds" and was called from nowhere, so the module could not be seen by the payload that reports
  * what a build can do. The key is now there and the guard asserts it, so the claim is text-editable.
+ *
+ * 62 → 61 on 2026-10-08: `verify-site-health.mjs` was in the pile — a health screen that is BELIEVED, with
+ * no mutation proving its claims could fail. The error-log reader added three: the tail bound (seek from the
+ * END, never the whole file), the read-only contract (reading evidence must not be able to destroy it), and
+ * the panel's "fetch only on the press". The first version of that last check was ALSO satisfied by its own
+ * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
+ * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 62;
+export const UNPROVEN_BASELINE = 61;

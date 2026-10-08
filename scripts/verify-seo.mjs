@@ -913,6 +913,41 @@ check('…the page node and the site nodes are merged into ONE flat list',
 check('…and the harness refuses a nested node list', has(noYoastHarness, 'no JSON-LD node list is nested inside another'), true);
 check('…and asserts the three nodes are top-level siblings', has(noYoastHarness, 'three TOP-LEVEL nodes'), true);
 
+// ── 8b. the panel works on the SITE's content types, not a hard-coded three ──
+//
+// The live failure: the store publishes a `services` CPT whose head tags WERE
+// emitted (`emit_head()` keys off `is_singular()`) while the panel could not list,
+// audit or bulk-fill it, because the set of types was the constant
+// `array( 'post', 'page', 'product' )`. Live symptom: `/services/equipment-repairs/`
+// carried a description built from its own first words including "Home / Services /",
+// with nothing in the panel able to say so.
+//
+// ⚠️ THE SAME THEME ALSO PUBLISHES A `portfolio` ARCHIVE, AND IT IS NOT INCLUDED —
+// deliberately, and measured rather than assumed. WordPress builds its sitemap from
+// types it is told are public, and live `/wp-sitemap-posts-services-1.xml` answers
+// 200 while `…-portfolio-1.xml` answers 404. So `portfolio` is a type the site keeps
+// off the public web; the derivation respects that instead of overriding it. If Rob
+// decides the panel should work on it anyway, both this and the helper's doc change
+// together.
+//
+// Source contracts here; `tests/harness-noyoast.php` registers a real CPT and
+// asserts the DEFAULT list and context include it, and the coupling below keeps
+// that from being deleted.
+console.log('\n8b. the panel works on the site\'s own content types');
+const seoHelperCode = read('wp-plugin/morpheus/includes/helpers.php')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  .replace(/^\s*#[^\n]*/gm, '');
+check('the SEO module no longer declares a post-type constant', /const POST_TYPES\s*=/.test(seoCode), false);
+check('…no call site still reads the old constant', /self::POST_TYPES/.test(seoCode), false);
+check('…and no hard-coded three-type list survives in it', /array\(\s*'post'\s*,\s*'page'\s*,\s*'product'\s*\)/.test(seoCode), false);
+check('…it derives them from the site instead', /morpheus_public_post_types\(\)/.test(seoCode), true);
+check('the shared helper exists', /function morpheus_public_post_types\s*\(/.test(seoHelperCode), true);
+check('…and asks WordPress for the PUBLIC types', /get_post_types\(\s*array\(\s*'public'\s*=>\s*true\s*\)/.test(seoHelperCode), true);
+check('…keeping attachments out of the content set', /'attachment'/.test(seoHelperCode), true);
+check('…and the harness proves it with a post type of the site\'s own', has(noYoastHarness, 'is one of the types the panel works on'), true);
+check('…including the DEFAULT list the panel actually gets', has(noYoastHarness, 'appears in the SEO list by DEFAULT'), true);
+
 // ── 9. robots.txt advertises a sitemap that exists ─────────────────────────
 //
 // The live failure: a site removed Yoast, `/sitemap_index.xml` started 404ing,

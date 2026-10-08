@@ -51,13 +51,17 @@ function phpFiles(dir) {
 console.log('\nPlugin uninstall — what it installs, deleting it removes\n');
 
 // ── what the plugin stores ──────────────────────────────────────────────────
-const OPTION_CONST = /const\s+(?:OPTION|RATE_OPTION|ATTEMPTS_OPTION|DEFAULTS_OPTION)\s*=\s*'([^']+)'/g;
+// ANY constant whose name ends in OPTION, not a hand-listed four.
+// ⚠️ The hand-listed version had exactly the hole it was written to close: the
+// redirects module added `LOG_OPTION`, which the list did not name, so a second
+// persistent store arrived invisible to this guard. A name shape is the rule now.
+const OPTION_CONST = /const\s+([A-Z_]*OPTION)\s*=\s*'([^']+)'/g;
 const OPTION_CALL = /(?:get|update|delete|add)_option\(\s*'([^']+)'/g;
 
 const stores = new Set();
 for (const file of phpFiles(join(PLUGIN, 'includes'))) {
   const src = readFileSync(file, 'utf8');
-  for (const m of src.matchAll(OPTION_CONST)) stores.add(m[1]);
+  for (const m of src.matchAll(OPTION_CONST)) stores.add(m[2]);
   for (const m of src.matchAll(OPTION_CALL)) {
     if (m[1].startsWith('morpheus_')) stores.add(m[1]);
   }
@@ -65,7 +69,7 @@ for (const file of phpFiles(join(PLUGIN, 'includes'))) {
 
 // The fixture is the real source tree, so it cannot be a fixture that "could never fire" (H19):
 // there is always at least one store, and the count is asserted rather than assumed.
-check('the plugin stores at least the known options', stores.size >= 7, true);
+check('the plugin stores at least the known options', stores.size >= 9, true);
 
 // ── what uninstall removes ──────────────────────────────────────────────────
 const uninstall = readFileSync(join(PLUGIN, 'uninstall.php'), 'utf8');

@@ -264,6 +264,24 @@ export async function wpTraffic(conn, action, data = {}) {
 }
 
 /**
+ * Redirects and the 404 log (plugin 0.9.2+): `wpCall(conn, 'redirects', …)`.
+ *
+ * The plugin owns the rule list AND the log — it is the only place that sees a 404,
+ * so the grouping and the bound are decided there and this side only reads and
+ * writes rules. `id` travels beside `data` because update/delete name one rule and
+ * a rule is not a field of the thing being edited.
+ *
+ * A build older than the release that added the route answers 400
+ * `unknown_action`; `wordPressRedirects` turns that into "update the plugin"
+ * rather than showing the operator a sentence about action names.
+ */
+export const MIN_REDIRECTS_PLUGIN_VERSION = '0.9.2';
+
+export async function wpRedirects(conn, action, data = {}, id = '') {
+  return wpCall(conn, 'redirects', { action, data, ...(id ? { id } : {}) });
+}
+
+/**
  * One-tap dock setup (plugin 0.8.2+).
  *
  * The site owns the dock: it holds the token and it decides whether to print.
@@ -317,6 +335,30 @@ export const MIN_CLEAN_PLUGIN_VERSION = '0.8.4';
 
 export async function wpClean(conn, { force = false } = {}) {
   return wpCall(conn, 'health', { action: 'clean', ...(force ? { force: true } : {}) });
+}
+
+/**
+ * The site's PHP error log, READ rather than merely measured (plugin 0.9.1+).
+ *
+ * `Morpheus_Clean::debug_log_state()` has always opened this file — to decide
+ * whether the web server is SERVING it, by comparing its bytes with the URL's.
+ * Nothing anywhere read the error lines, so the one question an owner actually
+ * has ("what is breaking on my site?") had no answer in Morpheus or in wp-admin.
+ *
+ * The same signed /health route with a third action, so the auth, the timestamp
+ * window and the answer shape are unchanged and there is no second place for the
+ * signature check to be got wrong. Its OWN request because a log is the one file
+ * on a site that can be gigabytes: opening the health panel must not pull it.
+ *
+ * A build older than 0.9.1 IGNORES the body and answers with a health scan (or,
+ * if it dispatches actions but has no `logs`, answers 400 unknown_action), so a
+ * 200 is not proof the read happened. `readErrorLog()` in lib/siteScan.js checks
+ * the payload shape, and this constant names the release that added the action.
+ */
+export const MIN_LOGS_PLUGIN_VERSION = '0.9.1';
+
+export async function wpLogs(conn, { lines } = {}) {
+  return wpCall(conn, 'health', { action: 'logs', ...(lines ? { lines: Number(lines) } : {}) });
 }
 
 /**

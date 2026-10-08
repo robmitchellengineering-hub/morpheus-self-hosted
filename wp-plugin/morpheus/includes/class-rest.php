@@ -163,8 +163,20 @@ class Morpheus_REST {
 			return new WP_REST_Response( Morpheus_Clean::scan( $force ), 200 );
 		}
 
+		if ( 'logs' === $action ) {
+			if ( ! class_exists( 'Morpheus_Health' ) ) {
+				return self::err( 'unsupported', 'This build of the Morpheus plugin has no error-log reader. Update the plugin.', 501 );
+			}
+			// Read-only by contract: Morpheus_Health::log_tail() must never write.
+			// A separate action from `health` because a log tail is unbounded in
+			// principle and the scan is cached for five minutes: folding the two
+			// together would either ship log text with every panel open or make the
+			// panel's log view five minutes stale.
+			return new WP_REST_Response( Morpheus_Health::log_tail( $body ), 200 );
+		}
+
 		if ( 'health' !== $action ) {
-			return self::err( 'unknown_action', 'action must be health or clean.', 400 );
+			return self::err( 'unknown_action', 'action must be health, clean or logs.', 400 );
 		}
 
 		if ( ! class_exists( 'Morpheus_Health' ) ) {
@@ -232,6 +244,13 @@ class Morpheus_REST {
 			'traffic'    => class_exists( 'Morpheus_Traffic' )
 				? Morpheus_Traffic::public_status()
 				: array( 'available' => false, 'enabled' => false ),
+			// Whether this build has the redirects module and how many rules it
+			// holds — a build capability plus a count the panel can show without a
+			// signed call. Deliberately NOT the 404 log: that is site activity, not
+			// a property of the build, and /status is unauthenticated.
+			'redirects'  => class_exists( 'Morpheus_Redirects' )
+				? Morpheus_Redirects::public_status()
+				: array( 'available' => false, 'enabled' => false, 'rules' => 0 ),
 			// kept flat for older callers
 			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
 			'armed'      => (bool) $s['armed'],

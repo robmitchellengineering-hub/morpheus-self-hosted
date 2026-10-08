@@ -707,4 +707,258 @@ class Morpheus_Health {
 		}
 		return $out;
 	}
+
+	// ── the error log, READ rather than merely measured ─────────────────────
+
+	/** The tail of the file we will actually read. Bounded so a runaway log cannot stall a request. */
+	const LOG_TAIL_BYTES = 262144; // 256 KB, sought from the END
+	/** Newest lines kept for the panel. */
+	const LOG_TAIL_LINES = 400;
+	/** Distinct signatures returned after grouping. */
+	const LOG_MAX_GROUPS = 40;
+	/** Raw lines kept per signature, so a group can be opened without shipping the whole log. */
+	const LOG_SAMPLES = 3;
+
+	/**
+	 * The PHP error log, parsed and grouped. THE OTHER HALF OF A CHECK THAT ONLY
+	 * LOOKED.
+	 *
+	 * `Morpheus_Clean::debug_log_state()` has always opened this file — to decide
+	 * whether the web server is SERVING it, by comparing its bytes with the URL's.
+	 * That answers "is this file a leak" and nothing else: nothing in the plugin
+	 * read the errors themselves, so the one question an owner actually has
+	 * ("what is breaking?") had no answer anywhere in the product, in Morpheus or
+	 * in wp-admin.
+	 *
+	 * READ-ONLY, and bounded three ways, because a log is the one file on a site
+	 * that can be gigabytes:
+	 *   * seeked from the END — at most LOG_TAIL_BYTES is ever read;
+	 *   * at most LOG_TAIL_LINES lines are parsed;
+	 *   * at most LOG_MAX_GROUPS signatures and LOG_SAMPLES raw lines per
+	 *     signature are returned.
+	 * Every bound is REPORTED when it bites (`truncated`, `lines_read`,
+	 * `lines_in_tail`, `groups_total`), because a truncated list that looks
+	 * complete is worse than no list — the same reason the SEO module caps a
+	 * description rather than silently cutting it.
+	 *
+	 * ⚠️ `lines_read` AND `lines_in_tail` ARE TWO DIFFERENT FACTS, and the harness
+	 * caught the first version conflating them: it reported the number of lines in
+	 * the bytes it had READ (thousands) under a name the panel rendered as "showing
+	 * the newest N lines" (hundreds). A number that overstates what the operator is
+	 * looking at is the same defect as a silent truncation, so the two are named
+	 * separately and asserted separately.
+	 *
+	 * What it deliberately does NOT do: invent a severity WordPress did not write,
+	 * trace a stack, or claim a cause. Each entry keeps the log's own words, its
+	 * severity, and the file:line the log itself names — with the site's own
+	 * ABSPATH prefix removed, because the panel is showing an operator their own
+	 * site, not an absolute server path they cannot act on.
+	 *
+	 * @param array $args `lines` — how many of the newest lines to parse (capped).
+	 * @return array
+	 */
+	public static function log_tail( $args = array() ) {
+		$want  = isset( $args['lines'] ) ? (int) $args['lines'] : self::LOG_TAIL_LINES;
+		$want  = max( 1, min( self::LOG_TAIL_LINES, $want ) );
+		$file  = trailingslashit( WP_CONTENT_DIR ) . 'debug.log';
+
+		$out = array(
+			'ok'            => true,
+			'path'          => 'wp-content/debug.log',
+			'exists'        => false,
+			'readable'      => false,
+			'bytes'         => 0,
+			'modified'      => null,
+			'truncated'     => false,
+			'lines_read'    => 0,
+			'lines_in_tail' => 0,
+			'entries'       => array(),
+			'groups'        => array(),
+			'groups_total'  => 0,
+			'counts'        => array( 'fatal' => 0, 'warning' => 0, 'notice' => 0, 'deprecated' => 0, 'other' => 0 ),
+			// Why there is nothing to show, in the plugin's own words, so the panel
+			// never has to invent a reason — or show an empty list as "all clear".
+			'not_read'      => null,
+			// WordPress can be told to log somewhere else; when it is, this says so
+			// rather than letting the panel imply it is reading that file.
+			'configured'    => null,
+		);
+
+		$configured = defined( 'WP_DEBUG_LOG' ) ? WP_DEBUG_LOG : false;
+		if ( is_string( $configured ) && '' !== $configured && $configured !== $file ) {
+			$out['configured'] = $configured;
+		}
+
+		if ( ! file_exists( $file ) ) {
+			$out['not_read'] = 'missing';
+			return $out;
+		}
+		$out['exists'] = true;
+
+		if ( ! is_readable( $file ) ) {
+			$out['not_read'] = 'unreadable';
+			return $out;
+		}
+		$out['readable'] = true;
+
+		$size = (int) @filesize( $file );
+		$out['bytes']    = $size;
+		$out['modified'] = (int) @filemtime( $file ) ? gmdate( 'c', (int) @filemtime( $file ) ) : null;
+
+		if ( 0 === $size ) {
+			$out['not_read'] = 'empty';
+			return $out;
+		}
+
+		$read  = min( $size, self::LOG_TAIL_BYTES );
+		$out['truncated'] = $read < $size;
+
+		$fh = @fopen( $file, 'rb' );
+		if ( ! $fh ) {
+			$out['not_read'] = 'unreadable';
+			return $out;
+		}
+		if ( $read < $size ) {
+			@fseek( $fh, -$read, SEEK_END );
+		}
+		$blob = @fread( $fh, $read );
+		@fclose( $fh );
+
+		if ( ! is_string( $blob ) || '' === $blob ) {
+			$out['not_read'] = 'unreadable';
+			return $out;
+		}
+
+		$raw = preg_split( '/\r\n|\n|\r/', $blob );
+		// When we started mid-file the first element is the back half of a line we
+		// did not read; dropping it is why the tail is honest about being a tail.
+		if ( $out['truncated'] && count( $raw ) > 1 ) {
+			array_shift( $raw );
+		}
+		// A trailing newline yields one empty final element.
+		if ( count( $raw ) && '' === end( $raw ) ) {
+			array_pop( $raw );
+		}
+
+		$out['lines_in_tail'] = count( $raw );
+		$tail                 = array_slice( $raw, -$want );
+		$out['lines_read']    = count( $tail );
+
+		$groups = array();
+		$entries = array();
+		foreach ( $tail as $line ) {
+			$e = self::parse_log_line( $line );
+			$out['counts'][ $e['level'] ] = ( isset( $out['counts'][ $e['level'] ] ) ? $out['counts'][ $e['level'] ] : 0 ) + 1;
+
+			$key = $e['level'] . '|' . $e['file'] . '|' . self::log_signature( $e['message'] );
+			if ( ! isset( $groups[ $key ] ) ) {
+				$groups[ $key ] = array(
+					'level'    => $e['level'],
+					'file'     => $e['file'],
+					'line'     => $e['line'],
+					'message'  => $e['message'],
+					'count'    => 0,
+					'first_at' => $e['at'],
+					'last_at'  => $e['at'],
+					'samples'  => array(),
+				);
+			}
+			$groups[ $key ]['count']++;
+			if ( $e['at'] !== '' ) {
+				if ( '' === $groups[ $key ]['first_at'] ) {
+					$groups[ $key ]['first_at'] = $e['at'];
+				}
+				$groups[ $key ]['last_at'] = $e['at'];
+			}
+			if ( count( $groups[ $key ]['samples'] ) < self::LOG_SAMPLES ) {
+				$groups[ $key ]['samples'][] = $e['raw'];
+			}
+		}
+
+		// Newest first: the log is append-only, so reading it backwards is what an
+		// operator wants at the top of a list. `$tail` is already at most $want long.
+		$out['entries'] = array_reverse( $tail );
+
+		$out['groups_total'] = count( $groups );
+		$list = array_values( $groups );
+		usort( $list, function ( $a, $b ) {
+			if ( $a['count'] === $b['count'] ) {
+				return strcmp( (string) $b['last_at'], (string) $a['last_at'] );
+			}
+			return $b['count'] - $a['count'];
+		} );
+		$out['groups'] = array_slice( $list, 0, self::LOG_MAX_GROUPS );
+
+		return $out;
+	}
+
+	/**
+	 * One line of a PHP error log.
+	 *
+	 * The shape WordPress writes is
+	 *   [23-Sep-2026 12:00:00 UTC] PHP Warning:  Undefined array key "x" in /path/f.php on line 12
+	 * but a log accumulates whatever anything on the site wrote, so an unrecognised
+	 * line is kept as `other` with its own text rather than dropped — the point of
+	 * reading a log is not to filter it down to the lines we anticipated.
+	 */
+	private static function parse_log_line( $line ) {
+		$out = array( 'at' => '', 'level' => 'other', 'message' => trim( (string) $line ), 'file' => '', 'line' => 0, 'raw' => (string) $line );
+
+		if ( ! preg_match( '/^\[([^\]]+)\]\s+(?:PHP\s+)?(Fatal error|Parse error|Recoverable fatal error|Warning|Notice|Deprecated|Strict Standards)\s*:\s*(.*)$/i', (string) $line, $m ) ) {
+			return $out;
+		}
+
+		$sev = strtolower( $m[2] );
+		if ( false !== strpos( $sev, 'fatal' ) || false !== strpos( $sev, 'parse' ) ) {
+			$out['level'] = 'fatal';
+		} elseif ( false !== strpos( $sev, 'warning' ) ) {
+			$out['level'] = 'warning';
+		} elseif ( false !== strpos( $sev, 'notice' ) ) {
+			$out['level'] = 'notice';
+		} elseif ( false !== strpos( $sev, 'deprecated' ) ) {
+			$out['level'] = 'deprecated';
+		} else {
+			$out['level'] = 'other';
+		}
+
+		$out['at']      = trim( $m[1] );
+		$out['message'] = trim( $m[3] );
+
+		// `… on line 12` for warnings/notices, `…:12` for fatals — both are the
+		// log's own words, and we only ever take the file and line out of them.
+		if ( preg_match( '/^(.*?) in (\S.*?) on line (\d+)$/', $out['message'], $f ) ) {
+			$out['message'] = $f[1];
+			$out['file']    = self::log_relative( $f[2] );
+			$out['line']    = (int) $f[3];
+		} elseif ( preg_match( '/^(.*?) in (\S.*?):(\d+)$/', $out['message'], $f ) ) {
+			$out['message'] = $f[1];
+			$out['file']    = self::log_relative( $f[2] );
+			$out['line']    = (int) $f[3];
+		}
+
+		return $out;
+	}
+
+	/** A path the operator can act on: relative to the site, not the server's absolute one. */
+	private static function log_relative( $path ) {
+		$path = wp_normalize_path( trim( (string) $path ) );
+		$root = wp_normalize_path( ABSPATH );
+		if ( '' !== $root && 0 === strpos( $path, $root ) ) {
+			return ltrim( substr( $path, strlen( $root ) ), '/' );
+		}
+		return $path;
+	}
+
+	/**
+	 * The grouping key for a message: the same error written twice with different
+	 * ids is one problem, and the numbers are the only part that differs.
+	 *
+	 * Digits become `N` — a post id, a count, a byte size and a line number all
+	 * vary per occurrence while the sentence does not. Quoted values are left
+	 * ALONE on purpose: `Undefined array key "price"` and `… "sku"` are two
+	 * different bugs in two different places, and merging them would hide one.
+	 */
+	private static function log_signature( $message ) {
+		return preg_replace( '/\d+/', 'N', (string) $message );
+	}
 }

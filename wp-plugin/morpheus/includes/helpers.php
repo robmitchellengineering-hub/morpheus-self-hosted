@@ -185,3 +185,76 @@ function morpheus_purge_caches() {
 	wp_cache_flush(); // object cache
 	morpheus_log( 'cache_purge', array() );
 }
+
+/**
+ * The site's PUBLIC content types — the set the SEO and traffic modules work on.
+ *
+ * This was a hard-coded `array( 'post', 'page', 'product' )` in both modules until
+ * 2026-10-08, and it is wrong for the site it runs on: the live store publishes a
+ * `services` CPT whose head tags were being emitted all along (`emit_head()` keys
+ * off `is_singular()`), while the panel could not list, audit or bulk-fill it, and
+ * IndexNow was never told when one was published. The visible result was a services
+ * page whose meta description was its own first words including "Home / Services /",
+ * with nothing in the panel able to say so.
+ *
+ * ⚠️ AND IT FOLLOWS THE SITE'S OWN `public` FLAG, RATHER THAN SECOND-GUESSING IT.
+ * The same theme also registers a `portfolio` archive, and it does NOT come out of
+ * this function: WordPress's sitemap is built from exactly `public => true` types,
+ * and on the live store `/wp-sitemap-posts-services-1.xml` answers 200 while
+ * `…-portfolio-1.xml` answers 404. So `portfolio` is one the site itself keeps out
+ * of the public web, and it stays out of the panel and out of what we submit to an
+ * index. Listing it would mean overriding the site's own declaration — a product
+ * decision, not a bug, and it is with Rob.
+ *
+ * Derived rather than assumed, because which types exist is a property of the
+ * SITE, not of this plugin. What is NOT derived is what to leave out: WordPress
+ * reports `attachment` as public, and an attachment has no title tag, no meta
+ * description and no URL worth submitting to an index. The rest of the list is the
+ * internals WordPress itself registers as public (`wp_block`, the template and
+ * global-style types) — named rather than pattern-matched, so a plugin that adds
+ * a `wp_`-prefixed post type of its own is not silently dropped.
+ *
+ * `post` and `page` are seeded first so the panel's familiar order survives, and
+ * `post_type_exists` guards them: a site that removed pages still gets a sane list.
+ *
+ * @return string[] Post type names, `post` and `page` first, then the rest sorted.
+ */
+function morpheus_public_post_types() {
+	$out = array();
+	foreach ( array( 'post', 'page' ) as $core ) {
+		if ( post_type_exists( $core ) ) {
+			$out[] = $core;
+		}
+	}
+
+	// Everything WordPress calls public but that is not content a search engine
+	// should be given a title and a description for.
+	$not_content = array(
+		'attachment',
+		'revision',
+		'nav_menu_item',
+		'custom_css',
+		'customize_changeset',
+		'oembed_cache',
+		'user_request',
+		'wp_block',
+		'wp_navigation',
+		'wp_template',
+		'wp_template_part',
+		'wp_global_styles',
+		'wp_font_family',
+		'wp_font_face',
+		'wp_pattern',
+	);
+
+	$rest = array();
+	foreach ( (array) get_post_types( array( 'public' => true ), 'names' ) as $type ) {
+		if ( in_array( $type, $out, true ) || in_array( $type, $not_content, true ) ) {
+			continue;
+		}
+		$rest[] = $type;
+	}
+	sort( $rest );
+
+	return array_merge( $out, $rest );
+}

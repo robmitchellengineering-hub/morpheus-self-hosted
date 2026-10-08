@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2, RefreshCw, ExternalLink, AlertTriangle, Check, ShieldCheck, Server, Package, Clock,
-  Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown, ShieldAlert, Eraser, Info,
+  Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown, ShieldAlert, Eraser, Info, FileWarning,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { resolveSiteLink } from '@/lib/siteLink';
 import { useTaskRunner, useTaskResult } from '../TaskRunner';
+import ErrorLogPanel from './ErrorLogPanel';
 
 // SITE HEALTH tab — what WordPress's own Site Health screen and Morpheus's own
 // checks say about the operator's live site, in one place.
@@ -1097,6 +1098,16 @@ export default function HealthTab({ projectId }) {
                 ))}
               </div>
             )}
+
+            {/* ── ERROR LOG ──────────────────────────────────────────────
+                The read half of a check this plugin has always had. CLEAN MY SITE
+                opens wp-content/debug.log to decide whether the web server is
+                SERVING it; nothing anywhere read the errors, so "what is breaking
+                on my site?" had no answer in Morpheus or in wp-admin. Its own
+                component, and its own button — nothing is fetched on tab open. */}
+            <Section title="ERROR LOG" icon={<FileWarning size={11} className="text-primary/45" />}>
+              <ErrorLogPanel projectId={projectId} />
+            </Section>
 
             {/* ── CLEAN MY SITE ──────────────────────────────────────────
                 A second, heavier scan with its own button. Nothing here runs on

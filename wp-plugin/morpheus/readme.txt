@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.8.9
+Stable tag: 0.9.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,52 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.2 =
+* New: **redirects, and a 404 log.** Nothing in this plugin managed a redirect, and nothing recorded a 404:
+  on a shop, every retired product URL, every renamed category and every campaign link someone already
+  shared was a dead end that no one could see. Morpheus → WEBSITE now keeps a rule list (301, 302, 307 or
+  a real 410 Gone) applied before the theme loads, and a log of what was asked for and not found, grouped
+  by path so a thousand hits on one dead link is one row with a count.
+* The 404 log is what tells you which rule to write, so the two are one feature rather than two reports.
+* **Your admin is never redirectable.** A rule matching `wp-admin`, the login form, the REST API or cron is
+  refused when it is saved *and* ignored when a request is matched — the one mistake here that could not be
+  fixed from inside WordPress. A redirect to itself, and two rules pointing at each other, are refused too.
+* The log is bounded, and when it is full it drops the **least-hit** entry: a scanner asking for a thousand
+  unique paths cannot push out the URL forty visitors a day are hitting. It is throttled under a flood, so
+  its counters are floors rather than exact totals — the panel says "at least" for that reason.
+* Clearing the 404 log is allowed; it is Morpheus's own record of what it observed, unlike the site's PHP
+  error log, which this plugin reads and never touches.
+
+= 0.9.1 =
+* New: **the site's error log, read rather than merely measured.** This plugin has always opened
+  `wp-content/debug.log` — to decide whether your web server is SERVING it, by comparing its bytes with the
+  URL's. That answers "is this file a leak" and nothing else: nothing read the errors themselves, so the
+  question an owner actually has — what is going wrong on my site? — had no answer in Morpheus or in
+  wp-admin. HEALTH → ERROR LOG now shows it: one row per distinct fault with a count, most frequent first,
+  each row expanding to the raw log lines it saw, plus every line that was read.
+* It is bounded to the newest part of the file — it seeks from the END and caps the bytes, the lines and the
+  number of distinct faults — and it SAYS when it stopped short, so a truncated list can never be read as a
+  complete one.
+* Reading it changes nothing on the site, and there is deliberately **no button anywhere that clears,
+  truncates or rotates the log**: an operator's evidence is not ours to delete.
+* A missing log is reported as missing, an unreadable one as unreadable, and an empty one as empty — never
+  as "no errors". WordPress only writes a log while `WP_DEBUG_LOG` is on, and an empty list would be the
+  most dangerous possible reading of that.
+
+= 0.9.0 =
+* Fixed: **the SEO panel could not see the site's own content type.** The set of post types was the
+  hard-coded `post`, `page`, `product`, so a site publishing a `services` custom type — reachable, in the
+  sitemap, and getting head tags all along — had no way to list, audit or bulk-fill it. The live symptom:
+  that page's meta description was its own first words including "Home / Services /", and nothing in the
+  panel could say so. The types are now derived from what the site actually publishes: WordPress's PUBLIC
+  post types, with attachments and WordPress's own internal public types excluded.
+* The derivation follows the SITE's own `public` flag rather than second-guessing it. Measured on the live
+  store: `/wp-sitemap-posts-services-1.xml` answers 200 (so `services` is public and is now listed) while
+  `…-portfolio-1.xml` answers 404 — the theme registers its `portfolio` archive as **not public**, so it is
+  deliberately left out of the panel and out of what gets submitted to an index.
+* Fixed: **TRAFFIC announced only `post`, `page` and `product` to IndexNow**, so publishing anything else was
+  never submitted. Both modules now read one shared list, so the two cannot drift apart.
 
 = 0.8.9 =
 * Fixed: **the site's own schema nodes were nested inside the page's.** Every page emitted its JSON-LD as

@@ -37,8 +37,10 @@ class Morpheus_Traffic {
 	const MAX_BACKFILL  = 200;   // URLs per backfill run, so one click cannot blast a whole site
 	const KEY_CHECK_TTL = 3600;  // seconds to trust a key-served check
 
-	/** Post types whose publication is worth telling an index about. */
-	const POST_TYPES = array( 'post', 'page', 'product' );
+	// Post types whose publication is worth telling an index about. Derived from
+	// the site, not hard-coded — see `morpheus_public_post_types()` in
+	// includes/helpers.php. The live store's `services` CPT was never announced to
+	// IndexNow while this was the constant `array( 'post', 'page', 'product' )`.
 
 	public static function init() {
 		add_action( 'transition_post_status', array( __CLASS__, 'on_transition' ), 10, 3 );
@@ -174,7 +176,7 @@ class Morpheus_Traffic {
 		if ( ! $post || 'auto-draft' === $new_status || 'trash' === $new_status ) {
 			return;
 		}
-		if ( ! in_array( $post->post_type, self::POST_TYPES, true ) ) {
+		if ( ! in_array( $post->post_type, morpheus_public_post_types(), true ) ) {
 			return;
 		}
 		$s = self::settings();
@@ -344,7 +346,7 @@ class Morpheus_Traffic {
 	public static function backfill() {
 		$done  = self::accepted_urls();
 		$query = new WP_Query( array(
-			'post_type'      => self::POST_TYPES,
+			'post_type'      => morpheus_public_post_types(),
 			'post_status'    => 'publish',
 			'posts_per_page' => self::MAX_BACKFILL,
 			'fields'         => 'ids',

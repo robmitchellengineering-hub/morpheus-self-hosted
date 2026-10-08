@@ -337,6 +337,63 @@ check('an unreachable update server is reported as such', /could not read the pu
 // only for pre-0.5.3 builds.
 check('the zip is offered whatever the check says', /Always offered, whatever the check says/.test(setupSrc), true);
 
+console.log('\n10. the error log is read, not just measured');
+
+// THE OTHER HALF OF A CHECK THIS PLUGIN HAS ALWAYS HAD. `Morpheus_Clean::
+// debug_log_state()` opens wp-content/debug.log to decide whether the web server is
+// SERVING it, by comparing its bytes with the URL's. That answers "is this file a
+// leak" and nothing else — so "what is breaking on my site?" had no answer anywhere
+// in the product, in Morpheus or in wp-admin.
+const healthSrc = read('wp-plugin/morpheus/includes/class-health.php');
+const restLogSrc = read('wp-plugin/morpheus/includes/class-rest.php');
+const pluginSrc = read('server/src/lib/wpPlugin.js');
+const scanSrc = read('server/src/lib/siteScan.js');
+const fnSrc = read('server/src/functions/siteHealth.js');
+const panelSrc = read('src/components/matrix/website/ErrorLogPanel.jsx');
+
+check('the plugin reads the log', /public static function log_tail\s*\(/.test(healthSrc), true);
+// BOUNDED three ways, because a log is the one file on a site that can be gigabytes.
+check('…seeking from the END, so the whole file is never read',
+  /if \( \$read < \$size \) \{\s*@fseek\( \$fh, -\$read, SEEK_END \);/.test(healthSrc), true);
+check('…with literal caps on bytes, lines and groups',
+  /LOG_TAIL_BYTES\s*=\s*\d+/.test(healthSrc) && /LOG_TAIL_LINES\s*=\s*\d+/.test(healthSrc) && /LOG_MAX_GROUPS\s*=\s*\d+/.test(healthSrc), true);
+check('…and every cap is REPORTED when it bites, never a silent truncation',
+  /'truncated'\s*=>/.test(healthSrc) && /groups_total/.test(healthSrc) && /lines_read/.test(healthSrc) && /lines_in_tail/.test(healthSrc), true);
+// Four different answers. The plugin names which one, so the panel can never render
+// an empty list as "all clear" — the worst reading this feature could produce.
+check('the nothing-to-read cases are named, not collapsed into "no errors"',
+  ["'missing'", "'unreadable'", "'empty'"].every((s) => healthSrc.includes(s)), true);
+
+// READ-ONLY, and that is the whole contract: a log is the operator's evidence, and
+// deleting it is the one thing this feature must never do.
+const logBody = healthSrc.slice(healthSrc.indexOf('public static function log_tail'));
+check('the reader writes nothing at all', /unlink\(|fwrite\(|file_put_contents\(|rename\(|ftruncate\(/.test(logBody), false);
+check('…and /health dispatches exactly health, clean and logs',
+  [...new Set([...restLogSrc.matchAll(/'(health|clean|logs|clear|rotate|truncate|purge|delete)'\s*[!=]==\s*\$action/g)].map((m) => m[1]))].sort(),
+  ['clean', 'health', 'logs']);
+check('the app has a client for it', /export async function wpLogs\s*\(/.test(pluginSrc), true);
+check('…posting the action on the one signed route', /wpCall\(conn, 'health', \{ action: 'logs'/.test(pluginSrc), true);
+check('a payload that is not a log is refused, not read as "no errors"',
+  /PLUGIN_TOO_OLD/.test(scanSrc) && /Array\.isArray\(log\.groups\)/.test(scanSrc), true);
+check('…and the action is in the function\'s allow-list', /ACTIONS = new Set\(\[[^\]]*'logs'/.test(fnSrc), true);
+
+// THE PANEL MUST NOT READ ON OPEN. A log tail is the one thing on this tab that can
+// be megabytes, and opening a tab is not a request to read it.
+//
+// ⚠️ THE FIRST VERSION OF THIS CHECK WAS SATISFIED BY ITS OWN SUBJECT'S COMMENT.
+// It grepped for `useEffect` in the file, and the component's doc-comment says "no
+// useEffect, deliberately" — so it went red on a correct file and would have gone
+// GREEN on a broken one that kept the sentence. H19's exact shape. Comments are now
+// stripped first, and the claim is asserted twice: the hook is not imported, and no
+// effect is called at all — the second is what the mutation below actually breaks.
+const panelCode = panelSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+check('the panel imports no effect hook', /import\s*\{[^}]*useEffect[^}]*\}\s*from\s*'react'/.test(panelCode), false);
+check('…and calls no effect at all', /useEffect\s*\(/.test(panelCode), false);
+check('…and the fetch is wired to a press', /onClick=\{run\}/.test(panelCode) && /const run = async \(\)/.test(panelCode), true);
+check('…rendering the plugin\'s own reason rather than an empty list',
+  /NOT_READ/.test(panelSrc) && /not_read/.test(panelSrc), true);
+check('…and offering no way to clear or delete the log', /clear the log|CLEAR LOG|DELETE/i.test(panelSrc), false);
+
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {
   console.log('\nA health screen is believed. A wrong verdict here is worse than no screen.\n')

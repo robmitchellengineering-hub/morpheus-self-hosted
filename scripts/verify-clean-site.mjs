@@ -235,11 +235,16 @@ check('…and the fix action is the existing one', FIX_ACTION, 'fix');
 // where a clean scan was asked for, which reads as "nothing found".
 check('the plugin switches on that exact action', /'clean' === \$action/.test(phpRest), true);
 check('…and only runs the clean scan for it', /if \( 'clean' === \$action \)[\s\S]{0,400}Morpheus_Clean::scan\( \$force \)/.test(phpRest), true);
-check('…and refuses an action it does not know, by name', /action must be health or clean/.test(phpRest), true);
+// The refusal names the actions the route answers, so the message has to grow with
+// them (it said "health or clean" until the error-log action arrived). Matched as
+// "names health … names clean" rather than as one frozen sentence, because the
+// claim is that the refusal is specific, not that its wording never changes —
+// verify-site-health.mjs separately pins the route to EXACTLY these three.
+check('…and refuses an action it does not know, by name', /action must be health[^']*clean/.test(phpRest), true);
 check('the app sends that action to the same route', /wpCall\(conn, 'health', \{ action: 'clean'/.test(jsClient), true);
 check('…from the clean scan helper', /wpClean\(conn, \{ force \}\)/.test(jsScan), true);
 check('…and the handler has a branch for it', /action === 'clean'/.test(jsHandler), true);
-check('…declared in the one action set', /'clean'\]/.test(jsHandler), true);
+check('…declared in the one action set', /ACTIONS = new Set\(\[[^\]]*'clean'/.test(jsHandler), true);
 
 // The ids are the contract between the scan, the registry and this module. A
 // finding the scan emits with no registry entry is UNMAPPED at runtime — a

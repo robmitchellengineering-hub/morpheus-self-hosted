@@ -86,9 +86,13 @@ class Morpheus_SEO {
 	// by emit_schema(), so a stored override would be a field the emitter
 	// ignores. Add one only alongside the code that reads it.
 
-	// Content that can be indexed and therefore needs SEO. Attachments and
-	// revisions are deliberately excluded.
-	const POST_TYPES = array( 'post', 'page', 'product' );
+	// Content that can be indexed and therefore needs SEO. This used to be the
+	// constant `array( 'post', 'page', 'product' )` — see
+	// `morpheus_public_post_types()` in includes/helpers.php for why that is now
+	// derived from the site instead: the live store publishes a `services` CPT that
+	// could not be listed, audited or bulk-filled here while the set was hard-coded.
+	// The same helper deliberately keeps OUT a type the site registers as not
+	// public (the theme's `portfolio` archive), and says how that was measured.
 
 	// Site-wide templates — the "Titles & Meta" defaults every SEO plugin has:
 	// what the title and description look like for content nobody has set by
@@ -283,7 +287,7 @@ class Morpheus_SEO {
 	 */
 	public static function defaults() {
 		$per_type = array();
-		foreach ( self::POST_TYPES as $type ) {
+		foreach ( morpheus_public_post_types() as $type ) {
 			$per_type[ $type ] = array( 'title' => '', 'description' => '' );
 		}
 		return array(
@@ -318,7 +322,7 @@ class Morpheus_SEO {
 			'post_types'  => array(),
 		);
 		$per = isset( $raw['post_types'] ) && is_array( $raw['post_types'] ) ? $raw['post_types'] : array();
-		foreach ( self::POST_TYPES as $type ) {
+		foreach ( morpheus_public_post_types() as $type ) {
 			$row = isset( $per[ $type ] ) && is_array( $per[ $type ] ) ? $per[ $type ] : array();
 			$out['post_types'][ $type ] = array(
 				'title'       => self::clean_template( isset( $row['title'] ) ? $row['title'] : '' ),
@@ -464,7 +468,7 @@ class Morpheus_SEO {
 		$dry     = ! empty( $data['dry_run'] );
 
 		$args = array(
-			'post_type'      => array_values( array_filter( self::POST_TYPES, 'post_type_exists' ) ),
+			'post_type'      => array_values( array_filter( morpheus_public_post_types(), 'post_type_exists' ) ),
 			'post_status'    => array( 'publish', 'draft' ),
 			'posts_per_page' => $limit,
 			'orderby'        => 'modified',
@@ -849,7 +853,7 @@ class Morpheus_SEO {
 	private static function context() {
 		$active = self::active_plugin();
 		$counts = array();
-		foreach ( self::POST_TYPES as $type ) {
+		foreach ( morpheus_public_post_types() as $type ) {
 			if ( ! post_type_exists( $type ) ) {
 				continue;
 			}
@@ -868,7 +872,7 @@ class Morpheus_SEO {
 			'site_title'    => get_bloginfo( 'name' ),
 			'tagline'       => get_bloginfo( 'description' ),
 			'permalink_structure' => get_option( 'permalink_structure' ),
-			'post_types'    => self::POST_TYPES,
+			'post_types'    => morpheus_public_post_types(),
 			'published_counts' => $counts,
 			// The site-wide templates, so the panel can show and edit them.
 			'defaults'      => self::get_defaults(),
@@ -933,7 +937,7 @@ class Morpheus_SEO {
 
 	/** Indexable content with its current SEO state — the widget's main list. */
 	private static function list_content( $data ) {
-		$types  = isset( $data['types'] ) && is_array( $data['types'] ) ? array_map( 'sanitize_key', $data['types'] ) : self::POST_TYPES;
+		$types  = isset( $data['types'] ) && is_array( $data['types'] ) ? array_map( 'sanitize_key', $data['types'] ) : morpheus_public_post_types();
 		$types  = array_values( array_filter( $types, 'post_type_exists' ) );
 		$limit  = isset( $data['limit'] ) ? max( 1, min( 200, (int) $data['limit'] ) ) : 50;
 		$search = isset( $data['search'] ) ? sanitize_text_field( $data['search'] ) : '';
