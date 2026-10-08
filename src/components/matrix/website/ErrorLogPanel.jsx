@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Loader2, Check, FileWarning, RefreshCw } from 'lucide-react';
+import { Loader2, Check, FileWarning, RefreshCw, Copy } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { errorLogAsText } from '@/lib/errorLogText';
 
 // ERROR LOG — the site's PHP error log, READ rather than merely measured.
 //
@@ -53,18 +54,22 @@ function Counts({ counts }) {
   );
 }
 
-function Group({ g, openKey, setOpenKey }) {
+function Group({ g, openKey, setOpenKey, path }) {
   const open = openKey === `${g.level}|${g.file}|${g.message}`;
   return (
     <div className="border border-primary/15 px-2.5 py-2 space-y-1">
       <button className="w-full text-left space-y-1" onClick={() => setOpenKey(open ? null : `${g.level}|${g.file}|${g.message}`)}>
         <div className="flex items-start gap-2">
           <span className={`shrink-0 border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${LEVEL_TONE[g.level] || LEVEL_TONE.other}`}>{g.level}</span>
-          <span className="min-w-0 flex-1 text-[11px] text-ink-max break-words">{g.message}</span>
+          {/* select-text: index.css turns selection OFF on every button (the Android
+              highlight menu on controls), and this row IS a button — so the evidence sat
+              inside a control and could not be copied. Re-enabled on the text itself, which
+              is where selection belongs; the row still toggles anywhere. */}
+          <span className="select-text min-w-0 flex-1 text-[11px] text-ink-max break-words">{g.message}</span>
           <span className="shrink-0 text-[10px] text-ink-max">×{g.count}</span>
         </div>
         {(g.file || g.last_at) && (
-          <div className="text-[10px] text-ink-max break-all">
+          <div className="select-text text-[10px] text-ink-max break-all">
             {g.file ? <span className="font-mono">{g.file}{g.line ? `:${g.line}` : ''}</span> : null}
             {g.file && g.last_at ? ' · ' : null}
             {g.last_at ? `last ${g.last_at}` : null}
@@ -73,11 +78,14 @@ function Group({ g, openKey, setOpenKey }) {
       </button>
       {open && (
         <div className="space-y-1 pt-1 border-t border-primary/10">
-          {g.samples.map((s, i) => (
-            <div key={i} className="text-[10px] text-ink-max font-mono break-all whitespace-pre-wrap">{s}</div>
+          {(g.samples || []).map((s, i) => (
+            <div key={i} className="select-text text-[10px] text-ink-max font-mono break-all whitespace-pre-wrap">{s}</div>
           ))}
-          {g.count > g.samples.length && (
-            <div className="text-[9px] text-ink-max">{g.count - g.samples.length} more like this — the full log is on the server in {g.file ? 'the file above' : 'wp-content/debug.log'}.</div>
+          {g.count > (g.samples || []).length && (
+            // The path, not the old hard-coded default: since the log can be MOVED out of
+            // the web root, telling an operator it is in wp-content/debug.log would send
+            // them looking in a file that no longer exists.
+            <div className="text-[9px] text-ink-max">{g.count - (g.samples || []).length} more like this in {g.file ? 'the same file' : (path || 'the log')} — Morpheus reads a bounded tail, it does not hold the whole file.</div>
           )}
         </div>
       )}
@@ -91,15 +99,50 @@ export default function ErrorLogPanel({ projectId }) {
   const [err, setErr] = useState(null);
   const [openKey, setOpenKey] = useState(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [copied, setCopied] = useState(null);
 
   // The press is the only thing that calls the server — no useEffect, deliberately.
   const run = async () => {
-    setLoading(true); setErr(null); setOpenKey(null); setShowRaw(false);
+    setLoading(true); setErr(null); setOpenKey(null); setShowRaw(false); setCopied(null);
     try {
       const { data } = await base44.functions.invoke('siteHealth', { projectId, action: 'logs' });
       setLog(data);
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setLoading(false); }
+  };
+
+  // COPY ALL — the readout as text, because a screen that shows evidence has to let you
+  // take it away. Selection works too (see the markup), but on a phone dragging across
+  // forty groups is not a thing anyone can do, and the operator's real next move is to
+  // paste this into a ticket, a host's support form, or another session.
+  //
+  // Two paths on purpose: the async clipboard API needs a SECURE CONTEXT, and the dock is
+  // embedded in other people's pages — some of them http. The fallback is the deprecated
+  // execCommand, which is the only thing that works there.
+  const copyAll = async () => {
+    const text = errorLogAsText(log);
+    let ok = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch { /* permission denied or insecure context — try the fallback */ }
+    if (!ok) {
+      try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.setAttribute('readonly', '');
+        el.style.position = 'fixed';
+        el.style.top = '-1000px';
+        document.body.appendChild(el);
+        el.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(el);
+      } catch { ok = false; }
+    }
+    setCopied(ok ? 'ok' : 'failed');
+    setTimeout(() => setCopied(null), 2500);
   };
 
   return (
@@ -155,7 +198,7 @@ export default function ErrorLogPanel({ projectId }) {
               {(log.groups || []).length ? (
                 <div className="space-y-1.5">
                   {log.groups.map((g) => (
-                    <Group key={`${g.level}|${g.file}|${g.message}`} g={g} openKey={openKey} setOpenKey={setOpenKey} />
+                    <Group key={`${g.level}|${g.file}|${g.message}`} g={g} openKey={openKey} setOpenKey={setOpenKey} path={log.path} />
                   ))}
                   {log.groups_total > log.groups.length ? (
                     <div className="text-[10px] text-ink-max">
@@ -177,7 +220,7 @@ export default function ErrorLogPanel({ projectId }) {
                   {showRaw && (
                     <div className="mt-1 max-h-56 overflow-y-auto scrollbar-matrix border border-primary/15 p-2 space-y-0.5">
                       {log.entries.map((l, i) => (
-                        <div key={i} className="text-[10px] text-ink-max font-mono break-all whitespace-pre-wrap">{l}</div>
+                        <div key={i} className="select-text text-[10px] text-ink-max font-mono break-all whitespace-pre-wrap">{l}</div>
                       ))}
                     </div>
                   )}
@@ -186,9 +229,26 @@ export default function ErrorLogPanel({ projectId }) {
             </>
           )}
 
-          <button className={btn} onClick={run} disabled={loading}>
-            <RefreshCw size={12} /> READ AGAIN
-          </button>
+          <div className="flex items-center gap-2">
+            <button className={btn} onClick={run} disabled={loading}>
+              <RefreshCw size={12} /> READ AGAIN
+            </button>
+            {!log.not_read ? (
+              <button className={btn} onClick={copyAll} disabled={loading}>
+                {copied === 'ok'
+                  ? <><Check size={12} /> COPIED</>
+                  : copied === 'failed'
+                    ? <><Copy size={12} /> SELECT THE TEXT</>
+                    : <><Copy size={12} /> COPY ALL</>}
+              </button>
+            ) : null}
+          </div>
+          {copied === 'failed' ? (
+            <div className="text-[10px] text-yellow-500/85 leading-relaxed">
+              This browser would not let Morpheus reach the clipboard. The text is selectable — drag over it
+              and copy, or open the same page outside the embed.
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

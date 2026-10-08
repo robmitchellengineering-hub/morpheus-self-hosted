@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.4
+Stable tag: 0.9.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,21 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.5 =
+* Fixed: **the error log can be copied.** The panel's rows were buttons, and selection is turned off on
+  every button in this product (deliberately, so Android does not pop a highlight menu on controls) — so
+  the evidence sat inside a control and could not be selected. The text opts back in, and the row still
+  toggles anywhere.
+* New: **COPY ALL**, which puts the whole readout on the clipboard as plain text — the file it was read
+  from, how much of it was read, and every distinct problem with its count, its file:line and its own
+  words. Useful on a phone, where dragging a selection across a hundred rows is not something anyone can
+  do. It works on hosts and embeds where the clipboard API is unavailable, and says so when it cannot.
+* Fixed: **the twelve problems you could not see.** The panel returned at most 40 distinct problems, and a
+  real site's log had 52 — so a quarter of it was invisible with one grey line as the only hint. The cap is
+  now 100, and it still reports when it bites.
+* Fixed: the "more like this" line named `wp-content/debug.log` as where the full log lives — no longer
+  true on any site whose log has been moved out of the web root (0.9.4). It names the real path.
 
 = 0.9.4 =
 * New: **Morpheus can move your error log out of the web root, in one press.** WordPress's standard debug block

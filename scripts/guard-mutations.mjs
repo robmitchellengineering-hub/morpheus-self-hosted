@@ -3042,6 +3042,73 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // ⚠️ THE DEFECT ROB HIT, AS A MUTATION: *"I can see them all they are on screen it just
+    // wont let me select them"*. index.css turns selection OFF on every <button> and this
+    // row IS the toggle button — so the evidence was text inside a control. Remove the
+    // opt-back-in and the panel goes back to being readable and not copyable.
+    why: 'Puts the group message back inside the button with no opt-in, so the operator can read the log and not copy it.',
+    find: '          <span className="select-text min-w-0 flex-1 text-[11px] text-ink-max break-words">{g.message}</span>',
+    replace: '          <span className="min-w-0 flex-1 text-[11px] text-ink-max break-words">{g.message}</span>',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // The whole readout, not the object it came from. `JSON.stringify(log)` would "work"
+    // in the sense that it copies something, and would be useless to paste at anyone.
+    why: 'Copies the raw payload instead of the readable readout, so COPY ALL hands over JSON.',
+    find: '    const text = errorLogAsText(log);',
+    replace: '    const text = JSON.stringify(log);',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // The clipboard API needs a secure context and the dock is embedded in other people's
+    // pages, some of them http. Drop the fallback and the button does nothing there — with
+    // no error, which is the worst kind of nothing.
+    why: 'Drops the insecure-context fallback, so COPY ALL silently does nothing where the clipboard API is unavailable.',
+    find: "        ok = document.execCommand('copy');",
+    replace: '        ok = false;',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // A copy that failed must SAY so. Silence reads as success on a button whose whole job
+    // is to move text somewhere the operator cannot see it go.
+    why: 'Stops telling the operator when the copy failed, so a dead button reads as a working one.',
+    find: '              This browser would not let Morpheus reach the clipboard. The text is selectable — drag over it',
+    replace: '              Copy failed.',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // The line the relocate fix made a lie: it named wp-content/debug.log as where the full
+    // log lives, on a site whose log is now outside the web root.
+    why: 'Puts the hard-coded default path back, sending an operator to look for a log that is no longer there.',
+    find: '            <div className="text-[9px] text-ink-max">{g.count - (g.samples || []).length} more like this in {g.file ? \'the same file\' : (path || \'the log\')}',
+    replace: '            <div className="text-[9px] text-ink-max">{g.count - (g.samples || []).length} more like this — the full log is on the server in {g.file ? \'the file above\' : \'wp-content/debug.log\'}',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/lib/errorLogText.js',
+    // The pasted header is the only thing that says WHICH file this is. A list of PHP
+    // warnings with no file name gets quoted as if it came from anywhere.
+    why: 'Stops the copied text naming the file it was read from, so a pasted log cannot be traced to a site or a path.',
+    find: "  lines.push('File: ' + (log.path || 'wp-content/debug.log'));",
+    replace: "  lines.push('File: the log');",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/lib/errorLogText.js',
+    // THE HONEST-SCOPE CLAIM. A bounded tail quoted without saying it is a tail is how a
+    // partial read becomes the whole story — the same failure the panel's own copy is
+    // written to avoid.
+    why: 'Drops what was actually read from the copied text, so a bounded tail is pasted as if it were the whole log.',
+    find: "    bits.push(`newest ${log.lines_read} lines of a ${kb} KB file`);",
+    replace: "    bits.push('the newest lines');",
+  },
+  {
+    guard: 'verify-site-health.mjs',
     file: 'wp-plugin/morpheus/includes/class-clean.php',
     // The public-log check has to ask about the file WordPress is WRITING. Asked about
     // the default path instead, a log pointed at any other path inside the root is
