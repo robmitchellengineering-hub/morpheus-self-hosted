@@ -79,6 +79,7 @@ model User {
   deck_google_connection DeckGoogleConnection?
   search_console_connection SearchConsoleConnection?
   site_maintenance_policies SiteMaintenancePolicy[]
+  site_uptime_checks SiteUptimeCheck[]
 
   // Command Deck (internal codename "Deck" — see the models below)
   deck_jarvis_messages DeckJarvisMessage[]
@@ -370,6 +371,7 @@ model Project {
   plugin_connections PluginConnection[]
   widget_tokens  WidgetToken[]
   capability_grants AppCapabilityGrant[]
+  site_uptime_checks SiteUptimeCheck[]
 
   created_date   DateTime @default(now())
   updated_date   DateTime @updatedAt
@@ -1608,4 +1610,41 @@ model DeckLifeFile {
 
   @@index([life_stream_id])
   @@map("deck_life_files")
+}
+
+// ONE UPTIME OBSERVATION of a connected site.
+//
+// The report's item 7: "the one failure an owner notices first". /status exists in
+// every plugin build, needs no signature and costs one HTTP request — and NOTHING
+// stored the answer, so "was my site up last night?" had no answer anywhere. A site
+// that was down for an hour while the owner slept looked identical to one that was
+// never checked.
+//
+// A ROW PER CHECK rather than a running total, because the interesting question is
+// never the percentage alone: it is WHEN it broke, and what the site said. A failed
+// check carries the reason and the code; one that answered carries the plugin version
+// it is running, which is how a site stuck on an old build becomes visible without
+// anyone asking it.
+//
+// Bounded by PRUNING on write (lib/siteUptimeStore.js) rather than by a counter: an
+// unbounded table grows at the polling rate forever, and that is a cost nobody can
+// see coming.
+model SiteUptimeCheck {
+  id             String   @id @default(uuid())
+  project_id     String
+  project        Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  created_by_id  String
+  owner          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  checked_at     DateTime @default(now())
+  ok             Boolean
+  // 0 means "never got a response" — the case worth telling apart from a 500.
+  status_code    Int      @default(0)
+  latency_ms     Int      @default(0)
+  plugin_version String?
+  // Why it failed, in the site's or the network's own words.
+  error          String?
+
+  @@index([project_id, checked_at])
+  @@map("site_uptime_checks")
 }

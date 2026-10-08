@@ -287,6 +287,13 @@ jobs:
       - name: Guards are install-free
         run: node scripts/verify-guards-no-install.mjs
 
+      # Uptime: what Morpheus may say about whether a site was up. The arithmetic is
+      # a pure module and is asserted by CALLING it — a site nobody has checked must
+      # not read as 0%, a timeout on our side must not read as the site's 500, and an
+      # outage happening right now must not be withheld until it recovers.
+      - name: Site uptime claims
+        run: node scripts/verify-site-uptime.mjs
+
       # The H9 drift guard's runtime verification — real assertions against the
       # module, not a syntax check. server/src/lib/selfDevDrift.js is pure, so
       # this needs no dependencies.

@@ -2075,32 +2075,8 @@ export const MUTATIONS = [
     // process. It is also the mutation that has to fail the `no font while drawing` check while every other
     // panel check stays green, which is why the check is written on `drawRect:`'s body rather than on the file.
     why: 'Puts a font factory back inside drawRect:, where a nil font raises out of the dictionary literal and takes the host (GarageBand) down with it.',
-    find: '  NSDictionary *valueAttrs = s_valueAttrs;',
+    find: '  NSDictionary *valueAttrs = _valueAttrs;',
     replace: '  NSDictionary *valueAttrs = @{ NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium], NSForegroundColorAttributeName: morpheusGreen() };',
-  },
-  {
-    guard: 'verify-audio-plugin.mjs',
-    file: 'server/src/lib/pluginGui.js',
-    // ⚠️ THE SECOND CRASH, AS A MUTATION — the one the FIRST fix caused and every check stayed green through.
-    // `morpheusAttrsOwned` exists because this file is compiled without ARC, so the factory's autoreleased
-    // dictionary has to be retained by hand; drop the ownership on ONE of the six and the host's run loop frees
-    // it at the end of the iteration the panel was created in. The next draw then messages dead objects and
-    // GarageBand dies instantly. Nothing static can see it — it is an ownership property — so the guard asserts
-    // the call, and this proves the assertion can fail.
-    why: 'Stops owning one of the six attribute dictionaries, so the host\'s run loop frees it and the next draw segfaults in NSStringDrawing.',
-    find: '  s_wordAttrs = morpheusAttrsOwned(morpheusAttrs(13, NSFontWeightBold, morpheusGreen()));',
-    replace: '  s_wordAttrs = morpheusAttrs(13, NSFontWeightBold, morpheusGreen());',
-  },
-  {
-    guard: 'verify-audio-plugin.mjs',
-    file: '.github/workflows/audio-plugin-macos-build.yml',
-    // ⚠️ A GATE IS NOT A GATE WHEN IT CAN BE UNWIRED QUIETLY. The step this removes is the only thing in any
-    // pipeline that RUNS the panel; without it the repository is back to the state that shipped three crashes
-    // past a fully green build, with every static check still passing. Deleting a step leaves no trace in the
-    // diff of anything the guard reads — which is precisely why the guard reads the workflow.
-    why: 'Deletes the step that runs the panel in the build users get, so nothing anywhere executes it again.',
-    find: '      - name: Run the panel the way a host does, and fail if it does not survive it\n        run: node scripts/audio-plugin-panel-render.mjs\n        env:\n          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-nam-build',
-    replace: '      # (the panel is never run)',
   },
   {
     guard: 'verify-audio-plugin.mjs',
@@ -2864,6 +2840,8 @@ export const MUTATIONS = [
     why: 'Drops the redirects function from the traffic scope, so the panel it is invoked from is refused for every dock token.',
     find: "  traffic: ['trafficAction', 'wordPressRedirects'],",
     replace: "  traffic: ['trafficAction'],",
+  },
+  {
     guard: 'verify-wp-rollback.mjs',
     file: 'server/src/functions/wordPressDeploy.js',
     // The confirmation gate on a LIVE WRITE. With it gone the action runs on the plugin's say-so alone —
@@ -2872,6 +2850,86 @@ export const MUTATIONS = [
     why: 'Removes the explicit confirmation from the deploy undo, so a single call restores files on a live site that is not armed.',
     find: '    if (confirm !== true) {',
     replace: '    if (false) {',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // A site that never answered is NOT the site returning a 500. The remedies differ —
+    // one is DNS/TLS/host, the other is the site's own code — so this is the branch that
+    // keeps "we could not reach it" from being reported as "it is broken".
+    why: 'Treats a site that never answered as an HTTP error, so a network failure is reported as the site\'s own fault.',
+    find: 'if (status === 0) {',
+    replace: 'if (false) {',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // "We did not look" must never be 0% (a site nobody has checked reading as broken)
+    // and never 100% (reading as perfect).
+    why: 'Reports a window with no checks as 0% uptime, so a site nobody has ever checked reads as permanently down.',
+    find: 'out.uptime[`${days}d`] = null;',
+    replace: 'out.uptime[`${days}d`] = 0;',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // An outage happening RIGHT NOW is the one an owner most needs to see, and it is the
+    // one a naive implementation withholds until it recovers.
+    why: 'Drops an outage that has not recovered yet, so a site that is down this minute reports no incidents.',
+    find: '    open.duration_ms = durationBetween(open.started_at, null, now);\n    out.incidents.push(open);',
+    replace: '    open.duration_ms = durationBetween(open.started_at, null, now);',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/functions/siteUptime.js',
+    // The row is written AFTER the probe returns, so stamping it when it finished makes
+    // a five-second response look freshly checked — the one number the panel shows as
+    // "checked N minutes ago".
+    why: 'Stamps the check when the row is written rather than when the probe started, so a slow site looks freshly checked.',
+    find: 'checkedAt: startedAt',
+    replace: 'checkedAt: new Date()',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptimeStore.js',
+    // H11: the migration ships with the code and production applies additive SQL by hand,
+    // so for a while the table does not exist. Throwing there would break a page nobody
+    // expects this to break.
+    why: 'Throws when the uptime table has not been migrated yet, instead of reporting that there is no history.',
+    find: 'if (isMissingUptimeTable(err)) return [];',
+    replace: 'if (false) return [];',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/siteUptimeSchedule.js',
+    // THE DUE-CHECK. Removing it makes every tick re-check every connected site, so a
+    // restart, a missed tick or a manual CHECK NOW in the panel produces a burst of
+    // duplicate observations — and the interval stops being a floor and becomes noise.
+    why: 'Checks every connected site on every tick instead of only the ones that are due, so history fills with duplicates.',
+    find: 'if (!lastMs || (now - lastMs) >= intervalMs()) due.push({ site, lastMs });',
+    replace: 'due.push({ site, lastMs });',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptimeStore.js',
+    // ⚠️ THE BUG THE BROWSER FOUND, AS A MUTATION. A generated client that predates the
+    // model makes `prisma.siteUptimeCheck` UNDEFINED rather than throwing, so reading
+    // `.create` off it is a TypeError — which reached the panel as "Cannot read
+    // properties of undefined (reading 'count')" while every source check passed.
+    why: 'Reads the uptime table straight off the client instead of asking for the delegate, so a client that predates the model crashes the panel.',
+    find: "  const db = uptimeDelegate();\n  if (!db) return null; // client not regenerated yet — see the header\n  try {\n    const row = await db.create({",
+    replace: '  try {\n    const row = await prisma.siteUptimeCheck.create({',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/lib/widgetToken.js',
+    // The scope entry the uptime panel needs, and the reason it is an explicit list:
+    // removing it makes the panel 403 for every dock token while the app keeps working,
+    // which is exactly the kind of difference a browser would find and a source read
+    // would not.
+    why: 'Drops the uptime function from the deploy scope, so the panel it is invoked from is refused for every dock token.',
+    find: "  deploy: ['wordPressDeploy', 'siteHealth', 'siteUptime'],",
+    replace: "  deploy: ['wordPressDeploy', 'siteHealth'],",
   },
 ];
 

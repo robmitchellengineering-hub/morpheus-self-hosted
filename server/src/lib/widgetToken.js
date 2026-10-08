@@ -25,7 +25,14 @@ export const WIDGET_SCOPE_FUNCTIONS = {
   // new scope would silently withhold Health from every existing dock token for
   // no gain in safety. The moment a fix/apply action exists it lands under the
   // same reasoning and gets its own review.
-  deploy: ['wordPressDeploy', 'siteHealth'],
+  //
+  // siteUptime joined it on 2026-10-08 for the same reason and is recorded rather
+  // than assumed: it READS the site's /status and records an observation in
+  // MORPHEUS's own table. It writes nothing to the site at all — the smallest
+  // privilege in this list — and it belongs on the surface that already shows a
+  // site's health, because "has it been answering?" is the first question about
+  // one. Anything that writes files or applies updates stays out.
+  deploy: ['wordPressDeploy', 'siteHealth', 'siteUptime'],
   store: ['getWordPressStore', 'wordPressStoreAction', 'generateProductCopy', 'analyzeProductPhoto'],
   // SEO is its own scope rather than part of `store`: an embed that only runs
   // the shop shouldn't also be able to rewrite every page's search metadata.

@@ -275,6 +275,10 @@ export const KNOWN_GREEN_CONSTANTS = [
   "src/components/matrix/website/ShopTab.jsx|w-full bg-black/30 border border-primary/20 px-2.5 h-[42px] text-[13px] text-primary focus:outline-none focus:border-primary/50",
   "src/components/matrix/website/ShopTab.jsx|w-full bg-black/30 border border-primary/20 px-2.5 py-2 text-[13px] text-primary focus:outline-none focus:border-primary/50",
   "src/components/matrix/website/TrafficTab.jsx|text-primary/60",
+  // DECIDED 2026-10-08: the uptime panel's CHECK NOW button — a green CONTROL (a press),
+  // the same string the other website panels use. The brand green marks structure, and
+  // this is structure.
+  "src/components/matrix/website/UptimePanel.jsx|inline-flex items-center justify-center gap-1.5 px-3 h-[26px] border border-primary/30 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary disabled:opacity-40 shrink-0",
   "src/components/ui/button.jsx|text-primary underline-offset-4 hover:underline",
   "src/pages/AdminPanel.jsx|text-primary",
   "src/pages/AdminPanel.jsx|text-primary/40",

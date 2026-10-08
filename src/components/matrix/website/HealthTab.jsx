@@ -7,6 +7,7 @@ import { base44 } from '@/api/base44Client';
 import { resolveSiteLink } from '@/lib/siteLink';
 import { useTaskRunner, useTaskResult } from '../TaskRunner';
 import ErrorLogPanel from './ErrorLogPanel';
+import UptimePanel from './UptimePanel';
 
 // SITE HEALTH tab — what WordPress's own Site Health screen and Morpheus's own
 // checks say about the operator's live site, in one place.
@@ -1540,6 +1541,16 @@ export default function HealthTab({ projectId }) {
             </Section>
           </div>
         )}
+
+        {/* ── UPTIME ─────────────────────────────────────────────────────
+            Whether the site has been ANSWERING, which is the one failure an
+            owner notices first and the only one Morpheus could not tell them
+            about: /status needs no secret and answers in every build of the
+            plugin, and nothing recorded it. Its own component, and it checks on
+            open only when what it holds is stale or absent. */}
+        <Section title="UPTIME" icon={<Clock size={11} className="text-primary/45" />}>
+          <UptimePanel projectId={projectId} />
+        </Section>
       </div>
     </div>
   );

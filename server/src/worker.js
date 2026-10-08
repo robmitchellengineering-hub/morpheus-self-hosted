@@ -12,6 +12,10 @@ import { runFreshnessCheckAndNotify } from './freshness.js';
 import { checkBalanceAndAlert, isDeepSeekPrimary } from './lib/deepseekBalance.js';
 import { runDeckInsights } from './lib/deckInsight.js';
 import { runDueSiteMaintenance } from './siteMaintenanceSchedule.js';
+import { runDueUptimeChecks, DEFAULT_INTERVAL_MS as UPTIME_DEFAULT_INTERVAL_MS } from './siteUptimeSchedule.js';
+
+/** The same env override the in-process schedule reads, so the two cannot disagree. */
+const uptimeIntervalMs = () => Number(process.env.SITE_UPTIME_INTERVAL_MS) || UPTIME_DEFAULT_INTERVAL_MS;
 
 if (!queueEnabled()) {
   console.log('[morpheus-worker] REDIS_URL not set — nothing to do. This process is only needed once you offload work onto queue.js, or once REDIS_URL is set (single-instance self-hosts get the freshness check via freshnessSchedule.js in the API process instead).');
@@ -93,6 +97,23 @@ if (process.env.DECK_INSIGHT_ENABLED !== 'false') {
     await runDeckInsights();
   }, 1);
   console.log(`[morpheus-worker] deck-insight registered — every ${Math.round(DECK_INSIGHT_INTERVAL_MS / 3600000)}h.`);
+}
+
+// Uptime, the same exactly-once reasoning: with several API replicas an in-process
+// interval would record N observations per tick for one site. Five minutes is the
+// floor, and the tick asks which sites are DUE rather than checking all of them, so a
+// restart or a manual check in the panel never produces a burst.
+if (process.env.SITE_UPTIME_ENABLED !== 'false') {
+  const uptimeQueue = getQueue('site-uptime');
+  await uptimeQueue.add(
+    'due',
+    {},
+    { repeat: { every: uptimeIntervalMs() }, jobId: 'site-uptime-repeatable' },
+  );
+  startWorker('site-uptime', async () => {
+    await runDueUptimeChecks();
+  }, 1);
+  console.log(`[morpheus-worker] site-uptime registered — every ${Math.round(uptimeIntervalMs() / 60000)}m.`);
 }
 
 // Example of how another processor would be registered once a producer
