@@ -25,6 +25,7 @@ import { startFreshnessSchedule } from './freshnessSchedule.js';
 import { startDeepSeekBalanceSchedule } from './deepseekBalanceSchedule.js';
 import { startDeckInsightSchedule } from './lib/deckInsightSchedule.js';
 import { startSiteMaintenanceSchedule } from './siteMaintenanceSchedule.js';
+import { startSiteUptimeSchedule } from './siteUptimeSchedule.js';
 import { resolveCors } from './lib/corsOrigin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -118,4 +119,7 @@ app.listen(port, () => {
   startDeepSeekBalanceSchedule();
   startDeckInsightSchedule();
   startSiteMaintenanceSchedule();
+  // Uptime: one cheap unauthenticated GET to each connected site's /status, so the
+  // history exists even when nobody is looking — which is the whole point of it.
+  startSiteUptimeSchedule();
 });

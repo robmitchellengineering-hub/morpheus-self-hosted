@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 64;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 65;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 63;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 64;\n',
   },
   {
     guard: 'verify-artifact-save-background.mjs',
@@ -2731,6 +2731,38 @@ export const MUTATIONS = [
     find: 'if (isMissingUptimeTable(err)) return [];',
     replace: 'if (false) return [];',
   },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/siteUptimeSchedule.js',
+    // THE DUE-CHECK. Removing it makes every tick re-check every connected site, so a
+    // restart, a missed tick or a manual CHECK NOW in the panel produces a burst of
+    // duplicate observations — and the interval stops being a floor and becomes noise.
+    why: 'Checks every connected site on every tick instead of only the ones that are due, so history fills with duplicates.',
+    find: 'if (!lastMs || (now - lastMs) >= intervalMs()) due.push({ site, lastMs });',
+    replace: 'due.push({ site, lastMs });',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptimeStore.js',
+    // ⚠️ THE BUG THE BROWSER FOUND, AS A MUTATION. A generated client that predates the
+    // model makes `prisma.siteUptimeCheck` UNDEFINED rather than throwing, so reading
+    // `.create` off it is a TypeError — which reached the panel as "Cannot read
+    // properties of undefined (reading 'count')" while every source check passed.
+    why: 'Reads the uptime table straight off the client instead of asking for the delegate, so a client that predates the model crashes the panel.',
+    find: "  const db = uptimeDelegate();\n  if (!db) return null; // client not regenerated yet — see the header\n  try {\n    const row = await db.create({",
+    replace: '  try {\n    const row = await prisma.siteUptimeCheck.create({',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/lib/widgetToken.js',
+    // The scope entry the uptime panel needs, and the reason it is an explicit list:
+    // removing it makes the panel 403 for every dock token while the app keeps working,
+    // which is exactly the kind of difference a browser would find and a source read
+    // would not.
+    why: 'Drops the uptime function from the deploy scope, so the panel it is invoked from is refused for every dock token.',
+    find: "  deploy: ['wordPressDeploy', 'siteHealth', 'siteUptime'],",
+    replace: "  deploy: ['wordPressDeploy', 'siteHealth'],",
+  },
 ];
 
 /**
@@ -2764,5 +2796,10 @@ export const NOT_YET_PROVEN = [
  * that every file MATCHES a lint block and never that the block's rules were still switched on. It now
  * also asserts each `rules:` block re-spreads the recommended set, so the falsification is a plain
  * text edit (drop the spread) and the guard joins the proven pile.
+ *
+ * 64 → 63 on 2026-10-08: `verify-site-health.mjs` — a health screen that is BELIEVED — was in the pile
+ * with no mutation of its own. The uptime work added one that removes `siteUptime` from the deploy widget
+ * scope: without it the panel 403s for every dock token while the app keeps working, which is a difference
+ * a browser finds and a source read does not.
  */
-export const UNPROVEN_BASELINE = 64;
+export const UNPROVEN_BASELINE = 63;

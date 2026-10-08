@@ -208,7 +208,18 @@ check('the health endpoint is a signed POST, not a public GET', /wpCall\(conn, '
 check('the minimum plugin version is declared once', /MIN_HEALTH_PLUGIN_VERSION = '0\.6\.0'/.test(client), true);
 
 const widget = read('server/src/lib/widgetToken.js');
-check('a widget token with the deploy scope can scan', /deploy: \['wordPressDeploy', 'siteHealth'\]/.test(widget), true);
+// The deploy scope is an explicit list on purpose: it is the whole granted privilege,
+// and adding a function to it is a decision (see widgetToken.js). Uptime joined it on
+// 2026-10-08 — it READS /status and records an observation in Morpheus's own table, and
+// writes nothing to the site.
+check('a widget token with the deploy scope can scan', /deploy: \['wordPressDeploy', 'siteHealth', 'siteUptime'\]/.test(widget), true);
+// And the surface that uses it is the one that already shows a site's health, so the
+// scope entry is not privilege handed out for a function nobody calls (H19's shape,
+// one level up).
+const uptimePanel = read('src/components/matrix/website/UptimePanel.jsx');
+check('…and the uptime panel invokes exactly that function',
+  [...new Set([...uptimePanel.matchAll(/functions\.invoke\(\s*'([A-Za-z0-9_]+)'/g)].map((m) => m[1]))], ['siteUptime']);
+check('…and it is mounted on the health surface', /<UptimePanel\b/.test(read('src/components/matrix/website/HealthTab.jsx')), true);
 
 const plugin = read('wp-plugin/morpheus/includes/class-health.php');
 check('the plugin loads the admin includes WordPress\'s tests need', /wp-admin\/includes\/admin\.php/.test(plugin), true);

@@ -141,6 +141,23 @@ check('…to a stated retention', /RETAIN_DAYS/.test(store) && RETAIN_DAYS > 0, 
 check('a MISSING TABLE reads as no history yet, not as an error',
   /isMissingUptimeTable\(err\)\) return \[\]/.test(store), true);
 check('…which is hazard H11 handled rather than hoped for', /return recordCheck|isMissingUptimeTable\(err\)\) return null/.test(store), true);
+// ⚠️ AND "MISSING" HAS TWO FORMS. A missing TABLE throws; a missing MODEL does not —
+// `prisma.siteUptimeCheck` is simply `undefined` when the generated client predates the
+// schema, so reading `.count` off it is a TypeError that reached a real browser as
+// "Cannot read properties of undefined (reading 'count')". Exactly ONE direct reference
+// is allowed, and it is inside the helper that asks.
+check('the store asks for its delegate rather than assuming it',
+  /export function uptimeDelegate\(\)/.test(store), true);
+// Comments stripped first: this file's own header NAMES `prisma.siteUptimeCheck` while
+// explaining the bug, and the first version of this check counted that sentence as a
+// direct use — H19's "satisfied by the prose it forbids", in the other direction.
+const storeCode = store.replace(/^\s*\/\/.*$/gm, '');
+check('…with exactly one direct reference, inside that helper',
+  (storeCode.match(/prisma\.siteUptimeCheck/g) || []).length, 1);
+check('…and every read and write goes through it',
+  (store.match(/const db = uptimeDelegate\(\);/g) || []).length, 5);
+check('…treating a client that predates the model as "not set up yet"',
+  /if \(!db\) return null; \/\/ client not regenerated yet/.test(store), true);
 check('the record is written AFTER the probe but stamped with when it STARTED',
   /checkedAt: startedAt/.test(fn), true);
 check('…and the probe is /status, which needs no secret and works on a stale plugin',
@@ -157,6 +174,36 @@ check('…with inline foreign keys, because ADD CONSTRAINT is not idempotent',
   /CONSTRAINT site_uptime_checks_project_id_fkey/.test(migration) && !/ALTER TABLE site_uptime_checks ADD CONSTRAINT/.test(migration), true);
 check('…and the bootstrap carries it too, so a new self-host is not a lesser install',
   /CREATE TABLE "site_uptime_checks"/.test(bootstrap), true);
+
+// ── 10. the schedule ────────────────────────────────────────────────────────
+console.log('\n10. the schedule records, and cannot double-record');
+const sched = read('server/src/siteUptimeSchedule.js');
+check('it asks which sites are DUE rather than checking all of them every tick',
+  /latestCheckAt\(/.test(sched) && /due\.push\(/.test(sched), true);
+check('…so a restart or a manual check cannot produce a burst of duplicates',
+  /\(now - lastMs\) >= intervalMs\(\)/.test(sched), true);
+check('…oldest first, so the longest-unchecked site is not starved by a busy one',
+  /due\.sort\(\(a, b\) => a\.lastMs - b\.lastMs\)/.test(sched), true);
+check('one tick cannot become an unbounded outbound fan-out', /MAX_PER_TICK\s*=\s*\d+/.test(sched), true);
+check('…and a single hanging site cannot hold the tick open', /PROBE_TIMEOUT_MS\s*=\s*\d+/.test(sched), true);
+// ⚠️ ANCHORED ON THE BLOCK, NOT ON A CHARACTER COUNT. The first version searched 260
+// characters past `catch (err)` for an `outcomes.push`, and the comment inside the
+// catch body was longer than that — so it failed on a correct file. A window whose
+// meaning changes when somebody edits a comment nearby is the same defect as a slice
+// measured in characters, which I had already hit once today.
+const catchAt = sched.indexOf('} catch (err) {');
+const catchEnd = sched.indexOf('\n    }', catchAt);
+const catchBlock = catchAt < 0 || catchEnd < 0 ? '' : sched.slice(catchAt, catchEnd);
+check('the schedule\'s catch block was located (parser sanity)', catchBlock.length > 40, true);
+check('one site throwing does not stop the rest — that site is recorded and the tick carries on',
+  /outcomes\.push/.test(catchBlock) && !/\bthrow\b/.test(catchBlock), true);
+check('in-process only when Redis is absent, or every replica would record it again',
+  /queueEnabled\(\)[\s\S]{0,220}worker process/.test(sched), true);
+check('…and the worker registers it when Redis IS present',
+  /runDueUptimeChecks/.test(read('server/src/worker.js')), true);
+check('…reading the SAME interval override, so the two cannot disagree',
+  /SITE_UPTIME_INTERVAL_MS/.test(read('server/src/worker.js')), true);
+check('…and the API process starts the in-process one', /startSiteUptimeSchedule\(\)/.test(read('server/src/index.js')), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
