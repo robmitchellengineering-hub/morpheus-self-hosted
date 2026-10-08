@@ -269,7 +269,8 @@ check('…and a type with no rewrite is skipped, because its permalink is a quer
   /empty\( \$type->rewrite \)/.test(helpersIdx), true);
 check('a URL that is nothing but a query string is refused',
   /'' === trim\( \$path, '\/' \)/.test(plugin), true);
-check('…and the store\'s own utility pages are refused', /wc_get_page_id/.test(plugin), true);
+check('…and the store\'s own utility pages are refused',
+  /if \( function_exists\( 'wc_get_page_id' \) \) \{/.test(plugin), true);
 check('…with a FILTER, so another shop is not a guess', /morpheus_announce_url/.test(plugin), true);
 // TWO call sites — the publish path and the backfill. Missing one is a half-fix that the
 // ledger would show again on the very next backfill.
