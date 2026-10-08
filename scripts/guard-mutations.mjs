@@ -3068,9 +3068,20 @@ export const MUTATIONS = [
     // tree is not being outside the web root — a site at public_html/blog/ has a served
     // parent. Stop consulting the document root and Morpheus will happily move a log
     // from one readable place to another and call it fixed.
-    why: 'Stops consulting the server\'s document root, so a log is moved to a directory that may still be served.',
-    find: "\t\t$docroot = isset( $_SERVER['DOCUMENT_ROOT'] ) ? realpath( (string) $_SERVER['DOCUMENT_ROOT'] ) : false;",
-    replace: "\t\t$docroot = false;",
+    why: 'Treats an empty document root as a real one, so the fix\'s answer depends on which PHP the host runs.',
+    find: "\t\t$docroot     = ( '' !== $docroot_raw ) ? realpath( $docroot_raw ) : false;",
+    replace: "\t\t$docroot     = realpath( $docroot_raw );",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // ⚠️ THE REFUSAL THAT KEEPS THIS FROM BEING THEATRE. Being outside WordPress's own
+    // tree is not being outside the web root — a site at public_html/blog/ has a served
+    // parent. Disable the containment test and Morpheus will happily move a log from one
+    // readable place to another and call it fixed.
+    why: 'Disables the containment test, so a log is moved to a directory that is still inside the web root.',
+    find: "\t\tif ( $real === $docroot || 0 === strpos( $real . '/', $docroot . '/' ) ) {",
+    replace: "\t\tif ( false ) {",
   },
   {
     guard: 'verify-site-health.mjs',

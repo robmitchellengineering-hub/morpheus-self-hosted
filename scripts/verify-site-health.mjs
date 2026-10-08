@@ -298,8 +298,17 @@ check('the fix is registered as automatic, with its own mechanism',
 // Prove the destination, or refuse. Being outside WordPress's own tree is not the
 // same as being outside the web root — a site can live at public_html/blog/, where
 // the WordPress root's parent is still served.
+// Asserted on the CONDITIONS, not on the error codes: `TARGET_IN_WEB_ROOT` survives in
+// the message after its branch is disabled, so a string check would prove nothing.
 check('…and it will not move a log it cannot PROVE is out of reach',
-  /DOCUMENT_ROOT/.test(fixesPhp) && /UNPROVEN_TARGET/.test(fixesPhp) && /TARGET_IN_WEB_ROOT/.test(fixesPhp), true);
+  /DOCUMENT_ROOT/.test(fixesPhp)
+  && /false === \$docroot \|\| false === \$real/.test(fixesPhp)
+  && /0 === strpos\( \$real \. '\/', \$docroot \. '\/' \)/.test(fixesPhp), true);
+// Present but EMPTY is unknown, not `/`. The Playground sets exactly that, and
+// `realpath( '' )` has returned the working directory in the wild — so the guard's
+// answer would depend on which PHP the host runs.
+check('…and an empty document root counts as unknown, not as the filesystem root',
+  /'' !== \$docroot_raw/.test(fixesPhp), true);
 check('…and it will not overwrite a file that is already there',
   /TARGET_EXISTS/.test(fixesPhp) && /will not overwrite it/.test(fixesPhp), true);
 // WP_DEBUG_LOG already exists on every site that was ever debugged, and PHP will not
