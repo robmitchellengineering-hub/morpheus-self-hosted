@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2, RefreshCw, ExternalLink, AlertTriangle, Check, ShieldCheck, Server, Package, Clock,
   Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown, ShieldAlert, Eraser, Info, FileWarning,
+  Sparkles, Play,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { resolveSiteLink } from '@/lib/siteLink';
@@ -247,12 +248,16 @@ function FixResult({ result }) {
  * `none`, an unknown kind or an absent fix render nothing at all.
  */
 function FixBox({
-  t, fix, busy = false, paused = false, result, onFix, onRescan, scanning = false,
+  t, fix, busy = false, paused = false, result, onFix, onPropose, onRescan, scanning = false,
   onJumpToUpdates, siteName, siteUrl,
 }) {
-  // Local to this finding: step two of the confirm, and whether the guide is open.
+  // Local to this finding: step two of the confirm, whether the guide is open, and what
+  // Morpheus said it would do (never persisted — a proposal is about the finding in front
+  // of the operator, and a stale one is worse than none).
   const [confirming, setConfirming] = useState(false);
   const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [asked, setAsked] = useState(null);
 
   if (!fix || fix.kind === 'none') return null;
 
@@ -316,6 +321,59 @@ function FixBox({
             <div className={faint}>
               RE-CHECK runs the scan again, so Morpheus confirms this itself instead of taking it on trust.
             </div>
+          </div>
+        ) : null}
+
+        {/* AI FIX — only for a finding the SITE says Morpheus has a mechanism for
+            (`fix.ai` is the plugin's own label for it). Pressing it CHANGES NOTHING:
+            it asks what Morpheus would do, and the answer is shown with the exact
+            change before anything is applied. A refusal is a first-class answer and
+            is rendered as one — most findings on a WordPress site are fixed by a
+            person, and a model that says so is being useful, not failing. */}
+        {fix.ai ? (
+          <div className="space-y-1.5">
+            <button className={btn} disabled={asking || busy}
+              onClick={async () => {
+                setAsking(true); setAsked(null);
+                const answer = await onPropose(t);
+                setAsking(false);
+                setAsked(answer);
+              }}>
+              {asking ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              {asking ? 'ASKING MORPHEUS…' : 'AI FIX'}
+            </button>
+            {asked && asked.ok === false ? (
+              <div className="border border-red-500/30 px-2.5 py-1.5 text-[10px] text-red-400/90 leading-relaxed break-words">
+                {asked.error}
+              </div>
+            ) : null}
+            {asked && asked.cannot ? (
+              <div className="border border-primary/20 px-2.5 py-1.5 space-y-1">
+                <div className={micro}>Morpheus will not do this one — and says why</div>
+                <div className="text-[10px] text-ink-max leading-relaxed break-words">{asked.cannot}</div>
+              </div>
+            ) : null}
+            {asked && asked.proposal ? (
+              <div className="border border-primary/25 px-2.5 py-2 space-y-1.5">
+                <div className={micro}>Morpheus would do this</div>
+                {/* Rendered from the PROPOSAL, not from the model's sentence about it:
+                    a description that claims more or less than the operation asks for
+                    must not be the thing believed. The model's own words sit BELOW it,
+                    labelled as its reasoning. */}
+                <div className="text-[10px] text-ink-max leading-relaxed break-words">{asked.describe}</div>
+                {asked.proposal.why ? (
+                  <div className="text-[10px] text-ink-max leading-relaxed break-words">
+                    <span className="font-medium">Why: </span>{asked.proposal.why}
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <button className={btn} disabled={busy} onClick={() => onFix(t, { proposal: asked.proposal })}>
+                    <Play size={12} /> APPLY THIS
+                  </button>
+                  <span className={faint}>Nothing has changed on the site yet.</span>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -396,7 +454,7 @@ function LastAttempt({ line, outcome }) {
 /** One finding, rendered so the server's own source label is unmissable. */
 function Finding({
   t, quiet = false, siteName, siteUrl, fixBusy = false, fixPaused = false, fixResult,
-  onFix, onRescan, scanning = false, onJumpToUpdates,
+  onFix, onPropose, onRescan, scanning = false, onJumpToUpdates,
   // CLEAN MY SITE withholds the control on a finding that already reads `good`:
   // a check that passed must not offer a press that changes the site, or the
   // buttons on screen stop agreeing with the set the bulk press applies. The
@@ -453,7 +511,7 @@ function Finding({
       ) : null}
       {/* The action, when the payload carries one — and nothing at all when it does not. */}
       {t.fix && withFix ? (
-        <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult}
+        <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult} onPropose={onPropose}
           onFix={onFix} onRescan={onRescan} scanning={scanning}
           onJumpToUpdates={onJumpToUpdates} siteName={siteName} siteUrl={siteUrl} />
       ) : null}
@@ -705,13 +763,33 @@ export default function HealthTab({ projectId }) {
   // registered for that id) — an answer to render as information, never a crash.
   // A rejection carries the server's own message; the page stays on screen.
   // `opts.rescan: false` is for FIX ALL, which scans once when the whole run ends.
+  // ASK — read-only. It returns what Morpheus WOULD do (or why it will not), and the
+  // operator decides. Deliberately not routed through applyFix: a proposal is not a
+  // result, and showing one must not touch the fix-result state a real press owns.
+  const proposeFix = useCallback(async (finding) => {
+    const id = finding?.id;
+    if (!id) return { ok: false, error: 'This finding has no id, so Morpheus cannot be asked about it.' };
+    try {
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'propose', finding: id });
+      return { ok: true, ...(res?.data || {}) };
+    } catch (e) {
+      return { ok: false, error: e?.data?.error || e.message, code: e?.data?.code || null };
+    }
+  }, [projectId]);
+
   const applyFix = useCallback(async (finding, opts = {}) => {
     const id = finding?.id;
     if (!id) return { id: '', rejected: true, message: 'This finding has no id, so no fix could be sent.' };
     setFixResults((r) => ({ ...r, [id]: { state: 'busy' } }));
     setFixingIds((s) => (s.includes(id) ? s : [...s, id]));
     try {
-      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'fix', finding: id });
+      // `opts.proposal` is an AI-authored change the operator has SEEN and approved. It
+      // travels as data; the plugin re-validates it against the site's own state before
+      // anything is written, so this panel cannot widen what may be applied.
+      const res = await base44.functions.invoke('siteHealth', {
+        projectId, action: 'fix', finding: id,
+        ...(opts.proposal ? { proposal: opts.proposal } : {}),
+      });
       const payload = res?.data;
       if (!payload || !payload.fix) {
         throw new Error('The server returned no result, so nothing can be shown as done.');
@@ -1074,6 +1152,7 @@ export default function HealthTab({ projectId }) {
                       fixPaused={fixAllRunning}
                       fixResult={fixResults[t.id]}
                       onFix={applyFix}
+                      onPropose={proposeFix}
                       onRescan={() => run(true)}
                       scanning={loading}
                       onJumpToUpdates={jumpToUpdates} />
@@ -1253,6 +1332,7 @@ export default function HealthTab({ projectId }) {
                         fixPaused={cleanRunning || fixAllRunning}
                         fixResult={fixResults[t.id]}
                         onFix={applyFix}
+                      onPropose={proposeFix}
                         onRescan={() => runClean(true)}
                         scanning={cleanLoading} />
                     ))}
@@ -1267,6 +1347,7 @@ export default function HealthTab({ projectId }) {
                             fixPaused={cleanRunning || fixAllRunning}
                             fixResult={fixResults[t.id]}
                             onFix={applyFix}
+                      onPropose={proposeFix}
                             onRescan={() => runClean(true)}
                             scanning={cleanLoading} />
                         )) : null}

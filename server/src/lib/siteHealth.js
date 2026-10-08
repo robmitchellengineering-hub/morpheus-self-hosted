@@ -58,6 +58,11 @@ export function normaliseFix(fix) {
     does: String(fix.does || ''),
     warning: fix.warning ? String(fix.warning) : null,
     steps,
+    // Which mechanism Morpheus could PROPOSE for this finding, in the operator's own
+    // words, or null when it has none. Only ever a label — the operation and its
+    // arguments live in the plugin and are re-read from the site at proposal time, so a
+    // panel cannot be fed a vocabulary by whatever answered the scan.
+    ai: fix.ai ? String(fix.ai) : null,
   };
 }
 

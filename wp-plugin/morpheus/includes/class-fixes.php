@@ -324,11 +324,17 @@ class Morpheus_Fixes {
 			'php_default_timezone' => array(
 				'kind'  => 'guided',
 				'label' => 'Set the PHP timezone',
-				'does'  => 'This one CAN be fixed in wp-config.php by hand, and Morpheus will show you the line rather than editing yours for something cosmetic.',
+				'does'  => 'WordPress stores a timezone; PHP does not read it. Anything PHP formats directly — and the timestamps in your error log — can therefore disagree with the site. Morpheus can write one line into wp-config.php for you, or show it to you to add yourself.',
 				'steps' => array(
 					array( 'text' => 'In wp-config.php, above the /* That\'s all, stop editing! */ line, add: date_default_timezone_set( \'Australia/Sydney\' ); — using your own timezone.' ),
 					array( 'text' => 'Save, then re-check.' ),
 				),
+				// Morpheus has a MECHANISM for this one, so it can propose it —
+				// see ai_operations(). It stays `guided` on purpose: nothing is
+				// applied until the operator has seen the exact line and pressed
+				// APPLY, and it is never swept into FIX ALL, which takes only
+				// `auto` findings.
+				'ai'    => true,
 			),
 			'sql_server' => array(
 				'kind'  => 'guided',
@@ -512,6 +518,159 @@ class Morpheus_Fixes {
 	}
 
 	/**
+	 * What Morpheus may PROPOSE for a finding that has no rule of its own.
+	 *
+	 * THE WHOLE SAFETY STORY IS THIS FUNCTION'S SHAPE. An AI cannot be pointed at a
+	 * live site and told to fix it: a model that can invent an action can invent a
+	 * harmful one, and nothing downstream would know it was outside the design. So the
+	 * vocabulary lives HERE, in the plugin, one entry per finding, each naming a single
+	 * operation this build knows how to perform, verify and undo. The model's job is to
+	 * choose one of these and supply its arguments — never to write code.
+	 *
+	 * A finding is only offered the button when it appears here, and every argument is
+	 * validated against THE SITE'S OWN STATE before anything is touched (a timezone
+	 * against PHP's own list, a plugin file against get_plugins(), a cron hook against
+	 * the site's own cron array). An argument the model got wrong is a REFUSAL with a
+	 * code, not a change.
+	 *
+	 * WHY THE FIRST ENTRY IS A TIMEZONE. It has to be something the plugin can verify
+	 * AND put back: this writes one line through the same backup → write → read-back →
+	 * restore rails as every other wp-config fix. Most of the remaining guided findings
+	 * are guided because they genuinely need a person — core files, mu-plugins, admin
+	 * accounts, PHP version, SSL, DNS — and no amount of model reasoning makes it safe
+	 * for Morpheus to edit them. The vocabulary is meant to grow one verified operation
+	 * at a time; it is not meant to be impressive.
+	 */
+	public static function ai_operations() {
+		return array(
+			'php_default_timezone' => array(
+				'op'    => 'wp_config_timezone',
+				'label' => 'Write the timezone into wp-config.php',
+				'does'  => 'Adds date_default_timezone_set( \'…\' ); above WordPress\'s "stop editing" line, using the timezone this WordPress is already set to. WordPress stores a timezone and PHP never reads it, so log timestamps and anything PHP formats directly can disagree with the site.',
+				'args'  => array(
+					'timezone' => 'A PHP timezone identifier from timezone_identifiers_list(), e.g. Australia/Sydney. Use the value the site already reports.',
+				),
+			),
+		);
+	}
+
+	/**
+	 * Apply a PROPOSAL — the same finding, but with the site doing the work.
+	 *
+	 * Every refusal here is a named code, because a refusal the operator cannot read
+	 * looks exactly like a broken button. Nothing in this path is reachable unless the
+	 * finding was configured with `ai => true` in the registry AND the proposal named
+	 * the one operation that finding is allowed.
+	 */
+	public static function apply_ai( $id, $proposal ) {
+		$menu = self::ai_operations();
+		if ( ! isset( $menu[ $id ] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_AI_ACTION', 'error' => 'Morpheus has no mechanism to propose for this finding, so nothing was changed. The steps on it are the way.' );
+		}
+		if ( empty( self::for_id( $id )['ai'] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_AI_ACTION', 'error' => 'This finding is not marked as one Morpheus may act on, so nothing was changed.' );
+		}
+
+		$allowed = $menu[ $id ]['op'];
+		$asked   = is_array( $proposal ) && isset( $proposal['op'] ) ? (string) $proposal['op'] : '';
+		if ( $asked !== $allowed ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'AI_OP_NOT_ALLOWED', 'error' => 'The proposal asked for "' . $asked . '", which is not what Morpheus may do about this finding ("' . $allowed . '"). Nothing was changed.' );
+		}
+
+		$args = ( is_array( $proposal ) && isset( $proposal['args'] ) && is_array( $proposal['args'] ) ) ? $proposal['args'] : array();
+
+		switch ( $allowed ) {
+			case 'wp_config_timezone':
+				return self::ai_wp_config_timezone( $id, $args );
+		}
+		return array( 'ok' => false, 'id' => $id, 'code' => 'AI_OP_UNKNOWN', 'error' => 'Morpheus does not know how to perform "' . $allowed . '". Nothing was changed.' );
+	}
+
+	/**
+	 * The one operation the vocabulary has so far: put the site's timezone into
+	 * wp-config.php.
+	 *
+	 * The timezone is NOT taken on trust. It must be a real PHP timezone identifier,
+	 * and it must be the one WordPress already reports — a model that proposed a
+	 * plausible-looking string, or the wrong city, gets a refusal rather than a config
+	 * change nobody can explain. Then the same rails as every other wp-config edit:
+	 * back the file up, write atomically, read it back, restore on any doubt.
+	 */
+	private static function ai_wp_config_timezone( $id, $args ) {
+		$tz = isset( $args['timezone'] ) ? trim( (string) $args['timezone'] ) : '';
+		if ( '' === $tz || ! in_array( $tz, timezone_identifiers_list(), true ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'BAD_TIMEZONE', 'error' => '"' . $tz . '" is not a PHP timezone identifier, so nothing was changed. They look like "Australia/Sydney".' );
+		}
+		$site_tz = get_option( 'timezone_string' );
+		if ( is_string( $site_tz ) && '' !== $site_tz && $site_tz !== $tz ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'TZ_MISMATCH', 'error' => 'This site is set to ' . $site_tz . ' in WordPress, and the proposal said ' . $tz . '. Morpheus will not write a timezone the site itself disagrees with — change it in Settings → General first if the site is wrong. Nothing was changed.' );
+		}
+
+		$file = self::wp_config_path();
+		if ( ! $file ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_WP_CONFIG', 'error' => 'Morpheus cannot find wp-config.php to edit. Nothing was changed.' );
+		}
+		$original = @file_get_contents( $file );
+		if ( false === $original ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'UNREADABLE', 'error' => 'wp-config.php could not be read. Nothing was changed.' );
+		}
+
+		$rewritten = self::wp_config_set_timezone( $original, $tz );
+		if ( isset( $rewritten['error'] ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => $rewritten['code'], 'error' => $rewritten['error'] );
+		}
+
+		$backup = self::backup_file( $file );
+		if ( is_wp_error( $backup ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_BACKUP', 'error' => 'No backup of wp-config.php could be taken, so Morpheus did not touch it: ' . $backup->get_error_message() );
+		}
+		if ( ! self::write_atomic( $file, $rewritten['body'] ) ) {
+			self::restore_file_backup( $backup, $file );
+			return array( 'ok' => false, 'id' => $id, 'code' => 'WRITE_FAILED', 'error' => 'wp-config.php could not be written; the original was put back. Nothing was changed.' );
+		}
+
+		$back = @file_get_contents( $file );
+		if ( ! is_string( $back ) || ! preg_match( '/date_default_timezone_set\s*\(\s*[\'"]' . preg_quote( $tz, '/' ) . '[\'"]\s*\)/', $back ) ) {
+			self::restore_file_backup( $backup, $file );
+			return array( 'ok' => true, 'id' => $id, 'did' => 'attempted', 'verified' => false, 'restored' => true, 'error' => 'The line did not read back as the timezone asked for, so wp-config.php was restored from the backup. Nothing was changed.' );
+		}
+		return array( 'ok' => true, 'id' => $id, 'did' => 'added date_default_timezone_set( \'' . $tz . '\' ) to wp-config.php', 'verified' => true, 'restored' => false, 'error' => null );
+	}
+
+	/**
+	 * Put a `date_default_timezone_set( '…' );` in wp-config.php — replacing one that is
+	 * already there, refusing when there is more than one (PHP would run the first, so
+	 * editing the other silently changes nothing).
+	 *
+	 * PUBLIC and pure for the same reason `wp_config_set_define()` is: the harness has to
+	 * be able to exercise the rule directly, and the refusals are the part that decides
+	 * whether a live config gets edited at all.
+	 */
+	public static function wp_config_set_timezone( $body, $timezone ) {
+		$pattern = '/date_default_timezone_set\s*\(\s*[\'"](.*?)[\'"]\s*\)\s*;/i';
+		$count   = preg_match_all( $pattern, $body );
+		if ( $count > 1 ) {
+			return array( 'code' => 'AMBIGUOUS_CALL', 'error' => 'wp-config.php sets the PHP timezone more than once, and PHP would use the first. Morpheus will not choose for you, so nothing was changed.' );
+		}
+
+		$line = "date_default_timezone_set( '" . $timezone . "' );";
+		if ( 1 === $count ) {
+			$rewritten = preg_replace_callback( $pattern, function () use ( $line ) { return $line; }, $body, 1 );
+			if ( ! is_string( $rewritten ) || $rewritten === $body ) {
+				return array( 'code' => 'NO_CHANGE', 'error' => 'Morpheus could not rewrite the timezone line. Nothing was changed.' );
+			}
+			return array( 'body' => $rewritten );
+		}
+
+		$marker = "/* That's all, stop editing!";
+		$pos    = strpos( $body, $marker );
+		if ( false !== $pos ) {
+			return array( 'body' => substr( $body, 0, $pos ) . $line . "\n" . substr( $body, $pos ) );
+		}
+		return array( 'body' => rtrim( $body, "\n" ) . "\n\n" . $line . "\n" );
+	}
+
+	/**
 	 * Annotate findings with their action, and count the ones that have none.
 	 *
 	 * A finding that PASSES needs no action, so it is not unmapped — the count is
@@ -533,13 +692,23 @@ class Morpheus_Fixes {
 			$entry = self::for_id( $f['id'] ?? '' );
 			if ( $entry ) {
 				$verified = isset( $f['action_does'] ) && is_string( $f['action_does'] ) ? trim( $f['action_does'] ) : '';
-				$findings[ $i ]['fix'] = array(
+				$fix = array(
 					'kind'    => $entry['kind'],
 					'label'   => $entry['label'],
 					'does'    => '' !== $verified ? $verified : $entry['does'],
 					'warning' => $entry['warning'] ?? null,
 					'steps'   => $entry['steps'] ?? array(),
 				);
+				// Whether Morpheus has a MECHANISM it could PROPOSE for this finding,
+				// in the operator's words. The key is added only when there is one, so
+				// every other finding's payload is exactly what it was — a key that is
+				// always present and usually null is how a panel comes to render an
+				// empty button.
+				if ( ! empty( $entry['ai'] ) ) {
+					$menu     = self::ai_operations();
+					$fix['ai'] = $menu[ $f['id'] ?? '' ]['label'] ?? '';
+				}
+				$findings[ $i ]['fix'] = $fix;
 				unset( $findings[ $i ]['action_does'] );
 				continue;
 			}
@@ -667,10 +836,18 @@ class Morpheus_Fixes {
 	 * leaked widget token turning this route into arbitrary file moves on a
 	 * customer's site.
 	 */
-	public static function apply( $id ) {
+	public static function apply( $id, $proposal = null ) {
 		$entry = self::for_id( $id );
 		if ( ! $entry ) {
 			return array( 'ok' => false, 'id' => $id, 'error' => 'Morpheus has no fix registered for "' . $id . '". Nothing was changed.', 'code' => 'NO_FIX' );
+		}
+		// A PROPOSAL means the operator pressed a button that says what will happen,
+		// after seeing the exact change. It goes through its own validated path and is
+		// recorded like every other attempt — including its refusals.
+		if ( null !== $proposal ) {
+			$proposed = self::apply_ai( $id, $proposal );
+			self::record_attempt( $id, $proposed );
+			return $proposed;
 		}
 		if ( 'auto' !== $entry['kind'] ) {
 			return array(

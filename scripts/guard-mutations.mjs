@@ -3099,6 +3099,116 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // ⚠️ AN ENTRY WITH NO OPERATION IS A BUTTON THAT CAN ONLY FAIL. The menu is the whole
+    // bound on what an AI may ask for; an entry that names nothing turns the panel's
+    // promise into a dead control.
+    why: 'Leaves the vocabulary entry without an operation, so the AI FIX button has nothing it is allowed to ask for.',
+    find: "\t\t\t\t'op'    => 'wp_config_timezone',",
+    replace: "\t\t\t\t'op'    => '',",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // THE GATE ITSELF. Without this comparison, a proposal may name ANY operation and the
+    // plugin would look up its own menu and run whatever it found — which is the model
+    // choosing what runs on a live site.
+    why: 'Stops checking the proposed operation against the one this finding allows, so any operation can be applied.',
+    find: '\t\tif ( $asked !== $allowed ) {',
+    replace: '\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // A timezone is a value on the command line of someone else's config file. Checking it
+    // against PHP's own list is the difference between a valid line and a broken one.
+    why: 'Stops validating the timezone against PHP\'s own identifiers, so any string the model supplies is written into wp-config.php.',
+    find: '\t\tif ( \'\' === $tz || ! in_array( $tz, timezone_identifiers_list(), true ) ) {',
+    replace: '\t\tif ( \'\' === $tz ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // wp-config.php is the one file an owner cannot afford to lose, and every other fix in
+    // this file backs it up first. An AI-authored edit is not a special case.
+    why: 'Edits wp-config.php with no backup, so an AI-authored change has nothing to be restored from.',
+    find: '\t\t$backup = self::backup_file( $file );\n\t\tif ( is_wp_error( $backup ) ) {\n\t\t\treturn array( \'ok\' => false, \'id\' => $id, \'code\' => \'NO_BACKUP\', \'error\' => \'No backup of wp-config.php could be taken, so Morpheus did not touch it: \' . $backup->get_error_message() );\n\t\t}\n\t\tif ( ! self::write_atomic( $file, $rewritten[\'body\'] ) ) {',
+    replace: '\t\t$backup = false;\n\t\tif ( false ) {\n\t\t\treturn array( \'ok\' => false, \'id\' => $id, \'code\' => \'NO_BACKUP\', \'error\' => \'No backup of wp-config.php could be taken, so Morpheus did not touch it: \' . $backup->get_error_message() );\n\t\t}\n\t\tif ( ! self::write_atomic( $file, $rewritten[\'body\'] ) ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // Two timezone lines and PHP runs the FIRST, so editing the other one silently changes
+    // nothing while reporting success.
+    why: 'Stops refusing a wp-config.php with two timezone lines, so Morpheus rewrites one and PHP runs the other.',
+    find: "\t\tif ( $count > 1 ) {\n\t\t\treturn array( 'code' => 'AMBIGUOUS_CALL',",
+    replace: "\t\tif ( false ) {\n\t\t\treturn array( 'code' => 'AMBIGUOUS_CALL',",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // `auto` would put an AI-reachable finding into the bulk press, which applies without
+    // anyone reading it. That is the one thing this design must never allow.
+    why: 'Marks the AI-reachable finding `auto`, so FIX ALL sweeps a change nobody has read.',
+    find: "\t\t\t'php_default_timezone' => array(\n\t\t\t\t'kind'  => 'guided',",
+    replace: "\t\t\t'php_default_timezone' => array(\n\t\t\t\t'kind'  => 'auto',",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // The vocabulary travels with the scan. Without it the app cannot build a question the
+    // model is allowed to answer, and would have to be trusted with the bound instead.
+    why: 'Stops the scan carrying the vocabulary, so the bound would have to live in the app.',
+    find: "\t\t\t'ai_operations'     => class_exists( 'Morpheus_Fixes' ) ? Morpheus_Fixes::ai_operations() : array(),\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/functions/siteHealth.js',
+    // ⚠️ ASKING MUST NOT APPLY. Changing the read to a write is the single edit that turns
+    // "show me what you would do" into "do it", with no operator in between.
+    why: 'Makes the propose action WRITE to the site, so asking what Morpheus would do applies it.',
+    find: '    const res = await wpHealth(conn, {});\n    if (res.status === 0) {\n      throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || \'no response\'}`), { status: 502, code: \'UNREACHABLE\' });',
+    replace: '    const res = await wpFix(conn, findingId);\n    if (res.status === 0) {\n      throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || \'no response\'}`), { status: 502, code: \'UNREACHABLE\' });',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/functions/siteHealth.js',
+    // A call that names no role silently takes default_model @ default_temperature, which
+    // the model-decisions record already caught truncating a small call in the product.
+    why: 'Drops the role, so the proposal call silently runs on the default model at the default temperature.',
+    find: '        role: PROPOSAL_ROLE,\n',
+    replace: '',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/functions/siteHealth.js',
+    // A schema call that is cut off mid-object THROWS, and the operator sees a broken
+    // button. The explicit budget is what keeps a reasoning-shaped answer from being
+    // truncated.
+    why: 'Drops the token budget, so a truncated answer throws and reads as a broken button.',
+    find: '        maxTokens: 1600,\n',
+    replace: '',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/functions/siteHealth.js',
+    // ⚠️ THE ANSWER IS THE MODEL\'S, THE DECISION IS OURS. Trusting the raw answer is how a
+    // model gets to name the operation that runs on a live site.
+    why: 'Stops validating the answer, so whatever the model returned is offered to the operator as a change.',
+    find: '    const verdict = validateProposal(raw, { findingId, menu });',
+    replace: '    const verdict = { ok: true, cannot: null, proposal: raw };',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/HealthTab.jsx',
+    // And on the panel: ASK must be a press that changes nothing.
+    why: 'Makes the AI FIX button apply its own answer, so an AI change lands without the operator reading it.',
+    find: '                const answer = await onPropose(t);',
+    replace: '                const answer = await onPropose(t); if (answer?.proposal) onFix(t, { proposal: answer.proposal });',
+  },
+  {
+    guard: 'verify-site-health.mjs',
     file: 'src/lib/errorLogText.js',
     // THE HONEST-SCOPE CLAIM. A bounded tail quoted without saying it is a tail is how a
     // partial read becomes the whole story — the same failure the panel's own copy is
@@ -3166,8 +3276,8 @@ export const MUTATIONS = [
     // dead code that reads like a fix. Two lines means Morpheus cannot know which one
     // WordPress uses — so it must refuse, not pick.
     why: 'Stops refusing an ambiguous WP_DEBUG_LOG, so Morpheus rewrites one of two definitions and changes whichever line it happened to match.',
-    find: "\t\tif ( $count > 1 ) {",
-    replace: "\t\tif ( false ) {",
+    find: '\t\tif ( $count > 1 ) {\n\t\t\treturn array(\n\t\t\t\t\'code\'  => \'AMBIGUOUS_DEFINE\',',
+    replace: '\t\tif ( false ) {\n\t\t\treturn array(\n\t\t\t\t\'code\'  => \'AMBIGUOUS_DEFINE\',',
   },
   {
     guard: 'verify-site-health.mjs',

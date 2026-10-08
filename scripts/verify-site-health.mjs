@@ -32,6 +32,7 @@ import {
   normaliseFix, FIX_KINDS,
 } from '../server/src/lib/siteHealth.js';
 import { errorLogAsText } from '../src/lib/errorLogText.js';
+import { validateProposal, describeProposal } from '../server/src/lib/aiFixProposal.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -317,10 +318,9 @@ check('…and it will not overwrite a file that is already there',
 // missing and when it is ambiguous, rather than adding a second one that never runs.
 // Asserted on the CONDITIONS, not on the error strings: the codes appear in the
 // messages either way, so a string check would survive disabling the branch.
+const defineRule = fixesPhp.slice(fixesPhp.indexOf('function wp_config_set_define'), fixesPhp.indexOf('function wp_config_value_is'));
 check('…and it changes the existing define rather than adding a dead second one',
-  /function wp_config_set_define\(/.test(fixesPhp)
-  && /if \( 0 === \$count \) \{/.test(fixesPhp)
-  && /if \( \$count > 1 \) \{/.test(fixesPhp), true);
+  /if \( 0 === \$count \) \{/.test(defineRule) && /if \( \$count > 1 \) \{/.test(defineRule), true);
 check('…and the config goes back if the log will not move',
   /The log file could not be moved to/.test(fixesPhp) && /restore_file_backup\( \$backup, \$config \)/.test(fixesPhp), true);
 
@@ -381,12 +381,17 @@ check('a warning is carried when the action needs one', normaliseFix({ kind: 'au
 const actionSet = fn.match(/const ACTIONS = new Set\(\[([^\]]*)\]\)/);
 const actionNames = actionSet ? [...actionSet[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]) : [];
 check('the action set is declared once and includes every moved action', ['scan', 'policy', 'apply', 'fix', 'updates', 'clean'].every((a) => actionNames.includes(a)), true);
-check('…sending only the finding id to the site', /wpFix\(conn, finding\)/.test(fn), true);
+// A fix sends the finding, and OPTIONALLY a proposal the operator has already seen. The
+// proposal is data the PLUGIN re-validates against the site's own state — this handler
+// decides what may be ASKED, not what is safe to write.
+check('…sending the finding, and a proposal only when there is one',
+  /wpFix\(conn, finding, proposal\)/.test(fn) && /const proposal = body\?\.proposal/.test(fn), true);
 check('…and refusing an empty id', /finding id required/.test(fn), true);
 // A site declining (409) is an answer, not a failure.
 check('a declined fix is not reported as an error', /res\.status !== 200 && res\.status !== 409/.test(fn), true);
 check('a plugin too old is named', /PLUGIN_TOO_OLD/.test(fn), true);
-check('the client sends nothing but the id', /wpCall\(conn, 'fix', \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
+check('the client sends the id alone unless a proposal was approved',
+  /wpCall\(conn, 'fix', proposal \? \{ id, proposal \} : \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
 
 // A fix that worked must not leave its own finding sitting on the screen. The
 // panel re-reads the site after a successful fix and only FIX ALL opts out,
@@ -569,6 +574,104 @@ check('…and is empty rather than wrong when there is no log',
 // in wp-content/debug.log — false on every site whose log has been moved out of the root.
 check('the "more like this" line names the real path, not the old default',
   /wp-content\/debug\.log'/.test(panelSrc) === false && /more like this in/.test(panelSrc), true);
+
+// ── 8b. AI FIX: the model chooses, the PLUGIN decides ────────────────────────
+//
+// Rob's directive: *"if there is not an actionable fix for an error lets build the
+// capability"*. The capability is a vocabulary the plugin owns, one operation per
+// finding, each one something this build can perform, VERIFY and undo. The model's whole
+// job is to choose one of those and fill in its arguments. Every claim below is the
+// reason that is safe; each has a mutation that turns it red.
+const fixesCode = read('wp-plugin/morpheus/includes/class-fixes.php')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const fnHealth = read('server/src/functions/siteHealth.js');
+const proposer = read('server/src/lib/aiFixProposal.js');
+
+check('the vocabulary lives in the plugin, not in the prompt',
+  /public static function ai_operations\(\)/.test(fixesCode), true);
+// Every finding offered the button must have an operation AND an argument list, or the
+// panel would show a control that can only fail.
+const aiIds = [...fixesCode.matchAll(/'([a-z0-9_]+)' => array\(\s*'kind'\s*=>\s*'guided'[\s\S]{0,900}?'ai'\s*=>\s*true/g)].map((m) => m[1]);
+check('at least one finding offers a mechanism (parser sanity)', aiIds.length >= 1, true);
+const menuBlock = fixesCode.slice(fixesCode.indexOf('function ai_operations()'), fixesCode.indexOf('function apply_ai('));
+check('…and every one of them is in the menu the scan sends',
+  aiIds.every((id) => menuBlock.includes(`'${id}' =>`)), true);
+check('…and each menu entry names its operation and its arguments',
+  aiIds.every((id) => {
+    const at = menuBlock.indexOf(`'${id}' =>`);
+    const body = menuBlock.slice(at, at + 900);
+    return /'op'\s*=>\s*'[a-z_]+'/.test(body) && /'args'\s*=>\s*array\(/.test(body);
+  }), true);
+check('the scan carries the vocabulary, from the plugin', /'ai_operations'\s*=>\s*class_exists\( 'Morpheus_Fixes' \)/.test(healthSrc), true);
+
+// THE GATE. An AI-authored change is only ever applied through apply_ai(), and only ever
+// against the operation the finding itself allows.
+check('a proposal is refused when it asks for an operation this finding does not allow',
+  /AI_OP_NOT_ALLOWED/.test(fixesCode) && /\$asked !== \$allowed/.test(fixesCode), true);
+// The CONDITION, not the words around it: `timezone_identifiers_list()` also appears in
+// the menu's own description of the argument, so a check for the name was satisfied by
+// the prose describing the rule while the rule itself was disabled. Asserted on the call.
+check('…and an argument is checked against the site, not taken on trust',
+  /! in_array\( \$tz, timezone_identifiers_list\(\), true \)/.test(fixesCode) && /BAD_TIMEZONE/.test(fixesCode), true);
+check('…through the same rails as every other config edit (backup, read back, restore)',
+  /function ai_wp_config_timezone/.test(fixesCode)
+  && /self::backup_file\( \$file \)/.test(fixesCode)
+  && /self::restore_file_backup\( \$backup, \$file \)/.test(fixesCode), true);
+// Scoped to THIS rule: `if ( $count > 1 )` is the same line in the WP_DEBUG_LOG rewrite,
+// so an unscoped check stayed green while this one's refusal was disabled.
+// Bounded, not 'to the end of the file': the WP_DEBUG_LOG rewrite comes LATER and carries
+// the same `if ( $count > 1 )` line, so a slice that ran on included it and the check
+// stayed green with this rule's refusal disabled.
+const tzAt = fixesCode.indexOf('function wp_config_set_timezone');
+const tzRule = fixesCode.slice(tzAt, tzAt + 1400);
+check('…and the rule that rewrites the line is pure and refuses an ambiguous file',
+  /function wp_config_set_timezone\( \$body, \$timezone \) \{/.test(tzRule) && /if \( \$count > 1 \) \{/.test(tzRule), true);
+// An `ai` finding stays GUIDED: nothing is swept into FIX ALL, and nothing applies itself.
+check('an AI finding is still `guided`, so no bulk run can ever include it',
+  /'ai'\s*=>\s*true/.test(fixesCode) && aiIds.length > 0
+  && [...fixesCode.matchAll(/'([a-z0-9_]+)' => array\(\s*'kind'\s*=>\s*'(auto|guided)'[\s\S]{0,900}?'ai'\s*=>\s*true/g)].every((m) => m[2] === 'guided'), true);
+
+// THE APP HALF. Proposing is read-only; applying passes the proposal as data.
+const proposeBranch = fnHealth.slice(fnHealth.indexOf("action === 'propose'"), fnHealth.indexOf("action === 'fix'"));
+check('proposing changes nothing on the site', /wpFix\(|wpClean\(|wpCall\(/.test(proposeBranch), false);
+check('…it reads the site, and the vocabulary from the site', /wpHealth\(conn, \{\}\)/.test(proposeBranch) && /scan\.ai_operations/.test(proposeBranch), true);
+check('…and it names a role, so the call is not silently on the default model', /role: PROPOSAL_ROLE/.test(proposeBranch), true);
+check('…with an explicit budget, because a truncated schema call throws', /maxTokens:\s*[0-9]{3,}/.test(proposeBranch), true);
+check('…and the answer is checked before the operator ever sees a button',
+  /validateProposal\(raw, \{ findingId, menu \}\)/.test(proposeBranch) && /verdict\.ok/.test(proposeBranch), true);
+
+// The pure rules, CALLED with fixtures rather than grepped for (H19).
+const menu = { op: 'wp_config_timezone', label: 'Write the timezone', does: 'adds a line', args: { timezone: 'a PHP timezone' } };
+check('the model choosing another operation is refused',
+  validateProposal({ op: 'deactivate_plugin', why: 'because' }, { findingId: 'php_default_timezone', menu }).code, 'AI_OP_NOT_ALLOWED');
+check('…an argument the operation does not take is refused, not dropped',
+  validateProposal({ op: 'wp_config_timezone', args: { timezone: 'UTC', force: 'yes' }, why: 'because' }, { findingId: 'php_default_timezone', menu }).code, 'AI_ARG_NOT_ALLOWED');
+check('…a missing argument is refused',
+  validateProposal({ op: 'wp_config_timezone', args: {}, why: 'because' }, { findingId: 'php_default_timezone', menu }).code, 'AI_ARG_MISSING');
+check('…an answer with no reason is refused, because there is nothing to show',
+  validateProposal({ op: 'wp_config_timezone', args: { timezone: 'UTC' } }, { findingId: 'php_default_timezone', menu }).code, 'NO_REASON');
+check('…and a good answer becomes a proposal naming the finding',
+  validateProposal({ op: 'wp_config_timezone', args: { timezone: 'Australia/Sydney' }, why: 'so logs agree' }, { findingId: 'php_default_timezone', menu }).proposal,
+  { finding: 'php_default_timezone', op: 'wp_config_timezone', args: { timezone: 'Australia/Sydney' }, why: 'so logs agree' });
+// REFUSING is an answer, not a failure. Most findings on a WordPress site are fixed by a
+// person, and a model that says so is being useful.
+const declined = validateProposal({ cannot: 'This is your host\'s PHP version — ask them.' }, { findingId: 'php_version', menu: {} });
+check('…and Morpheus declining to act is a SUCCESS with its reason',
+  declined.ok === true && declined.proposal === null && declined.cannot.includes('host'), true);
+const healthPanel = read('src/components/matrix/website/HealthTab.jsx');
+check('…a model that refuses can never leave a button on screen',
+  /asked\.proposal \?/.test(healthPanel) && /asked\.cannot \?/.test(healthPanel), true);
+// Asking must not be applying: the button that asks is wired to onPropose, and the one
+// that applies is wired to onFix WITH the proposal. A single control doing both is how an
+// AI change lands without anyone reading it.
+check('…and asking is a separate press from applying',
+  /onClick=\{\(\) => onFix\(t, \{ proposal: asked\.proposal \}\)\}/.test(healthPanel)
+  && /const answer = await onPropose\(t\)/.test(healthPanel), true);
+// Between the button and the apply control there must be NO call to onFix — that gap is
+// the operator's, and one control doing both is how an AI change lands unread.
+const askBlock = healthPanel.slice(healthPanel.indexOf('AI FIX'), healthPanel.indexOf('onClick={() => onFix(t, { proposal: asked.proposal })}'));
+check('…and nothing between ASK and APPLY can change the site', /onFix\(/.test(askBlock), false);
+
 
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

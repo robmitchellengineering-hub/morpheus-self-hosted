@@ -1155,7 +1155,8 @@ const actions = actionSet ? [...actionSet[1].matchAll(/'([a-z]+)'/g)].map((m) =>
 check('the app has a fix action', /action === 'fix'/.test(fnSrc) && actions.includes('fix'), true);
 check('…and the robots quarantine is reachable through the signed routes it names', actions.includes('scan') && actions.includes('fix'), true);
 check('…which sends the site\'s own finding id, not a mechanism name', /body\?\.finding \|\| body\?\.id/.test(fnSrc), true);
-check('…to the plugin\'s /fix route', /wpFix\(conn, finding\)/.test(fnSrc) && /wpCall\(conn, 'fix', \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
+check('…to the plugin\'s /fix route', /wpFix\(conn, finding, proposal\)/.test(fnSrc)
+  && /wpCall\(conn, 'fix', proposal \? \{ id, proposal \} : \{ id \}\)/.test(read('server/src/lib/wpPlugin.js')), true);
 check('…and the plugin registers that route (signed)', /register_rest_route\( MORPHEUS_REST_NS, '\/fix'/.test(read('wp-plugin/morpheus/includes/class-rest.php')), true);
 check('the app reads the quarantine evidence out of the result', /quarantineEvidence\(res\.data, finding\)/.test(fnSrc), true);
 

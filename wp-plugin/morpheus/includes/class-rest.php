@@ -75,7 +75,19 @@ class Morpheus_REST {
 		if ( '' === $id ) {
 			return self::err( 'bad_request', 'Body needs the finding "id" to fix.', 400 );
 		}
-		$result = Morpheus_Fixes::apply( $id );
+		// An optional PROPOSAL: the operator saw exactly what Morpheus would do and
+		// pressed apply. It is NOT trusted — Morpheus_Fixes::apply_ai() checks the
+		// operation against the one this finding is allowed, and every argument against
+		// the site's own state, before anything is touched. This route is the only door
+		// an AI-authored change can come through, and it is a narrow one on purpose.
+		$proposal = null;
+		if ( isset( $body['proposal'] ) && is_array( $body['proposal'] ) ) {
+			$proposal = array(
+				'op'   => isset( $body['proposal']['op'] ) ? sanitize_text_field( (string) $body['proposal']['op'] ) : '',
+				'args' => isset( $body['proposal']['args'] ) && is_array( $body['proposal']['args'] ) ? $body['proposal']['args'] : array(),
+			);
+		}
+		$result = Morpheus_Fixes::apply( $id, $proposal );
 		return new WP_REST_Response( $result, empty( $result['ok'] ) ? 409 : 200 );
 	}
 

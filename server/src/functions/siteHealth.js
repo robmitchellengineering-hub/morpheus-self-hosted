@@ -11,6 +11,9 @@
 //            and its own cache, because it checksums core, walks uploads/ and
 //            may download plugin packages — it must not run when a panel opens.
 //   fix    — apply ONE finding, by id, that the site's own registry marks `auto`
+//   propose— ASK what Morpheus would do about a finding it has a mechanism for,
+//            and change nothing. The vocabulary is the site's; the model chooses
+//            from it; the answer is checked here and again before anything is written.
 //   updates— force the plugin's own update check
 //   apply  — apply the updates the policy allows, one snapshotted target at a time
 //   logs   — the site's PHP error log, READ rather than merely measured
@@ -24,7 +27,11 @@
 // are reported and never applied, because re-downloading core over a live site
 // and removing an account are the owner's decisions.
 import { prisma } from '../db.js';
-import { getWpConnection, wpFix, wpUpdates } from '../lib/wpPlugin.js';
+import { getWpConnection, wpFix, wpUpdates, wpHealth } from '../lib/wpPlugin.js';
+import { invokeAI } from '../ai.js';
+import {
+  PROPOSAL_ROLE, PROPOSAL_SCHEMA, buildProposalPrompt, validateProposal, describeProposal,
+} from '../lib/aiFixProposal.js';
 import { scanSite, scanCleanSite, readErrorLog } from '../lib/siteScan.js';
 import { getPolicy, savePolicy } from '../lib/siteMaintenanceStore.js';
 import { applyAllowedUpdates } from '../lib/siteApply.js';
@@ -38,7 +45,7 @@ import { quarantineEvidence, undoLine } from '../lib/robotsQuarantine.js';
 import { isPluginTooOld } from '../lib/siteHealth.js';
 import { cleanQuarantineEvidence, cleanUndoLine } from '../lib/siteClean.js';
 
-const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'updates', 'clean', 'logs']);
+const ACTIONS = new Set(['scan', 'policy', 'apply', 'fix', 'propose', 'updates', 'clean', 'logs']);
 
 export default async function handler({ user, body, req }) {
   const { projectId, action } = body || {};
@@ -94,6 +101,87 @@ export default async function handler({ user, body, req }) {
     return { ok: res.data?.ok === true, updates: res.data || null };
   }
 
+  if (action === 'propose') {
+    // ASK MORPHEUS WHAT IT WOULD DO — and change nothing.
+    //
+    // The whole design rests on this branch being read-only. The vocabulary comes from
+    // the SITE (its own ai_operations), not from this request, so a compromised or
+    // confused client cannot widen what may be proposed; the model chooses from that
+    // vocabulary and nothing else; and the answer is checked here AND again by the
+    // plugin before any file is touched. What comes back is shown to the operator, who
+    // presses apply or does not.
+    const findingId = String(body?.finding || body?.id || '');
+    if (!findingId) throw Object.assign(new Error('finding id required'), { status: 400 });
+
+    const conn = await getWpConnection(projectId, user.id);
+    if (!conn) throw Object.assign(new Error('No WordPress site connected.'), { status: 400, code: 'NOT_CONNECTED' });
+
+    const res = await wpHealth(conn, {});
+    if (res.status === 0) {
+      throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || 'no response'}`), { status: 502, code: 'UNREACHABLE' });
+    }
+    const old = isPluginTooOld(res, null);
+    if (old.tooOld) throw Object.assign(new Error(old.message), { status: 409, code: 'PLUGIN_TOO_OLD' });
+
+    const scan = res.data || {};
+    const all = [...(scan.tests || []), ...(scan.own_checks || [])];
+    const finding = all.find((f) => String(f?.id || '') === findingId);
+    if (!finding) {
+      throw Object.assign(new Error('That finding is not on the site any more — re-scan and try again. Nothing was changed.'), { status: 404, code: 'FINDING_GONE' });
+    }
+    const menu = (scan.ai_operations || {})[findingId] || null;
+    if (!menu || !menu.op) {
+      throw Object.assign(new Error('Morpheus has no mechanism to propose for this finding. Nothing was changed.'), { status: 409, code: 'NO_AI_ACTION' });
+    }
+
+    const prompt = buildProposalPrompt({
+      finding,
+      menu,
+      site: {
+        wpVersion: scan.wp_version,
+        phpVersion: scan.php_version,
+        timezone: scan.host?.timezone_string || null,
+        phpTimezone: scan.host?.php_timezone || null,
+      },
+    });
+
+    let raw = null;
+    try {
+      const { result } = await invokeAI({
+        userId: user.id,
+        prompt,
+        schema: PROPOSAL_SCHEMA,
+        // The recorded slot for "analyse, don't build". Named explicitly: a call that
+        // names no role silently takes default_model @ default_temperature, and this is
+        // a reasoning-shaped request, not a classifier.
+        role: PROPOSAL_ROLE,
+        // Generous rather than tight. It answers with a sentence and a value, but the
+        // reasoning tax is real and a schema call that is cut off mid-object THROWS —
+        // which would read to the operator as a broken button.
+        maxTokens: 1600,
+        task: 'ai_fix_proposal',
+      });
+      raw = result;
+    } catch (e) {
+      throw Object.assign(new Error(`Morpheus could not work out what to do about this one: ${e.message}. Nothing was changed.`), { status: 502, code: 'PROPOSAL_FAILED' });
+    }
+
+    const verdict = validateProposal(raw, { findingId, menu });
+    if (!verdict.ok) {
+      throw Object.assign(new Error(verdict.error), { status: 409, code: verdict.code });
+    }
+    return {
+      ok: true,
+      // The honest "no" — the model declining to act, with its reason, is an answer this
+      // design prefers to a plausible-looking change. The panel shows it and offers no
+      // button.
+      cannot: verdict.cannot,
+      proposal: verdict.proposal,
+      menu,
+      describe: describeProposal(verdict.proposal, menu),
+    };
+  }
+
   if (action === 'fix') {
     const finding = String(body?.finding || body?.id || '');
     if (!finding) throw Object.assign(new Error('finding id required'), { status: 400 });
@@ -101,7 +189,13 @@ export default async function handler({ user, body, req }) {
     const conn = await getWpConnection(projectId, user.id);
     if (!conn) throw Object.assign(new Error('No WordPress site connected.'), { status: 400, code: 'NOT_CONNECTED' });
 
-    const res = await wpFix(conn, finding);
+    // A proposal is applied through the SAME route as every other fix, and the plugin
+    // re-validates it against the site's own state. This handler does not decide what is
+    // safe to write — it decides what may be asked.
+    const proposal = body?.proposal && typeof body.proposal === 'object'
+      ? { op: String(body.proposal.op || ''), args: body.proposal.args && typeof body.proposal.args === 'object' ? body.proposal.args : {} }
+      : null;
+    const res = await wpFix(conn, finding, proposal);
     if (res.status === 0) {
       throw Object.assign(new Error(`Could not reach ${conn.siteUrl} — ${res.error || 'no response'}`), { status: 502, code: 'UNREACHABLE' });
     }
