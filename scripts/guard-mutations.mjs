@@ -2683,6 +2683,54 @@ export const MUTATIONS = [
     find: '    if (kind !== \'model\' && kind !== \'cab\') return null;',
     replace: '    if (false) return null;',
   },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // A site that never answered is NOT the site returning a 500. The remedies differ —
+    // one is DNS/TLS/host, the other is the site's own code — so this is the branch that
+    // keeps "we could not reach it" from being reported as "it is broken".
+    why: 'Treats a site that never answered as an HTTP error, so a network failure is reported as the site\'s own fault.',
+    find: 'if (status === 0) {',
+    replace: 'if (false) {',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // "We did not look" must never be 0% (a site nobody has checked reading as broken)
+    // and never 100% (reading as perfect).
+    why: 'Reports a window with no checks as 0% uptime, so a site nobody has ever checked reads as permanently down.',
+    find: 'out.uptime[`${days}d`] = null;',
+    replace: 'out.uptime[`${days}d`] = 0;',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptime.js',
+    // An outage happening RIGHT NOW is the one an owner most needs to see, and it is the
+    // one a naive implementation withholds until it recovers.
+    why: 'Drops an outage that has not recovered yet, so a site that is down this minute reports no incidents.',
+    find: '    open.duration_ms = durationBetween(open.started_at, null, now);\n    out.incidents.push(open);',
+    replace: '    open.duration_ms = durationBetween(open.started_at, null, now);',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/functions/siteUptime.js',
+    // The row is written AFTER the probe returns, so stamping it when it finished makes
+    // a five-second response look freshly checked — the one number the panel shows as
+    // "checked N minutes ago".
+    why: 'Stamps the check when the row is written rather than when the probe started, so a slow site looks freshly checked.',
+    find: 'checkedAt: startedAt',
+    replace: 'checkedAt: new Date()',
+  },
+  {
+    guard: 'verify-site-uptime.mjs',
+    file: 'server/src/lib/siteUptimeStore.js',
+    // H11: the migration ships with the code and production applies additive SQL by hand,
+    // so for a while the table does not exist. Throwing there would break a page nobody
+    // expects this to break.
+    why: 'Throws when the uptime table has not been migrated yet, instead of reporting that there is no history.',
+    find: 'if (isMissingUptimeTable(err)) return [];',
+    replace: 'if (false) return [];',
+  },
 ];
 
 /**

@@ -137,6 +137,7 @@ const HARD = [
   'verify-plan-reconciliation.mjs',
   'verify-applied-ops.mjs',
   'verify-broker-minting.mjs',
+  'verify-site-uptime.mjs',
   'boot-smoke.mjs',
 ];
 
