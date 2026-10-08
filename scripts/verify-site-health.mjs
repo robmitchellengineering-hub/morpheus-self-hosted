@@ -619,7 +619,11 @@ check('…through the same rails as every other config edit (backup, read back, 
   && /self::restore_file_backup\( \$backup, \$file \)/.test(fixesCode), true);
 // Scoped to THIS rule: `if ( $count > 1 )` is the same line in the WP_DEBUG_LOG rewrite,
 // so an unscoped check stayed green while this one's refusal was disabled.
-const tzRule = fixesCode.slice(fixesCode.indexOf('function wp_config_set_timezone'));
+// Bounded, not 'to the end of the file': the WP_DEBUG_LOG rewrite comes LATER and carries
+// the same `if ( $count > 1 )` line, so a slice that ran on included it and the check
+// stayed green with this rule's refusal disabled.
+const tzAt = fixesCode.indexOf('function wp_config_set_timezone');
+const tzRule = fixesCode.slice(tzAt, tzAt + 1400);
 check('…and the rule that rewrites the line is pure and refuses an ambiguous file',
   /function wp_config_set_timezone\( \$body, \$timezone \) \{/.test(tzRule) && /if \( \$count > 1 \) \{/.test(tzRule), true);
 // An `ai` finding stays GUIDED: nothing is swept into FIX ALL, and nothing applies itself.
