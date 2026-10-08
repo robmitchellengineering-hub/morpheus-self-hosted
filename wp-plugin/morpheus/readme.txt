@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.8.9
+Stable tag: 0.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,19 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.0 =
+* Fixed: **the SEO panel could not see the site's own content types.** The set of post types was the
+  hard-coded `post`, `page`, `product`, so a site publishing a `services` custom type or a `portfolio`
+  archive had no way to list, audit or bulk-fill them — even though their head tags were being emitted
+  all along. The live symptom: a services page whose meta description was its own first words including
+  "Home / Services /", and a `/portfolio/` with no description at all, with nothing in the panel able to
+  say so. The types are now derived from what the site actually publishes — WordPress's public post
+  types, with attachments and WordPress's own internal public types excluded — so the panel works on the
+  site's content rather than on an assumption about it.
+* Fixed: **TRAFFIC announced only those same three types to IndexNow**, so publishing anything else was
+  never submitted: a page in the site's sitemap that no index was ever told about. Both modules now read
+  one shared list, so the two cannot drift apart.
 
 = 0.8.9 =
 * Fixed: **the site's own schema nodes were nested inside the page's.** Every page emitted its JSON-LD as

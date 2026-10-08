@@ -86,10 +86,49 @@ function store_req( $action, $data, $secret ) {
 	return rest_do_request( $r );
 }
 
+// ── the site's OWN content types ─────────────────────────────────────────────
+//
+// The live store publishes a `services` CPT — `/services/equipment-repairs/` is in
+// its sitemap. Head tags ARE emitted for it (`emit_head()` keys off
+// `is_singular()`, not off a type list), but the panel could not LIST it, audit it
+// or bulk-fill it, because the set of types was the hard-coded
+// `array( 'post', 'page', 'product' )`. The visible result: that page's meta
+// description was its own first words, including "Home / Services /", and
+// `/portfolio/` had none at all — with nothing in the panel able to say so.
+//
+// A type of the site's own is registered and published here, which turns "the
+// panel works on what the site publishes" into a claim about a REAL WordPress
+// rather than about a source string — and makes it fail if the list is ever
+// hard-coded again.
+register_post_type( 'services', array( 'public' => true, 'label' => 'Services' ) );
+$svc_id = wp_insert_post( array(
+	'post_title'   => 'Equipment repairs',
+	'post_content' => 'We repair instruments.',
+	'post_status'  => 'publish',
+	'post_type'    => 'services',
+) );
+ok( $svc_id > 0 && get_post_status( $svc_id ) === 'publish', 'fixture: a public CPT of the site\'s own is published' );
+
 $ctx = seo_req( 'context', array(), $SECRET )->get_data();
 ok( ( $ctx['owns_head'] ?? null ) === true, 'context: owns_head true' );
 ok( array_key_exists( 'active_plugin', $ctx ) && $ctx['active_plugin'] === null, 'context: active_plugin null' );
 ok( ! empty( $ctx['limits']['title_max'] ), 'context: length guidance is exposed to the widget' );
+
+$ctx_types = isset( $ctx['post_types'] ) && is_array( $ctx['post_types'] ) ? $ctx['post_types'] : array();
+ok( in_array( 'services', $ctx_types, true ), 'context: the site\'s own CPT is one of the types the panel works on' );
+ok( in_array( 'post', $ctx_types, true ) && in_array( 'page', $ctx_types, true ), 'context: post and page are still in the list' );
+ok( ! in_array( 'attachment', $ctx_types, true ), 'context: attachment is NOT treated as indexable content' );
+ok( ! in_array( 'wp_block', $ctx_types, true ), 'context: WordPress\'s own internal public types are not content either' );
+
+// NO `types` argument on purpose: the point is the DEFAULT the panel gets. Passing
+// the type explicitly would pass on the old hard-coded default too (list_content
+// filters whatever it is given by post_type_exists), so it would prove nothing.
+$listed      = seo_req( 'list_content', array( 'limit' => 20 ), $SECRET )->get_data();
+$listed_ids  = array();
+foreach ( (array) ( $listed['items'] ?? array() ) as $row ) {
+	$listed_ids[] = (int) ( $row['id'] ?? 0 );
+}
+ok( in_array( $svc_id, $listed_ids, true ), 'list_content: an item of the site\'s own CPT appears in the SEO list by DEFAULT' );
 
 echo "\n== no-Yoast boot: read/write lands in OUR keys ==\n";
 $id = wp_insert_post( array(

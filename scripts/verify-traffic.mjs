@@ -159,6 +159,18 @@ check('the backfill cap agrees across the boundary', [num(plugin, /MAX_BACKFILL\
 check('our batch cap is not claimed to be the spec\'s (it documents 10,000)', has(plugin, '10,000 URLs per post'), true);
 check('the lib does not claim 100 is the spec ceiling either', has(read('server/src/lib/indexNow.js'), 'NOT IndexNow\'s'), true);
 
+// 3c-ii. WHICH pages get announced is the site's business, not a constant.
+//
+// The same hard-coded `array( 'post', 'page', 'product' )` lived here as well as
+// in the SEO module, so publishing the store's `services` CPT never told IndexNow
+// about it — a page that is in the sitemap and reachable, handed to the index by
+// nothing. Both modules now read one helper, so the two lists cannot drift apart
+// either.
+check('the traffic module no longer declares a post-type constant', /const POST_TYPES\s*=/.test(plugin), false);
+check('…no call site still reads the old constant', /self::POST_TYPES/.test(plugin), false);
+check('…and no hard-coded three-type list survives in it', /array\(\s*'post'\s*,\s*'page'\s*,\s*'product'\s*\)/.test(plugin), false);
+check('…it announces the site\'s own public types instead', /morpheus_public_post_types\(\)/.test(plugin), true);
+
 // 3d. one component, mounted by both surfaces — the dock must not fork a tab.
 const panel = read('src/components/matrix/WebsitePanel.jsx');
 const embed = read('src/pages/Embed.jsx');

@@ -2713,6 +2713,36 @@ export const MUTATIONS = [
     find: "['deploy', 'health', 'shop', 'pages', 'seo', 'traffic']",
     replace: "['deploy', 'health', 'shop', 'pages', 'seo']",
   },
+  {
+    guard: 'verify-seo.mjs',
+    file: 'wp-plugin/morpheus/includes/seo/class-seo.php',
+    // THE HARD-CODED LIST, restored at the one site that decides what the panel's
+    // main list contains. The live store's `services` CPT and `portfolio` archive
+    // are public and in the sitemap, and this is the line that kept both out of
+    // the SEO tab — including the page whose description was its own first words.
+    why: 'Puts the three-type list back as the default for the SEO content list, so the site\'s own public post types vanish from the panel.',
+    find: ': morpheus_public_post_types();',
+    replace: ": array( 'post', 'page', 'product' );",
+  },
+  {
+    guard: 'verify-seo.mjs',
+    file: 'wp-plugin/morpheus/includes/helpers.php',
+    // WordPress reports `attachment` as public, and an attachment has no title
+    // tag or meta description to write. Dropping the exclusion would hand every
+    // image in the media library to the SEO panel as indexable content.
+    why: 'Stops excluding attachments from the derived content types, so every media item is offered to the SEO panel as content with a title tag.',
+    find: "\t\t'attachment',\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // The same constant lived here: publishing the store's `services` CPT never
+    // told IndexNow about a page that is in the sitemap and reachable.
+    why: 'Puts the traffic module back on the hard-coded three types, so the site\'s own public post types are never announced to an index.',
+    find: "\t\t\t'post_type'      => morpheus_public_post_types(),\n",
+    replace: "\t\t\t'post_type'      => array( 'post', 'page', 'product' ),\n",
+  },
 ];
 
 /**
