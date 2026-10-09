@@ -829,6 +829,16 @@ class Morpheus_Health {
 	const LOG_SAMPLES = 3;
 
 	/**
+	 * What core's automatic-update run is CALLED in the panel.
+	 *
+	 * One label, because it is one event: every line `core_update_noise()` recognises
+	 * takes this as its message, so the whole update run — six "Automatic updates…"
+	 * lines, every "Upgrading plugin 'x'…", and both scrape delimiters, each of which
+	 * was its own group before — collapses to a single row the operator can skip.
+	 */
+	const LOG_NOISE_LABEL = "WordPress's own automatic-update run (core's messages, not a site fault)";
+
+	/**
 	 * A path for the panel: relative when it is inside the site, absolute when it is
 	 * not. The second case is the whole point of the relocate fix — an operator
 	 * cannot find a file they are only told is "outside the web root".
@@ -1112,6 +1122,50 @@ class Morpheus_Health {
 		return 0;
 	}
 
+	/**
+	 * WordPress core's OWN automatic-update chatter — one problem, not forty-six.
+	 *
+	 * `WP_Automatic_Updater::run()` writes its progress to the debug log whenever
+	 * WP_DEBUG_LOG is on: "Automatic updates starting…", "Upgrading plugin 'x'…",
+	 * "Scraping home page…", and the `###### wp_scraping_result_*` delimiters that
+	 * `has_fatal_error()` wraps its post-update scrape in. None of it is a fault and
+	 * all of it is expected — and on a real log it produced FORTY-SIX of the hundred
+	 * "distinct problems" the panel was listing: six update messages split three ways
+	 * by month (see the timestamp note in parse_log_line()) plus one group per
+	 * one-off hash in the scrape delimiters.
+	 *
+	 * The needles are named from core's own source, not guessed —
+	 * wp-admin/includes/class-wp-automatic-updater.php. `Loopback request failed:` is
+	 * deliberately NOT one of them: that means core could not RUN the fatal-error
+	 * check, which is worth showing rather than folding away.
+	 *
+	 * PUBLIC and pure so the harness can exercise the table without a boot.
+	 */
+	public static function core_update_noise( $message ) {
+		$needles = array(
+			'Automatic updates starting...',
+			'Automatic updates complete.',
+			'Automatic plugin updates starting...',
+			'Automatic plugin updates complete.',
+			'Automatic theme updates starting...',
+			'Automatic theme updates complete.',
+			"Upgrading plugin '",
+			'Upgrading theme ',
+			' has been upgraded.',
+			' is inactive and will not be checked for fatal errors.',
+			'has no fatal errors.',
+			'Scraping home page...',
+			'wp_scraping_result_start:',
+			'wp_scraping_result_end:',
+		);
+		foreach ( $needles as $needle ) {
+			if ( false !== strpos( (string) $message, $needle ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static function downtime_reason( $line ) {
 		$shapes = array(
 			'mysqli_real_connect()'                     => 'PHP could not reach the database server. While this is happening WordPress answers every page with "Error establishing a database connection" — visitors saw an error, not a slow site.',
@@ -1163,6 +1217,28 @@ class Morpheus_Health {
 		}
 
 		if ( ! preg_match( '/^\[([^\]]+)\]\s+(?:PHP\s+)?(Fatal error|Parse error|Recoverable fatal error|Warning|Notice|Deprecated|Strict Standards)\s*:\s*(.*)$/i', (string) $line, $m ) ) {
+			// ── THE TIMESTAMP IS PART OF THE GROUPING KEY IF YOU LEAVE IT IN THE TEXT ──
+			//
+			// Only a `PHP <severity>:` line has its stamp parsed out, above. Every OTHER
+			// line keeps it inside the message, and `log_signature()` strips digits — but
+			// a MONTH IS LETTERS. So one core updater line written in August, September
+			// and October grouped as three separate problems (9 + 65 + 38), and the panel
+			// said "3 distinct problems" about one sentence. Taking the stamp out here is
+			// what makes the same line group once, whichever month wrote it.
+			if ( preg_match( '/^\[(\d{1,2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2}(?:\s+[A-Za-z]{1,5})?)\]\s*(.*)$/s', (string) $line, $t ) ) {
+				$out['at']      = trim( $t[1] );
+				$out['message'] = trim( $t[2] );
+			}
+
+			// Core's own automatic-update run is expected and is not a fault. Folded under
+			// one label so it cannot bury the handful of lines that ARE — never over a
+			// downtime classification, which is the one thing that must not be talked down.
+			if ( 'fatal' !== $out['level'] && self::core_update_noise( $out['message'] ) ) {
+				$out['message'] = self::LOG_NOISE_LABEL;
+				$out['file']    = '';
+				$out['line']    = 0;
+			}
+
 			// Keeps the level and the note: an unusual shape is still a site that went down.
 			return $out;
 		}

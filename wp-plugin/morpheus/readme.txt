@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.8
+Stable tag: 0.9.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,18 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.9 =
+* Fix: **the error log stops counting WordPress's own update run as your problems.** On a real site, 46 of the
+  "100 distinct problems" the panel listed were WordPress updating itself — "Automatic updates starting…",
+  "Upgrading plugin 'x'…", "Scraping home page…", and the delimiters core wraps its post-update error scrape in.
+  Two causes, both fixed: the same line written in three different months was three separate groups (a month is
+  letters, and only numbers were being treated as ids), and every one-off scrape hash was its own problem. Core's
+  update run is now a single row you can skip. A **failed** loopback check is deliberately left out of that —
+  it means core could not run the check at all, which you should see.
+* Fix: the TRAFFIC tab said **"Sitemap hygiene is not built yet."** It was doing it. `robots.txt` is kept
+  pointing at the sitemap the site really serves, a dead path left by a removed SEO plugin is replaced, and a
+  stale physical `robots.txt` can be quarantined. The tab now names what it handles as well as what it does not.
 
 = 0.9.8 =
 * New: **READ THE WHOLE LOG.** The error log panel reads a bounded tail — the newest 400 lines of a file that can

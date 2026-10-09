@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 import {
   INDEXNOW_ENDPOINT, MAX_URLS_PER_REQUEST, LEDGER_LIMIT, MAX_BACKFILL, TRAFFIC_ACTIONS,
   isValidKey, hostFromSiteUrl, keyLocation, buildPayload, chunkUrls,
-  selectBackfillUrls, normalizeLedgerRow, boundLedger, isAccepted, summarizeLedger, NOT_BUILT,
+  selectBackfillUrls, normalizeLedgerRow, boundLedger, isAccepted, summarizeLedger, NOT_BUILT, HANDLED,
 } from '../server/src/lib/indexNow.js';
 import { isNewer } from '../server/src/lib/version.js';
 
@@ -43,6 +43,7 @@ function check(name, actual, expected) {
 
 const has = (haystack, needle) => String(haystack).includes(needle);
 const uniq = (list) => [...new Set(list)].sort();
+const unescapeSlashes = (s) => String(s).replace(/\\/g, '');
 
 console.log('\nTraffic — IndexNow submission and its contracts\n');
 
@@ -129,9 +130,28 @@ check('the status note for 403 blames the key file', /if \( 403 === \$status \) 
 check('nothing in the tab claims a page was indexed', /was indexed|is indexed|indexed successfully/i.test(tab), false);
 check('the tab says what a 2xx actually means', has(tab, 'the submission was accepted'), true);
 check('the tab shows the real status code per row', has(tab, '{row.status ||'), true);
-check('every unbuilt part of the plan is named in the lib', Object.keys(NOT_BUILT).sort(), ['areas', 'gbp', 'orphans', 'sitemap']);
+check('every unbuilt part of the plan is named in the lib', Object.keys(NOT_BUILT).sort(), ['areas', 'gbp', 'orphans']);
 check('the tab renders the not-built list rather than omitting it', has(tab, 'not_built'), true);
 check('the plugin names them too, so the tab cannot invent the list', has(plugin, "'not_built'"), true);
+// ⚠️ THIS CHECK USED TO ASSERT THE OPPOSITE, AND IT WAS THE REASON A FALSE CLAIM SURVIVED.
+//
+// It read `['areas','gbp','orphans','sitemap']` — so a guard whose whole job is "the panel
+// must not imply something exists when it does not" was pinning "Sitemap hygiene is not
+// built yet." in place while the plugin was doing exactly that (robots.txt pointed at the
+// live sitemap, dead paths replaced, eight harness assertions behind it). A guard can
+// enforce a LIE as faithfully as a truth; only reading it against the code catches that.
+//
+// The lists are now paired: what is not built, and what is — and the plugin must ship the
+// same words for both, because the tab renders whatever the plugin sends.
+check('…and what IS built is named too, so the panel cannot under-claim', Object.keys(HANDLED).sort(), ['sitemap']);
+check('…and the tab renders that list as well', has(tab, 'handled'), true);
+check('…and the plugin names it, not the tab', has(plugin, "'handled'"), true);
+for (const [key, words] of Object.entries({ ...NOT_BUILT, ...HANDLED })) {
+  // Compared with backslashes removed: the lib is JS and writes `Google\'s` for the
+  // apostrophe, the plugin is PHP and writes the same escape — but only the VALUE is
+  // the claim. Comparing the escaped source text would fail on the quoting, not the words.
+  check(`…and the plugin ships the same words for '${key}'`, has(unescapeSlashes(plugin), unescapeSlashes(words)), true);
+}
 
 // ── 3. the cross-boundary contracts ─────────────────────────────────────────
 console.log('\n3. the contracts across the boundary');

@@ -1227,6 +1227,41 @@ $spread = Morpheus_Health::downtime_scale( 12, '08-Oct-2026 03:00:00 UTC', '08-O
 ok( strpos( $spread, 'not a restart' ) !== false && strpos( $spread, '12 times' ) !== false, 'log: a wide spread reads as a fault, with the times', $spread );
 ok( strpos( Morpheus_Health::downtime_scale( 5, '', '' ), '5 times' ) !== false, 'log: an unreadable timestamp falls back to the count, not to a guess' );
 
+// ── CORE'S AUTOMATIC-UPDATE RUN IS ONE PROBLEM, NOT FORTY-SIX ────────────────
+//
+// From a real log, 2026-10-09: 4,696 lines reported as "100 distinct problems", of
+// which FORTY-SIX were WordPress updating itself. Two independent causes, and both are
+// asserted here because either one alone puts the count straight back up.
+//
+// 1. The timestamp stayed in the TEXT of every line that is not a `PHP <severity>:`
+//    line. `log_signature()` strips digits — but a MONTH IS LETTERS, so one sentence
+//    written in August, September and October was three groups (9 + 65 + 38).
+$aug = Morpheus_Health::parse_log_line( '[27-Aug-2026 19:43:02 UTC] Something else entirely wrote this' );
+$oct = Morpheus_Health::parse_log_line( '[01-Oct-2026 07:42:21 UTC] Something else entirely wrote this' );
+ok( $aug['message'] === $oct['message'], 'log: one line in two different months is ONE message', array( $aug['message'], $oct['message'] ) );
+ok( strpos( $aug['message'], 'Aug' ) === false && strpos( $aug['message'], '2026' ) === false, 'log: …the stamp is out of the text, not just out of the count' );
+ok( $aug['at'] === '27-Aug-2026 19:43:02 UTC', 'log: …because it was parsed into `at`, where the panel shows it', $aug );
+
+// 2. One group per one-off hash: `has_fatal_error()` wraps its post-update scrape in
+//    `###### wp_scraping_result_start:<md5> ######` delimiters, so every occurrence was
+//    its own "problem" — fourteen of them in the real log. Each update MESSAGE
+//    ("Automatic updates starting…", "Upgrading plugin 'x'…") was its own group too.
+ok( Morpheus_Health::core_update_noise( "'###### wp_scraping_result_start:9c9351be45803652dc7eaa1b1f2ccd02 ######" ), 'log: a scrape delimiter is recognised as core noise' );
+ok( Morpheus_Health::core_update_noise( '###### wp_scraping_result_end:9c9351be45803652dc7eaa1b1f2ccd02 ######' ), 'log: …both halves of it' );
+ok( Morpheus_Health::core_update_noise( "    Upgrading plugin 'morpheus'..." ), 'log: an update line is core noise' );
+$n1 = Morpheus_Health::parse_log_line( "[21-Sep-2026 07:42:25 UTC]     Upgrading plugin 'morpheus'..." );
+$n2 = Morpheus_Health::parse_log_line( '[08-Oct-2026 19:42:25 UTC]     Scraping home page...' );
+$n3 = Morpheus_Health::parse_log_line( "[21-Sep-2026 07:42:33 UTC] '###### wp_scraping_result_start:9c9351be45803652dc7eaa1b1f2ccd02 ######" );
+ok( $n1['message'] === $n2['message'] && $n2['message'] === $n3['message'], 'log: three different core update lines are ONE problem', array( $n1['message'], $n2['message'], $n3['message'] ) );
+ok( $n1['message'] === Morpheus_Health::LOG_NOISE_LABEL, 'log: …under a label that says what it is' );
+
+// THE FOLD MUST NOT EAT ANYTHING THAT MATTERS. A failed loopback means core could not
+// RUN the fatal-error check at all — that is worth showing, so it is deliberately not a
+// needle. And a real fault must stay a real fault.
+ok( false === Morpheus_Health::core_update_noise( '    Loopback request failed: cURL error 28' ), 'log: a failed loopback check is NOT folded away' );
+ok( false === Morpheus_Health::core_update_noise( 'PHP Warning:  Undefined array key "price"' ), 'log: an ordinary error is not core noise' );
+ok( ( $parsed['message'] ?? '' ) !== Morpheus_Health::LOG_NOISE_LABEL, 'log: …and a database outage never takes the noise label' );
+
 // A post type that is `public` but has no single view — exactly what a page builder
 // registers — must not be treated as content a search engine should hear about.
 register_post_type( 'morpheus_harness_builder', array( 'public' => true, 'publicly_queryable' => false, 'rewrite' => false, 'label' => 'Builder' ) );
