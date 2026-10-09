@@ -2773,6 +2773,37 @@ export const MUTATIONS = [
     replace: '  useEffect(() => { run(); }, []);\n  const [log, setLog] = useState(null);',
   },
   {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // A MONTH IS LETTERS. `log_signature()` strips digits, so a line whose timestamp is
+    // still inside its text groups by MONTH — one sentence written in August, September
+    // and October became three "distinct problems". This is that stamp being left in.
+    why: 'Leaves the timestamp inside the text of a non-PHP line, so one problem becomes one group per month.',
+    find: "\t\t\tif ( preg_match( '/^\\[(\\d{1,2}-[A-Za-z]{3}-\\d{4} \\d{2}:\\d{2}:\\d{2}(?:\\s+[A-Za-z]{1,5})?)\\]\\s*(.*)$/s', (string) $line, $t ) ) {",
+    replace: '\t\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // CORE'S UPDATE RUN IS NOT YOUR PROBLEM — but only while it stays folded. Unfolding it
+    // puts 46 of a real log's 100 "distinct problems" back, which is what buried the three
+    // that mattered.
+    why: "Stops folding WordPress core's own automatic-update run, so it buries the real findings again.",
+    find: "\t\t\tif ( 'fatal' !== $out['level'] && self::core_update_noise( $out['message'] ) ) {",
+    replace: '\t\t\tif ( false ) {',
+  },
+  {
+    guard: 'verify-traffic.mjs',
+    file: 'wp-plugin/morpheus/includes/class-traffic.php',
+    // ⚠️ THE GUARD USED TO ENFORCE THE LIE. It asserted `sitemap` was in the NOT-BUILT
+    // list while the plugin was doing sitemap hygiene — so the claim could not be
+    // corrected without the guard going red. The lists are paired now, and this mutation
+    // is the pair coming apart: the words ship, the name does not.
+    why: 'Renames the handled list, so the plugin ships the sitemap wording with no list naming it.',
+    find: "\t\t\t'handled'      => array(",
+    replace: "\t\t\t'handled_off'  => array(",
+  },
+  {
     guard: 'verify-redirects.mjs',
     file: 'wp-plugin/morpheus/includes/class-redirects.php',
     // ⚠️ THE LOCKOUT. A rule matching wp-admin takes the owner out of the screen they

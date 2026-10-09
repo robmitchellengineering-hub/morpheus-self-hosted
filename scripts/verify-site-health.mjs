@@ -499,6 +499,34 @@ check('…with literal caps on bytes, lines and groups',
   /LOG_TAIL_BYTES\s*=\s*\d+/.test(healthSrc) && /LOG_TAIL_LINES\s*=\s*\d+/.test(healthSrc) && /LOG_MAX_GROUPS\s*=\s*\d+/.test(healthSrc), true);
 check('…and every cap is REPORTED when it bites, never a silent truncation',
   /'truncated'\s*=>/.test(healthSrc) && /groups_total/.test(healthSrc) && /lines_read/.test(healthSrc) && /lines_in_tail/.test(healthSrc), true);
+
+// ── ONE PROBLEM, NOT FORTY-SIX ──────────────────────────────────────────────
+//
+// A real log reported 4,696 lines as "100 distinct problems", and FORTY-SIX of them were
+// WordPress updating itself. Two independent causes, and each needs its own assertion
+// because fixing either one alone leaves the count high:
+//
+//   1. the timestamp stayed in the TEXT of every line that is not a `PHP <severity>:`
+//      line, and `log_signature()` strips digits — but a MONTH IS LETTERS, so one
+//      sentence written in August, September and October was three groups (9 + 65 + 38);
+//   2. every one-off scrape hash was its own "problem" — fourteen of them.
+//
+// A fold like this is one small step from a mute button, so the last two assertions are
+// the ones that stop it: a downtime line is never folded, and a failed loopback check is
+// deliberately NOT a needle, because it means core could not run the check at all.
+check('the timestamp comes out of the TEXT of a non-severity line, not just out of the count',
+  healthCode.includes('\\d{1,2}-[A-Za-z]{3}-\\d{4} \\d{2}:\\d{2}:\\d{2}'), true);
+check("core's own update run is recognised from a table, not a keyword match",
+  healthCode.includes('public static function core_update_noise')
+  && healthCode.includes('has no fatal errors.')
+  && healthCode.includes('wp_scraping_result_start:'), true);
+check('…and every recognised line takes ONE label, which is what makes them a single group',
+  healthCode.includes('LOG_NOISE_LABEL')
+  && healthCode.includes("self::core_update_noise( $out['message'] )"), true);
+check('…and the fold can never talk a downtime line down',
+  healthCode.includes("'fatal' !== $out['level'] && self::core_update_noise"), true);
+check('…and a FAILED loopback is deliberately not noise — it means core could not run the check',
+  healthCode.includes('Loopback request failed:'), false);
 // Four different answers. The plugin names which one, so the panel can never render
 // an empty list as "all clear" — the worst reading this feature could produce.
 // THE WHOLE FILE IS A SECOND, EXPLICIT READ — never the default.

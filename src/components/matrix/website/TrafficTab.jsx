@@ -97,6 +97,7 @@ export default function TrafficTab({ projectId }) {
 
   const keyServed = status?.key_served;
   const notBuilt = status?.not_built || {};
+  const handled = status?.handled || {};
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-3 text-[11px]">
@@ -222,6 +223,22 @@ export default function TrafficTab({ projectId }) {
             <div className="text-primary/40 uppercase tracking-wider">Redirects &amp; missing pages</div>
             <RedirectsPanel projectId={projectId} />
           </div>
+
+          {/* The same ledger, the other way up. Nothing named the parts of the plan
+              that ARE built, and this tab used to list "Sitemap hygiene is not built
+              yet." while the plugin was quietly doing exactly that. */}
+          {Object.keys(handled).length > 0 && (
+            <div className="border border-primary/15 px-3 py-2">
+              <div className="text-ink-max mb-1 flex items-center gap-1.5">
+                <Check size={10} /> Handled here
+              </div>
+              <ul className="space-y-0.5 text-ink-max">
+                {Object.entries(handled).map(([k, text]) => (
+                  <li key={k}>· {text}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Not built. Named, not omitted — an absent half reads as a finished whole. */}
           <div className="border border-primary/15 px-3 py-2">

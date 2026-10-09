@@ -475,10 +475,19 @@ class Morpheus_Traffic {
 			// Named so the tab does not have to invent a list: these are the parts
 			// of the plan that do not exist in this build.
 			'not_built'    => array(
-				'sitemap'   => 'Sitemap hygiene is not built yet.',
 				'orphans'   => 'Orphan pages and internal-link automation are not built yet.',
 				'areas'     => 'Service and area pages are not built yet.',
 				'gbp'       => 'Google Business Profile needs Google\'s API approval before anything here can use it.',
+			),
+			// The other half of the same honesty, and it corrects a false claim: this
+			// list used to be led by "Sitemap hygiene is not built yet.", which was
+			// simply wrong. The SEO module keeps robots.txt pointing at the sitemap the
+			// site really serves and replaces a dead path left by a removed SEO plugin
+			// — Morpheus_SEO::filter_robots_txt(), with eight harness assertions behind
+			// it. A missing half reads as a finished whole; a finished half written
+			// down as missing reads as a smaller product than the one that ships.
+			'handled'      => array(
+				'sitemap'   => 'Sitemap hygiene is handled: robots.txt is kept pointing at the sitemap this site really serves, and a dead path left by a removed SEO plugin is replaced.',
 			),
 		);
 	}

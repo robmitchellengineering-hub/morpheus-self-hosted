@@ -193,8 +193,21 @@ export function summarizeLedger(rows = []) {
  * cannot quietly imply they exist. Kept beside the code that would grow them.
  */
 export const NOT_BUILT = {
-  sitemap: 'Sitemap hygiene is not built yet.',
   orphans: 'Orphan pages and internal-link automation are not built yet.',
   areas: 'Service and area pages are not built yet.',
   gbp: 'Google Business Profile needs Google\'s API approval before anything here can use it.',
+};
+
+/**
+ * The other half of the same ledger — and it corrected a claim that was simply false.
+ *
+ * This list used to lead with "Sitemap hygiene is not built yet." It was not true, and
+ * had not been since the SEO module learned to keep `robots.txt` pointed at the sitemap
+ * the site actually serves and to replace a path left dead by a removed SEO plugin
+ * (`Morpheus_SEO::filter_robots_txt()`). The tab's own rule is that an absent half reads
+ * as a finished whole; a FINISHED half written down as absent reads as a smaller product
+ * than the one that ships, which is the same lie pointing the other way.
+ */
+export const HANDLED = {
+  sitemap: 'Sitemap hygiene is handled: robots.txt is kept pointing at the sitemap this site really serves, and a dead path left by a removed SEO plugin is replaced.',
 };
