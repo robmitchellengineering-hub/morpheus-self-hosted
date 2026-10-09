@@ -1103,8 +1103,9 @@ OPERATOR SAYS: ${message}`;
   let declaredProviderCapabilities = [];
   // The lane-split verdict for this turn (lib/lanePartition.js). Lifted to this scope for the same reason as
   // `declaredProviderCapabilities` above: the planner's result lives inside the planner branch, and this travels
-  // to the client on the `result` event declared far below. `null` means no split was proposed by the planner OR
-  // none was accepted — the ordinary build either way, and the one that must cost nothing.
+  // to the client on the `result` event declared far below. `null` means the planner proposed NO split at all —
+  // the ordinary build, and the one that must cost nothing. A refused split is NOT null: it carries its `reason`
+  // and `detail`, so the panel can say why this build ran sequentially instead of leaving the operator to guess.
   let laneSplit = null;
 
   try {
