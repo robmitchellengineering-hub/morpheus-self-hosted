@@ -40,6 +40,19 @@ class Morpheus_Security {
 	const OPT_HSTS = 'morpheus_hsts_max_age';
 
 	/**
+	 * The stored answer to "is the header really being served": `array( verdict, at )`.
+	 *
+	 * An OPTION and not a transient, because a transient that expires takes the answer with
+	 * it and the next read would have to make a request — which is the thing that broke the
+	 * health scan. An old verdict that says when it was taken is more useful than a fresh
+	 * one that cannot be taken.
+	 */
+	const OPT_PROBE = 'morpheus_hsts_probe';
+
+	/** The scheduled event that takes the verdict above. Never run inside a scan. */
+	const PROBE_HOOK = 'morpheus_hsts_probe_event';
+
+	/**
 	 * The max-age Morpheus offers: six months.
 	 *
 	 * NOT a year, and deliberately NOT `includeSubDomains` or `preload`. Those two are the
@@ -67,6 +80,23 @@ class Morpheus_Security {
 		}
 		if ( self::hsts_max_age() > 0 ) {
 			add_action( 'send_headers', array( __CLASS__, 'send_hsts' ) );
+			// The verdict is taken HERE — on its own schedule, from wp-cron.php, in a request
+			// of its own — and never from the health scan. See hsts_served().
+			add_action( self::PROBE_HOOK, array( __CLASS__, 'probe_hsts' ) );
+			if ( ! wp_next_scheduled( self::PROBE_HOOK ) ) {
+				// Five minutes out, not immediately: the switch was usually just turned on, and
+				// probing in the same breath would be the self-request this file exists to
+				// avoid, wearing a cron hat.
+				wp_schedule_event( time() + 300, 'hourly', self::PROBE_HOOK );
+			}
+		} else {
+			// Switched off — stop the schedule. The stored verdict is deliberately NOT deleted:
+			// `delete_option` is a write, and this branch runs on every request of every site
+			// that never turned the switch on. The verdict carries the max-age it was taken
+			// under and is ignored unless that matches, so a stale one is inert.
+			if ( wp_next_scheduled( self::PROBE_HOOK ) ) {
+				wp_clear_scheduled_hook( self::PROBE_HOOK );
+			}
 		}
 	}
 
@@ -107,31 +137,81 @@ class Morpheus_Security {
 	}
 
 	/**
-	 * Is the header ACTUALLY being served? 'served' · 'not_served' · 'unknown'.
+	 * Is the header ACTUALLY being served? 'served' · 'not_served' · 'unknown' · 'unchecked'.
 	 *
 	 * ⚠️ THE POINT OF ASKING. Setting an option proves nothing about what a visitor
 	 * receives: the host, a proxy or a page cache sits between PHP and the browser, and any
 	 * of them can drop a header this site asked for. Claiming "browsers are told to use
 	 * HTTPS" on the strength of an option is exactly the kind of claim this plugin exists to
-	 * stop making — so the check asks the site, and reports three answers, not two.
+	 * stop making — so the answer comes from a probe, and there are four of them, not two.
 	 *
 	 * 'unknown' is not a failure and must never be reported as 'not_served': a host that
 	 * blocks loopback requests is common, and "I could not look" is a different sentence
-	 * from "it is not there".
+	 * from "it is not there". 'unchecked' is the honest state before the first probe has run.
+	 *
+	 * ⚠️⚠️ THIS FUNCTION MUST NEVER MAKE A NETWORK REQUEST, AND THAT IS NOT A STYLE CHOICE.
+	 * The first version of this did the request right here, which put a self-request inside
+	 * the health scan — and on the first real site it shipped to, **the scan stopped
+	 * working entirely.** A scan holds a PHP worker; a self-request needs one; a host with a
+	 * single worker cannot serve the second until the first finishes, so the scan sat there
+	 * until something timed out. WordPress's own Site Health loopback test has this exact
+	 * reputation and it is well earned. The probe now runs on its own schedule (see
+	 * `probe_hsts()`), the verdict is stored, and this reads the stored answer.
+	 *
+	 * The shape of that bug is worth naming because it will happen again: **a check that
+	 * depends on the site answering is a check that breaks when the site is busy, and it
+	 * breaks the screen you would diagnose it from.**
 	 */
 	public static function hsts_served() {
-		if ( self::hsts_max_age() <= 0 ) {
+		$max = self::hsts_max_age();
+		if ( $max <= 0 ) {
 			return 'not_served';
 		}
-		$cached = get_transient( 'morpheus_hsts_probe' );
-		if ( is_string( $cached ) && '' !== $cached ) {
-			return $cached;
+		$stored  = get_option( self::OPT_PROBE, array() );
+		$verdict = ( is_array( $stored ) && isset( $stored['verdict'] ) ) ? (string) $stored['verdict'] : '';
+		// A verdict taken under a DIFFERENT max-age is about a header this site is no longer
+		// sending, so it is not an answer to the current question. That is what makes an
+		// un-deleted stale verdict safe.
+		$for_max = ( is_array( $stored ) && isset( $stored['max'] ) ) ? (int) $stored['max'] : 0;
+		if ( $for_max !== $max ) {
+			return 'unchecked';
+		}
+		return in_array( $verdict, array( 'served', 'not_served', 'unknown' ), true ) ? $verdict : 'unchecked';
+	}
+
+	/**
+	 * When the verdict above was last established, or '' if it never has been.
+	 *
+	 * Kept beside the verdict because "not served" from five minutes ago and from last week
+	 * are different facts, and a panel that shows one as the other is guessing.
+	 */
+	public static function hsts_probed_at() {
+		$stored = get_option( self::OPT_PROBE, array() );
+		return ( is_array( $stored ) && ! empty( $stored['at'] ) ) ? (string) $stored['at'] : '';
+	}
+
+	/**
+	 * Ask this site for its own home page and read the header back. RUNS ON A SCHEDULE.
+	 *
+	 * ⚠️ NEVER call this from the health scan. See the note in `hsts_served()`: a
+	 * self-request inside a scan holds two PHP workers, and on a host with one it deadlocks
+	 * the scan rather than merely slowing it. It is registered on `PROBE_HOOK`, which
+	 * WordPress runs from `wp-cron.php` — a separate request, so a slow or refused loopback
+	 * costs a background run and never a visitor's page or the operator's screen.
+	 *
+	 * The timeout is short for the same reason: this probe may be the thing that cannot be
+	 * served, so waiting ten seconds to find that out is ten seconds of nothing.
+	 */
+	public static function probe_hsts() {
+		if ( self::hsts_max_age() <= 0 ) {
+			delete_option( self::OPT_PROBE );
+			return 'unchecked';
 		}
 
 		$res = wp_remote_get(
 			home_url( '/' ),
 			array(
-				'timeout'     => 10,
+				'timeout'     => 5,
 				'redirection' => 0,
 				'headers'     => array( 'Cache-Control' => 'no-cache' ),
 				// A self-signed or otherwise unusual certificate on the site's own address is
@@ -148,9 +228,9 @@ class Morpheus_Security {
 			$verdict = ( is_string( $header ) && '' !== trim( $header ) ) ? 'served' : 'not_served';
 		}
 
-		// Short, because this is a probe and the answer changes the moment the host does.
-		set_transient( 'morpheus_hsts_probe', $verdict, 5 * MINUTE_IN_SECONDS );
+		update_option( self::OPT_PROBE, array( 'verdict' => $verdict, 'at' => gmdate( 'c' ), 'max' => self::hsts_max_age() ), false );
 		return $verdict;
+
 	}
 
 	/**
@@ -167,8 +247,11 @@ class Morpheus_Security {
 			// HSTS is meaningless without HTTPS: browsers ignore the header over plain HTTP.
 			'https'       => self::site_is_https(),
 			'hsts'        => self::hsts_max_age(),
-			// 'not_served' is the honest starting point when the switch is off.
+			// 'not_served' is the honest starting point when the switch is off. Both of these
+			// READ, and neither makes a request — see hsts_served().
 			'hsts_served' => self::hsts_max_age() > 0 ? self::hsts_served() : 'not_served',
+			// When that verdict was taken, so a panel never presents an old one as current.
+			'hsts_probed_at' => self::hsts_probed_at(),
 		);
 	}
 

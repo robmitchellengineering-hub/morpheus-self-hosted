@@ -3435,6 +3435,28 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // ⚠️ THIS IS THE BUG THAT BROKE A REAL SITE'S SCAN. 0.9.12 took the HSTS verdict inside
+    // the health scan with a self-request; a scan holds a PHP worker, the self-request needs
+    // one, and a host with a single worker cannot serve the second until the first finishes.
+    // The operator's diagnostic screen stopped responding. This mutation puts the probe back
+    // into the scan path, and the guard must refuse it.
+    why: 'Puts the HSTS probe back inside the health scan, so the scan waits on the site it is checking.',
+    find: "\t\t\t$hsts_served = (string) ( $sec['hsts_served'] ?? 'not_served' );",
+    replace: "\t\t\tMorpheus_Security::probe_hsts();\n\t\t\t$hsts_served = (string) ( $sec['hsts_served'] ?? 'not_served' );",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-security.php',
+    // NO SCHEDULE, NO VERDICT. Without the cron event the probe never runs, the check reads
+    // 'unchecked' forever, and the honest answer becomes a permanent nag — which is how a
+    // verified claim quietly turns back into an unverified one.
+    why: 'Removes the schedule that takes the verdict, so nothing ever checks whether the header is served.',
+    find: "\t\t\t\twp_schedule_event( time() + 300, 'hourly', self::PROBE_HOOK );",
+    replace: '\t\t\t\t// no schedule',
+  },
+  {
+    guard: 'verify-site-health.mjs',
     file: 'wp-plugin/morpheus/includes/class-security.php',
     // AND THE BEHAVIOURS ARE FOR ANONYMOUS CALLERS ONLY. Applied to everyone, hardening
     // breaks the site for the people who run it.

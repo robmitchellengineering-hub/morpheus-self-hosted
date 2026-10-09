@@ -1469,14 +1469,24 @@ ok( $site_reads_https, 'security: …but a site ADDRESSED over https counts as H
 ok( ! Morpheus_Security::site_is_https(), 'security: …and it goes back to http when the filter does' );
 
 ok( 'not_served' === Morpheus_Security::hsts_served(), 'security: with the switch off, nothing claims to be served' );
-// THREE ANSWERS, NEVER A BOOLEAN. Setting the option proves nothing about what a visitor
-// receives — the host, a proxy or a page cache can drop the header between PHP and the
-// browser — so the probe asks the site, and "I could not look" is its own answer.
+// ⚠️⚠️ READING MUST NOT ASK. The stored verdict is set here to 'served', which this boot's own
+// site could never produce (it is not serving the header) — so if `hsts_served()` comes back
+// with 'served', it READ the stored answer. If it comes back with 'not_served' it went and
+// asked, which is the bug that broke a real site's health scan: a scan holds a PHP worker, a
+// self-request needs one, and a host with a single worker cannot serve the second until the
+// first has finished. Four answers, and 'unchecked' is the honest one before any probe has run.
 update_option( 'morpheus_hsts_max_age', Morpheus_Security::HSTS_MAX_AGE );
-$hsts_probe = Morpheus_Security::hsts_served();
+ok( 'unchecked' === Morpheus_Security::hsts_served(), 'security: with the switch on and no verdict yet, the answer is "unchecked" — not a guess, and not a request' );
+update_option( 'morpheus_hsts_probe', array( 'verdict' => 'served', 'at' => '2026-10-09T00:00:00+00:00', 'max' => Morpheus_Security::HSTS_MAX_AGE ), false );
+ok( 'served' === Morpheus_Security::hsts_served(), 'security: …and a STORED verdict is what it reports, because it reads rather than asks', Morpheus_Security::hsts_served() );
+ok( '2026-10-09T00:00:00+00:00' === Morpheus_Security::hsts_probed_at(), 'security: …with the time it was taken, so an old verdict is never shown as current' );
+// A verdict taken under a DIFFERENT setting is about a header this site is no longer sending,
+// so it is not an answer to the current question — which is what lets a stale one sit safely
+// in the database instead of being deleted on every request of every site.
+update_option( 'morpheus_hsts_max_age', 3600 );
+ok( 'unchecked' === Morpheus_Security::hsts_served(), 'security: …and a verdict from a different max-age is not an answer to this one' );
+delete_option( 'morpheus_hsts_probe' );
 delete_option( 'morpheus_hsts_max_age' );
-ok( in_array( $hsts_probe, array( 'served', 'not_served', 'unknown' ), true ), 'security: the probe answers served / not_served / unknown, in those words', $hsts_probe );
-delete_transient( 'morpheus_hsts_probe' );
 
 // ── redirects, and the 404 log ──────────────────────────────────────────────
 //

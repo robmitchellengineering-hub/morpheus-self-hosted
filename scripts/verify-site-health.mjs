@@ -899,9 +899,14 @@ check('…and the check VERIFIES the header is really served rather than trustin
   /public static function hsts_served\(\)/.test(securityCode)
   && /wp_remote_get\(/.test(securityCode)
   && /strict-transport-security/.test(securityCode), true);
+// ⚠️ ASSERTED ON THE ASSIGNMENT, NOT ON THE WORD. This check used to look for `'unknown'`
+// anywhere in the file — and the moment a FOUR-state list was added elsewhere
+// (`array( 'served', 'not_served', 'unknown' )`), the word was present no matter what the
+// probe actually recorded, so folding a failed probe into 'not_served' passed unnoticed. A
+// literal that appears in two places proves nothing about either; the pattern below requires
+// 'unknown' to sit INSIDE the is_wp_error branch, which is where the distinction lives.
 check('…with "could not check" kept separate from "not being sent", and neither reported as good',
-  /'unknown'/.test(securityCode)
-  && /is_wp_error\( \$res \)/.test(securityCode)
+  /if \( is_wp_error\( \$res \) \) \{\s*\$verdict = 'unknown';/.test(securityCode)
   && /elseif \( 'not_served' === \$hsts_served \) \{/.test(healthCode)
   && /could not confirm whether it is being served/.test(healthCode), true);
 // Scoped to the HSTS decision block, and counted: `$status = 'good'` must appear ONCE, in
@@ -911,6 +916,31 @@ const hstsDecision = healthCode.slice(healthCode.indexOf('if ( ! $hsts_on ) {'),
 check('…and a header actually read back from the site is the ONLY thing that reads as good',
   /elseif \( 'served' === \$hsts_served \) \{\s*\$status = 'good';/.test(hstsDecision)
   && (hstsDecision.match(/\$status = 'good';/g) || []).length === 1, true);
+
+// ⚠️⚠️ THE SCAN MUST NOT OPEN A CONNECTION, AND THIS IS THE GUARD FOR THE BUG THAT SHIPPED.
+//
+// 0.9.12 took the HSTS verdict INSIDE the health scan, with a wp_remote_get to the site's own
+// home page. On the first real site it reached, **the scan stopped working**: a scan holds a
+// PHP worker, a self-request needs one, and a host with a single worker cannot serve the
+// second until the first has finished. The screen you would diagnose it from was the screen
+// that stopped working — and it looked like a dead product, not a slow one.
+//
+// The shape of it is worth keeping in front of whoever touches this next: **a check that
+// waits on the site to answer is a check that breaks when the site is busy.** The probe runs
+// on its own cron event now; the check only reads the stored verdict; and these four
+// assertions are what stop the two being quietly re-joined.
+const servedFn = securityCode.slice(securityCode.indexOf('function hsts_served'), securityCode.indexOf('function hsts_probed_at'));
+check('…and READING that verdict opens no connection — the scan must never wait on the site',
+  /wp_remote_get|wp_remote_post|curl_exec|fsockopen/.test(servedFn), false);
+check('…the probe that does open one runs on its own schedule, never inside the scan',
+  /wp_schedule_event\(/.test(securityCode)
+  && /add_action\( self::PROBE_HOOK, array\( __CLASS__, 'probe_hsts' \) \)/.test(securityCode), true);
+check('…and the health screen never calls the probe at all',
+  /probe_hsts\(/.test(healthCode), false);
+check('…with "not checked YET" kept apart from "could not check" and from "not there"',
+  /'unchecked'/.test(securityCode)
+  && /elseif \( 'unchecked' === \$hsts_served \) \{/.test(healthCode)
+  && /elseif \( 'not_served' === \$hsts_served \) \{/.test(healthCode), true);
 // The finding itself is only emitted where the header can do something.
 check('…and the HSTS finding is offered only on a site already served over HTTPS',
   /if \( ! empty\( \$sec\['https'\] \) \) \{/.test(healthCode), true);
