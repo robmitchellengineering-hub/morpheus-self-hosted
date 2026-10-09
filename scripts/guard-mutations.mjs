@@ -1394,6 +1394,27 @@ export const MUTATIONS = [
     replace: '\nexport const UNPROVEN_BASELINE = 61;\n',
   },
   {
+    guard: 'verify-php-syntax.mjs',
+    file: 'server/src/lib/delivery/wordpress.js',
+    // THE EXACT SHAPE OF THE HOLE. The adapter read only `.js/.jsx/.ts/.tsx/.mjs/.cjs` before handing the
+    // change to the checker — so a WordPress tenant, whose normal change is PHP, examined nothing and the
+    // verdict was `not_verified`. It is one `.filter()` to put back, every other check still passes, and
+    // it is the reason this guard asserts an ABSENCE rather than a presence.
+    why: 'Narrows the WordPress adapter back to JS-only, so a PHP change is examined by nothing again.',
+    find: "    const syntax = await checkSyntaxDetailed(present.map((f) => ({ path: f.path, content: f.content ?? '' })));",
+    replace: "    const scripts = present.filter((f) => /\\.(jsx?|tsx?|mjs|cjs)$/.test(f.path));\n    const syntax = await checkSyntaxDetailed(scripts.map((f) => ({ path: f.path, content: f.content ?? '' })));",
+  },
+  {
+    guard: 'verify-php-syntax.mjs',
+    file: 'server/src/lib/syntaxCheck.js',
+    // ⚠️ THE FALSE PASS. Counting a file as "read" because its extension matched — rather than because a
+    // checker was AVAILABLE for it — is how adding `.php` would have turned an honest `not_verified` into a
+    // pass over files nothing looked at. H17 again, caused by the change meant to close it.
+    why: 'Counts PHP files as checked whether or not a parser was available, so a missing tool reports a pass.',
+    find: '    ...(php.available ? phpFiles : []),',
+    replace: '    ...phpFiles,',
+  },
+  {
     guard: 'verify-artifact-save-background.mjs',
     file: 'server/src/lib/artifactSaveJob.js',
     why: 'Reports a save whose process is gone as still saving (dropping the staleness branch), so a backend restart mid-save leaves the panel polling forever and a dead job reads as progress — the exact lie the guard exists to prevent.',

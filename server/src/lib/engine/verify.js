@@ -21,7 +21,7 @@
 // It does NOT run `vite build` or `eslint` — the backend container has
 // neither. esbuild is a single dependency-free binary and covers the
 // failure modes that actually take a deploy down.
-import { checkSyntax } from '../syntaxCheck.js';
+import { checkSyntaxDetailed } from '../syntaxCheck.js';
 import { findBrokenImports } from '../importGraph.js';
 import { conventionViolations } from '../conventionChecks.js';
 import { coverageError } from './verificationCoverage.js';
@@ -29,8 +29,6 @@ import * as esbuild from 'esbuild';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-
-const CODE_EXT = /\.(jsx?|tsx?|mjs|cjs)$/;
 
 const ASSET_LOADERS = {
   '.css': 'empty', '.scss': 'empty', '.less': 'empty',
@@ -72,13 +70,20 @@ export async function verifyProject(files, opts = {}) {
   const extraPlugins = opts.esbuildPlugins || [];
 
   const kept = files.filter((f) => f && typeof f.path === 'string' && !exclude(f.path));
-  const codeFiles = kept.filter((f) => CODE_EXT.test(f.path));
   const errors = [];
 
-  // Pass 1 — per-file transform (syntax / JSX).
-  for (const e of await checkSyntax(codeFiles.map((f) => ({ path: f.path, content: f.content ?? '' })))) {
+  // Pass 1 — per-file syntax, over EVERY kept file, and the checker says which ones it read.
+  //
+  // ⚠️ THIS USED TO PASS ONLY JS/TS, because that was all `checkSyntax` could read. The cost was
+  // invisible and expensive: for a WordPress tenant the normal change is PHP, and a PHP-only change
+  // examined nothing, so coverage correctly said `not_verified` — honest, and no protection at all.
+  // Reading the checker's own `checked` list is what makes coverage meaningful now: it is the files
+  // that were really examined, so adding a language is only ever a gain.
+  const syntax = await checkSyntaxDetailed(kept.map((f) => ({ path: f.path, content: f.content ?? '' })));
+  for (const e of syntax.errors) {
     errors.push({ phase: 'syntax', file: e.file, line: e.line, column: e.column, text: e.text });
   }
+  const codeFiles = syntax.checked;
 
   // Pass 2 — bundle from real entry points (local imports).
   const root = await mkdtemp(path.join(tmpdir(), 'engine-verify-'));
