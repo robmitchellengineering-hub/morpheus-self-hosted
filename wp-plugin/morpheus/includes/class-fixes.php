@@ -104,6 +104,37 @@ class Morpheus_Fixes {
 				'args'  => array( 'name' => 'default_role', 'value' => 'subscriber' ),
 			),
 
+			// ── What WordPress does by default that it should not ───────────
+			//
+			// Three defaults, three switches. Each fix writes ONE option through the same
+			// `set_option` rail as everything above, and the BEHAVIOUR lives in
+			// Morpheus_Security — which registers no hook while the option is off. So the
+			// fix is verified the ordinary way and turned off by setting the option back;
+			// nothing here needs new machinery, which is the point.
+			'morpheus_user_enumeration' => array(
+				'kind'    => 'auto',
+				'label'   => 'Stop publishing usernames to visitors',
+				'does'    => 'Refuses the REST user list and the /?author=1,2,3… probe to anyone who is not signed in. WordPress publishes both by default, and the slug it hands out is the login name on any site that never changed it. Signed-in editing, and /wp/v2/users/me which the editor needs, are untouched.',
+				'warning' => 'Stops DISCOVERY, not reading: an author archive at /author/<slug>/ still resolves for anyone who already knows the slug. That is deliberate — closing author archives outright would change how the site behaves for readers.',
+				'fix'     => 'set_option',
+				'args'    => array( 'name' => 'morpheus_hide_user_enumeration', 'value' => 1 ),
+			),
+			'morpheus_version_fingerprint' => array(
+				'kind'  => 'auto',
+				'label' => 'Stop announcing the WordPress version',
+				'does'  => 'Removes the generator tag that names the exact WordPress version in every page head, and in feeds. It is the fastest way for anyone to find out whether a known vulnerability applies to this site.',
+				'fix'   => 'set_option',
+				'args'  => array( 'name' => 'morpheus_hide_wp_version', 'value' => 1 ),
+			),
+			'morpheus_hsts' => array(
+				'kind'    => 'auto',
+				'label'   => 'Tell browsers to use HTTPS for this host',
+				'does'    => 'Sends Strict-Transport-Security for six months, which stops a browser that has seen it from making a plain-HTTP request to this host at all. That closes the first-visit downgrade, which the redirect cannot — a redirect only answers once the insecure request has already been made.',
+				'warning' => 'A commitment, not a toggle. A browser that has seen the header keeps using HTTPS until the six months run out, even if you turn this off — turning it off stops renewing the pin, it does not remove it. Only worth doing on a site that is staying on HTTPS, which is why Morpheus offers it only when it finds the site already served over HTTPS.',
+				'fix'     => 'set_option',
+				'args'    => array( 'name' => 'morpheus_hsts_max_age', 'value' => 15552000 ),
+			),
+
 			// ── The directory WordPress needs to roll back an update ────────
 			'update_temp_backup_writable' => array(
 				'kind'  => 'auto',

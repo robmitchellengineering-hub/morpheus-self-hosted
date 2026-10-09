@@ -433,6 +433,57 @@ class Morpheus_Health {
 			);
 		}
 
+		// ── 7–9. THE DEFAULTS WORTH CHANGING ───────────────────────────────────
+		//
+		// These three are not faults the site developed; they are how WordPress ships. Each
+		// is closed by one option, each option is written by the ordinary `set_option` rail,
+		// and the BEHAVIOUR lives in Morpheus_Security — which registers no hook at all
+		// while the option is off. So "good" here means the filter is really running, not
+		// that a checkbox was ticked somewhere.
+		//
+		// Read once, from the one place that owns the answer (Morpheus_Security::state()),
+		// with a safe default so a plugin tree missing the class degrades to "not hardened"
+		// rather than to a fatal on the health screen.
+		$sec = class_exists( 'Morpheus_Security' )
+			? Morpheus_Security::state()
+			: array( 'enumeration' => false, 'version' => false, 'https' => false, 'hsts' => 0 );
+
+		$checks[] = array(
+			'id'          => 'morpheus_user_enumeration',
+			'label'       => 'Usernames are not published to anonymous visitors',
+			'status'      => ! empty( $sec['enumeration'] ) ? 'good' : 'recommended',
+			'description' => ! empty( $sec['enumeration'] )
+				? 'Anonymous requests get no user list from the REST API and the ?author= probe is refused, so an attacker cannot turn a number into a login name. Morpheus stops DISCOVERY: an author archive at /author/<slug>/ still works if the slug is already known, because closing author archives outright would change how the site behaves for readers.'
+				: 'WordPress answers /wp-json/wp/v2/users with every author\'s id, display name and slug, and resolves /?author=1, 2, 3… to each of them in turn. The slug is the login name on any site that never changed it, so this hands an attacker the one piece they cannot guess. Morpheus can refuse both to anyone who is not signed in; signed-in editing is untouched.',
+			'source'      => 'morpheus',
+		);
+
+		$checks[] = array(
+			'id'          => 'morpheus_version_fingerprint',
+			'label'       => 'The WordPress version is not announced to visitors',
+			'status'      => ! empty( $sec['version'] ) ? 'good' : 'recommended',
+			'description' => ! empty( $sec['version'] )
+				? 'The generator tag no longer names the WordPress version, in the page head or in feeds.'
+				: 'Every page carries <meta name="generator" content="WordPress ' . esc_html( get_bloginfo( 'version' ) ) . '"> in its head, which names the exact version to anyone who views the source — the fastest way to find out whether a known vulnerability applies here. Morpheus can remove it. It is a fingerprint, not a lock: the version can still be inferred from other things, and keeping WordPress updated is what actually protects the site.',
+			'source'      => 'morpheus',
+		);
+
+		// HSTS is only meaningful on a site already served over HTTPS — on a plain-HTTP site
+		// the browser ignores the header outright, and the finding that matters there is
+		// ssl_support. Emitting it anyway would be a green tick for a switch that cannot do
+		// anything.
+		if ( ! empty( $sec['https'] ) ) {
+			$checks[] = array(
+				'id'          => 'morpheus_hsts',
+				'label'       => 'Browsers are told to use HTTPS for this host',
+				'status'      => ! empty( $sec['hsts'] ) ? 'good' : 'recommended',
+				'description' => ! empty( $sec['hsts'] )
+					? 'Strict-Transport-Security is sent for ' . esc_html( Morpheus_Security::describe_hsts() ) . ', so a browser that has seen it will not make a plain-HTTP request to this host at all. That closes the first-visit downgrade, which a redirect cannot — a redirect only answers after the insecure request has already been made.'
+					: 'The certificate and the http→https redirect are both in place, but no Strict-Transport-Security header is sent, so the FIRST request a browser makes can still be plain HTTP and answered by whoever is listening. Morpheus can send the header for six months. It is a commitment: a browser that has seen it keeps using HTTPS until the window expires, even if you switch it off, so it is worth being sure the site is staying on HTTPS.',
+				'source'      => 'morpheus',
+			);
+		}
+
 		return $checks;
 	}
 

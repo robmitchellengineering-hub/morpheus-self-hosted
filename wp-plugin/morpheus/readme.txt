@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.10
+Stable tag: 0.9.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,19 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.11 =
+* New: **three things WordPress does by default, and a switch for each.** None of these is a fault your site
+  developed — they are how WordPress ships, on every site, and a person would have to know to go and close them.
+  * **Stop publishing usernames to visitors.** WordPress answers `/wp-json/wp/v2/users` with every author's id,
+    display name and slug, and resolves `/?author=1, 2, 3…` to each in turn. The slug is the login name on any
+    site that never changed it. Morpheus refuses both to anyone who is not signed in; signed-in editing and
+    `/wp/v2/users/me`, which the editor needs, are untouched.
+  * **Stop announcing the WordPress version.** Every page carried `<meta name="generator" content="WordPress …">`
+    in its head — the fastest way for anyone to find out whether a known vulnerability applies to you.
+  * **Tell browsers to use HTTPS for this host.** Sends `Strict-Transport-Security` for six months, which closes
+    the first-visit downgrade that a redirect cannot. Offered only on a site already served over HTTPS, and
+    deliberately without `preload` or `includeSubDomains`: those outlive the site that set them.
 
 = 0.9.10 =
 * New: **the AI FIX button has a real choice in it now.** Two findings can be answered more than one honest way, and

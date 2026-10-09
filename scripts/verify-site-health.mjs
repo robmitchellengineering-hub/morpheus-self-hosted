@@ -832,6 +832,59 @@ check('…and asking is a separate press from applying',
 const askBlock = healthPanel.slice(healthPanel.indexOf('AI FIX'), healthPanel.indexOf('onClick={() => onFix(t, { proposal: asked.proposal })}'));
 check('…and nothing between ASK and APPLY can change the site', /onFix\(/.test(askBlock), false);
 
+// ── SECURITY: THE DEFAULTS WORTH CHANGING ───────────────────────────────────
+//
+// Three findings that are not faults the site developed — they are how WordPress ships.
+// Each is closed by ONE option through the ordinary `set_option` rail, and the BEHAVIOUR
+// lives in Morpheus_Security. The claim worth guarding is not "a switch exists": it is that
+// OFF MEANS OFF (no hook is registered while the option is clear), that the option the fix
+// WRITES is the option the behaviour READS, and that the one route the editor needs is not
+// caught in the net.
+const securityCode = strip('wp-plugin/morpheus/includes/class-security.php');
+const pluginBoot = strip('wp-plugin/morpheus/morpheus.php');
+
+check('the hardening behaviour is a module, loaded and initialised by the plugin',
+  /class Morpheus_Security/.test(securityCode)
+  && /require_once MORPHEUS_DIR \. 'includes\/class-security\.php'/.test(pluginBoot)
+  && /Morpheus_Security::init\(\)/.test(pluginBoot), true);
+// OFF MEANS OFF. Every behaviour is registered INSIDE the option test, so an unhardened site
+// carries no filter at all — not a filter that returns early. The difference matters: a hook
+// that runs and does nothing is invisible in every check except this one.
+check('…and OFF means off: no hook is registered unless its option is set',
+  /if \( self::enabled\( self::OPT_ENUMERATION \) \) \{\s*add_filter\( 'rest_endpoints'/.test(securityCode)
+  && /if \( self::enabled\( self::OPT_VERSION \) \) \{\s*remove_action\( 'wp_head', 'wp_generator' \)/.test(securityCode)
+  && /if \( self::hsts_max_age\(\) > 0 \) \{\s*add_action\( 'send_headers'/.test(securityCode), true);
+// ⚠️ THE PLUGIN HAS ONE COPY OF EACH OPTION NAME, AND IT IS THE ONE THE FIX WRITES. Two
+// literals that drift apart is a button that reports success and changes nothing — and no
+// runtime test would see it.
+for (const option of ['morpheus_hide_user_enumeration', 'morpheus_hide_wp_version', 'morpheus_hsts_max_age']) {
+  check(`…and '${option}' is spelled the same in the fix that writes it and the code that reads it`,
+    new RegExp(`'name'\\s*=>\\s*'${option}'`).test(fixesCode) && securityCode.includes(`'${option}'`), true);
+}
+// THE EDITOR NEEDS /users/me, and it is a different route from the collection. Removing it
+// breaks the block editor for every signed-in user on the site.
+check('…and the one user route the editor needs is NOT removed',
+  /unset\( \$endpoints\['\/wp\/v2\/users'\] \)/.test(securityCode)
+  && /unset\( \$endpoints\['\/wp\/v2\/users\/\(\?P<id>\[\\d\]\+\)'\] \)/.test(securityCode)
+  && ! /unset\( \$endpoints\['\/wp\/v2\/users\/me'\] \)/.test(securityCode), true);
+// ANONYMOUS ONLY. Hardening that also applies to signed-in users breaks editing; the guard
+// is the first line of both behaviours, and both are asserted because either one alone
+// leaves the other open to the wrong caller.
+check('…and both behaviours are refused only to callers who are NOT signed in',
+  (securityCode.match(/is_user_logged_in\(\)/g) || []).length >= 2, true);
+// HSTS IS THE ONE THAT CANNOT BE TAKEN BACK QUICKLY. preload and includeSubDomains outlive
+// the site that set them — a subdomain the shop does not run today (mail, staging) can be
+// broken by a header it never asked for.
+check('…and the HSTS header carries neither preload nor includeSubDomains',
+  /Strict-Transport-Security: max-age=/.test(securityCode)
+  && ! /includeSubDomains/i.test(securityCode)
+  && ! /preload/i.test(securityCode), true);
+check('…and it is sent only on a request that is already HTTPS',
+  /!\s*is_ssl\(\)/.test(securityCode), true);
+// The finding itself is only emitted where the header can do something.
+check('…and the HSTS finding is offered only on a site already served over HTTPS',
+  /if \( ! empty\( \$sec\['https'\] \) \) \{/.test(healthCode), true);
+
 
 console.log(`\n${pass}/${pass + fail} checks passed`)
 if (fail) {

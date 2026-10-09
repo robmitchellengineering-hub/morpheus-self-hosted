@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Morpheus
  * Description:        Run your site from Morpheus — deploy code from a connected GitHub repo (no FTP), and manage products, stock, content and SEO over a signed API. Deploy, Store, SEO and Traffic, plus the admin-only Morpheus dock printed on the site itself.
- * Version:           0.9.10
+ * Version:           0.9.11
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Morpheus (morpheus.nz)
@@ -77,7 +77,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // was offered an update it already had. class-updates.php warns about exactly
 // that outcome in its own comment ("a stale response here would nag every site
 // forever") and it was a stale CONSTANT, not a stale response.
-define( 'MORPHEUS_VERSION', '0.9.10' );
+define( 'MORPHEUS_VERSION', '0.9.11' );
 define( 'MORPHEUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MORPHEUS_REST_NS', 'morpheus/v1' );
 
@@ -87,6 +87,9 @@ define( 'MORPHEUS_STATE_DIR', WP_CONTENT_DIR . '/morpheus-state' );
 
 require_once MORPHEUS_DIR . 'includes/helpers.php';
 require_once MORPHEUS_DIR . 'includes/class-settings.php';
+// Security: the defaults worth changing, one switch each. Loaded early because the
+// health checks report on it and the fix registry writes its options.
+require_once MORPHEUS_DIR . 'includes/class-security.php';
 require_once MORPHEUS_DIR . 'includes/class-rest.php';
 require_once MORPHEUS_DIR . 'includes/class-updates.php';
 require_once MORPHEUS_DIR . 'includes/class-pairing.php';
@@ -179,3 +182,6 @@ Morpheus_Redirects::init();
 // Dock: the floating panel button, printed on the site's own pages — for a
 // signed-in administrator only. See includes/class-dock.php.
 Morpheus_Dock::init();
+// Security: registers ONLY the switches that are on, so "off" is a fact about the
+// request rather than a claim in a panel. See includes/class-security.php.
+Morpheus_Security::init();
