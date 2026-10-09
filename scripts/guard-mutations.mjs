@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 52;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 53;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 48;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 49;\n',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -3727,6 +3727,51 @@ export const MUTATIONS = [
     find: 'Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module',
     replace: 'Failed to fetch dynamically imported module|error loading dynamically imported module',
   },
+
+  // ── batch 3: chosen because a failure here produces a WRONG or UNSAFE build ──
+  //
+  // Rob's rule for this work: *"the guards and mutations shouldnt stop morpheus from being able to build
+  // anything, they should only help him build better."* So the pile comes down from the end that matters —
+  // money, auth, safety defaults and the honest-success rule — and the cosmetic guards can wait, or go.
+  {
+    guard: 'verify-deck-fee-tiers.mjs',
+    file: 'src/pages/CommandDeck/feeTiers.js',
+    // ⚠️ MONEY, AND IT IS ONE DIGIT. This is the shop's cut on a consignment, and the repo already has the
+    // scar: `fee` was reported as money OWED to a consignor instead of kept by the shop, "wrong by the full
+    // sale value". Dropping the under-threshold rate by a third silently underpays every consignor below it.
+    why: "Drops the under-threshold commission rate, so every consignment below the threshold underpays its consignor.",
+    find: 'export const DEFAULT_FEE_TIERS = { threshold: 2000, rateUnder: 30, rateOver: 20 };',
+    replace: 'export const DEFAULT_FEE_TIERS = { threshold: 2000, rateUnder: 20, rateOver: 20 };',
+  },
+  {
+    guard: 'verify-site-maintenance.mjs',
+    file: 'server/src/lib/siteMaintenance.js',
+    // SAFETY DEFAULT. A maintenance run that scans because nobody turned it off is a run that touches
+    // somebody's live site on its own schedule — the whole point of the defaults being `false` and frozen.
+    why: 'Turns the maintenance scan on by default, so a scheduled run starts touching a site without being asked.',
+    find: '  scan_enabled: false,',
+    replace: '  scan_enabled: true,',
+  },
+  {
+    guard: 'verify-compile-artifacts.mjs',
+    file: 'server/src/lib/artifactSaveOutcome.js',
+    // ⚠️ THE FALSE-SUCCESS SHAPE, which this file's own comment calls what it was written to stop: a partial
+    // save reported as complete, so the panel says "Build complete!" while one asset never landed. The repo's
+    // stated cardinal sin, and the user's evidence is the app they cannot download.
+    why: 'Reports a partial save as complete, so the panel says the build succeeded while assets are missing.',
+    find: '  if (failed.length === 0) return outcome;',
+    replace: '  if (true) return outcome;',
+  },
+  {
+    guard: 'verify-caller-check.mjs',
+    file: 'server/src/lib/callerCheck.js',
+    // NOISE THAT MAKES THE CODER CHASE SOMETHING IT DID NOT BREAK. The filter drops breaks that were already
+    // there before this change; without it every turn is told it broke imports that were broken when it
+    // started — which is how a real finding gets lost in a list of false ones.
+    why: 'Blames this change for pre-existing broken imports, burying the ones it actually caused.',
+    find: '    .filter((b) => !before.has(keyOf(b)))',
+    replace: '    .filter(() => true)',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
@@ -3792,4 +3837,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 52;
+export const UNPROVEN_BASELINE = 48;
