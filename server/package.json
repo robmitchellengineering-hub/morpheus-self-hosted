@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Morpheus self-hosted backend \u2014 Express + Prisma/Postgres. Ported 1:1 from the Base44 function/entity source (see PORTING_GUIDE.md).",
+  "description": "Morpheus self-hosted backend — Express + Prisma/Postgres. Ported 1:1 from the Base44 function/entity source (see PORTING_GUIDE.md).",
   "main": "src/index.js",
   "scripts": {
     "dev": "node --watch src/index.js",
@@ -41,6 +41,7 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.15",
     "pdf-parse": "^2.4.5",
+    "php-parser": "^3.7.0",
     "puppeteer-core": "^25.11.0",
     "stripe": "^16.12.0",
     "uuid": "^9.0.1",

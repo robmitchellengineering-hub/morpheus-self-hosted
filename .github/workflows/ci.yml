@@ -64,6 +64,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      # THE BEHAVIOURAL half of "a WordPress change is verified in the language it is written in", re-run
+      # in the ONE job that has `php-parser` installed. Same script as the guards job — the wiring half runs
+      # there, and the behavioural half reports NOT VERIFIED there rather than pretending (H4: that job
+      # installs nothing, and its no-install walker follows dynamic imports, so a script in it cannot even
+      # reach syntaxCheck.js). This step is what makes the behaviour proven on every pull request.
+      - name: PHP syntax is really read before it reaches a site
+        run: node scripts/verify-php-syntax.mjs
+
       # `prebuild` runs scripts/sync-capabilities.mjs, which rewrites this file
       # (KNOWN-HAZARDS.md H3). A build that dirties it is normal; the warning is
       # here so a change that *commits* it gets noticed.
@@ -623,6 +631,15 @@ jobs:
 
       - name: The guard-mutation registry is honest
         run: node scripts/verify-guard-mutations.mjs
+
+      # A tenant's normal change is PHP, and until 2026-10-09 nothing read it: the verify tier counted
+      # code files from a static extension list, a PHP-only change counted zero, and coverage honestly
+      # reported `not_verified` — no protection, with the adapter's own note pointing at "the target
+      # repo's CI" as the real check. That assumption is gone; this asserts the WIRING that replaced it.
+      # The behaviour needs `php-parser`, so it runs in the `lint + build` job below instead — see
+      # scripts/verify-php-syntax.mjs for why the two halves are split.
+      - name: PHP is verified in the language it is written in
+        run: node scripts/verify-php-syntax.mjs
 
       # And the proof itself: one sabotage per guard, applied to a real file, with the guard expected to go
       # red — then restored byte-for-byte and hash-verified. ~6 seconds for the whole set. It fails on a guard

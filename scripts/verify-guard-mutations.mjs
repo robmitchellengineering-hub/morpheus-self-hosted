@@ -1,8 +1,17 @@
 // Can this repo still prove its guards can fail?
 //
-// The companion to scripts/mutate-guards.mjs, which does the actual work — apply one sabotage, run the
-// guard, fail if it stays green. That runner is a command a person runs; this is the part CI enforces, and
-// it is cheap on purpose: no guard is executed here, so it can live in the no-install guards job.
+// TWO HALVES, AND BOTH RUN IN CI:
+//   * `scripts/mutate-guards.mjs` — the proof itself: one sabotage per guard, applied to a real file,
+//     with the guard expected to go red. `.github/workflows/ci.yml` runs it on every pull request.
+//   * this file — the registry's integrity: completeness, no stale `find`, no ambiguous `find`, and the
+//     ratchet. It executes no guard, so it is cheap enough to sit in the no-install guards job.
+//
+// ⚠️ THE SENTENCE THAT USED TO BE HERE SAID THE RUNNER "is a command a person runs". IT IS NOT, and it
+// has not been since #455 put it in `ci.yml`. A session read that line as fact on 2026-10-09, concluded
+// that a mutation surviving its own guard could go unnoticed in CI, and started building a diff-scoped
+// runner to close a gap that did not exist. It was stopped only by reading the workflow.
+// **A comment describing what CI does is a claim about the system, and it rots like any other.** If you
+// change the workflow, change this line in the same change.
 //
 // What it will not let happen:
 //   * a guard added to verify.mjs with no mutation, or with a mutation that no longer matches its file

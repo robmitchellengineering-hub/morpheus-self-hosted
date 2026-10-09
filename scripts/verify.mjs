@@ -135,6 +135,7 @@ const HARD = [
   'verify-build-failure-owner.mjs',
   'verify-project-divergence.mjs',
   'verify-guard-mutations.mjs',
+  'verify-php-syntax.mjs',
   'verify-app-selftest.mjs',
   'verify-bootstrap-sql.mjs',
   'verify-plan-reconciliation.mjs',

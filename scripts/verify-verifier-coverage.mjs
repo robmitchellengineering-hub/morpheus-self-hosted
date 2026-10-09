@@ -104,12 +104,20 @@ console.log('\n-- and the WordPress verifier reports it --');
 const wpSrc = readFileSync(join(REPO, 'server/src/lib/delivery/wordpress.js'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
 check('it imports the verdict', /import \{ coverageVerdict \} from '\.\.\/engine\/verificationCoverage\.js'/.test(wpSrc));
+// ⚠️ THIS USED TO READ `codeFiles: scripts.length` — and `scripts` was the adapter's JS-ONLY filter, so
+// the assertion whose whole point is "decide from the files you could actually read" was pinning the one
+// count that read NONE of a WordPress theme. The intent was right and the subject was the bug.
+// `syntax.checked` is literally the files a checker read, which is what this sentence always meant.
 check('…and decides from the counts of the files it could actually read',
-  /coverageVerdict\(\{ errors, codeFiles: scripts\.length, files: present\.length \}\)/.test(wpSrc));
+  /coverageVerdict\(\{ errors, codeFiles: syntax\.checked\.length, files: present\.length \}\)/.test(wpSrc));
 // The shape this replaced — `ok: errors.length === 0` — is a clean bill of health
 // over zero files. It must not survive anywhere in this adapter.
 check('…never a bare "no errors means ok"', /ok: errors\.length === 0/.test(wpSrc) === false);
-check('…and it still reports how many files it checked', /checkedFiles: scripts\.length/.test(wpSrc));
+check('…and it still reports how many files it checked', /checkedFiles: syntax\.checked\.length/.test(wpSrc));
+// And the JS-only filter it used to count must not come back — see verify-php-syntax.mjs, which asserts
+// the same absence from the other direction.
+check('…and it no longer narrows the change to JS before checking it',
+  /present\.filter\(\(f\) => \/\\\.\(jsx\?/.test(wpSrc) === false);
 
 // ── and only a real failure blocks the ship ─────────────────────────────────
 // A not_verified change is the normal case for this target. Blocking it would

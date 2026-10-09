@@ -19,7 +19,7 @@
 // `config`.
 import crypto from 'node:crypto';
 import { PLUGIN_DENY_PATHS } from '../enginePolicy.js';
-import { checkSyntax } from '../syntaxCheck.js';
+import { checkSyntaxDetailed } from '../syntaxCheck.js';
 import { revertCommit } from '../github.js';
 import { mergePrWhenGreen } from '../engine/merge.js';
 import { coverageVerdict } from '../engine/verificationCoverage.js';
@@ -96,16 +96,26 @@ export const wordpressDelivery = {
   // is the caller's decision; see the ship gate in functions/wordPressDeploy.js.
   async verify({ files }) {
     const present = (files || []).filter((f) => !isDenied(f.path));
-    const scripts = present.filter((f) => /\.(jsx?|tsx?|mjs|cjs)$/.test(f.path));
-    const errors = (await checkSyntax(scripts.map((f) => ({ path: f.path, content: f.content ?? '' }))))
-      .map((e) => ({ phase: 'syntax', file: e.file, line: e.line, column: e.column, text: e.text }));
-    const verdict = coverageVerdict({ errors, codeFiles: scripts.length, files: present.length });
+    // ⚠️ EVERY present file goes in, and the checker says which ones it could READ.
+    //
+    // This used to filter to JS/TS — so for a WordPress tenant, whose normal change is PHP, this
+    // examined nothing and coverage honestly reported `not_verified`. The note at the bottom of this
+    // function said where the real check was: *"PHP lint and the theme build run in the target
+    // repo's CI"* — an assumption about a repo nobody had checked, carrying the whole safety story
+    // for a change about to reach a live shop. `php-parser` is a real parser in JS, so the check now
+    // happens HERE, before the files are written, on the machine doing the writing.
+    //
+    // `checked` is the honest count: a file is in it only when its language had a working checker,
+    // so a missing tool still reports `not_verified` rather than a pass over unread files.
+    const syntax = await checkSyntaxDetailed(present.map((f) => ({ path: f.path, content: f.content ?? '' })));
+    const errors = syntax.errors.map((e) => ({ phase: 'syntax', file: e.file, line: e.line, column: e.column, text: e.text }));
+    const verdict = coverageVerdict({ errors, codeFiles: syntax.checked.length, files: present.length });
     return {
       ...verdict,
       errorCount: errors.length,
       errors: errors.slice(0, 50),
-      checkedFiles: scripts.length,
-      note: 'PHP lint and the theme build run in the target repo’s CI; the plugin health-checks the live site after it writes the files.',
+      checkedFiles: syntax.checked.length,
+      note: 'PHP and JS syntax are checked here, with a real parser for each. The theme build runs in the target repo\'s CI, and the plugin health-checks the live site after it writes the files.',
     };
   },
 
