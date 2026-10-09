@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 48;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 49;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 44;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 45;\n',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -3773,6 +3773,47 @@ export const MUTATIONS = [
     replace: '    .filter(() => true)',
   },
 
+  // ── batch 4: production data, privacy, the honest meter, and prompt cost ────
+  {
+    guard: 'verify-prod-sql.mjs',
+    file: 'server/src/lib/prodSqlGuard.js',
+    // ⚠️ AN UNBOUNDED WRITE AGAINST PRODUCTION. This branch is what refuses `DELETE FROM x` with no WHERE —
+    // the guard's own words for it are *"an unbounded write is never a repair"*. Removed, the one statement
+    // that can erase a table is classified as a data repair and allowed through.
+    why: 'Allows an unbounded write against production, so a DELETE or UPDATE with no WHERE passes as a repair.',
+    find: '    if (!HAS_WHERE.test(s)) { unbounded.push(s); continue; }',
+    replace: '    if (false) { unbounded.push(s); continue; }',
+  },
+  {
+    guard: 'verify-insight-optout.mjs',
+    file: 'server/src/lib/deckInsightGate.js',
+    // ⚠️ THE OPT-OUT IGNORED. `isInsightOptedOut` is a person saying "do not look at my inbox"; returning
+    // false regardless means the insight still runs, still reads their messages and still spends their
+    // credits. The comment above it says respecting the opt-out "is the safe direction" — this is the other one.
+    why: 'Ignores the insight opt-out, so a person who switched it off still has their data read and their credits spent.',
+    find: '  return widgetRows.some((r) => r && r.widget_key === key && r.enabled === false);',
+    replace: '  return false;',
+  },
+  {
+    guard: 'verify-deck-prompt-bounds.mjs',
+    file: 'server/src/lib/promptBounds.js',
+    // THE ONE BLOCK THAT CAN BLOW UP FROM THE PERSONA'S OWN BEHAVIOUR. Jarvis's conversation window is
+    // count-bounded but was size-unbounded — it grew 77 → 6,927 chars purely through its own long replies.
+    // Without this break, every message carries the whole history and the cost grows without bound.
+    why: 'Stops bounding the conversation block, so every Jarvis message carries the entire history.',
+    find: '    if (!alwaysWhole.has(i) && used + line.length > maxChars) { omitted = i + 1; break; }',
+    replace: '    if (false) { omitted = i + 1; break; }',
+  },
+  {
+    guard: 'verify-usage-observability.mjs',
+    file: 'server/src/ai.js',
+    // THE METER LOSES ITS LABEL. This is the column that makes a usage row attributable to the thing that
+    // spent the money; without it a build's cost cannot be split from a chat's, which is how "the pipeline is
+    // 98.7% of spend" was ever knowable. The product commitment is "an honest meter", not merely a number.
+    why: 'Drops the task label from usage rows, so what spent the credits can no longer be attributed.',
+    find: '        task: task || null,',
+    replace: '        task: null,',
+  },
   // ── the lane splitter: a fan-out is only safe when this module says no to the ones that are not ──────
   //
   // Born proven rather than added to the unproven pile: it is a new hard gate, and the ratchet is equality,
@@ -3891,4 +3932,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 48;
+export const UNPROVEN_BASELINE = 44;
