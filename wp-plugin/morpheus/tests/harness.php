@@ -1450,6 +1450,34 @@ if ( false === $sec_version_was ) { delete_option( 'morpheus_hide_wp_version' );
 if ( 0 === (int) $sec_hsts_was ) { delete_option( 'morpheus_hsts_max_age' ); } else { update_option( 'morpheus_hsts_max_age', $sec_hsts_was ); }
 ok( false === get_option( 'morpheus_hide_user_enumeration', false ), 'security: …and this section left the site exactly as it found it' );
 
+// ── HSTS: THE SITE'S SCHEME, NOT THE REQUEST'S ──────────────────────────────
+//
+// ⚠️ THIS BUG SHIPPED, AND A REAL SITE FOUND IT. "Is this site HTTPS?" was asked with
+// `is_ssl()`, which reads `$_SERVER['HTTPS']` — unset or 'off' on every host that terminates
+// TLS in front of PHP. On the first site it reached, BOTH halves of the feature switched
+// themselves off: the finding was never offered, and the header would never have been sent
+// if it had been. The site's own address is the authority, and this is the test for it: the
+// REQUEST stays plain while home_url() says https, which is exactly the shape of the host
+// that broke it.
+$https_home = function ( $url ) { return preg_replace( '#^http://#', 'https://', (string) $url ); };
+ok( ! is_ssl(), 'security: (this boot\'s REQUEST is plain HTTP — that is what makes the next assertion mean something)' );
+ok( ! Morpheus_Security::site_is_https(), 'security: an http-addressed site is not treated as HTTPS' );
+add_filter( 'home_url', $https_home, 99 );
+$site_reads_https = Morpheus_Security::site_is_https();
+remove_filter( 'home_url', $https_home, 99 );
+ok( $site_reads_https, 'security: …but a site ADDRESSED over https counts as HTTPS even when the request is plain' );
+ok( ! Morpheus_Security::site_is_https(), 'security: …and it goes back to http when the filter does' );
+
+ok( 'not_served' === Morpheus_Security::hsts_served(), 'security: with the switch off, nothing claims to be served' );
+// THREE ANSWERS, NEVER A BOOLEAN. Setting the option proves nothing about what a visitor
+// receives — the host, a proxy or a page cache can drop the header between PHP and the
+// browser — so the probe asks the site, and "I could not look" is its own answer.
+update_option( 'morpheus_hsts_max_age', Morpheus_Security::HSTS_MAX_AGE );
+$hsts_probe = Morpheus_Security::hsts_served();
+delete_option( 'morpheus_hsts_max_age' );
+ok( in_array( $hsts_probe, array( 'served', 'not_served', 'unknown' ), true ), 'security: the probe answers served / not_served / unknown, in those words', $hsts_probe );
+delete_transient( 'morpheus_hsts_probe' );
+
 // ── redirects, and the 404 log ──────────────────────────────────────────────
 //
 // A redirect list is the one content feature that can take a site DOWN: a rule

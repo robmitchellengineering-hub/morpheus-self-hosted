@@ -472,14 +472,37 @@ class Morpheus_Health {
 		// the browser ignores the header outright, and the finding that matters there is
 		// ssl_support. Emitting it anyway would be a green tick for a switch that cannot do
 		// anything.
+		//
+		// ⚠️ AND "SWITCHED ON" IS NOT "BEING SENT". Between PHP and the browser sit the host,
+		// any proxy and any page cache, and every one of them can drop a header this site
+		// asked for. The first site this shipped to had the switch on and no header — which is
+		// why the check does not take the option's word for it, and why there are three
+		// answers below rather than two. Reporting "unknown" as a failure would be the
+		// opposite mistake: a host that blocks loopback requests is common, and "I could not
+		// look" is a different sentence from "it is not there".
 		if ( ! empty( $sec['https'] ) ) {
+			$hsts_on     = ! empty( $sec['hsts'] );
+			$hsts_served = (string) ( $sec['hsts_served'] ?? 'not_served' );
+
+			if ( ! $hsts_on ) {
+				$status = 'recommended';
+				$desc   = 'The certificate and the http→https redirect are both in place, but no Strict-Transport-Security header is sent, so the FIRST request a browser makes can still be plain HTTP and answered by whoever is listening. Morpheus can send the header for six months. It is a commitment: a browser that has seen it keeps using HTTPS until the window expires, even if you switch it off, so it is worth being sure the site is staying on HTTPS.';
+			} elseif ( 'served' === $hsts_served ) {
+				$status = 'good';
+				$desc   = 'Strict-Transport-Security is being served for ' . esc_html( Morpheus_Security::describe_hsts() ) . ' — Morpheus asked this site for its own home page and read the header back, so this is what a visitor receives rather than what was configured. A browser that has seen it will not make a plain-HTTP request to this host at all, which closes the first-visit downgrade that a redirect cannot.';
+			} elseif ( 'not_served' === $hsts_served ) {
+				$status = 'recommended';
+				$desc   = 'Morpheus is set to send Strict-Transport-Security for ' . esc_html( Morpheus_Security::describe_hsts() ) . ', and the header is NOT coming back when Morpheus asks this site for its own home page. Something between PHP and the browser is dropping it — most often the host, a proxy or a page cache. The setting is correct and the header is not reaching anyone, which is the one combination an option alone can never tell you about. Ask the host to serve Strict-Transport-Security, or to stop stripping it.';
+			} else {
+				$status = 'recommended';
+				$desc   = 'Morpheus is set to send Strict-Transport-Security for ' . esc_html( Morpheus_Security::describe_hsts() ) . ', and could not confirm whether it is being served: this site did not answer Morpheus\'s request to its own home page. That is usually a host blocking loopback requests, and it does not mean the header is missing — but Morpheus will not report a protection it has not seen.';
+			}
+
 			$checks[] = array(
 				'id'          => 'morpheus_hsts',
 				'label'       => 'Browsers are told to use HTTPS for this host',
-				'status'      => ! empty( $sec['hsts'] ) ? 'good' : 'recommended',
-				'description' => ! empty( $sec['hsts'] )
-					? 'Strict-Transport-Security is sent for ' . esc_html( Morpheus_Security::describe_hsts() ) . ', so a browser that has seen it will not make a plain-HTTP request to this host at all. That closes the first-visit downgrade, which a redirect cannot — a redirect only answers after the insecure request has already been made.'
-					: 'The certificate and the http→https redirect are both in place, but no Strict-Transport-Security header is sent, so the FIRST request a browser makes can still be plain HTTP and answered by whoever is listening. Morpheus can send the header for six months. It is a commitment: a browser that has seen it keeps using HTTPS until the window expires, even if you switch it off, so it is worth being sure the site is staying on HTTPS.',
+				'status'      => $status,
+				'description' => $desc,
 				'source'      => 'morpheus',
 			);
 		}

@@ -3408,9 +3408,30 @@ export const MUTATIONS = [
     file: 'wp-plugin/morpheus/includes/class-security.php',
     // HSTS OVER PLAIN HTTP IS IGNORED BY EVERY BROWSER. Sending it anyway is harmless and
     // still wrong: it makes the panel claim a protection the transport cannot carry.
-    why: 'Sends the HSTS header on plain-HTTP requests too, where no browser will honour it.',
-    find: "\t\tif ( $max <= 0 || ! is_ssl() || headers_sent() ) {",
+    why: 'Sends the HSTS header on a site that is not served over HTTPS, where no browser will honour it.',
+    find: "\t\tif ( $max <= 0 || ! self::site_is_https() || headers_sent() ) {",
     replace: '\t\tif ( $max <= 0 || headers_sent() ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-security.php',
+    // ⚠️ THE BUG THAT ACTUALLY SHIPPED. Back to asking the REQUEST whether the site is HTTPS
+    // — which is false on every host that terminates TLS in front of PHP, and switched BOTH
+    // halves of this feature off on the first real site it reached: no finding offered, and
+    // no header sent if it had been.
+    why: 'Asks the request rather than the site whether it is HTTPS, which is false behind a TLS-terminating host.',
+    find: "\t\t$scheme = wp_parse_url( home_url(), PHP_URL_SCHEME );\n\t\treturn 'https' === strtolower( (string) $scheme );",
+    replace: '\t\treturn false;',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-security.php',
+    // "COULD NOT LOOK" IS NOT "IT IS NOT THERE". Folded together, a host that blocks loopback
+    // makes Morpheus report a missing protection it never checked — the exact claim-about-the-
+    // past this plugin spends its copy avoiding.
+    why: 'Reports a failed probe as "not served", so a blocked loopback reads as a missing header.',
+    find: "\t\t\t$verdict = 'unknown';",
+    replace: "\t\t\t$verdict = 'not_served';",
   },
   {
     guard: 'verify-site-health.mjs',
