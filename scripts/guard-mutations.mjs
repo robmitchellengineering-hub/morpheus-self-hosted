@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 56;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 57;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 52;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 53;\n',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -3684,6 +3684,49 @@ export const MUTATIONS = [
     find: 'block text-[11px] text-ink-max break-words',
     replace: 'block text-[11px] text-ink-max/60 break-words',
   },
+
+  // ── batch 2: four more, chosen by what they protect ────────────────────────
+  {
+    guard: 'verify-push-policy.mjs',
+    file: 'server/src/lib/enginePolicy.js',
+    // THE VERIFICATION GATE, SKIPPABLE. `force` is how a check gets bypassed, and this branch is the only thing
+    // that refuses it for a policy that has not allowed it. Removed, "I could not get the guards green" becomes
+    // a push — the shape of most of this repo's own recorded hazards.
+    why: 'Stops refusing a forced push on a policy that does not allow it, so the verification gate can be skipped.',
+    find: '  if (force && !p.allowForce) {',
+    replace: '  if (false) {',
+  },
+  {
+    guard: 'verify-connection-secrets.mjs',
+    file: 'server/src/lib/connectionSecrets.js',
+    // ⚠️ A TOKEN THAT IS SILENTLY THE CIPHERTEXT. When decryption fails, returning the stored blob makes every
+    // caller treat an encrypted string as the credential — so a Netlify or Google call goes out with `v1:…` as
+    // the bearer token, and the failure reads as "the connection is broken" rather than "this never decrypted".
+    // The guard asserts exactly this: *"decoding never returns the ciphertext as if it were the value"*.
+    why: 'Returns the stored ciphertext when decryption fails, so a caller sends an encrypted blob as the credential.',
+    find: '  } catch {\n    return {};\n  }\n  if (!json) return {};',
+    replace: '  } catch {\n    return stored;\n  }\n  if (!json) return {};',
+  },
+  {
+    guard: 'verify-app-capability-creds.mjs',
+    file: 'server/src/lib/tokenHash.js',
+    // TWO UNSET VALUES ARE NOT A MATCH. The function's own comment: in a grant check, `true` here reads as
+    // *"an app that named no app satisfies a row that named no app"* — the opposite of the isolation this
+    // exists to enforce, and it would pass any check that only ever compares real tokens.
+    why: 'Treats two empty tokens as a match, so a grant check on two unset values succeeds.',
+    find: '  if (!left || !right) return false;',
+    replace: '  if (!left || !right) return true;',
+  },
+  {
+    guard: 'verify-stale-chunk.mjs',
+    file: 'src/lib/staleChunk.js',
+    // A BROWSER LEFT OUT. The three engines word this failure differently and the guard names all three; the one
+    // that goes missing is the one whose users get a white screen with no reload, and nothing else in the suite
+    // would notice, because the other two patterns still match.
+    why: "Drops Safari's wording from the stale-chunk test, so that browser gets a blank page instead of a reload.",
+    find: 'Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module',
+    replace: 'Failed to fetch dynamically imported module|error loading dynamically imported module',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
@@ -3749,4 +3792,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 56;
+export const UNPROVEN_BASELINE = 52;
