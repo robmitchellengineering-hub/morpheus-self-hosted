@@ -1390,8 +1390,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 60;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 61;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 56;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 57;\n',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -3612,7 +3612,91 @@ export const MUTATIONS = [
     find: 'outside the site, and is what this panel reads either way.',
     replace: 'and this is {log.path}. Morpheus reads the file CLEAN MY SITE judges served or not.',
   },
+
+  // ── batch 1: five guards the ratchet had never asked to prove themselves ────
+  {
+    guard: 'verify-deploy-health-scope.mjs',
+    file: 'server/src/routes/functions.routes.js',
+    // ⚠️ PUTS AN SSRF PROBE ORACLE BACK ON THE ANONYMOUS SURFACE. The handler fetches a URL and returns its
+    // status, latency and error text; one entry in this Set makes that reachable without a session. The
+    // guard's own header says the property is "no code path here fetches an address the caller chose", and a
+    // behavioural test cannot see this, because both legitimate callers pass an owned projectId.
+    why: 'Puts checkDeployHealth back in PUBLIC_FUNCTIONS, so an unauthenticated caller can make the server fetch an address they choose.',
+    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'submitFeedback']);",
+    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'submitFeedback', 'checkDeployHealth']);",
+  },
+  {
+    guard: 'verify-deploy-health-scope.mjs',
+    file: 'server/src/functions/checkDeployHealth.js',
+    // CROSS-TENANT DISCLOSURE, and it is one clause. Without the owner filter, any signed-in user can name
+    // somebody else's projectId and be told whether it is up — which is what the original defect did.
+    why: 'Drops the owner filter from the project lookup, so any signed-in caller can check another user\'s project.',
+    find: '    where: { id: projectId, created_by_id: user.id },',
+    replace: '    where: { id: projectId },',
+  },
+  {
+    guard: 'verify-cors.mjs',
+    file: 'server/src/lib/corsOrigin.js',
+    // ⚠️ THE CLASSIC. Reflecting the requesting origin AND allowing credentials is the combination that lets
+    // any site in the world make credentialed cross-origin calls. The module's own comment says credentials
+    // are "not needed for this API… pure liability", so this is one character away from a real vulnerability
+    // and the guard asserts it as a PROPERTY over nine inputs rather than as one example.
+    why: 'Allows credentials alongside a reflected wildcard origin — the exact combination the property check exists to forbid.',
+    find: '    credentials: !wildcard,',
+    replace: '    credentials: true,',
+  },
+  {
+    guard: 'verify-cors.mjs',
+    file: 'server/src/lib/corsOrigin.js',
+    // THE FAIL-OPEN DEFAULT. With CORS_ORIGIN unset — a deployment that forgot — the resolver must refuse the
+    // real frontend loudly rather than accept every origin quietly.
+    why: 'Defaults an unset CORS_ORIGIN to a wildcard instead of the dev frontend, so a forgotten setting accepts every origin.',
+    find: "  const origins = parsed.length > 0 ? parsed : [DEFAULT_CORS_ORIGIN]",
+    replace: "  const origins = parsed.length > 0 ? parsed : ['*']",
+  },
+  {
+    guard: 'verify-contrast.mjs',
+    file: 'src/index.css',
+    // THE RUNG LADDER, at its root. `body` opting out of the ink token and back into the bright green is the
+    // exact regression the contrast work was done to prevent (Rob: *"words are still green"*), and it is a
+    // one-word edit in a file nobody reads line by line.
+    why: 'Puts body copy back on --foreground, so prose is the bright green again.',
+    find: '    @apply bg-background text-ink font-body;',
+    replace: '    @apply bg-background text-foreground font-body;',
+  },
+  {
+    guard: 'verify-contrast.mjs',
+    file: 'src/index.css',
+    // A THEME BLOCK THAT LOSES A RUNG. The guard asserts each theme defines all three, because a missing rung
+    // is not a fallback — it is a token that resolves to nothing, and the contrast it was chosen for is gone.
+    why: 'Drops the strong rung from one theme block, so that theme has an ink token with nothing between it and max.',
+    find: '    --text-ink-strong: 130 25% 95%;',
+    replace: '    --text-ink-strong-x: 130 25% 95%;',
+  },
+  {
+    guard: 'verify-prose-ink.mjs',
+    file: 'src/components/matrix/website/HealthTab.jsx',
+    // THE ONE RULE THE WHOLE PROSE SWEEP EXISTS FOR: an opacity modifier on an ink token. It looks like a
+    // softer grey and is actually whatever is behind it, which is how a paragraph ends up unreadable over one
+    // background and fine over another. Asserted as behaviour by the shared scanner, so it can only be proved
+    // by putting a real violation back into a real file.
+    why: 'Puts an opacity modifier back on an ink token, the exact violation the prose sweep exists to catch.',
+    find: 'block text-[11px] text-ink-max break-words',
+    replace: 'block text-[11px] text-ink-max/60 break-words',
+  },
 ];
+
+// ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
+//
+// `UNPROVEN_BASELINE` counts the hard gates with no mutation at all: **60 of 124 on 2026-10-09.** Nothing
+// proves those can fail, and that is not a formality — one of them was holding a live hole in place.
+// `verify-verifier-coverage.mjs` asserted the WordPress adapter's JS-only `codeFiles: scripts.length` under
+// the sentence *"decides from the counts of the files it could actually read"*, and with no mutation nothing
+// ever asked it to prove it could fail; it went on asserting the bug as though it were the rule until the PHP
+// work exposed it.
+//
+// So the pile comes down in batches below, each with a sabotage that makes its guard go red. The baseline is
+// equality, so proving a guard means lowering the number in the same change.
 
 /**
  * Guards a find/replace mutation CANNOT express, with the reason. Not an allowlist and not a home — the
@@ -3665,4 +3749,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 60;
+export const UNPROVEN_BASELINE = 56;
