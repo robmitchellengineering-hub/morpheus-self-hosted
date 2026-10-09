@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.12
+Stable tag: 0.9.13
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,17 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.13 =
+* Fix: **the health scan is fast again.** 0.9.12 checked whether the HSTS header was being served by asking this
+  site for its own home page *from inside the scan* — and a scan holds a PHP worker while a self-request needs
+  one, so on a host with a single worker the scan waited for a request that could not be served until the scan
+  had finished. It did finish, eventually, which is the worst way for it to fail: it looked like a slow product
+  rather than a broken check. The check now reads a stored answer and makes no request at all; the probe that
+  takes that answer runs on its own schedule, from wp-cron, in a request of its own.
+* The HSTS finding has a fourth state to go with it: **not checked yet**, which is a different thing from
+  *could not check* and from *not being served*. A green tick on this finding still means Morpheus read the
+  header back from your site — it will not give you one it has not seen.
 
 = 0.9.12 =
 * Fix: **the HTTPS test asked the wrong thing, so the HSTS switch never appeared.** 0.9.11 decided whether the
