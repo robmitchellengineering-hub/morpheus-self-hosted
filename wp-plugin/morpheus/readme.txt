@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.11
+Stable tag: 0.9.12
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,18 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.12 =
+* Fix: **the HTTPS test asked the wrong thing, so the HSTS switch never appeared.** 0.9.11 decided whether the
+  site is served over HTTPS by asking the REQUEST — `is_ssl()`, which reads a server variable that is unset or
+  "off" on any host that terminates TLS in front of PHP. On such a host both halves of the feature switched
+  themselves off: the finding was never offered, and the header would not have been sent if it had been. It now
+  asks the site's own address, which is what HSTS is a statement about. **Nothing else about the switch changed**,
+  and it remains something you turn on deliberately.
+* New: **the HSTS finding now says whether the header is actually being served**, by asking this site for its own
+  home page and reading the header back. The host, a proxy or a page cache sits between PHP and the browser and
+  any of them can drop it, so "switched on" is no longer reported as protection. Three answers, not two — and
+  "Morpheus could not check" is kept separate from "it is not there".
 
 = 0.9.11 =
 * New: **three things WordPress does by default, and a switch for each.** None of these is a fault your site

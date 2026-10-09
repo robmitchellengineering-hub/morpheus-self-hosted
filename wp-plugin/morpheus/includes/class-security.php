@@ -75,10 +75,82 @@ class Morpheus_Security {
 		return (bool) get_option( $option, false );
 	}
 
+	/**
+	 * Is this SITE served over HTTPS — asked of the site, not of one request.
+	 *
+	 * ⚠️ THIS WAS `is_ssl()` AND THAT WAS WRONG, in the way that costs the most: it is not a
+	 * preference, it is a fact about the REQUEST, and the two are different on every host
+	 * that terminates TLS in front of PHP. `is_ssl()` reads `$_SERVER['HTTPS']`, which a
+	 * proxy or a load balancer that forwards plain HTTP leaves unset or 'off' — so a site
+	 * whose own address is `https://` and whose visitors are on HTTPS reports "not secure",
+	 * and BOTH halves of this feature switched themselves off: the finding was never
+	 * offered, and the header would never have been sent if it had been. Seen on the first
+	 * real site this shipped to, which is the only reason it is written down.
+	 *
+	 * The site's own address is the authority — `home_url()` is what WordPress is configured
+	 * to serve, and it is the thing HSTS is a statement about. `is_ssl()` stays as the second
+	 * test because a site mid-migration (https addresses, still answering plain HTTP) should
+	 * not be told it is insecure either.
+	 */
+	public static function site_is_https() {
+		if ( is_ssl() ) {
+			return true;
+		}
+		$scheme = wp_parse_url( home_url(), PHP_URL_SCHEME );
+		return 'https' === strtolower( (string) $scheme );
+	}
+
 	/** The configured HSTS max-age, or 0 when it is off or unusable. */
 	public static function hsts_max_age() {
 		$max = (int) get_option( self::OPT_HSTS, 0 );
 		return $max > 0 ? $max : 0;
+	}
+
+	/**
+	 * Is the header ACTUALLY being served? 'served' · 'not_served' · 'unknown'.
+	 *
+	 * ⚠️ THE POINT OF ASKING. Setting an option proves nothing about what a visitor
+	 * receives: the host, a proxy or a page cache sits between PHP and the browser, and any
+	 * of them can drop a header this site asked for. Claiming "browsers are told to use
+	 * HTTPS" on the strength of an option is exactly the kind of claim this plugin exists to
+	 * stop making — so the check asks the site, and reports three answers, not two.
+	 *
+	 * 'unknown' is not a failure and must never be reported as 'not_served': a host that
+	 * blocks loopback requests is common, and "I could not look" is a different sentence
+	 * from "it is not there".
+	 */
+	public static function hsts_served() {
+		if ( self::hsts_max_age() <= 0 ) {
+			return 'not_served';
+		}
+		$cached = get_transient( 'morpheus_hsts_probe' );
+		if ( is_string( $cached ) && '' !== $cached ) {
+			return $cached;
+		}
+
+		$res = wp_remote_get(
+			home_url( '/' ),
+			array(
+				'timeout'     => 10,
+				'redirection' => 0,
+				'headers'     => array( 'Cache-Control' => 'no-cache' ),
+				// A self-signed or otherwise unusual certificate on the site's own address is
+				// not what is being tested here, and refusing to look would report 'unknown'
+				// on precisely the sites that need the answer.
+				'sslverify'   => false,
+			)
+		);
+
+		if ( is_wp_error( $res ) ) {
+			$verdict = 'unknown';
+		} else {
+			$header  = wp_remote_retrieve_header( $res, 'strict-transport-security' );
+			$verdict = ( is_string( $header ) && '' !== trim( $header ) ) ? 'served' : 'not_served';
+		}
+
+		// Short, because this is a probe and the answer changes the moment the host does.
+		set_transient( 'morpheus_hsts_probe', $verdict, 5 * MINUTE_IN_SECONDS );
+		return $verdict;
 	}
 
 	/**
@@ -93,8 +165,10 @@ class Morpheus_Security {
 			'enumeration' => self::enabled( self::OPT_ENUMERATION ),
 			'version'     => self::enabled( self::OPT_VERSION ),
 			// HSTS is meaningless without HTTPS: browsers ignore the header over plain HTTP.
-			'https'       => is_ssl(),
+			'https'       => self::site_is_https(),
 			'hsts'        => self::hsts_max_age(),
+			// 'not_served' is the honest starting point when the switch is off.
+			'hsts_served' => self::hsts_max_age() > 0 ? self::hsts_served() : 'not_served',
 		);
 	}
 
@@ -181,13 +255,16 @@ class Morpheus_Security {
 	 * the value is six months rather than a year and why `includeSubDomains` and `preload`
 	 * are not offered here.
 	 *
-	 * It is sent only on a request that is already HTTPS, which is what the specification
-	 * requires a browser to honour anyway — over plain HTTP the header is ignored, so a site
-	 * with a misconfigured proxy cannot pin a browser to a scheme it cannot serve.
+	 * It is sent only where the SITE is served over HTTPS — asked via site_is_https(), not
+	 * `is_ssl()`, for the reason written there: on a host that terminates TLS in front of
+	 * PHP, `is_ssl()` reports the request as plain, and the header would never be sent on
+	 * exactly the sites that need it. Over a genuinely plain-HTTP request the header is
+	 * ignored by every browser anyway, so the wider test cannot pin a browser to a scheme
+	 * the site is not already serving.
 	 */
 	public static function send_hsts() {
 		$max = self::hsts_max_age();
-		if ( $max <= 0 || ! is_ssl() || headers_sent() ) {
+		if ( $max <= 0 || ! self::site_is_https() || headers_sent() ) {
 			return;
 		}
 		header( 'Strict-Transport-Security: max-age=' . $max );

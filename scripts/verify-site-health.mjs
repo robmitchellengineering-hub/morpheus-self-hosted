@@ -879,8 +879,38 @@ check('…and the HSTS header carries neither preload nor includeSubDomains',
   /Strict-Transport-Security: max-age=/.test(securityCode)
   && ! /includeSubDomains/i.test(securityCode)
   && ! /preload/i.test(securityCode), true);
-check('…and it is sent only on a request that is already HTTPS',
-  /!\s*is_ssl\(\)/.test(securityCode), true);
+check('…and it is sent only where the SITE is served over HTTPS',
+  /if \( \$max <= 0 \|\| ! self::site_is_https\(\) \|\| headers_sent\(\) \) \{/.test(securityCode), true);
+// ⚠️ ASKED OF THE SITE, NOT OF ONE REQUEST. This was `is_ssl()`, which reads
+// `$_SERVER['HTTPS']` — unset or 'off' on every host that terminates TLS in front of PHP.
+// That switched BOTH halves off on the first real site it shipped to: the finding was never
+// offered, and the header would never have been sent if it had been. `home_url()` is what
+// WordPress is configured to serve, and it is the thing HSTS is a statement about.
+check('…and "is this site HTTPS" is asked of the site\'s own address, not the request',
+  /public static function site_is_https\(\)/.test(securityCode)
+  && /wp_parse_url\( home_url\(\), PHP_URL_SCHEME \)/.test(securityCode)
+  && /if \( is_ssl\(\) \) \{/.test(securityCode), true);
+// SWITCHED ON IS NOT BEING SENT. The host, a proxy or a page cache sits between PHP and the
+// browser, and any of them can drop a header this site asked for — so the check asks the site
+// and reports THREE answers. 'unknown' must never be folded into 'not_served': a host that
+// blocks loopback is common, and "I could not look" is a different sentence from "it is not
+// there".
+check('…and the check VERIFIES the header is really served rather than trusting the option',
+  /public static function hsts_served\(\)/.test(securityCode)
+  && /wp_remote_get\(/.test(securityCode)
+  && /strict-transport-security/.test(securityCode), true);
+check('…with "could not check" kept separate from "not being sent", and neither reported as good',
+  /'unknown'/.test(securityCode)
+  && /is_wp_error\( \$res \)/.test(securityCode)
+  && /elseif \( 'not_served' === \$hsts_served \) \{/.test(healthCode)
+  && /could not confirm whether it is being served/.test(healthCode), true);
+// Scoped to the HSTS decision block, and counted: `$status = 'good'` must appear ONCE, in
+// the branch that read the header back — never in the "switched on" or "could not check"
+// branches, which is how a claimed protection gets reported as a verified one.
+const hstsDecision = healthCode.slice(healthCode.indexOf('if ( ! $hsts_on ) {'), healthCode.indexOf("'id'          => 'morpheus_hsts'"));
+check('…and a header actually read back from the site is the ONLY thing that reads as good',
+  /elseif \( 'served' === \$hsts_served \) \{\s*\$status = 'good';/.test(hstsDecision)
+  && (hstsDecision.match(/\$status = 'good';/g) || []).length === 1, true);
 // The finding itself is only emitted where the header can do something.
 check('…and the HSTS finding is offered only on a site already served over HTTPS',
   /if \( ! empty\( \$sec\['https'\] \) \) \{/.test(healthCode), true);
