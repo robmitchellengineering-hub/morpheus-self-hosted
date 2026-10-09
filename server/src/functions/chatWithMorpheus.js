@@ -25,6 +25,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
+import { partitionLanes, DEFAULT_MAX_LANES } from '../lib/lanePartition.js';
 import { findCallerBreaks, describeCallerBreaks } from '../lib/callerCheck.js';
 import { unknownPrismaFields, isCodePath } from '../lib/prismaFields.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
@@ -1100,6 +1101,11 @@ OPERATOR SAYS: ${message}`;
   // the planner branch and the README write happens further down, after the coder
   // and polish passes. Empty for a project where the planner never ran.
   let declaredProviderCapabilities = [];
+  // The lane-split verdict for this turn (lib/lanePartition.js). Lifted to this scope for the same reason as
+  // `declaredProviderCapabilities` above: the planner's result lives inside the planner branch, and this travels
+  // to the client on the `result` event declared far below. `null` means no split was proposed by the planner OR
+  // none was accepted — the ordinary build either way, and the one that must cost nothing.
+  let laneSplit = null;
 
   try {
     // ── Phase 0a: Web research — search + read pasted URLs before planning ──
@@ -1289,6 +1295,17 @@ OPERATOR SAYS: ${message}`;
             needsClarification: { type: 'boolean', description: 'true ONLY if a genuine build-blocking ambiguity prevents building correctly — reply then contains just the clarifying questions' },
             plan: { type: 'string', description: 'Detailed file-by-file build plan with implementation notes (only when needsCode is true AND needsClarification is false). When featureSteps is set, this covers only the first step.' },
             plannedFiles: { type: 'array', items: { type: 'string' }, description: 'Ordered list of every file path this build will create or modify (only when needsCode is true AND needsClarification is false) — the coder implements this list a few files at a time' },
+            lanes: {
+              type: 'array',
+              description: 'OPTIONAL, and OMIT IT unless this build genuinely is 2-3 groups of files that can be built WITHOUT seeing each other. Leave it out for any ordinary build, any single-file change, and anything where one part depends on another — a wrong split costs more than it saves, and it will simply be ignored. Across all lanes every plannedFiles entry must appear exactly once, and no lane may name a file that is not in plannedFiles.',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', description: 'A 2-4 word name for this independent piece.' },
+                  files: { type: 'array', items: { type: 'string' }, description: 'The planned files this piece writes.' },
+                },
+              },
+            },
             featureTitle: { type: 'string', description: 'MULTI-STEP ESCALATION only: a 2-5 word name for a job too big for one turn.' },
             featureSteps: { type: 'array', items: { type: 'string' }, description: 'MULTI-STEP ESCALATION only: 3-8 ordered, individually shippable step titles. When set, plan/plannedFiles cover only the first.' },
             stepComplete: { type: 'boolean', description: 'When an ACTIVE FEATURE is shown in your context: true if THIS turn fully completes the active step (advance to the next); false if it is a tweak/fix still within the active step.' },
@@ -1502,6 +1519,33 @@ OPERATOR SAYS: ${message}`;
       const plannedFiles = Array.isArray(plannerResult.plannedFiles)
         ? plannerResult.plannedFiles.filter((p) => typeof p === 'string' && p)
         : [];
+
+      // CAN THIS BUILD BE SPLIT INTO INDEPENDENT LANES? The planner's `lanes` is a PROPOSAL and this is the
+      // check on it — the refusal is the feature (lib/lanePartition.js): two lanes may not name the same file,
+      // every planned file must land in exactly one lane, and lanes joined by a real import edge are MERGED
+      // rather than run together, because running chunks concurrently removes the `writtenSoFar` argument the
+      // sequential pass was given to stop a generated backend contradicting itself.
+      //
+      // ⚠️ THIS TURN RECORDS THE VERDICT AND DOES NOT ACT ON IT. The fan-out itself is the next step, and it
+      // goes in behind the N sweep (wall-clock, cost and conflict count) rather than ahead of it. Until then the
+      // build runs exactly as it did — which is why an accepted split is logged as a PROPOSAL, not as concurrency
+      // that happened. A log line claiming parallel execution would be the dishonest half of this feature.
+      //
+      // Cost when the planner proposes nothing (the ordinary build): `partitionLanes` returns before it touches
+      // `files`, so nothing is parsed and nothing is slower. See the guard for the proof of that.
+      if (plannerResult.lanes) {
+        laneSplit = partitionLanes({
+          plannedFiles,
+          lanes: plannerResult.lanes,
+          existingFiles: files,
+          maxLanes: DEFAULT_MAX_LANES,
+        });
+        if (laneSplit.ok) {
+          console.log(`[chatWithMorpheus] lane split proposed (not yet run concurrently): ${laneSplit.lanes.map((l) => `${l.name} [${l.files.length} file(s)]`).join(', ')}${laneSplit.notes.length ? ` — ${laneSplit.notes.join(' ')}` : ''}`);
+        } else {
+          console.log(`[chatWithMorpheus] lane split refused, running sequentially (${laneSplit.reason}): ${laneSplit.detail}`);
+        }
+      }
 
       let fileOps = [];
       let coderModelLast;
@@ -2397,7 +2441,10 @@ OPERATOR SAYS: ${message}`;
     emit({ type: 'result', data: { reply: fullReply || reply, fileOperations: appliedOps, // The paths that ACTUALLY changed, so no consumer has to re-derive it from `fileOperations`, which is a
 // mixed list carrying refusals (`policy_denied`), skips and failures alongside real writes. Three
 // consumers had each derived their own answer and two were wrong (defect 4).
-changedPaths: appliedPaths(appliedOps), security: securityReport, uiFeedback: uiFeedbackReport, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedCount(appliedOps) > 0 && !isSelfDev)) } });
+changedPaths: appliedPaths(appliedOps), security: securityReport, uiFeedback: uiFeedbackReport, // `null` unless the planner proposed a split — see lib/lanePartition.js. Carried on the existing result
+// event rather than a new channel, so the panel can show "3 independent pieces" (and let the operator
+// collapse it to 1) without the pipeline needing a second way to talk to the client.
+laneSplit, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, convention: conventionFixAttempts, reviewer: reviewerFixAttempts, reviewerFailed: reviewerFailed ? 1 : 0, caller: callerCritical.length, schema: schemaCritical.length, a11y: a11yNotes.length, deepVerify: deepVerifyCritical.length }, featureChanged: !!(escalatedFeature || (activeFeature && appliedCount(appliedOps) > 0 && !isSelfDev)) } });
   } catch (err) {
     console.error('[chatWithMorpheus]', err);
     // If the build already LANDED, an error event is the worst response available: the files are

@@ -136,6 +136,7 @@ const HARD = [
   'verify-project-divergence.mjs',
   'verify-guard-mutations.mjs',
   'verify-php-syntax.mjs',
+  'verify-lane-partition.mjs',
   'verify-app-selftest.mjs',
   'verify-bootstrap-sql.mjs',
   'verify-plan-reconciliation.mjs',
