@@ -3375,6 +3375,63 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-security.php',
+    // ⚠️ OFF MEANS OFF. Move the hook registration OUTSIDE the option test and an unhardened
+    // site carries a filter that merely returns early — which looks identical from outside
+    // and is exactly the difference this guard exists to hold.
+    why: 'Registers the restriction whether or not the option is set, so "off" becomes a claim rather than a fact.',
+    find: '\t\tif ( self::enabled( self::OPT_ENUMERATION ) ) {',
+    replace: '\t\tif ( true ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-security.php',
+    // THE EDITOR'S ROUTE. `/wp/v2/users/me` is a different route from the collection, and
+    // removing it breaks the block editor for every signed-in user — while still passing any
+    // check that only looks for "users routes are gone".
+    why: "Removes /wp/v2/users/me along with the collection, so the block editor loses the caller's own account.",
+    find: "\t\tunset( $endpoints['/wp/v2/users/(?P<id>[\\d]+)'] );",
+    replace: "\t\tunset( $endpoints['/wp/v2/users/me'] );",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // ONE COPY OF THE OPTION NAME, OR THE BUTTON LIES. If the fix writes a name the
+    // behaviour does not read, the fix reports success, the option is set, and the site is
+    // exactly as open as it was.
+    why: 'Writes an option name the behaviour does not read, so the fix reports success and changes nothing.',
+    find: "'args'    => array( 'name' => 'morpheus_hide_user_enumeration', 'value' => 1 ),",
+    replace: "'args'    => array( 'name' => 'morpheus_hide_users', 'value' => 1 ),",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-security.php',
+    // HSTS OVER PLAIN HTTP IS IGNORED BY EVERY BROWSER. Sending it anyway is harmless and
+    // still wrong: it makes the panel claim a protection the transport cannot carry.
+    why: 'Sends the HSTS header on plain-HTTP requests too, where no browser will honour it.',
+    find: "\t\tif ( $max <= 0 || ! is_ssl() || headers_sent() ) {",
+    replace: '\t\tif ( $max <= 0 || headers_sent() ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-security.php',
+    // AND THE BEHAVIOURS ARE FOR ANONYMOUS CALLERS ONLY. Applied to everyone, hardening
+    // breaks the site for the people who run it.
+    why: 'Leaves the author probe open to signed-in callers too, so hardening applies to the wrong people.',
+    find: "\t\tif ( is_user_logged_in() || is_admin() ) {",
+    replace: '\t\tif ( is_admin() ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // THE CONDITIONAL. Offered everywhere, the finding is a green tick for a switch that
+    // cannot do anything on a site that is not HTTPS.
+    why: 'Offers the HSTS finding on plain-HTTP sites, where the header can do nothing.',
+    find: "\t\tif ( ! empty( $sec['https'] ) ) {",
+    replace: '\t\tif ( true ) {',
+  },
+  {
+    guard: 'verify-site-health.mjs',
     file: 'src/lib/errorLogText.js',
     // THE HONEST-SCOPE CLAIM. A bounded tail quoted without saying it is a tail is how a
     // partial read becomes the whole story — the same failure the panel's own copy is

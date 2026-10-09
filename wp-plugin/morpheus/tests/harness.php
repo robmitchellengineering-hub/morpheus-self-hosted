@@ -1374,6 +1374,82 @@ ok( ( $mismatch['code'] ?? '' ) === 'TZ_MISMATCH', 'ai: a timezone the SITE disa
 file_put_contents( $wp_config, $config_was );
 if ( false === $tz_was || '' === $tz_was ) { update_option( 'timezone_string', '' ); } else { update_option( 'timezone_string', $tz_was ); }
 ok( file_get_contents( $wp_config ) === $config_was, 'ai: wp-config.php is byte-identical to how this boot found it' );
+
+// ── SECURITY: THE DEFAULTS WORTH CHANGING ───────────────────────────────────
+//
+// Three findings that are not faults the site developed — they are how WordPress ships.
+// Each is closed by one option, and the claim that matters is OFF MEANS OFF: while the
+// option is clear the plugin registers NO hook at all, so an unhardened site carries no
+// filter that merely returns early.
+//
+// ⚠️ ASSERTED IN THIS ORDER ON PURPOSE. A filter cannot be un-registered, so the "off"
+// assertions have to run before anything sets an option — the other way round and they
+// would pass because the hook was left over from earlier in the boot.
+$sec_enabled_was = get_option( 'morpheus_hide_user_enumeration', false );
+$sec_version_was = get_option( 'morpheus_hide_wp_version', false );
+$sec_hsts_was    = get_option( 'morpheus_hsts_max_age', 0 );
+
+ok( class_exists( 'Morpheus_Security' ), 'security: the hardening module is loaded' );
+ok( false === has_filter( 'rest_endpoints', array( 'Morpheus_Security', 'restrict_user_endpoints' ) ), 'security: OFF means off — no REST filter while the option is clear' );
+ok( false === has_action( 'send_headers', array( 'Morpheus_Security', 'send_hsts' ) ), 'security: …and no HSTS action either' );
+ok( 0 === Morpheus_Security::hsts_max_age(), 'security: …and no max-age configured' );
+
+// THE ROUTES, built the way WordPress builds them, so this is about the real keys.
+$routes = array(
+	'/wp/v2/users'               => array( 'GET' => true ),
+	'/wp/v2/users/(?P<id>[\d]+)' => array( 'GET' => true ),
+	'/wp/v2/users/me'            => array( 'GET' => true ),
+	'/wp/v2/posts'               => array( 'GET' => true ),
+);
+wp_set_current_user( 0 );
+$anon = Morpheus_Security::restrict_user_endpoints( $routes );
+ok( ! isset( $anon['/wp/v2/users'] ) && ! isset( $anon['/wp/v2/users/(?P<id>[\d]+)'] ), 'security: an anonymous caller gets no user list' );
+ok( isset( $anon['/wp/v2/users/me'] ), 'security: …but keeps /users/me, which the block editor needs' );
+ok( isset( $anon['/wp/v2/posts'] ), 'security: …and every other route is untouched' );
+
+wp_set_current_user( 1 );
+$signed_in = Morpheus_Security::restrict_user_endpoints( $routes );
+ok( isset( $signed_in['/wp/v2/users'] ), 'security: a signed-in caller still gets the list, so editing is unaffected' );
+wp_set_current_user( 0 );
+
+ok( '' === Morpheus_Security::empty_generator(), 'security: the generator tag is emptied, not replaced' );
+
+// NOW TURN THEM ON, and assert the hooks really appear — the other half of "off means off".
+update_option( 'morpheus_hide_user_enumeration', 1 );
+update_option( 'morpheus_hide_wp_version', 1 );
+update_option( 'morpheus_hsts_max_age', Morpheus_Security::HSTS_MAX_AGE );
+Morpheus_Security::init();
+ok( false !== has_filter( 'rest_endpoints', array( 'Morpheus_Security', 'restrict_user_endpoints' ) ), 'security: with the option set, the REST filter IS registered' );
+ok( false !== has_action( 'send_headers', array( 'Morpheus_Security', 'send_hsts' ) ), 'security: …and so is the HSTS action' );
+ok( Morpheus_Security::hsts_max_age() === Morpheus_Security::HSTS_MAX_AGE, 'security: …and the max-age is the configured one' );
+ok( '180 days' === Morpheus_Security::describe_hsts(), 'security: …described in days, so a panel never invents the number', Morpheus_Security::describe_hsts() );
+
+// THE SCAN REPORTS THEM. A finding nobody can see is a switch nobody can find.
+$sec_scan = Morpheus_Health::scan( true );
+$sec_by_id = array();
+foreach ( array_merge( $sec_scan['tests'] ?? array(), $sec_scan['own_checks'] ?? array() ) as $sec_f ) {
+	if ( isset( $sec_f['id'] ) ) { $sec_by_id[ $sec_f['id'] ] = $sec_f; }
+}
+ok( isset( $sec_by_id['morpheus_user_enumeration'], $sec_by_id['morpheus_version_fingerprint'] ), 'security: the scan reports both findings that apply to any site' );
+ok( ( $sec_by_id['morpheus_user_enumeration']['status'] ?? '' ) === 'good', 'security: …and they read good once the switch is on', $sec_by_id['morpheus_user_enumeration'] ?? null );
+// THE CONDITIONAL, asserted rather than skipped. This boot is plain HTTP, which is exactly
+// what makes the rule testable: a header a browser ignores over HTTP must not be offered as
+// a finding, or the panel grows a green tick for a switch that cannot do anything.
+ok( ! is_ssl(), 'security: (this boot is plain HTTP — that is what makes the next assertion meaningful)' );
+ok( ! isset( $sec_by_id['morpheus_hsts'] ), 'security: …and on a plain-HTTP site the HSTS finding is not offered at all' );
+
+// THE FIX RAIL, and the option it writes is the option the behaviour reads.
+$sec_applied = Morpheus_Fixes::apply( 'morpheus_user_enumeration' );
+ok( ! empty( $sec_applied['ok'] ) && ! empty( $sec_applied['verified'] ), 'security: the fix writes its option through the ordinary rail', $sec_applied );
+ok( (bool) get_option( 'morpheus_hide_user_enumeration' ), 'security: …and the option really is set afterwards' );
+
+// PUT THE BOOT BACK. Every option this section touched is restored to what it was, so
+// whatever runs after it sees the site as it found it.
+if ( false === $sec_enabled_was ) { delete_option( 'morpheus_hide_user_enumeration' ); } else { update_option( 'morpheus_hide_user_enumeration', $sec_enabled_was ); }
+if ( false === $sec_version_was ) { delete_option( 'morpheus_hide_wp_version' ); } else { update_option( 'morpheus_hide_wp_version', $sec_version_was ); }
+if ( 0 === (int) $sec_hsts_was ) { delete_option( 'morpheus_hsts_max_age' ); } else { update_option( 'morpheus_hsts_max_age', $sec_hsts_was ); }
+ok( false === get_option( 'morpheus_hide_user_enumeration', false ), 'security: …and this section left the site exactly as it found it' );
+
 // ── redirects, and the 404 log ──────────────────────────────────────────────
 //
 // A redirect list is the one content feature that can take a site DOWN: a rule
