@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.9
+Stable tag: 0.9.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,14 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.10 =
+* New: **the AI FIX button has a real choice in it now.** Two findings can be answered more than one honest way, and
+  Morpheus offers the operations the site can actually perform and picks between them from what the check found.
+  First: **Stop logging errors to a public file** — either turn `WP_DEBUG` off, or keep debugging and move the log
+  outside the web root. Both are rails that already ship, so nothing new can be written to your site; the change
+  is that Morpheus can now RECOMMEND one and say why. Nothing is applied until you have read the exact change and
+  pressed APPLY, and it is never swept into FIX ALL.
 
 = 0.9.9 =
 * Fix: **the error log stops counting WordPress's own update run as your problems.** On a real site, 46 of the

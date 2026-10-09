@@ -3236,8 +3236,8 @@ export const MUTATIONS = [
     // THE GATE ITSELF. Without this comparison, a proposal may name ANY operation and the
     // plugin would look up its own menu and run whatever it found — which is the model
     // choosing what runs on a live site.
-    why: 'Stops checking the proposed operation against the one this finding allows, so any operation can be applied.',
-    find: '\t\tif ( $asked !== $allowed ) {',
+    why: "Stops checking the proposed operation against the finding's menu, so any operation the model names can be applied.",
+    find: '\t\tif ( ! in_array( $asked, $allowed, true ) ) {',
     replace: '\t\tif ( false ) {',
   },
   {
@@ -3329,6 +3329,49 @@ export const MUTATIONS = [
     why: 'Makes the AI FIX button apply its own answer, so an AI change lands without the operator reading it.',
     find: '                const answer = await onPropose(t);',
     replace: '                const answer = await onPropose(t); if (answer?.proposal) onFix(t, { proposal: answer.proposal });',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // AN OPERATION ON THE MENU THAT REACHES NO MECHANISM is the failure the checks above do
+    // not catch: the button answers, the panel shows a change, and APPLY falls through to
+    // "Morpheus does not know how to perform this".
+    why: 'Removes the dispatch for one of the two operations, so choosing it falls through as unknown.',
+    find: "\t\t\tcase 'wp_config_debug_off':",
+    replace: "\t\t\tcase 'wp_config_debug_off_removed':",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-fixes.php',
+    // THE COUNT IS WHAT GROWS THE BUTTON. A finding marked `ai` with no vocabulary behind
+    // it must arrive as 0; a truthy label here is a button that cannot answer.
+    why: 'Sends a label instead of a count, so a finding with no operations still grows an AI FIX button.',
+    find: "\t\t\t\t\t$fix['ai'] = count( $mine );",
+    replace: "\t\t\t\t\t$fix['ai'] = 'AI FIX';",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/lib/aiFixProposal.js',
+    // ARGUMENTS ARE SCOPED TO THE OPERATION CHOSEN, not to the menu. Reading them from the
+    // first operation lets an argument belonging to the other one through — the exact hole a
+    // second operation opens.
+    //
+    // ⚠️ THE WHOLE TERNARY, not just its first reference. Changing only `chosen` to `ops[0]`
+    // leaves the expression returning `chosen.args`, so nothing changes and the mutation
+    // SURVIVES while looking like it proves something — which is what the mutator is for.
+    why: 'Validates arguments against the first operation on the menu rather than the one the model chose.',
+    find: "  const declared = Object.keys(chosen.args && typeof chosen.args === 'object' ? chosen.args : {});",
+    replace: '  const declared = Object.keys(ops[0].args || {});',
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'server/src/lib/aiFixProposal.js',
+    // WHAT THE OPERATOR READS BEFORE PRESSING APPLY. If this describes the wrong operation,
+    // the panel tells him the wrong thing about his own site — the one thing the description
+    // exists to prevent.
+    why: 'Describes the first operation on the menu rather than the one the proposal named.',
+    find: '  const chosen = operationsOf(menu).find((o) => o.op === proposal.op) || {};',
+    replace: '  const chosen = operationsOf(menu)[0] || {};',
   },
   {
     guard: 'verify-site-health.mjs',

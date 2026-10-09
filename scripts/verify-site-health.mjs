@@ -32,7 +32,7 @@ import {
   normaliseFix, FIX_KINDS,
 } from '../server/src/lib/siteHealth.js';
 import { errorLogAsText } from '../src/lib/errorLogText.js';
-import { validateProposal, describeProposal } from '../server/src/lib/aiFixProposal.js';
+import { buildProposalPrompt, validateProposal, describeProposal } from '../server/src/lib/aiFixProposal.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
@@ -675,18 +675,58 @@ check('at least one finding offers a mechanism (parser sanity)', aiIds.length >=
 const menuBlock = fixesCode.slice(fixesCode.indexOf('function ai_operations()'), fixesCode.indexOf('function apply_ai('));
 check('…and every one of them is in the menu the scan sends',
   aiIds.every((id) => menuBlock.includes(`'${id}' =>`)), true);
+// ⚠️ ONE CHUNK PER FINDING, CUT BY STRUCTURE RATHER THAN BY A CHARACTER COUNT.
+//
+// This read a 900-character window from each finding's key — and that was enough only while
+// every finding had ONE operation. Giving `debug_enabled` a second one pushed its
+// `'op' => 'wp_config_debug_off'` INSIDE php_default_timezone's window, so blanking THAT
+// finding's operation was satisfied by the next finding's: the mutation survived and the
+// check passed for the wrong reason. A window that has to grow every time the data does is
+// the same failure in a slower form. The finding keys are three tabs deep and the operations
+// four, so the split is on that boundary and cannot drift.
+const vocabChunks = {};
+for (const chunk of menuBlock.split(/\n\t{3}'/).slice(1)) {
+  const key = chunk.slice(0, chunk.indexOf("'"));
+  vocabChunks[key] = chunk;
+}
 check('…and each menu entry names its operation and its arguments',
   aiIds.every((id) => {
-    const at = menuBlock.indexOf(`'${id}' =>`);
-    const body = menuBlock.slice(at, at + 900);
-    return /'op'\s*=>\s*'[a-z_]+'/.test(body) && /'args'\s*=>\s*array\(/.test(body);
+    const body = vocabChunks[id] || '';
+    return (body.match(/'op'\s*=>\s*'[a-z_]+'/g) || []).length >= 1
+      && (body.match(/'args'\s*=>\s*array\(/g) || []).length >= 1;
   }), true);
 check('the scan carries the vocabulary, from the plugin', /'ai_operations'\s*=>\s*class_exists\( 'Morpheus_Fixes' \)/.test(healthSrc), true);
 
 // THE GATE. An AI-authored change is only ever applied through apply_ai(), and only ever
-// against the operation the finding itself allows.
+// against the operations the finding itself allows.
+//
+// ⚠️ THIS ASSERTED `$asked !== $allowed` — EQUALITY against ONE operation. That was true
+// while every finding had exactly one, and it would now be the thing pinning the menu of
+// one in place: the check would go red the moment a finding offered a second operation.
+// It is MEMBERSHIP, because a finding may offer several, and the model choosing between
+// them is the feature rather than a loophole in it.
 check('a proposal is refused when it asks for an operation this finding does not allow',
-  /AI_OP_NOT_ALLOWED/.test(fixesCode) && /\$asked !== \$allowed/.test(fixesCode), true);
+  /AI_OP_NOT_ALLOWED/.test(fixesCode) && /! in_array\( \$asked, \$allowed, true \)/.test(fixesCode), true);
+// A LIST, not one operation — and the second operation had to cost NO new blast radius:
+// both of `debug_enabled`'s reuse rails that already ship behind `auto` findings. If one
+// stops reusing them, a finding has grown a new way to touch a site and this says so.
+check('a finding may offer more than one operation, and the vocabulary says so',
+  (menuBlock.match(/'op'\s*=>\s*'/g) || []).length >= 3, true);
+check("…and `debug_enabled` is the finding that does — the first with a real choice in it",
+  /'debug_enabled'\s*=>\s*array\(\s*array\(/.test(menuBlock), true);
+check('…and both of its operations RUN something that already ships, not new code',
+  /case 'wp_config_debug_off':[\s\S]{0,240}?self::fix_wp_config_define\( \$id, 'WP_DEBUG', 'false' \)/.test(fixesCode)
+  && /case 'wp_debug_log_outside_root':[\s\S]{0,240}?self::fix_relocate_debug_log\( \$id \)/.test(fixesCode), true);
+// Scoped to `debug_enabled`'s own entries rather than a window in characters: an
+// operation's `does` sentence is long, and a character count that has to grow every time
+// a sentence is reworded is a check that fails for the wrong reason.
+const dbgVocab = menuBlock.slice(menuBlock.indexOf("'debug_enabled'"));
+check("…and both of that finding's operations declare NO arguments, so a model has nothing to fill in",
+  (dbgVocab.match(/'args'\s*=>\s*array\(\s*\)/g) || []).length === 2, true);
+// The panel grows its button from a COUNT now: a finding marked `ai` with no vocabulary
+// behind it must arrive as 0, or it grows a button that cannot answer.
+check('the panel is told how many operations exist, not a label for one of them',
+  /\$fix\['ai'\]\s*=\s*count\( \$mine \)/.test(fixesCode), true);
 // The CONDITION, not the words around it: `timezone_identifiers_list()` also appears in
 // the menu's own description of the argument, so a check for the name was satisfied by
 // the prose describing the rule while the rule itself was disabled. Asserted on the call.
@@ -720,7 +760,13 @@ check('…and the answer is checked before the operator ever sees a button',
   /validateProposal\(raw, \{ findingId, menu \}\)/.test(proposeBranch) && /verdict\.ok/.test(proposeBranch), true);
 
 // The pure rules, CALLED with fixtures rather than grepped for (H19).
-const menu = { op: 'wp_config_timezone', label: 'Write the timezone', does: 'adds a line', args: { timezone: 'a PHP timezone' } };
+//
+// ⚠️ TWO OPERATIONS, because that is what makes "the model chooses" a real sentence. With
+// a menu of one, every check below confirmed the only answer there was.
+const menu = [
+  { op: 'wp_config_timezone', label: 'Write the timezone', does: 'adds a line', args: { timezone: 'a PHP timezone' } },
+  { op: 'wp_config_debug_off', label: 'Turn WP_DEBUG off', does: 'writes the define', args: {} },
+];
 check('the model choosing another operation is refused',
   validateProposal({ op: 'deactivate_plugin', why: 'because' }, { findingId: 'php_default_timezone', menu }).code, 'AI_OP_NOT_ALLOWED');
 check('…an argument the operation does not take is refused, not dropped',
@@ -737,6 +783,41 @@ check('…and a good answer becomes a proposal naming the finding',
 const declined = validateProposal({ cannot: 'This is your host\'s PHP version — ask them.' }, { findingId: 'php_version', menu: {} });
 check('…and Morpheus declining to act is a SUCCESS with its reason',
   declined.ok === true && declined.proposal === null && declined.cannot.includes('host'), true);
+
+// ── THE MODEL'S CHOICE IS THE FEATURE, SO IT IS THE THING TESTED ─────────────
+//
+// Every check above passes on a menu of ONE, which is why they could not tell the
+// difference between "the model chooses" and "there was only ever one answer". These four
+// only mean something when a finding offers two.
+const choseSecond = validateProposal(
+  { op: 'wp_config_debug_off', why: 'the log is not readable, so keep logging and move it' },
+  { findingId: 'debug_enabled', menu });
+check('choosing the OTHER operation on the menu is accepted, not refused',
+  choseSecond.ok === true && choseSecond.proposal.op, 'wp_config_debug_off');
+check('…but an argument belonging to the operation it did NOT choose is still refused',
+  validateProposal({ op: 'wp_config_debug_off', args: { timezone: 'UTC' }, why: 'because' }, { findingId: 'debug_enabled', menu }).code, 'AI_ARG_NOT_ALLOWED');
+check('…because the arguments are scoped to the CHOSEN operation, not to the whole menu',
+  validateProposal({ op: 'wp_config_timezone', args: { timezone: 'UTC' }, why: 'because' }, { findingId: 'debug_enabled', menu }).ok, true);
+check('…and an operation outside the menu is still refused when there are two of them',
+  validateProposal({ op: 'deactivate_plugin', why: 'because' }, { findingId: 'debug_enabled', menu }).code, 'AI_OP_NOT_ALLOWED');
+// WHAT WILL ACTUALLY RUN. The operator reads this line before pressing APPLY, and it is
+// built from the operation the proposal NAMED — so a second operation described with the
+// first one's words would be the panel telling him the wrong thing about his own site.
+const described = describeProposal(choseSecond.proposal, menu);
+check('the description names the operation that was CHOSEN',
+  described.includes('Turn WP_DEBUG off') && !described.includes('Write the timezone'), true);
+// AN OLDER PLUGIN SENDS ONE OBJECT, NOT A LIST. A version skew between the app and a site
+// must not silently turn the button off — and must not widen what may be applied either.
+const single = { op: 'wp_config_timezone', label: 'Write the timezone', does: 'adds a line', args: { timezone: 'a PHP timezone' } };
+check('a one-operation menu still works when it arrives as a single object, as older plugins send it',
+  validateProposal({ op: 'wp_config_timezone', args: { timezone: 'UTC' }, why: 'because' }, { findingId: 'php_default_timezone', menu: single }).ok, true);
+check('…and an empty menu is still the honest "no mechanism", never a button that cannot answer',
+  validateProposal({ op: 'wp_config_timezone', args: { timezone: 'UTC' }, why: 'because' }, { findingId: 'php_default_timezone', menu: [] }).code, 'NO_AI_ACTION');
+// The prompt has to OFFER the choice, or the model answers with the only one it was told
+// about and the whole thing is a menu of one again — with a fixture that cannot catch it.
+const prompt = buildProposalPrompt({ finding: { id: 'debug_enabled', label: 'Stop logging errors to a public file' }, menu, site: {} });
+check('the prompt lists BOTH operations and says that choosing is the job',
+  prompt.includes('wp_config_debug_off') && prompt.includes('wp_config_timezone') && /CHOOSE ONE/.test(prompt), true);
 const healthPanel = read('src/components/matrix/website/HealthTab.jsx');
 check('…a model that refuses can never leave a button on screen',
   /asked\.proposal \?/.test(healthPanel) && /asked\.cannot \?/.test(healthPanel), true);
