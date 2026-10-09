@@ -3343,6 +3343,23 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-site-health.mjs',
+    file: 'wp-plugin/morpheus/includes/class-health.php',
+    // ⚠️ THE DEFAULT BECOMES THE WHOLE FILE. The tail bound exists so opening a panel never
+    // pulls a log that can be gigabytes; make it the default and every panel open does.
+    why: 'Makes the whole-file bound the default read, so simply opening the panel pulls up to 8 MB.',
+    find: "\t\t$max_bytes  = $full ? self::LOG_FULL_BYTES : self::LOG_TAIL_BYTES;",
+    replace: "\t\t$max_bytes  = self::LOG_FULL_BYTES;",
+  },
+  {
+    guard: 'verify-site-health.mjs',
+    file: 'src/components/matrix/website/ErrorLogPanel.jsx',
+    // And the button that ASKS for it: without it the operator cannot get the lot at all.
+    why: 'Removes the whole-log button, so the operator can never read past the tail.',
+    find: "              <button className={btn} onClick={() => run({ full: true })} disabled={loading}>",
+    replace: "              <button className={btn} onClick={() => run()} disabled={loading}>",
+  },
+  {
+    guard: 'verify-site-health.mjs',
     file: 'wp-plugin/morpheus/includes/class-fixes.php',
     // ⚠️ THE REFUSAL THAT KEEPS THIS FROM BEING THEATRE. Being outside WordPress's own
     // tree is not being outside the web root — a site at public_html/blog/ has a served

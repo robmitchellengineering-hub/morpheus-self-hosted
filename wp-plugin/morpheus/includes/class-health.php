@@ -811,6 +811,20 @@ class Morpheus_Health {
 	 * never meets it, and it is still REPORTED when it bites (`groups_total`).
 	 */
 	const LOG_MAX_GROUPS = 100;
+
+	/**
+	 * The WHOLE file, when the operator asks for it explicitly.
+	 *
+	 * The tail bounds exist so that opening a panel never pulls a log that can be
+	 * gigabytes. They are not a limit on what the operator may READ — Rob, 2026-10-09:
+	 * *"put a copy button in there that cappys the lot"* — so there is a second, larger
+	 * bound, reached only by pressing a button that says what it does. Still a bound, and
+	 * still REPORTED when it bites: an 8 MB cap on a 200 MB log must say so rather than
+	 * look complete.
+	 */
+	const LOG_FULL_BYTES  = 8388608;  // 8 MB
+	const LOG_FULL_LINES  = 20000;
+	const LOG_FULL_GROUPS = 300;
 	/** Raw lines kept per signature, so a group can be opened without shipping the whole log. */
 	const LOG_SAMPLES = 3;
 
@@ -867,8 +881,16 @@ class Morpheus_Health {
 	 * @return array
 	 */
 	public static function log_tail( $args = array() ) {
-		$want  = isset( $args['lines'] ) ? (int) $args['lines'] : self::LOG_TAIL_LINES;
-		$want  = max( 1, min( self::LOG_TAIL_LINES, $want ) );
+		// `full` is an EXPLICIT ask for the whole file. It changes the bounds, not the
+		// rules: the read is still bounded, still seeked from the end, and still says so
+		// when the bound bites.
+		$full   = ! empty( $args['full'] );
+		$max_lines  = $full ? self::LOG_FULL_LINES : self::LOG_TAIL_LINES;
+		$max_bytes  = $full ? self::LOG_FULL_BYTES : self::LOG_TAIL_BYTES;
+		$max_groups = $full ? self::LOG_FULL_GROUPS : self::LOG_MAX_GROUPS;
+
+		$want  = isset( $args['lines'] ) ? (int) $args['lines'] : $max_lines;
+		$want  = max( 1, min( $max_lines, $want ) );
 		// THE file WordPress is writing — see morpheus_debug_log_file(). This used
 		// to be the literal default path, so a site that logs elsewhere showed an
 		// empty panel with a footnote saying so. That was survivable while nothing
@@ -893,6 +915,9 @@ class Morpheus_Health {
 			// Why there is nothing to show, in the plugin's own words, so the panel
 			// never has to invent a reason — or show an empty list as "all clear".
 			'not_read'      => null,
+			// Which read this was. The panel says so, because "8000 lines" means
+			// something different when the operator asked for the whole file.
+			'scope'         => $full ? 'whole' : 'tail',
 			// WordPress can be told to log somewhere else; when it is, this says so
 			// rather than letting the panel imply it is reading that file.
 			'configured'    => null,
@@ -928,7 +953,7 @@ class Morpheus_Health {
 			return $out;
 		}
 
-		$read  = min( $size, self::LOG_TAIL_BYTES );
+		$read  = min( $size, $max_bytes );
 		$out['truncated'] = $read < $size;
 
 		$fh = @fopen( $file, 'rb' );
@@ -1021,7 +1046,7 @@ class Morpheus_Health {
 			}
 			return $b['count'] - $a['count'];
 		} );
-		$out['groups'] = array_slice( $list, 0, self::LOG_MAX_GROUPS );
+		$out['groups'] = array_slice( $list, 0, $max_groups );
 
 		return $out;
 	}

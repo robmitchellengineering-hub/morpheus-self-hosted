@@ -109,10 +109,16 @@ export default function ErrorLogPanel({ projectId }) {
   const [copied, setCopied] = useState(null);
 
   // The press is the only thing that calls the server — no useEffect, deliberately.
-  const run = async () => {
+  const run = async (opts = {}) => {
     setLoading(true); setErr(null); setOpenKey(null); setShowRaw(false); setCopied(null);
     try {
-      const { data } = await base44.functions.invoke('siteHealth', { projectId, action: 'logs' });
+      const { data } = await base44.functions.invoke('siteHealth', {
+        projectId, action: 'logs',
+        // An EXPLICIT ask for the whole file — only ever from the button that says so.
+        // The default read stays bounded, because this panel opens on a scan whose log
+        // can be gigabytes.
+        ...(opts.full ? { full: true } : {}),
+      });
       setLog(data);
     } catch (e) { setErr(e?.data?.error || e.message); }
     finally { setLoading(false); }
@@ -184,6 +190,13 @@ export default function ErrorLogPanel({ projectId }) {
             <>
               <Counts counts={log.counts || {}} />
 
+              {log.scope === 'whole' ? (
+                <div className="text-[10px] text-ink-max leading-relaxed">
+                  This is the <span className="font-medium">whole file</span> as far as Morpheus could read it.
+                  {log.truncated ? ' Even so it is not all of it — see below.' : ''}
+                </div>
+              ) : null}
+
               {log.truncated ? (
                 <div className="text-[10px] text-ink-max leading-relaxed">
                   Showing the newest {log.lines_read} line{log.lines_read === 1 ? '' : 's'} of a file that is
@@ -237,9 +250,18 @@ export default function ErrorLogPanel({ projectId }) {
           )}
 
           <div className="flex items-center gap-2">
-            <button className={btn} onClick={run} disabled={loading}>
+            <button className={btn} onClick={() => run()} disabled={loading}>
               <RefreshCw size={12} /> READ AGAIN
             </button>
+            {/* The tail is for reading; this is for having the LOT. It is a second
+                press with its own label because it costs far more — the plugin's own
+                cap is 8 MB rather than 256 KB — and because nobody should discover
+                after the fact that they asked for their whole log. */}
+            {log.not_read ? null : (
+              <button className={btn} onClick={() => run({ full: true })} disabled={loading}>
+                <FileWarning size={12} /> READ THE WHOLE LOG
+              </button>
+            )}
             {!log.not_read ? (
               <button className={btn} onClick={copyAll} disabled={loading}>
                 {copied === 'ok'

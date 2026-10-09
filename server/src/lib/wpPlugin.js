@@ -357,8 +357,15 @@ export async function wpClean(conn, { force = false } = {}) {
  */
 export const MIN_LOGS_PLUGIN_VERSION = '0.9.1';
 
-export async function wpLogs(conn, { lines } = {}) {
-  return wpCall(conn, 'health', { action: 'logs', ...(lines ? { lines: Number(lines) } : {}) });
+export async function wpLogs(conn, { lines, full } = {}) {
+  return wpCall(conn, 'health', {
+    action: 'logs',
+    ...(lines ? { lines: Number(lines) } : {}),
+    // An EXPLICIT ask for the whole file, sent only when the operator pressed the
+    // button that says so. The plugin has its own larger bound for it; this is a
+    // request, not a licence.
+    ...(full ? { full: true } : {}),
+  });
 }
 
 /**

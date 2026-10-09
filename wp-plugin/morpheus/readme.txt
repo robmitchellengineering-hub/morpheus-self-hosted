@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.7
+Stable tag: 0.9.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,13 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.8 =
+* New: **READ THE WHOLE LOG.** The error log panel reads a bounded tail — the newest 400 lines of a file that can
+  be gigabytes — because opening a panel must never pull the whole thing. That bound is there for the panel, not
+  for you: press **READ THE WHOLE LOG** and Morpheus reads the entire file (up to 8 MB, and it says so when it
+  stops short), and **COPY ALL** then copies the lot. The panel tells you which read you are looking at, because
+  "8000 lines" means something different when you asked for all of them.
 
 = 0.9.7 =
 * Fixed: **Morpheus was telling search engines about pages that are not pages.** A real site's submission ledger

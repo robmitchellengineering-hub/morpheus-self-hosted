@@ -934,6 +934,17 @@ ok( $big['lines_read'] === 10, 'log: …the count of what was returned is the co
 ok( $big['lines_in_tail'] > $big['lines_read'], 'log: …and the tail it read holds far more — which is exactly what truncated means' );
 ok( ( $big['groups'][0]['message'] ?? '' ) === 'Filler warning for the tail bound', 'log: …and what it did read still parses' );
 
+// AND THE WHOLE FILE, when the operator asks for it explicitly. The tail bound is there so
+// a panel open never pulls a huge file; it is not a limit on what the operator may READ
+// (Rob, 2026-10-09: *"put a copy button in there that cappys the lot"*). The fixture above
+// is past the tail bound and well inside the full one, so the difference is provable here.
+$whole = Morpheus_Health::log_tail( array( 'full' => true ) );
+ok( ( $whole['scope'] ?? '' ) === 'whole', 'log: the full read says which read it was' );
+ok( $whole['truncated'] === false, 'log: asking for the whole log reads PAST the tail bound', $whole['truncated'] );
+ok( $whole['lines_in_tail'] > $big['lines_in_tail'], 'log: …and holds more of the file than the tail read did', array( 'tail' => $big['lines_in_tail'], 'whole' => $whole['lines_in_tail'] ) );
+// Still a bound, and still reported: an 8 MB cap on a 200 MB log must not look complete.
+ok( Morpheus_Health::LOG_FULL_BYTES > Morpheus_Health::LOG_TAIL_BYTES, 'log: the full read has its own, larger bound' );
+
 // Leave the site exactly as it was found — a harness that leaves a fixture behind is
 // the thing run.sh's own trap warns about.
 if ( $log_had ) {
