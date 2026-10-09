@@ -290,7 +290,9 @@ export default async function handler({ user, body, req }) {
     // Deliberately NO sibling action that clears, rotates or truncates the log.
     // An operator's evidence is not ours to delete, and a "clear log" button would
     // be the easiest way for this product to destroy the thing it was asked to show.
-    return readErrorLog(user, projectId, { lines: body?.lines });
+    // `full` is the operator asking for the WHOLE file, from a button that says so. It
+    // only widens the plugin's own bounds; it cannot uncap them.
+    return readErrorLog(user, projectId, { lines: body?.lines, full: body?.full === true });
   }
 
   const scan = await scanSite(user, projectId, { force: body?.force === true });

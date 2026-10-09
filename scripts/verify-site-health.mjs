@@ -501,6 +501,27 @@ check('…and every cap is REPORTED when it bites, never a silent truncation',
   /'truncated'\s*=>/.test(healthSrc) && /groups_total/.test(healthSrc) && /lines_read/.test(healthSrc) && /lines_in_tail/.test(healthSrc), true);
 // Four different answers. The plugin names which one, so the panel can never render
 // an empty list as "all clear" — the worst reading this feature could produce.
+// THE WHOLE FILE IS A SECOND, EXPLICIT READ — never the default.
+//
+// The tail bounds exist so a panel open never pulls a log that can be gigabytes. They are
+// not a limit on what the operator may READ: Rob, 2026-10-09, *"put a copy button in there
+// that cappys the lot"*. So `full` widens the bounds and nothing else — the read is still
+// seeked from the end, still bounded, and still says so when the bound bites.
+check('the whole-file read has its own, larger bound',
+  /LOG_FULL_BYTES\s*=\s*\d+/.test(healthCode) && /LOG_FULL_LINES\s*=\s*\d+/.test(healthCode), true);
+check('…and it is chosen by an EXPLICIT ask, not by the default read',
+  /\$max_bytes  = \$full \? self::LOG_FULL_BYTES : self::LOG_TAIL_BYTES;/.test(healthCode)
+  && /\$max_lines  = \$full \? self::LOG_FULL_LINES : self::LOG_TAIL_LINES;/.test(healthCode), true);
+check('…and the payload says which read it was, so a count is not read as the whole file',
+  /'scope'\s*=>\s*\$full \? 'whole' : 'tail'/.test(healthCode), true);
+const fnSrc2 = read('server/src/functions/siteHealth.js');
+check('…the app asks for it only when the panel said so',
+  /full: body\?\.full === true/.test(fnSrc2), true);
+const panelLog = read('src/components/matrix/website/ErrorLogPanel.jsx');
+check('…and the panel has the button, beside the bounded read',
+  /READ THE WHOLE LOG/.test(panelLog) && /run\(\{ full: true \}\)/.test(panelLog), true);
+check('…and the DEFAULT read stays bounded', /onClick=\{\(\) => run\(\)\}/.test(panelLog), true);
+
 check('the nothing-to-read cases are named, not collapsed into "no errors"',
   ["'missing'", "'unreadable'", "'empty'"].every((s) => healthSrc.includes(s)), true);
 
@@ -512,7 +533,8 @@ check('…and /health dispatches exactly health, clean and logs',
   [...new Set([...restLogSrc.matchAll(/'(health|clean|logs|clear|rotate|truncate|purge|delete)'\s*[!=]==\s*\$action/g)].map((m) => m[1]))].sort(),
   ['clean', 'health', 'logs']);
 check('the app has a client for it', /export async function wpLogs\s*\(/.test(pluginSrc), true);
-check('…posting the action on the one signed route', /wpCall\(conn, 'health', \{ action: 'logs'/.test(pluginSrc), true);
+check('…posting the action on the one signed route',
+  /wpCall\(conn, 'health', \{[\s\S]{0,200}?action: 'logs'/.test(pluginSrc) && /full \? \{ full: true \} : \{\}/.test(pluginSrc), true);
 check('a payload that is not a log is refused, not read as "no errors"',
   /PLUGIN_TOO_OLD/.test(scanSrc) && /Array\.isArray\(log\.groups\)/.test(scanSrc), true);
 check('…and the action is in the function\'s allow-list', /ACTIONS = new Set\(\[[^\]]*'logs'/.test(fnSrc), true);
@@ -529,7 +551,9 @@ check('…and the action is in the function\'s allow-list', /ACTIONS = new Set\(
 const panelCode = panelSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 check('the panel imports no effect hook', /import\s*\{[^}]*useEffect[^}]*\}\s*from\s*'react'/.test(panelCode), false);
 check('…and calls no effect at all', /useEffect\s*\(/.test(panelCode), false);
-check('…and the fetch is wired to a press', /onClick=\{run\}/.test(panelCode) && /const run = async \(\)/.test(panelCode), true);
+check('…and the fetch is wired to a press',
+  /onClick=\{\(\) => run\(\)\}/.test(panelCode) && /onClick=\{\(\) => run\(\{ full: true \}\)\}/.test(panelCode)
+  && /const run = async \(opts = \{\}\)/.test(panelCode), true);
 check('…rendering the plugin\'s own reason rather than an empty list',
   /NOT_READ/.test(panelSrc) && /not_read/.test(panelSrc), true);
 check('…and offering no way to clear or delete the log', /clear the log|CLEAR LOG|DELETE/i.test(panelSrc), false);

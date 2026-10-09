@@ -103,10 +103,10 @@ export async function scanCleanSite(user, projectId, { force = false } = {}) {
  * with `tests`/`own_checks` and no `counts`. "No errors" read from that shape would
  * be the worst outcome this feature can produce, so it is refused as a stale plugin.
  */
-export async function readErrorLog(user, projectId, { lines } = {}) {
+export async function readErrorLog(user, projectId, { lines, full } = {}) {
   const { project, conn } = await connectedSite(user, projectId);
 
-  const res = await wpLogs(conn, { lines });
+  const res = await wpLogs(conn, { lines, full });
   await assertScannable(conn, res, 'a log read');
 
   const log = res.data || {};
