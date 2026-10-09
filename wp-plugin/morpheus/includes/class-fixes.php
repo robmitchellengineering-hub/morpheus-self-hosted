@@ -285,12 +285,19 @@ class Morpheus_Fixes {
 				// (see Morpheus_Health::describe_public_debug_log()), because a
 				// static claim appended to WordPress's test was wrong on a host
 				// whose front controller answers every /wp-content path with 200.
-				'does'  => 'WP_DEBUG_LOG is on, so WordPress writes wp-content/debug.log. Whether that file is reachable over the web is a separate question, and Morpheus answers it from the file itself rather than from the URL\'s status. Which fix you want is your call — Morpheus will not decide how much debugging you keep.',
+				'does'  => 'WP_DEBUG_LOG is on, so WordPress writes wp-content/debug.log. Whether that file is reachable over the web is a separate question, and Morpheus answers it from the file itself rather than from the URL\'s status. There are two honest fixes and the choice is yours — stop logging, or keep logging and move the log out of reach. Press AI FIX and Morpheus reads this site, recommends one and explains why; nothing is written until you have seen it and pressed APPLY.',
 				'steps' => array(
 					array( 'text' => 'For a live site, add this to wp-config.php above the "stop editing" line: define( \'WP_DEBUG\', false );' ),
 					array( 'text' => 'Or keep debugging and move the log outside the web root: define( \'WP_DEBUG_LOG\', \'/home/your-account/debug.log\' );' ),
 					array( 'text' => 'Whichever you choose, the log file itself should not be downloadable — check wp-content/debug.log in a browser and delete it if it is.' ),
 				),
+				// THE FIRST FINDING WITH A REAL CHOICE IN IT. Everywhere else the model
+				// picks the only operation there is, which is not a choice at all; here it
+				// picks between two the site can actually perform — and both of them are
+				// already-proven rails (wp_config_define, relocate_debug_log), so the AI
+				// adds a decision and no new way to touch a site. It stays `guided`: the
+				// operator still presses APPLY, and FIX ALL never sweeps it.
+				'ai'    => true,
 			),
 			'woocommerce_secure_connection' => array(
 				'kind'  => 'guided',
@@ -523,8 +530,8 @@ class Morpheus_Fixes {
 	 * THE WHOLE SAFETY STORY IS THIS FUNCTION'S SHAPE. An AI cannot be pointed at a
 	 * live site and told to fix it: a model that can invent an action can invent a
 	 * harmful one, and nothing downstream would know it was outside the design. So the
-	 * vocabulary lives HERE, in the plugin, one entry per finding, each naming a single
-	 * operation this build knows how to perform, verify and undo. The model's job is to
+	 * vocabulary lives HERE, in the plugin, one entry per finding, each naming the
+	 * operations this build knows how to perform, verify and undo. The model's job is to
 	 * choose one of these and supply its arguments — never to write code.
 	 *
 	 * A finding is only offered the button when it appears here, and every argument is
@@ -533,6 +540,14 @@ class Morpheus_Fixes {
 	 * the site's own cron array). An argument the model got wrong is a REFUSAL with a
 	 * code, not a change.
 	 *
+	 * ⚠️ A LIST, NOT ONE OPERATION (2026-10-09). It was one operation per finding, which
+	 * made "the model chooses" a menu of one — the choice meant nothing, and the safety
+	 * story rested on a check that could only ever confirm the only answer. A finding may
+	 * now offer SEVERAL operations this build can perform, and choosing between them is
+	 * the model's actual job. `debug_enabled` is the first, because its own text has
+	 * always said *"which fix you want is your call — Morpheus will not decide how much
+	 * debugging you keep"*: two honest answers, both already implemented and proven.
+	 *
 	 * WHY THE FIRST ENTRY IS A TIMEZONE. It has to be something the plugin can verify
 	 * AND put back: this writes one line through the same backup → write → read-back →
 	 * restore rails as every other wp-config fix. Most of the remaining guided findings
@@ -540,15 +555,35 @@ class Morpheus_Fixes {
 	 * accounts, PHP version, SSL, DNS — and no amount of model reasoning makes it safe
 	 * for Morpheus to edit them. The vocabulary is meant to grow one verified operation
 	 * at a time; it is not meant to be impressive.
+	 *
+	 * AN OPERATION WITH NO ARGUMENTS IS THE SAFEST KIND: there is nothing for a model to
+	 * fill in, so the whole of its contribution is the CHOICE and the sentence explaining
+	 * it. Both `debug_enabled` operations are that kind.
 	 */
 	public static function ai_operations() {
 		return array(
 			'php_default_timezone' => array(
-				'op'    => 'wp_config_timezone',
-				'label' => 'Write the timezone into wp-config.php',
-				'does'  => 'Adds date_default_timezone_set( \'…\' ); above WordPress\'s "stop editing" line, using the timezone this WordPress is already set to. WordPress stores a timezone and PHP never reads it, so log timestamps and anything PHP formats directly can disagree with the site.',
-				'args'  => array(
-					'timezone' => 'A PHP timezone identifier from timezone_identifiers_list(), e.g. Australia/Sydney. Use the value the site already reports.',
+				array(
+					'op'    => 'wp_config_timezone',
+					'label' => 'Write the timezone into wp-config.php',
+					'does'  => 'Adds date_default_timezone_set( \'…\' ); above WordPress\'s "stop editing" line, using the timezone this WordPress is already set to. WordPress stores a timezone and PHP never reads it, so log timestamps and anything PHP formats directly can disagree with the site.',
+					'args'  => array(
+						'timezone' => 'A PHP timezone identifier from timezone_identifiers_list(), e.g. Australia/Sydney. Use the value the site already reports.',
+					),
+				),
+			),
+			'debug_enabled'        => array(
+				array(
+					'op'    => 'wp_config_debug_off',
+					'label' => 'Stop logging: turn WP_DEBUG off',
+					'does'  => 'Writes define( \'WP_DEBUG\', false ); into wp-config.php above the "stop editing" line. WordPress stops writing the log. The log file that already exists is left exactly as it is — nothing is deleted, and debugging can be turned back on by removing that one line.',
+					'args'  => array(),
+				),
+				array(
+					'op'    => 'wp_debug_log_outside_root',
+					'label' => 'Keep logging: move the log outside the web root',
+					'does'  => 'Points WP_DEBUG_LOG at a file beside your site instead of inside it, and moves the log that is there now. Debugging stays ON and the log keeps every line it had; the web stops being able to hand the file out. Refuses, and changes nothing, when Morpheus cannot prove the new location is out of reach. Nothing is deleted.',
+					'args'  => array(),
 				),
 			),
 		);
@@ -559,31 +594,51 @@ class Morpheus_Fixes {
 	 *
 	 * Every refusal here is a named code, because a refusal the operator cannot read
 	 * looks exactly like a broken button. Nothing in this path is reachable unless the
-	 * finding was configured with `ai => true` in the registry AND the proposal named
-	 * the one operation that finding is allowed.
+	 * finding was configured with `ai => true` in the registry AND the proposal named ONE
+	 * of the operations that finding is allowed.
+	 *
+	 * ⚠️ THE CHOICE IS CHECKED HERE, NOT TRUSTED. The model is shown a menu and asked to
+	 * pick from it; this is where "pick from it" stops being a request and becomes a rule.
+	 * A finding may now offer SEVERAL operations, so the check is membership rather than
+	 * equality — and it is made again in the server half, for the reason the two checks
+	 * exist at all: this one happens on the machine the change is made to.
 	 */
 	public static function apply_ai( $id, $proposal ) {
 		$menu = self::ai_operations();
-		if ( ! isset( $menu[ $id ] ) ) {
+		if ( ! isset( $menu[ $id ] ) || ! is_array( $menu[ $id ] ) || ! $menu[ $id ] ) {
 			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_AI_ACTION', 'error' => 'Morpheus has no mechanism to propose for this finding, so nothing was changed. The steps on it are the way.' );
 		}
 		if ( empty( self::for_id( $id )['ai'] ) ) {
 			return array( 'ok' => false, 'id' => $id, 'code' => 'NO_AI_ACTION', 'error' => 'This finding is not marked as one Morpheus may act on, so nothing was changed.' );
 		}
 
-		$allowed = $menu[ $id ]['op'];
-		$asked   = is_array( $proposal ) && isset( $proposal['op'] ) ? (string) $proposal['op'] : '';
-		if ( $asked !== $allowed ) {
-			return array( 'ok' => false, 'id' => $id, 'code' => 'AI_OP_NOT_ALLOWED', 'error' => 'The proposal asked for "' . $asked . '", which is not what Morpheus may do about this finding ("' . $allowed . '"). Nothing was changed.' );
+		$allowed = array();
+		foreach ( $menu[ $id ] as $operation ) {
+			if ( isset( $operation['op'] ) ) {
+				$allowed[] = (string) $operation['op'];
+			}
+		}
+
+		$asked = is_array( $proposal ) && isset( $proposal['op'] ) ? (string) $proposal['op'] : '';
+		if ( ! in_array( $asked, $allowed, true ) ) {
+			return array( 'ok' => false, 'id' => $id, 'code' => 'AI_OP_NOT_ALLOWED', 'error' => 'The proposal asked for "' . $asked . '", which is not one of the things Morpheus may do about this finding ("' . implode( '", "', $allowed ) . '"). Nothing was changed.' );
 		}
 
 		$args = ( is_array( $proposal ) && isset( $proposal['args'] ) && is_array( $proposal['args'] ) ) ? $proposal['args'] : array();
 
-		switch ( $allowed ) {
+		switch ( $asked ) {
 			case 'wp_config_timezone':
 				return self::ai_wp_config_timezone( $id, $args );
+			// Both of these already had rails: `wp_config_define` and `relocate_debug_log` are
+			// the fixes behind two `auto` findings, with their own guards and harness proofs.
+			// REUSING them is the point — the AI path adds a CHOICE, not a new way to touch
+			// a site, so the second operation costs no new blast radius at all.
+			case 'wp_config_debug_off':
+				return self::fix_wp_config_define( $id, 'WP_DEBUG', 'false' );
+			case 'wp_debug_log_outside_root':
+				return self::fix_relocate_debug_log( $id );
 		}
-		return array( 'ok' => false, 'id' => $id, 'code' => 'AI_OP_UNKNOWN', 'error' => 'Morpheus does not know how to perform "' . $allowed . '". Nothing was changed.' );
+		return array( 'ok' => false, 'id' => $id, 'code' => 'AI_OP_UNKNOWN', 'error' => 'Morpheus does not know how to perform "' . $asked . '". Nothing was changed.' );
 	}
 
 	/**
@@ -705,8 +760,14 @@ class Morpheus_Fixes {
 				// always present and usually null is how a panel comes to render an
 				// empty button.
 				if ( ! empty( $entry['ai'] ) ) {
-					$menu     = self::ai_operations();
-					$fix['ai'] = $menu[ $f['id'] ?? '' ]['label'] ?? '';
+					$ops  = self::ai_operations();
+					$mine = isset( $ops[ $f['id'] ?? '' ] ) && is_array( $ops[ $f['id'] ?? '' ] ) ? $ops[ $f['id'] ?? '' ] : array();
+					// HOW MANY OPERATIONS ARE AVAILABLE, not a label. A finding may now
+					// offer more than one, so there is no single label to send — and the
+					// count is what the panel actually needs: truthy means a mechanism
+					// exists, and 0 means the finding is marked `ai` with no vocabulary
+					// behind it, which must NOT grow a button that cannot answer.
+					$fix['ai'] = count( $mine );
 				}
 				$findings[ $i ]['fix'] = $fix;
 				unset( $findings[ $i ]['action_does'] );

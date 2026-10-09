@@ -130,7 +130,12 @@ export default async function handler({ user, body, req }) {
       throw Object.assign(new Error('That finding is not on the site any more — re-scan and try again. Nothing was changed.'), { status: 404, code: 'FINDING_GONE' });
     }
     const menu = (scan.ai_operations || {})[findingId] || null;
-    if (!menu || !menu.op) {
+    // A finding may offer SEVERAL operations (the site sends a list); an older plugin
+    // sends one object, and both are read here so a version skew cannot silently turn
+    // the button off. An empty list is the honest "no mechanism" — never a button that
+    // cannot answer.
+    const ops = Array.isArray(menu) ? menu.filter((o) => o && o.op) : (menu && menu.op ? [menu] : []);
+    if (!ops.length) {
       throw Object.assign(new Error('Morpheus has no mechanism to propose for this finding. Nothing was changed.'), { status: 409, code: 'NO_AI_ACTION' });
     }
 

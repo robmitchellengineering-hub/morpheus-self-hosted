@@ -1284,11 +1284,60 @@ foreach ( $registry as $rid => $entry ) {
 	if ( ! empty( $entry['ai'] ) ) { $ai_ids[] = $rid; }
 }
 ok( $ai_ids !== array(), 'ai: at least one finding offers a mechanism (parser sanity)', $ai_ids );
+// ⚠️ A LIST PER FINDING, and `empty()` WAS THE BUG IN THIS CHECK. It read
+// `empty( $menu[$rid]['args'] )` — true for a finding with ONE operation whose arguments
+// were empty, which is now a legitimate and deliberately safest shape (an operation with no
+// arguments is one a model cannot fill anything into). `array_key_exists` is the question
+// that was actually meant: does the operation DECLARE arguments?
 $no_op = array();
 foreach ( $ai_ids as $rid ) {
-	if ( empty( $menu[ $rid ]['op'] ) || empty( $menu[ $rid ]['args'] ) ) { $no_op[] = $rid; }
+	$ops = isset( $menu[ $rid ] ) && is_array( $menu[ $rid ] ) ? $menu[ $rid ] : array();
+	if ( ! $ops ) { $no_op[] = $rid; continue; }
+	foreach ( $ops as $op ) {
+		if ( ! is_array( $op ) || empty( $op['op'] ) || ! array_key_exists( 'args', $op ) || ! is_array( $op['args'] ) ) {
+			$no_op[] = $rid;
+		}
+	}
 }
-ok( $no_op === array(), 'ai: every finding offered the button has an operation AND its arguments', $no_op );
+ok( $no_op === array(), 'ai: every finding offered the button has at least one operation, each declaring its arguments', $no_op );
+
+// ── A MENU OF MORE THAN ONE, AND A CHOICE THAT MEANS SOMETHING ───────────────
+//
+// Until now every finding had exactly one operation, so "the model chooses" was a menu of
+// one and the gate below could only ever confirm the only answer there was. `debug_enabled`
+// is the first finding with two — and both of them reuse rails that ALREADY SHIP behind
+// `auto` findings, so what is asserted here is the DISPATCH and the GATE, not the rails:
+// `relocate_debug_log` has its own end-to-end proof in the error-log section of this boot.
+$vocab_ok = true;
+foreach ( $menu as $ops ) {
+	if ( ! is_array( $ops ) || ! $ops ) { $vocab_ok = false; continue; }
+	foreach ( $ops as $op ) {
+		if ( ! is_array( $op ) || empty( $op['op'] ) ) { $vocab_ok = false; }
+	}
+}
+ok( $vocab_ok, 'ai: the vocabulary is a LIST of operations per finding, not one operation', $menu['debug_enabled'] ?? null );
+
+$dbg_ops = array();
+foreach ( ( $menu['debug_enabled'] ?? array() ) as $op ) { $dbg_ops[] = $op['op'] ?? ''; }
+ok( $dbg_ops === array( 'wp_config_debug_off', 'wp_debug_log_outside_root' ), 'ai: debug_enabled offers BOTH honest answers', $dbg_ops );
+ok( ( $menu['debug_enabled'][0]['args'] ?? null ) === array() && ( $menu['debug_enabled'][1]['args'] ?? null ) === array(), 'ai: …and neither takes an argument, so a model has nothing to fill in' );
+
+// PERMISSION IS PER FINDING, NOT GLOBAL. `wp_config_timezone` is a real operation this build
+// knows how to perform — and it is still refused on a finding whose menu does not offer it.
+// That is the whole reason the vocabulary lives in the plugin rather than in the prompt.
+$config_now = file_get_contents( $wp_config );
+$crossed = Morpheus_Fixes::apply( 'debug_enabled', array( 'op' => 'wp_config_timezone', 'args' => array( 'timezone' => 'UTC' ) ) );
+ok( ( $crossed['code'] ?? '' ) === 'AI_OP_NOT_ALLOWED', 'ai: an operation allowed on ANOTHER finding is refused here', $crossed );
+ok( file_get_contents( $wp_config ) === $config_now, 'ai: …and wp-config.php was not touched' );
+
+// THE DISPATCH. If an operation reached no mechanism it would fall through to "Morpheus does
+// not know how to perform this" — which is exactly what a broken menu looks like until
+// somebody presses it. Asserted as "not that", because whether the define was WRITTEN
+// depends on whether this boot already defines WP_DEBUG, and both answers are correct.
+$off = Morpheus_Fixes::apply( 'debug_enabled', array( 'op' => 'wp_config_debug_off', 'args' => array() ) );
+ok( ! in_array( ( $off['code'] ?? '' ), array( 'AI_OP_UNKNOWN', 'NO_AI_ACTION' ), true ), 'ai: the first operation dispatches to a real mechanism', $off );
+file_put_contents( $wp_config, $config_now );
+ok( file_get_contents( $wp_config ) === $config_now, 'ai: wp-config.php is byte-identical afterwards' );
 ok( ( $registry['php_default_timezone']['kind'] ?? '' ) === 'guided', 'ai: an AI finding stays guided, so no bulk run can ever include it' );
 
 $config_was = file_get_contents( $wp_config );

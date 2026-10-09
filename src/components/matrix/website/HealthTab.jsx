@@ -324,12 +324,15 @@ function FixBox({
           </div>
         ) : null}
 
-        {/* AI FIX — only for a finding the SITE says Morpheus has a mechanism for
-            (`fix.ai` is the plugin's own label for it). Pressing it CHANGES NOTHING:
-            it asks what Morpheus would do, and the answer is shown with the exact
-            change before anything is applied. A refusal is a first-class answer and
-            is rendered as one — most findings on a WordPress site are fixed by a
-            person, and a model that says so is being useful, not failing. */}
+        {/* AI FIX — only for a finding the SITE says Morpheus has a mechanism for.
+            `fix.ai` is the COUNT of operations the site offers for this finding, so a
+            truthy value means one or more exist; a finding marked for AI with no
+            vocabulary behind it arrives as 0 and grows no button. There is deliberately
+            no per-operation label here: the button asks, and the SITE's answer says what
+            it would do. Pressing it CHANGES NOTHING — the answer is shown with the exact
+            change before anything is applied. A refusal is a first-class answer and is
+            rendered as one: most findings on a WordPress site are fixed by a person, and
+            a model that says so is being useful, not failing. */}
         {fix.ai ? (
           <div className="space-y-1.5">
             <button className={btn} disabled={asking || busy}
