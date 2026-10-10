@@ -42,6 +42,7 @@ Check for:
 
 - REGRESSIONS AGAINST KNOWN HAZARDS: if the context includes a KNOWN-HAZARDS.md (or similar "things that have already broken this codebase" file), check every proposed change against every item in it. A change that repeats a listed hazard is a CRITICAL issue — cite the hazard by its heading.
 - CALLER IMPACT: if the context includes a "CALLER IMPACT" section, it lists files that import a file being changed and the names they pull from it. Verify the change keeps every one of those imports valid — a removed or renamed export, or a signature/return-shape change a listed caller relies on, is a CRITICAL issue. Name the caller.
+- RUNNABLE APP: if the context includes a "RUNNABLE APP" section, it lists mechanical findings about whether the app can install and start, decided from the source by a checker rather than by you. Check each against the files above: a REAL one is a CRITICAL issue — a dependency that cannot install, or a module used in a way its own exports do not support, ships an app that fails at its first command, and the operator is told to run exactly that command. A finding that does not apply to this app (it is not meant to be run locally, or the file is not part of the deliverable) is NOT an issue, and you must not report it.
 
 Do NOT comment on naming or formatting. Only flag issues that would break the code, cause runtime failures, materially degrade performance, or (as warnings) leave the UI visibly unpolished. Be concise — one line per issue.
 

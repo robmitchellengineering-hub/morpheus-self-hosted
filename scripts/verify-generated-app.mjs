@@ -143,6 +143,50 @@ check('the generator still asks for one command', /ONE command must start everyt
   readFileSync(join(ROOT, 'server', 'src', 'lib', 'infrastructureComponents.js'), 'utf8')), true);
 check('…and injects that requirement into the brief', gen.includes('${runnableRequirement}'), true);
 
+// ── Is the checker applied WHERE THE APP IS MADE, or only in this fixture? ─────────────────────────────────
+//
+// ⚠️ THE HOLE THIS CLOSES WAS A COMMENT. `src/lib/exportPromise.js` stated that `generatedAppCheck.js`
+// "runs where the app is made" — and nothing under `server/src/functions` or `server/src/routes` imported it.
+// It ran in this CI fixture and nowhere else, so a build could go green over an app that cannot install or
+// start, and the operator found out at download. Every assertion above passes in that world.
+//
+// The lesson is the same one this repo keeps relearning: a check that is never CALLED reads exactly like a
+// check that passed. So these assert the CALL, not the checker's existence.
+console.log('\n6. the checker runs in the build loop, not only here');
+const chat = readFileSync(join(ROOT, 'server', 'src', 'functions', 'chatWithMorpheus.js'), 'utf8');
+const reviewer = readFileSync(join(ROOT, 'server', 'src', 'lib', 'reviewer.js'), 'utf8');
+const promise = readFileSync(join(ROOT, 'src', 'lib', 'exportPromise.js'), 'utf8');
+
+check('the build loop appends the section to the reviewer\'s context',
+  /reviewContext \+= runnableAppBlock\(fileOps\)/.test(chat), true);
+// BEHAVIOUR, on the real fixture — not the handler's text. The fixture is a good app; the two defects below are
+// the ones actually produced on 2026-09-29, so the composition is exercised with the real thing.
+const { runnableAppBlock } = await import('../server/src/lib/reviewContext.js');
+check('a good app produces no section at all', runnableAppBlock(good), '');
+const unbuildableBlock = runnableAppBlock(badDep);
+check('an unbuildable dependency reaches the reviewer, named', /better-sqlite3/.test(unbuildableBlock), true);
+check('…and it names the block the prompt is told to look for', /^\n\nRUNNABLE APP — mechanical findings/.test(unbuildableBlock), true);
+check('…and says a non-applicable finding must not be reported', /must not be reported/.test(unbuildableBlock), true);
+check('…and the machine-readable kind travels with it', /\[unbuildable\]/.test(unbuildableBlock), true);
+const brokenModule = setFile(clone(), 'server/routes/tasks.js', 'const db = require("../db");\nrouter.get("/", (req, res) => { db.prepare("select 1"); });\n');
+check('a broken module contract reaches the reviewer too', /module-contract/.test(runnableAppBlock(brokenModule)), true);
+check('…with the file it is about', /tasks\.js: /.test(runnableAppBlock(brokenModule)), true);
+// Only when there is something to say — a section that is always present is one the reviewer skims.
+check('a clean build adds nothing', runnableAppBlock(good.map((f) => ({ path: f.path, content: f.content }))), '');
+// The reviewer must be told what to DO with it, or the section is decoration in a prompt.
+check('the reviewer prompt has a rule for the block', /- RUNNABLE APP: if the context includes a "RUNNABLE APP" section/.test(reviewer), true);
+check('…and it says a non-applicable finding must not be reported', /A finding that does not apply to this app[\s\S]{0,120}must not report it/.test(reviewer), true);
+// ONE producer. The text moved out of the handler and into reviewContext.js when this became a testable
+// function; the count is asserted where the text lives, and the handler must not grow its own copy.
+const reviewCtx = readFileSync(join(ROOT, 'server', 'src', 'lib', 'reviewContext.js'), 'utf8');
+check('the block text is built in exactly one place', (reviewCtx.match(/RUNNABLE APP — mechanical findings/g) || []).length, 1);
+check('…and the handler does not keep a second copy', (chat.match(/RUNNABLE APP — mechanical findings/g) || []).length, 0);
+check('…and a dependency finding names the package, not just the reason', /p\.package \?/.test(reviewCtx), true);
+// THE FALSE COMMENT MUST NOT COME BACK — it is the thing that hid this, and it is the kind of sentence that is
+// re-added by the next person who assumes rather than greps.
+check('the export path no longer claims the checker runs where the app is made',
+  /it runs where the app is made/.test(promise), false);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
   console.log('\n✗ we could ship an app the operator cannot start\n');

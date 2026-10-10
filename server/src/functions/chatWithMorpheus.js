@@ -17,7 +17,7 @@ import {
 import { isContentOp, appliedPaths, appliedCount, unresolvedPaths } from '../lib/appliedOps.js';
 import { planSelfTestFile, selfTestEvidence, selfTestEvidenceLine } from '../lib/appSelfTest.js';
 import { buildScopedFilesContext } from '../lib/scopedContext.js';
-import { buildReviewerContext } from '../lib/reviewContext.js';
+import { buildReviewerContext, runnableAppBlock } from '../lib/reviewContext.js';
 import { designSystemPromptBlock, POLISH_PROMPT, DESIGN_SYSTEM_CSS } from '../lib/designSystem.js';
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
 import { estimateCallMs } from '../lib/timingStats.js';
@@ -1875,6 +1875,27 @@ OPERATOR SAYS: ${message}`;
             reviewContext += `\n\nCALLER IMPACT — this change modifies file(s) that other files import:\n${lines.join('\n')}\n\nThe change MUST keep every listed import valid: do not remove or rename an exported binding a caller uses, and do not change a function's signature or return shape in a way a caller relies on. Any such break is a CRITICAL issue — name the caller.`;
           }
         }
+        // ── CAN THIS APP INSTALL AND START? Decidable from the source, and asked IN THE LOOP ─────────────────
+        //
+        // `lib/generatedAppCheck.js` decides exactly this, and it was written from two OBSERVED failures on
+        // 2026-09-29: a declared `better-sqlite3` (no prebuilt binary for Node 22, source does not compile) which
+        // failed the FIRST command in the app's own README, and a `db.js` exporting a factory that its callers
+        // used as the handle, which threw on the first request.
+        //
+        // ⚠️ UNTIL NOW IT RAN ONLY IN THE CI FIXTURES AND AT EXPORT. `src/lib/exportPromise.js` states in a
+        // comment that it "runs where the app is made", and nothing under server/src called it — so a build could
+        // go green over an app that cannot be installed or started, and the operator found out at download. That
+        // is the false-success shape this repo treats as its cardinal sin, sitting directly under "keep what you
+        // build".
+        //
+        // THE REVIEWER, NOT A NEW GATE. Whether a finding applies is a judgement about the app in front of it —
+        // a `start` script is not required of a frontend Morpheus deploys itself — and the reviewer's findings
+        // already flow into the existing fix loop. So the facts are put in front of the reviewer and the
+        // judgement is left to it, rather than a mechanical rule blocking builds it does not understand.
+        //
+        // What this can MISS, stated rather than implied: the check reads file CONTENT, so a file that arrives
+        // as `edits` rather than full content is not examined — a miss, never a false report.
+        reviewContext += runnableAppBlock(fileOps);
         // ── The review is ADVISORY, so its failure must not discard the coder's work ────────────
         //
         // WHY THIS TRY/CATCH EXISTS. `reviewAndRetry` awaits `invokeAI`, and `invokeAI` throws: a

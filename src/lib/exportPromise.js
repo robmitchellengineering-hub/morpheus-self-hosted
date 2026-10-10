@@ -20,12 +20,20 @@
 //
 // Import-free and platform-free: the browser, `node --test` and the verify guard all run this same code.
 //
-// NOT the whole runnability story, deliberately. `server/src/lib/generatedAppCheck.js` already decides
-// whether the GENERATED app is buildable and installable (`RUNNABLE_APP_REQUIREMENTS`,
-// `dependencyProblems`, `entryPointProblems`) and it runs where the app is made. This module asks the
-// different question the export raises: does the thing the operator is about to download keep the
-// promise printed on the button? Only the overlap of a start script naming a file that is not in the ZIP
-// is re-checked here, because here it is the export's own lie rather than the generator's.
+// NOT the whole runnability story, deliberately. `server/src/lib/generatedAppCheck.js` decides whether the
+// GENERATED app is buildable and installable (`RUNNABLE_APP_REQUIREMENTS`, `dependencyProblems`,
+// `entryPointProblems`), and as of 2026-10-10 the build loop hands its findings to the REVIEWER, so they are
+// raised while the app is being made rather than only here.
+//
+// ⚠️ THIS COMMENT USED TO CLAIM THAT CHECKER "runs where the app is made". IT DID NOT. Nothing under
+// `server/src/functions` or `server/src/routes` imported it — it ran in the CI fixtures and nothing else — so an
+// app that could not install or start could pass a build and be discovered at download. The claim was believed
+// for as long as it took to grep for a caller. Two things fixed it: the loop now feeds the findings to the
+// reviewer, and this sentence now says what is true.
+//
+// This module still asks the different question the export raises: does the thing the operator is about to
+// download keep the promise printed on the button? Only the overlap of a start script naming a file that is not
+// in the ZIP is re-checked here, because here it is the export's own lie rather than the generator's.
 
 /**
  * Morpheus's own bookkeeping, written next to the app it describes. It ships in the export today and
