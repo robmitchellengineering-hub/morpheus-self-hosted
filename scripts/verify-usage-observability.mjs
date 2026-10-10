@@ -66,6 +66,43 @@ check('…and it is still fire-and-forget, so it cannot replace the real error',
 check('the refund path is untouched above it',
   /reconcileCredits\(userId, reservedCredits, 0\)\.catch\(\(\) => \{\}\);/.test(code), true);
 
+// ── Every call site in the roles that dominate spend is attributable ────────────────────────────────────────
+//
+// ⚠️ THE COLUMNS EXISTING IS NOT THE SAME AS THEM BEING USED, and that gap was measured: on 2026-10-10, **4,956 of
+// 4,983 `usage_events` rows carried no `task` at all** — $192.47 of $192.68, the whole of it. So every cost
+// question this project asked had to be answered by inferring from `role` and timestamps, and that inference
+// produced a WRONG answer the same day: the reviewer's input tokens looked like they had gone UP 44% after the
+// change meant to cut them, because a first-pass review and its retry were one indistinguishable row. They are
+// not one row any more, and the count below is what keeps it that way — a presence check would pass on a file
+// where one of three call sites was still unlabelled, which is exactly the state being replaced.
+// Comments are stripped before matching, the same as `code` above: a check that reads raw source can be satisfied
+// by its own explanatory prose, which has caught this repo out more than once today.
+const stripComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
+const chatSrc = stripComments(readFileSync(new URL('../server/src/functions/chatWithMorpheus.js', import.meta.url), 'utf8'));
+const reviewerSrc = stripComments(readFileSync(new URL('../server/src/lib/reviewer.js', import.meta.url), 'utf8'));
+
+const plannerSites = (chatSrc.match(/role: 'planner',/g) || []).length;
+const plannerLabelled = (chatSrc.match(/^\s+task: 'plan_(build|context)'/gm) || []).length
+  + (chatSrc.match(/^\s+task: 'research_repo'/gm) || []).length;
+check(`every planner call site carries a task label (${plannerLabelled}/${plannerSites})`, plannerLabelled, plannerSites);
+// The three are genuinely different jobs with very different output sizes, so they must be told apart.
+for (const label of ['plan_build', 'plan_context', 'research_repo']) {
+  check(`…and ${label} is one of them`, new RegExp(`task: '${label}',`).test(chatSrc), true);
+}
+check('the build planner is not the context planner', /task: 'plan_build',/.test(chatSrc) && /task: 'plan_context',/.test(chatSrc), true);
+
+const reviewerSites = (reviewerSrc.match(/role: 'reviewer',/g) || []).length;
+check(`every reviewer call site carries a task label (${(reviewerSrc.match(/^\s+task: stageName,/gm) || []).length}/${reviewerSites})`,
+  (reviewerSrc.match(/^\s+task: stageName,/gm) || []).length, reviewerSites);
+// It must be the STAGE, not a constant: a first pass and a post-fix retry review are the two things the missing
+// label made indistinguishable, and `stageName` is what varies between them.
+check('…and it is the stage, so a retry review is a different row from a first pass', /task: stageName,/.test(reviewerSrc), true);
+// Pinned to the CALL, not to the word: `/retry_reviewer/` alone is satisfied by the stage-label table in
+// chatWithMorpheus.js, so the earlier version of this line would have passed even if the re-review never asked for
+// its own stage name — the check-caught-by-its-own-prose shape, again.
+check('…and the re-review passes its own stage', /stageName: 'retry_reviewer'/.test(reviewerSrc), true);
+check('…while the first pass passes the plain one', /stageName: 'reviewer'/.test(reviewerSrc), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }
 console.log('all good\n');
