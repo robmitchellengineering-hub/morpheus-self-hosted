@@ -18,6 +18,7 @@
 // blocks" philosophy, just more real attempts before giving up.
 
 import { invokeAI } from '../ai.js';
+import { mapWithConcurrency, maxConcurrentCalls } from './callPool.js';
 import {
   REVIEW_BUDGET, createReviewBudget, canSpendReviewCall, planReviewCalls,
   canStartReReviewPass, startReReviewPass, reReviewScope, reviewOutcome,
@@ -134,12 +135,29 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
   const planned = planReviewCalls(chunks, budget, { reserve: budget ? reserveCalls : 0 });
   const reviewed = [];
   const skipped = [...planned.unreviewed];
-  for (let i = 0; i < planned.willReview.length; i++) {
-    const chunk = planned.willReview[i];
+
+  // ⚠️ THE CHUNKS ARE REVIEWED AT ONCE, BOUNDED, AND THE RESULTS COME BACK IN CHUNK ORDER.
+  //
+  // This loop used to be sequential, and the reviewer is the slowest call in the system — measured at 45.4s a call,
+  // with `REVIEW_CHUNK_SIZE` of 3 files, so a seven-file build spent ~136s in the reviewer and every one of those
+  // seconds was on the critical path of the whole build. The chunks are genuinely INDEPENDENT: each is handed its
+  // own files, the same context block, the same rules, and the full list only as a read-only manifest. Nothing in
+  // one chunk's answer can change another's — unlike the coder's chunks, where a later file can contradict an
+  // earlier one — so this is a scheduling change and nothing else. The model (pro @ 0.4), the context and the
+  // prompt are all untouched, which is what keeps the decisions in MODEL-DECISIONS.md intact: **the reviewer's
+  // safety net is not narrowed by running its chunks in parallel, only its wall-clock.**
+  //
+  // The order still matters and is preserved. `allIssues` and `summaries` are read in sequence by the operator and
+  // were ordered by chunk before; `mapWithConcurrency` returns one entry per chunk, by chunk index, so the
+  // accumulation below is byte-for-byte the same sequence the sequential loop produced. `approvedAll` is an AND
+  // fold and order-free either way.
+  //
+  // A failing chunk still ends the review with an error — the pool reports the FIRST failing chunk in order rather
+  // than whichever call failed fastest, so the error an operator sees does not depend on network timing.
+  const perChunk = await mapWithConcurrency(planned.willReview, maxConcurrentCalls(), async (chunk) => {
     const batchNote = chunks.length > 1
       ? `\n\nReviewing batch of ${chunk.length} file(s) out of ${fileOps.length} total in this build.`
       : '';
-
     const review = await invokeAI({
       userId,
       prompt: buildReviewPrompt({ contextBlock, chunk, allOps: fileOps, plan, batchNote }),
@@ -148,14 +166,23 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
       role: 'reviewer',
       maxTokens: REVIEW_STEP_MAX_TOKENS,
     });
-    reviewed.push(...chunk.map((op) => op.path));
-    model = review.model;
-    provider = review.provider;
-    const result = review.result;
-    const issues = Array.isArray(result.issues) ? result.issues : [];
-    allIssues.push(...issues);
-    if (result.summary) summaries.push(result.summary);
-    if (issues.some((i) => i.severity === 'critical') || !result.approved) approvedAll = false;
+    return {
+      paths: chunk.map((op) => op.path),
+      model: review.model,
+      provider: review.provider,
+      issues: Array.isArray(review.result.issues) ? review.result.issues : [],
+      summary: review.result.summary,
+      approved: review.result.approved,
+    };
+  });
+
+  for (const r of perChunk) {
+    reviewed.push(...r.paths);
+    model = r.model;
+    provider = r.provider;
+    allIssues.push(...r.issues);
+    if (r.summary) summaries.push(r.summary);
+    if (r.issues.some((i) => i.severity === 'critical') || !r.approved) approvedAll = false;
   }
 
   onProgress?.({ stage: stageName, status: 'done' });

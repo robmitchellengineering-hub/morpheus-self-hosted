@@ -51,14 +51,26 @@
 // Run:  node scripts/verify-lane-partition.mjs
 
 import { parseImports, resolveImport } from './importGraph.js';
+// The concurrency limit has ONE definition, in callPool.js, because the reviewer's chunks are bounded by the same
+// physical ceiling as the coder's lanes — how many model calls this deployment will make at once. The names below
+// are kept as lane-flavoured aliases so every existing caller and guard reads the same as before.
+import {
+  maxConcurrentCalls,
+  MAX_CONCURRENT_ENV,
+  DEFAULT_MAX_CONCURRENT,
+  MAX_CONCURRENT_CEILING,
+} from './callPool.js';
 
 /** The default fan-out. Design §6.4: cap the default at 3, make it a parameter, and run the N sweep before
  *  choosing anything permanent. Two ceilings bind here — the reviewer (N lanes = N reviews + 1 integration
  *  review, and the review is 33% of all spend at 45s a call) and contention. */
-export const DEFAULT_MAX_LANES = 3;
+export const DEFAULT_MAX_LANES = DEFAULT_MAX_CONCURRENT;
 /** Never more than this many lanes, whatever a caller passes. The measured arithmetic (Amdahl + the reviewer's
  *  cost) makes N>4 pay 2x the reviews for ~15% more speed. */
-export const MAX_LANES_CEILING = 4;
+export const MAX_LANES_CEILING = MAX_CONCURRENT_CEILING;
+export const MAX_LANES_ENV = MAX_CONCURRENT_ENV;
+/** Lane-flavoured alias of `maxConcurrentCalls` — see callPool.js for the definition and the reasoning. */
+export const maxLanesFromEnv = maxConcurrentCalls;
 
 const CODE_EXT = /\.(jsx?|tsx?|mjs|cjs)$/;
 /** Code whose dependencies `importGraph` cannot read. Counted and reported, never assumed independent. */
@@ -350,28 +362,6 @@ function mergeGroups(lanes, pairs) {
         root,
       };
     });
-}
-
-// ── the fan-out parameter ───────────────────────────────────────────────────────────────────────────────
-//
-// Design §6.4: *"Cap the default at 3, make it a parameter, and run the N sweep before choosing anything
-// permanent."* This is that parameter. It is an environment variable rather than a database setting because the
-// sweep is an OPERATIONAL measurement — it has to be changed between two runs of the same task, and a
-// `platform_settings` write needs a deploy's worth of ceremony for something that is read once per build.
-//
-// **`1` means sequential, and that is the point of the whole exercise**: it makes the measurement a
-// one-variable comparison against today's behaviour rather than against a remembered number. It is also the
-// switch to reach for if concurrency ever misbehaves in production — one variable, no deploy.
-//
-// Unreadable input falls back to the default rather than throwing: a typo in an env var must not stop a build.
-export const MAX_LANES_ENV = 'MORPHEUS_MAX_LANES';
-
-export function maxLanesFromEnv(env = process.env) {
-  const raw = env?.[MAX_LANES_ENV];
-  if (raw === undefined || raw === null || String(raw).trim() === '') return DEFAULT_MAX_LANES;
-  const n = Number(String(raw).trim());
-  if (!Number.isFinite(n)) return DEFAULT_MAX_LANES;
-  return clampCap(n);
 }
 
 // ── work units, and merging them back ───────────────────────────────────────────────────────────────────
