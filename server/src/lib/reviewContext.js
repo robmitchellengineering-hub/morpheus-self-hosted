@@ -34,6 +34,7 @@
 // can assert its composition directly (`scripts/verify-review-context.mjs`) and the export
 // parser is shared with `scripts/verify-server-imports.mjs` rather than copied.
 import { exportedNames } from './moduleExports.js';
+import { generatedAppProblems } from './generatedAppCheck.js';
 import { modelFieldIndex } from './prismaFields.js';
 
 /** The files the reviewer's own prompt instructs it to check a change against. */
@@ -312,4 +313,34 @@ export function buildReviewerContext({ files, fileOps, maxTreeBytes = 12000, max
   }
 
   return sections.join('\n\n');
+}
+
+/**
+ * The reviewer's "can this app install and start?" section, or '' when there is nothing to say.
+ *
+ * WHY THIS IS A FUNCTION AND NOT FOUR LINES IN THE HANDLER. The checker (`generatedAppCheck.js`) was already
+ * tested against a real fixture app; what was NOT tested was the composition — that the findings reach the
+ * reviewer, naming the actual defect, in the wording the reviewer's prompt is told to look for. Inline in a
+ * 2,600-line handler that could only ever be asserted by reading the source, which is how a checker that
+ * nothing called went unnoticed in the first place.
+ *
+ * ⚠️ IT RUNS ON WHAT THIS BUILD PRODUCED, and that is deliberate: against the project's whole file list it would
+ * re-report every pre-existing app on every turn, and a section that is always present is one the reviewer
+ * learns to skim. An empty string means this build added nothing to the section, and the caller appends nothing.
+ *
+ * What it can MISS, said rather than implied: the checker reads file CONTENT, so a file that arrived as `edits`
+ * rather than full content is not examined. A miss, never a false report.
+ */
+export function runnableAppBlock(fileOps) {
+  const problems = generatedAppProblems((fileOps || []).map((op) => ({ path: op.path, content: op.content })));
+  if (problems.length === 0) return '';
+  // ⚠️ A DEPENDENCY FINDING HAS TO NAME THE DEPENDENCY. The first version rendered only `p.file`, and dependency
+  // problems carry `package` instead — so the reviewer was told "no prebuilt binary … use sqlite3" without being
+  // told WHICH declared package cannot install. Caught by exercising this against the real fixture rather than
+  // by reading it; the explanation does not necessarily repeat the package name.
+  const lines = problems.map((p) => {
+    const where = p.file ? `${p.file}: ` : p.package ? `${p.package} — ` : '';
+    return `  - [${p.kind}] ${where}${p.detail}`;
+  });
+  return `\n\nRUNNABLE APP — mechanical findings about whether this app can install and start, decided from the source by a checker without running anything:\n${lines.join('\n')}\n\nThese were found by a checker, not by you: verify each against the files above rather than repeating it. A finding that is REAL for this app is a CRITICAL issue — a dependency that cannot install, or a module used in a way its own exports do not support, ships an app that fails at its first command, and the operator is told to run exactly that command. A finding that does not apply to this app (it is not meant to be run locally, or the file is not part of the deliverable) is NOT an issue and must not be reported.`;
 }

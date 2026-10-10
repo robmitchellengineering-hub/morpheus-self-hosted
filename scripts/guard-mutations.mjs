@@ -118,6 +118,43 @@ export const MUTATIONS = [
     replace: "'never-a-real-dep': 'no prebuilt binary for this Node",
   },
   {
+    guard: 'verify-generated-app.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // ⚠️ THE CHECKER BECOMES DECORATION. This is the exact hole the wiring assertions were written for: the
+    // checker still exists, still passes its own fixture tests, and is simply never consulted about what a build
+    // produced — which is how it went unnoticed that nothing called it at all.
+    why: 'Stops the build loop consulting the generated-app checker, so it runs only in the CI fixture again.',
+    find: '        reviewContext += runnableAppBlock(fileOps);',
+    replace: '',
+  },
+  {
+    guard: 'verify-generated-app.mjs',
+    file: 'server/src/lib/reviewContext.js',
+    // A SECTION THAT IS ALWAYS PRESENT IS ONE THE REVIEWER SKIMS. Returning the header with no findings attached
+    // would put "RUNNABLE APP" into every single review, including clean ones.
+    why: 'Emits the runnable-app section even when there is nothing wrong, so it appears in every review.',
+    find: "  if (problems.length === 0) return '';",
+    replace: '  if (false) return \'\';',
+  },
+  {
+    guard: 'verify-generated-app.mjs',
+    file: 'server/src/lib/reviewContext.js',
+    // THE FINDING LOSES ITS SUBJECT. Dependency problems carry `package`, not `file`, so rendering only `file`
+    // tells the reviewer an explanation without saying which declared package it is about.
+    why: 'Drops the package name from a dependency finding, so the reviewer cannot tell which one it is.',
+    find: "    const where = p.file ? `${p.file}: ` : p.package ? `${p.package} — ` : '';",
+    replace: "    const where = p.file ? `${p.file}: ` : '';",
+  },
+  {
+    guard: 'verify-generated-app.mjs',
+    file: 'server/src/lib/reviewer.js',
+    // THE FACTS ARRIVE WITH NO INSTRUCTION. The block is then prose in a prompt the reviewer has no reason to
+    // act on, and a real unbuildable dependency is listed and ignored.
+    why: 'Removes the reviewer rule for the runnable-app section, so its findings are never acted on.',
+    find: '\n- RUNNABLE APP: if the context includes a "RUNNABLE APP" section',
+    replace: '\n- (removed) RUNNABLE APP: if the context includes a "RUNNABLE APP" section',
+  },
+  {
     guard: 'verify-backend-chunk-context.mjs',
     file: 'server/src/lib/backendChunkContext.js',
     why: 'Raises the context ceiling past anything a probe can reach, so an over-limit context is no longer over the limit.',
