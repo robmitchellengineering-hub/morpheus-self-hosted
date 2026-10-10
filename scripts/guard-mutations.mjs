@@ -3951,6 +3951,36 @@ export const MUTATIONS = [
     find: '    const label = opts.label || STAGE_LABELS[stage] || stage;',
     replace: '    const label = STAGE_LABELS[stage];',
   },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ⚠️ THE WHOLE FEATURE, SILENTLY OFF. The fan-out is one `if`; forcing the sequential branch means every lane
+    // queues exactly as it used to, the build still succeeds, every other guard still passes — and the only
+    // symptom is that nothing got faster. This is the mutation the timing check exists for: without a check that
+    // measures OVERLAP, "the units run at once" is a comment that no test contradicts.
+    why: 'Forces every lane down the sequential branch, so the fan-out silently does nothing at all.',
+    find: '  if (!concurrent) {',
+    replace: '  if (true) {',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ORDER FROM TIMING INSTEAD OF POSITION. Reversing the settled list makes the build's operation order depend
+    // on completion, so the same plan produces a different file order — and therefore a different diff, review
+    // and apply order — on every run.
+    why: 'Merges the lanes in reverse, so the build result depends on timing rather than on the plan.',
+    find: '  return mergeLaneResults(settled.map((s) => s.value));',
+    replace: '  return mergeLaneResults(settled.map((s) => s.value).reverse());',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // WHICHEVER FAILED FIRST, RATHER THAN THE FIRST LANE. With lanes running concurrently the failing call is a
+    // race, so the error the operator sees — and the one the coder is asked to fix — would change run to run.
+    why: 'Reports whichever lane failed soonest instead of the first lane in order, making the error nondeterministic.',
+    find: '  const firstErr = firstLaneError(settled);',
+    replace: '  const firstErr = firstLaneError([...settled].reverse());',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────

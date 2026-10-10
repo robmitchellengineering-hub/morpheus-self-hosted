@@ -441,3 +441,37 @@ export function firstLaneError(settled) {
   }
   return null;
 }
+
+/**
+ * Run the work units and merge them — the scheduling half, with the model call INJECTED.
+ *
+ * ⚠️ WHY THIS IS A FUNCTION AND NOT FOUR LINES INSIDE THE HANDLER. It was inside the handler, and that made the
+ * single most important claim about this feature untestable: **that the units actually run at once.** The guard
+ * could only regex-match `Promise.allSettled` in a 2,600-line file — which is a statement about the text, not
+ * about the behaviour, and it would keep passing if the call were replaced by a sequential loop.
+ *
+ * With `runUnit` injected, the claim becomes executable: three units that each sleep 150ms must finish in ~150ms,
+ * not ~450ms; the sequential path must really queue; the merge must be unit order even when completion order is
+ * reversed; and a failure must be the FIRST unit's, not whichever failed fastest.
+ *
+ * `concurrent: false` keeps today's exact throw behaviour — the first failure propagates immediately, with no
+ * `allSettled` wrapper to swallow it.
+ *
+ * @param {object} opts
+ * @param {Array<{name: string|null, chunks: string[][]}>} opts.units
+ * @param {(unit: object) => Promise<{ops: object[], truncated?: string[], model?: string}>} opts.runUnit
+ * @param {boolean} opts.concurrent
+ * @returns {Promise<{ops: object[], truncated: string[], model: string|undefined}>}
+ */
+export async function runLaneUnits({ units, runUnit, concurrent }) {
+  const list = Array.isArray(units) ? units : [];
+  if (!concurrent) {
+    const values = [];
+    for (const u of list) values.push(await runUnit(u));
+    return mergeLaneResults(values);
+  }
+  const settled = await Promise.allSettled(list.map((u) => runUnit(u)));
+  const firstErr = firstLaneError(settled);
+  if (firstErr) throw firstErr;
+  return mergeLaneResults(settled.map((s) => s.value));
+}
