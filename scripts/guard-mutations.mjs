@@ -3948,8 +3948,8 @@ export const MUTATIONS = [
     // THE LANE ROW LOSES ITS NAME. The emitter's fallback is what lets a `coder:<lane>` stage render with the
     // lane's own label and the coder's ETA; without it the row shows a raw id and an ETA for an unknown role.
     why: 'Drops the emitter fallback, so a lane row renders with no label and an ETA from an unknown role.',
-    find: '    const label = opts.label || STAGE_LABELS[stage] || stage;',
-    replace: '    const label = STAGE_LABELS[stage];',
+    find: '  const labelFor = (stage, opts) => opts.label || STAGE_LABELS[stage] || stage;',
+    replace: '  const labelFor = (stage) => STAGE_LABELS[stage];',
   },
   {
     guard: 'verify-lane-partition.mjs',

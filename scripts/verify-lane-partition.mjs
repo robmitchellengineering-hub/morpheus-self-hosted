@@ -359,7 +359,12 @@ check('…built from the lane name', /const task = unit\.name \? `coder:\$\{unit
 // A lane stage is not one of the fixed pipeline stages, so the emitter must accept an explicit label and role —
 // without them the row would render with no label and an ETA computed from an unknown role.
 check('the stage emitter accepts a lane label and role', /const start = \(stage, opts = \{\}\) => \{/.test(chat), true);
-check('…and still falls back for the fixed stages', /opts\.label \|\| STAGE_LABELS\[stage\] \|\| stage/.test(chat), true);
+// ⚠️ COUNTED, NOT MERELY PRESENT, AND THIS CHECK FOUND THAT THE HARD WAY. A first version used a presence test
+// for the fallback expression; `fail()` then needed the same fallback and a second copy was written, so mutating
+// one copy left the other matching and the mutation SURVIVED while the emitter was broken. One expression, and
+// the guard counts it.
+check('…resolving a label in exactly one place', (chat.match(/opts\.label \|\| STAGE_LABELS\[stage\] \|\| stage/g) || []).length, 1);
+check('…which both the start and the fail path use', (chat.match(/labelFor\(stage, opts\)/g) || []).length, 2);
 
 // THE CLIENT CHANGE THAT IS NOT NEEDED, pinned so a refactor to a fixed stage allowlist fails here instead of
 // silently dropping every lane's row.

@@ -140,9 +140,13 @@ function makeStageEmitter(emit) {
   // reducer is id-generic (`useWorkspace.js` appends a row for any `status:'start'` and flips it on the matching
   // `done`), so a lane gets its own row and its own clock with no client change — which is design §4.2's
   // "N lanes, each with its own state" without a second event type or a second progress surface.
+  // ONE place resolves a label. `fail()` below needs the same fallback as `start()`, and writing the expression
+  // out twice meant a mutation of one copy was satisfied by the other — the guard's `presence` assertion passed
+  // while the emitter it was meant to protect was broken. Counted in the guard, not merely matched.
+  const labelFor = (stage, opts) => opts.label || STAGE_LABELS[stage] || stage;
   const start = (stage, opts = {}) => {
     startedAt.set(stage, Date.now());
-    const label = opts.label || STAGE_LABELS[stage] || stage;
+    const label = labelFor(stage, opts);
     const role = opts.role || STAGE_ROLE[stage];
     emit({ type: 'stage', stage, status: 'start', label, etaSeconds: Math.round(estimateCallMs(role) / 1000), index: index++ });
     // 2026-09-17: found live — a build turn can go completely silent for
@@ -170,7 +174,7 @@ function makeStageEmitter(emit) {
   const fail = (stage, opts = {}) => {
     const t = startedAt.get(stage);
     const elapsedSeconds = t ? Math.round((Date.now() - t) / 1000) : undefined;
-    emit({ type: 'stage', stage, status: 'failed', label: opts.label || STAGE_LABELS[stage] || stage, elapsedSeconds });
+    emit({ type: 'stage', stage, status: 'failed', label: labelFor(stage, opts), elapsedSeconds });
     console.log(`[chatWithMorpheus] stage failed: ${stage} — ${opts.label || ''}`);
   };
   return {
