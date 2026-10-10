@@ -42,12 +42,19 @@ export default function MorpheusPipelineStatus({ stages }) {
       <div className="space-y-1 flex-1 min-w-0">
         {stages.map((s, i) => {
           const isActive = s.status === 'active';
+          // A per-lane VERDICT (the server emits this after the gates have run, which is the first moment the
+          // answer is final). It is deliberately drawn differently from a tick: a lane whose files still have
+          // findings must not look like a lane that came out clean, or the marker is worth nothing.
+          const isFailed = s.status === 'failed';
           const remaining = isActive ? Math.round(s.etaSeconds - (Date.now() - s.startedAt) / 1000) : null;
           return (
             <div key={`${s.stage}-${i}`} className="flex items-baseline gap-2">
               <span className={isActive ? 'text-ink animate-pulse' : 'text-ink'} aria-hidden="true">
-                {isActive ? '>' : '✓'}
+                {isActive ? '>' : isFailed ? '✗' : '✓'}
               </span>
+              {/* No colour change is available here: this panel's text is held to the ink convention (text-ink /
+                  text-ink-strong / text-ink-max) by its own guard, so the ✗ plus the server's fuller label
+                  ("Writing x — 2 files need attention") is what carries the meaning. */}
               <span className={isActive ? 'text-ink' : 'text-ink'}>{s.label}</span>
               {isActive && (
                 <span className="text-ink-strong text-xs tabular-nums">

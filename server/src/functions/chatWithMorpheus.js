@@ -25,7 +25,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
-import { partitionLanes, planCoderWork, runLaneUnits, maxLanesFromEnv } from '../lib/lanePartition.js';
+import { partitionLanes, planCoderWork, runLaneUnits, laneVerdicts, describeLaneIssues, maxLanesFromEnv } from '../lib/lanePartition.js';
 import { findCallerBreaks, describeCallerBreaks } from '../lib/callerCheck.js';
 import { unknownPrismaFields, isCodePath } from '../lib/prismaFields.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
@@ -140,9 +140,13 @@ function makeStageEmitter(emit) {
   // reducer is id-generic (`useWorkspace.js` appends a row for any `status:'start'` and flips it on the matching
   // `done`), so a lane gets its own row and its own clock with no client change — which is design §4.2's
   // "N lanes, each with its own state" without a second event type or a second progress surface.
+  // ONE place resolves a label. `fail()` below needs the same fallback as `start()`, and writing the expression
+  // out twice meant a mutation of one copy was satisfied by the other — the guard's `presence` assertion passed
+  // while the emitter it was meant to protect was broken. Counted in the guard, not merely matched.
+  const labelFor = (stage, opts) => opts.label || STAGE_LABELS[stage] || stage;
   const start = (stage, opts = {}) => {
     startedAt.set(stage, Date.now());
-    const label = opts.label || STAGE_LABELS[stage] || stage;
+    const label = labelFor(stage, opts);
     const role = opts.role || STAGE_ROLE[stage];
     emit({ type: 'stage', stage, status: 'start', label, etaSeconds: Math.round(estimateCallMs(role) / 1000), index: index++ });
     // 2026-09-17: found live — a build turn can go completely silent for
@@ -163,9 +167,20 @@ function makeStageEmitter(emit) {
     emit({ type: 'stage', stage, status: 'done', label: STAGE_LABELS[stage], elapsedSeconds });
     console.log(`[chatWithMorpheus] stage done: ${stage}${elapsedSeconds != null ? ` (${elapsedSeconds}s)` : ''} rss=${memMb()}MB ${containerMb()}`);
   };
+  // A lane whose own files still have findings after the gates. It is emitted LATE — the lane row was already
+  // closed as 'done' when its coding pass ended — so the client flips an existing row rather than appending one.
+  // That is deliberate: "did this lane come out clean?" is only answerable once the gates have run, and answering
+  // it earlier would mark most multi-file lanes failed and teach the operator to ignore the marker.
+  const fail = (stage, opts = {}) => {
+    const t = startedAt.get(stage);
+    const elapsedSeconds = t ? Math.round((Date.now() - t) / 1000) : undefined;
+    emit({ type: 'stage', stage, status: 'failed', label: labelFor(stage, opts), elapsedSeconds });
+    console.log(`[chatWithMorpheus] stage failed: ${stage} — ${opts.label || ''}`);
+  };
   return {
     start,
     done,
+    fail,
     onProgress: (evt) => {
       if (!evt?.stage) return;
       if (evt.status === 'start') start(evt.stage);
@@ -2521,6 +2536,34 @@ OPERATOR SAYS: ${message}`;
         plannerResult.decisionSummary || plannerResult.plan?.split('\n')[0] || reply,
         plannerResult.decisionRationale || '',
       );
+    }
+
+    // ── PER-LANE VERDICTS (design §4.2: "N lanes, each with its own state") ──────────────────────────────────
+    //
+    // ⚠️ HERE, AFTER THE GATES, AND NOWHERE ELSE. A lane's files routinely do not parse while it is writing them —
+    // the syntax gate and its fix loop run afterwards on the integrated change set and repair them. A verdict
+    // emitted at the end of a lane's own coding pass would therefore be wrong on most multi-file builds, and a
+    // marker that is usually wrong teaches the operator to ignore it. So the question is asked once it is FINAL:
+    // given everything the gates still object to, which lane does each objection belong to?
+    //
+    // `unowned` is logged rather than dropped — a finding about a file in NO lane is the one case the lanes cannot
+    // explain, and it must not be the case that goes missing.
+    if (laneSplit?.ok) {
+      const { verdicts, unowned } = laneVerdicts({
+        lanes: laneSplit.lanes,
+        // `syntaxCritical` FIRST, because it is the finding that matters most: a file that still does not parse
+        // after every fix attempt. It was missing from a first version of this list, which would have left the
+        // worst case — a broken file in a lane — as the one case with no verdict at all. Every entry here is a
+        // display string or a path; `laneVerdicts` reads the file back out of both.
+        findings: [...syntaxCritical, ...truncatedFiles, ...callerCritical, ...schemaCritical, ...a11yNotes, ...deepVerifyCritical],
+      });
+      for (const v of verdicts) {
+        if (v.issues.length === 0) continue;
+        stages.fail(`coder:${v.name}`, { label: `Writing ${v.name} — ${describeLaneIssues(v.issues.length)}` });
+      }
+      if (unowned.length > 0) {
+        console.log(`[chatWithMorpheus] ${unowned.length} finding(s) belong to no lane (files outside the plan)`);
+      }
     }
 
     // A streaming handler returns nothing the dispatcher can read, so the run

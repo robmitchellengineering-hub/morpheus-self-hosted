@@ -3948,8 +3948,8 @@ export const MUTATIONS = [
     // THE LANE ROW LOSES ITS NAME. The emitter's fallback is what lets a `coder:<lane>` stage render with the
     // lane's own label and the coder's ETA; without it the row shows a raw id and an ETA for an unknown role.
     why: 'Drops the emitter fallback, so a lane row renders with no label and an ETA from an unknown role.',
-    find: '    const label = opts.label || STAGE_LABELS[stage] || stage;',
-    replace: '    const label = STAGE_LABELS[stage];',
+    find: '  const labelFor = (stage, opts) => opts.label || STAGE_LABELS[stage] || stage;',
+    replace: '  const labelFor = (stage) => STAGE_LABELS[stage];',
   },
   {
     guard: 'verify-lane-partition.mjs',
@@ -3980,6 +3980,66 @@ export const MUTATIONS = [
     why: 'Reports whichever lane failed soonest instead of the first lane in order, making the error nondeterministic.',
     find: '  const firstErr = firstLaneError(settled);',
     replace: '  const firstErr = firstLaneError([...settled].reverse());',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ⚠️ THE FINDING WITH NOWHERE TO GO, DROPPED. A finding against a file in NO lane is the one case the lanes
+    // cannot explain — the coder wrote something the plan never listed — so silently discarding it means the
+    // build's one unexplained problem is the one problem never reported.
+    why: 'Drops findings that belong to no lane, so a file outside the plan fails silently.',
+    find: '    if (name === undefined || name === null) { unowned.push(raw); continue; }',
+    replace: '    if (name === undefined || name === null) { continue; }',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // THE SHAPE BLIND SPOT. The gate call sites do not agree on what a finding looks like; accepting only `file`
+    // means every finding that used `path` is attributed to nobody, and the lane reads clean.
+    why: 'Understands only the `file` shape, so findings using `path` attribute to no lane and read as clean.',
+    find: '  return raw?.file ?? raw?.path ?? null;',
+    replace: '  return raw?.file ?? null;',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ⚠️ THE ONE THAT WOULD HAVE SHIPPED A LIE. Every findings list in the handler holds DISPLAY STRINGS
+    // ("path:line — text"), not objects. Treating a string as a path means the lookup never matches, every
+    // finding lands in `unowned`, and every lane is reported CLEAN — a per-lane verdict that says "all good" for
+    // a build containing a file that does not parse. This mistake was made once, caught by checking the shape the
+    // call sites actually build, and is now a mutation so it cannot come back quietly.
+    why: 'Stops reading the file out of the gate lists\' display strings, so every lane reads clean.',
+    find: "  if (typeof raw === 'string') {\n    const m = DISPLAY_FINDING.exec(raw);\n    return m ? m[1] : raw;\n  }",
+    replace: "  if (typeof raw === 'string') {\n    return raw;\n  }",
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // ⚠️ THE WORST CASE LEFT WITHOUT A VERDICT. `syntaxCritical` is a file that still does not parse after every
+    // fix attempt — the finding most worth attributing to a lane. It was omitted from this list once, which meant
+    // a broken file in a lane produced no verdict at all while a broken IMPORT did. Silent, and in the worst place.
+    why: 'Leaves the syntax findings out of the verdict, so the worst case is the one case with no verdict.',
+    find: '        findings: [...syntaxCritical, ...truncatedFiles, ...callerCritical, ...schemaCritical, ...a11yNotes, ...deepVerifyCritical],',
+    replace: '        findings: [...truncatedFiles, ...callerCritical, ...schemaCritical, ...a11yNotes, ...deepVerifyCritical],',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // A CLEAN LANE IS STILL A LANE. Returning only the lanes with findings makes the list's positions mean
+    // different things between builds, and the caller iterating it to clear the others would never see them.
+    why: 'Returns only lanes that have findings, so a clean lane vanishes from the per-lane report.',
+    find: '  return { verdicts, unowned };',
+    replace: '  return { verdicts: verdicts.filter((v) => v.issues.length > 0), unowned };',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'src/hooks/useWorkspace.js',
+    // ⚠️ THE FALSE PASS, DRAWN ON SCREEN. The lane's row is already closed as 'done' by the time the gates run, so
+    // requiring 'active' here means a lane whose files STILL have findings keeps its green tick. Nothing else in
+    // the pipeline changes, and the operator is shown a clean build.
+    why: 'Leaves a failed lane showing a green tick, because its row closed before the verdict arrived.',
+    find: "            return prev.map(s => (s.stage === evt.stage\n              ? { ...s, status: 'failed', label: evt.label || s.label, elapsedSeconds: evt.elapsedSeconds }",
+    replace: "            return prev.map(s => (s.stage === evt.stage && s.status === 'active'\n              ? { ...s, status: 'failed', label: evt.label || s.label, elapsedSeconds: evt.elapsedSeconds }",
   },
 ];
 

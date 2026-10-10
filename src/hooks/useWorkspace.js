@@ -224,6 +224,15 @@ export function useWorkspace() {
           if (evt.status === 'start') {
             return [...prev, { stage: evt.stage, label: evt.label, status: 'active', etaSeconds: evt.etaSeconds, startedAt: Date.now() }];
           }
+          // 'failed' — a per-lane verdict, emitted AFTER the lane's own row closed (the gates run later, once
+          // "did this lane come out clean?" is finally answerable). So this matches on the stage id alone rather
+          // than requiring 'active': a lane whose files still have findings must not keep a green tick. The label
+          // is taken from the event because the server sends the fuller one ("Writing x — 2 files need attention").
+          if (evt.status === 'failed') {
+            return prev.map(s => (s.stage === evt.stage
+              ? { ...s, status: 'failed', label: evt.label || s.label, elapsedSeconds: evt.elapsedSeconds }
+              : s));
+          }
           // 'done' — flip the matching active entry; leave completed ones as-is.
           return prev.map(s => (s.stage === evt.stage && s.status === 'active')
             ? { ...s, status: 'done', elapsedSeconds: evt.elapsedSeconds }
