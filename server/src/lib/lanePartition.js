@@ -475,3 +475,71 @@ export async function runLaneUnits({ units, runUnit, concurrent }) {
   if (firstErr) throw firstErr;
   return mergeLaneResults(settled.map((s) => s.value));
 }
+
+// ── per-lane verdicts ───────────────────────────────────────────────────────────────────────────────────────
+//
+// Design §4.2: "N lanes, each with its own state". The state it is missing is the one that matters — whether the
+// lane's own files came out clean.
+//
+// ⚠️ COMPUTED AFTER THE GATES, NOT DURING THE LANE, AND THAT IS THE WHOLE DESIGN. A lane's files routinely do not
+// parse WHILE it is writing them: the syntax gate and its fix loop run afterwards, on the integrated change set,
+// and routinely repair them. Marking a lane failed at the end of its own coding pass would therefore cry wolf on
+// most multi-file builds — and a verdict that is usually wrong is worse than no verdict, because it teaches the
+// operator to ignore the marker.
+//
+// So this answers the question at the point where the answer is final: **given everything the gates still object
+// to, which lane does each objection belong to?** A lane with no findings needs nothing; a lane with findings
+// carries them on its own row.
+//
+// `unowned` is returned rather than dropped: a finding about a file that is in NO lane (the coder wrote something
+// the plan never listed) has to be visible, or the one case the lanes cannot explain is the one case that goes
+// missing.
+//
+// ⚠️ AND THE FILE HAS TO BE READ BACK OUT OF A DISPLAY STRING, WHICH IS NOT HOW THIS WAS FIRST WRITTEN. The gate
+// lists in chatWithMorpheus.js do not hold objects — every one of them is built as
+// `` `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}` `` because those same arrays are shown to the operator.
+// A first version of this function looked only for an object's `file`/`path`, so fed the real lists it found no
+// owner for ANY finding, attributed everything to `unowned`, and reported every lane clean — a per-lane verdict
+// that silently says "all good" for a build with a file that does not parse. Shape tolerance here is not
+// defensive padding; it is the difference between the feature working and the feature lying.
+const DISPLAY_FINDING = /^(.+?)(?::\d+)?\s+—\s+/;
+
+/** The file a finding is about: a bare path, an object's `file`/`path`, or the path inside "path:line — text". */
+export function fileOfFinding(raw) {
+  if (typeof raw === 'string') {
+    const m = DISPLAY_FINDING.exec(raw);
+    return m ? m[1] : raw;
+  }
+  return raw?.file ?? raw?.path ?? null;
+}
+export function laneVerdicts({ lanes, findings } = {}) {
+  const list = Array.isArray(lanes) ? lanes.filter((l) => l && typeof l.name === 'string') : [];
+  const owner = new Map();
+  for (const l of list) {
+    for (const f of (Array.isArray(l.files) ? l.files : [])) owner.set(f, l.name);
+  }
+
+  const verdicts = list.map((l) => ({
+    name: l.name,
+    files: (Array.isArray(l.files) ? l.files : []).slice(),
+    issues: [],
+  }));
+  const byName = new Map(verdicts.map((v) => [v.name, v]));
+
+  const unowned = [];
+  for (const raw of Array.isArray(findings) ? findings : []) {
+    const file = fileOfFinding(raw);
+    const name = file ? owner.get(file) : null;
+    if (name === undefined || name === null) { unowned.push(raw); continue; }
+    byName.get(name).issues.push(raw);
+  }
+
+  return { verdicts, unowned };
+}
+
+/** The suffix a lane's own row carries when it has findings — e.g. "2 files need attention". */
+export function describeLaneIssues(count) {
+  const n = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  if (n === 0) return '';
+  return `${n} file${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} attention`;
+}

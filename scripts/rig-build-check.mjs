@@ -124,6 +124,31 @@ check('…and nothing outside the plan was touched', changed.length, planned.len
 // model calls happened to return. Completion order here is a race, so this is a real assertion, not a tautology.
 check('…in LANE order, not completion order', changed, planned);
 
+// ── 5. PER-LANE VERDICTS, IN BOTH DIRECTIONS ────────────────────────────────────────────────────────────────
+// The server emits a lane's verdict AFTER the gates have run, as a `failed` status on that lane's own row. Both
+// directions matter and they prove different things:
+//   * a CLEAN build must mark NO lane failed — otherwise the marker cries wolf and the operator learns to ignore
+//     it, which is worse than having no marker;
+//   * with `MOCK_LLM_BUILD_BREAK=1` one lane's file genuinely does not parse, and EXACTLY that lane must be
+//     marked failed, with a label naming how many of its files need attention — so the feature cannot be a no-op.
+const failedStages = stages.filter((s) => s.status === 'failed');
+const broken = process.env.MOCK_LLM_BUILD_BREAK === '1';
+const marked = failedStages.map((s) => s.stage).sort();
+if (broken) {
+  check('a lane whose file does not parse is marked failed', marked, ['coder:list view']);
+  // `describeLaneIssues` pluralises properly ("1 file needs", "2 files need"), so the (s) here is optional — an
+  // earlier version of this pattern required a literal "file(s)" and failed against a correct label.
+  check('…and its label says how many files need attention', /Writing list view — \d+ files? needs? attention/.test(failedStages[0]?.label || ''), true);
+  check('…the clean lanes are left alone', failedStages.length, 1);
+} else {
+  check('a clean build marks NO lane failed (the marker must not cry wolf)', marked, []);
+}
+// The verdict must arrive AFTER the lane row closed — that ordering is the design decision, and a verdict emitted
+// at the end of a lane's coding pass would be wrong on most multi-file builds.
+const lastLaneDone = laneStages.map((s) => s.status).lastIndexOf('done');
+const failedAt = stages.findIndex((s) => s.status === 'failed');
+check('…and the verdict arrives only after the coding pass has closed', failedAt < 0 || failedAt > stages.findIndex((s) => s.stage === 'coder' && s.status === 'done'), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 console.log(failures === 0
   ? '  a real build fanned out, named every lane, and lost no file\n'

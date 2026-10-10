@@ -52,6 +52,12 @@ const NEVER_INVENT = new Set(['fileOperations', 'edits', 'toolCalls']);
 // browser. It stays OFF unless asked for, and the writes land in the rig's own database (`morpheus_dock_rig`),
 // which exists to be thrown away.
 const BUILD = process.env.MOCK_LLM_BUILD === '1';
+// `MOCK_LLM_BUILD_BREAK=1` makes ONE lane's file genuinely un-parseable, so the per-lane verdict can be driven
+// end to end: the syntax gate retries, the mock returns the same broken content every time, and the file is still
+// broken when the gates give up. Without this the verdict path could only be asserted against source text — and
+// the "does a clean build stay clean?" direction could not be asserted at all.
+const BUILD_BREAK = process.env.MOCK_LLM_BUILD_BREAK === '1';
+const BROKEN_FILE = 'riglist.js'; // in the 'list view' lane, and in no other
 const BUILD_LANES = [
   { name: 'data layer', files: ['rigdata.js', 'rigschema.js'] },
   { name: 'list view', files: ['riglist.js', 'rigdetail.js'] },
@@ -90,11 +96,13 @@ function buildScenario(schema, prompt) {
       fileOperations: paths.map((p) => ({
         path: p,
         action: 'create',
-        content: p.endsWith('.css')
-          ? `/* dock-rig build scenario */\n.rig { color: #0f0; }\n`
-          : p.endsWith('.jsx')
-            ? `// dock-rig build scenario\nexport default function Rig() { return null; }\n`
-            : `// dock-rig build scenario\nexport const id = ${JSON.stringify(p)};\n`,
+        content: BUILD_BREAK && p === BROKEN_FILE
+          ? `// dock-rig build scenario — deliberately does not parse\nexport const broken = { ;\n`
+          : p.endsWith('.css')
+            ? `/* dock-rig build scenario */\n.rig { color: #0f0; }\n`
+            : p.endsWith('.jsx')
+              ? `// dock-rig build scenario\nexport default function Rig() { return null; }\n`
+              : `// dock-rig build scenario\nexport const id = ${JSON.stringify(p)};\n`,
       })),
     };
   }

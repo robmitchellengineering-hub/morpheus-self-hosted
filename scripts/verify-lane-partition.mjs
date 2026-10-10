@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
-const { partitionLanes, planCoderWork, runLaneUnits, mergeLaneResults, firstLaneError, maxLanesFromEnv, DEFAULT_MAX_LANES, MAX_LANES_CEILING, MAX_LANES_ENV } = await import(
+const { partitionLanes, planCoderWork, runLaneUnits, laneVerdicts, describeLaneIssues, fileOfFinding, mergeLaneResults, firstLaneError, maxLanesFromEnv, DEFAULT_MAX_LANES, MAX_LANES_CEILING, MAX_LANES_ENV } = await import(
   '../server/src/lib/lanePartition.js'
 );
 
@@ -438,6 +438,79 @@ try {
 }
 check('…and a sequential failure propagates too', seqErr?.message, 'boom');
 check('an empty unit list is not a crash', await runLaneUnits({ units: [], concurrent: true, runUnit: okUnit }), { ops: [], truncated: [], model: undefined });
+
+// ── 14. PER-LANE VERDICTS: whose files are the remaining findings against? ───────────────────────────────
+// The gates report findings against FILES; the operator is watching LANES. This maps one to the other, and it is
+// asked AFTER the gates have run — a verdict taken at the end of a lane's coding pass would be wrong on most
+// multi-file builds, because the syntax gate and its fix loop are what repair them.
+const VL = [{ name: 'data layer', files: ['db.js', 'schema.js'] }, { name: 'list view', files: ['list.js'] }];
+const v1 = laneVerdicts({ lanes: VL, findings: ['db.js', { file: 'list.js', text: 'broken import' }] });
+check('a finding is attributed to the lane that owns the file', v1.verdicts.map((v) => v.issues.length), [1, 1]);
+check('…and a clean lane carries nothing', laneVerdicts({ lanes: VL, findings: ['db.js'] }).verdicts[1].issues, []);
+check('…with every lane reported even when it has no findings', v1.verdicts.map((v) => v.name), ['data layer', 'list view']);
+// The gate call sites in this repo do not agree on a shape, so all of them are accepted — a bare path, an object
+// with `file` or `path`, and the DISPLAY STRING the gates actually build. A finder that understood only one shape
+// would silently report a clean build.
+check('both object shapes are understood',
+  laneVerdicts({ lanes: VL, findings: ['db.js', { path: 'schema.js' }, { file: 'db.js' }] }).verdicts[0].issues.length, 3);
+// ⚠️ THE REAL FORMAT, AND THE REASON THIS CHECK EXISTS. Every findings list in chatWithMorpheus.js holds strings
+// built as `${e.file}${e.line ? ':' + e.line : ''} — ${e.text}` — the file has to be read back out. A first
+// version of `laneVerdicts` looked only for an object's `file`, so fed the real lists it attributed EVERY finding
+// to `unowned` and reported every lane clean. These fixtures are that format verbatim.
+check('a "path:line — text" finding is attributed to its file', fileOfFinding('src/a.js:3 — Unexpected token }'), 'src/a.js');
+check('…one without a line number too', fileOfFinding('src/a.js — something broke'), 'src/a.js');
+check('…a bare path is a path, not a display string', fileOfFinding('src/a.js'), 'src/a.js');
+const vReal = laneVerdicts({
+  lanes: [{ name: 'data layer', files: ['db.js'] }, { name: 'list view', files: ['list.jsx'] }],
+  findings: ['db.js:12 — Unexpected token }', 'list.jsx:3 — img has no alt text'],
+});
+check('…so a build with a broken file does NOT read as every lane clean', vReal.verdicts.map((v) => v.issues.length), [1, 1]);
+check('the display format the gates build is the one this parses',
+  (chat.match(/`\$\{e\.file\}\$\{e\.line \? ':' \+ e\.line : ''\} — \$\{e\.text\}`/g) || []).length >= 3, true);
+// ⚠️ A FINDING ON A FILE IN NO LANE MUST NOT VANISH. The coder can write something the plan never listed; that is
+// exactly the case the lanes cannot explain, so it is returned rather than dropped into a lane at random.
+const v2 = laneVerdicts({ lanes: VL, findings: ['stray.js', 'db.js', null] });
+check('a finding against a file in no lane is returned, not dropped', v2.unowned, ['stray.js', null]);
+check('…and it does not inflate any lane', v2.verdicts.map((v) => v.issues.length), [1, 0]);
+check('no lanes and no findings is empty, not a crash', laneVerdicts(), { verdicts: [], unowned: [] });
+check('garbage findings are tolerated', laneVerdicts({ lanes: VL, findings: 'nope' }).verdicts.length, 2);
+
+check('the row suffix counts files', describeLaneIssues(1), '1 file needs attention');
+check('…and pluralises', describeLaneIssues(3), '3 files need attention');
+check('…and says nothing for a clean lane', describeLaneIssues(0), '');
+
+// ── the wiring: emitted late, drawn differently, and never as a silent green ─────────────────────────────
+// Positional, not a character window: the call must come AFTER the last gate that can put a finding in a list.
+// (A `[\s\S]{0,200}` window here failed the moment a comment grew inside it — the same brittle-window mistake as
+// the 1800-character slice in verify-stage-observability.)
+const verdictAt = chat.indexOf('laneVerdicts({');
+const lastGateAt = Math.max(...['syntaxCritical = syntaxErrors', 'truncatedFiles.push', 'deepVerifyCritical = deep.errors', 'a11yNotes = a11yFindings']
+  .map((needle) => chat.indexOf(needle)));
+check('the verdict is computed after the gates have run', verdictAt > 0 && lastGateAt > 0 && verdictAt > lastGateAt, true);
+// Counted against the lists that exist, so a findings source added later and left out of this array fails here.
+// `syntaxCritical` was left out once — the finding that matters most (a file that still does not parse) — which
+// would have made the worst case the only case with no verdict.
+// Anchored on the CALL, because `findings: [` also appears in the security and UI-feedback report shapes above it.
+const findingsArg = (/findings: \[([^\]]*)\]/.exec(chat.slice(verdictAt)) || [])[1] || '';
+const findingsSources = (findingsArg.match(/\.\.\.(\w+)/g) || []).map((x) => x.slice(3));
+check('the verdict reads every gate list, including the syntax one',
+  ['syntaxCritical', 'truncatedFiles', 'callerCritical', 'schemaCritical', 'a11yNotes', 'deepVerifyCritical'].every((n) => findingsSources.includes(n)), true);
+for (const name of ['syntaxCritical', 'truncatedFiles', 'callerCritical', 'schemaCritical', 'a11yNotes', 'deepVerifyCritical']) {
+  check(`…and that list exists (${name})`, new RegExp(`let ${name} = \\[\\]`).test(chat), true);
+}
+check('…and only for a build that actually has lanes', /if \(laneSplit\?\.ok\) \{\n\s+const \{ verdicts, unowned \}/.test(chat), true);
+check('a lane with findings is marked FAILED on its own row', /stages\.fail\(`coder:\$\{v\.name\}`/.test(chat), true);
+check('…and unowned findings are reported rather than dropped', /if \(unowned\.length > 0\)/.test(chat), true);
+// The emitter must actually send a status the client acts on.
+check('the emitter sends a distinct failed status', /status: 'failed'/.test(chat), true);
+const ws = read('src/hooks/useWorkspace.js');
+// ⚠️ MATCHED ON THE ID ALONE, not `&& s.status === 'active'`: the lane's row was closed as done before the gates
+// ran, so requiring 'active' would leave every failed lane showing a green tick — a false pass drawn on screen.
+check('the client flips the row it already closed', /evt\.status === 'failed'/.test(ws) && /s\.stage === evt\.stage\n/.test(ws), true);
+// Anchored so that ADDING the condition fails here: the map line must end right after `evt.stage`. Requiring
+// 'active' would leave a lane whose files still have findings drawn with a green tick — a false pass, on screen.
+check('…without requiring the row to still be active', /evt\.status === 'failed'\) \{[\s\S]{0,400}?return prev\.map\(s => \(s\.stage === evt\.stage\s*\n/.test(ws), true);
+check('…and the panel draws it differently from a tick', /isFailed \? '✗' : '✓'/.test(read('src/components/matrix/MorpheusPipelineStatus.jsx')), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed\n`);
 if (failures > 0) process.exit(1);
