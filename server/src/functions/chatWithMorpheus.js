@@ -1594,7 +1594,13 @@ OPERATOR SAYS: ${message}`;
           // unit precisely because a unit's steps stay sequential — the lane is the boundary concurrency is allowed
           // across, which is exactly why lanes joined by an import edge are merged upstream rather than run at once.
           const priorBlock = priorOps.length
-            ? `\n\nOPERATIONS YOU ALREADY RETURNED FOR THIS BUILD (stay consistent with them):\n${priorOps.map((o) => `${o.action || 'update'} ${o.path}`).join('\n')}`
+            ? `\n\nOPERATIONS YOU ALREADY RETURNED FOR THIS BUILD (stay consistent with them):\n${priorOps
+                // Model output, so nothing here is guaranteed: a null element or a missing `path` would throw on
+                // the way into a template string and take the whole turn with it. This is the FIRST place raw
+                // operations are dereferenced, so it is the place to be defensive rather than assume the schema.
+                .filter((o) => o && typeof o.path === 'string')
+                .map((o) => `${o.action || 'update'} ${o.path}`)
+                .join('\n')}`
             : '';
           const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}${priorBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
           // A truncated completion THROWS (server/src/ai.js). Unwrapped, that one throw discarded the ENTIRE turn —
