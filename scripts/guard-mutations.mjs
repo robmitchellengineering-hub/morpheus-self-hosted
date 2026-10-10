@@ -3906,12 +3906,13 @@ export const MUTATIONS = [
     replace: "    if (r && r.status === 'fulfilled') return r.value;",
   },
   {
-    guard: 'verify-lane-partition.mjs',
-    file: 'server/src/lib/lanePartition.js',
+    guard: 'verify-call-pool.mjs',
+    file: 'server/src/lib/callPool.js',
     // THE PARAMETER DISCONNECTED. Reading the env var and then not using it is the shape that makes a "tunable"
-    // that changes nothing — and the sweep would report a flat line as a finding.
-    why: 'Ignores the lane environment variable, so the configured lane count has no effect.',
-    find: '  const raw = env?.[MAX_LANES_ENV];',
+    // that changes nothing — and the sweep would report a flat line as a finding. (This entry moved here with the
+    // reader itself when the limit became shared between the coder's lanes and the reviewer's chunks.)
+    why: 'Ignores the concurrency environment variable, so the configured limit has no effect.',
+    find: '  const raw = env?.[MAX_CONCURRENT_ENV];',
     replace: '  const raw = undefined;',
   },
   {
@@ -4021,6 +4022,58 @@ export const MUTATIONS = [
     why: 'Leaves the syntax findings out of the verdict, so the worst case is the one case with no verdict.',
     find: '        findings: [...syntaxCritical, ...truncatedFiles, ...callerCritical, ...schemaCritical, ...a11yNotes, ...deepVerifyCritical],',
     replace: '        findings: [...truncatedFiles, ...callerCritical, ...schemaCritical, ...a11yNotes, ...deepVerifyCritical],',
+  },
+
+  // ── the pool both fan-outs run on ─────────────────────────────────────────────────────────────────────────
+  {
+    guard: 'verify-call-pool.mjs',
+    file: 'server/src/lib/callPool.js',
+    // ⚠️ UNBOUNDED. The reviewer chunks 3 files at a time and its chunk count is capped by NOTHING, so a 30-file
+    // build becomes ten simultaneous `deepseek-v4-pro` calls — a provider and memory problem, and the ceiling that
+    // made `MORPHEUS_MAX_LANES` meaningful silently stops applying.
+    why: 'Runs every call at once regardless of the limit, so a large review opens ten simultaneous model calls.',
+    // The next line is included so this `find` is distinct from the sequential mutation below: both sabotage the
+    // same statement, and the registry refuses two identical claims (correctly — that would be one claim twice).
+    find: '  await Promise.all(Array.from({ length: Math.min(cap, list.length) }, worker));\n  if (failures.size > 0)',
+    replace: '  await Promise.all(Array.from({ length: list.length }, worker));\n  if (failures.size > 0)',
+  },
+  {
+    guard: 'verify-call-pool.mjs',
+    file: 'server/src/lib/callPool.js',
+    // THE FEATURE SILENTLY OFF — the same shape as forcing the coder sequential. One worker, everything queues, the
+    // build still succeeds and every other guard still passes; only the wall-clock regresses, and only the timing
+    // check below notices.
+    why: 'Forces a single worker, so every fan-out queues and the concurrency silently does nothing.',
+    find: '  await Promise.all(Array.from({ length: Math.min(cap, list.length) }, worker));',
+    replace: '  await Promise.all(Array.from({ length: 1 }, worker));',
+  },
+  {
+    guard: 'verify-call-pool.mjs',
+    file: 'server/src/lib/callPool.js',
+    // RESULTS IN COMPLETION ORDER. The coder's operations decide what is applied and what the reviewer reads; the
+    // reviewer's issues and summaries are read in sequence. Merging by completion makes the same plan produce a
+    // different build and a differently-ordered report on every run.
+    why: 'Returns results in completion order, so the build and the review depend on network timing.',
+    find: '        results[i] = await fn(list[i], i);',
+    replace: '        results.push(await fn(list[i], i));',
+  },
+  {
+    guard: 'verify-call-pool.mjs',
+    file: 'server/src/lib/callPool.js',
+    // WHICHEVER FAILED LAST. With calls running at once the failing one is a race, so the error an operator sees —
+    // and the file the coder is asked to fix — would change from run to run.
+    why: 'Reports the last input to fail instead of the first, making the error nondeterministic.',
+    find: '  if (failures.size > 0) throw failures.get(Math.min(...failures.keys()));',
+    replace: '  if (failures.size > 0) throw failures.get(Math.max(...failures.keys()));',
+  },
+  {
+    guard: 'verify-call-pool.mjs',
+    file: 'server/src/lib/reviewer.js',
+    // A HARDCODED LIMIT. `MORPHEUS_MAX_LANES=1` would stop being a true baseline for the reviewer, so the A/B would
+    // compare two concurrent arms while reporting that it compared concurrent against sequential.
+    why: 'Hardcodes the reviewer\'s concurrency, so the lane parameter no longer controls it and the baseline is a lie.',
+    find: '  const perChunk = await mapWithConcurrency(planned.willReview, maxConcurrentCalls(), async (chunk) => {',
+    replace: '  const perChunk = await mapWithConcurrency(planned.willReview, 1, async (chunk) => {',
   },
   {
     guard: 'verify-lane-partition.mjs',
