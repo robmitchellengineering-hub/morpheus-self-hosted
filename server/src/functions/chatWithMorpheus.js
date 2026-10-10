@@ -25,7 +25,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
-import { partitionLanes, planCoderWork, mergeLaneResults, firstLaneError, maxLanesFromEnv } from '../lib/lanePartition.js';
+import { partitionLanes, planCoderWork, runLaneUnits, maxLanesFromEnv } from '../lib/lanePartition.js';
 import { findCallerBreaks, describeCallerBreaks } from '../lib/callerCheck.js';
 import { unknownPrismaFields, isCodePath } from '../lib/prismaFields.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
@@ -1703,18 +1703,13 @@ OPERATOR SAYS: ${message}`;
           filesPerStep: MAX_FILES_PER_CODER_STEP,
           maxLanes: maxLanesFromEnv(),
         });
-        let merged;
         if (work.concurrent) {
           console.log(`[chatWithMorpheus] coder fan-out: ${work.units.length} lane(s) at once — ${work.units.map((u) => u.name).join(', ')}`);
-          const settled = await Promise.allSettled(work.units.map(runUnit));
-          // Deterministic failure: the FIRST unit in order, never whichever model call happened to fail fastest.
-          // The caller's behaviour is otherwise unchanged — a non-truncation error still ends the turn.
-          const firstErr = firstLaneError(settled);
-          if (firstErr) throw firstErr;
-          merged = mergeLaneResults(settled.map((s) => s.value));
-        } else {
-          merged = mergeLaneResults(await Promise.all(work.units.map(runUnit)));
         }
+        // The scheduling lives in lanePartition.js so it can be TESTED: it is the claim "the units really do run at
+        // once", and inside this handler all a guard could do was match the text of a `Promise.allSettled` call.
+        // Passing `runUnit` in makes that claim executable — see scripts/verify-lane-partition.mjs §13.
+        const merged = await runLaneUnits({ units: work.units, runUnit, concurrent: work.concurrent });
         fileOps.push(...merged.ops);
         truncatedFiles.push(...merged.truncated);
         if (merged.model) coderModelLast = merged.model;

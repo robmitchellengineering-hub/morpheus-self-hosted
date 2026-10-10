@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
-const { partitionLanes, planCoderWork, mergeLaneResults, firstLaneError, maxLanesFromEnv, DEFAULT_MAX_LANES, MAX_LANES_CEILING, MAX_LANES_ENV } = await import(
+const { partitionLanes, planCoderWork, runLaneUnits, mergeLaneResults, firstLaneError, maxLanesFromEnv, DEFAULT_MAX_LANES, MAX_LANES_CEILING, MAX_LANES_ENV } = await import(
   '../server/src/lib/lanePartition.js'
 );
 
@@ -323,8 +323,15 @@ check('…and CI runs it', /node scripts\/verify-lane-partition\.mjs/.test(ci), 
 // keep passing while the feature it describes does nothing.
 check('the split is judged by the build that would use it', /partitionLanes\(/.test(chat), true);
 check('…the fan-out is planned through the tested function', /planCoderWork\(/.test(chat), true);
-check('…the units are merged through the tested function', /mergeLaneResults\(/.test(chat), true);
-check('…a unit failure is chosen deterministically', /firstLaneError\(settled\)/.test(chat), true);
+// Scheduling used to be four lines inside the handler, which made the feature's central claim — that the units
+// really run at once — untestable, and left the guard matching a `Promise.allSettled` in a 2,600-line file. It is
+// now one call into a function that takes `runUnit` injected, so §13 can execute the claim instead of reading it.
+check('…and the units are SCHEDULED through the tested function', /runLaneUnits\(\{ units: work\.units, runUnit, concurrent: work\.concurrent \}\)/.test(chat), true);
+// Anchored on the CALL, not the word: an earlier version of this check failed because a comment in the handler
+// explains that the scheduling used to be a `Promise.allSettled` there — a check catching its own prose.
+check('…with the scheduling no longer inlined in the handler', (chat.match(/await Promise\.allSettled\(/g) || []).length, 0);
+check('…it lives in the tested module instead', /await Promise\.allSettled\(list\.map/.test(read('server/src/lib/lanePartition.js')), true);
+check('the scheduling function is where order and failure are decided', /firstLaneError\(settled\)/.test(read('server/src/lib/lanePartition.js')), true);
 // The lane count must come from the parameter, not a literal — a hardcoded N would make the sweep measure nothing.
 check('…and N comes from the environment parameter', /maxLanes: maxLanesFromEnv\(\)/.test(chat), true);
 
@@ -360,6 +367,77 @@ const workspace = read('src/hooks/useWorkspace.js');
 check('the client appends a row for any stage id', /\{ stage: evt\.stage, label: evt\.label, status: 'active'/.test(workspace), true);
 check('…and flips the row with the matching id', /s\.stage === evt\.stage && s\.status === 'active'/.test(workspace), true);
 check('…and the panel renders the server’s label', /\{s\.label\}/.test(read('src/components/matrix/MorpheusPipelineStatus.jsx')), true);
+
+// ── 13. THE CLAIM NOTHING COULD TEST: do the units actually run AT ONCE? ─────────────────────────────────
+// This is the whole feature. Until `runLaneUnits` took `runUnit` injected, the answer lived in four lines inside a
+// 2,600-line handler and the only thing assertable was the TEXT of a `Promise.allSettled` call — a statement about
+// the file, not about the behaviour, and it would have kept passing if someone replaced it with a `for` loop.
+//
+// Real timers, real overlap. These are the slowest checks in this guard (~0.5s) and they earn it: without them
+// "the lanes run in parallel" is a comment.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const LANE_MS = 150;
+const mkUnit = (name) => ({ name, chunks: [[`${name}.js`]] });
+const okUnit = async (u) => { await sleep(LANE_MS); return { ops: [{ path: `${u.name}.js`, action: 'create' }], truncated: [], model: 'm1' }; };
+
+let t0 = Date.now();
+const parallel = await runLaneUnits({ units: [mkUnit('a'), mkUnit('b'), mkUnit('c')], concurrent: true, runUnit: okUnit });
+const parallelMs = Date.now() - t0;
+check('three 150ms lanes OVERLAP rather than queue', parallelMs < 2 * LANE_MS, true);
+
+// …and the sequential path really queues. This is the arm the N sweep compares against, so "concurrent:false is
+// just slower in principle" would make the whole measurement meaningless.
+t0 = Date.now();
+await runLaneUnits({ units: [mkUnit('a'), mkUnit('b'), mkUnit('c')], concurrent: false, runUnit: okUnit });
+const sequentialMs = Date.now() - t0;
+check('…while concurrent:false really does queue them', sequentialMs >= 3 * LANE_MS, true);
+check('…so the fan-out is measurably faster than the baseline it replaced', parallelMs < sequentialMs, true);
+check('…and both merged every lane', parallel.ops.map((o) => o.path), ['a.js', 'b.js', 'c.js']);
+
+// ORDER IS LANE ORDER, NOT COMPLETION ORDER. Make the FIRST unit the slowest: it must still merge first, which is
+// the property that stops the same plan producing a different build depending on network timing.
+const completion = [];
+const ordered = await runLaneUnits({
+  units: [mkUnit('slow'), mkUnit('fast')],
+  concurrent: true,
+  runUnit: async (u) => {
+    await sleep(u.name === 'slow' ? 120 : 5);
+    completion.push(u.name);
+    return { ops: [{ path: `${u.name}.js`, action: 'create' }], truncated: [], model: `m-${u.name}` };
+  },
+});
+check('the slower first lane still merges FIRST', ordered.ops.map((o) => o.path), ['slow.js', 'fast.js']);
+check('…even though it finished last', completion, ['fast', 'slow']);
+// UNIT order, so the last lane is `fast` — this is the same "last chunk's model wins" the sequential loop did,
+// and the point is that it is chosen by position rather than by which call returned first.
+check('…and the reported model follows unit order, not completion order', ordered.model, 'm-fast');
+
+// A FAILURE IS THE FIRST LANE'S, DETERMINISTICALLY — not whichever model call happened to fail fastest.
+let caught = null;
+try {
+  await runLaneUnits({
+    units: [mkUnit('first'), mkUnit('second')],
+    concurrent: true,
+    runUnit: async (u) => {
+      if (u.name === 'first') throw new Error('first lane failed');
+      await sleep(30); // the SECOND lane fails later, so "fastest failure" would pick the other one
+      throw new Error('second lane failed');
+    },
+  });
+} catch (err) {
+  caught = err;
+}
+check('a failed lane ends the run', caught?.message, 'first lane failed');
+
+// And the sequential path keeps today's behaviour: a failure propagates at once, with no wrapper swallowing it.
+let seqErr = null;
+try {
+  await runLaneUnits({ units: [mkUnit('a')], concurrent: false, runUnit: async () => { throw new Error('boom'); } });
+} catch (err) {
+  seqErr = err;
+}
+check('…and a sequential failure propagates too', seqErr?.message, 'boom');
+check('an empty unit list is not a crash', await runLaneUnits({ units: [], concurrent: true, runUnit: okUnit }), { ops: [], truncated: [], model: undefined });
 
 console.log(`\n${checks - failures}/${checks} checks passed\n`);
 if (failures > 0) process.exit(1);
