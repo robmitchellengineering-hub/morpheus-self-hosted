@@ -4097,6 +4097,15 @@ export const MUTATIONS = [
   },
   {
     guard: 'verify-lane-partition.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // ONE CODER CALL SITE LOSES ITS LABEL. A file-wide count of `task` lines would not notice — it passed for
+    // months while measuring a coincidence — so this is what the per-call-site walk exists for.
+    why: 'Drops the task label from one coder call site, leaving that call site unattributable.',
+    find: "              task: 'fix_syntax',\n",
+    replace: '',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
     file: 'server/src/lib/lanePartition.js',
     // A CLEAN LANE IS STILL A LANE. Returning only the lanes with findings makes the list's positions mean
     // different things between builds, and the caller iterating it to clear the others would never see them.

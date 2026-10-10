@@ -347,9 +347,27 @@ check('…and a lane that throws cannot leave its row spinning', /finally \{\n\s
 // Cost is itemised per lane (design §3.5) through the usage row's `task` label — previously the coder's calls
 // carried none at all, in ANY of the eight places it is invoked. Counted rather than checked for presence: a
 // presence check passes while seven call sites stay unattributable, which is the state this replaced.
-const coderCallSites = (chat.match(/role: 'coder',/g) || []).length;
-const taskLabels = (chat.match(/^\s+task[,:]/gm) || []).length;
-check('every coder call site carries a task label', taskLabels, coderCallSites);
+// Per CALL SITE, not a file-wide count. The previous version counted every `task` line in the file and compared it
+// with the number of coder roles — which passed only because every task line happened to belong to a coder call.
+// Adding three PLANNER labels then broke it, wrongly: the check was measuring a coincidence. This walks each coder
+// call site and asks whether a task label appears before the call ends.
+const coderSites = (() => {
+  const lines = chat.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== "role: 'coder',") continue;
+    let labelled = false;
+    for (let j = i + 1; j < Math.min(i + 40, lines.length); j++) {
+      const t = lines[j].trim();
+      if (/^role: '/.test(t) || t.startsWith('}')) break; // the call ended before any label
+      if (/^task[,:]/.test(t)) { labelled = true; break; }
+    }
+    out.push(labelled);
+  }
+  return out;
+})();
+check('every coder call site carries a task label', coderSites.length > 0 && coderSites.every(Boolean), true);
+check('…and there are the eight this file is known to have', coderSites.length, 8);
 check('…the two lane-aware sites take it from the lane name', (chat.match(/^\s+task,$/gm) || []).length, 2);
 check('…and the rest are named for what they actually are',
   ['coder', 'fix_syntax', 'fix_caller', 'fix_a11y', 'polish']
