@@ -595,6 +595,9 @@ Return JSON: { readNext: [up to 6 paths from the tree you need to read next — 
         // failed, falling back to auto-select: OUTPUT_TRUNCATED (role=planner, maxTokens=4000)",
         // 6 times in 72h) — leaving the build with a blind guess at the affected files.
         role: 'planner',
+        // It picks the repo paths to show the planner — a different job from planning, and invisible as its own
+        // line item until it is labelled.
+        task: 'research_repo',
         maxTokens: 8000,
       });
       notes = res.result.notes || notes;
@@ -1191,6 +1194,7 @@ OPERATOR SAYS: ${message}`;
         },
         fileUrls,
         role: 'planner',
+        task: 'plan_context',
         maxTokens: 6000,
       });
       const ctxReply = (ctx.result.reply || '...') + sourcesLine;
@@ -1369,6 +1373,7 @@ OPERATOR SAYS: ${message}`;
         },
         fileUrls: toolScreenshotUrls.length ? [...(fileUrls || []), ...toolScreenshotUrls] : fileUrls,
         role: 'planner',
+        task: 'plan_build',
         // 2026-09-03 correction: this 3000 cap (set earlier today purely for
         // latency) turned out to be the ACTUAL cause of the OUTPUT_TRUNCATED
         // failures Rob kept hitting -- confirmed from the runtime logs, which

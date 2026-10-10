@@ -164,6 +164,10 @@ export async function reviewFileOperations(userId, fileOps, contextBlock, plan, 
       schema: REVIEW_SCHEMA,
       fileUrls: undefined,
       role: 'reviewer',
+      // The call-site label. `stageName` is 'reviewer' for a first pass and 'retry_reviewer' after a fix, so a
+      // usage row can finally say WHICH of the two it was — the distinction that was invisible when 4,956 of
+      // 4,983 rows carried no task at all, and the reason an earlier reading of this role's cost was wrong.
+      task: stageName,
       maxTokens: REVIEW_STEP_MAX_TOKENS,
     });
     return {

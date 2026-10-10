@@ -4076,6 +4076,26 @@ export const MUTATIONS = [
     replace: '  const perChunk = await mapWithConcurrency(planned.willReview, 1, async (chunk) => {',
   },
   {
+    guard: 'verify-usage-observability.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // ⚠️ THE BUILD PLANNER GOES BACK TO BEING INDISTINGUISHABLE. Relabelling it `plan_context` keeps every call
+    // site labelled — so a presence check would still pass — while the single most expensive call site in the
+    // product goes back to being merged with the chat-mode planner, which is the ambiguity that produced a wrong
+    // cost reading on 2026-10-10.
+    why: 'Mislabels the build planner as the context planner, merging the two biggest planner line items again.',
+    find: "        task: 'plan_build',",
+    replace: "        task: 'plan_context',",
+  },
+  {
+    guard: 'verify-usage-observability.mjs',
+    file: 'server/src/lib/reviewer.js',
+    // A CONSTANT WHERE THE STAGE BELONGS. A first-pass review and its post-fix re-review are the two things the
+    // missing label made indistinguishable; a literal puts them back in one row while still looking labelled.
+    why: 'Labels every reviewer call the same, so a first pass and its re-review cannot be told apart.',
+    find: '      task: stageName,',
+    replace: "      task: 'reviewer',",
+  },
+  {
     guard: 'verify-lane-partition.mjs',
     file: 'server/src/lib/lanePartition.js',
     // A CLEAN LANE IS STILL A LANE. Returning only the lanes with findings makes the list's positions mean
