@@ -17,6 +17,12 @@
  *
  *   node scripts/dock-rig-mock-llm.mjs        # listens on :4599
  *   MOCK_LLM_PORT=4599 MOCK_LLM_DELAY_MS=0 node scripts/dock-rig-mock-llm.mjs
+ *   MOCK_LLM_BUILD=1 node scripts/dock-rig-mock-llm.mjs
+ *
+ * `MOCK_LLM_BUILD=1` additionally answers the planner and coder schemas with a SCRIPTED BUILD — a real
+ * `plannedFiles` list and three independent `lanes`, and coder answers with real file content — so the whole
+ * build pipeline (including the concurrent-lane fan-out) can be driven end to end, in a browser or from
+ * `scripts/rig-build-check.mjs`. Off unless asked for; see the BUILD section below.
  */
 import { createServer } from 'node:http';
 
@@ -34,6 +40,67 @@ const SCHEMA_MARKER = 'matching this exact schema:';
 // Arrays whose contents would cause writes or long pipelines if the mock
 // invented an item. Empty is always the safe answer.
 const NEVER_INVENT = new Set(['fileOperations', 'edits', 'toolCalls']);
+
+// ── OPT-IN BUILD SCENARIO ───────────────────────────────────────────────────────────────────────────────────
+//
+// The default mock is non-writing ON PURPOSE ("a rig must never write project files by accident"), which is also
+// why it cannot exercise the build pipeline: `needsCode` synthesises to `false` and `fileOperations` to `[]`, so
+// every turn is conversation and the coder stage never runs.
+//
+// `MOCK_LLM_BUILD=1` turns on a scripted build — a planner answer with real `plannedFiles` and three genuinely
+// independent `lanes`, and coder answers with real file content — so the fan-out can be driven end to end in a
+// browser. It stays OFF unless asked for, and the writes land in the rig's own database (`morpheus_dock_rig`),
+// which exists to be thrown away.
+const BUILD = process.env.MOCK_LLM_BUILD === '1';
+const BUILD_LANES = [
+  { name: 'data layer', files: ['rigdata.js', 'rigschema.js'] },
+  { name: 'list view', files: ['riglist.js', 'rigdetail.js'] },
+  { name: 'shell', files: ['rigapp.jsx', 'rigstyle.css'] },
+];
+const BUILD_FILES = BUILD_LANES.flatMap((l) => l.files);
+
+/**
+ * The scripted answer for the two schemas a build actually needs, or null to fall through to `synthesise`.
+ * Keyed on the schema's own properties, so it cannot fire for a caller that is not the planner or the coder.
+ */
+function buildScenario(schema, prompt) {
+  if (!BUILD || !schema?.properties) return null;
+  const props = schema.properties;
+
+  if (props.needsCode && props.plannedFiles) {
+    const out = synthesise(schema, 'root', true);
+    out.needsCode = true;
+    out.needsClarification = false;
+    out.reply = MOCK_REPLY;
+    out.plan = 'Rig build scenario: three independent pieces — a data layer, a list/detail view, and the shell.';
+    out.plannedFiles = BUILD_FILES.slice();
+    out.lanes = BUILD_LANES.map((l) => ({ name: l.name, files: l.files.slice() }));
+    out.decisionSummary = 'Rig build scenario';
+    return out;
+  }
+
+  if (props.fileOperations) {
+    // Which files is THIS step asked for? Chunked steps say "these file(s)", the truncation retry says "this
+    // file". Matching lazily up to ". Return fileOperations" survives the dot inside "db.js".
+    const many = /implement ONLY these file\(s\): (.+?)\. Return fileOperations/s.exec(prompt);
+    const one = /implement ONLY this file: (.+?)\. Return fileOperations/s.exec(prompt);
+    const raw = many ? many[1] : one ? one[1] : '';
+    const paths = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    return {
+      fileOperations: paths.map((p) => ({
+        path: p,
+        action: 'create',
+        content: p.endsWith('.css')
+          ? `/* dock-rig build scenario */\n.rig { color: #0f0; }\n`
+          : p.endsWith('.jsx')
+            ? `// dock-rig build scenario\nexport default function Rig() { return null; }\n`
+            : `// dock-rig build scenario\nexport const id = ${JSON.stringify(p)};\n`,
+      })),
+    };
+  }
+
+  return null;
+}
 
 /** The JSON object that follows `marker`, brace-matched so nested schemas work. */
 function jsonAfter(text, marker) {
@@ -116,11 +183,15 @@ function completionFor(body) {
   const prompt = messages.map((m) => textOf(m?.content)).join('\n');
   const schema = jsonAfter(prompt, SCHEMA_MARKER);
   const wantsJson = body?.response_format?.type === 'json_object' || !!schema;
-  const content = schema
-    ? JSON.stringify(synthesise(schema, 'root', true))
-    : wantsJson
-      ? JSON.stringify({ reply: MOCK_REPLY })
-      : MOCK_REPLY;
+  // The scripted build answer, when it applies, wins over the safe synthesis — see MOCK_LLM_BUILD above.
+  const scripted = buildScenario(schema, prompt);
+  const content = scripted
+    ? JSON.stringify(scripted)
+    : schema
+      ? JSON.stringify(synthesise(schema, 'root', true))
+      : wantsJson
+        ? JSON.stringify({ reply: MOCK_REPLY })
+        : MOCK_REPLY;
   const promptTokens = Math.max(1, Math.round(prompt.length / 4));
   const completionTokens = Math.max(1, Math.round(content.length / 4));
   return {
