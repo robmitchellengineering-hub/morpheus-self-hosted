@@ -25,7 +25,7 @@ import { getCompileTarget } from '../lib/compile-targets/index.js';
 import { getActiveFeature, featureContextBlock, createFeature } from '../lib/selfDevFeature.js';
 import { resolvePolicy } from '../lib/enginePolicy.js';
 import { buildReverseImports } from '../lib/importGraph.js';
-import { partitionLanes, DEFAULT_MAX_LANES } from '../lib/lanePartition.js';
+import { partitionLanes, planCoderWork, mergeLaneResults, firstLaneError, maxLanesFromEnv } from '../lib/lanePartition.js';
 import { findCallerBreaks, describeCallerBreaks } from '../lib/callerCheck.js';
 import { unknownPrismaFields, isCodePath } from '../lib/prismaFields.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
@@ -1524,25 +1524,31 @@ OPERATOR SAYS: ${message}`;
       // CAN THIS BUILD BE SPLIT INTO INDEPENDENT LANES? The planner's `lanes` is a PROPOSAL and this is the
       // check on it — the refusal is the feature (lib/lanePartition.js): two lanes may not name the same file,
       // every planned file must land in exactly one lane, and lanes joined by a real import edge are MERGED
-      // rather than run together, because running chunks concurrently removes the `writtenSoFar` argument the
-      // sequential pass was given to stop a generated backend contradicting itself.
+      // rather than run together. The merge is what keeps a lane honest: the coder loop below hands a unit its
+      // OWN earlier operations (the fix for the measured "three files, three ideas of what `db` was"), and that
+      // is only possible because a unit's steps stay sequential — so two files that depend on each other have to
+      // end up in the same unit rather than in two lanes that cannot see one another.
       //
-      // ⚠️ THIS TURN RECORDS THE VERDICT AND DOES NOT ACT ON IT. The fan-out itself is the next step, and it
-      // goes in behind the N sweep (wall-clock, cost and conflict count) rather than ahead of it. Until then the
-      // build runs exactly as it did — which is why an accepted split is logged as a PROPOSAL, not as concurrency
-      // that happened. A log line claiming parallel execution would be the dishonest half of this feature.
+      // ⚠️ AN ACCEPTED SPLIT RUNS CONCURRENTLY ONLY WHEN THE LANE PARAMETER ALLOWS IT (`MORPHEUS_MAX_LANES`,
+      // default 3, and `1` means sequential). Every refusal — and every build whose planner proposed no split,
+      // which is the ordinary one — falls through to exactly the sequential path this code always had, and costs
+      // nothing: `partitionLanes` returns before it reads the workspace. So a bad split can cost speed, never a
+      // build. What the fan-out must never do is make the RESULT depend on timing, which is why units are merged
+      // in lane order rather than completion order (see runUnit/mergeLaneResults below).
       //
       // Cost when the planner proposes nothing (the ordinary build): `partitionLanes` returns before it touches
       // `files`, so nothing is parsed and nothing is slower. See the guard for the proof of that.
       if (plannerResult.lanes) {
+        // Judged with the ACTUAL lane parameter, not the default, so that running the sweep at N=1 reports the
+        // truth ("nothing here can run at once") instead of announcing a split that will not be used.
         laneSplit = partitionLanes({
           plannedFiles,
           lanes: plannerResult.lanes,
           existingFiles: files,
-          maxLanes: DEFAULT_MAX_LANES,
+          maxLanes: maxLanesFromEnv(),
         });
         if (laneSplit.ok) {
-          console.log(`[chatWithMorpheus] lane split proposed (not yet run concurrently): ${laneSplit.lanes.map((l) => `${l.name} [${l.files.length} file(s)]`).join(', ')}${laneSplit.notes.length ? ` — ${laneSplit.notes.join(' ')}` : ''}`);
+          console.log(`[chatWithMorpheus] lane split accepted: ${laneSplit.lanes.map((l) => `${l.name} [${l.files.length} file(s)]`).join(', ')}${laneSplit.notes.length ? ` — ${laneSplit.notes.join(' ')}` : ''}`);
         } else {
           console.log(`[chatWithMorpheus] lane split refused, running sequentially (${laneSplit.reason}): ${laneSplit.detail}`);
         }
@@ -1553,23 +1559,19 @@ OPERATOR SAYS: ${message}`;
       stages.start('coder');
 
       if (plannedFiles.length > 0) {
-        // Chunked path — see MAX_FILES_PER_CODER_STEP's comment above. Each
-        // call only has to hold a few files' worth of code, so no single
-        // completion can overflow regardless of how big the overall build is.
-        const chunks = [];
-        for (let i = 0; i < plannedFiles.length; i += MAX_FILES_PER_CODER_STEP) {
-          chunks.push(plannedFiles.slice(i, i + MAX_FILES_PER_CODER_STEP));
-        }
-        for (const [chunkIdx, chunk] of chunks.entries()) {
-          // Multiple chunks all share one stages.start/done('coder') pair —
-          // this makes each individual chunk call's timing visible too, not
-          // just "coder started" once for however many chunks there are.
-          console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} starting: ${chunk.join(', ')}`);
+        // Chunked path — see MAX_FILES_PER_CODER_STEP's comment above. Each call only has to hold a few files'
+        // worth of code, so no single completion can overflow regardless of how big the overall build is.
+        //
+        // ⚠️ ONE STEP RETURNS ITS OPERATIONS INSTEAD OF PUSHING THEM INTO SHARED ARRAYS, AND THAT IS LOAD-BEARING.
+        // Steps may now run CONCURRENTLY (one lane each), and a step that mutated `fileOps` would make the final
+        // order depend on which model call happened to finish first — the same plan producing a different build
+        // each run. Units are merged in unit order instead (lib/lanePartition.js → mergeLaneResults).
+        const runChunk = async (chunk, label, priorOps) => {
+          console.log(`[chatWithMorpheus] coder ${label} starting: ${chunk.join(', ')}`);
           const chunkStartedAt = Date.now();
-          // When context is scoped (large/self-dev project), the shared
-          // contextBlock may not carry this chunk's files' content. Give the
-          // coder the CURRENT content of every existing file it's about to
-          // implement, so an "update" is never written blind from memory.
+          // When context is scoped (large/self-dev project), the shared contextBlock may not carry this chunk's
+          // files' content. Give the coder the CURRENT content of every existing file it's about to implement, so
+          // an "update" is never written blind from memory.
           const chunkCurrent = chunk
             .filter((p) => !shownPathSet.has(p))
             .map((p) => files.find((f) => f.path === p))
@@ -1577,20 +1579,21 @@ OPERATOR SAYS: ${message}`;
             .map((f) => `--- ${f.path} (current content) ---\n${f.content}`)
             .join('\n\n');
           const chunkCurrentBlock = chunkCurrent ? `\n\nCURRENT CONTENT OF THE FILE(S) FOR THIS STEP:\n${chunkCurrent}` : '';
-          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
-          // A truncated completion THROWS (server/src/ai.js). Unwrapped, that one throw discarded the
-          // ENTIRE turn — every chunk already generated, the plan, the review and the reply — even
-          // though autonomousBuildStep.js has caught exactly this since it was written. The chunked
-          // path exists BECAUSE a completion can overflow, so answering an anticipated failure by
-          // throwing away the work already produced was the worst available response to it.
-          //
-          // Only truncation is recoverable; any other error still throws. Nothing already produced is
-          // discarded, and a partial build is never reported as complete — see the reply below.
-          // Count the ops this chunk produced from the array's growth, so the log below can report it
-          // without reaching for anything declared inside the `try`. `const chunkOps` is scoped to that
-          // block, and reading it after the block threw a ReferenceError on EVERY chunked build —
-          // discarding the whole turn. Introduced by dbd73f7; this is the fix for it.
-          const opsBeforeChunk = fileOps.length;
+          // What the EARLIER steps of THIS unit already wrote. This is the fix for the shape that made chunking
+          // produce files that disagreed with each other ("three files, three ideas of what `db` was, measured on a
+          // real run"): the coder was given its plan but never its own earlier output. Passing it is safe WITHIN a
+          // unit precisely because a unit's steps stay sequential — the lane is the boundary concurrency is allowed
+          // across, which is exactly why lanes joined by an import edge are merged upstream rather than run at once.
+          const priorBlock = priorOps.length
+            ? `\n\nOPERATIONS YOU ALREADY RETURNED FOR THIS BUILD (stay consistent with them):\n${priorOps.map((o) => `${o.action || 'update'} ${o.path}`).join('\n')}`
+            : '';
+          const chunkPrompt = `${systemPrompt}${CODER_INSTRUCTIONS}${diffModeNote}\n${contextBlock}\n\nBUILD PLAN FROM PLANNER:\n${plannerResult.plan}${apiCheckBlock}\n\nFULL FILE LIST FOR THIS BUILD (for context only — do not write these now): ${plannedFiles.join(', ')}${chunkCurrentBlock}${priorBlock}\n\nFOR THIS STEP, implement ONLY these file(s): ${chunk.join(', ')}. Return fileOperations for ONLY these file(s) — nothing else. For each: full \`content\` (a create, or a small file), or \`edits\` (a targeted change to a large existing file). Never partial content.`;
+          // A truncated completion THROWS (server/src/ai.js). Unwrapped, that one throw discarded the ENTIRE turn —
+          // every chunk already generated, the plan, the review and the reply — even though autonomousBuildStep.js
+          // has caught exactly this since it was written. The chunked path exists BECAUSE a completion can overflow,
+          // so answering an anticipated failure by throwing away the work already produced was the worst available
+          // response to it. Only truncation is recoverable; any other error still throws, and nothing already
+          // produced is discarded.
           try {
             const chunkCoder = await invokeAI({
               userId: user.id,
@@ -1600,12 +1603,15 @@ OPERATOR SAYS: ${message}`;
               role: 'coder',
               maxTokens: CODER_STEP_MAX_TOKENS,
             });
-            coderModelLast = chunkCoder.model;
             const chunkOps = Array.isArray(chunkCoder.result.fileOperations) ? chunkCoder.result.fileOperations : [];
-            fileOps.push(...chunkOps);
+            console.log(`[chatWithMorpheus] coder ${label} done (${Math.round((Date.now() - chunkStartedAt) / 1000)}s, ${chunkOps.length} file op(s))`);
+            return { ops: chunkOps, truncated: [], model: chunkCoder.model };
           } catch (chunkErr) {
             if (!String(chunkErr?.message || '').includes('OUTPUT_TRUNCATED')) throw chunkErr;
-            console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} truncated — retrying one file at a time`);
+            console.log(`[chatWithMorpheus] coder ${label} truncated — retrying one file at a time`);
+            const ops = [];
+            const truncated = [];
+            let model;
             for (const onePath of chunk) {
               try {
                 const one = await invokeAI({
@@ -1616,17 +1622,61 @@ OPERATOR SAYS: ${message}`;
                   role: 'coder',
                   maxTokens: CODER_STEP_MAX_TOKENS,
                 });
-                coderModelLast = one.model;
-                fileOps.push(...(Array.isArray(one.result.fileOperations) ? one.result.fileOperations : []));
+                model = one.model;
+                ops.push(...(Array.isArray(one.result.fileOperations) ? one.result.fileOperations : []));
               } catch (oneErr) {
                 if (!String(oneErr?.message || '').includes('OUTPUT_TRUNCATED')) throw oneErr;
-                truncatedFiles.push(onePath);
-                console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}: ${onePath} truncated on retry too — not written`);
+                truncated.push(onePath);
+                console.log(`[chatWithMorpheus] coder ${label}: ${onePath} truncated on retry too — not written`);
               }
             }
+            console.log(`[chatWithMorpheus] coder ${label} done after per-file retry (${Math.round((Date.now() - chunkStartedAt) / 1000)}s, ${ops.length} file op(s), ${truncated.length} unwritten)`);
+            return { ops, truncated, model };
           }
-          console.log(`[chatWithMorpheus] coder chunk ${chunkIdx + 1}/${chunks.length} done (${Math.round((Date.now() - chunkStartedAt) / 1000)}s, ${fileOps.length - opsBeforeChunk} file op(s))`);
+        };
+
+        // ONE UNIT = ONE LANE. A unit's own steps stay sequential and are handed their own earlier output; when the
+        // split allows it, the units run at once. With no accepted split this is a single unit holding exactly the
+        // flat chunking the loop above always did — the sequential build, unchanged.
+        const runUnit = async (unit) => {
+          const ops = [];
+          const truncated = [];
+          let model;
+          for (const [i, chunk] of unit.chunks.entries()) {
+            const label = unit.name
+              ? `${unit.name} ${i + 1}/${unit.chunks.length}`
+              : `chunk ${i + 1}/${unit.chunks.length}`;
+            const r = await runChunk(chunk, label, ops);
+            ops.push(...r.ops);
+            truncated.push(...r.truncated);
+            if (r.model) model = r.model;
+          }
+          return { ops, truncated, model };
+        };
+
+        // N is a MEASUREMENT, not a preference: `MORPHEUS_MAX_LANES` is read here, defaults to 3, and `1` means
+        // sequential — so the N sweep compares against exactly today's behaviour instead of a remembered number.
+        const work = planCoderWork({
+          laneSplit,
+          plannedFiles,
+          filesPerStep: MAX_FILES_PER_CODER_STEP,
+          maxLanes: maxLanesFromEnv(),
+        });
+        let merged;
+        if (work.concurrent) {
+          console.log(`[chatWithMorpheus] coder fan-out: ${work.units.length} lane(s) at once — ${work.units.map((u) => u.name).join(', ')}`);
+          const settled = await Promise.allSettled(work.units.map(runUnit));
+          // Deterministic failure: the FIRST unit in order, never whichever model call happened to fail fastest.
+          // The caller's behaviour is otherwise unchanged — a non-truncation error still ends the turn.
+          const firstErr = firstLaneError(settled);
+          if (firstErr) throw firstErr;
+          merged = mergeLaneResults(settled.map((s) => s.value));
+        } else {
+          merged = mergeLaneResults(await Promise.all(work.units.map(runUnit)));
         }
+        fileOps.push(...merged.ops);
+        truncatedFiles.push(...merged.truncated);
+        if (merged.model) coderModelLast = merged.model;
       } else {
         // Fallback: the Planner didn't enumerate plannedFiles (shouldn't
         // normally happen now that PLANNER_INSTRUCTIONS asks for it, but a

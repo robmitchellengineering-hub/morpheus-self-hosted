@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
-const { partitionLanes, DEFAULT_MAX_LANES, MAX_LANES_CEILING } = await import(
+const { partitionLanes, planCoderWork, mergeLaneResults, firstLaneError, maxLanesFromEnv, DEFAULT_MAX_LANES, MAX_LANES_CEILING, MAX_LANES_ENV } = await import(
   '../server/src/lib/lanePartition.js'
 );
 
@@ -231,16 +231,102 @@ const untouched = partitionLanes({
 check('a build with no proposed split still runs sequentially', untouched.reason, 'no-lanes');
 check('…and never reads the workspace to find that out', touched, false);
 
-// ── 10. the wiring, which is what makes it a guard rather than a test ────────────────────────────────────
+// ── 10. the fan-out: which files become concurrent units, and in what order they merge ───────────────────
+//
+// The part that can be WRONG in a way a test can see. The model call cannot, so it stays in chatWithMorpheus.js
+// and these two functions carry the claims: a chunk never spans two lanes, no file is lost or duplicated, and the
+// merge order is unit order rather than completion order.
+
+// (a) NO ACCEPTED SPLIT — the ordinary build — is exactly one unit holding today's flat chunking. This is what
+// makes the N sweep a one-variable comparison against the current behaviour instead of a second code path.
+const flat = planCoderWork({ laneSplit: null, plannedFiles: P6, filesPerStep: 3, maxLanes: 3 });
+check('no split means one unit', flat.units.length, 1);
+check('…named as the whole build, not a lane', flat.units[0].name, null);
+check('…chunked exactly as the sequential loop did', flat.units[0].chunks, [['src/a.js', 'src/b.js', 'src/c.js'], ['src/d.js', 'src/e.js', 'src/f.js']]);
+check('…and not concurrent', flat.concurrent, false);
+
+// (b) N=1 MEANS SEQUENTIAL, AND IT IS THE WHOLE POINT OF THE PARAMETER: the same plan that would fan out at 3
+// collapses to the identical single unit at 1, so the sweep compares against today rather than a memory.
+const split6 = partitionLanes({ plannedFiles: P6, lanes: [{ name: 'left', files: P6.slice(0, 3) }, { name: 'right', files: P6.slice(3) }] });
+check('the fixture really is splittable', split6.ok, true);
+const atOne = planCoderWork({ laneSplit: split6, plannedFiles: P6, filesPerStep: 3, maxLanes: 1 });
+check('N=1 collapses the split to a single sequential unit', atOne.concurrent, false);
+check('…with exactly the flat chunking of no-split', atOne, flat);
+
+// (c) THE REAL SPLIT: one unit per lane, in lane order.
+const atThree = planCoderWork({ laneSplit: split6, plannedFiles: P6, filesPerStep: 3, maxLanes: 3 });
+check('an accepted split becomes one unit per lane', atThree.units.map((u) => u.name), ['left', 'right']);
+check('…and says it is concurrent', atThree.concurrent, true);
+check('…with each lane chunked internally', atThree.units[0].chunks, [P6.slice(0, 3)]);
+check('…and the second lane’s own files', atThree.units[1].chunks, [P6.slice(3)]);
+
+// ⚠️ A CHUNK MAY NEVER SPAN TWO LANES. If it did, one coder call would be writing files from both lanes at once —
+// which is the shared-writer problem again, one level down, and invisible in the output.
+const acrossLanes = planCoderWork({
+  laneSplit: partitionLanes({ plannedFiles: P6, lanes: [{ name: 'a', files: [P6[0]] }, { name: 'b', files: P6.slice(1) }] }),
+  plannedFiles: P6,
+  filesPerStep: 6, // deliberately bigger than any lane, to try to make one chunk swallow both
+  maxLanes: 3,
+});
+const laneOfFile = new Map();
+for (const u of acrossLanes.units) for (const c of u.chunks) for (const f of c) laneOfFile.set(f, u.name);
+const spanned = acrossLanes.units.filter((u) => u.chunks.some((c) => c.some((f) => laneOfFile.get(f) !== u.name)));
+check('no chunk spans two lanes, even when the step size is larger than a lane', spanned.length, 0);
+
+// (d) COVERAGE: every planned file is in exactly one chunk. A file dropped here is never written, and nothing
+// downstream would say so — the same quiet failure the splitter refuses one level up.
+const coveredFiles = acrossLanes.units.flatMap((u) => u.chunks.flat());
+check('every planned file is assigned', [...coveredFiles].sort(), [...P6].sort());
+check('…exactly once', new Set(coveredFiles).size, P6.length);
+check('a plan with no files produces no units', planCoderWork({ laneSplit: null, plannedFiles: [], maxLanes: 3 }).units, []);
+check('a garbage step size falls back rather than looping forever', planCoderWork({ laneSplit: null, plannedFiles: P, filesPerStep: 0, maxLanes: 3 }).units[0].chunks.length, 2);
+
+// (e) MERGE ORDER IS UNIT ORDER, NEVER COMPLETION ORDER. If a slow lane's output landed last, the same plan
+// would produce a different build on every run — the property that makes a parallel build untrustworthy.
+const merged = mergeLaneResults([
+  { ops: [{ path: 'src/a.js' }, { path: 'src/b.js' }], truncated: [], model: 'm1' },
+  { ops: [{ path: 'src/c.js' }], truncated: ['src/d.js'], model: 'm2' },
+]);
+check('units merge in the order they were given', merged.ops.map((o) => o.path), ['src/a.js', 'src/b.js', 'src/c.js']);
+check('…their unwritten files too', merged.truncated, ['src/d.js']);
+check('…and the model reported is the last one that had one', merged.model, 'm2');
+check('a unit with no model does not erase the previous one',
+  mergeLaneResults([{ ops: [], model: 'm1' }, { ops: [], model: null }]).model, 'm1');
+check('malformed unit results are skipped, not thrown', mergeLaneResults([null, 'x', { ops: 'nope' }, { ops: [{ path: 'p' }] }]).ops, [{ path: 'p' }]);
+check('merging nothing is empty, not a crash', mergeLaneResults(undefined), { ops: [], truncated: [], model: undefined });
+
+// (f) A FAILURE IS REPORTED BY THE FIRST UNIT IN ORDER — deterministic, so which error ends the turn cannot
+// depend on which model call happened to fail fastest.
+const settled = [{ status: 'fulfilled', value: { ops: [] } }, { status: 'rejected', reason: new Error('second') }, { status: 'rejected', reason: new Error('third') }];
+check('the first failure in unit order is the one reported', firstLaneError(settled).message, 'second');
+check('…and no failure is null, not undefined', firstLaneError([{ status: 'fulfilled', value: {} }]), null);
+
+// (g) THE PARAMETER. Read from the environment so the sweep can change it between two runs of one task without a
+// deploy, and unreadable input falls back rather than stopping a build.
+check('the default lane count is 3', maxLanesFromEnv({}), DEFAULT_MAX_LANES);
+check('…and the entry for it is the documented name', MAX_LANES_ENV, 'MORPHEUS_MAX_LANES');
+check('an unset variable uses the default', maxLanesFromEnv({ [MAX_LANES_ENV]: undefined }), DEFAULT_MAX_LANES);
+check('1 means sequential and is honoured', maxLanesFromEnv({ [MAX_LANES_ENV]: '1' }), 1);
+check('a higher ask is clamped to the ceiling', maxLanesFromEnv({ [MAX_LANES_ENV]: '99' }), MAX_LANES_CEILING);
+check('nonsense falls back to the default', maxLanesFromEnv({ [MAX_LANES_ENV]: 'lots' }), DEFAULT_MAX_LANES);
+check('…and so does an empty string', maxLanesFromEnv({ [MAX_LANES_ENV]: '   ' }), DEFAULT_MAX_LANES);
+check('a missing env object is not a crash', maxLanesFromEnv(null), DEFAULT_MAX_LANES);
+
+// ── 11. the wiring, which is what makes it a guard rather than a test ────────────────────────────────────
 const gate = read('scripts/verify.mjs');
 const ci = read('.github/workflows/ci.yml');
+const chat = read('server/src/functions/chatWithMorpheus.js');
 check('it is in verify.mjs\'s HARD list', /'verify-lane-partition\.mjs'/.test(gate), true);
 check('…and CI runs it', /node scripts\/verify-lane-partition\.mjs/.test(ci), true);
 // And the module is actually consulted by the build, so this is a decision the pipeline makes rather than a
 // library nobody calls. A guard whose subject is dead code is the "guard that only polices us" shape — it would
 // keep passing while the feature it describes does nothing.
-check('the split is judged by the build that would use it',
-  /partitionLanes/.test(read('server/src/functions/chatWithMorpheus.js')), true);
+check('the split is judged by the build that would use it', /partitionLanes\(/.test(chat), true);
+check('…the fan-out is planned through the tested function', /planCoderWork\(/.test(chat), true);
+check('…the units are merged through the tested function', /mergeLaneResults\(/.test(chat), true);
+check('…a unit failure is chosen deterministically', /firstLaneError\(settled\)/.test(chat), true);
+// The lane count must come from the parameter, not a literal — a hardcoded N would make the sweep measure nothing.
+check('…and N comes from the environment parameter', /maxLanes: maxLanesFromEnv\(\)/.test(chat), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed\n`);
 if (failures > 0) process.exit(1);
