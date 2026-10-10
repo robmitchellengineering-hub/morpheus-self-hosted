@@ -155,6 +155,34 @@ export const MUTATIONS = [
     replace: '\n- (removed) RUNNABLE APP: if the context includes a "RUNNABLE APP" section',
   },
   {
+    guard: 'verify-generated-app.mjs',
+    file: 'scripts/smoke-generated-app.mjs',
+    // ⚠️ THE ADVISORY LANDING TURNS INTO A REQUIRED GATE, and this is the exact one-line accident it protects
+    // against: this script already runs inside the REQUIRED `render` job, so an unconditional browser pass makes
+    // every self-dev merge depend on a browser job — one flake and nothing merges.
+    why: 'Makes the browser tier run unconditionally, so the required job silently gains a browser gate.',
+    find: "  if (process.argv.includes('--render')) await checkRenderedPage();",
+    replace: '  if (true) await checkRenderedPage();',
+  },
+  {
+    guard: 'verify-generated-app.mjs',
+    file: 'server/src/lib/engine/requiredChecks.js',
+    // THE PROMOTION THAT SKIPS THE EVIDENCE. The plan says promote only after several clean PRs; this makes the
+    // not-yet-trusted browser job block every merge on the day it lands.
+    why: 'Promotes the advisory browser job to a required gate before it has earned it.',
+    find: "export const SELF_DEV_REQUIRED_CHECKS = ['guards (no install)', 'lint + build', 'render'];",
+    replace: "export const SELF_DEV_REQUIRED_CHECKS = ['guards (no install)', 'lint + build', 'render', 'render-generated-app (advisory)'];",
+  },
+  {
+    guard: 'verify-generated-app.mjs',
+    file: 'scripts/smoke-generated-app.mjs',
+    // PRESENCE INSTEAD OF VISIBILITY — the single property that separates this tier from the HTTP probes above it.
+    // A blanked or hidden page would pass, which is the failure the tier was added for.
+    why: 'Checks the heading is present rather than visible, so a hidden page reads as rendered.',
+    find: `    check('…the heading is VISIBLE', await page.locator('[data-page="fixture-home"]').isVisible(), true);`,
+    replace: `    check('…the heading is VISIBLE', (await page.locator('[data-page="fixture-home"]').count()) === 1, true);`,
+  },
+  {
     guard: 'verify-backend-chunk-context.mjs',
     file: 'server/src/lib/backendChunkContext.js',
     why: 'Raises the context ceiling past anything a probe can reach, so an over-limit context is no longer over the limit.',

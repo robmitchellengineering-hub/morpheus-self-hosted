@@ -275,6 +275,41 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # ⚠️ ADVISORY ON PURPOSE — the `name:` below is deliberately NOT in SELF_DEV_REQUIRED_CHECKS
+  # (server/src/lib/engine/requiredChecks.js). This job renders the app a self-contained build produces, in a real
+  # browser, and a browser job that flakes once would then block EVERY self-dev merge — the first risk the
+  # 2026-09-23 plan names. So it lands as a real job you can see on the PR and is promoted only after it has run
+  # clean across several real PRs. Promotion is one array entry, and `scripts/verify-merge-gates.mjs` fails if the
+  # required list and this file drift apart, so it cannot be half-done.
+  #
+  # It is a separate job from `render` rather than another step in it: `render` IS required, so putting these
+  # assertions there would make them required by accident. The smoke script's default run is unchanged and keeps
+  # its place in `render`; `--render` adds the browser tier, here only.
+  #
+  # No browser install step: the runner image provides Chrome (`channel: 'chrome'`), exactly as the required
+  # `render` job relies on.
+  render-generated-app:
+    name: render-generated-app (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Boots the generated-app fixture (a real `npm install`, a real server, a real database it creates itself)
+      # and then, unlike the required job's run of this script, DRIVES it in a browser: the heading must be
+      # VISIBLE, the row the API created must be on the screen, no same-origin asset may 4xx, and the console must
+      # be clean. An HTTP 200 says only that a shell was served — which is the whole reason this tier exists.
+      - name: A generated app's page actually renders
+        run: node scripts/smoke-generated-app.mjs --render
+
   guards:
     name: guards (no install)
     runs-on: ubuntu-latest

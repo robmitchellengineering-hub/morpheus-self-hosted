@@ -187,9 +187,45 @@ check('…and a dependency finding names the package, not just the reason', /p\.
 check('the export path no longer claims the checker runs where the app is made',
   /it runs where the app is made/.test(promise), false);
 
+// ── The BROWSER tier: does a real browser find the page visible? ────────────────────────────────────────────
+//
+// Everything above is HTTP and source-reading. This repo spent a day learning why that is not enough — a bundle
+// check passes and an HTTP 200 says only that a shell was served, while the page is blank or the console throws
+// (MORPHEUS-BIG-PICTURE.md, "Self-dev should render what it builds").
+console.log('\n7. the rendered page is checked, in a browser, ADVISORILY');
+
+check('the fixture serves a page at all (there is something to render)',
+  /data-page="fixture-home"/.test(readFileSync(join(ROOT, 'server', 'test-fixtures', 'runnable-app', 'server', 'index.js'), 'utf8')), true);
+
+const smoke = readFileSync(join(ROOT, 'scripts', 'smoke-generated-app.mjs'), 'utf8');
+const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+const required = readFileSync(join(ROOT, 'server', 'src', 'lib', 'engine', 'requiredChecks.js'), 'utf8');
+
+// VISIBILITY, not presence. Content that exists in the DOM and cannot be seen is the exact failure this tier was
+// added for, and `isVisible()` is the whole difference from an HTTP probe or a text read — verified by hiding the
+// heading with `display:none` and watching ONLY this assertion go red while the HTTP checks stayed green.
+check('…and the browser asserts the content is VISIBLE, not merely present', /\.isVisible\(\)/.test(smoke), true);
+check('…the row the API created is on the screen', /locator\('\[data-task\]'\)/.test(smoke), true);
+// Both halves of the console discipline, copied from the required `render` job: filtering the message alone would
+// hide a genuinely broken same-origin asset, because Chrome's text does not always name the URL.
+check('…and a same-origin 4xx/5xx is caught from the RESPONSE side, not just the console text',
+  /badResponses/.test(smoke) && /res\.url\(\)\.startsWith\(BASE\)/.test(smoke), true);
+
+// ⚠️ THE ADVISORY DECISION, AS AN ASSERTION. This script runs inside the REQUIRED `render` job, so a browser pass
+// added unconditionally would gate every self-dev merge on a browser job — and one flake would stop all of them.
+// The tier is opt-in and lives only in the advisory job; promoting it is a deliberate two-file change.
+check('the required job runs the script WITHOUT the browser tier', /run: node scripts\/smoke-generated-app\.mjs$/m.test(ci), true);
+check('…the browser tier is opt-in behind --render', /process\.argv\.includes\('--render'\)/.test(smoke), true);
+check('…and a separate job runs it with the tier', /run: node scripts\/smoke-generated-app\.mjs --render/.test(ci), true);
+check('…whose job name says it is advisory', /name: render-generated-app \(advisory\)/.test(ci), true);
+// The claim that matters most: it must NOT be in the required list, or the advisory landing was a fiction.
+check('…and it is NOT a required gate', /SELF_DEV_REQUIRED_CHECKS = \[[^\]]*'render-generated-app/.test(required), false);
+check('…while the gates it must not disturb are still required',
+  /SELF_DEV_REQUIRED_CHECKS = \['guards \(no install\)', 'lint \+ build', 'render'\]/.test(required), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {
-  console.log('\n✗ we could ship an app the operator cannot start\n');
+  console.log('\n✗ we could ship an app the operator cannot start or cannot see\n');
   process.exit(1);
 }
 console.log('a generated app is checked for the two ways it was measured to fail before it is shipped\n');
