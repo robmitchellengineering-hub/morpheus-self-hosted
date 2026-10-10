@@ -3814,6 +3814,59 @@ export const MUTATIONS = [
     find: '        task: task || null,',
     replace: '        task: null,',
   },
+  // ── the lane splitter: a fan-out is only safe when this module says no to the ones that are not ──────
+  //
+  // Born proven rather than added to the unproven pile: it is a new hard gate, and the ratchet is equality,
+  // so a new guard with no mutation would raise the count and fail. Each of these is one claim the guard makes,
+  // and the guard asserts the exact `reason` code so a mutation cannot be answered by a different refusal.
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ⚠️ THE REFUSAL THE WHOLE FEATURE RESTS ON. Two lanes naming one file is H9 at file scale: run at once, two
+    // coders write the same path, the last completion wins, and nothing in the result records that it happened —
+    // which is exactly the incident this repo opens its own rules with. One `if` disables it.
+    why: 'Lets two lanes write the same file, which is the shared-writer incident the splitter exists to refuse.',
+    find: '      if (owner.has(f)) {',
+    replace: '      if (false) {',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // THE QUIET ONE: a planned file in no lane. Every lane finishes green, no conflict is reported, and a file
+    // the plan called for was written by nobody — so the build is silently short a file rather than visibly wrong.
+    why: 'Stops noticing a planned file that is in no lane, so the build silently omits a file the plan required.',
+    find: '  const missing = planned.filter((p) => !owner.has(p));',
+    replace: '  const missing = [];',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ROB'S RULE, AS A MUTATION: *"the guards shouldn't stop morpheus from being able to build anything."* The
+    // only reason this module may exist on the build path at all is that an unexpected error degrades to the
+    // existing sequential pass. Rethrowing turns an optimisation into a build failure.
+    why: 'Propagates an unexpected error instead of falling back to the sequential build, so a splitter bug blocks the build.',
+    find: "    return refusal(\n      'error',",
+    replace: '    throw err;\n    return refusal(\n      \'error\',',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // The cap is a measured ceiling (Amdahl plus the reviewer, which is 33% of all spend at 45s a call), so a plan
+    // proposing nine lanes must not get nine concurrent coders and nine reviews.
+    why: 'Ignores the lane ceiling, so a plan proposing many lanes runs them all and pays a review for each.',
+    find: '  const cap = clampCap(maxLanes);',
+    replace: '  const cap = 99;',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // THE MEASURED HAZARD. Running chunks concurrently removes the `writtenSoFar` argument that sequential
+    // chunking was given because a generated backend "routinely disagreed with itself (three files, three ideas
+    // of what `db` was, measured on a real run)". Lanes joined by an import edge must be merged, not run together.
+    why: 'Runs lanes that import each other concurrently, reproducing the self-contradicting backend that chunking was fixed for.',
+    find: '  if (pairs.length > 0) {\n    working = mergeGroups(working, pairs);',
+    replace: '  if (false) {\n    working = mergeGroups(working, pairs);',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────

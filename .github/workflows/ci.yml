@@ -405,6 +405,17 @@ jobs:
       - name: Deck widget build survives its own deploy
         run: node scripts/verify-deck-widget-build.mjs
 
+      # THE REFUSAL IS THE FEATURE. Fan-out is only safe when the plan can NAME the units and show they do
+      # not share files, so this asserts the splitter's refusals by their exact reason — a file in two lanes
+      # (H9 at file scale, and unrecoverable because nothing in the result says it happened), a planned file
+      # in NO lane (every lane green, a file written by nobody), a path outside the plan, and lanes joined by
+      # a real import edge (which must MERGE, because running chunks concurrently removes the `writtenSoFar`
+      # argument sequential chunking was given to stop a backend contradicting itself — measured). It also
+      # asserts the honest limit (a PHP lane is reported as NOT dependency-checked, never silently treated as
+      # independent) and Rob's rule: a refusal is always "run this sequentially" and never a throw.
+      - name: A build only fans out when its pieces are genuinely independent
+        run: node scripts/verify-lane-partition.mjs
+
       # Rob, 2026-10-04: brain dump is locked to the top of the Command Deck and everything else moves.
       # A new user's first widget was Jarvis's suggestions, because the registry order is what seeding
       # numbers from — this asserts the pin, the move that cannot pass it, and that all four surfaces
