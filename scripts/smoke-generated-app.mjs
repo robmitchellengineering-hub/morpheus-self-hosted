@@ -64,6 +64,87 @@ const cleanup = () => {
 };
 process.on('exit', cleanup);
 
+// ── the browser pass, OPT-IN (`--render`) ────────────────────────────────────────────────────────────────────
+//
+// ⚠️ WHY IT IS OPT-IN AND NOT PART OF THE DEFAULT RUN. This script already runs inside the REQUIRED `render` job,
+// so adding these assertions unconditionally would have made a browser check gate every self-dev merge
+// immediately — the failure mode the 2026-09-23 plan warns about in its first line ("a flaky required gate blocks
+// every merge"). It lands ADVISORY: a real job on the PR, absent from `SELF_DEV_REQUIRED_CHECKS`, promoted only
+// after it has run clean across several real PRs. Promotion is one array entry, and `verify-merge-gates.mjs`
+// keeps the two lists from drifting.
+//
+// So the default run is byte-for-byte what it was, and `--render` adds the tier.
+async function checkRenderedPage() {
+
+    //
+    // Everything above is HTTP, and this repo spent a day learning why that is not enough: a bundle check passes
+    // and an HTTP 200 says only that a shell was served, while the page is blank or the console is throwing — a
+    // dock panel off the bottom of the screen, a guided link 404ing inside the app's own router, both of them
+    // green (MORPHEUS-BIG-PICTURE.md, "Self-dev should render what it builds"). So: a real browser, a VISIBLE
+    // heading, the row the API just created actually on screen, a clean console, nothing thrown.
+    //
+    // `playwright-core` against the runner's own Chrome, exactly as scripts/render-smoke.mjs does it — that
+    // mechanism is already carrying the required `render` job, so this reuses it rather than inventing a second
+    // way to obtain a browser.
+    const { chromium } = await import('playwright-core');
+    const channel = process.env.RENDER_SMOKE_CHANNEL || 'chrome';
+    const executablePath = process.env.RENDER_SMOKE_BROWSER || undefined;
+    let browser;
+    try {
+      browser = await chromium.launch({
+        channel: executablePath ? undefined : channel,
+        executablePath,
+        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-crashpad'],
+      });
+    } catch (browserErr) {
+      // A machine with no browser is NOT an app that fails to render. Exit 2, "cannot check", the same as an
+      // unreachable registry above — a check that could not run must never read as one that passed (H17).
+      console.log(`\n  ⚠  no browser available (channel "${channel}"): ${browserErr.message.split('\n')[0]}`);
+      console.log('     The app was NOT rendered. This is not a pass.');
+      console.log('     Set RENDER_SMOKE_BROWSER=/path/to/chrome, or run `npx playwright install chrome`.\n');
+      console.log('  0/0 checks passed — NOT VERIFIED\n');
+      process.exit(2);
+    }
+
+    console.log('\n5. and the page a person sees actually renders');
+    try {
+      const page = await browser.newPage();
+      const consoleErrors = [];
+      const pageErrors = [];
+      // The same allowlist the required `render` job uses — Chrome's own noise (an unprompted favicon request, the
+      // Vite banner, the React DevTools notice) is not the app's fault.
+      const BENIGN_CONSOLE = [/favicon/i, /\[vite\]/i, /Download the React DevTools/i];
+      page.on('console', (m) => {
+        if (m.type() !== 'error') return;
+        const text = m.text();
+        if (BENIGN_CONSOLE.some((re) => re.test(text))) return;
+        consoleErrors.push(text);
+      });
+      page.on('pageerror', (e) => pageErrors.push(e?.stack || String(e)));
+      // ⚠️ AND KEEP THE RESPONSE SIDE. Chrome's console message for a missing asset does not always name the URL,
+      // so filtering the message alone would hide a genuinely broken same-origin asset. `render-smoke.mjs` keeps
+      // both for the same reason, and copying only the allowlist would have been the weaker half.
+      const badResponses = [];
+      page.on('response', (res) => {
+        if (res.status() >= 400 && res.url().startsWith(BASE)) badResponses.push(`${res.status()} ${res.url().replace(BASE, '')}`);
+      });
+
+      const response = await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      check('GET / answers with a page', response?.status(), 200);
+      check('…and it is served as HTML, not JSON', /text\/html/.test(response?.headers()['content-type'] || ''), true);
+      // VISIBLE, not merely present in the DOM. Content that exists and cannot be seen is the exact failure this
+      // tier was added for, and `isVisible()` is what distinguishes the two.
+      check('…the heading is VISIBLE', await page.locator('[data-page="fixture-home"]').isVisible(), true);
+      check('…the row the API created is on the screen', (await page.locator('[data-task]').first().textContent())?.trim(), 'smoke');
+      check('…and the count agrees with it', (await page.locator('[data-count]').textContent())?.trim(), '1 task(s)');
+      check('nothing threw in the browser', pageErrors, []);
+      check('no same-origin asset 404s or 500s', badResponses, []);
+      check('the console is clean', consoleErrors, []);
+    } finally {
+      await browser.close();
+    }
+}
+
 try {
   cpSync(FIXTURE, work, { recursive: true });
 
@@ -149,6 +230,9 @@ try {
   check('…and it is readable back', after.tasks.map((t) => t.title), ['smoke']);
   // The exact failure on 2026-09-29 was a TypeError on the first request, so stderr must be clean.
   check('nothing threw while serving', /TypeError|is not a function/.test(err), false);
+
+  // The page a person sees — only under `--render`. See checkRenderedPage above for why it is opt-in.
+  if (process.argv.includes('--render')) await checkRenderedPage();
 } catch (error) {
   if (!failures) { console.log(`\n  ✗ ${error.message}\n`); failures++; checks++; }
 } finally {
