@@ -135,9 +135,16 @@ function containerMb() {
 function makeStageEmitter(emit) {
   let index = 0;
   const startedAt = new Map();
-  const start = (stage) => {
+  // `opts` is for stages that are not one of the fixed pipeline stages — currently the CONCURRENT LANES, whose
+  // id is `coder:<lane>` and whose label is the lane's own name (lib/lanePartition.js). The client's stage
+  // reducer is id-generic (`useWorkspace.js` appends a row for any `status:'start'` and flips it on the matching
+  // `done`), so a lane gets its own row and its own clock with no client change — which is design §4.2's
+  // "N lanes, each with its own state" without a second event type or a second progress surface.
+  const start = (stage, opts = {}) => {
     startedAt.set(stage, Date.now());
-    emit({ type: 'stage', stage, status: 'start', label: STAGE_LABELS[stage], etaSeconds: Math.round(estimateCallMs(STAGE_ROLE[stage]) / 1000), index: index++ });
+    const label = opts.label || STAGE_LABELS[stage] || stage;
+    const role = opts.role || STAGE_ROLE[stage];
+    emit({ type: 'stage', stage, status: 'start', label, etaSeconds: Math.round(estimateCallMs(role) / 1000), index: index++ });
     // 2026-09-17: found live — a build turn can go completely silent for
     // 15+ minutes with zero server console output, whether it's genuinely
     // stuck or just slow, because `emit` above only ever writes to the HTTP
@@ -151,6 +158,8 @@ function makeStageEmitter(emit) {
   const done = (stage) => {
     const t = startedAt.get(stage);
     const elapsedSeconds = t ? Math.round((Date.now() - t) / 1000) : undefined;
+    // The client ignores `label` on 'done' (it flips the row it already has), so passing the fixed-stage label
+    // here is harmless for a lane stage and keeps this call site unchanged.
     emit({ type: 'stage', stage, status: 'done', label: STAGE_LABELS[stage], elapsedSeconds });
     console.log(`[chatWithMorpheus] stage done: ${stage}${elapsedSeconds != null ? ` (${elapsedSeconds}s)` : ''} rss=${memMb()}MB ${containerMb()}`);
   };
@@ -1566,7 +1575,7 @@ OPERATOR SAYS: ${message}`;
         // Steps may now run CONCURRENTLY (one lane each), and a step that mutated `fileOps` would make the final
         // order depend on which model call happened to finish first — the same plan producing a different build
         // each run. Units are merged in unit order instead (lib/lanePartition.js → mergeLaneResults).
-        const runChunk = async (chunk, label, priorOps) => {
+        const runChunk = async (chunk, label, priorOps, task) => {
           console.log(`[chatWithMorpheus] coder ${label} starting: ${chunk.join(', ')}`);
           const chunkStartedAt = Date.now();
           // When context is scoped (large/self-dev project), the shared contextBlock may not carry this chunk's
@@ -1601,6 +1610,10 @@ OPERATOR SAYS: ${message}`;
               schema: coderSchema,
               fileUrls,
               role: 'coder',
+              // The call site label. For a lane this is `coder:<lane>`, which is what makes design §3.5's
+              // "which lane cost $4 and produced nothing" answerable from `usage_events` rather than a guess.
+              // Before this the coder's rows carried no task at all.
+              task,
               maxTokens: CODER_STEP_MAX_TOKENS,
             });
             const chunkOps = Array.isArray(chunkCoder.result.fileOperations) ? chunkCoder.result.fileOperations : [];
@@ -1620,6 +1633,7 @@ OPERATOR SAYS: ${message}`;
                   schema: coderSchema,
                   fileUrls,
                   role: 'coder',
+                  task,
                   maxTokens: CODER_STEP_MAX_TOKENS,
                 });
                 model = one.model;
@@ -1642,16 +1656,37 @@ OPERATOR SAYS: ${message}`;
           const ops = [];
           const truncated = [];
           let model;
-          for (const [i, chunk] of unit.chunks.entries()) {
-            const label = unit.name
-              ? `${unit.name} ${i + 1}/${unit.chunks.length}`
-              : `chunk ${i + 1}/${unit.chunks.length}`;
-            const r = await runChunk(chunk, label, ops);
-            ops.push(...r.ops);
-            truncated.push(...r.truncated);
-            if (r.model) model = r.model;
+          // A LANE GETS ITS OWN ROW AND ITS OWN CLOCK (design §4.2: "N lanes, each with its own state"). The id is
+          // `coder:<lane>`, which the client's stage reducer handles generically — it appends a row for any
+          // `status:'start'` and flips the row with the matching id on `done` — so per-lane progress needs no
+          // second event type, no second progress surface, and no client change.
+          //
+          // The whole-build unit (the ordinary sequential build, and every refusal) keeps the single `coder` stage
+          // the pipeline already had, so nothing about an ordinary build's display changes.
+          const laneStage = unit.name ? `coder:${unit.name}` : null;
+          // The call-site label for usage attribution; `coder` alone for the whole-build unit.
+          const task = unit.name ? `coder:${unit.name}` : 'coder';
+          if (laneStage) stages.start(laneStage, { label: `Writing ${unit.name}`, role: 'coder' });
+          // `finally`, so a lane that throws cannot leave a row spinning for the rest of the turn. Note what a
+          // close-on-failure does and does not claim: a non-truncation coder error is rethrown and ENDS the turn
+          // (the caller's behaviour is unchanged), so there is no green build left for a closed row to mislead.
+          // What is NOT built yet is a per-lane VERIFY verdict (design §3.2) — the deterministic gates still run
+          // once over the whole change set, which catches a broken file whichever lane produced it, but a lane's
+          // row does not yet carry its own pass/fail. Do not read these rows as that.
+          try {
+            for (const [i, chunk] of unit.chunks.entries()) {
+              const label = unit.name
+                ? `${unit.name} ${i + 1}/${unit.chunks.length}`
+                : `chunk ${i + 1}/${unit.chunks.length}`;
+              const r = await runChunk(chunk, label, ops, task);
+              ops.push(...r.ops);
+              truncated.push(...r.truncated);
+              if (r.model) model = r.model;
+            }
+            return { ops, truncated, model };
+          } finally {
+            if (laneStage) stages.done(laneStage);
           }
-          return { ops, truncated, model };
         };
 
         // N is a MEASUREMENT, not a preference: `MORPHEUS_MAX_LANES` is read here, defaults to 3, and `1` means
@@ -1702,6 +1737,9 @@ OPERATOR SAYS: ${message}`;
             schema: coderSchema,
             fileUrls,
             role: 'coder',
+            // The fallback path has no file list to chunk by, so it is always the whole build — `coder` is its
+            // honest label, and giving it one at all means every coder call in this file is attributable.
+            task: 'coder',
             maxTokens: 64000,
           });
           coderModelLast = coder.model;
@@ -1768,6 +1806,7 @@ OPERATOR SAYS: ${message}`;
             schema: coderSchema,
             fileUrls,
             role: 'coder',
+            task: 'coder',
             maxTokens: 64000,
           });
           const retryOps = (Array.isArray(retry.result.fileOperations) ? retry.result.fileOperations : [])
@@ -1894,6 +1933,7 @@ OPERATOR SAYS: ${message}`;
               schema: coderSchema,
               fileUrls,
               role: 'coder',
+              task: 'fix_syntax',
               maxTokens: 64000,
             });
             const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
@@ -2080,6 +2120,7 @@ OPERATOR SAYS: ${message}`;
                 schema: coderSchema,
                 fileUrls,
                 role: 'coder',
+                task: 'fix_caller',
                 maxTokens: 64000,
               });
               const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
@@ -2132,6 +2173,7 @@ OPERATOR SAYS: ${message}`;
               schema: coderSchema,
               fileUrls,
               role: 'coder',
+              task: 'fix_a11y',
               maxTokens: 64000,
             });
             const fixOps = (Array.isArray(fix.result.fileOperations) ? fix.result.fileOperations : [])
@@ -2205,6 +2247,7 @@ OPERATOR SAYS: ${message}`;
             },
             fileUrls: undefined,
             role: 'coder',
+            task: 'polish',
             // Same fix as the main Coder call above — see the comment there.
             maxTokens: 64000,
           });
