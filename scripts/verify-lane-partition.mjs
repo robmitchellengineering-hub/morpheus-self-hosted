@@ -328,5 +328,38 @@ check('…a unit failure is chosen deterministically', /firstLaneError\(settled\
 // The lane count must come from the parameter, not a literal — a hardcoded N would make the sweep measure nothing.
 check('…and N comes from the environment parameter', /maxLanes: maxLanesFromEnv\(\)/.test(chat), true);
 
+// ── 12. per-lane visibility, and the client change it does NOT need ──────────────────────────────────────
+// Design §4.2: "N lanes, each with its own state". A lane gets its own row by reusing the existing stage
+// protocol with a lane-specific id, so there is no second event type and no second progress surface.
+check('a lane gets its own stage id', /const laneStage = unit\.name \? `coder:\$\{unit\.name\}` : null;/.test(chat), true);
+check('…labelled with the lane name', /label: `Writing \$\{unit\.name\}`/.test(chat), true);
+// The whole-build unit is the ordinary sequential build AND every refusal, so it must not grow an extra row.
+check('…while the whole-build unit adds no row', /: null;/.test(chat) && /if \(laneStage\) stages\.start\(laneStage/.test(chat), true);
+check('…and a lane that throws cannot leave its row spinning', /finally \{\n\s+if \(laneStage\) stages\.done\(laneStage\);/.test(chat), true);
+
+// Cost is itemised per lane (design §3.5) through the usage row's `task` label — previously the coder's calls
+// carried none at all, in ANY of the eight places it is invoked. Counted rather than checked for presence: a
+// presence check passes while seven call sites stay unattributable, which is the state this replaced.
+const coderCallSites = (chat.match(/role: 'coder',/g) || []).length;
+const taskLabels = (chat.match(/^\s+task[,:]/gm) || []).length;
+check('every coder call site carries a task label', taskLabels, coderCallSites);
+check('…the two lane-aware sites take it from the lane name', (chat.match(/^\s+task,$/gm) || []).length, 2);
+check('…and the rest are named for what they actually are',
+  ['coder', 'fix_syntax', 'fix_caller', 'fix_a11y', 'polish']
+    .map((t) => (chat.match(new RegExp(`task: '${t}',`, 'g')) || []).length),
+  [2, 1, 1, 1, 1]);
+check('…built from the lane name', /const task = unit\.name \? `coder:\$\{unit\.name\}` : 'coder';/.test(chat), true);
+// A lane stage is not one of the fixed pipeline stages, so the emitter must accept an explicit label and role —
+// without them the row would render with no label and an ETA computed from an unknown role.
+check('the stage emitter accepts a lane label and role', /const start = \(stage, opts = \{\}\) => \{/.test(chat), true);
+check('…and still falls back for the fixed stages', /opts\.label \|\| STAGE_LABELS\[stage\] \|\| stage/.test(chat), true);
+
+// THE CLIENT CHANGE THAT IS NOT NEEDED, pinned so a refactor to a fixed stage allowlist fails here instead of
+// silently dropping every lane's row.
+const workspace = read('src/hooks/useWorkspace.js');
+check('the client appends a row for any stage id', /\{ stage: evt\.stage, label: evt\.label, status: 'active'/.test(workspace), true);
+check('…and flips the row with the matching id', /s\.stage === evt\.stage && s\.status === 'active'/.test(workspace), true);
+check('…and the panel renders the server’s label', /\{s\.label\}/.test(read('src/components/matrix/MorpheusPipelineStatus.jsx')), true);
+
 console.log(`\n${checks - failures}/${checks} checks passed\n`);
 if (failures > 0) process.exit(1);
