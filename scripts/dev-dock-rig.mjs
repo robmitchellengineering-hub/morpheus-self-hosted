@@ -34,6 +34,10 @@
  *   node scripts/dev-dock-rig.mjs logs      # tail what the services are saying
  *   node scripts/dev-dock-rig.mjs down      # stop what this rig started
  *
+ * And the one thing the rig can drive that CI cannot: a REAL build.
+ *   MOCK_LLM_BUILD=1 node scripts/dev-dock-rig.mjs up
+ *   node scripts/rig-build-check.mjs         # drives a build and watches it fan out
+ *
  * Overridable: DOCK_RIG_DB, DOCK_RIG_BACKEND_PORT, DOCK_RIG_FRONTEND_PORT,
  * DOCK_RIG_MOCK_LLM_PORT, DOCK_RIG_MOCK_WP_PORT, DOCK_RIG_WP_SECRET.
  */
