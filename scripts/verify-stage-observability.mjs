@@ -51,7 +51,15 @@ check('the helper is documented with the incident that caused it', /OOM kill loo
 
 // ── 2. Every stage boundary reports it ──────────────────────────────────────
 console.log('\n2. every stage boundary reports it');
-const emitter = src.slice(src.indexOf('function makeStageEmitter'), src.indexOf('function makeStageEmitter') + 1800);
+// ⚠️ THE WINDOW WAS A FIXED 1800 CHARS, and on 2026-10-10 that made this check FAIL FOR A REASON UNRELATED TO
+// ITS CLAIM: adding comments inside `makeStageEmitter` (for the per-lane stages) pushed the `done` log past the
+// 1800th character, so "stage done reports memory" went red while the done log was still there and still correct.
+// That is the shape this file exists to catch — a check reporting something other than what it tested. Bound the
+// function itself instead: from its declaration to its closing brace, however long its comments grow.
+const emitterStart = src.indexOf('function makeStageEmitter');
+const emitterEnd = src.indexOf('\n}\n', emitterStart);
+if (emitterStart < 0 || emitterEnd < 0) throw new Error('could not locate makeStageEmitter in chatWithMorpheus.js');
+const emitter = src.slice(emitterStart, emitterEnd);
 check('stage start reports memory', /console\.log\(`\[chatWithMorpheus\] stage start: \$\{stage\} rss=\$\{memMb\(\)\}MB/.test(emitter), true);
 check('stage done reports memory', /stage done: \$\{stage\}[\s\S]{0,120}rss=\$\{memMb\(\)\}MB/.test(emitter), true);
 

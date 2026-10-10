@@ -3914,6 +3914,43 @@ export const MUTATIONS = [
     find: '  const raw = env?.[MAX_LANES_ENV];',
     replace: '  const raw = undefined;',
   },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // THE LANES GO INVISIBLE. Design §4.2's whole requirement is that the operator sees N lanes while it runs;
+    // with no lane stage id every lane collapses into the one `coder` row, so a build that is running three
+    // things at once looks exactly like a build that is running one — and the slow lane cannot be identified.
+    why: 'Drops the per-lane stage id, so concurrent lanes collapse into one indistinguishable progress row.',
+    find: "          const laneStage = unit.name ? `coder:${unit.name}` : null;",
+    replace: '          const laneStage = null;',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // COST LOSES ITS LANE. §3.5 asks "which lane cost $4 and produced nothing" — with no task label the usage row
+    // cannot answer it, which is exactly how the coder's $38 went unattributed before any of this.
+    why: 'Drops the lane task label, so a lane\'s spend cannot be attributed in usage_events.',
+    find: "          const task = unit.name ? `coder:${unit.name}` : 'coder';",
+    replace: '          const task = undefined;',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // A ROW THAT NEVER CLOSES. Without the `finally`, a lane that throws leaves its own progress row spinning for
+    // the rest of the turn — the panel showing work in progress that stopped existing.
+    why: 'Closes a lane row only on success, so a failed lane spins in the panel for the rest of the turn.',
+    find: '          } finally {\n            if (laneStage) stages.done(laneStage);\n          }',
+    replace: '          }\n          if (false) stages.done(laneStage);',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/functions/chatWithMorpheus.js',
+    // THE LANE ROW LOSES ITS NAME. The emitter's fallback is what lets a `coder:<lane>` stage render with the
+    // lane's own label and the coder's ETA; without it the row shows a raw id and an ETA for an unknown role.
+    why: 'Drops the emitter fallback, so a lane row renders with no label and an ETA from an unknown role.',
+    find: '    const label = opts.label || STAGE_LABELS[stage] || stage;',
+    replace: '    const label = STAGE_LABELS[stage];',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
