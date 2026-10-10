@@ -18,9 +18,18 @@
 // The chunked coder is SEQUENTIAL for a reason that was measured, not assumed: chunk N cannot see chunk N-1's
 // output, and a generated backend "routinely disagreed with itself (three files, three ideas of what `db` was,
 // measured on a real run)". That is why `generateFilesChunked` grew a `writtenSoFar` argument and why the pass
-// is a loop rather than a Promise.all. **Concurrency removes `writtenSoFar` entirely** — so a lane may only be
-// concurrent with another when neither needs to see the other. That is a dependency question, and it is why
-// this module merges lanes joined by an import edge instead of trusting the planner's grouping.
+// is a loop rather than a Promise.all.
+//
+// ⚠️ AND THE PRECISE STATE OF THE CALLER THAT USES THIS, because the difference changes what concurrency costs:
+// `chatWithMorpheus.js`'s inline coder loop is sequential but **never passed prior output to the coder either** —
+// it gives each step its plan, the full file list and the current on-disk content, nothing more. So concurrency
+// there does not remove a guarantee that existed; it removes a *shape*. The fan-out work below therefore adds the
+// missing piece in the safe direction: operations already produced are fed back to the coder **within a unit**,
+// which is exactly the boundary a lane is allowed to be concurrent across — and the reason lanes joined by an
+// import edge are MERGED rather than run at once.
+//
+// The unit of concurrency is the LANE, not the chunk: a lane's own chunks stay sequential, so the within-lane
+// context can be passed and cannot be skipped.
 //
 // ── ROB'S RULE, AND WHICH WAY THIS FAILS ─────────────────────────────────────────────────────────────────
 //
@@ -341,4 +350,94 @@ function mergeGroups(lanes, pairs) {
         root,
       };
     });
+}
+
+// ── the fan-out parameter ───────────────────────────────────────────────────────────────────────────────
+//
+// Design §6.4: *"Cap the default at 3, make it a parameter, and run the N sweep before choosing anything
+// permanent."* This is that parameter. It is an environment variable rather than a database setting because the
+// sweep is an OPERATIONAL measurement — it has to be changed between two runs of the same task, and a
+// `platform_settings` write needs a deploy's worth of ceremony for something that is read once per build.
+//
+// **`1` means sequential, and that is the point of the whole exercise**: it makes the measurement a
+// one-variable comparison against today's behaviour rather than against a remembered number. It is also the
+// switch to reach for if concurrency ever misbehaves in production — one variable, no deploy.
+//
+// Unreadable input falls back to the default rather than throwing: a typo in an env var must not stop a build.
+export const MAX_LANES_ENV = 'MORPHEUS_MAX_LANES';
+
+export function maxLanesFromEnv(env = process.env) {
+  const raw = env?.[MAX_LANES_ENV];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return DEFAULT_MAX_LANES;
+  const n = Number(String(raw).trim());
+  if (!Number.isFinite(n)) return DEFAULT_MAX_LANES;
+  return clampCap(n);
+}
+
+// ── work units, and merging them back ───────────────────────────────────────────────────────────────────
+//
+// The coder is chunked by files-per-step, and a lane chunks its OWN files — so a chunk never contains files from
+// two lanes, which is the property that makes the units independently writable. These two functions are split
+// out from the build loop on purpose: they are the parts that can be WRONG in a way a test can see, and the part
+// that cannot (the model call) stays in chatWithMorpheus.js.
+
+/**
+ * Plan the coder's work units from a lane verdict, in the order their output must be merged.
+ *
+ * @param {object} opts
+ * @param {object|null} [opts.laneSplit] — a `partitionLanes()` verdict. Anything not `ok` means one unit.
+ * @param {string[]} [opts.plannedFiles]
+ * @param {number} [opts.filesPerStep=3]
+ * @param {number} [opts.maxLanes=DEFAULT_MAX_LANES]
+ * @returns {{concurrent: boolean, units: Array<{name: string|null, chunks: string[][]}>}}
+ *   With `maxLanes < 2`, or no accepted split, this is exactly ONE unit holding today's flat chunking — the
+ *   sequential build, unchanged, which is what makes N=1 a fair baseline rather than a second code path.
+ */
+export function planCoderWork({ laneSplit, plannedFiles, filesPerStep = 3, maxLanes = DEFAULT_MAX_LANES } = {}) {
+  const planned = Array.isArray(plannedFiles) ? plannedFiles.filter((p) => typeof p === 'string' && p) : [];
+  const step = Number.isFinite(filesPerStep) && filesPerStep >= 1 ? Math.floor(filesPerStep) : 3;
+  const chunk = (files) => {
+    const out = [];
+    for (let i = 0; i < files.length; i += step) out.push(files.slice(i, i + step));
+    return out;
+  };
+
+  const lanes = laneSplit?.ok && Array.isArray(laneSplit.lanes) && laneSplit.lanes.length >= 2 ? laneSplit.lanes : null;
+  if (!lanes || clampCap(maxLanes) < 2) {
+    return { concurrent: false, units: planned.length > 0 ? [{ name: null, chunks: chunk(planned) }] : [] };
+  }
+  return { concurrent: true, units: lanes.map((l) => ({ name: l.name, chunks: chunk(Array.isArray(l.files) ? l.files : []) })) };
+}
+
+/**
+ * Merge settled work units back into one list, in UNIT ORDER — never in completion order.
+ *
+ * ⚠️ WHY THIS IS A FUNCTION AND NOT A LOOP IN THE CALLER: the order of `fileOperations` decides the order the
+ * files are applied and therefore what the reviewer reads. Merging in completion order would make the build
+ * nondeterministic — the same plan producing a different result each run — which is precisely the property that
+ * makes a parallel build hard to reason about. `Promise.allSettled` preserves input order, so this is a merge of
+ * an ordered list, and the guard asserts it.
+ *
+ * Rejected entries are skipped: the caller asks `firstLaneError()` first, so that a failure is reported by the
+ * unit that comes FIRST rather than whichever model call happened to fail fastest.
+ */
+export function mergeLaneResults(results) {
+  const ops = [];
+  const truncated = [];
+  let model;
+  for (const r of Array.isArray(results) ? results : []) {
+    if (!r || typeof r !== 'object') continue;
+    if (Array.isArray(r.ops)) ops.push(...r.ops);
+    if (Array.isArray(r.truncated)) truncated.push(...r.truncated);
+    if (r.model) model = r.model;
+  }
+  return { ops, truncated, model };
+}
+
+/** The first rejection in unit order, or null. Deterministic on purpose — see `mergeLaneResults`. */
+export function firstLaneError(settled) {
+  for (const r of Array.isArray(settled) ? settled : []) {
+    if (r && r.status === 'rejected') return r.reason;
+  }
+  return null;
 }

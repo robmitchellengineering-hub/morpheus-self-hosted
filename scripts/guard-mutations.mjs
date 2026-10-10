@@ -3867,6 +3867,53 @@ export const MUTATIONS = [
     find: '  if (pairs.length > 0) {\n    working = mergeGroups(working, pairs);',
     replace: '  if (false) {\n    working = mergeGroups(working, pairs);',
   },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ⚠️ A CHUNK THAT SPANS TWO LANES. Each unit is supposed to chunk its OWN files; chunking the whole planned
+    // list instead means one coder call is handed files from both lanes at once — the shared-writer problem one
+    // level down, with every lane's files written twice and nothing in the output saying so.
+    why: 'Chunks the whole plan into every lane, so lanes overwrite each other and one call spans two units.',
+    find: '  return { concurrent: true, units: lanes.map((l) => ({ name: l.name, chunks: chunk(Array.isArray(l.files) ? l.files : []) })) };',
+    replace: '  return { concurrent: true, units: lanes.map((l) => ({ name: l.name, chunks: chunk(planned) })) };',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // THE SWEEP DEPENDS ON THIS LINE. Without the cap check, `MORPHEUS_MAX_LANES=1` still fans out — so the
+    // baseline arm of the N sweep silently IS the treatment arm, and the measurement reports "no difference".
+    why: 'Ignores the lane parameter, so N=1 still fans out and the measurement compares lanes with lanes.',
+    find: '  if (!lanes || clampCap(maxLanes) < 2) {',
+    replace: '  if (!lanes) {',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // ⚠️ MERGING IN COMPLETION ORDER. This is the failure that makes a parallel build untrustworthy: the same
+    // plan and the same files, but the build's operation order — and so what the reviewer reads and what gets
+    // applied first — changes run to run with network timing.
+    why: 'Merges units in reverse, so the build result depends on ordering rather than on the plan.',
+    find: '  for (const r of Array.isArray(results) ? results : []) {',
+    replace: '  for (const r of (Array.isArray(results) ? [...results].reverse() : [])) {',
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // A NON-DETERMINISTIC FAILURE. The loop must report the FIRST failing unit in order; returning a fulfilled
+    // unit instead means the caller treats a failed lane as a success and builds on work that does not exist.
+    why: 'Reports a succeeded unit as the failure, so a lane that failed is treated as if it had produced code.',
+    find: "    if (r && r.status === 'rejected') return r.reason;",
+    replace: "    if (r && r.status === 'fulfilled') return r.value;",
+  },
+  {
+    guard: 'verify-lane-partition.mjs',
+    file: 'server/src/lib/lanePartition.js',
+    // THE PARAMETER DISCONNECTED. Reading the env var and then not using it is the shape that makes a "tunable"
+    // that changes nothing — and the sweep would report a flat line as a finding.
+    why: 'Ignores the lane environment variable, so the configured lane count has no effect.',
+    find: '  const raw = env?.[MAX_LANES_ENV];',
+    replace: '  const raw = undefined;',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
