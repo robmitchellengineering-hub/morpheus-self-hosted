@@ -1,0 +1,81 @@
+# The studio lane: CI on OUR OWN machines.
+#
+# WHY THIS EXISTS
+#
+# Every required check in ci.yml runs on `ubuntu-latest`, which is billed per minute
+# — and on 2026-10-10 that quota was spent inside a single day. The mesh nodes are
+# idle for most of the night. This lane puts real verification on that hardware, so
+# the account's hosted minutes stop being the thing that gates a change.
+#
+# ADVISORY ON PURPOSE, and that is not timidity. A self-hosted job QUEUES when its
+# machine is asleep, and a required check that queues is indistinguishable from one
+# that will never run — it would block every merge in the repo. So this lane is NOT
+# in branch protection, it does not replace ci.yml, and nothing here becomes required
+# until a machine has been online long enough to trust. If the machine goes away,
+# the lane queues and nothing else is affected. (The airmatrix repo keeps its own
+# self-hosted lane behind a repo variable for the same reason: flip the variable,
+# not the workflow.)
+#
+# WHAT IT PROVES TODAY: that a job reaches our hardware, names the machine that took
+# it, and that the no-install guards really are no-install — they run here with no
+# dependencies at all. The full suite, lint and build still run on ubuntu-latest;
+# moving those here is the next increment, once this lane has a track record.
+name: Studio lane (self-hosted)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same ref makes an in-flight run pointless.
+concurrency:
+  group: studio-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mac-studio:
+    name: studio mac (self-hosted)
+    # Label-scoped: a runner must carry ALL of these to take the job, so this cannot
+    # land on a GitHub-hosted machine, or on the airmatrix runner beside it.
+    runs-on: [self-hosted, studio, macos]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # The node's own report, first, because "which machine ran this" is the question
+      # a self-hosted lane exists to answer — and on 2026-10-12 a mesh job claimed a
+      # measurement from the wrong machine, so it is asked rather than assumed.
+      - name: Which machine actually took this job
+        run: |
+          echo "runner name : ${RUNNER_NAME}"
+          echo "runner os   : ${RUNNER_OS} / ${RUNNER_ARCH}"
+          echo "hostname    : $(hostname)"
+          echo "hardware    : $(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m)"
+          echo "cpu count   : $(sysctl -n hw.ncpu 2>/dev/null || nproc)"
+          echo "memory      : $(($(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824)) GB"
+          echo "node        : $(node --version)   npm: $(npm --version)"
+          echo "git         : $(git --version)"
+          echo "free disk   : $(df -h "${GITHUB_WORKSPACE}" | tail -1 | awk '{print $4}')"
+          echo "workspace   : ${GITHUB_WORKSPACE}"
+
+      # NO INSTALL STEP, deliberately. These guards are written to import nothing but
+      # node builtins and the repo's own pure rule modules, so running them here with
+      # no node_modules is the assertion that they are still no-install. If one of
+      # them starts needing a dependency, this fails and says so — which is a guard
+      # about the guards that the ubuntu job cannot provide, because that job installs.
+      - name: The portable guards — no dependencies, on our own hardware
+        run: |
+          node scripts/verify-portable-bundle.mjs
+          node scripts/verify-portable-ai.mjs
+          node scripts/verify-portable-launcher.mjs
+          node scripts/verify-portable-setup.mjs
+          node scripts/verify-portable-remote.mjs
+
+      - name: What this lane has NOT proven yet
+        run: |
+          echo "Still on ubuntu-latest: guards (no install), lint + build, render."
+          echo "No Windows or Linux lane exists: those nodes have no runner, and Windows"
+          echo "has no bash, WSL or docker, so the ubuntu jobs cannot run there as they are."
+          echo "This lane becomes useful for gate work only after it has a track record."
