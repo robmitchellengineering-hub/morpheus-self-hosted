@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { LOCAL_MODEL_PATTERNS } from '../server/src/lib/costEstimate.js';
 import {
   AI_SOURCES, LOCAL_CANDIDATES, BROKER_PLACEHOLDER, AI_ENV_KEYS, NOT_CONFIGURED,
-  matchesLocalPattern, envLinesFor, privacyLine,
+  matchesLocalPattern, envLinesFor, privacyLine, probeHeaders,
 } from '../server/src/lib/portableAi.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,9 +39,15 @@ const envValue = (key) => {
 };
 
 /** Probe an OpenAI-compatible server. Returns {ok, models, error} — never throws, never guesses. */
-async function probe(baseUrl) {
+async function probe(baseUrl, apiKey) {
   try {
-    const res = await fetch(`${String(baseUrl).replace(/\/+$/, '')}/models`, { signal: AbortSignal.timeout(2500) });
+    const res = await fetch(`${String(baseUrl).replace(/\/+$/, '')}/models`, {
+      signal: AbortSignal.timeout(2500),
+      // WITH the credential. Without it a provider that requires auth on /models answers 401 to every
+      // probe and the wizard blames the URL — which is how a real DeepSeek key was refused, on the one
+      // advertised source that works on a fresh install.
+      headers: probeHeaders(apiKey),
+    });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     const body = await res.json().catch(() => null);
     const models = (body?.data || []).map((m) => m?.id).filter(Boolean);
@@ -134,7 +140,7 @@ if (!baseUrl) {
 if (!model) {
   // A base URL with no model means "use whatever that server has" — ask it, rather than complaining
   // that nothing was found, which is what the first version did and was simply wrong about the cause.
-  const r = await probe(baseUrl);
+  const r = await probe(baseUrl, key);
   if (!r.ok) {
     say(`\n  ✗ ${baseUrl} did not answer a models request (${r.error}). Nothing was changed.\n`);
     process.exit(1);
@@ -150,7 +156,7 @@ if (USE === 'key' && !key) {
   process.exit(2);
 }
 
-const check = await probe(baseUrl);
+const check = await probe(baseUrl, key);
 if (!check.ok) {
   say(`\n  ✗ ${baseUrl} did not answer a models request (${check.error}). Nothing was changed.\n`);
   process.exit(1);

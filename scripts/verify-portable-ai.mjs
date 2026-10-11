@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { LOCAL_MODEL_PATTERNS } from '../server/src/lib/costEstimate.js';
 import {
   AI_SOURCES, LOCAL_CANDIDATES, BROKER_PLACEHOLDER, AI_ENV_KEYS, NOT_CONFIGURED,
-  matchesLocalPattern, envLinesFor, privacyLine,
+  matchesLocalPattern, envLinesFor, privacyLine, probeHeaders,
 } from '../server/src/lib/portableAi.js';
 import { NOT_INSTALLED_YET } from '../server/src/lib/portableSetup.js';
 
@@ -117,6 +117,20 @@ check('the installer no longer lists the AI choice as missing',
 check('…and names it as a command instead', NOT_INSTALLED_YET.some((n) => /portable:ai/.test(n)), true);
 check('the bundle README says the same', /portable:ai/.test(read('server/src/lib/portableBundle.js')), true);
 check('reality.mjs reports it', /portable-ai/i.test(read('scripts/reality.mjs')), true);
+
+console.log('\n9. the probe carries the credential it was given');
+// MEASURED 2026-10-12, by pointing a fresh install at a real DeepSeek key: the wizard refused with
+// "did not answer a models request (HTTP 401)" and blamed the URL. The probe sent NO Authorization
+// header at all, and DeepSeek's /models answers 200 with the key and 401 without it. `--use key` is one
+// of the three advertised sources and the only one that works on a fresh install today, so it could not
+// be configured. A local server needs no key, so the empty case must not fabricate one.
+check('a key becomes a bearer header', probeHeaders('k'), { Authorization: 'Bearer k' });
+check('…and surrounding whitespace is trimmed, not sent', probeHeaders('  k  '), { Authorization: 'Bearer k' });
+check('a local server (no key) sends no header at all',
+  [probeHeaders(''), probeHeaders('   '), probeHeaders(undefined)], [{}, {}, {}]);
+check('the probe sends those headers', /headers: probeHeaders\(apiKey\)/.test(script), true);
+check('…and the wizard hands the key to BOTH probes that decide whether the source works',
+  (script.match(/await probe\(baseUrl, key\)/g) || []).length, 2);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

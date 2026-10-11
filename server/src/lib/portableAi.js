@@ -83,6 +83,22 @@ export function matchesLocalPattern(modelId, patterns) {
   return (patterns || []).some((p) => id.includes(String(p).toLowerCase()));
 }
 
+/**
+ * The headers a provider probe must carry, given the key the operator supplied.
+ *
+ * MEASURED 2026-10-12, by trying to point a fresh install at a real DeepSeek key. The wizard probed
+ * `/models` with NO credentials at all, so any provider that requires auth on that endpoint answered
+ * 401 — DeepSeek returns 200 with the key and 401 without it — and the wizard refused with
+ * "…did not answer a models request", blaming the URL for a missing header. `--use key` is one of the
+ * three advertised sources and the only one that works on a fresh install today, and it could not be
+ * configured at all. A local server needs no key, so the empty case is an empty header set rather than a
+ * fabricated one. Import-free on purpose, so `scripts/verify-portable-ai.mjs` asserts it without an install.
+ */
+export function probeHeaders(apiKey) {
+  const key = String(apiKey || '').trim();
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
 /** The `.env` lines for a chosen source. Never includes a value we were not explicitly given. */
 export function envLinesFor({ source, baseUrl, model, key, brokerUrl }) {
   if (source === 'local' || source === 'key') {
