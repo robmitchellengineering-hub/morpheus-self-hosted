@@ -71,9 +71,26 @@ if (!existsSync(SRC)) {
   process.exit(1);
 }
 
-/** Pack once and return the manifest it published. */
-function pack() {
-  execFileSync(process.execPath, ['scripts/pack-wp-plugin.mjs'], { cwd: REPO, stdio: 'pipe' });
+/**
+ * Pack once and return the manifest it published. `tz` sets the builder's timezone, as a machine would.
+ *
+ * A non-zero exit is tolerated HERE, and only here, for one reason: the packer writes the zip and its
+ * manifest BEFORE it decides whether the package is deliverable, and "not deliverable to a live site" is
+ * exactly what section 5 measures when it packs from another timezone. Letting that throw escape would
+ * replace this file's FAIL lines with a stack trace and hide which hash moved — the first version did
+ * precisely that. Nothing is tolerated if the manifest was never written: that is a broken packer, and
+ * the read below still fails loudly.
+ */
+function pack(tz) {
+  try {
+    execFileSync(process.execPath, ['scripts/pack-wp-plugin.mjs'], {
+      cwd: REPO,
+      stdio: 'pipe',
+      env: tz ? { ...process.env, TZ: tz } : process.env,
+    });
+  } catch (err) {
+    if (!existsSync(MANIFEST)) throw err;
+  }
   return JSON.parse(readFileSync(MANIFEST, 'utf8'));
 }
 
@@ -173,6 +190,23 @@ const stamps = [...new Set(entries.map((e) => `${e.year}:${e.time}`))];
 check('all entries share one timestamp, so none carries a build time', stamps.length, 1);
 check('and it is the pinned timestamp, not today', entries.every((e) => e.year <= 2020), true);
 check('a timestamp was read for every entry', entries.filter((e) => e.year > 0).length, entries.length);
+
+// ── 5. the bytes do not depend on the builder's timezone ────────────────────
+// MEASURED 2026-10-12, and section 1 above is structurally blind to it: both of its packs run in the
+// SAME zone, so a timezone-dependent artifact looks perfectly deterministic there. The comment in
+// section 4 even noticed half of it ("the fixed 2020-01-01 can render as 2019-12-31 west of UTC") and
+// only asserted the year, which is why the time of day moving went unnoticed: one tree packed to
+// 5d4c7acb in Sydney (+11), 9bf0edb2 in Kolkata (+5:30) and 39b789e1 in UTC — same size, same file list,
+// three hashes. The packer's own deliverability check compares that hash with the published manifest, so
+// every build outside UTC refused to publish and exited 1, failing `npm run build` — and stalling a
+// downloaded Portable Morpheus at its sixth step of seven on a real machine.
+console.log('\n5. the same source packs to the same bytes in another timezone');
+
+const packedUtc = pack('UTC');
+const packedEast = pack('Asia/Kolkata');
+check('a UTC build and a +05:30 build publish one hash', packedEast.sha256, packedUtc.sha256);
+check('…and one byte count', packedEast.bytes, packedUtc.bytes);
+check('…and the shipped zip is that artifact', createHash('sha256').update(readFileSync(ZIP)).digest('hex'), packedUtc.sha256);
 
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

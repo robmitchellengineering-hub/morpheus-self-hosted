@@ -82,10 +82,24 @@ try {
   walk(resolve(staging, 'morpheus'), 'morpheus');
   files.sort();
 
+  // ONE FIXED TIMESTAMP, AND THE ARCHIVER RUNS IN UTC.
+  //
+  // The instant is fixed so that two packs of the same source agree. But `zip` writes that instant's
+  // LOCAL time into the DOS field, so pinning the instant alone still moved the bytes with the
+  // builder's timezone — measured 2026-10-12: one tree packed to 5d4c7acb in Sydney (+11), 9bf0edb2 in
+  // Kolkata (+5:30) and 39b789e1 in UTC, at the same size and with the same file list. Because the
+  // deliverability check below compares that hash with the published manifest, every build outside UTC
+  // printed "REFUSING TO PUBLISH" and exited 1 — which failed `npm run build`, and is how a downloaded
+  // Portable Morpheus got stuck at its sixth step of seven on a real machine. TZ=UTC is what makes the
+  // artifact describe the source and nothing about the machine that packed it.
   const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');
   for (const rel of files) utimesSync(resolve(staging, rel), FIXED_MTIME, FIXED_MTIME);
 
-  execSync(`zip -X -q "${outZip}" -@`, { cwd: staging, input: `${files.join('\n')}\n` });
+  execSync(`zip -X -q "${outZip}" -@`, {
+    cwd: staging,
+    input: `${files.join('\n')}\n`,
+    env: { ...process.env, TZ: 'UTC' },
+  });
   console.log(`[pack-wp-plugin] wrote ${outZip}`);
 
   const header = readFileSync(resolve(src, 'morpheus.php'), 'utf8');

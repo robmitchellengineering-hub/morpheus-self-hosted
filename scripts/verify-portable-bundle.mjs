@@ -46,10 +46,43 @@ check('the schema ships', isPortableFile('server/prisma/schema.prisma'), true);
 check('the local Postgres script ships — the installer delegates to it', isPortableFile('server/scripts/dev-db.mjs'), true);
 check('the verification suite ships, so a self-hoster can check it', isPortableFile('scripts/verify.mjs'), true);
 check('root manifests ship', [isPortableFile('package.json'), isPortableFile('README.md')].join(','), 'true,true');
+// MEASURED 2026-10-12, by installing the published zip on a real machine. The bundle shipped every
+// server file EXCEPT its own manifest, so the installer's third step (`npm install` in `server/`)
+// installed nothing — the root manifest does not declare `embedded-postgres`; only this one does — and
+// step 4 died with "Postgres binaries not found" on every platform. The download could not be installed
+// by the one command it tells a person to run, and its own printed remedy could not work either.
+const serverManifest = JSON.parse(read('server/package.json'));
+const serverDeps = { ...serverManifest.dependencies, ...serverManifest.devDependencies };
+check('the server manifest ships — npm install in server/ is a no-op without it', isPortableFile('server/package.json'), true);
+check('…with its lock, so the install is the same install everywhere', isPortableFile('server/package-lock.json'), true);
+check('…and it is the manifest that declares the local database the installer needs',
+  'embedded-postgres' in serverDeps, true);
+check('the Postgres script and the manifest it needs ship together',
+  [isPortableFile('server/scripts/dev-db.mjs'), isPortableFile('server/package.json')].join(','), 'true,true');
+// The build's entry list is IN the build config, so this asks the config instead of someone's memory of
+// the tree — which is how the same omission happened twice. MEASURED 2026-10-12: vite's SECOND entry is a
+// root file (`deck.html`, distinct from `public/deck.html`) that the bundle did not ship, so the
+// downloaded product failed its own build with `Could not resolve entry module "deck.html"`. Scoped to
+// the `input` block on purpose: the config's other `path.resolve` is the `@` alias to `./src`, a
+// directory this rule describes with a trailing slash.
+const viteConfig = read('vite.config.js');
+const inputBlock = viteConfig.slice(viteConfig.indexOf('input: {'), viteConfig.indexOf('}', viteConfig.indexOf('input: {')));
+const entryFiles = [...inputBlock.matchAll(/path\.resolve\(__dirname,\s*'([^']+)'\)/g)].map((m) => m[1]);
+check('the build config names its entries (parser sanity)', entryFiles.length >= 2, true);
+check('…and every entry the build resolves ships in the bundle',
+  entryFiles.filter((f) => !isPortableFile(f)), []);
 
 console.log('\n2. …and never a fossil, a secret, or a copy of itself');
 // The measured failure: the mirror shipped base44/ for a month after the port.
 check('the pre-port base44 tree does NOT ship', isPortableFile('base44/functions/autonomousBuildStep/entry.ts'), false);
+// …but the one module the shipped frontend IMPORTS must ship with it. MEASURED 2026-10-12 on the
+// published download: `BackendPanel.jsx` imports this file, `base44/` was excluded wholesale, and the
+// build died with `Could not resolve "../../../base44/shared/infrastructureComponents"` — the fourth
+// thing that stopped the download from installing. A rule that ships an importer has to ship the import.
+check('the base44 module the frontend still imports ships',
+  isPortableFile('base44/shared/infrastructureComponents.ts'), true);
+check('…because a shipped component imports it (so this cannot be dropped by accident)',
+  /base44\/shared\/infrastructureComponents/.test(read('src/components/matrix/BackendPanel.jsx')), true);
 // The nesting trap: this directory contains the download page's own assets, inside public/.
 check('the portable download machinery does not nest inside itself',
   isPortableFile('public/portable-morpheus/_source/README.md'), false);
@@ -81,7 +114,13 @@ check('it selects hundreds of files (parser sanity)', real.length > 300, true);
 check('the backend is in there', real.includes('server/src/functions/chatWithMorpheus.js'), true);
 check('the Command Deck is in there', real.some((p) => p.startsWith('src/pages/CommandDeck/')), true);
 check('the schema is in there', real.includes('server/prisma/schema.prisma'), true);
-check('no base44 path survives', real.filter((p) => p.startsWith('base44/')), []);
+// Narrowed 2026-10-12. `base44/shared/` now ships on purpose: the frontend still imports one of its
+// modules, and excluding the directory wholesale is what broke the download's build. The mistake this
+// check exists for is the SUPERSEDED pre-port functions tree, so that is what it asserts — plus that
+// nothing else from base44/ creeps in beside the one directory that is allowed.
+check('no pre-port base44 functions path survives', real.filter((p) => p.startsWith('base44/functions/')), []);
+check('…and only base44/shared/ comes from base44/',
+  [...new Set(real.filter((p) => p.startsWith('base44/')).map((p) => p.split('/')[1]))], ['shared']);
 check('no portable mirror path survives', real.filter((p) => p.startsWith('public/portable-morpheus/')), []);
 check('no credential path survives', real.filter((p) => /(^|\/)\.env/.test(p)), []);
 

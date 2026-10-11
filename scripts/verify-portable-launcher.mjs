@@ -24,6 +24,7 @@ import {
   LAUNCHERS, launcherFor, START_STEPS, PORTABLE_GATEKEEPER_NOTE, OPEN_AFTER_HEALTHY_WHY,
   HEALTH_PATH, READY_TIMEOUT_MS, LOCAL_PORT, startedMessage,
 } from '../server/src/lib/portableLaunch.js';
+import { portFromEnvFile } from '../server/src/lib/portableSetup.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -117,7 +118,26 @@ check('…and now names signing and auto-update as what is missing',
   /signed native app/.test(setup) && /auto-update/.test(setup), true);
 check('reality.mjs reports the launcher', /portable-start|launcher/i.test(read('scripts/reality.mjs')), true);
 
-console.log('\n9. the read-only path runs');
+console.log('\n9. a second install on the same machine can be told apart');
+// MEASURED 2026-10-12, by reading the code after trying to install the published bundle. The server has
+// always listened on its own `process.env.PORT`, but every tool that talks TO it read the constant 4500.
+// So a second install would have run on its own port while portable:start polled 4500 and portable:remote
+// published 4500 — both tools answering about a different install than the one that is running.
+const remoteSrc = read('scripts/portable-remote.mjs');
+check('the port comes from this install, not the shipped default',
+  [/portFromEnvFile/.test(start), /portFromEnvFile/.test(remoteSrc), /portFromEnvFile/.test(setupSrc)].join(','), 'true,true,true');
+check('…and no tool still takes the constant as its port',
+  /Number\(LOCAL_ENV\.PORT\)/.test(start + remoteSrc + setupSrc), false);
+check('a non-default port in server/.env is the one used', portFromEnvFile('PORT=4599\n'), 4599);
+check('a missing or empty env falls back to the shipped default',
+  [portFromEnvFile(''), portFromEnvFile(undefined)].join(','), `${LOCAL_PORT},${LOCAL_PORT}`);
+check('…and so does anything that is not a usable port',
+  [portFromEnvFile('PORT=not-a-port'), portFromEnvFile('PORT=99999'), portFromEnvFile('PORT=0')].join(','),
+  `${LOCAL_PORT},${LOCAL_PORT},${LOCAL_PORT}`);
+check('a commented PORT line is not mistaken for the setting',
+  portFromEnvFile('# PORT=4599\nPORT=4501\n'), 4501);
+
+console.log('\n10. the read-only path runs');
 // The lesson from the remote work: a wrong import passes every text assertion above.
 const proc = spawnSync(process.execPath, [join(ROOT, 'scripts/portable-stop.mjs')], { encoding: 'utf8', timeout: 60000 });
 const said = `${proc.stdout}${proc.stderr}`;

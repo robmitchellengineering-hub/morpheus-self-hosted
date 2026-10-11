@@ -21,12 +21,12 @@
 // Run:  node scripts/portable-setup.mjs [--check] [--platform darwin|linux|win32] [--skip-install] [--skip-build]
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   INSTALL_STEPS, NOT_INSTALLED_YET, GENERATED_ENV, preflight, generateSecrets, envFileContents,
-  localUrl, REQUIRED_NODE_MAJOR, LOCAL_ENV, PORTABLE_SELFTEST,
+  localUrl, REQUIRED_NODE_MAJOR, PORTABLE_SELFTEST, portFromEnvFile,
 } from '../server/src/lib/portableSetup.js';
 import { SELFTEST_FILE, renderSelfTestRunner, parseSelfTestOutput, isVerified } from '../server/src/lib/appSelfTest.js';
 import { PORTABLE_GATEKEEPER_NOTE, launcherFor } from '../server/src/lib/portableLaunch.js';
@@ -38,6 +38,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = join(ROOT, 'server');
 const ENV_PATH = join(SERVER, '.env');
 const DEV_DB = join(SERVER, 'scripts', 'dev-db.mjs');
+// The port THIS install uses. On a first install no env exists yet, so this is the shipped default —
+// which is exactly what gets written below. On a re-run of an existing install it is that install's own
+// port, so what is printed and what the self-test probes are the same number the server will listen on.
+const PORT = portFromEnvFile(existsSync(ENV_PATH) ? readFileSync(ENV_PATH, 'utf8') : '');
 
 const argv = process.argv.slice(2);
 const CHECK = argv.includes('--check');
@@ -76,7 +80,7 @@ function run(cmd, args, cwd) {
 }
 
 say('\n  PORTABLE MORPHEUS — local setup');
-say(`  This installs and starts the server on this machine. URL when done: ${localUrl()}`);
+say(`  This installs and starts the server on this machine. URL when done: ${localUrl(PORT)}`);
 
 // ── preflight ───────────────────────────────────────────────────────────────
 const nodeMajor = Number(process.versions.node.split('.')[0]);
@@ -180,7 +184,7 @@ if (!existsSync(selfTestPath)) {
     startCommand: PORTABLE_SELFTEST.command,
     cwd: PORTABLE_SELFTEST.cwd,
     path: PORTABLE_SELFTEST.path,
-    port: Number(LOCAL_ENV.PORT),
+    port: PORT,
     timeoutMs: PORTABLE_SELFTEST.timeoutMs,
   }));
   say(`      wrote ${SELFTEST_FILE} — run it any time to check this install`);
@@ -206,7 +210,7 @@ say(`    ${PORTABLE_GATEKEEPER_NOTE}`);
 say('');
 say(`  VERIFIED ON THIS MACHINE: the server started, answered ${PORTABLE_SELFTEST.path}, and was stopped again.`);
 say(`  That check is a file in this folder — re-run it any time with:  node ${SELFTEST_FILE}`);
-say(`  When it is running it opens ${localUrl()} by itself, and the browser shows the sign-in page.`);
+say(`  When it is running it opens ${localUrl(PORT)} by itself, and the browser shows the sign-in page.`);
 say('');
 sayPlatformSteps();
 say('');
