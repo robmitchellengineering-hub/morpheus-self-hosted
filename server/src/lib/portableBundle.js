@@ -20,6 +20,16 @@
 // builder AND the Command Deck — running on the operator's own machine. So the bundle is the source
 // that runs it, not a sample of it. The one thing kept out is the portable download machinery
 // itself, which would otherwise nest a copy of the bundle inside the bundle on every build.
+//
+// `base44/shared/` IS SHIPPED, NARROWLY, AND IT IS NOT A CONTRADICTION of the exclusion below. The
+// pre-port `base44/functions/` tree is what must never ship — it was superseded, and the old mirror
+// shipped it for a month. But `src/components/matrix/BackendPanel.jsx` still imports
+// `base44/shared/infrastructureComponents` directly, so a bundle without it cannot build at all —
+// measured 2026-10-12 on the published download: `Could not resolve
+// "../../../base44/shared/infrastructureComponents"`. Most of `base44/shared/` HAS been ported into
+// `server/src/lib/` (each file carries a "Ported from …" header); this one module has not. The rule now
+// ships the directory that holds it instead of the tree that was replaced. A rule that ships an importer
+// has to ship the import.
 
 /**
  * Roots (directory prefixes) that ship, taken verbatim from the repository.
@@ -27,6 +37,7 @@
  */
 export const PORTABLE_INCLUDE_ROOTS = [
   'src/',                    // the whole frontend, including the Command Deck and its widgets
+  'base44/shared/',          // the one pre-port directory still imported by the shipped frontend — see above
   'server/src/',             // every backend function, route and library
   'server/prisma/',          // the schema a local Postgres is built from
   'server/scripts/',         // dev-db.mjs — the local Postgres cluster a self-host actually runs
@@ -41,7 +52,21 @@ export const PORTABLE_INCLUDE_ROOTS = [
  */
 export const PORTABLE_INCLUDE_FILES = [
   'package.json',
+  // The server's OWN manifest, and the lock beside it. MEASURED 2026-10-12 by installing the published
+  // zip on a real machine: the bundle shipped `server/src/`, `server/prisma/` and `server/scripts/` but
+  // not this file, so the installer's third step (`npm install` in `server/`) installed NOTHING — the
+  // root manifest does not declare `embedded-postgres`; only this one does. Step 4 then died with
+  // "Postgres binaries not found", on every platform, because the missing file is platform-independent.
+  // The downloaded product could not be installed by the one command it tells you to run. Its own
+  // remedy ("Run: cd server && npm install") could not work either, for the same reason.
+  'server/package.json',
+  'server/package-lock.json',
   'index.html',
+  // The Command Deck's OWN entry point, and the second input in vite.config.js. The bundle shipped
+  // `public/deck.html` — a different file — and not this one, so `vite build` died at step 6 of the
+  // install with `Could not resolve entry module "deck.html"` on a freshly downloaded bundle. Found the
+  // same way as the manifest above: by installing the download instead of reading the rule.
+  'deck.html',
   'vite.config.js',
   'tailwind.config.js',
   'jsconfig.json',
