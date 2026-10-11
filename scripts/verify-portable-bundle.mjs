@@ -21,9 +21,13 @@
 //
 // Run:  node scripts/verify-portable-bundle.mjs
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { selectPortableFiles, isPortableFile, portableBundleReadme, PORTABLE_EXCLUDE } from '../server/src/lib/portableBundle.js';
+import {
+  selectPortableFiles, isPortableFile, portableBundleReadme, PORTABLE_EXCLUDE,
+  PORTABLE_INCLUDE_FILES, PORTABLE_INCLUDE_ROOTS,
+} from '../server/src/lib/portableBundle.js';
 import { platformSteps } from '../server/src/lib/platformCli.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,11 +58,26 @@ check('root manifests ship', [isPortableFile('package.json'), isPortableFile('RE
 const serverManifest = JSON.parse(read('server/package.json'));
 const serverDeps = { ...serverManifest.dependencies, ...serverManifest.devDependencies };
 check('the server manifest ships — npm install in server/ is a no-op without it', isPortableFile('server/package.json'), true);
-check('…with its lock, so the install is the same install everywhere', isPortableFile('server/package-lock.json'), true);
 check('…and it is the manifest that declares the local database the installer needs',
   'embedded-postgres' in serverDeps, true);
 check('the Postgres script and the manifest it needs ship together',
   [isPortableFile('server/scripts/dev-db.mjs'), isPortableFile('server/package.json')].join(','), 'true,true');
+// A RULE THAT PROMISES A FILE THE DEPLOY TREE DOES NOT HAVE IS A PROMISE THE DOWNLOAD CANNOT KEEP.
+// MEASURED 2026-10-12, and it was this guard's own blind spot: `server/package-lock.json` was added to
+// the rule as a good idea and shipped in NO published zip ever, because it is gitignored — the deploy
+// tree is a git checkout and the file is not in it. Every check above asked isPortableFile(), which
+// answers "does the RULE select it" and said yes. This asks git, which is the thing that decides whether
+// the file is there to select. It is the same mistake in miniature as the four missing files this rule
+// was fixed for: the rule is not the artifact.
+const includedButIgnored = [...PORTABLE_INCLUDE_FILES, ...PORTABLE_INCLUDE_ROOTS].filter((p) => {
+  try {
+    execFileSync('git', ['check-ignore', '--quiet', p], { cwd: ROOT, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+});
+check('no included path is gitignored — it would never reach the deploy tree', includedButIgnored, []);
 // The build's entry list is IN the build config, so this asks the config instead of someone's memory of
 // the tree — which is how the same omission happened twice. MEASURED 2026-10-12: vite's SECOND entry is a
 // root file (`deck.html`, distinct from `public/deck.html`) that the bundle did not ship, so the

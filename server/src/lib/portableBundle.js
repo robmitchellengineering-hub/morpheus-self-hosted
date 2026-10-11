@@ -60,7 +60,13 @@ export const PORTABLE_INCLUDE_FILES = [
   // The downloaded product could not be installed by the one command it tells you to run. Its own
   // remedy ("Run: cd server && npm install") could not work either, for the same reason.
   'server/package.json',
-  'server/package-lock.json',
+  // NOT `server/package-lock.json`, and the reason is the point of everything above: it is GITIGNORED
+  // (.gitignore:47), so it exists only in a local working tree and can never be in a deployed checkout.
+  // Listing it was a promise the download could not keep — this change's own mistake, caught by
+  // downloading the zip the merge produced and finding the lock absent while the rule said yes. The
+  // installer runs `npm install`, not `npm ci`, so the manifest is what the install path actually needs;
+  // the guard below now refuses any included path that git ignores. If a reproducible install is ever
+  // wanted, the fix is to stop ignoring the lock, not to list it here.
   'index.html',
   // The Command Deck's OWN entry point, and the second input in vite.config.js. The bundle shipped
   // `public/deck.html` — a different file — and not this one, so `vite build` died at step 6 of the
