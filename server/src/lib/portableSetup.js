@@ -36,6 +36,29 @@ export const LOCAL_ENV = {
 };
 
 /**
+ * The port a given install listens on, read from its own `server/.env`.
+ *
+ * WHY THIS IS A FUNCTION AND NOT THE CONSTANT ABOVE. The server has always honoured its own env —
+ * `server/src/index.js` listens on `process.env.PORT || 4500` — but everything that talks TO it
+ * (`portable:start`'s health check and the URL it opens, `portable:remote`'s `tailscale serve`, the
+ * install's own self-test) read `LOCAL_ENV.PORT` instead. So a second install on one machine would
+ * listen on its own port while every tool around it polled 4500: start would report a running server as
+ * not up, and remote would publish the wrong port.
+ *
+ * A second install is the point: one machine, two projects or two repos, with their own databases and
+ * their own secrets rather than one shared stack. That is why this reads the file the server reads.
+ *
+ * Absent, unreadable, or not a usable port falls back to the shipped default, so a fresh install
+ * behaves exactly as it did before. Import-free on purpose, so `scripts/verify-portable-launcher.mjs`
+ * can assert it in CI's no-install guards job.
+ */
+export function portFromEnvFile(contents) {
+  const match = /^[ \t]*PORT[ \t]*=[ \t]*(\d{1,5})[ \t]*$/m.exec(String(contents ?? ''));
+  const port = match ? Number(match[1]) : NaN;
+  return Number.isInteger(port) && port > 0 && port < 65536 ? port : Number(LOCAL_ENV.PORT);
+}
+
+/**
  * The `.env` a local install gets, written once and never overwritten.
  *
  * The AI lines are present but EMPTY, and say so: the decided ordering is a working paid default with

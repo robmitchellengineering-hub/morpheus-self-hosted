@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LOCAL_ENV } from '../server/src/lib/portableSetup.js';
+import { portFromEnvFile } from '../server/src/lib/portableSetup.js';
 import {
   REMOTE_STEPS, REMOTE_CAVEATS, tailscaleInstallHint, remoteUrlFromStatus, tailscaleReady,
   serveCommands, backendPublicUrlLine,
@@ -22,7 +22,8 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = join(ROOT, 'server', '.env');
-const PORT = Number(LOCAL_ENV.PORT);
+// This install's port — exposing the wrong one would publish a service that is not there.
+const PORT = portFromEnvFile(existsSync(ENV_PATH) ? readFileSync(ENV_PATH, 'utf8') : '');
 
 const argv = process.argv.slice(2);
 const ENABLE = argv.includes('--enable');

@@ -9,17 +9,19 @@
 // once /api/health answers — opening first is how a launcher shows someone a connection-refused page and
 // calls it a success.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LOCAL_ENV } from '../server/src/lib/portableSetup.js';
+import { portFromEnvFile } from '../server/src/lib/portableSetup.js';
 import { HEALTH_PATH, READY_TIMEOUT_MS, READY_POLL_MS, START_STEPS, startedMessage } from '../server/src/lib/portableLaunch.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = join(ROOT, 'server');
 const ENV_PATH = join(SERVER, '.env');
 const DEV_DB = join(SERVER, 'scripts', 'dev-db.mjs');
-const PORT = Number(LOCAL_ENV.PORT);
+// THIS install's port, from its own env — not the shipped default. Two installs on one machine would
+// otherwise both health-check 4500, and the one that is running would look like the one that is not.
+const PORT = portFromEnvFile(existsSync(ENV_PATH) ? readFileSync(ENV_PATH, 'utf8') : '');
 const argv = process.argv.slice(2);
 const NO_OPEN = argv.includes('--no-open');
 const say = (s) => console.log(s);
