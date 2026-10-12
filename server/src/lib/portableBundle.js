@@ -31,9 +31,25 @@
 // ships the directory that holds it instead of the tree that was replaced. A rule that ships an importer
 // has to ship the import.
 
+// `hosted-broker/` SHIPS FOR THE SAME REASON, MEASURED ONE TREE OVER. The bundle ships `scripts/` in
+// full — "the point of self-hosting is being able to check" — and one of those scripts,
+// `scripts/verify-cloud-metering.mjs`, imports `../hosted-broker/src/metering.js` and reads the broker's
+// `server.js`, `.env.example` and `README.md`; `scripts/verify-license-terms.mjs` reads its
+// `package.json`. With the broker excluded, the suite the bundle advertises died at module load before
+// it could check anything. Excluding the importer instead is not an option: the bundle's `scripts/verify.mjs`
+// runs every guard by name, so a shipped gate missing a guard fails outright, and hiding it behind an
+// "only if present" check is H17 exactly — a check that never ran reading as a pass. So the broker's
+// SOURCE ships (it holds no credential — its secrets come from the environment at deploy time, and
+// `.env` is excluded below); the service itself remains separately deployed, as its README says.
+//
+// `hosted-broker/` and `portable-architect/` are the two separately-deployed services. Neither is
+// needed to run Morpheus or the Deck locally, which is why they were left out — but the shipped suite
+// grew a dependency on the broker's source, and a rule that ships an importer has to ship the import.
+
 /**
  * Roots (directory prefixes) that ship, taken verbatim from the repository.
- * Every one of these is needed to run Morpheus or the Deck locally.
+ * Every one of these is needed to run Morpheus or the Deck locally — except `hosted-broker/`, which is
+ * needed by the verification suite that ships beside them (see the note above).
  */
 export const PORTABLE_INCLUDE_ROOTS = [
   'src/',                    // the whole frontend, including the Command Deck and its widgets
@@ -44,6 +60,7 @@ export const PORTABLE_INCLUDE_ROOTS = [
   'public/',                 // deck.html + manifests + icons the local server must serve
   'wp-plugin/',              // the WordPress plugin source, so a self-hoster can build it too
   'scripts/',                // the verification suite: the point of self-hosting is being able to check
+  'hosted-broker/',          // …and the broker that suite imports and reads — see above
 ];
 
 /**
@@ -85,6 +102,12 @@ export const PORTABLE_INCLUDE_FILES = [
  *   * `public/portable-morpheus/` — the download page's own assets. Including it nests the bundle in
  *     itself, once per build, growing every time.
  *   * `server/.env*` — credentials. The self-hoster writes their own.
+ *   * `hosted-broker/.env*` — the SAME rule for the broker, which now ships as source. This one is not
+ *     hypothetical: the bundle is built from a walk of the WORKING TREE (not `git ls-files`), the
+ *     generic dotfile check below only refuses dotfiles at the repository ROOT, and the broker's own
+ *     deploy steps tell the operator to copy `.env.example` to `.env` in that directory — so on the
+ *     machine of anyone who has deployed a broker, `npm run build` would have zipped the live
+ *     `BROKER_JWT_SECRET` and upstream AI key and published them with the download.
  *   * `public/morpheus-wordpress-plugin.zip` — a build product of `pack-wp-plugin.mjs`, regenerated
  *     from `wp-plugin/` which IS included. Shipping both invites them to diverge.
  *   * `node_modules/`, `dist/` — never source.
@@ -92,6 +115,7 @@ export const PORTABLE_INCLUDE_FILES = [
 export const PORTABLE_EXCLUDE = [
   'public/portable-morpheus/',
   'server/.env',
+  'hosted-broker/.env',
   'public/morpheus-wordpress-plugin.zip',
   'node_modules/',
   'dist/',
@@ -154,6 +178,8 @@ your own Mac, PC or Linux machine.
 - \`public/\` — the static assets the local server serves, including \`deck.html\`.
 - \`wp-plugin/\` and \`scripts/\` — the WordPress plugin source, and the verification suite, so you can
   check the thing you are running.
+- \`hosted-broker/\` — the source of the optional shared OAuth/AI broker. It ships because the shipped
+  verification suite imports and reads it; the service is separate and is not started by the installer.
 - \`README.md\` and \`AGENTS.md\` — what the project is, and how it is built.
 
 ## What is in here, and what is still missing
