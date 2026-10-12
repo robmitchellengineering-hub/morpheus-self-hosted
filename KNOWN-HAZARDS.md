@@ -633,3 +633,61 @@ scores, and a drift check that stopped firing) — both were a *mutated* reader 
 product — a tool that writes a file, then writes it back after doing something slow, with no check that the
 thing it is about to overwrite is the thing it left. The self-dev loop does exactly this with `project_files`,
 and so does every "sync, transform, restore" path here.
+
+---
+
+## H24 — a subprocess that prompts (inherited stdin) blocks the whole build loop
+
+**Incident (the harness-mesh's `node.ps1`, 2026-10-11; ported here because the same shape is in the build
+loop).** The mesh's node loop started a child process with stdin inherited and never closed, so a tool that
+decided to ask a question — `vmrun -gu root -gp '' runScriptInGuest` wanting guest credentials — blocked for
+ever, and because the loop waits for that child, **every queued job waited behind it**. The fix was "close
+stdin at start": a prompt now gets EOF and fails fast, instead of a hang that takes the whole node down.
+
+Morpheus's build loop shells out to tools the same way: `lib/syntaxCheck.js` runs a real `python3` for every
+`.py` file, and `lib/appSelfTest.js` writes a self-test runner into each generated app that spawns the app's
+own `npm start`. A tool that reads stdin and decides to prompt — a `git` asking for credentials, an installer
+asking "proceed? [y/N]" — would hang the build, not just the one file, with nothing to say why.
+
+**Rule:** every subprocess the build loop spawns must have its stdin **closed** (`stdio: 'ignore'` /
+`stdio: ['ignore', …]`, or `input:` on a sync call), so a prompt gets EOF and fails fast instead of blocking.
+A subprocess may keep stdin as a `'pipe'` **only** as a deliberate data channel the parent writes and then
+`end()`s — which is exactly the Python syntax check — and never as `stdio: 'inherit'` or the unmanaged
+default pipe. `scripts/verify-build-loop-stdin.mjs` walks `server/src/**` and fails on any spawn that
+re-inherits stdin.
+
+## H25 — a filename Windows cannot represent stops every pull
+
+**Incident (the harness-mesh, 2026-10-11; ported because a generated app or a self-dev push writes filenames
+too).** A job id was committed as `…T12:57Z-…` with its colon intact. A `:` is legal in a macOS/Linux path and
+illegal in a Windows one, so **git accepted the commit and refused the checkout on every Windows node** — the
+PC could not update, and the Legion Go silently stopped taking work at all. One filename, two unrelated-looking
+faults, on two machines, and a commit-time hook on the Mac cannot catch it because on macOS the path is
+perfectly valid.
+
+Morpheus writes filenames on the same machine-shaped boundary: self-dev pushes `ProjectFile` paths straight to
+`main`, and a generated app ships whatever filenames the coder produced. A path with `:` `*` `?` `"` `<` `>`
+`|`, or ending in a dot/space, is a repo a Windows self-host or a Windows compile checkout cannot even pull.
+
+**Rule:** anything that writes a filename into a repo (a self-dev push, a generated app's scaffold, a job id)
+must keep Windows-illegal characters and a trailing dot/space out of the path, because "legal here" is not
+"legal everywhere" and the failure arrives at checkout, far from the writer. Guard suggestion (from the mesh's
+own fix): a pre-push path check, since the macOS commit hook is structurally blind to it.
+
+## H26 — the loop must not be killable by its own queue
+
+**Incident (the harness-mesh, 2026-10-11; ported for the build loop's own error isolation).** The node loop
+listed the queue and then read each file; a job retired or withdrawn in between made `Get-Content` throw, the
+exception was **unhandled**, and the process ended — six jobs then sat overdue for an hour before anyone could
+see why. Two of the three "the node is dead" diagnoses were this shape. The rule underneath: **the loop is the
+only thing on the machine that can pick work up, so an unexpected error inside it costs *every* queued job
+rather than one.**
+
+The Morpheus analogue is the same claim one level up: the build loop reads `project_files` and walks each
+file through syntax, review and apply, and one malformed row or one file that changed underneath the turn must
+not take the whole build — or the server — down with it. (The mesh's fix is the shape to copy: the per-item
+body is wrapped, and the readers tolerate an item that vanished between enumeration and read.)
+
+**Rule:** a loop that picks work up from a queue must tolerate an item that vanishes mid-iteration, and must
+never let one unexpected per-item error kill the loop itself — an error inside the loop is the one failure
+that is not recoverable by a retry, because the thing that would retry it is the thing that died.

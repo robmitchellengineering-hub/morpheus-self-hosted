@@ -4261,6 +4261,16 @@ export const MUTATIONS = [
     find: "    if (c === '/' && (prev === '' || REGEX_MAY_FOLLOW.has(prev) || REGEX_KEYWORDS.has(prevWord))) {",
     replace: '    if (false) {',
   },
+  {
+    guard: 'verify-build-loop-stdin.mjs',
+    file: 'server/src/lib/appSelfTest.js',
+    // ⭐ THE MESH INCIDENT, AS A MUTATION. The generated self-test runner spawns the app's own start command;
+    // inheriting stdin instead of closing it is exactly how a tool that decides to prompt (a git credential
+    // ask, an installer "proceed?") blocks the whole test — and with it the build — instead of getting EOF.
+    why: 'Makes the self-test runner inherit stdin, so a start command that prompts would hang the app test instead of failing fast on EOF.',
+    find: "stdio: ['ignore', 'pipe', 'pipe']",
+    replace: "stdio: ['inherit', 'pipe', 'pipe']",
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
