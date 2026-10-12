@@ -2,289 +2,283 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { MORPHEUS_BUILD_TARGETS } from '@/lib/morpheusCapabilities';
 
-// The three products, as a single page. Every number here is measured and read
-// from the projects' own repositories and experiment records — not estimated
-// from memory. Where a figure is a target rather than a measurement it says so.
-// This is an investor-facing surface: the work speaks, so there is no "invest"
-// call-to-action and no hard sell anywhere on the page.
+// A technical briefing on three systems: Morpheus (a self-hosting build engine),
+// MorpheOS (a self-healing operating system) and AirMatrix (broadcast-grade audio
+// over consumer Wi-Fi). Written in the voice of an engineering document — what
+// each is, how it works, and the measured numbers with their source — not a
+// marketing page. Every figure on this page is measured and read from the
+// systems' own repositories and experiment records.
 
-// ── data ─────────────────────────────────────────────────────────────────────
+const SANS = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
-// The heal ladder, from MorpheOS docs/adr/0009-heal-ladder.md (H0–H5, Phoenix as
-// H5). "What is real at each rung" is the ADR's own state column. fill encodes it
-// for the staircase: 1 = built, 0.5 = mechanism exists but unwired, 0 = not built.
-const HEAL_LADDER = [
-  { rung: 'H0', name: 'Restart the process or service', fill: 0, state: 'not built' },
-  { rung: 'H1', name: 'Rebuild a capsule from its recipe', fill: 0, state: 'not built (phase 2)' },
-  { rung: 'H2', name: 'Roll back one offending transaction', fill: 0, state: 'not built' },
-  { rung: 'H3', name: 'Roll back to the last known-good system', fill: 1, state: 'built, as boot policy' },
-  { rung: 'H4', name: 'Rebuild in place from the recovery image', fill: 0.5, state: 'mechanism exists, unwired' },
-  { rung: 'H5', name: 'Phoenix restore from a mesh peer or backup', fill: 0, state: 'not built' },
-];
+// ── flow diagrams (hand-drawn SVG, no chart library) ─────────────────────────
 
-// ── charts (hand-drawn SVG + CSS, no chart library) ──────────────────────────
-
-// Graph 1 · AirMatrix — "found it, fixed it". One bar pair: a same-channel
-// extender conceals 22–30% of downlink packets, the direct path 1.4%. The whole
-// story in one chart. (E22-R1, measured 2026-10-12, 5 GHz, same room.)
-function ConcealmentChart() {
-  // Scale: 30% = full width, so the ~20× gap is honest on screen.
-  const max = 30;
-  const direct = 1.4;
+// A horizontal pipeline: boxes joined by arrows, one annotation row underneath.
+function FlowRow({ nodes, annotations = [], markerId }) {
+  const last = nodes[nodes.length - 1];
+  const totalW = last.x + last.w;
+  const boxY = 24;
+  const boxH = 40;
+  const mid = boxY + boxH / 2;
   return (
-    <div className="space-y-5">
-      <div>
-        <div className="flex items-baseline justify-between gap-3 mb-1.5">
-          <span className="text-xs text-ink-strong font-mono">same-channel extender</span>
-          <span className="text-primary font-display tracking-wider">22–30%</span>
-        </div>
-        <div className="h-3 w-full bg-primary/10 rounded-sm overflow-hidden">
-          <div className="h-full rounded-sm" style={{ width: `${(30 / max) * 100}%`, backgroundColor: 'hsl(var(--chart-5))', opacity: 0.82 }} />
-        </div>
-        <p className="text-[10px] text-ink-max font-mono mt-1">packets concealed, downlink</p>
-      </div>
-      <div>
-        <div className="flex items-baseline justify-between gap-3 mb-1.5">
-          <span className="text-xs text-ink-strong font-mono">direct path</span>
-          <span className="text-primary font-display tracking-wider">1.4%</span>
-        </div>
-        <div className="h-3 w-full bg-primary/10 rounded-sm overflow-hidden">
-          <div className="h-full rounded-sm" style={{ width: `${(direct / max) * 100}%`, backgroundColor: 'hsl(var(--chart-1))' }} />
-        </div>
-        <p className="text-[10px] text-ink-max font-mono mt-1">same link, no extender</p>
-      </div>
-    </div>
-  );
-}
-
-// Graph 2 · MorpheOS — the self-healing ladder. Six rungs, cheapest first, drawn
-// as an ascending staircase; a filled step is built, a half step has its
-// mechanism but is unwired, an outlined step is not built yet.
-function HealLadderChart() {
-  const w = 64;
-  const gap = 14;
-  const baseY = 118;
-  const total = HEAL_LADDER.length * (w + gap) - gap;
-  return (
-    <svg viewBox={`0 0 ${total} 134`} className="w-full h-auto" role="img" aria-label="MorpheOS heal ladder: H0 to H5, cheapest rung first; H3 is built, H4 has its mechanism, the rest are targets">
-      <line x1="0" y1={baseY} x2={total} y2={baseY} stroke="hsl(var(--border))" />
-      {HEAL_LADDER.map((s, i) => {
-        const x = i * (w + gap);
-        const h = 20 + i * 14;
-        const y = baseY - h;
-        return (
-          <g key={s.rung}>
-            <rect
-              x={x}
-              y={y}
-              width={w}
-              height={h}
-              fill={s.fill === 1 ? 'hsl(var(--chart-1))' : 'none'}
-              stroke="hsl(var(--primary))"
-              strokeOpacity={s.fill === 0 ? 0.35 : 1}
-            />
-            {s.fill === 0.5 && (
-              <rect x={x} y={y + h / 2} width={w} height={h / 2} fill="hsl(var(--chart-1))" />
-            )}
-            <text x={x + w / 2} y={baseY + 13} textAnchor="middle" fontSize="10" fill="hsl(var(--text-ink-max))" fontFamily="var(--font-mono)">{s.rung}</text>
-          </g>
-        );
-      })}
+    <svg viewBox={`0 0 ${totalW} 100`} className="w-full h-auto" role="img">
+      <defs>
+        <marker id={markerId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="hsl(var(--primary))" fillOpacity="0.6" />
+        </marker>
+      </defs>
+      {nodes.map((n, i) => (
+        <g key={n.label}>
+          <rect x={n.x} y={boxY} width={n.w} height={boxH} rx="4" fill="hsl(var(--card))" stroke="hsl(var(--border))" />
+          <text x={n.x + n.w / 2} y={mid + 4} textAnchor="middle" fontSize="12.5" fill="hsl(var(--text-ink-strong))" fontFamily={SANS}>{n.label}</text>
+          {i < nodes.length - 1 && (
+            <line x1={n.x + n.w} y1={mid} x2={nodes[i + 1].x} y2={mid} stroke="hsl(var(--primary))" strokeOpacity="0.6" strokeWidth="1.5" markerEnd={`url(#${markerId})`} />
+          )}
+        </g>
+      ))}
+      {annotations.map((a) => (
+        <text key={a.text} x={a.x} y={86} textAnchor="middle" fontSize="10.5" fill="hsl(var(--text-ink-max))" opacity="0.7" fontFamily={SANS}>{a.text}</text>
+      ))}
     </svg>
   );
 }
 
-// ── the page ────────────────────────────────────────────────────────────────
+// The A/B one-shot trial boot, drawn as a decision tree: a committed slot boots a
+// trial once; a healthy trial commits, anything else falls back to the committed slot.
+function TrialBootDiagram() {
+  const box = (x, y, w, label) => (
+    <g key={label}>
+      <rect x={x} y={y} width={w} height={44} rx="4" fill="hsl(var(--card))" stroke="hsl(var(--border))" />
+      <text x={x + w / 2} y={y + 26} textAnchor="middle" fontSize="12.5" fill="hsl(var(--text-ink-strong))" fontFamily={SANS}>{label}</text>
+    </g>
+  );
+  const arrow = (x1, y1, x2, y2) => (
+    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="hsl(var(--primary))" strokeOpacity="0.6" strokeWidth="1.5" markerEnd="url(#trial-arrow)" />
+  );
+  return (
+    <svg viewBox="0 0 520 256" className="w-full h-auto" role="img">
+      <defs>
+        <marker id="trial-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="hsl(var(--primary))" fillOpacity="0.6" />
+        </marker>
+      </defs>
+      {box(160, 12, 200, 'slot A — committed')}
+      {arrow(260, 56, 260, 96)}
+      <text x={268} y={80} textAnchor="start" fontSize="10.5" fill="hsl(var(--text-ink-max))" opacity="0.7" fontFamily={SANS}>boot the trial once</text>
+      {box(160, 96, 200, 'slot B — trial')}
+      {arrow(260, 140, 260, 168)}
+      <line x1={260} y1={168} x2={140} y2={168} stroke="hsl(var(--primary))" strokeOpacity="0.6" strokeWidth="1.5" />
+      <line x1={260} y1={168} x2={380} y2={168} stroke="hsl(var(--primary))" strokeOpacity="0.6" strokeWidth="1.5" />
+      {arrow(140, 168, 140, 200)}
+      {arrow(380, 168, 380, 200)}
+      <text x={132} y={188} textAnchor="end" fontSize="10.5" fill="hsl(var(--text-ink-max))" opacity="0.7" fontFamily={SANS}>not healthy</text>
+      <text x={388} y={188} textAnchor="start" fontSize="10.5" fill="hsl(var(--text-ink-max))" opacity="0.7" fontFamily={SANS}>healthy</text>
+      {box(30, 200, 220, 'fallback — next boot is A')}
+      {box(270, 200, 220, 'commit — B becomes A')}
+    </svg>
+  );
+}
+
+// ── small building blocks ────────────────────────────────────────────────────
+
+// A measured-numbers table: one green header row, values in bold green, sources in ink.
+function Measured({ rows }) {
+  return (
+    <table className="w-full text-sm border-collapse mt-2">
+      <thead>
+        <tr className="border-b border-primary/30">
+          <th className="text-left text-primary font-medium py-2 pr-4">MEASURE</th>
+          <th className="text-left text-primary font-medium py-2 pr-4">VALUE</th>
+          <th className="text-left text-primary font-medium py-2">SOURCE</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.measure} className="border-b border-primary/10 align-top">
+            <td className="py-2 pr-4 text-ink">{r.measure}</td>
+            <td className="py-2 pr-4 text-primary font-semibold whitespace-nowrap">{r.value}</td>
+            <td className="py-2 text-xs text-ink-strong leading-relaxed">{r.source}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// A mechanism: a bolded name followed by its description, as one list item.
+function Mechanism({ name, children }) {
+  return (
+    <li>
+      <strong className="text-primary">{name}.</strong> {children}
+    </li>
+  );
+}
+
+// ── the page ─────────────────────────────────────────────────────────────────
 
 export default function Projects() {
   const targetCount = MORPHEUS_BUILD_TARGETS.length;
   return (
-    <div className="min-h-screen bg-background text-ink">
-      {/* Header — the brand mark and a way back, nothing more. */}
+    <div className="min-h-screen bg-background text-ink font-sans">
       <header className="border-b border-primary/20">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <Link to="/" className="inline-flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary font-display tracking-wider transition-colors">
-            <ArrowLeft size={12} /> MORPHEUS
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-primary/70 hover:text-primary transition-colors">
+            <ArrowLeft size={14} /> Morpheus
           </Link>
           <span className="inline-flex items-center gap-2">
             <img src="/morpheus-icon.svg" alt="" className="w-4 h-4" />
-            <span className="text-[10px] text-ink-max font-mono tracking-[0.2em]">OUR WORK</span>
+            <span className="text-[11px] text-ink-max tracking-wide">OUR WORK</span>
           </span>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6">
-        {/* Hero */}
-        <section className="pt-16 pb-12 md:pt-24 md:pb-16 border-b border-primary/10">
-          <p className="text-[11px] text-primary font-display tracking-[0.3em] uppercase mb-6">OUR WORK</p>
-          <h1 className="text-3xl md:text-5xl font-display text-primary tracking-tight leading-tight">
-            Three things that shouldn&rsquo;t exist yet.
-          </h1>
-          <p className="mt-6 text-base text-ink leading-relaxed max-w-2xl">
-            One team. Three things that shouldn&rsquo;t exist yet — an AI that ships real software, an
-            operating system that can&rsquo;t break, and broadcast-grade audio over the Wi-Fi you already own.
+      <main className="max-w-3xl mx-auto px-6">
+        <section className="pt-14 pb-12 border-b border-primary/10">
+          <h1 className="text-3xl font-semibold text-primary tracking-tight">OUR WORK</h1>
+          <p className="mt-4 text-base text-ink leading-relaxed">
+            A technical briefing on three systems: a build engine, an operating system, and a
+            wireless-audio transport. Each section describes what the system is, how it works, and the
+            measured numbers behind it.
           </p>
         </section>
 
-        {/* 01 · Morpheus */}
-        <section className="py-14 md:py-20 border-b border-primary/10">
-          <div className="grid md:grid-cols-2 gap-10">
-            <div>
-              <p className="text-[11px] text-primary font-display tracking-[0.25em] uppercase">01 · Morpheus — the builder</p>
-              <h2 className="mt-4 text-2xl md:text-3xl font-display text-primary tracking-tight">
-                It doesn&rsquo;t generate code. It ships working software.
-              </h2>
-              <div className="mt-5 space-y-4 text-sm text-ink leading-relaxed">
-                <p>
-                  Morpheus builds real, installable artifacts for <strong className="text-primary font-normal">thirteen targets</strong> —
-                  native apps for Android, iOS, macOS, Windows and Linux, Raspberry Pi images, Python packages,
-                  web apps, Arduino firmware, and audio plugins for all three desktop platforms.
-                </p>
-                <p>
-                  And it builds <strong className="text-primary font-normal">itself</strong>: a planner proposes, a coder writes, an
-                  independent reviewer is the safety net, and a merge gate enforced by GitHub keeps broken changes
-                  out. It runs where you want — including fully portable and offline.
-                </p>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-baseline gap-3 mb-4">
-                <span className="text-5xl font-display text-primary tracking-wider">{targetCount}</span>
-                <span className="text-xs text-ink-strong font-mono tracking-wider">compile targets, one AI</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {MORPHEUS_BUILD_TARGETS.map((t) => (
-                  <span key={t} className="text-[10px] text-ink-max font-mono border border-primary/25 px-2 py-1 rounded-sm">{t}</span>
-                ))}
-              </div>
-              <p className="text-[10px] text-ink-max font-mono mt-3 leading-relaxed">
-                The list is asserted against <code className="text-[10px]">server/src/lib/compile-targets/</code> at build
-                time, so it cannot drift from what actually ships.
-              </p>
-            </div>
+        {/* 1 · Morpheus */}
+        <section className="py-12 border-b border-primary/10">
+          <h2 className="text-xl font-semibold text-primary">1 · Morpheus — a self-hosting build engine</h2>
+          <p className="mt-4 text-base text-ink leading-relaxed">
+            Morpheus turns a description of software into working, installable artifacts. It does not stop at
+            generated code: it lands a compiled, installable result for each target it supports, and it builds
+            itself the same way.
+          </p>
+
+          <div className="mt-6">
+            <FlowRow
+              markerId="morpheus-arrow"
+              nodes={[
+                { x: 0, w: 120, label: 'planner' },
+                { x: 144, w: 120, label: 'coder' },
+                { x: 288, w: 120, label: 'reviewer' },
+                { x: 432, w: 130, label: 'merge gate' },
+                { x: 586, w: 134, label: `${targetCount} targets` },
+              ]}
+              annotations={[
+                { x: 348, text: 'a different model' },
+                { x: 497, text: 'GitHub · strict · 3 checks' },
+              ]}
+            />
+          </div>
+
+          <ul className="mt-6 space-y-2.5 text-sm text-ink leading-relaxed">
+            <Mechanism name="Three-role loop">planner → coder → reviewer. The reviewer runs a <em className="text-primary">different model</em> from the coder on purpose — a same-model review grades its own work, so it is not a safety net.</Mechanism>
+            <Mechanism name="Merge gate">branch protection on the main branch, with strict up-to-date heads and three required checks (guards, lint + build, render). A broken change physically cannot land.</Mechanism>
+            <Mechanism name="Compile targets">Android, iOS, macOS, Windows, Linux, Raspberry Pi, Python, web, Arduino, and audio plugins for all three desktop OSes.</Mechanism>
+            <Mechanism name="Mutation-tested guards">every check is proven to fail before it ships — a guard that cannot fail is not a guard.</Mechanism>
+            <Mechanism name="Portable">installs and runs anywhere, offline.</Mechanism>
+          </ul>
+
+          <div className="mt-6">
+            <p className="text-[11px] text-primary uppercase tracking-wide">MEASURED</p>
+            <Measured
+              rows={[
+                { measure: 'Compile targets', value: String(targetCount), source: 'server/src/lib/compile-targets/ — asserted by scripts/reality.mjs' },
+                { measure: 'Mutation-tested guards', value: '456', source: 'scripts/verify-guard-mutations.mjs — "proven: 456 guard(s)"' },
+              ]}
+            />
           </div>
         </section>
 
-        {/* 02 · MorpheOS */}
-        <section className="py-14 md:py-20 border-b border-primary/10">
-          <p className="text-[11px] text-primary font-display tracking-[0.25em] uppercase">02 · MorpheOS — the operating system</p>
-          <h2 className="mt-4 text-2xl md:text-3xl font-display text-primary tracking-tight">
-            Delete the system folder live on stage. It comes back.
-          </h2>
-          <div className="mt-6 grid md:grid-cols-2 gap-10">
-            <div className="space-y-4 text-sm text-ink leading-relaxed">
-              <p>
-                An OS built around one idea: <strong className="text-primary font-normal">it never breaks, and when it does, it fixes
-                itself.</strong> Updates are a one-shot trial — try the new version, commit it only if it&rsquo;s healthy,
-                fall back automatically the instant it isn&rsquo;t.
-              </p>
-              <p>
-                A broken slot is rebuilt in <strong className="text-primary font-normal">~7 seconds, measured</strong> — not estimated.
-                A transaction engine takes a change back the moment the machine says no.
-              </p>
-              <p>
-                On top sits a real Wayland compositor written in Rust — not a skin over GNOME. Open core,
-                Apache-2.0, on the Linux kernel.
-              </p>
-            </div>
-            <div>
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div>
-                  <div className="text-2xl font-display text-primary tracking-wider">~7 s</div>
-                  <div className="text-[10px] text-ink-max font-mono mt-1 leading-snug">heal repair, measured</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-display text-primary tracking-wider">~5.9 s</div>
-                  <div className="text-[10px] text-ink-max font-mono mt-1 leading-snug">update install, measured</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-display text-primary tracking-wider">~3×</div>
-                  <div className="text-[10px] text-ink-max font-mono mt-1 leading-snug">faster updates from a slimmer payload</div>
-                </div>
-              </div>
-              <HealLadderChart />
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
-                <span className="inline-flex items-center gap-1.5 text-[10px] text-ink-max font-mono"><span className="w-2 h-2 inline-block rounded-sm" style={{ backgroundColor: 'hsl(var(--chart-1))' }} /> built</span>
-                <span className="inline-flex items-center gap-1.5 text-[10px] text-ink-max font-mono"><span className="w-2 h-2 inline-block rounded-sm border border-primary/50" /> not built</span>
-                <span className="inline-flex items-center gap-1.5 text-[10px] text-ink-max font-mono"><span className="w-2 h-2 inline-block rounded-sm" style={{ background: 'linear-gradient(to top, hsl(var(--chart-1)) 50%, transparent 50%)', border: '1px solid hsl(var(--primary))' }} /> mechanism exists</span>
-              </div>
-              <ul className="mt-4 space-y-1 border-t border-primary/10 pt-3">
-                {HEAL_LADDER.map((s) => (
-                  <li key={s.rung} className="flex items-baseline justify-between gap-4 text-[11px] font-mono">
-                    <span className="text-ink-max shrink-0">{s.rung}</span>
-                    <span className="text-ink-max flex-1 leading-snug">{s.name}</span>
-                    <span className="text-ink-max shrink-0 opacity-80">{s.state}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+        {/* 2 · MorpheOS */}
+        <section className="py-12 border-b border-primary/10">
+          <h2 className="text-xl font-semibold text-primary">2 · MorpheOS — a self-healing operating system</h2>
+          <p className="mt-4 text-base text-ink leading-relaxed">
+            MorpheOS is built around one property: it does not break, and when it does, it repairs itself.
+            The mechanism is a one-shot trial for every change, not a promise.
+          </p>
+
+          <div className="mt-6">
+            <TrialBootDiagram />
+            <p className="mt-2 text-xs text-ink-strong leading-relaxed">
+              Rollback is boot-counted, not self-reported: a panicking kernel cannot mark its own trial failed,
+              so the fallback is decided by the boot counter, not by the kernel&rsquo;s word.
+            </p>
+          </div>
+
+          <ul className="mt-6 space-y-2.5 text-sm text-ink leading-relaxed">
+            <Mechanism name="A/B one-shot trial boot">a new version boots once as a trial; it is committed only if healthy, and falls back automatically otherwise — including the crash case.</Mechanism>
+            <Mechanism name="Transaction engine">arm → apply → health-check → commit | rollback. A process that dies mid-change leaves a machine that rolls itself back.</Mechanism>
+            <Mechanism name="Heal engine">rebuilds a broken slot in ~7.4 seconds, measured.</Mechanism>
+            <Mechanism name="Manifest applier">a service-graph change that breaks an invariant is refused, never applied — the machine stops accepting changes that would break it.</Mechanism>
+            <Mechanism name="Flow shell">a Wayland compositor written in Rust (Smithay), not a skin over GNOME.</Mechanism>
+          </ul>
+
+          <div className="mt-6">
+            <p className="text-[11px] text-primary uppercase tracking-wide">MEASURED</p>
+            <Measured
+              rows={[
+                { measure: 'Broken-slot rebuild (heal)', value: '~7.4 s', source: 'x86 test VM, serial logs (2026-10-11)' },
+              ]}
+            />
           </div>
         </section>
 
-        {/* 03 · AirMatrix */}
-        <section className="py-14 md:py-20 border-b border-primary/10">
-          <p className="text-[11px] text-primary font-display tracking-[0.25em] uppercase">03 · AirMatrix — the audio</p>
-          <h2 className="mt-4 text-2xl md:text-3xl font-display text-primary tracking-tight">
-            Broadcast-grade wireless audio, on the Wi-Fi you already own. Bought once.
-          </h2>
-          <div className="mt-6 grid md:grid-cols-2 gap-10">
-            <div className="space-y-4 text-sm text-ink leading-relaxed">
-              <p>
-                Today, wireless audio on a stage means Shure/Audinate-class systems at thousands per channel,
-                locked to one vendor. AirMatrix makes the same broadcast-grade quality — tight sync, low latency,
-                loss concealment, a full desk mixed from a browser — work on ordinary consumer Wi-Fi.
-              </p>
-              <p>
-                <strong className="text-primary font-normal">132 dB</strong> through the loopback; amp models run real-time on a
-                Pi-class ARM chip (WaveNet <strong className="text-primary font-normal">1.96×</strong>, NAM{' '}
-                <strong className="text-primary font-normal">6.42×</strong>).
-              </p>
-              <p>
-                And the field work is the tell: when the link under-performed, we <strong className="text-primary font-normal">measured</strong> it
-                and found the real culprit — a same-channel extender — instead of guessing.
-              </p>
-            </div>
-            <div>
-              <ConcealmentChart />
-              <p className="text-[10px] text-ink-max font-mono mt-4 leading-relaxed">
-                Measured 2026-10-12 (E22-R1), 5 GHz, same room. WaveNet / NAM throughput on an ARM runner,
-                64-frame blocks, bit-identical to the reference.
-              </p>
-            </div>
+        {/* 3 · AirMatrix */}
+        <section className="py-12 border-b border-primary/10">
+          <h2 className="text-xl font-semibold text-primary">3 · AirMatrix — broadcast-grade audio over consumer Wi-Fi</h2>
+          <p className="mt-4 text-base text-ink leading-relaxed">
+            AirMatrix replaces the proprietary wireless audio of live sound with software running on the Wi-Fi
+            already installed in the room. The transport is sample-accurate, and its failure modes are measured
+            rather than guessed.
+          </p>
+
+          <div className="mt-6">
+            <FlowRow
+              markerId="airmatrix-arrow"
+              nodes={[
+                { x: 0, w: 84, label: 'capture' },
+                { x: 96, w: 84, label: 'encode' },
+                { x: 192, w: 84, label: 'sync' },
+                { x: 288, w: 96, label: 'network' },
+                { x: 396, w: 108, label: 'jitter buffer' },
+                { x: 516, w: 108, label: 'concealment' },
+                { x: 636, w: 84, label: 'playout' },
+              ]}
+              annotations={[
+                { x: 234, text: 'AMT-Sync' },
+                { x: 570, text: 'no audible gap' },
+              ]}
+            />
+          </div>
+
+          <ul className="mt-6 space-y-2.5 text-sm text-ink leading-relaxed">
+            <Mechanism name="Sample-accurate sync and concealment">a dropped packet is recovered with no audible gap — 132 dB through the loopback.</Mechanism>
+            <Mechanism name="Lock-free audio tap">the audio thread does a plain copy (no lock, no allocation, no FFT); analysis runs off the packet path, so metering never touches latency.</Mechanism>
+            <Mechanism name="E22 field result">when a link under-performed, the culprit was measured — a same-channel extender concealing 22–30% of packets, collapsing to 1.4% on the direct path.</Mechanism>
+            <Mechanism name="The open mt76 driver">the only Wi-Fi stack that can be tuned end-to-end for real-time — power-save off at the driver, real-time IRQs.</Mechanism>
+          </ul>
+
+          <div className="mt-6">
+            <p className="text-[11px] text-primary uppercase tracking-wide">MEASURED</p>
+            <Measured
+              rows={[
+                { measure: 'Loopback signal-to-noise', value: '132 dB', source: 'tone SNR, no processing — AirMatrix technical disclosure and field runs' },
+                { measure: 'Downlink concealment, extender vs direct', value: '22–30% vs 1.4%', source: 'E22-R1 field run, 5 GHz, same room (2026-10-12)' },
+              ]}
+            />
           </div>
         </section>
 
-        {/* Credibility strip */}
-        <section className="py-14 md:py-16">
-          <p className="text-[11px] text-primary font-display tracking-[0.25em] uppercase mb-6">The work is verified</p>
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="border border-primary/15 rounded-sm p-5">
-              <div className="text-2xl font-display text-primary tracking-wider">456</div>
-              <p className="text-xs text-ink-strong leading-relaxed mt-2">
-                guards, each mutation-tested to fail before it ships — every check we claim is proven to catch
-                the thing it claims to catch.
-              </p>
-            </div>
-            <div className="border border-primary/15 rounded-sm p-5">
-              <div className="text-2xl font-display text-primary tracking-wider">GitHub</div>
-              <p className="text-xs text-ink-strong leading-relaxed mt-2">
-                a merge gate enforced by GitHub — broken changes physically cannot land.
-              </p>
-            </div>
-            <div className="border border-primary/15 rounded-sm p-5">
-              <div className="text-2xl font-display text-primary tracking-wider">3 OS</div>
-              <p className="text-xs text-ink-strong leading-relaxed mt-2">
-                built and tested across macOS, Windows and Linux — we build the things we tell you we build.
-              </p>
-            </div>
-          </div>
+        <section className="py-12">
+          <p className="text-sm text-ink leading-relaxed">
+            All figures above are measured and taken from the systems&rsquo; own repositories and experiment
+            records. Where a mechanism is not yet built, that is stated rather than implied.
+          </p>
         </section>
       </main>
 
       <footer className="border-t border-primary/10">
-        <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between gap-4">
-          <span className="text-[10px] text-ink-max font-mono">MORPHEUS · MORPHEOS · AIRMATRIX</span>
-          <Link to="/" className="text-xs text-primary/70 hover:text-primary font-display tracking-wider transition-colors">HOME</Link>
+        <div className="max-w-3xl mx-auto px-6 py-6 flex items-center justify-between gap-4">
+          <span className="text-[11px] text-ink-max">MORPHEUS · MORPHEOS · AIRMATRIX</span>
+          <Link to="/" className="text-sm text-primary/70 hover:text-primary transition-colors">HOME</Link>
         </div>
       </footer>
     </div>
