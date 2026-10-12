@@ -30,6 +30,7 @@ const PortableMorpheusDownload = lazy(() => import('@/pages/PortableMorpheusDown
 const Terms = lazy(() => import('@/pages/Terms'));
 const Privacy = lazy(() => import('@/pages/Privacy'));
 const RefundPolicy = lazy(() => import('@/pages/RefundPolicy'));
+const Projects = lazy(() => import('@/pages/Projects'));
 const BackendDocs = lazy(() => import('@/pages/BackendDocs'));
 const RebuildBlueprint = lazy(() => import('@/pages/RebuildBlueprint'));
 const Screenshots = lazy(() => import('@/pages/Screenshots'));
@@ -142,6 +143,10 @@ function AnimatedRoutes() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/refund-policy" element={<RefundPolicy />} />
+          {/* Our Work — the investor-facing projects page (Morpheus / MorpheOS /
+              AirMatrix). A public marketing route like the legal pages above, not
+              a protected one: a first-time visitor reads it without signing in. */}
+          <Route path="/projects" element={<Projects />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />

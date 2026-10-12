@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Store, FileText, Camera, ShieldCheck, Sparkles, DollarSign, Rocket, LayoutDashboard, Globe, BookOpen } from 'lucide-react';
+import { Download, Store, FileText, Camera, ShieldCheck, Sparkles, DollarSign, Rocket, LayoutDashboard, Globe, BookOpen, Layers } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
 import DonateWidget from '@/components/matrix/DonateWidget';
@@ -210,6 +210,16 @@ export default function Landing() {
           <a href="/downloads" className="px-8 py-3 border border-primary/40 text-primary/70 hover:bg-primary/90 hover:text-black transition-colors font-display tracking-wider inline-flex items-center gap-2">
             <Download size={16} /> DOWNLOADS
           </a>
+        </div>}
+
+        {/* OUR WORK — the investor-facing projects page (Morpheus / MorpheOS /
+            AirMatrix), placed under DOWNLOADS. This one IS an SPA route (unlike
+            /downloads above, which is a static page), so it is a client-side
+            <Link>: the router owns /projects. */}
+        {showButtons && <div className="mt-3 flex justify-center">
+          <Link to="/projects" className="px-8 py-3 border border-primary/40 text-primary/70 hover:bg-primary/90 hover:text-black transition-colors font-display tracking-wider inline-flex items-center gap-2">
+            <Layers size={16} /> OUR WORK
+          </Link>
         </div>}
 
         {/* Core principle + live capability list. Reads from the shared

@@ -394,6 +394,9 @@ const PUBLIC_ROUTES = [
   ['/portable-morpheus', '0.8'],
   // Everything downloadable, in one place — and linked from the landing page, not only from here.
   ['/downloads', '0.8'],
+  // Our Work — the investor-facing projects page (Morpheus / MorpheOS / AirMatrix),
+  // linked from the landing page under DOWNLOADS.
+  ['/projects', '0.8'],
   ['/register', '0.7'],
   ['/login', '0.5'],
   ['/terms', '0.3'],
