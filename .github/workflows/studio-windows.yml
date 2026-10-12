@@ -1,0 +1,69 @@
+# The studio lane on WINDOWS — and it is manual only, on purpose.
+#
+# WHY THIS EXISTS
+#
+# The repo ships a Windows installer and a Windows compile target, and until now NOTHING in CI ran on
+# Windows at all. The four defects that made the downloadable Portable Morpheus impossible to install
+# (a missing server manifest, a missing vite entry, an excluded module the frontend imports, and a plugin
+# package whose bytes moved with the builder's timezone) were all found by installing the thing on a real
+# machine — never by a check. A Windows runner is the cheapest way to have that class of check at all.
+#
+# WHY `workflow_dispatch` AND NOT `pull_request`
+#
+# A self-hosted job QUEUES while its machine is off, and a queued check is indistinguishable from a check
+# that will never run. On a pull request that would make every merge in the repo wait on a laptop being
+# awake — which is why the macOS lane is advisory and why this one is manual. Run it from the Actions tab
+# or `gh workflow run studio-windows.yml`. If it ever becomes a gate, it goes behind a repo variable, the
+# way the airmatrix repo does it, so it can be flipped back without editing a workflow.
+name: Studio lane (Windows, self-hosted)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-studio:
+    name: studio windows (self-hosted)
+    # Label-scoped: a runner must carry ALL of these, so this cannot land on a GitHub-hosted runner or on
+    # the macOS runner beside it.
+    runs-on: [self-hosted, studio, windows]
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      # The machine's own report, first. "Which machine ran this" is the question a self-hosted lane exists
+      # to answer, and on 2026-10-12 a mesh job claimed a measurement from the wrong machine — so it is
+      # asked, not assumed.
+      - name: Which machine actually took this job
+        run: |
+          "runner name : $env:RUNNER_NAME"
+          "runner os   : $env:RUNNER_OS / $env:RUNNER_ARCH"
+          "hostname    : $(hostname)"
+          "node        : $(node --version)"
+          "npm         : $(npm --version)"
+          "powershell  : $($PSVersionTable.PSVersion)"
+          "workspace   : $env:GITHUB_WORKSPACE"
+
+      # NO INSTALL, deliberately: these guards import nothing but node builtins and the repo's own pure
+      # rule modules. Running them on Windows is the assertion that they still do — and the reason this
+      # lane is worth having is that a guard can pass on a case-insensitive macOS filesystem or a
+      # case-sensitive Linux one and still be wrong on Windows.
+      - name: The portable guards — no dependencies, on Windows
+        run: |
+          node scripts/verify-portable-bundle.mjs
+          node scripts/verify-portable-ai.mjs
+          node scripts/verify-portable-launcher.mjs
+          node scripts/verify-portable-setup.mjs
+          node scripts/verify-portable-remote.mjs
+
+      - name: What this lane has NOT proven
+        run: |
+          "Still on ubuntu-latest: guards (no install), lint + build, render."
+          "This lane proves the mechanism on Windows: a job reaches our hardware and the guards pass there."
+          "It is manual because a self-hosted job queues while the machine is off, and a queued check on a"
+          "pull request would block every merge in the repo."
