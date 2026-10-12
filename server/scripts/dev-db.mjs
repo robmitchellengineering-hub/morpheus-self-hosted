@@ -26,7 +26,7 @@
  * whatever the app is configured to use.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync, openSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -110,10 +110,22 @@ function start() {
     console.log('  already running')
   } else {
     mkdirSync(dirname(LOG), { recursive: true })
-    const out = openSync(LOG, 'a')
+    // ⚠️ DO NOT HOLD THE LOG FILE OPEN WHILE `pg_ctl -l` OPENS IT. It used to do
+    // `const out = openSync(LOG, 'a')` and pass `stdio: ['ignore', out, out]` alongside `-l LOG`. POSIX
+    // allows that; Windows does not, and the portable installer therefore worked on macOS and could never
+    // start its database on Windows:
+    //
+    //   waiting for server to start....The process cannot access the file because it is being used by
+    //   another process.
+    //   pg_ctl: could not start server
+    //
+    // Measured 2026-10-12 by installing the published download on a real Windows machine — the same bundle
+    // that installs and runs on the Mac. `-l` already sends the SERVER's output to the log, so the extra
+    // handle was redundant as well as fatal; pg_ctl's own messages are captured from its pipe instead, which
+    // is what the error below now prints.
     // -w waits for readiness; -l sends server output to the log.
-    const r = run(pg_ctl, ['-D', DATA, '-l', LOG, '-o', `-p ${cfg.port}`, '-w', 'start'], { stdio: ['ignore', out, out] })
-    if (r.status !== 0) throw new Error(`pg_ctl start failed — see ${LOG}`)
+    const r = run(pg_ctl, ['-D', DATA, '-l', LOG, '-o', `-p ${cfg.port}`, '-w', 'start'])
+    if (r.status !== 0) throw new Error(`pg_ctl start failed — see ${LOG}\n${(r.stdout || '') + (r.stderr || '')}`)
     console.log(`  started on port ${cfg.port} (log: ${LOG.replace(SERVER + '/', '')})`)
   }
 
