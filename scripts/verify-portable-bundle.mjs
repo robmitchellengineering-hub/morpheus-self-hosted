@@ -102,12 +102,23 @@ check('the base44 module the frontend still imports ships',
   isPortableFile('base44/shared/infrastructureComponents.ts'), true);
 check('…because a shipped component imports it (so this cannot be dropped by accident)',
   /base44\/shared\/infrastructureComponents/.test(read('src/components/matrix/BackendPanel.jsx')), true);
+// THE SAME PRINCIPLE, ONE TREE OVER. The bundle ships the verification suite in full, and that suite
+// IMPORTS the broker's metering module (`scripts/verify-cloud-metering.mjs`) and READS its server.js,
+// README and manifest. With `hosted-broker/` excluded the suite died at module load, so the broker's
+// source now ships. What ships is code; the service stays separately deployed and its `.env` is
+// excluded below.
+check('the broker the shipped verification suite imports ships',
+  isPortableFile('hosted-broker/src/metering.js'), true);
+check('…and the manifest scripts/verify-license-terms.mjs reads',
+  isPortableFile('hosted-broker/package.json'), true);
+check('…because a shipped script really imports it (so this cannot be dropped by accident)',
+  /from '\.\.\/hosted-broker\/src\/metering\.js'/.test(read('scripts/verify-cloud-metering.mjs')), true);
 // The nesting trap: this directory contains the download page's own assets, inside public/.
 check('the portable download machinery does not nest inside itself',
   isPortableFile('public/portable-morpheus/_source/README.md'), false);
 check('…even though public/ itself ships', isPortableFile('public/deck.html'), true);
 check('credentials never ship',
-  [isPortableFile('server/.env'), isPortableFile('server/.env.prodsql'), isPortableFile('server/.env.northflank')].join(','), 'false,false,false');
+  [isPortableFile('server/.env'), isPortableFile('server/.env.prodsql'), isPortableFile('server/.env.northflank'), isPortableFile('hosted-broker/.env')].join(','), 'false,false,false,false');
 check('build products never ship',
   [isPortableFile('node_modules/jszip/index.js'), isPortableFile('dist/assets/main.js'), isPortableFile('public/morpheus-wordpress-plugin.zip')].join(','), 'false,false,false');
 check('dotfiles never ship', isPortableFile('.github/workflows/ci.yml'), false);

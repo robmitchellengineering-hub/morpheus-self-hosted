@@ -4218,7 +4218,7 @@ export const MUTATIONS = [
     replace: "  return bytes;\n",
   },
   {
-    guard: 'verify-shipped-src-imports.mjs',
+    guard: 'verify-shipped-imports.mjs',
     file: 'src/components/matrix/BackendPanel.jsx',
     // The general debt #629 recorded: a shipped src/ file importing something outside src/ that the
     // bundle does not ship. Pointing the frontend's one cross-tree import at the superseded
@@ -4226,6 +4226,40 @@ export const MUTATIONS = [
     why: 'Points the shipped frontend\'s cross-tree import at the superseded base44/functions tree, so a shipped src/ file imports a file the bundle does not ship.',
     find: "'../../../base44/shared/infrastructureComponents'",
     replace: "'../../../base44/functions/autonomousBuildStep/entry'",
+  },
+  {
+    guard: 'verify-shipped-imports.mjs',
+    file: 'scripts/verify-cloud-metering.mjs',
+    // ⭐ THE HALF THE ORIGINAL GUARD COULD NOT SEE. #638 walked `src/**` only, so this same bug class sat
+    // one directory over in the tree the bundle ships BECAUSE it is the suite a self-hoster runs. This
+    // mutation recreates it without touching the ship list: the liveness check still passes (the broker
+    // ships), so only the whole-tree walk can catch a shipped script importing an unshipped tree — which
+    // is the scripts/ coverage this change added.
+    why: 'Points the shipped verification suite\'s cross-tree import at the unshipped portable-architect tree, so a shipped script imports a file the bundle does not ship.',
+    find: "'../hosted-broker/src/metering.js'",
+    replace: "'../portable-architect/server/llm.js'",
+  },
+  {
+    guard: 'verify-shipped-imports.mjs',
+    file: 'server/src/lib/portableBundle.js',
+    // ⭐ THE REGRESSION ITSELF, at its source. Dropping the broker from the ship list is exactly how the
+    // gap reopened after #629: the rule ships an importer (scripts/) and not the import. Both the rule's
+    // own liveness check and the walk must go red, so the fix cannot be undone silently.
+    why: 'Drops the broker from the bundle\'s ship list, so the shipped verification suite imports an unshipped tree again — the exact gap this guard was generalised for.',
+    find: "  'hosted-broker/',",
+    replace: '',
+  },
+  {
+    guard: 'verify-shipped-imports.mjs',
+    file: 'scripts/verify-shipped-imports.mjs',
+    // THE SCANNER'S OWN PROOF, broken on purpose. The regex branch is what stops a quote inside a regex
+    // (`replace(/'/g, '"')`, which the shipped scripts really contain) from opening a phantom string and
+    // reading the string FIXTURES after it as real imports — the four false positives that made this
+    // guard fail on a healthy tree until the branch was added. With it removed, the fixture checks must
+    // go red; if they do not, the scanner is not actually proven before it judges anything.
+    why: 'Removes the regex-literal branch from the scanner, so a quote inside a regex flips its state and the string fixtures after it are read as real imports.',
+    find: "    if (c === '/' && (prev === '' || REGEX_MAY_FOLLOW.has(prev) || REGEX_KEYWORDS.has(prevWord))) {",
+    replace: '    if (false) {',
   },
 ];
 
