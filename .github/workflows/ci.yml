@@ -542,6 +542,12 @@ jobs:
       - name: Portable bundle is generated from the code it ships
         run: node scripts/verify-portable-bundle.mjs
 
+      # The general guard #629 recorded but never built: every relative import in the shipped
+      # frontend that leaves src/ must resolve to a file the bundle ships, or the download cannot
+      # build. A whitelist review will not catch a missing shipped import — only this assertion will.
+      - name: Every shipped src/ import that leaves src/ resolves to a shipped file
+        run: node scripts/verify-shipped-src-imports.mjs
+
       # The installer has to finish the job on someone else's machine: real secrets, a database it
       # delegates rather than re-implements, and an honest list of what it still does not do.
       - name: Portable installer holds up its end

@@ -4217,6 +4217,16 @@ export const MUTATIONS = [
     find: "  if (!bytes.includes('\\r\\n')) return bytes;\n",
     replace: "  return bytes;\n",
   },
+  {
+    guard: 'verify-shipped-src-imports.mjs',
+    file: 'src/components/matrix/BackendPanel.jsx',
+    // The general debt #629 recorded: a shipped src/ file importing something outside src/ that the
+    // bundle does not ship. Pointing the frontend's one cross-tree import at the superseded
+    // base44/functions tree (which must never ship) is the exact omission that broke the download.
+    why: 'Points the shipped frontend\'s cross-tree import at the superseded base44/functions tree, so a shipped src/ file imports a file the bundle does not ship.',
+    find: "'../../../base44/shared/infrastructureComponents'",
+    replace: "'../../../base44/functions/autonomousBuildStep/entry'",
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
