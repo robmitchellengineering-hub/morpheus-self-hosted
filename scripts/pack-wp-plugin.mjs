@@ -13,7 +13,7 @@
 import JSZip from 'jszip';
 import { rmSync, mkdirSync, existsSync, readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { undeliverable } from './lib/wpPluginRelease.mjs';
+import { undeliverable, packedBytes } from './lib/wpPluginRelease.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -100,7 +100,8 @@ try {
   const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');
   const zip = new JSZip();
   for (const rel of files) {
-    zip.file(`morpheus/${rel}`, readFileSync(resolve(src, rel)), {
+    // packedBytes: CRLF back to LF, so a Windows autocrlf checkout packs the commit's bytes (see its note).
+    zip.file(`morpheus/${rel}`, packedBytes(rel, readFileSync(resolve(src, rel))), {
       date: FIXED_MTIME,
       createFolders: false,
       unixPermissions: 0o100644, // a regular file, rw-r--r--: without S_IFREG, unzip -Z shows '?rw-r--r--'

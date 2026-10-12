@@ -4208,6 +4208,15 @@ export const MUTATIONS = [
     find: "const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');",
     replace: 'const FIXED_MTIME = new Date(2020, 0, 1);',
   },
+  {
+    guard: 'verify-plugin-pack.mjs',
+    file: 'scripts/lib/wpPluginRelease.mjs',
+    // Measured 2026-10-12: a Windows autocrlf checkout packed 203,370 bytes against 202,420 elsewhere.
+    why: 'Stops turning CRLF back into LF, so a Windows autocrlf checkout packs different bytes from the commit and its build is refused.',
+    needsInstall: true,
+    find: "  if (!bytes.includes('\\r\\n')) return bytes;\n",
+    replace: "  return bytes;\n",
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────

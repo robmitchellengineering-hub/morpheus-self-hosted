@@ -213,6 +213,11 @@ for (const name of Object.keys(unpacked.files).sort()) {
   if (body.includes('\r\n')) crlf.push(name);
 }
 check('no file in the package has CRLF line endings, so a Windows checkout packs the same bytes', crlf, []);
+// …and the normalisation the packer applies, called directly (it cannot be observed on an LF checkout).
+const { packedBytes } = await import('./lib/wpPluginRelease.mjs');
+check('a CRLF php file is packed as LF', packedBytes('includes/x.php', Buffer.from('<?php\r\necho 1;\r\n')).toString(), '<?php\necho 1;\n');
+check('an LF file is packed unchanged', packedBytes('readme.txt', Buffer.from('a\nb\n')).toString(), 'a\nb\n');
+check('a non-text file is never rewritten', packedBytes('icon.png', Buffer.from('a\r\nb')).toString(), 'a\r\nb');
 check('nothing from tests/ is in the package', names.filter((f) => has(f, 'tests/')), []);
 
 // ── 4. every entry carries the pinned timestamp, exactly ────────────────────
