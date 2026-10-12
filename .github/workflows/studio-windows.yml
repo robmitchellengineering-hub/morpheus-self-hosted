@@ -72,3 +72,40 @@ jobs:
           "This lane proves the mechanism on Windows: a job reaches our hardware and the guards pass there."
           "It is manual because a self-hosted job queues while the machine is off, and a queued check on a"
           "pull request would block every merge in the repo."
+
+  # A SECOND JOB, on purpose. The first one asserts that the portable guards are still no-install on
+  # Windows; this one INSTALLS and BUILDS, which is a different claim and would destroy the first if they
+  # shared a job. What it proves is new: this repo ships a Windows installer and a windows-exe compile
+  # target, and until now NOTHING in CI had ever built the frontend on Windows. Every Windows-specific
+  # breakage so far (a case-insensitive path, a `pwsh` that is not there, an execution policy that blocks
+  # the runner's own step scripts) was found by running something, never by reading it.
+  windows-build:
+    name: studio windows build (self-hosted)
+    runs-on: [self-hosted, studio, windows]
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which machine is building
+        run: |
+          "runner   : $env:RUNNER_NAME on $(hostname)"
+          "node     : $(node --version)   npm: $(npm --version)"
+          "free GB  : " + [math]::Round((Get-PSDrive C).Free / 1GB, 1)
+
+      - name: Install (root)
+        run: npm install --no-audit --no-fund
+
+      - name: Build the frontend on Windows
+        run: npm run build
+
+      - name: The build produced what it claims to
+        run: |
+          $needed = @('dist\index.html', 'dist\deck.html')
+          foreach ($f in $needed) {
+            if (-not (Test-Path $f)) { Write-Error "the build did not produce $f"; exit 1 }
+            "  produced $f (" + [math]::Round((Get-Item $f).Length / 1KB, 1) + " KB)"
+          }
+          "OK: the frontend builds on Windows"
