@@ -117,6 +117,7 @@ const HARD = [
   'verify-portable-ai.mjs',
   'verify-portable-launcher.mjs',
   'verify-portable-platform.mjs',
+  'verify-shipped-src-imports.mjs',
   'verify-cloud-metering.mjs',
   'verify-build-gate-failopen.mjs',
   'verify-delivery-posture.mjs',
