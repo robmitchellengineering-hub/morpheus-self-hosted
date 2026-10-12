@@ -26,3 +26,25 @@ export function undeliverable(live, next) {
   return `the plugin changed but the version did not (still ${next.version}), so no site will ever be offered it`;
 }
 
+
+/**
+ * ⚠️ THE BYTES A SOURCE FILE IS PACKED AS: its text with CRLF turned back into LF.
+ *
+ * The package must describe the COMMIT, not the checkout. Measured 2026-10-12: a Windows machine with
+ * `core.autocrlf=true` packed 0.9.14 to 203,370 bytes / e17dd0f4… while macOS and Linux packed 202,420 /
+ * 05bb75db… from the same commit — every LF had become CRLF on checkout. `.gitattributes` pins wp-plugin/ to
+ * `eol=lf`, but a checkout made before that pin (a reused CI workspace, a developer's existing clone) keeps
+ * its CRLF files until they are rewritten, and the deliverability check would refuse its build. Git stores
+ * these files with LF, so LF is what ships, whatever the working tree did to them.
+ *
+ * Only text the plugin is made of is touched; anything else passes through byte for byte.
+ *
+ * @param {string} name   path inside the plugin
+ * @param {Buffer} bytes  as read from disk
+ * @return {Buffer}
+ */
+export function packedBytes(name, bytes) {
+  if (!/\.(php|txt|md|json|js|css|sh|html|xml|pot|po)$/i.test(name)) return bytes;
+  if (!bytes.includes('\r\n')) return bytes;
+  return Buffer.from(bytes.toString('latin1').replace(/\r\n/g, '\n'), 'latin1');
+}

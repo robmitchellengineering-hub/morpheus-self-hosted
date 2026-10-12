@@ -26,7 +26,7 @@
  * whatever the app is configured to use.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync, openSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync, openSync, closeSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -44,6 +44,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const SERVER = resolve(HERE, '..')
 const DATA = join(SERVER, 'data', 'pg')
 const LOG = join(SERVER, 'data', 'pg.log')
+// pg_ctl's own stdout/stderr — a DIFFERENT file from LOG; see start() for why it must not be the same one.
+const PG_CTL_OUT = join(SERVER, 'data', 'pg_ctl.out')
 
 // ── connection details, straight from .env ──────────────────────────────────
 function readEnvUrl() {
@@ -110,10 +112,39 @@ function start() {
     console.log('  already running')
   } else {
     mkdirSync(dirname(LOG), { recursive: true })
-    const out = openSync(LOG, 'a')
+    // ⚠️ DO NOT HOLD THE LOG FILE OPEN WHILE `pg_ctl -l` OPENS IT. It used to do
+    // `const out = openSync(LOG, 'a')` and pass `stdio: ['ignore', out, out]` alongside `-l LOG`. POSIX
+    // allows that; Windows does not, and the portable installer therefore worked on macOS and could never
+    // start its database on Windows:
+    //
+    //   waiting for server to start....The process cannot access the file because it is being used by
+    //   another process.
+    //   pg_ctl: could not start server
+    //
+    // Measured 2026-10-12 by installing the published download on a real Windows machine — the same bundle
+    // that installs and runs on the Mac. `-l` already sends the SERVER's output to the log, so the extra
+    // handle on THAT file was redundant as well as fatal.
+    //
+    // pg_ctl's OWN messages go to a second file, PG_CTL_OUT, and deliberately not to a pipe. On Windows
+    // pg_ctl starts the server through `cmd /c` with handle inheritance on, so the postmaster inherits
+    // whatever pg_ctl's stdout is and holds it for its whole life. A pipe would therefore never reach EOF,
+    // and spawnSync waits for EOF — `start` would hang until the database stopped. A file has no such
+    // wait, and it is not the file `-l` opens. The timeout is the backstop: pg_ctl -w gives up at 60 s.
     // -w waits for readiness; -l sends server output to the log.
-    const r = run(pg_ctl, ['-D', DATA, '-l', LOG, '-o', `-p ${cfg.port}`, '-w', 'start'], { stdio: ['ignore', out, out] })
-    if (r.status !== 0) throw new Error(`pg_ctl start failed — see ${LOG}`)
+    const outFd = openSync(PG_CTL_OUT, 'w')
+    let r
+    try {
+      r = run(pg_ctl, ['-D', DATA, '-l', LOG, '-o', `-p ${cfg.port}`, '-w', 'start'], {
+        stdio: ['ignore', outFd, outFd], timeout: 120_000,
+      })
+    } finally {
+      closeSync(outFd)
+    }
+    if (r.status !== 0) {
+      let said = ''
+      try { said = readFileSync(PG_CTL_OUT, 'utf8').trim() } catch {}
+      throw new Error(`pg_ctl start failed${r.error ? ` (${r.error.message})` : ''} — see ${LOG}${said ? `\n${said}` : ''}`)
+    }
     console.log(`  started on port ${cfg.port} (log: ${LOG.replace(SERVER + '/', '')})`)
   }
 

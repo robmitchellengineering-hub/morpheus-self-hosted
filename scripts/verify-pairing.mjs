@@ -175,7 +175,9 @@ check('the runtime version constant matches the plugin header', constantVersion,
 check('it documents the connection step', has(readme, 'Settings → Morpheus'), true);
 check('it documents the deploy deny-list', has(readme, 'wp-config.php'), true);
 check('its changelog covers the shipped versions', has(readme, '= 0.5.0 =') && has(readme, `= ${headerVersion} =`), true);
-check('the readme travels inside the plugin zip', has(packer, "rmSync(resolve(staging, 'morpheus/tests')"), true);
+// The packer's allow-list is what admits readme.txt; that the built zip really CARRIES it is asserted on the
+// bytes by verify-plugin-pack.mjs §3, which has the install this job does not.
+check('the readme travels inside the plugin zip', /ALLOWED_TOP_LEVEL = new Set\(\[[^\]]*'readme\.txt'/.test(packer), true);
 
 // ⭐ AND THE THING THAT MADE THE TWO-CANONICAL FIX UNDELIVERABLE: a change with no version bump.
 //
