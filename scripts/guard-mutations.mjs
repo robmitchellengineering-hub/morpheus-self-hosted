@@ -4194,6 +4194,7 @@ export const MUTATIONS = [
     // MEASURED 2026-10-12: the packer shelled out to `zip`, which Windows lacks, and that failed step 6 of the
     // Portable Morpheus install on a real Windows machine. Re-importing child_process is how it would come back.
     why: 'Brings back a process spawn in the plugin packer — the shell-out to `zip` that failed every Windows build.',
+    needsInstall: true, // the packer imports jszip — run by `mutate-guards.mjs --needs-install` in lint + build
     find: "import JSZip from 'jszip';\n",
     replace: "import JSZip from 'jszip';\nimport { execSync } from 'node:child_process';\n",
   },
@@ -4203,6 +4204,7 @@ export const MUTATIONS = [
     // The PR #629 bug class: a pinned instant built from LOCAL fields is a different instant in every zone, so
     // the published hash depends on where the build ran and every non-UTC build refuses to publish.
     why: 'Pins the plugin\'s timestamp as local midnight instead of a UTC instant, so the bytes move with the builder\'s timezone.',
+    needsInstall: true, // the packer imports jszip — run by `mutate-guards.mjs --needs-install` in lint + build
     find: "const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');",
     replace: 'const FIXED_MTIME = new Date(2020, 0, 1);',
   },

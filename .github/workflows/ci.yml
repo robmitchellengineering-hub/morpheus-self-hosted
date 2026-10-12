@@ -84,6 +84,13 @@ jobs:
       - name: Plugin pack determinism
         run: node scripts/verify-plugin-pack.mjs
 
+      # The mutations whose guards need this job's install (marked `needsInstall` in
+      # scripts/guard-mutations.mjs). The guards job's mutate-guards run reports them as NEEDS INSTALL
+      # rather than running them; this is where they are proven. It refuses to run without an install
+      # or with nothing selected, and verify-guard-mutations.mjs fails if this step disappears.
+      - name: Guards that need the install fail when their subject breaks
+        run: node scripts/mutate-guards.mjs --needs-install
+
       # `prebuild` runs scripts/sync-capabilities.mjs, which rewrites this file
       # (KNOWN-HAZARDS.md H3). A build that dirties it is normal; the warning is
       # here so a change that *commits* it gets noticed.

@@ -82,6 +82,16 @@ check('no mutation has stopped matching its file', stale, []);
 // may mutate the wrong site and still go red — a false pass with the right colour.
 check('…and every mutation matches exactly once', ambiguous, []);
 
+// A mutation that needs the root install is NOT RUN by the no-install guards job (mutate-guards reports it as
+// NEEDS INSTALL there), so it is proven only if the `lint + build` job — the one with `npm ci` — runs it.
+// Without this, marking a mutation needsInstall would quietly move it to "ran nowhere" (H17).
+const needsInstall = MUTATIONS.filter((m) => m.needsInstall);
+const ciText = read('.github/workflows/ci.yml');
+const buildJob = (/\n  build:\n([\s\S]*?)\n  [a-z][\w-]*:\n/.exec(ciText) || [, ''])[1];
+check('the lint + build job was found in ci.yml (parser sanity)', /name: lint \+ build/.test(buildJob) && /npm ci/.test(buildJob), true);
+check('mutations that need an install are run where there is one',
+  needsInstall.length === 0 || /\n\s+run: node scripts\/mutate-guards\.mjs --needs-install\s*\n/.test(buildJob), true);
+
 console.log('\n3. the gap may only shrink');
 const proven = new Set(MUTATIONS.map((m) => m.guard));
 const unproven = hard.filter((g) => !proven.has(g));

@@ -33,12 +33,22 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const allowDirty = argv.includes('--allow-dirty');
 const filters = argv.filter((a) => !a.startsWith('--'));
+// ⚠️ A MUTATION MARKED `needsInstall` NEEDS THE ROOT `npm ci` (verify-plugin-pack.mjs runs the packer, which
+// imports jszip). The no-install guards job cannot run it — its baseline would be red for a reason that has
+// nothing to do with the guard — so there it is reported as NEEDS INSTALL rather than run, and the
+// `lint + build` job runs exactly those with `--needs-install`. That flag REFUSES to run without an install
+// and refuses an empty selection, so the split cannot turn into "ran nowhere" (H17);
+// verify-guard-mutations.mjs asserts ci.yml carries the second half.
+const onlyNeedsInstall = argv.includes('--needs-install');
+const installed = existsSync(join(ROOT, 'node_modules', '.package-lock.json'));
 const TIMEOUT_MS = 120_000;
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 const tail = (s, n = 14) => String(s || '').split('\n').slice(-n).join('\n');
 
-const selected = MUTATIONS.filter((m) => !filters.length || filters.some((f) => m.guard.includes(f)));
+const selected = MUTATIONS
+  .filter((m) => !filters.length || filters.some((f) => m.guard.includes(f)))
+  .filter((m) => !onlyNeedsInstall || m.needsInstall);
 
 if (argv.includes('--list')) {
   for (const m of selected) console.log(`${m.guard.padEnd(32)} ${m.file}`);
@@ -56,7 +66,11 @@ if (!selected.length) {
 //
 // The floor applies only to a FULL run: naming a guard is a deliberate, narrow question ("did my new entry
 // really land?"), and that is a legitimate one-mutation run.
-if (!filters.length && selected.length < 5) {
+if (onlyNeedsInstall && !installed) {
+  console.error('--needs-install was asked for, but there is no root install (node_modules/.package-lock.json) — run npm ci first');
+  process.exit(2);
+}
+if (!filters.length && !onlyNeedsInstall && selected.length < 5) {
   console.error(`only ${selected.length} mutation(s) are registered — that is not a run, it is an empty registry`);
   process.exit(2);
 }
@@ -88,6 +102,12 @@ for (const m of selected) {
   const text = original.toString('utf8');
 
   const count = text.split(m.find).length - 1;
+  if (m.needsInstall && !installed) {
+    // Staleness is still checked here — it needs no install — so a mutation that stopped matching is caught
+    // in both jobs, not only in the one that can run it.
+    results.push({ m, verdict: count === 1 ? 'NEEDS INSTALL' : 'STALE', detail: count === 1 ? 'run in lint + build: node scripts/mutate-guards.mjs --needs-install' : `the mutation matches ${count} times` });
+    continue;
+  }
   if (count === 0) { results.push({ m, verdict: 'STALE', detail: 'the mutation no longer matches' }); continue; }
   if (count > 1) { results.push({ m, verdict: 'STALE', detail: `the mutation matches ${count} times; it must be unique` }); continue; }
 
@@ -148,8 +168,10 @@ for (const r of results) {
   if (r.verdict === 'SURVIVED' && r.output) console.log(r.output.split('\n').map((l) => `                 ${l}`).join('\n'));
 }
 
-const bad = results.filter((r) => r.verdict !== 'caught');
-console.log(`\n${caught}/${results.length} guard(s) went red when their subject was broken.`);
+const deferred = by('NEEDS INSTALL').length;
+const bad = results.filter((r) => r.verdict !== 'caught' && r.verdict !== 'NEEDS INSTALL');
+console.log(`\n${caught}/${results.length - deferred} guard(s) went red when their subject was broken.`);
+if (deferred) console.log(`${deferred} mutation(s) need the root install and were NOT run here — the lint + build job runs them (--needs-install).`);
 if (bad.length) {
   const survived = by('SURVIVED').length, stale = by('STALE').length, base = by('BASELINE RED').length, t = by('TIMED OUT').length;
   console.log(`survived: ${survived} · stale: ${stale} · baseline red: ${base} · timed out: ${t}`);
