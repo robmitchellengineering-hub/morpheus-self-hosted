@@ -35,12 +35,14 @@
 // on disk, because a manifest that describes a different package than the one
 // being served is the same failure wearing a different hat.
 //
-// Dependency-free and no install: it shells out to the packer, which imports
-// only node builtins.
+// It needs the ROOT install: the packer archives with JSZip (2026-10-12 — the
+// `zip` binary it used to shell out to does not exist on Windows, and that
+// failed step 6 of the Portable Morpheus install there). So CI runs this in the
+// `lint + build` job, after `npm ci`, not in the no-install guards job.
 //
 // Run: node scripts/verify-plugin-pack.mjs
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, utimesSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, utimesSync, existsSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -82,6 +84,10 @@ if (!existsSync(SRC)) {
  * the read below still fails loudly.
  */
 function pack(tz) {
+  // Both are build products (gitignored). Removed first so a pack that never ran — the packer failing at
+  // import, say, with jszip not installed — cannot be read as one that did, from a previous run's files.
+  rmSync(MANIFEST, { force: true });
+  rmSync(ZIP, { force: true });
   try {
     execFileSync(process.execPath, ['scripts/pack-wp-plugin.mjs'], {
       cwd: REPO,
@@ -102,6 +108,20 @@ function touchAll(dir) {
     else utimesSync(full, new Date(), new Date());
   }
 }
+
+// ── 0. the packer archives in-process, with no external binary ─────────────
+// MEASURED 2026-10-12 on a real Windows machine: `npm run build` — the sixth step of the Portable Morpheus
+// install — died with "'zip' is not recognized as an internal or external command", because the packer
+// shelled out to Info-ZIP. Windows does not ship it. The packer now uses JSZip; this fails if any process
+// spawning comes back, whichever archiver it would call. Comments are stripped first, so the history in the
+// packer's own comments (which quote the old `zip` command) cannot satisfy or trip the check (H19).
+console.log('0. the packer spawns no external archiver');
+const packerCode = readFileSync(join(REPO, 'scripts/pack-wp-plugin.mjs'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
+check('the packer does not import child_process', /child_process/.test(packerCode), false);
+check('…nor call exec/spawn/fork by any route', /\b(exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(/.test(packerCode), false);
+check('…and archives with JSZip', /import JSZip from 'jszip'/.test(packerCode) && /generateAsync\(/.test(packerCode), true);
 
 // ── 1. the packer itself is deterministic ───────────────────────────────────
 console.log('1. two packs of the same source are the same bytes');
@@ -159,6 +179,9 @@ function zipEntries(buf) {
       // DOS date: bits 0-4 day, 5-8 month, 9-15 years since 1980.
       year: ((date >> 9) & 0x7f) + 1980,
       time,
+      // The whole stored stamp, decoded as written. DOS time: bits 0-4 seconds/2, 5-10 minutes, 11-15 hours.
+      stamp: `${((date >> 9) & 0x7f) + 1980}-${String((date >> 5) & 0xf).padStart(2, '0')}-${String(date & 0x1f).padStart(2, '0')} `
+        + `${String(time >> 11).padStart(2, '0')}:${String((time >> 5) & 0x3f).padStart(2, '0')}:${String((time & 0x1f) * 2).padStart(2, '0')}`,
     });
     p += 46 + nameLen + extraLen + commentLen;
   }
@@ -176,19 +199,23 @@ console.log('\n3. the package carries the plugin and not the harness');
 const names = entries.map((e) => e.name);
 check('the central directory was read (parser sanity)', entries.length >= 8, true);
 check('the entry point is in the package', names.includes('morpheus/morpheus.php'), true);
+check('the readme WordPress shows is in the package', names.includes('morpheus/readme.txt'), true);
+check('…and uninstall.php, or deleting the plugin leaves its options behind', names.includes('morpheus/uninstall.php'), true);
 check('nothing from tests/ is in the package', names.filter((f) => has(f, 'tests/')), []);
 
-// ── 4. no entry carries a "now" timestamp ───────────────────────────────────
+// ── 4. every entry carries the pinned timestamp, exactly ────────────────────
 // The direct form of the bug: every entry in the archive must share one
 // timestamp, because a per-file mtime is exactly what made two builds of the
-// same code differ. The exact value is not pinned — ZIP stores the packer's
-// local time, so the fixed 2020-01-01 can render as 2019-12-31 west of UTC — but
-// the year has to be the pinned one, which is what catches a build time.
+// same code differ. Since 2026-10-12 the exact value IS pinned: the packer
+// writes 2020-01-01T00:00:00Z through JSZip, which encodes the UTC fields, so
+// the stored stamp is 2020-01-01 00:00:00 in every zone. (`zip` wrote local
+// time, which is why this used to assert only the year.)
 console.log('\n4. every entry carries the same fixed timestamp');
 
+const PINNED = '2020-01-01 00:00:00';
 const stamps = [...new Set(entries.map((e) => `${e.year}:${e.time}`))];
 check('all entries share one timestamp, so none carries a build time', stamps.length, 1);
-check('and it is the pinned timestamp, not today', entries.every((e) => e.year <= 2020), true);
+check('and it is the pinned timestamp, exactly', [...new Set(entries.map((e) => e.stamp))], [PINNED]);
 check('a timestamp was read for every entry', entries.filter((e) => e.year > 0).length, entries.length);
 
 // ── 5. the bytes do not depend on the builder's timezone ────────────────────
@@ -202,10 +229,19 @@ check('a timestamp was read for every entry', entries.filter((e) => e.year > 0).
 // downloaded Portable Morpheus at its sixth step of seven on a real machine.
 console.log('\n5. the same source packs to the same bytes in another timezone');
 
-const packedUtc = pack('UTC');
+// Three zones, either side of UTC, and the stamp is READ BACK from each pack rather than inferred from the
+// hash: a hash mismatch says that something moved, the stamp says it was the clock. West of UTC matters on
+// its own — that is where a local-time encoder pushes the pinned instant back into 2019.
 const packedEast = pack('Asia/Kolkata');
+const stampsEast = [...new Set(zipEntries(readFileSync(ZIP)).map((e) => e.stamp))];
+const packedWest = pack('America/Los_Angeles');
+const stampsWest = [...new Set(zipEntries(readFileSync(ZIP)).map((e) => e.stamp))];
+const packedUtc = pack('UTC');
 check('a UTC build and a +05:30 build publish one hash', packedEast.sha256, packedUtc.sha256);
-check('…and one byte count', packedEast.bytes, packedUtc.bytes);
+check('a UTC build and a -08:00 build publish one hash', packedWest.sha256, packedUtc.sha256);
+check('…and one byte count', [packedEast.bytes, packedWest.bytes], [packedUtc.bytes, packedUtc.bytes]);
+check('the +05:30 pack stores the pinned stamp, not a shifted one', stampsEast, [PINNED]);
+check('the -08:00 pack stores the pinned stamp, not a shifted one', stampsWest, [PINNED]);
 check('…and the shipped zip is that artifact', createHash('sha256').update(readFileSync(ZIP)).digest('hex'), packedUtc.sha256);
 
 

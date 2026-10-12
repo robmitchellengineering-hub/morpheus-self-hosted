@@ -101,6 +101,12 @@ jobs:
       - name: Build the frontend on Windows
         run: npm run build
 
+      # The plugin package is built by JSZip in-process (the `zip` binary it used to call does not exist on
+      # Windows), and its bytes must not depend on the machine or its timezone. Run the determinism guard
+      # HERE as well, so "the same hash on Windows" is measured rather than assumed.
+      - name: The plugin package is deterministic on Windows
+        run: node scripts/verify-plugin-pack.mjs
+
       - name: The build produced what it claims to
         run: |
           $needed = @('dist\index.html', 'dist\deck.html')

@@ -72,6 +72,18 @@ jobs:
       - name: PHP syntax is really read before it reaches a site
         run: node scripts/verify-php-syntax.mjs
 
+      # The plugin package: the published SHA-256 has to describe the bytes that
+      # are actually served, and packing the same source twice — or in another
+      # timezone — has to produce the same bytes. `zip -rq` stamped each file's
+      # mtime into the archive, so every rebuild republished a new hash for
+      # identical code — and a site holding the previous hash in its one-hour
+      # cache had its update refused. That is how valiantmusic.com.au became
+      # unable to update at all. It lives in THIS job, not the no-install guards
+      # job, since 2026-10-12: the packer archives with JSZip (the `zip` binary
+      # does not exist on Windows), so it needs `npm ci`.
+      - name: Plugin pack determinism
+        run: node scripts/verify-plugin-pack.mjs
+
       # `prebuild` runs scripts/sync-capabilities.mjs, which rewrites this file
       # (KNOWN-HAZARDS.md H3). A build that dirties it is normal; the warning is
       # here so a change that *commits* it gets noticed.
@@ -946,16 +958,6 @@ jobs:
       # still has the old hand-pasted theme snippet.
       - name: Dock rules
         run: node scripts/verify-dock.mjs
-
-      # The plugin package: the published SHA-256 has to describe the bytes that
-      # are actually served, and packing the same source twice has to produce the
-      # same bytes. `zip -rq` stamped each file's mtime into the archive, so every
-      # rebuild republished a new hash for identical code — and a site holding the
-      # previous hash in its one-hour cache had its update refused, with WordPress
-      # "Check again" saying the same thing. That is how valiantmusic.com.au
-      # became unable to update at all.
-      - name: Plugin pack determinism
-        run: node scripts/verify-plugin-pack.mjs
 
       # What the plugin installs, deleting it removes. `uninstall.php` dropped two
       # options and left five (SEO templates, fix history, pairing record, traffic

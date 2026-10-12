@@ -4,7 +4,7 @@ Tags: deploy, git, seo, woocommerce, store
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.13
+Stable tag: 0.9.14
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,11 @@ uploads, cache, .git, .htaccess, .env), snapshots what it touches, and rolls bac
 answering a health check.
 
 == Changelog ==
+
+= 0.9.14 =
+* No change to what the plugin does. The package is now built by a different archiver (so it can be built on
+  Windows), which changes the bytes of the zip and therefore its checksum. The version moves so that the update
+  check, which compares versions, and the download check, which compares checksums, keep agreeing.
 
 = 0.9.13 =
 * Fix: **the health scan is fast again.** 0.9.12 checked whether the HSTS header was being served by asking this

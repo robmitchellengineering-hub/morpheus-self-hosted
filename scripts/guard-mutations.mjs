@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 44;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 45;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 43;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 44;\n',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4188,6 +4188,24 @@ export const MUTATIONS = [
     find: "            return prev.map(s => (s.stage === evt.stage\n              ? { ...s, status: 'failed', label: evt.label || s.label, elapsedSeconds: evt.elapsedSeconds }",
     replace: "            return prev.map(s => (s.stage === evt.stage && s.status === 'active'\n              ? { ...s, status: 'failed', label: evt.label || s.label, elapsedSeconds: evt.elapsedSeconds }",
   },
+  {
+    guard: 'verify-plugin-pack.mjs',
+    file: 'scripts/pack-wp-plugin.mjs',
+    // MEASURED 2026-10-12: the packer shelled out to `zip`, which Windows lacks, and that failed step 6 of the
+    // Portable Morpheus install on a real Windows machine. Re-importing child_process is how it would come back.
+    why: 'Brings back a process spawn in the plugin packer — the shell-out to `zip` that failed every Windows build.',
+    find: "import JSZip from 'jszip';\n",
+    replace: "import JSZip from 'jszip';\nimport { execSync } from 'node:child_process';\n",
+  },
+  {
+    guard: 'verify-plugin-pack.mjs',
+    file: 'scripts/pack-wp-plugin.mjs',
+    // The PR #629 bug class: a pinned instant built from LOCAL fields is a different instant in every zone, so
+    // the published hash depends on where the build ran and every non-UTC build refuses to publish.
+    why: 'Pins the plugin\'s timestamp as local midnight instead of a UTC instant, so the bytes move with the builder\'s timezone.',
+    find: "const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');",
+    replace: 'const FIXED_MTIME = new Date(2020, 0, 1);',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
@@ -4253,4 +4271,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 44;
+export const UNPROVEN_BASELINE = 43;
