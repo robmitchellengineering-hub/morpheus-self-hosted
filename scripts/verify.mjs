@@ -140,6 +140,7 @@ const HARD = [
   'verify-lane-partition.mjs',
   'verify-call-pool.mjs',
   'verify-app-selftest.mjs',
+  'verify-build-loop-stdin.mjs',
   'verify-bootstrap-sql.mjs',
   'verify-plan-reconciliation.mjs',
   'verify-applied-ops.mjs',
