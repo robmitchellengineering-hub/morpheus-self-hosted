@@ -136,9 +136,9 @@ export default function Projects() {
         <section className="pt-14 pb-12 border-b border-primary/10">
           <h1 className="text-3xl font-semibold text-primary tracking-tight">OUR WORK</h1>
           <p className="mt-4 text-base text-ink leading-relaxed">
-            A technical briefing on three systems: a build engine, an operating system, and a
-            wireless-audio transport. Each section describes what the system is, how it works, and the
-            measured numbers behind it.
+            Three systems, built by one team: a self-hosting build engine, a self-healing operating system,
+            and broadcast-grade audio over consumer Wi-Fi. What follows is an engineering briefing — what each
+            system is, how it works, and the measured numbers behind it.
           </p>
         </section>
 
@@ -168,6 +168,11 @@ export default function Projects() {
             />
           </div>
 
+          <p className="mt-3 text-sm text-ink leading-relaxed">
+            <strong className="text-primary">Why it matters.</strong> The loop lands a compiled, installable
+            artifact — not a code suggestion — and the merge gate cannot land a broken change.
+          </p>
+
           <ul className="mt-6 space-y-2.5 text-sm text-ink leading-relaxed">
             <Mechanism name="Three-role loop">planner → coder → reviewer. The reviewer runs a <em className="text-primary">different model</em> from the coder on purpose — a same-model review grades its own work, so it is not a safety net.</Mechanism>
             <Mechanism name="Merge gate">branch protection on the main branch, with strict up-to-date heads and three required checks (guards, lint + build, render). A broken change physically cannot land.</Mechanism>
@@ -185,6 +190,11 @@ export default function Projects() {
               ]}
             />
           </div>
+
+          <p className="mt-5 text-xs text-ink-strong">
+            Repository →{' '}
+            <a href="https://github.com/robmitchellengineering-hub/morpheus-self-hosted" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">github.com/robmitchellengineering-hub/morpheus-self-hosted</a>
+          </p>
         </section>
 
         {/* 2 · MorpheOS */}
@@ -203,6 +213,11 @@ export default function Projects() {
             </p>
           </div>
 
+          <p className="mt-3 text-sm text-ink leading-relaxed">
+            <strong className="text-primary">Why it matters.</strong> The update that bricks a machine is
+            handled end-to-end — trial, fallback, self-repair — rather than promised.
+          </p>
+
           <ul className="mt-6 space-y-2.5 text-sm text-ink leading-relaxed">
             <Mechanism name="A/B one-shot trial boot">a new version boots once as a trial; it is committed only if healthy, and falls back automatically otherwise — including the crash case.</Mechanism>
             <Mechanism name="Transaction engine">arm → apply → health-check → commit | rollback. A process that dies mid-change leaves a machine that rolls itself back.</Mechanism>
@@ -219,6 +234,12 @@ export default function Projects() {
               ]}
             />
           </div>
+
+          <p className="mt-5 text-xs text-ink-strong">
+            Repository →{' '}
+            <a href="https://github.com/robmitchellengineering-hub/MorpheOS" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">github.com/robmitchellengineering-hub/MorpheOS</a>
+            {' '}· Apache-2.0, open source
+          </p>
         </section>
 
         {/* 3 · AirMatrix */}
@@ -249,6 +270,11 @@ export default function Projects() {
             />
           </div>
 
+          <p className="mt-3 text-sm text-ink leading-relaxed">
+            <strong className="text-primary">Why it matters.</strong> Broadcast-grade wireless audio becomes
+            software on the network already in the room, rather than a locked, per-channel hardware system.
+          </p>
+
           <ul className="mt-6 space-y-2.5 text-sm text-ink leading-relaxed">
             <Mechanism name="Sample-accurate sync and concealment">a dropped packet is recovered with no audible gap — 132 dB through the loopback.</Mechanism>
             <Mechanism name="Lock-free audio tap">the audio thread does a plain copy (no lock, no allocation, no FFT); analysis runs off the packet path, so metering never touches latency.</Mechanism>
@@ -265,6 +291,8 @@ export default function Projects() {
               ]}
             />
           </div>
+
+          <p className="mt-5 text-xs text-ink-strong">Repository — private.</p>
         </section>
 
         <section className="py-12">
