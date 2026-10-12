@@ -76,6 +76,6 @@ jobs:
       - name: What this lane has NOT proven yet
         run: |
           echo "Still on ubuntu-latest: guards (no install), lint + build, render."
-          echo "No Windows or Linux lane exists: those nodes have no runner, and Windows"
-          echo "has no bash, WSL or docker, so the ubuntu jobs cannot run there as they are."
+          echo "Windows and Linux have their own manual lanes: studio-windows.yml and"
+          echo "studio-linux.yml (gh workflow run <file>), because those machines sleep."
           echo "This lane becomes useful for gate work only after it has a track record."
