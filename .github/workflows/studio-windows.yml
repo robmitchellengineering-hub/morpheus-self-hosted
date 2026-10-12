@@ -32,7 +32,12 @@ jobs:
     timeout-minutes: 25
     defaults:
       run:
-        shell: pwsh
+        # `powershell`, NOT `pwsh`. The first run of this lane failed with `pwsh: command not found` on a
+        # real Windows node: GitHub-hosted Windows runners ship PowerShell 7 as `pwsh`, and a plain Windows
+        # machine has only Windows PowerShell 5.1. A workflow written against the hosted runner's
+        # conveniences does not run on the hardware we own — which is a fair summary of why self-hosted CI
+        # finds things hosted CI cannot.
+        shell: powershell
     steps:
       - uses: actions/checkout@v4
 
