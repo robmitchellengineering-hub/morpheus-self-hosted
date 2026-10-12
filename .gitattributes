@@ -8,3 +8,13 @@
 # `-diff` is the other half: a 300 KB JSON file diffed as text produces a useless blob of numbers on every
 # touch, and there is nothing in these files a reviewer reads in a diff.
 assets/demo-rig/* -text -diff
+
+# The WordPress plugin is PACKED, and the zip's SHA-256 is an update-channel contract (scripts/pack-wp-plugin.mjs).
+#
+# ⚠️ `eol=lf` SO A WINDOWS CHECKOUT PACKS THE SAME BYTES AS EVERY OTHER MACHINE. Measured 2026-10-12: the
+# Windows CI lane and a Windows install from a git checkout both packed 0.9.14 to 203,370 bytes / e17dd0f4,
+# while macOS and Linux packed 202,420 bytes / 05bb75db — the same source, with `core.autocrlf=true` turning
+# every LF into CRLF on checkout. Once the manifest for a version is published, the packer's deliverability
+# check refuses any build whose hash differs, so every `npm run build` on such a checkout would fail exactly
+# the way the `zip` shell-out made it fail. verify-plugin-pack.mjs refuses a package carrying CRLF.
+wp-plugin/morpheus/** text eol=lf

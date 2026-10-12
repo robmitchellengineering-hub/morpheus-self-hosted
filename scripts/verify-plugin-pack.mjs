@@ -201,6 +201,18 @@ check('the central directory was read (parser sanity)', entries.length >= 8, tru
 check('the entry point is in the package', names.includes('morpheus/morpheus.php'), true);
 check('the readme WordPress shows is in the package', names.includes('morpheus/readme.txt'), true);
 check('…and uninstall.php, or deleting the plugin leaves its options behind', names.includes('morpheus/uninstall.php'), true);
+
+// LINE ENDINGS ARE BYTES TOO. A Windows checkout with core.autocrlf=true turns every LF into CRLF, so the same
+// commit packed to 203,370 bytes there and 202,420 everywhere else (measured 2026-10-12) — and once a version's
+// manifest is published, the deliverability check refuses the odd one out. .gitattributes pins wp-plugin to
+// eol=lf; this reads the package itself, so it fails on the machine where the pin did not take.
+const unpacked = await (await import('jszip')).default.loadAsync(readFileSync(ZIP));
+const crlf = [];
+for (const name of Object.keys(unpacked.files).sort()) {
+  const body = await unpacked.files[name].async('nodebuffer');
+  if (body.includes('\r\n')) crlf.push(name);
+}
+check('no file in the package has CRLF line endings, so a Windows checkout packs the same bytes', crlf, []);
 check('nothing from tests/ is in the package', names.filter((f) => has(f, 'tests/')), []);
 
 // ── 4. every entry carries the pinned timestamp, exactly ────────────────────
