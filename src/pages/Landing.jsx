@@ -216,7 +216,7 @@ export default function Landing() {
             AirMatrix), placed under DOWNLOADS. This one IS an SPA route (unlike
             /downloads above, which is a static page), so it is a client-side
             <Link>: the router owns /projects. */}
-        {showButtons && <div className="mt-3 flex justify-center">
+        {showButtons && <div className="mt-6 flex justify-center">
           <Link to="/projects" className="px-8 py-3 border border-primary/40 text-primary/70 hover:bg-primary/90 hover:text-black transition-colors font-display tracking-wider inline-flex items-center gap-2">
             <Layers size={16} /> OUR WORK
           </Link>
