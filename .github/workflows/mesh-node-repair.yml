@@ -1,0 +1,121 @@
+# Mesh node repair (Windows, self-hosted) — manual only, and it refuses the wrong machine.
+#
+# WHY THIS EXISTS
+#
+# The Windows studio nodes are driven by an UNELEVATED job loop, and the supervised repair
+# task on each of them runs as the node's own login with no `RunLevel` either — so neither can
+# do anything admin-only. That is fine until something admin-only breaks. On 2026-10-13 a
+# Windows feature update rebooted the Legion (`rme1`) and left OpenSSH Server installed but
+# the `sshd` service Stopped/Manual, so the node lost its remote shell entirely: port 22
+# refused, no RDP, no WinRM, while its job loop carried on working perfectly. Nothing could
+# put it back — the mesh's only way in was the thing that was broken. That is circular by
+# construction and it needs a privileged executor that does not depend on sshd.
+#
+# The self-hosted runner service is exactly that executor: it runs as **LocalSystem**. This
+# workflow therefore exists so that "a node lost its remote shell" is recoverable from here
+# rather than by a person at the machine with a command line.
+#
+# WHY `workflow_dispatch` AND NOT `pull_request`
+#
+# Same reason as studio-windows.yml: a self-hosted job QUEUES while its machine is off, and a
+# queued check is indistinguishable from one that will never run. On a pull request that would
+# make every merge wait on a laptop being awake. This lane is plumbing, not a product claim.
+#
+# WHY IT REFUSES
+#
+# `studio`/`windows` is shared by BOTH studio machines — the Legion and the laptop carry the
+# same labels — so a dispatch could land on either. It therefore names the computer it expects
+# and refuses, loudly and without changing anything, on any other. A repair that silently ran
+# on the wrong node is worse than one that did not run.
+name: Mesh node repair (Windows, self-hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expect_computer:
+        description: 'Refuse unless the runner is this computer (COMPUTERNAME, e.g. RME1)'
+        required: true
+        default: 'RME1'
+      action:
+        description: 'What to repair'
+        required: true
+        default: 'start-sshd'
+        type: choice
+        options:
+          - start-sshd
+          - report
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: node repair (self-hosted)
+    runs-on: [self-hosted, studio, windows]
+    timeout-minutes: 10
+    defaults:
+      run:
+        # `powershell`, NOT `pwsh` — these machines have Windows PowerShell 5.1 only. Written
+        # the hosted-runner way this lane would fail on the first step, which is the same
+        # mistake studio-windows.yml already records.
+        shell: powershell
+    steps:
+      # Which machine took this job, asked rather than assumed. Every self-hosted incident in
+      # this studio has at some point involved a job that believed it was somewhere else.
+      - name: Which machine actually took this job
+        id: who
+        run: |
+          "runner     : $env:RUNNER_NAME"
+          "computer   : $env:COMPUTERNAME"
+          "user       : $(whoami)"
+          "elevated   : " + ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          "wanted     : ${{ github.event.inputs.expect_computer }}"
+          $match = ($env:COMPUTERNAME -ieq '${{ github.event.inputs.expect_computer }}')
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "match=$($match.ToString().ToLower())"
+
+      - name: Refuse - this is the wrong machine, and nothing was changed
+        if: steps.who.outputs.match != 'true'
+        run: |
+          "REFUSED: this dispatch expects ${{ github.event.inputs.expect_computer }} and this runner is $env:COMPUTERNAME."
+          "Nothing was changed. Re-dispatch with expect_computer=$env:COMPUTERNAME if that is what you meant."
+          exit 1
+
+      # Always report the state, whatever the action. The point of a repair lane is the
+      # evidence, and sshd is only one of the things a feature update can take.
+      - name: The remote shell, as it is now
+        if: steps.who.outputs.match == 'true'
+        run: |
+          $s = Get-Service sshd -ErrorAction SilentlyContinue
+          if ($s) { "sshd       : $($s.Status) / $($s.StartType)" } else { "sshd       : ABSENT (OpenSSH Server is not installed)" }
+          $l = Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue
+          "port 22    : " + $(if ($l) { 'LISTENING' } else { 'not listening' })
+          "last boot  : " + (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+          $key = "$env:ProgramData\ssh\administrators_authorized_keys"
+          "admin keys : " + $(if (Test-Path $key) { "present, $((Get-Item $key).Length) bytes" } else { 'MISSING' })
+          "gh         : " + $(if (Get-Command gh -ErrorAction SilentlyContinue) { 'present' } else { 'not installed' })
+
+      - name: Repair - start sshd and set it to Automatic
+        if: steps.who.outputs.match == 'true' && github.event.inputs.action == 'start-sshd'
+        run: |
+          $svc = Get-Service sshd -ErrorAction SilentlyContinue
+          if (-not $svc) {
+            "The sshd service does not exist on this machine, so there is nothing to start."
+            "That is a different fault: the OpenSSH.Server capability is not installed."
+            exit 1
+          }
+          "before: $($svc.Status) / $($svc.StartType)"
+          Set-Service -Name sshd -StartupType Automatic
+          if ((Get-Service sshd).Status -ne 'Running') { Start-Service -Name sshd }
+          Start-Sleep -Seconds 3
+          $after = Get-Service sshd
+          "after : $($after.Status) / $($after.StartType)"
+
+          # Assert the claim rather than printing it. A repair that reports success while the
+          # port stays shut is the failure this whole lane exists to prevent.
+          $listening = Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue
+          "port 22: " + $(if ($listening) { 'LISTENING' } else { 'not listening' })
+          if ($after.Status -ne 'Running' -or -not $listening) {
+            "FAILED: sshd did not come up on port 22. Started=$($after.Status) listening=$([bool]$listening)"
+            exit 1
+          }
+          "OK: the remote shell is back on $env:COMPUTERNAME - the mesh can reach this node again."
