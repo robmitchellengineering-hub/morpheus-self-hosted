@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Morpheus WordPress Plugin</title>
+<style>
+  :root {
+    --ink: #14211e;
+    --muted: #55655f;
+    --accent: #0e7a5f;
+    --accent-dark: #0a5c48;
+    --rule: #dde6e2;
+    --soft: #f2f7f4;
+    --warn: #8a6d1f;
+    --warn-bg: #fbf6e9;
+    --code: #0f2d24;
+  }
+  * { box-sizing: border-box; }
+  @page {
+    size: A4;
+    margin: 16mm 16mm 18mm 16mm;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+  h1, h2, h3 { line-height: 1.2; }
+  h1 { font-size: 23pt; margin: 0 0 4pt; letter-spacing: -0.5px; }
+  h2 {
+    font-size: 14pt; margin: 0 0 8pt; padding-bottom: 5pt;
+    border-bottom: 2px solid var(--accent); color: var(--accent-dark);
+  }
+  h3 { font-size: 11pt; margin: 12pt 0 4pt; color: var(--ink); }
+  p { margin: 0 0 8pt; }
+  a { color: var(--accent-dark); text-decoration: none; }
+
+  .cover {
+    border-bottom: 4px solid var(--accent);
+    padding-bottom: 14pt;
+    margin-bottom: 18pt;
+  }
+  .kicker {
+    text-transform: uppercase; letter-spacing: 1.6px; font-size: 8.5pt;
+    color: var(--accent); font-weight: 700; margin: 0 0 8pt;
+  }
+  .subtitle { font-size: 12.5pt; color: var(--muted); margin: 0 0 10pt; max-width: 62ch; }
+  .meta { font-size: 8.5pt; color: var(--muted); }
+
+  section { margin-bottom: 16pt; }
+  .lead {
+    font-size: 11.5pt; color: var(--ink);
+    background: var(--soft); border-left: 4px solid var(--accent);
+    padding: 10pt 12pt; margin: 0 0 12pt;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt; font-size: 9pt; }
+  th, td { border: 1px solid var(--rule); padding: 6pt 7pt; text-align: left; vertical-align: top; }
+  th { background: var(--soft); color: var(--accent-dark); font-weight: 700; }
+  tr { break-inside: avoid; }
+  .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  .cards { display: block; }
+  .card {
+    border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    padding: 7pt 10pt; margin: 0 0 7pt; break-inside: avoid;
+  }
+  .card h3 { margin-top: 0; }
+
+  .note {
+    background: var(--warn-bg); border: 1px solid #ecdfb8; border-left: 4px solid var(--warn);
+    padding: 8pt 11pt; font-size: 9pt; color: #4a3d10; margin: 8pt 0;
+  }
+  .note strong { color: var(--warn); }
+
+  ul { margin: 4pt 0 8pt; padding-left: 16pt; }
+  li { margin-bottom: 3pt; }
+
+  .footnotes { font-size: 8pt; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 6pt; }
+  .footnotes p { margin-bottom: 2pt; }
+  .src { font-size: 8pt; color: var(--muted); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 8.8pt; color: var(--code); background: #eef4f1; padding: 0 3px; border-radius: 3px; }
+  .avoid-break { break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <p class="kicker">Morpheus &middot; morpheus.nz &middot; Product explainer</p>
+  <h1>The Morpheus WordPress Plugin</h1>
+  <p class="subtitle">What it is, what it lets you do, why it matters to the WordPress market — and what running a WordPress site costs with it versus without it.</p>
+  <p class="meta">Prepared 15 October 2026 &middot; Plugin version 0.9.13 &middot; Figures are indicative market ranges from the cited sources, not quotes.</p>
+</div>
+
+<section>
+  <h2>One paragraph summary</h2>
+  <p class="lead">
+    The Morpheus plugin turns an ordinary WordPress site into something an AI operator can <em>work on</em> —
+    deploy code, run a store, own the SEO, watch traffic, redirect dead links, and fix what is wrong — through
+    a signed, audited channel from a phone, without ever handing over a WordPress password or an FTP login.
+    The plugin itself is free and open (GPL). It is the hands on the site; the Morpheus platform
+    (morpheus.nz) is the brain that drives it, billed by what you actually use rather than a monthly retainer.
+  </p>
+</section>
+
+<section>
+  <h2>What it is</h2>
+  <p>
+    Morpheus is a self-hosted AI platform that builds and operates software. Its WordPress plugin is the
+    <strong>site-side half</strong> of that system — a single, free WordPress plugin that connects a site to the
+    Morpheus app. Its only admin surface on the site is a small Settings screen (the pairing code and the dock
+    switch); the working panels live in the Morpheus app and the dock. Everything it does is reached through a
+    signed REST API, which is how the platform asks it to act.
+  </p>
+  <div class="avoid-break">
+  <h3>How the connection is secured</h3>
+  <ul>
+    <li><strong>No passwords, no FTP.</strong> Pairing is a one-time code shown in <em>Settings &rarr; Morpheus</em> (valid 20 minutes, usable once). The plugin generates the shared secret itself — nothing is invented, copied or retyped by hand.</li>
+    <li><strong>Every request is signed.</strong> Morpheus sends an HMAC-SHA256 signature over the raw request body in an <code>X-Morpheus-Signature</code> header, with a timestamp that must be inside a five-minute window — so a request can neither be forged nor replayed.</li>
+    <li><strong>The secret lives in one place</strong> and is encrypted at rest on the Morpheus side; the site only ever stores its own half.</li>
+  </ul>
+  </div>
+  <p>
+    Everything the plugin can do is reached at <code>/wp-json/morpheus/v1/&lt;module&gt;</code> — Deploy, Store,
+    SEO, Traffic, Redirects, Health, Clean, Maintenance, Fix, Updates, Pairing, Export and Dock. Each module is a
+    separate, deliberately narrow surface.
+  </p>
+</section>
+
+<section>
+  <h2>What it lets you do</h2>
+
+  <div class="card"><h3>Deploy — ship code without touching a server</h3>
+    <p>Connect the GitHub repository your theme lives in. Morpheus opens a pull request; once the checks pass and it merges, the plugin applies exactly the files that commit changed — snapshots what it touches, health-checks the live site, and rolls the snapshot back if anything breaks. A hard deny-list (<code>wp-config.php</code>, uploads, cache, <code>.git</code>, <code>.htaccess</code>, <code>.env</code>) is enforced regardless. Writing is gated behind an explicit "Armed" switch.</p>
+  </div>
+
+  <div class="card"><h3>Store — run the shop from a phone</h3>
+    <p>Create products, set stock and prices, and draft posts and pages over the signed API. WooCommerce is used when present; plain pages and posts work without it.</p>
+  </div>
+
+  <div class="card"><h3>SEO — own every field, with or without another plugin</h3>
+    <p>Read and write title, meta description, focus keyword, canonical, social image and noindex for any page, post or product; list content; read a page's real text so generated copy is grounded in it; and audit for real problems. With no third-party SEO plugin, Morpheus emits the tags itself. With Yoast, Rank Math, AIOSEO or SEOPress active, it drives <em>that</em> plugin's fields instead — two plugins never emit competing <code>&lt;title&gt;</code>/description tags. Site-wide title/description templates and one-click internal-link proposals fill the gaps.</p>
+  </div>
+
+  <div class="card"><h3>Traffic — tell search engines, and prove it</h3>
+    <p>Submits new and changed URLs to IndexNow on publish (covering Bing and Yandex, with no account or third-party key), and keeps a submission ledger showing the HTTP status each URL actually received — a record, not a claim.</p>
+  </div>
+
+  <div class="card"><h3>Redirects — no more dead links</h3>
+    <p>Keeps a 301/302/307/410 rule list applied before the theme loads, plus a 404 log grouped by path so a thousand hits on one retired product URL shows as one row with a count. wp-admin, login, the REST API and cron are never redirectable.</p>
+  </div>
+
+  <div class="card"><h3>Health — what is wrong, and what fixes it</h3>
+    <p>Runs WordPress's own Site Health tests (plus WooCommerce's) and reports the results, what can be updated, and whether files can be written at all. The six async tests it cannot run are reported as "not run, and here is why" — never silently omitted. Deliberately no score: findings are ordered worst-first and counted, with their source kept separate.</p>
+  </div>
+
+  <div class="card"><h3>Clean My Site — what is on the server that nobody asked for</h3>
+    <p>Checksums every WordPress core file against wordpress.org, inventories uploads and mu-plugins, flags any <code>.php</code> under uploads, lists admin accounts and unattributed cron jobs, and finds a publicly readable <code>debug.log</code> or stray <code>wp-config.php.bak</code>. Nothing is ever deleted — files are renamed to a timestamped backup, re-checked, and put straight back if the site does not confirm.</p>
+  </div>
+
+  <div class="card"><h3>Maintenance — safe, reversible updates</h3>
+    <p>Reports what could be updated and applies plugin, theme and minor core updates one at a time, each zipped to a backup, verified afterwards and restored on failure. A <strong>major</strong> WordPress version update is never automatic — it is reported for a human.</p>
+  </div>
+
+  <div class="card"><h3>AI Fix — a change you read before it happens</h3>
+    <p>For a finding with no automatic fix, Morpheus proposes the exact change in plain words and <strong>changes nothing until you press apply</strong>. The model can only choose from operations that already exist in the plugin, and every argument is checked against the site's own state first; anything else is a refusal that names itself.</p>
+  </div>
+
+  <div class="card"><h3>Updates, Pairing, Export and Dock</h3>
+    <p>Registers WordPress's own update channel and verifies each download against a published SHA-256 (a package that cannot be verified is refused, not installed). Pairs with a one-time code. Hands the active theme over as a text-only working copy so a site not yet in git gets the full pipeline. And prints the floating Morpheus button on the site's pages <strong>for a signed-in administrator only</strong> — the token it carries acts as the owner, so a visitor or editor never receives it.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Why it matters to the WordPress market</h2>
+  <p>
+    WordPress runs <strong>roughly 43% of all websites</strong> — hundreds of millions of sites, and a clear
+    majority of the sites that use any CMS at all. That scale comes from being open and self-hosted, which means
+    the day-to-day burden of <em>operating</em> a site — updates, backups, security, monitoring, changes — lands on
+    the individual owner. It is a genuine ops job, and most owners are not ops engineers.
+  </p>
+  <p>
+    That gap is why an entire <strong>"care plan" industry</strong> exists: agencies and freelancers charging
+    $100&ndash;$500 a month per site to do the routine maintenance nobody should have to think about. The
+    ecosystem's answers so far have all been human-shaped — hire someone, or buy a monitoring dashboard that
+    still needs a human to read it and click.
+  </p>
+  <p>The Morpheus plugin changes the shape of that answer:</p>
+  <ul>
+    <li><strong>From watching to doing.</strong> Management dashboards (ManageWP, MainWP, WP Umbrella and similar) mostly <em>observe and batch</em> — a human still decides and acts. Morpheus <em>acts</em> on the site through the signed API, with verify-and-rollback rails so a bad change does not stick.</li>
+    <li><strong>From desktop to phone.</strong> Deploy, store, SEO and fixes are reachable from a phone, over a signed channel, with no credential sharing.</li>
+    <li><strong>From a bill that starts on day one to a meter.</strong> There is no fixed retainer and no per-site headcount cost; you pay for the work the platform actually does.</li>
+    <li><strong>From "an error someone will explain" to a verifiable record.</strong> Every write is signed, snapshotted, checked against the live site, and recorded — the ledgers, logs and refusal records are the evidence, not a summary of it.</li>
+  </ul>
+  <p>
+    The significance is not "another SEO plugin." It is that the largest content platform on the web can now be
+    <em>operated</em> by an AI over an audited interface, with the safety rails a professional would insist on —
+    which is precisely the part of WordPress ownership that has, until now, been stuck in the hire-a-human era.
+  </p>
+</section>
+
+<section>
+  <h2>What it costs versus the alternatives</h2>
+  <p>
+    Managing a WordPress site is usually priced as <em>labour</em> (hourly or retainer) or as <em>infrastructure</em>
+    (hosting). Morpheus prices it as <em>usage</em>. The table compares the realistic ways to look after a site.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:18%">Option</th>
+        <th style="width:30%">What you get</th>
+        <th style="width:20%">Typical cost</th>
+        <th style="width:32%">Who does the work / the catch</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Do it yourself</strong></td>
+        <td>Full control; updates, backups, security and changes are your responsibility.</td>
+        <td class="num">$0 cash — your time, every month</td>
+        <td>You. Risk is that routine maintenance slips, and the site decays or breaks when you are busy.</td>
+      </tr>
+      <tr>
+        <td><strong>Freelance developer</strong></td>
+        <td>On-demand fixes and changes; often a small monthly retainer.</td>
+        <td class="num">$15&ndash;$150+/hr &middot; $1,000&ndash;$2,000/mo retainer</td>
+        <td>A person, reactively — you open a ticket and wait; coverage depends on one human's availability.</td>
+      </tr>
+      <tr>
+        <td><strong>Agency care plan</strong></td>
+        <td>Recurring updates, backups, security, monitoring, support.</td>
+        <td class="num">$100&ndash;$500/mo (WooCommerce $250&ndash;$500+)</td>
+        <td>A team, on contract — the standard answer, and a fixed cost that recurs whether or not you needed much that month.</td>
+      </tr>
+      <tr>
+        <td><strong>Management SaaS</strong> (ManageWP, MainWP, WP Umbrella…)</td>
+        <td>One dashboard to monitor and batch-update many sites.</td>
+        <td class="num">~$2&ndash;$50/site/mo (tool-dependent)</td>
+        <td>Still mostly you — it surfaces and batches, but a human decides and clicks. Observes more than it operates.</td>
+      </tr>
+      <tr>
+        <td><strong>Managed hosting</strong> (WP Engine, Kinsta…)</td>
+        <td>Hosting plus some maintenance (backups, core updates, staging).</td>
+        <td class="num">~$20&ndash;$100+/site/mo</td>
+        <td>The host handles infrastructure; it does not run your store, write your SEO or fix content problems.</td>
+      </tr>
+      <tr>
+        <td><strong>Build your own equivalent</strong></td>
+        <td>A custom plugin + backend + AI integration with security and rollback rails.</td>
+        <td class="num">$10,000&ndash;$50,000+ to build, then you maintain it</td>
+        <td>You re-invent the wheel at agency-project prices, and own it forever.</td>
+      </tr>
+      <tr>
+        <td><strong>Morpheus plugin</strong></td>
+        <td>The plugin is free; the platform does the work above over the signed API.</td>
+        <td class="num">Free plugin &middot; usage-priced credits</td>
+        <td>An AI operator, metered — pay for what it does, no fixed retainer and no per-site headcount.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="avoid-break">
+  <h3>Reading Morpheus's pricing honestly</h3>
+  <ul>
+    <li>The <strong>plugin is free</strong> (GPL) and installs in one step — there is no licence to buy for the WordPress side.</li>
+    <li>Morpheus bills in <strong>credits</strong>: <code>$5 per 1,000 credits</code>, sold in small packs ($2 / $4 / $8 &rarr; 400 / 800 / 1,600 credits) with a <strong>200-credit free grant</strong> on signup.</li>
+    <li>It is <strong>usage-priced, not a retainer</strong>: a quiet month costs less than a busy one, and there is no bill that starts before you have used anything. The honest caveat is the mirror image of that — unlike a care plan, there is no fixed monthly ceiling, so a very busy month costs more.</li>
+  </ul>
+  </div>
+
+  <div class="note">
+    <strong>Boundary worth stating plainly:</strong> Morpheus addresses the <em>operating</em> side of WordPress —
+    deployment, store, SEO, traffic, health, security and maintenance. A genuinely bespoke design or build
+    (a custom theme from scratch, a complex integration) may still want a human. The comparison is against the
+    recurring maintenance-and-change bucket that most site owners pay for every month, not against one-off build work.
+  </div>
+</section>
+
+<section>
+  <h2>The bottom line</h2>
+  <p>
+    For a site owner today, "manage my WordPress" almost always means a recurring bill to a person or a company, or
+    quietly absorbing the ops work yourself. The Morpheus plugin offers a third shape: keep your site where it is,
+    install one free plugin, and let an AI operator do the routine work over a signed, verifiable channel — paying
+    for the work it actually does rather than a retainer that recurs whether you needed it or not. That is the
+    significance: the world's most common website is now operable by software, on rails a professional would trust.
+  </p>
+</section>
+
+<div class="footnotes">
+  <p><strong>Sources</strong> (accessed 15 October 2026; cost figures are published market ranges, not Morpheus quotes).</p>
+  <p>Market share: WordPress ≈ 43% of all websites — Search Engine Journal, <span class="src">searchenginejournal.com/cms-market-share-spa/454039/</span>; CMS Knowledge Base, <span class="src">cmsconf.com/knowledge/cms-market-share-2026/</span>.</p>
+  <p>Care-plan pricing: WP Umbrella, "What Are WordPress Care Plans? Pricing, Scope, Examples" — <span class="src">wp-umbrella.com/blog/what-are-wordpress-care-plans/</span>; DreamHost, "WordPress Maintenance Plans" — <span class="src">dreamhost.com/blog/wordpress-maintenance-plan/</span>.</p>
+  <p>Developer rates and retainers: Uplers, "The Cost of Hiring a WordPress Developer" — <span class="src">uplers.com/blog/the-cost-of-hiring-a-wordpress-developer-what-to-expect-in-2024/</span>.</p>
+  <p>Morpheus pricing is taken from the platform's own billing configuration (<span class="src">server/src/lib/billing.js</span>) as of the writing date; capability descriptions from the plugin's <span class="src">readme.txt</span> (v0.9.13).</p>
+</div>
+
+</body>
+</html>
