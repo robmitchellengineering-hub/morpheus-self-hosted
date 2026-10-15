@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morpheus WordPress Plugin — Revenue at Scale</title>
+<style>
+  :root {
+    --ink: #14211e;
+    --muted: #55655f;
+    --accent: #0e7a5f;
+    --accent-dark: #0a5c48;
+    --rule: #dde6e2;
+    --soft: #f2f7f4;
+    --warn: #8a6d1f;
+    --warn-bg: #fbf6e9;
+    --code: #0f2d24;
+  }
+  * { box-sizing: border-box; }
+  @page { size: A4; margin: 16mm 16mm 18mm 16mm; }
+  html, body {
+    margin: 0; padding: 0; color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 10.5pt; line-height: 1.5;
+  }
+  h1, h2, h3 { line-height: 1.2; }
+  h1 { font-size: 22pt; margin: 0 0 4pt; letter-spacing: -0.5px; }
+  h2 { font-size: 13.5pt; margin: 0 0 8pt; padding-bottom: 5pt; border-bottom: 2px solid var(--accent); color: var(--accent-dark); }
+  h3 { font-size: 11pt; margin: 12pt 0 4pt; }
+  p { margin: 0 0 8pt; }
+  a { color: var(--accent-dark); text-decoration: none; }
+  .cover { border-bottom: 4px solid var(--accent); padding-bottom: 14pt; margin-bottom: 18pt; }
+  .kicker { text-transform: uppercase; letter-spacing: 1.6px; font-size: 8.5pt; color: var(--accent); font-weight: 700; margin: 0 0 8pt; }
+  .subtitle { font-size: 12.5pt; color: var(--muted); margin: 0 0 10pt; max-width: 64ch; }
+  .meta { font-size: 8.5pt; color: var(--muted); }
+  section { margin-bottom: 16pt; }
+  .lead { font-size: 11.5pt; background: var(--soft); border-left: 4px solid var(--accent); padding: 10pt 12pt; margin: 0 0 12pt; }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt; font-size: 9pt; }
+  th, td { border: 1px solid var(--rule); padding: 6pt 8pt; text-align: left; vertical-align: top; }
+  th { background: var(--soft); color: var(--accent-dark); font-weight: 700; }
+  tr { break-inside: avoid; }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; }
+  .big { font-size: 10.5pt; font-weight: 700; color: var(--accent-dark); }
+  .note { background: var(--warn-bg); border: 1px solid #ecdfb8; border-left: 4px solid var(--warn); padding: 8pt 11pt; font-size: 9pt; color: #4a3d10; margin: 8pt 0; }
+  .note strong { color: var(--warn); }
+  ul { margin: 4pt 0 8pt; padding-left: 16pt; }
+  li { margin-bottom: 3pt; }
+  .footnotes { font-size: 8pt; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 6pt; }
+  .footnotes p { margin-bottom: 2pt; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 8.8pt; color: var(--code); background: #eef4f1; padding: 0 3px; border-radius: 3px; }
+  .avoid-break { break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <p class="kicker">Morpheus &middot; morpheus.nz &middot; Revenue model</p>
+  <h1>Morpheus WordPress Plugin — Revenue at Scale</h1>
+  <p class="subtitle">What revenue the platform produces as the WordPress plugin scales from 1,000 to 1,000,000 active users — built from the repo's own business model, with the assumptions and caveats called out rather than smoothed over.</p>
+  <p class="meta">Prepared 15 October 2026 &middot; Source: the repo's own business-model documents and the internal audit at <code>docs/audits/morpheus-business-model-digest.md</code> &middot; Figures are projections resting on an assumed usage profile, not measured billing data.</p>
+</div>
+
+<section>
+  <h2>Read this first — what "active user" means here</h2>
+  <p class="lead">
+    Every figure below treats an <strong>active user</strong> as a <strong>paying Morpheus account</strong> that
+    uses the WordPress plugin (connected site, consuming AI actions). It is <em>not</em> a raw plugin install.
+    Installs become revenue only through an <em>install &rarr; paying</em> conversion rate, and — as the repo's own
+    audit states plainly — <strong>no telemetry exists yet</strong> to measure that rate. So: read these numbers as
+    "revenue at N paying active users", not "revenue at N downloads".
+  </p>
+</section>
+
+<section>
+  <h2>The unit: one active user, annualized</h2>
+  <p>The model prices every action in credits (1,000 credits = $5 retail) and bills at a flat 2&times; markup over DeepSeek's rate, so profit on usage is roughly equal to the underlying AI cost. One "realistic active user" costs Morpheus about <strong>$19.10/yr</strong> in AI and retails at about <strong>$38.55&ndash;$40.35/yr</strong>.</p>
+  <table>
+    <thead>
+      <tr><th style="width:40%">Line</th><th class="num">Cost to Morpheus / yr</th><th class="num">Retail (user pays) / yr</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>AI usage, own-GitHub compile</td><td class="num">$19.10</td><td class="num">$38.55</td></tr>
+      <tr><td>AI usage, all-Priority Compile</td><td class="num">$20.18</td><td class="num">$40.35</td></tr>
+      <tr><td>Markup / gross margin</td><td class="num">&mdash;</td><td class="num">2&times; (&asymp;50% on usage)</td></tr>
+    </tbody>
+  </table>
+  <p class="src" style="font-size:8.5pt;color:var(--muted)">
+    The $19.10/$20.18 cost and $38.55/$40.35 retail are the repo's BR-v6 / FIN figures, resting on the assumed
+    "120 code-producing turns + 14 chats + 3 diagnoses + 3 compiles per month" profile. That profile is
+    <em>assumed, not measured</em> — see the caveats.
+  </p>
+</section>
+
+<section>
+  <h2>Revenue at the four tiers</h2>
+  <p>Retail revenue — what users pay in total per year — at 1,000 / 10,000 / 100,000 / 1,000,000 active users.</p>
+  <table>
+    <thead>
+      <tr><th class="num">Active users</th><th class="num">Revenue/yr (own-GitHub, $38.55)</th><th class="num">Revenue/yr (all-Priority, $40.35)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="num big">1,000</td><td class="num">$38,550</td><td class="num">$40,350</td></tr>
+      <tr><td class="num big">10,000</td><td class="num">$385,500</td><td class="num">$403,500</td></tr>
+      <tr><td class="num big">100,000</td><td class="num">$3,855,000</td><td class="num">$4,035,000</td></tr>
+      <tr><td class="num big">1,000,000</td><td class="num">$38,550,000</td><td class="num">$40,350,000</td></tr>
+    </tbody>
+  </table>
+  <p>At ~$3.21&ndash;$3.36 per user per month, this is the pay-as-you-go model scaling linearly: revenue is simply
+  <em>active users &times; $38.55&ndash;$40.35/yr</em>.</p>
+</section>
+
+<section>
+  <h2>Gross profit (the repo's "profit" line)</h2>
+  <p>What the repo's own scaling tables report as "profit" is <strong>usage markup only</strong> — retail minus the AI cost. It is <em>not</em> net profit; see the fixed-cost note below.</p>
+  <table>
+    <thead>
+      <tr><th class="num">Active users</th><th class="num">Gross profit / yr (AI + compile markup)</th><th class="num">&asymp; per user / yr</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="num big">1,000</td><td class="num">$19,457</td><td class="num">$19.46</td></tr>
+      <tr><td class="num big">10,000</td><td class="num">$194,568</td><td class="num">$19.46</td></tr>
+      <tr><td class="num big">100,000</td><td class="num">$1,950,000</td><td class="num">$19.50</td></tr>
+      <tr><td class="num big">1,000,000</td><td class="num">$19,460,000</td><td class="num">$19.46</td></tr>
+    </tbody>
+  </table>
+  <p>With a 2&times; markup, profit on usage runs just under the revenue line's cost half — roughly $19.46 per
+  user per year, dollar for dollar against the AI spend.</p>
+</section>
+
+<section>
+  <h2>From markup to something closer to net</h2>
+  <p>The headline figures deduct <strong>no infrastructure, monitoring, Stripe fees, domain, analytics or storage</strong>. The repo's operations plan puts a "fixed floor" under each tier — the minimum monthly burn before those variable lines. Subtracting just that floor (and nothing else) gives a truer picture:</p>
+  <table>
+    <thead>
+      <tr><th class="num">Active users</th><th class="num">Fixed floor / mo</th><th class="num">Fixed floor / yr</th><th class="num">Markup &minus; fixed floor / yr</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="num big">1,000</td><td class="num">~$86</td><td class="num">~$1,032</td><td class="num">~$18,400</td></tr>
+      <tr><td class="num big">10,000</td><td class="num">~$176</td><td class="num">~$2,112</td><td class="num">~$192,500</td></tr>
+      <tr><td class="num big">100,000</td><td class="num">~$701</td><td class="num">~$8,412</td><td class="num">~$1,942,000</td></tr>
+      <tr><td class="num big">1,000,000</td><td class="num">~$4,001</td><td class="num">~$48,012</td><td class="num">~$19,412,000</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <strong>The 1,000-user row is the fragile one.</strong> The repo's operations plan states the assumed
+    engagement at 1,000 users may not cover even the ~$86/month floor — the break-even needs ~430% of the assumed
+    average paid engagement. Treat 1,000 users as the tier where the model is least proven, not a small version of
+    the million-user tier.
+  </div>
+</section>
+
+<section>
+  <h2>Assumptions and caveats — the honest part</h2>
+  <ul>
+    <li><strong>The usage profile is assumed, not measured.</strong> $19.10/yr and $38.55/yr come from "120 build turns + 14 chats + 3 diagnoses + 3 compiles per month" — the repo's own operations plan labels every such profile "a stated assumption, not measured data". There is <strong>no telemetry</strong> confirming real users behave this way.</li>
+    <li><strong>That profile is the app <em>builder</em>'s, not a WordPress-site owner's.</strong> 120 build turns/month describes someone building software. A WordPress operator may do far fewer AI-heavy actions, so per-user revenue could be <em>lower</em> than $38.55/yr — the internal audit even records a 40-turns-vs-120-turns conflict in the source documents, so the true WordPress ARPU is genuinely unknown. Read the tables as the model's ceiling until real WordPress usage is measured.</li>
+    <li><strong>"Profit" is markup, not net.</strong> The $19,457&hellip;$19.46M figures exclude infrastructure, monitoring, Stripe fees, domain, analytics and storage. They are gross profit on usage, not bottom-line profit.</li>
+    <li><strong>"Active user" &ne; install.</strong> Revenue = paying active users &times; ARPU. Raw plugin installs must first be multiplied by an install&rarr;paying conversion rate that is unmeasured.</li>
+    <li><strong>The source documents disagree with each other.</strong> The repo's own audit (<code>docs/audits/morpheus-business-model-digest.md</code>) catalogued 27 internal inconsistencies — free-tier wording, per-user cost ($1.591 vs &lt;$1 vs $2.47/mo), Priority Compile pricing, and the fixed-floor arithmetic. The foundations (2&times; markup, $0.80/$2.40 DeepSeek rate) are consistent; the reporting layer is not. This sheet uses the BR-v6 figures as the single baseline and flags the rest rather than averaging incompatible numbers.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>The bottom line</h2>
+  <p>
+    As a linear, pay-as-you-go model, revenue scales simply: <strong>1,000 users &asymp; $38.5k/yr &rarr; 10,000
+    &asymp; $385k &rarr; 100,000 &asymp; $3.86M &rarr; 1,000,000 &asymp; $38.55M</strong> of retail revenue, with
+    usage-markup gross profit of roughly <strong>$19.5k &rarr; $195k &rarr; $1.95M &rarr; $19.46M</strong> before
+    fixed and infrastructure costs. The honest caveat is the mirror image of the clean curve: those numbers ride on
+    an assumed per-user usage profile and an unmeasured install-to-paying conversion, and the WordPress-specific
+    profile may be lighter than the builder profile they were calibrated against. The model is sound in shape; the
+    <em>level</em> of each tier is the thing to validate with real billing data before quoting it to anyone as a
+    fact.
+  </p>
+</section>
+
+<div class="footnotes">
+  <p><strong>Source.</strong> The repo's own business-model documents (MORPHEUS-BUSINESS-REPORT-v6, COMMAND-DECK-BUSINESS-REPORT, INVESTOR-OVERVIEW-v5, INTERNAL-FINANCIAL-REPORT, OPERATIONS-COST-PLAN) as summarised and audited in <code>docs/audits/morpheus-business-model-digest.md</code>. Pricing constants ($5/1,000 credits, $0.005/credit, 2&times; markup) are cross-checked against <code>server/src/lib/billing.js</code>. All dollar figures are the repo's own; this sheet adds no independent model, only the caveats the audit already documents.</p>
+</div>
+
+</body>
+</html>
