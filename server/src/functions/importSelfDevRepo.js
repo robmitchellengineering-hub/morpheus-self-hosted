@@ -129,14 +129,18 @@ export default async function handler({ user, body }) {
       if (!blobRes.ok) return null;
       const blob = await ghJson(blobRes);
       const content = blob.encoding === 'base64' ? Buffer.from(blob.content, 'base64').toString('utf8') : (blob.content || '');
+      // A binary blob whose extension is not in BINARY_EXTS decodes with NUL bytes, which
+      // Postgres TEXT rejects (22021) and would 500 the whole sync. Skip it as a deliberate
+      // non-mirror — NOT a failed fetch, which must stay retryable.
+      if (content.includes('\u0000')) return { path: item.path, content: null, binary: true };
       return { path: item.path, content };
     } catch {
       return null;
     }
   });
 
-  const fetchedOk = fetched.filter(Boolean);
-  const failed = fetched.length - fetchedOk.length;
+  const fetchedOk = fetched.filter((f) => f && f.content != null);
+  const failed = fetched.filter((f) => !f).length;
 
   // The full HEAD file set = freshly-fetched + the ones we skipped because
   // they were already current.
