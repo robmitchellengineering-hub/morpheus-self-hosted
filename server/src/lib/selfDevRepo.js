@@ -28,8 +28,8 @@ export function gitBlobSha(content) {
 
 const BINARY_EXTS = [
   '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf',
-  '.eot', '.mp3', '.mp4', '.zip', '.jar', '.class', '.so', '.dll', '.exe',
-  '.bin', '.dat', '.pdf',
+  '.eot', '.mp3', '.mp4', '.wav', '.nam', '.zip', '.jar', '.class', '.so',
+  '.dll', '.exe', '.bin', '.dat', '.pdf',
 ];
 
 // True for paths self-dev deliberately does NOT mirror into the workspace:
