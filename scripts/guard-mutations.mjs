@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 25;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 26;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 23;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 24;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1583,6 +1583,20 @@ export const MUTATIONS = [
     why: 'Inverts the prefix check, so a path OUTSIDE the active theme is accepted and the export reads files beyond the theme it is meant to copy.',
     find: 'strpos( $p, $prefix ) !== 0',
     replace: 'strpos( $p, $prefix ) === 0',
+  },
+  {
+    guard: 'verify-keywords.mjs',
+    file: 'server/src/lib/keywordResearch.js',
+    why: 'Changes the XML fallback attribute from data to datum, so the XML-ish autocomplete payload is parsed as empty — the suggestions vanish.',
+    find: '/data="([^"]+)"/g',
+    replace: '/datum="([^"]+)"/g',
+  },
+  {
+    guard: 'verify-photo-drive.mjs',
+    file: 'server/src/lib/photoDrive.js',
+    why: 'Doubles the size limit, so an over-limit photo is accepted and uploads grow past the cap the limit exists to enforce.',
+    find: 'if (bytes > MAX_PHOTO_BYTES) {',
+    replace: 'if (bytes > MAX_PHOTO_BYTES * 2) {',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4462,4 +4476,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 25;
+export const UNPROVEN_BASELINE = 23;
