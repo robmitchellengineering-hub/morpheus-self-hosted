@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 31;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 32;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 30;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 31;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1541,6 +1541,13 @@ export const MUTATIONS = [
     why: 'Adds deepseek to the local-model patterns, so a DeepSeek model id is priced as local when it is not — the ledger trap the wizard warns about.',
     find: "'ollama', 'lm-studio', 'lmstudio', 'local', 'llama', 'mistral',",
     replace: "'ollama', 'lm-studio', 'lmstudio', 'local', 'llama', 'mistral', 'deepseek',",
+  },
+  {
+    guard: 'verify-portable-launcher.mjs',
+    file: 'server/src/lib/portableSetup.js',
+    why: 'Caps the accepted port below 1000, so the default 4599 is rejected and the wrong port is used.',
+    find: 'return Number.isInteger(port) && port > 0 && port < 65536 ? port : Number(LOCAL_ENV.PORT);',
+    replace: 'return Number.isInteger(port) && port > 0 && port < 1000 ? port : Number(LOCAL_ENV.PORT);',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4420,4 +4427,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 31;
+export const UNPROVEN_BASELINE = 30;
