@@ -1455,8 +1455,15 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 43;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 44;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 42;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 43;\n',
+  },
+  {
+    guard: 'verify-billing-ledger-math.mjs',
+    file: 'server/src/lib/billingLedger.js',
+    why: 'Raises the signup grant by one, so the "signup grant is 200" check fails — proving the guard asserts the actual constant, not merely that it is a number.',
+    find: 'export const SIGNUP_CREDITS = 200;',
+    replace: 'export const SIGNUP_CREDITS = 201;',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4336,4 +4343,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 43;
+export const UNPROVEN_BASELINE = 42;
