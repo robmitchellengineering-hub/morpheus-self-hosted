@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 26;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 27;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 25;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 26;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1576,6 +1576,13 @@ export const MUTATIONS = [
     why: 'Changes the in-flight guard from a Set to a Map, so a duplicate key is never refused — a second press of the same add runs twice.',
     find: 'const addInFlight = useRef(new Set());',
     replace: 'const addInFlight = useRef(new Map());',
+  },
+  {
+    guard: 'verify-working-copy.mjs',
+    file: 'wp-plugin/morpheus/includes/class-export.php',
+    why: 'Inverts the prefix check, so a path OUTSIDE the active theme is accepted and the export reads files beyond the theme it is meant to copy.',
+    find: 'strpos( $p, $prefix ) !== 0',
+    replace: 'strpos( $p, $prefix ) === 0',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4455,4 +4462,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 26;
+export const UNPROVEN_BASELINE = 25;
