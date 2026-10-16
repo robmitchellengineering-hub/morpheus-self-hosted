@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 39;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 40;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 38;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 39;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1485,6 +1485,13 @@ export const MUTATIONS = [
     why: 'Ignores missing gates entirely, so a gate GitHub never ran reads as verified — the exact failure the module exists to prevent.',
     find: 'if (missing.length || notSuccess.length) return { ok: false, required: list, missing, notSuccess };',
     replace: 'if (notSuccess.length) return { ok: false, required: list, missing, notSuccess };',
+  },
+  {
+    guard: 'verify-github-reconnect.mjs',
+    file: 'server/src/lib/githubReconnect.js',
+    why: 'Stops classifying invalid_grant as revoked, so a dead refresh token reads as a transient network blip — telling the operator to retry work that can never succeed.',
+    find: "if (code === 'bad_refresh_token' || code === 'invalid_grant' || /expired|revoked|invalid/i.test(description)) {",
+    replace: "if (code === 'bad_refresh_token' || /expired|revoked|invalid/i.test(description)) {",
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4364,4 +4371,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 39;
+export const UNPROVEN_BASELINE = 38;
