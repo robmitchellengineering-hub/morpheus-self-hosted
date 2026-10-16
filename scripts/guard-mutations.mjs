@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 27;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 28;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 26;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 27;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1569,6 +1569,13 @@ export const MUTATIONS = [
     why: 'Rewords the Tailscale caveat so it no longer mentions installation, hiding that remote access still needs the operator to install and sign in to Tailscale.',
     find: "'Remote access is a script, but Tailscale itself is yours to install and sign in to: npm run portable:remote (we do not install a VPN for you).',",
     replace: "'Remote access is a script, but Tailscale itself is yours to set up and sign in to: npm run portable:remote (we do not set up a VPN for you).',",
+  },
+  {
+    guard: 'verify-deck-add-guard.mjs',
+    file: 'src/contexts/CommandDeckContext.jsx',
+    why: 'Changes the in-flight guard from a Set to a Map, so a duplicate key is never refused — a second press of the same add runs twice.',
+    find: 'const addInFlight = useRef(new Set());',
+    replace: 'const addInFlight = useRef(new Map());',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4448,4 +4455,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 27;
+export const UNPROVEN_BASELINE = 26;
