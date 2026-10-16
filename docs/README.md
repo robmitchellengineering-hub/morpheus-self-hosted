@@ -42,6 +42,13 @@ in this directory.
 | `docs/planning/claude_PROJECT-STATUS-2026-08-28.md` | project status, 2026-08-28 |
 | `docs/planning/claude_TRADEMARK-LEGAL-FOLLOWUP-2026-08-31.md` | the trademark/legal follow-up |
 
+**New planning (2026-10, forward-looking — not part of the 2026-09 corpus above):**
+
+| File | What it is |
+|---|---|
+| `docs/planning/cpanel-hosting-connector-plan.md` | cPanel hosting connector — scoping plan (management surface + self-dev deploy target) |
+| `docs/planning/cpanel-hosting-connector-spec.md` | cPanel hosting connector — build-ready technical spec (data model, client, functions, deploy adapter, mock harness) |
+
 The polished PDFs (Business Report v6, Competitive Positioning v6, the explainers,
 the investor overviews) live beside these in `~/Downloads/Build plan 3.0/` and are
 **not** copied here — they are deliverables, and they are regenerated from these
