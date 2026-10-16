@@ -227,6 +227,8 @@ if (generated) {
       /<title>[^<]*verification/i.test(verification) && verification.includes('unlocks code verification'));
     check('…linking the specification with a real download',
       /href="\/verification-spec\.md"[^>]*download/.test(verification));
+    check('…linking the GitHub repo (the adoption surface)',
+      verification.includes('github.com/robmitchellengineering-hub/valiant-verification'));
   }
   check('the open specification file exists and is substantive',
     existsSync(join(ROOT, 'public', 'verification-spec.md'))
