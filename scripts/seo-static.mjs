@@ -73,6 +73,13 @@ if (existsSync(TARGET_DIR)) {
     .sort();
 }
 
+// The verification page's numbers are read from the code, not typed — the same rule as the
+// compile-target count ("6 platforms" vs ten). A hardcoded "130 guards" drifts the moment a guard
+// is added or a hazard is filed, so both are counted here and injected into the page below.
+const guardCount = readdirSync(join(ROOT, 'scripts'))
+  .filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).length;
+const hazardCount = (readFileSync(join(ROOT, 'KNOWN-HAZARDS.md'), 'utf8').match(/^## H\d+/gm) || []).length;
+
 // Verified against the running system: the grant is live and 6 accounts hold exactly 200
 // credits (reality.mjs), and billing.js carries the grant constant. The subscription line
 // matches what the code does, not what the financial reports claimed.
@@ -382,6 +389,7 @@ platform puts in your way. The whole thing, for all ${targets.length} targets:
 - Start building: ${SITE}/start
 - Marketplace: ${SITE}/market
 - Desktop build: ${SITE}/portable-morpheus
+- Code verification & the open specification: ${SITE}/verification
 `;
 
 // ── 4. Sitemap ───────────────────────────────────────────────────────────────────────
@@ -405,6 +413,7 @@ const PUBLIC_ROUTES = [
   // A real page with real content for every target, linked visibly from the landing page — not a text file
   // only crawlers are told about, which is the line between publishing and cloaking.
   ['/manual', '0.8'],
+  ['/verification', '0.8'],
 ];
 const today = new Date().toISOString().slice(0, 10);
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
@@ -492,6 +501,13 @@ ${caps.downloads.items.map((it) => `  <article>
 </html>
 `;
 
+// ── The verification page: a real static page whose numbers are injected here, not typed. The HTML
+// lives in public/verification.html with __GUARD_COUNT__ / __HAZARD_COUNT__ tokens, so the page cannot
+// drift from the repo. The spec itself (public/verification-spec.md) is count-free prose.
+const verificationHtml = readFileSync(join(ROOT, 'public', 'verification.html'), 'utf8')
+  .replace(/__GUARD_COUNT__/g, String(guardCount))
+  .replace(/__HAZARD_COUNT__/g, String(hazardCount));
+writeFileSync(join(DIST, 'verification.html'), verificationHtml);
 writeFileSync(join(DIST, 'manual.html'), manualHtml);
 writeFileSync(join(DIST, 'downloads.html'), downloadsHtml);
 writeFileSync(join(DIST, 'sitemap.xml'), sitemap);
