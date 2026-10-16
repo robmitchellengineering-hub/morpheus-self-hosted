@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 22;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 23;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 21;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 22;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1604,6 +1604,13 @@ export const MUTATIONS = [
     why: 'Treats any non-refused outcome as done, so an unknown outcome reads as a successful fix — the exact false-success the line exists to prevent.',
     find: "const outcome = attempt.outcome === 'done' ? 'done' : 'refused';",
     replace: "const outcome = attempt.outcome !== 'refused' ? 'done' : 'refused';",
+  },
+  {
+    guard: 'verify-gmail-sync.mjs',
+    file: 'server/src/functions/syncDeckGmailInbox.js',
+    why: 'Zeroes the sync budget fallback, so a deployment with no env var gets no time at all — the sync stops before it starts.',
+    find: 'const SYNC_BUDGET_MS = Number(process.env.DECK_GMAIL_SYNC_BUDGET_MS || 150000);',
+    replace: 'const SYNC_BUDGET_MS = Number(process.env.DECK_GMAIL_SYNC_BUDGET_MS || 0);',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4483,4 +4490,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 22;
+export const UNPROVEN_BASELINE = 21;
