@@ -306,6 +306,11 @@ console.log('\n5. ⭐ EMBED: the source a user compiles, run against the reader'
  * a thousand times looser; comparing them on the same decoded samples makes "the generated C computes the same
  * function as the reader" a claim that can be checked to the last digit.
  */
+// A hung child must not hang the whole guard: spawnSync has no timeout by default, and a mutation
+// that leaves a compiled binary looping would block the entire proof (the guards job, and the local
+// run) instead of failing. See rob-mesh-enhancement IMPROVEMENTS item 11 (2026-10-16).
+const CHILD_TIMEOUT_MS = 30_000;
+
 function buildAndRun(container, dir, wavName) {
   mkdirSync(dir, { recursive: true });
   const emitted = cppSource(container);
@@ -313,8 +318,8 @@ function buildAndRun(container, dir, wavName) {
   const demo = join(dir, 'demo');
   const cc = process.env.CC || 'cc';
   const compile = spawnSync(cc, ['-O2', '-Wall', '-Wextra', '-o', demo,
-    join(dir, 'morpheus_classifier.c'), join(dir, 'morpheus_classifier_main.c'), '-lm'], { encoding: 'utf8' });
-  const run = compile.status === 0 ? spawnSync(demo, [wavName], { encoding: 'utf8' }) : null;
+    join(dir, 'morpheus_classifier.c'), join(dir, 'morpheus_classifier_main.c'), '-lm'], { encoding: 'utf8', timeout: CHILD_TIMEOUT_MS });
+  const run = compile.status === 0 ? spawnSync(demo, [wavName], { encoding: 'utf8', timeout: CHILD_TIMEOUT_MS }) : null;
   return { emitted, compile, run, demo };
 }
 
@@ -366,7 +371,7 @@ check('…and the README it writes carries the numbers a person needs to trust i
 console.log('\n6. the CLI drives the same code');
 const modelPath = join(work, 'model.json');
 writeFileSync(modelPath, serializeModel(withCard(model, { accuracy: accuracyOf(model) })));
-const runCli = (...argv) => spawnSync(process.execPath, [join(ROOT, 'scripts', 'task.mjs'), ...argv], { encoding: 'utf8' });
+const runCli = (...argv) => spawnSync(process.execPath, [join(ROOT, 'scripts', 'task.mjs'), ...argv], { encoding: 'utf8', timeout: CHILD_TIMEOUT_MS });
 const cliOk = runCli('verify', modelPath, '--data', datasetDir);
 check('verify exits 0 for a container whose claim holds', [cliOk.status, /verified/.test(cliOk.stdout)], [0, true]);
 const liarPath = join(work, 'liar.json');
