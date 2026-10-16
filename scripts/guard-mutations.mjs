@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 34;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 35;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 32;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 33;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1520,6 +1520,20 @@ export const MUTATIONS = [
     why: 'Requires more than one readable file before the verifier is satisfied, so a one-file project reads as unverified — a gate that cries wolf and gets switched off.',
     find: 'if (codeFiles > 0) return null;',
     replace: 'if (codeFiles > 1) return null;',
+  },
+  {
+    guard: 'verify-drift.mjs',
+    file: 'server/src/lib/selfDevDrift.js',
+    why: 'Raises the unscoped-deletion cap a hundredfold, so a mass deletion reads as an allowed push — the exact H9 data-loss the guard exists to refuse.',
+    find: 'export const MAX_UNSCOPED_DELETIONS = 10;',
+    replace: 'export const MAX_UNSCOPED_DELETIONS = 1000;',
+  },
+  {
+    guard: 'verify-search-console.mjs',
+    file: 'server/src/lib/safeRedirect.js',
+    why: 'Loosens the protocol-relative guard, so //evil.example is accepted and the browser reads it as a host — the open-redirect the module exists to prevent.',
+    find: "if (v.startsWith('//')) return fallback;",
+    replace: "if (v.startsWith('///')) return fallback;",
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4399,4 +4413,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 34;
+export const UNPROVEN_BASELINE = 32;
