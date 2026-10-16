@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 30;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 31;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 28;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 29;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1548,6 +1548,20 @@ export const MUTATIONS = [
     why: 'Caps the accepted port below 1000, so the default 4599 is rejected and the wrong port is used.',
     find: 'return Number.isInteger(port) && port > 0 && port < 65536 ? port : Number(LOCAL_ENV.PORT);',
     replace: 'return Number.isInteger(port) && port > 0 && port < 1000 ? port : Number(LOCAL_ENV.PORT);',
+  },
+  {
+    guard: 'verify-portable-platform.mjs',
+    file: 'server/src/lib/portableLaunch.js',
+    why: 'Renames the macOS launcher file so it no longer matches the platform step that ships it — the shipped launcher and the step that tells the user to run it disagree.',
+    find: "file: 'Portable-Morpheus.command',",
+    replace: "file: 'Portable-Morpheus.command.txt',",
+  },
+  {
+    guard: 'verify-portable-setup.mjs',
+    file: 'server/src/lib/portableBundle.js',
+    why: 'Excludes the scripts directory, so scripts/portable-setup.mjs is dropped from the bundle — the installer is useless without it.',
+    find: 'return PORTABLE_INCLUDE_ROOTS.some((root) => p.startsWith(root));',
+    replace: "return PORTABLE_INCLUDE_ROOTS.some((root) => p.startsWith(root) && !p.startsWith('scripts/'));",
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4427,4 +4441,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 30;
+export const UNPROVEN_BASELINE = 28;
