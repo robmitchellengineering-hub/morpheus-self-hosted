@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 41;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 42;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 39;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 40;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1471,6 +1471,20 @@ export const MUTATIONS = [
     why: 'Reverses the delta so a credit reads as spend and real spend reads as a top-up — the exact confusion the module exists to prevent.',
     find: 'const delta = first.balanceUsd - last.balanceUsd;',
     replace: 'const delta = last.balanceUsd - first.balanceUsd;',
+  },
+  {
+    guard: 'verify-salvage-json.mjs',
+    file: 'server/src/lib/salvageJson.js',
+    why: 'Marks a salvaged partial as complete (truncated: false), so a caller would mistake a cut-off list for the whole answer — the exact lie the module exists to prevent.',
+    find: 'return { value, truncated: true };',
+    replace: 'return { value, truncated: false };',
+  },
+  {
+    guard: 'verify-merge-gates.mjs',
+    file: 'server/src/lib/engine/requiredChecks.js',
+    why: 'Ignores missing gates entirely, so a gate GitHub never ran reads as verified — the exact failure the module exists to prevent.',
+    find: 'if (missing.length || notSuccess.length) return { ok: false, required: list, missing, notSuccess };',
+    replace: 'if (notSuccess.length) return { ok: false, required: list, missing, notSuccess };',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4350,4 +4364,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 41;
+export const UNPROVEN_BASELINE = 39;
