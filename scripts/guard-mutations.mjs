@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 37;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 38;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 34;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 35;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1499,6 +1499,27 @@ export const MUTATIONS = [
     why: 'Renames the admin exemption to superadmin, so an admin is billed like an ordinary user — the exemption the whole product depends on silently disappears.',
     find: "if (String(billingUser.role || '').trim().toLowerCase() === 'admin') return false;",
     replace: "if (String(billingUser.role || '').trim().toLowerCase() === 'superadmin') return false;",
+  },
+  {
+    guard: 'verify-sync-safety.mjs',
+    file: 'server/src/lib/selfDevSyncSafety.js',
+    why: 'Classifies a proven upstream deletion as local work, so the sync preserves a file upstream intentionally deleted — the mirror can never catch up to an upstream removal.',
+    find: 'if (synced !== null && localSha === synced) deletions.push(file.path);',
+    replace: 'if (synced !== null && localSha === synced) orphaned.push(file.path);',
+  },
+  {
+    guard: 'verify-doc-honesty.mjs',
+    file: 'server/src/lib/schemaIntrospect.js',
+    why: 'Swaps the extension filter from .js to .mjs, so the function list names the wrong files — a document that disagrees with the handlers it claims to describe.',
+    find: ".filter((f) => typeof f === 'string' && f.endsWith('.js'))",
+    replace: ".filter((f) => typeof f === 'string' && f.endsWith('.mjs'))",
+  },
+  {
+    guard: 'verify-verifier-coverage.mjs',
+    file: 'server/src/lib/engine/verificationCoverage.js',
+    why: 'Requires more than one readable file before the verifier is satisfied, so a one-file project reads as unverified — a gate that cries wolf and gets switched off.',
+    find: 'if (codeFiles > 0) return null;',
+    replace: 'if (codeFiles > 1) return null;',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4378,4 +4399,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 37;
+export const UNPROVEN_BASELINE = 34;
