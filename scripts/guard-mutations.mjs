@@ -34,6 +34,13 @@ export const MUTATIONS = [
     replace: "    id: 'env-committed',\n    severity: 'note',",
   },
   {
+    guard: 'verify-deck-forward.mjs',
+    file: 'server/src/lib/deckForward.js',
+    why: 'Makes the forward matcher always return null, so a real forward to <local>+jarvis@ is never detected — the H13 silent-zero this guard exists to prevent.',
+    find: 'if (haystack.includes(`${local}+${tag}@${domain}`.toLowerCase())) return tag;',
+    replace: 'if (haystack.includes(`${local}+${tag}@${domain}`.toLowerCase())) return null;',
+  },
+  {
     guard: 'verify-ui-feedback.mjs',
     file: 'server/src/lib/uiFeedback.js',
     why: 'Makes stripProse a no-op, so comments and string literals count as code — the exact prose-satisfies-the-check failure H19 records six times, and the property the whole conservative design rests on.',
