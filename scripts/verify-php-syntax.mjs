@@ -83,12 +83,17 @@ check('the self-dev gate counts the same way, so one rule serves both engines',
 
 // ── And it is wired into the gate and into CI ───────────────────────────────
 const ci = read('.github/workflows/ci.yml');
+let guardsList = [];
+try { guardsList = JSON.parse(read('scripts/guards-list.json')).guards || []; } catch {}
 check('the guard is wired into the one gate and run by CI',
   /'verify-php-syntax\.mjs'/.test(read('scripts/verify.mjs')) && /node scripts\/verify-php-syntax\.mjs/.test(ci), true);
 // The behavioural half needs `php-parser`, which this job does not install — so it is re-run in the one
 // job that does. Asserted here, because a behaviour proven only locally is a behaviour nobody runs.
+// The guards job now runs this script via run-guards.mjs + scripts/guards-list.json, so it appears in
+// ci.yml once (lint + build), not twice.
 check('…and its behavioural half is re-run in the job that HAS the dependency',
-  (ci.match(/node scripts\/verify-php-syntax\.mjs/g) || []).length >= 2, true);
+  (ci.match(/node scripts\/verify-php-syntax\.mjs/g) || []).length >= 1
+    && guardsList.includes('verify-php-syntax.mjs'), true);
 
 // ── The behaviour, in a CHILD PROCESS ───────────────────────────────────────
 //

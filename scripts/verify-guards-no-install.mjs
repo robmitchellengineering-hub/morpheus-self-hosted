@@ -27,7 +27,6 @@ import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const CI = resolve(REPO, '.github/workflows/ci.yml');
 
 // An import STATEMENT, not an import LINE.
 //
@@ -68,23 +67,22 @@ const check = (name, actual, expected) => {
   else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
 };
 
-const yaml = readFileSync(CI, 'utf8');
-const lines = yaml.split('\n');
-
-// Slice out the `guards:` job — from its line to the next top-level job key.
-const start = lines.findIndex((l) => /^  guards:/.test(l));
-if (start < 0) {
-  console.error('\n  ✗ could not find the `guards:` job in ci.yml — this check would silently pass.\n');
+// The guards job runs all its scripts from scripts/guards-list.json via run-guards.mjs, so the list
+// lives in the manifest, not in ci.yml's step lines. Read the manifest (plus the runner itself). If
+// it is missing or empty, that is a failure — never a silent pass.
+let guardsList;
+try {
+  guardsList = JSON.parse(readFileSync(resolve(REPO, 'scripts', 'guards-list.json'), 'utf8')).guards;
+} catch {
+  console.error('\n  ✗ could not read scripts/guards-list.json — this check would silently pass.\n');
   process.exit(1);
 }
-let end = lines.length;
-for (let i = start + 1; i < lines.length; i++) {
-  if (/^  [A-Za-z0-9_-]+:/.test(lines[i])) { end = i; break; }
+if (!Array.isArray(guardsList) || guardsList.length === 0) {
+  console.error('\n  ✗ scripts/guards-list.json holds no guards — this check would silently pass.\n');
+  process.exit(1);
 }
-const guardsJob = lines.slice(start, end).join('\n');
-
-// `run: node scripts/<name>.mjs`
-const scripts = [...guardsJob.matchAll(/node\s+(scripts\/[\w.-]+\.mjs)/g)].map((m) => m[1]);
+// The runner itself must also be install-free, so it is checked alongside the guards it runs.
+const scripts = ['scripts/run-guards.mjs', ...guardsList.map((g) => `scripts/${g}`)];
 check('the guards job runs at least one script', scripts.length > 0, true);
 
 /** Every module reachable from `entry` via relative imports (excluding node: builtins). */
