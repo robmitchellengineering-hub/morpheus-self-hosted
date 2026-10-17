@@ -75,6 +75,24 @@ if (!filters.length && !onlyNeedsInstall && selected.length < 5) {
   process.exit(2);
 }
 
+// --shard=i/n: run only the i-th of n shards (strided by index), so the ~500-mutation proof can be
+// split across parallel runners. The registry floor above still checks the FULL selection — a shard
+// legitimately runs fewer than five. A bad shard argument is refused rather than silently ignored.
+const shardArg = argv.find((a) => a.startsWith('--shard='));
+const shard = shardArg
+  ? (() => {
+      const [i, n] = shardArg.slice('--shard='.length).split('/').map(Number);
+      return (Number.isInteger(i) && Number.isInteger(n) && i >= 0 && i < n) ? { i, n } : null;
+    })()
+  : null;
+if (shardArg && !shard) {
+  console.error(`--shard expects i/n (e.g. --shard=0/2), got "${shardArg}"`);
+  process.exit(2);
+}
+const runSelected = shard
+  ? selected.filter((_, idx) => idx % shard.n === shard.i)
+  : selected;
+
 /** Is this file free of uncommitted changes? Untracked counts as dirty: a crash would lose it. */
 function isDirty(file) {
   const r = spawnSync('git', ['status', '--porcelain', '--', file], { cwd: ROOT, encoding: 'utf8' });
@@ -82,7 +100,7 @@ function isDirty(file) {
   return String(r.stdout || '').trim().length > 0;
 }
 
-const dirty = [...new Set(selected.map((m) => m.file))].filter(isDirty);
+const dirty = [...new Set(runSelected.map((m) => m.file))].filter(isDirty);
 if (dirty.length && !allowDirty) {
   console.error(`refusing to mutate ${dirty.length} file(s) with uncommitted changes:\n  ${dirty.join('\n  ')}`);
   console.error('\nCommit or stash them, or pass --allow-dirty (backups are taken either way).');
@@ -94,7 +112,7 @@ const results = [];
 let interrupted = false;
 process.on('SIGINT', () => { interrupted = true; });
 
-for (const m of selected) {
+for (const m of runSelected) {
   if (interrupted) break;
   const abs = resolve(ROOT, m.file);
   const original = readFileSync(abs);
