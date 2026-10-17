@@ -14,6 +14,7 @@
 // code that encrypts and then hands the ciphertext to a client that JSON.parses it, which silently
 // blanks every connection the user had saved.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 import { decodeConnections, encodeConnections } from '../server/src/lib/connectionSecrets.js';
 
@@ -26,7 +27,7 @@ function check(name, actual, expected) {
   else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
 }
 
-const REPO = new URL('..', import.meta.url).pathname;
+const REPO = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
 const entities = read('server/src/entities.js');
 const helper = read('server/src/lib/connectionSecrets.js');

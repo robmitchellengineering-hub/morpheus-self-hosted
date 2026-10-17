@@ -15,6 +15,7 @@
 // container that lies, refused; a front end that drifted from training, caught. The fixture is a model that
 // genuinely classifies — a random-weight container would let every one of these pass by agreeing with itself.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -43,7 +44,7 @@ function check(name, actual, expected) {
   if (a === e) console.log(`  PASS  ${name}`);
   else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
 }
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // ── the fixture: a dataset on disk and a model that really separates it ─────────────────────────────────────
 const work = mkdtempSync(join(tmpdir(), 'morpheus-ladder-'));
