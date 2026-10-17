@@ -10,6 +10,7 @@
 // So each refusal below is asserted together with the reason it gives, and the ones that are warnings are
 // asserted to be warnings — a check that refuses everything is as useless as one that refuses nothing.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -145,7 +146,7 @@ for (let i = 0; i < 30; i++) {
   write('clean', `takeA${i}.wav`, tone(1 + (i % 4) * 0.1, { hz: 220, amplitude: 0.4 }));
   write('distorted', `takeB${i}.wav`, tone(1 + (i % 4) * 0.1, { hz: 440, amplitude: 0.6 }));
 }
-const run = (dir) => spawnSync(process.execPath, [join(new URL('..', import.meta.url).pathname, 'scripts', 'task.mjs'), 'check', dir, '--json'], { encoding: 'utf8' });
+const run = (dir) => spawnSync(process.execPath, [join(fileURLToPath(new URL('..', import.meta.url)), 'scripts', 'task.mjs'), 'check', dir, '--json'], { encoding: 'utf8' });
 const okRun = run(join(work, 'dataset'));
 const okJson = (() => { try { return JSON.parse(okRun.stdout); } catch { return null; } })();
 check('the CLI reads a real dataset directory and reports its shape',
@@ -199,7 +200,7 @@ const badDs = mkdtempSync(join(tmpdir(), 'morpheus-badds-'));
 mkdirSync(join(badDs, 'only'), { recursive: true });
 for (let i = 0; i < 3; i++) writeFileSync(join(badDs, 'only', `a${i}.wav`), encodeWav({ sampleRate: SR, data: tone(1), format: 'float32' }));
 const scaffoldOut = mkdtempSync(join(tmpdir(), 'morpheus-scaffold-'));
-const scaffolded = spawnSync(process.execPath, [join(new URL('..', import.meta.url).pathname, 'scripts', 'task.mjs'),
+const scaffolded = spawnSync(process.execPath, [join(fileURLToPath(new URL('..', import.meta.url)), 'scripts', 'task.mjs'),
   'scaffold', '--out', scaffoldOut, '--dataset', badDs], { encoding: 'utf8' });
 // Deliberately NOT wrapped in a try/catch. The first version was, and it swallowed the ReferenceError from a
 // missing `readFileSync` import whole — it reported "no verdict written" for a verdict that was written
