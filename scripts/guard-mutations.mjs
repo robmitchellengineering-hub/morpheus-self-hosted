@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 13;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 14;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 12;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 13;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1667,6 +1667,13 @@ export const MUTATIONS = [
     why: 'Treats unknown as not-public, so an unreadable state that is neither login-required nor blocked is silently treated as inaccessible.',
     find: "return access === 'login-required' || access === 'blocked';",
     replace: "return access !== 'public';",
+  },
+  {
+    guard: 'verify-selfdev-runs.mjs',
+    file: 'server/src/lib/selfDevRunRules.js',
+    why: 'Widens blocked to cover 5xx, so a server error reads as the guard working — a real failure is recorded as a blocked run, hiding outages.',
+    find: 'if (code >= 400 && code < 500) return \'blocked\';',
+    replace: 'if (code >= 400 && code < 600) return \'blocked\';',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4546,4 +4553,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 13;
+export const UNPROVEN_BASELINE = 12;
