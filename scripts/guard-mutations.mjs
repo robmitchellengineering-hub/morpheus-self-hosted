@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 16;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 17;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 14;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 15;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1646,6 +1646,20 @@ export const MUTATIONS = [
     why: 'Rewords the empty-draft error, so the guard that asserts it names the failure no longer matches — an empty reply would ship as { reply: "" } again.',
     find: "throw new Error('Jarvis returned an empty draft",
     replace: "throw new Error('Jarvis returned an empty note",
+  },
+  {
+    guard: 'verify-deck-crm-edit.mjs',
+    file: 'src/contexts/CommandDeckContext.jsx',
+    why: 'Drops the Z from the ISO date, so the date helper no longer produces a UTC instant — promised dates shift a day.',
+    find: 'T00:00:00.000Z',
+    replace: 'T00:00:00.000',
+  },
+  {
+    guard: 'verify-proving-ground.mjs',
+    file: 'src/pages/ProvingGround/index.jsx',
+    why: 'Relabels the page as production, so the guard that flags it as an internal test surface no longer matches — an internal surface would read as customer-facing.',
+    find: 'Internal test surface',
+    replace: 'Production test surface',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4525,4 +4539,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 16;
+export const UNPROVEN_BASELINE = 14;
