@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 12;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 13;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 10;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 11;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1674,6 +1674,20 @@ export const MUTATIONS = [
     why: 'Widens blocked to cover 5xx, so a server error reads as the guard working — a real failure is recorded as a blocked run, hiding outages.',
     find: 'if (code >= 400 && code < 500) return \'blocked\';',
     replace: 'if (code >= 400 && code < 600) return \'blocked\';',
+  },
+  {
+    guard: 'verify-operator-drive.mjs',
+    file: 'server/src/lib/operatorToken.js',
+    why: 'Drops the underscore from the operator token prefix, so a well-formed token no longer parses as the documented prefix — operator tokens read as wrong.',
+    find: "export const OPERATOR_TOKEN_PREFIX = 'opr_';",
+    replace: "export const OPERATOR_TOKEN_PREFIX = 'opr';",
+  },
+  {
+    guard: 'verify-workspace-search.mjs',
+    file: 'src/lib/constructSearch.js',
+    why: 'Matches every query, so an unrelated word finds every construct — a search that matches everything finds nothing.',
+    find: 'return haystack.includes(q);',
+    replace: 'return true;',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4553,4 +4567,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 12;
+export const UNPROVEN_BASELINE = 10;
