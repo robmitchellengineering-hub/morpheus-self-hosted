@@ -50,6 +50,7 @@ const BASE = `http://localhost:${FRONTEND_PORT}`;
 
 const argv = process.argv.slice(2);
 const keep = argv.includes('--keep');
+const vision = argv.includes('--vision');
 const routes = argv.filter((a) => a.startsWith('/'));
 const DEFAULT_ROUTES = ['/deck', '/deck/settings', '/deck/tools', '/deck/jarvis', '/settings', '/workspace'];
 const ROUTES = routes.length ? routes : DEFAULT_ROUTES;
@@ -304,13 +305,68 @@ async function renderAll(token) {
       // the console as well as re-throwing it — both are collected, and both fail the route.
       const fatal = [...pageErrors, ...consoleErrors].filter((m) => /is not defined|Cannot read|is not a function|Maximum update depth|Minified React error/.test(m));
 
-      results.push({ route, landedOn, boundary, blank, bouncedToLogin, pageErrors, consoleErrors, fatal, navigationError, serverErrors, body });
+      // Opt-in vision pass: a screenshot to deepseek-flash (V4.1, vision-capable) so a page that
+      // renders "fine" to the DOM checks but LOOKS broken (off-screen, overlapping, blank panel) is
+      // still caught. A skip is never a failure — the DOM checks above remain the hard gate.
+      let visionResult = null;
+      if (vision) {
+        const shot = await page.screenshot({ fullPage: false }).catch(() => null);
+        visionResult = shot ? await visionVerdict(shot.toString('base64'), route) : { ok: true, skipped: 'screenshot failed' };
+      }
+
+      results.push({ route, landedOn, boundary, blank, bouncedToLogin, pageErrors, consoleErrors, fatal, navigationError, serverErrors, body, visionResult });
       await context.close();
     }
   } finally {
     await browser.close();
   }
   return results;
+}
+
+// ── vision ─────────────────────────────────────────────────────────────────
+// Routes rendering QA through deepseek-flash (V4.1 Flash, vision-capable).
+// The key is the harness's own DeepSeek key (refs/DEEPSEEK_API_KEY in
+// ~/.dsh/.credentials.yaml) or DEEPSEEK_API_KEY in the env (CI). Never printed.
+// This is opt-in (`--vision`) because each screenshot is a small paid flash call.
+function visionKey() {
+  if (process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY;
+  try {
+    const home = process.env.HOME || process.env.USERPROFILE || '~';
+    const c = readFileSync(join(home, '.dsh', '.credentials.yaml'), 'utf8');
+    const m = c.match(/DEEPSEEK_API_KEY:\s*(\S+)/);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
+async function visionVerdict(pngBase64, route) {
+  const key = visionKey();
+  if (!key) return { ok: true, skipped: 'no DEEPSEEK_API_KEY — vision check skipped' };
+  const prompt = `This is a screenshot of the "${route}" page of a web app. Does it render correctly? `
+    + 'Look for: a blank or near-empty page, an error / error-boundary message, text overlapping or cut off, '
+    + 'or anything visually broken. Reply with exactly "OK" if it looks fine, otherwise a one-line '
+    + 'description of what is broken.';
+  const body = {
+    model: 'deepseek-flash',
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: prompt },
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${pngBase64}` } },
+    ] }],
+    temperature: 0.2,
+  };
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) return { ok: true, skipped: `vision HTTP ${res.status}` };
+    const data = await res.json();
+    const text = String(data?.choices?.[0]?.message?.content || '').trim();
+    return { ok: /^OK\b/i.test(text), verdict: text };
+  } catch (e) {
+    return { ok: true, skipped: `vision call failed (${String(e.message || e).slice(0, 60)})` };
+  }
 }
 
 // ── main ───────────────────────────────────────────────────────────────────
@@ -339,6 +395,7 @@ for (const r of results) {
   if (uniqueServerErrors.length) {
     problems.push(`${uniqueServerErrors.length} API 5xx response(s): ${uniqueServerErrors.slice(0, 2).join(' | ')}`);
   }
+  if (r.visionResult && !r.visionResult.ok) problems.push(`vision: ${r.visionResult.verdict}`);
   if (problems.length) {
     failures++;
     console.log(`  ✗ ${r.route}`);
