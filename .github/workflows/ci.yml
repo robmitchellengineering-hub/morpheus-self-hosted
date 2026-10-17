@@ -331,7 +331,7 @@ jobs:
 
   guards:
     name: guards (no install)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, X64, studio, mac-studio]
     steps:
       - uses: actions/checkout@v4
 
