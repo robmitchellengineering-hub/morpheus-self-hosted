@@ -492,6 +492,12 @@ jobs:
       - name: Gmail sync limits
         run: node scripts/verify-gmail-sync.mjs
 
+      # Forward-to-Jarvis capture: the To/Delivered-To matcher must actually detect
+      # <local>+jarvis@ / <local>+build@, or every forward falls through to the inquiry
+      # classifier and is silently dropped (H13).
+      - name: Forward capture detection
+        run: node scripts/verify-deck-forward.mjs
+
       # A widget build runs ~15 minutes in the server process and then merges a PR that
       # redeploys production — replacing the process running it. This asserts the durable
       # work (install the widget, reach a terminal status) happens BEFORE the post-deploy

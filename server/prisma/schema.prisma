@@ -1323,6 +1323,13 @@ model DeckInboxItem {
   stage         String   @default("new") // new | replied | done
   external_id   String?  // Gmail message id — dedup key for syncDeckGmailInbox.js, null for non-synced items
 
+  // Which forward-to-Jarvis address this arrived via ("jarvis" | "build"), null for
+  // normal inquiry items. Set only by syncDeckGmailInbox.js when a message was sent to
+  // <local>+jarvis@ or <local>+build@ on the connected mailbox — forwards are captured
+  // unfiltered, so this is how the two consumers (Jarvis for the account, the dev agent
+  // for "build") tell the item is theirs.
+  forward_tag   String?
+
   created_date  DateTime @default(now())
   updated_date  DateTime @updatedAt
 

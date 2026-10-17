@@ -130,9 +130,10 @@ function decodeBase64Url(str) {
   return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
 }
 
-// Returns { id, from, fromEmail, subject, snippet, body, date }, pulling
-// the plain-text part (or falling back to the snippet) out of Gmail's
-// nested MIME payload structure.
+// Returns { id, from, fromEmail, subject, snippet, body, date, to, deliveredTo },
+// pulling the plain-text part (or falling back to the snippet) out of Gmail's
+// nested MIME payload structure. `to`/`deliveredTo` are raw header values, used
+// by syncDeckGmailInbox.js to detect a forward-to-Jarvis alias.
 export async function getGmailMessage(token, id) {
   const res = await fetch(`${GMAIL_API}/messages/${id}?format=full`, { headers: { Authorization: `Bearer ${token}` } });
   const data = await apiJson(res);
@@ -160,7 +161,7 @@ export async function getGmailMessage(token, id) {
   else if (data.payload?.body?.data) body = decodeBase64Url(data.payload.body.data);
   else body = data.snippet || '';
 
-  return { id: data.id, threadId: data.threadId, from: fromName, fromEmail, subject: header('Subject'), snippet: data.snippet, body, date: header('Date') };
+  return { id: data.id, threadId: data.threadId, from: fromName, fromEmail, subject: header('Subject'), snippet: data.snippet, body, date: header('Date'), to: header('To'), deliveredTo: header('Delivered-To') };
 }
 
 // Sends a reply in an existing thread (or a fresh message if threadId/inReplyTo omitted).

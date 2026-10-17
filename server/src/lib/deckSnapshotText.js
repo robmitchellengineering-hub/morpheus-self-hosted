@@ -63,7 +63,7 @@ const notes = (n) => `${n} note${n === 1 ? '' : 's'}`;
  *   consignment: {unsoldCount: number, value: number, owedToConsignors: number, owedCount: number, owedIncomplete: number},
  *   repairs: {rows: Array<{item: string, stage: string, quote?: number|null, promised_date?: Date|string|null}>, total: number},
  *   murbah: Array<{title: string, stage: string}>,
- *   inbox: {rows: Array<{channel: string, from_name: string, message: string, stage: string}>, total: number},
+ *   inbox: {rows: Array<{channel: string, from_name: string, message: string, stage: string, forward_tag?: string|null}>, total: number},
  *   dump: {rows: Array<{text: string}>, total: number},
  *   lifeStreams: Array<{id: string, stream_key: string, status: string}>,
  *   lifeStreamNotes: {rows: Array<{life_stream_id: string, text: string}>, total: number},
@@ -118,7 +118,7 @@ KNOWLEDGE / IDEAS (${listCount(knowledge.rows.length, knowledge.total)}): ${know
 CONSIGNMENT: ${consignment.unsoldCount} unsold items worth $${consignment.value} on the floor${consignment.owedCount ? `; $${consignment.owedToConsignors} owed to consignors on ${consignment.owedCount} sold item${consignment.owedCount === 1 ? '' : 's'}${consignment.owedIncomplete ? ` (${consignment.owedIncomplete} with no sale price or fee recorded, so that amount is short)` : ''}` : ''}
 REPAIRS QUEUE: ${repairs.total} open${truncationNote(repairs.rows.length, repairs.total)}: ${repairs.rows.map((r) => `${r.item} [${REPAIR_STAGE_LABEL[r.stage] || r.stage}]${r.quote ? ` quote $${r.quote}` : ''}${r.promised_date ? ` promised ${day(r.promised_date)}` : ''}`).join('; ') || 'none'}
 MURBAH OPPORTUNITIES: ${murbah.map((m) => `${m.title} — ${MURBAH_STAGE_LABEL[m.stage] || m.stage}`).join('; ') || 'none'}
-INBOX (${inbox.total} not yet done${truncationNote(inbox.rows.length, inbox.total)}): ${inbox.rows.map((i) => `[${i.channel}] ${i.from_name}: ${excerpt(i.message)} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}
+INBOX (${inbox.total} not yet done${truncationNote(inbox.rows.length, inbox.total)}): ${inbox.rows.map((i) => `[${i.channel}${i.forward_tag ? `/${i.forward_tag}` : ''}] ${i.from_name}: ${excerpt(i.message)} (${INBOX_STAGE_LABEL[i.stage] || i.stage})`).join('; ') || 'none'}
 UNSORTED BRAIN DUMP (${listCount(dump.rows.length, dump.total)}): ${dump.rows.map((d) => d.text).join('; ') || 'none'}
 
 LIFE STREAMS (outside the shop — ${notes(lifeStreamNotes.total)}${truncationNote(lifeStreamNotes.rows.length, lifeStreamNotes.total)}): ${lifeStreamsText}
