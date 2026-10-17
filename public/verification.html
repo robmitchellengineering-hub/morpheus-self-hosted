@@ -59,20 +59,20 @@
   }
   ol.principles b { display: block; margin-bottom: .2rem; }
   .cta { margin-top: 2.5rem; }
-  a.download {
-    display: inline-block;
-    background: var(--green); color: #fff;
+  a.download, a.github {
+    display: block;
+    width: fit-content;
     padding: .9rem 1.6rem; border-radius: 10px;
     font-weight: 700; font-size: 1.05rem; text-decoration: none;
+  }
+  a.download {
+    background: var(--green); color: #fff;
     box-shadow: 0 1px 2px rgba(4,120,87,.25);
   }
   a.download:hover { background: var(--green-dark); }
   a.github {
-    display: inline-block;
-    margin-left: .5rem;
-    padding: .9rem 1.4rem; border-radius: 10px;
+    margin-top: .6rem;
     border: 1px solid var(--green); color: var(--green-dark);
-    font-weight: 700; font-size: 1rem; text-decoration: none;
   }
   a.github:hover { background: var(--soft); }
   .muted { color: var(--muted); font-size: .95rem; }
@@ -96,7 +96,9 @@
 
   <h2>The results, measured</h2>
   <div class="finding"><b><span class="stat">__GUARD_COUNT__ automated guards</span></b> — each asserts a real
-  failure mode the build must satisfy, and each must be proven to fail on a seeded fault before it counts.</div>
+  failure mode, and each is proven to fail: <span class="stat">__MUTATION_COUNT__ recorded mutation tests</span>
+  inject a seeded fault and confirm the guard goes red. The unproven backlog has been ratcheted from 44 to
+  <span class="stat">__UNPROVEN_BASELINE__</span>.</div>
   <div class="finding"><b><span class="stat">__HAZARD_COUNT__ documented breakages</span></b> — every self-inflicted
   failure is filed with a detection rule and fed back to the reviewer on every turn, so the same mistake
   cannot repeat unnoticed.</div>
@@ -124,6 +126,11 @@
   <p><strong>The specification</strong> — open, free to implement, so the standard spreads.<br>
   <strong>The reference SDK</strong> — source-available, licensed per product, tiered by licensee size.<br>
   <strong>The guard corpus + hazard library</strong> — subscription; the breakages, bought with real incidents, updated continuously.</p>
+
+  <h2>For investors &amp; partners</h2>
+  <p>The full case in one document — why verification became the bottleneck, the twelve-tool survey,
+  how this compares to the funded field, and the disruptor thesis, with its honest boundary stated
+  alongside it. <a href="/verification-gap-investor.pdf" download>Download the investor brief (PDF)</a>.</p>
 
   <div class="cta">
     <a class="download" href="/verification-spec.md" download>Download the specification</a>
