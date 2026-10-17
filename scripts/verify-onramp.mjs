@@ -18,6 +18,7 @@
 // and it is the same shape as the calendar-row fix of the same day ("the floor is set once, so the
 // next row cannot reintroduce it").
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { COMPILE_TARGETS, targetOptions } from '../src/lib/compileTargets.js';
 import { listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 import { checklistRows, isOptionalRow, remainingCount } from '../src/lib/onrampChecklist.js';
@@ -32,7 +33,7 @@ function check(name, actual, expected) {
   else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
 }
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => readFileSync(root + p, 'utf8');
 
 console.log('\n1. web-app leads every list, and is worded for a website, not just an app');

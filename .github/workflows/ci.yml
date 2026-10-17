@@ -329,9 +329,38 @@ jobs:
       - name: A generated app's page actually renders
         run: node scripts/smoke-generated-app.mjs --render
 
+  # The SIGNED-IN surface, in a real browser. `render` above renders only the public routes —
+  # every protected page sits behind ProtectedRoute, so an unauthenticated render never fetches
+  # their chunks (H22: a blank /deck/settings shipped through a fully-green pipeline). This brings
+  # up the self-contained dock rig (embedded Postgres + mock LLM + frontend + backend), seeds an
+  # account, mints a LOCAL session, and loads each signed-in route in the runner's Chrome — failing
+  # on a console error, an uncaught exception, the error boundary, an empty render, or an API 5xx.
+  # It can never touch production (loopback + `_dock_rig` interlock). Advisory first, like render-smoke
+  # was: promote to a required check once it has run clean across several real pull requests.
+  render-signed-in:
+    name: render signed-in (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install the server workspace (prisma/pg live under server/)
+        run: cd server && npm install --no-audit --no-fund --no-save
+
+      - name: Render the signed-in surface
+        run: npm run render:check
+
   guards:
     name: guards (no install)
-    runs-on: [self-hosted, X64, studio]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -343,8 +372,8 @@ jobs:
         run: |
           git config core.autocrlf false
           git config core.eol lf
-          git rm -r --cached . >/dev/null 2>&1 || true
-          git reset --hard >/dev/null 2>&1 || true
+          git rm -r -q --cached .
+          git reset -q --hard
 
       - uses: actions/setup-node@v4
         with:

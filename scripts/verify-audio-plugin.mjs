@@ -19,6 +19,7 @@
 //
 // Run:  node scripts/verify-audio-plugin.mjs
 import { readFileSync, existsSync, unlinkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import audioPlugin, { readManifest, PLUGIN_MANIFEST } from '../server/src/lib/compile-targets/audio-plugin-macos.js';
@@ -27,7 +28,7 @@ import audioPluginWindows from '../server/src/lib/compile-targets/audio-plugin-w
 import audioPluginLinux from '../server/src/lib/compile-targets/audio-plugin-linux-arm.js';
 import { getCompileTarget, listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 
-const REPO = new URL('..', import.meta.url).pathname;
+const REPO = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => (existsSync(join(REPO, p)) ? readFileSync(join(REPO, p), 'utf8') : '');
 
 let failures = 0;
