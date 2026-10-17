@@ -335,6 +335,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Windows self-hosted runners check out with CRLF (git's Windows default) and hold a
+      # persistent working tree, so the `.gitattributes` `eol=lf` rule does NOT re-smudge files
+      # that are already present. Guards assert against `\n` in source, so force a clean LF
+      # checkout before any guard runs. Cross-platform: done through git, not sed/dos2unix.
+      - name: Force LF checkout (Windows runners hold stale CRLF worktrees)
+        run: |
+          git config core.autocrlf false
+          git config core.eol lf
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git reset --hard >/dev/null 2>&1 || true
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
