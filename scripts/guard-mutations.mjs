@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 6;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 7;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 5;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 6;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1716,6 +1716,13 @@ export const MUTATIONS = [
     why: 'Disables the coverage fallback, so a model that dropped part of the dump files only the fragments — the lost words the fallback exists to recover are gone.',
     find: 'if (covered < text.length * MIN_COVERAGE || droppedClause) {',
     replace: 'if (false) {',
+  },
+  {
+    guard: 'verify-review-context.mjs',
+    file: 'server/src/lib/reviewContext.js',
+    why: 'Drops KNOWN-HAZARDS.md from the rule files, so the reviewer is no longer shown the hazard ledger its own prompt instructs it to check against.',
+    find: "const RULE_FILES = ['KNOWN-HAZARDS.md', 'AGENTS.md'];",
+    replace: "const RULE_FILES = ['AGENTS.md'];",
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4595,4 +4602,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 6;
+export const UNPROVEN_BASELINE = 5;
