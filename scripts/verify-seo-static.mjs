@@ -229,10 +229,14 @@ if (generated) {
       /href="\/verification-spec\.md"[^>]*download/.test(verification));
     check('…linking the GitHub repo (the adoption surface)',
       verification.includes('github.com/robmitchellengineering-hub/valiant-verification'));
+    check('…linking the investor brief (PDF) with a real download',
+      /href="\/verification-gap-investor\.pdf"[^>]*download/.test(verification));
   }
   check('the open specification file exists and is substantive',
     existsSync(join(ROOT, 'public', 'verification-spec.md'))
     && readFileSync(join(ROOT, 'public', 'verification-spec.md'), 'utf8').length > 1000);
+  check('the investor brief PDF is published',
+    existsSync(join(ROOT, 'public', 'verification-gap-investor.pdf')));
   const verRedirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
   check('the /verification rewrite comes BEFORE the SPA catch-all',
     verRedirects.indexOf('/verification  /verification.html') >= 0
