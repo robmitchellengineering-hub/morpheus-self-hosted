@@ -9,6 +9,7 @@ import { prisma } from '../db.js';
 import { invokeAI } from '../ai.js';
 import { getDeckGoogleToken, listGmailMessages, getGmailMessage } from '../lib/deckGoogle.js';
 import { getDeckBusinessContext } from '../lib/deckBusinessProfile.js';
+import { forwardTagFor } from '../lib/deckForward.js';
 
 const PAGE_SIZE = 20;
 // 2026-09-17 (Rob: "emails are blowing out of their box" — a real inquiry,
@@ -21,6 +22,11 @@ const PAGE_SIZE = 20;
 // bounded so one sync can't run away classifying an entire mailbox's history
 // the first time it's ever run against a huge backlog.
 const MAX_MESSAGES_PER_SYNC = 150;
+
+// Forwards are captured whole — a forwarded email is a deliberate capture (a spec, a
+// note, a document for Jarvis or the dev agent), not a triage candidate. Still bounded
+// so one pathological message cannot blow the row out.
+const FORWARD_BODY_MAX_CHARS = 30000;
 
 // How long one sync may spend before it stops and hands the rest to the next one.
 // The browser abandons the request at 210s (src/api/base44Client.js API_FETCH_TIMEOUT_MS),
@@ -78,7 +84,7 @@ ${(message.body || message.snippet || '').slice(0, 3000)}`;
 }
 
 export default async function handler({ user }) {
-  const { token } = await getDeckGoogleToken(user.id);
+  const { token, email } = await getDeckGoogleToken(user.id);
   const deadline = Date.now() + SYNC_BUDGET_MS;
 
   let checked = 0;
@@ -108,21 +114,48 @@ export default async function handler({ user }) {
       const full = await getGmailMessage(token, id);
       checked++;
 
-      let isInquiry;
-      try {
-        isInquiry = await classifyIsInquiry(user.id, full);
-      } catch (err) {
-        // A failed classification (truncation, a transient provider error)
-        // must NOT be treated as "not an inquiry" — that would permanently
-        // drop a real customer message the moment DeckGmailSeenMessage marks
-        // it seen below. Skip both the inbox item AND the seen-marker so this
-        // message is simply reclassified on the next sync instead.
-        console.error(`[syncDeckGmailInbox] classification failed for message ${id}:`, err.message);
-        failed++;
-        continue;
+      // Forward-to-Jarvis capture first: a message addressed to one of the forward
+      // aliases (<local>+jarvis@ / <local>+build@ on the connected mailbox) is a
+      // deliberate capture, not a triage candidate — so it is filed whole and tagged,
+      // with no inquiry classifier run over it.
+      const forwardTag = forwardTagFor(email, full.to, full.deliveredTo);
+
+      let capture; // the DeckInboxItem data to write, or null when nothing should be filed
+      if (forwardTag) {
+        capture = {
+          channel: 'gmail',
+          from_name: full.from,
+          from_email: full.fromEmail,
+          message: full.body?.slice(0, FORWARD_BODY_MAX_CHARS) || full.snippet || '',
+          stage: 'new',
+          forward_tag: forwardTag,
+        };
+      } else {
+        let isInquiry;
+        try {
+          isInquiry = await classifyIsInquiry(user.id, full);
+        } catch (err) {
+          // A failed classification (truncation, a transient provider error)
+          // must NOT be treated as "not an inquiry" — that would permanently
+          // drop a real customer message the moment DeckGmailSeenMessage marks
+          // it seen below. Skip both the inbox item AND the seen-marker so this
+          // message is simply reclassified on the next sync instead.
+          console.error(`[syncDeckGmailInbox] classification failed for message ${id}:`, err.message);
+          failed++;
+          continue;
+        }
+        if (isInquiry) {
+          capture = {
+            channel: 'gmail',
+            from_name: full.from,
+            from_email: full.fromEmail,
+            message: full.body?.slice(0, 5000) || full.snippet || '',
+            stage: 'new',
+          };
+        }
       }
 
-      if (isInquiry) {
+      if (capture) {
         // Idempotent on the message id. The seen-marker below is the fast path, but when
         // its write fails the message is unseen again next sync — and re-classifying it
         // used to create a SECOND DeckInboxItem, putting one customer email in the list
@@ -135,15 +168,7 @@ export default async function handler({ user }) {
         });
         if (!already) {
           await prisma.deckInboxItem.create({
-            data: {
-              created_by_id: user.id,
-              channel: 'gmail',
-              from_name: full.from,
-              from_email: full.fromEmail,
-              message: full.body?.slice(0, 5000) || full.snippet || '',
-              stage: 'new',
-              external_id: full.id,
-            },
+            data: { ...capture, created_by_id: user.id, external_id: full.id },
           });
           created++;
         }
