@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 19;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 20;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 18;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 19;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1625,6 +1625,13 @@ export const MUTATIONS = [
     why: 'Renames the fileId parameter to file, so the delete helper the document-cleanup path depends on no longer matches its caller — the orphan cleanup never runs.',
     find: 'export async function deleteDriveFile(token, fileId)',
     replace: 'export async function deleteDriveFile(token, file)',
+  },
+  {
+    guard: 'verify-deck-snapshot.mjs',
+    file: 'server/src/lib/deckSnapshot.js',
+    why: 'Flips the unsold filter to sold, so the count on the floor is the sold items — the unsold figure is wrong.',
+    find: 'prisma.deckConsignmentItem.count({ where: { ...where, sold: false } })',
+    replace: 'prisma.deckConsignmentItem.count({ where: { ...where, sold: true } })',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4504,4 +4511,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 19;
+export const UNPROVEN_BASELINE = 18;
