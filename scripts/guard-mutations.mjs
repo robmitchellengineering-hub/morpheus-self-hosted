@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 14;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 15;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 13;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 14;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1660,6 +1660,13 @@ export const MUTATIONS = [
     why: 'Relabels the page as production, so the guard that flags it as an internal test surface no longer matches — an internal surface would read as customer-facing.',
     find: 'Internal test surface',
     replace: 'Production test surface',
+  },
+  {
+    guard: 'verify-frontend-deploy.mjs',
+    file: 'server/src/lib/siteAccess.js',
+    why: 'Treats unknown as not-public, so an unreadable state that is neither login-required nor blocked is silently treated as inaccessible.',
+    find: "return access === 'login-required' || access === 'blocked';",
+    replace: "return access !== 'public';",
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4539,4 +4546,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 14;
+export const UNPROVEN_BASELINE = 13;
