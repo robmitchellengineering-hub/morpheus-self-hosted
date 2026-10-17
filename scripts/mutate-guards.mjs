@@ -109,6 +109,11 @@ if (dirty.length && !allowDirty) {
 
 const backups = mkdtempSync(join(tmpdir(), 'guard-mutations-'));
 const results = [];
+// The baseline is per-guard, not per-mutation: it runs the guard on the UNMUTATED tree, which is identical
+// before every mutation of the same guard (each sabotage is restored before the next). Running it once per
+// mutation was the bulk of the ~1,000 node subprocess spawns in a full pass — half of them redundant baseline
+// spawns — which is what made a 502-mutation pass ~14 min on a shared runner.
+const baselineCache = new Map(); // guard -> spawnSync result
 let interrupted = false;
 process.on('SIGINT', () => { interrupted = true; });
 
@@ -134,7 +139,11 @@ for (const m of runSelected) {
 
   // Baseline: an assertion that the guard passes BEFORE the sabotage. Without it, a guard that is red for an
   // unrelated reason (a missing dependency, a broken fixture) would be recorded as "caught" forever.
-  const base = spawnSync(process.execPath, [join(ROOT, 'scripts', m.guard)], { cwd: ROOT, encoding: 'utf8', timeout: TIMEOUT_MS });
+  let base = baselineCache.get(m.guard);
+  if (base === undefined) {
+    base = spawnSync(process.execPath, [join(ROOT, 'scripts', m.guard)], { cwd: ROOT, encoding: 'utf8', timeout: TIMEOUT_MS });
+    baselineCache.set(m.guard, base);
+  }
   if (base.status !== 0) {
     results.push({ m, verdict: 'BASELINE RED', detail: base.error ? String(base.error.message) : `exit ${base.status}`, output: tail(base.stdout) });
     continue;
