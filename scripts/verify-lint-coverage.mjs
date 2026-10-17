@@ -15,6 +15,7 @@
 // A file that matches no config block is not "clean", it is UNCHECKED, and ESLint reports that as
 // an info line nobody fails on. This walks the source tree and fails on it.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 
 let failures = 0;
@@ -26,7 +27,7 @@ function check(name, actual, expected) {
   else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
 }
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const configPath = join(root, 'eslint.config.js');
 
 // Read the config as text rather than importing it: importing would need its plugins installed, and

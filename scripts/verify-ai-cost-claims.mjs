@@ -25,6 +25,7 @@
 //
 // Run:  node scripts/verify-ai-cost-claims.mjs
 import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { join, extname } from 'node:path';
 import { shouldReserveCredits, isOwnKeyProvider, isFlatRateCall, FLAT_CALL_CREDITS, OWN_KEY_CALL_CREDITS, FLAT_RATE_MODELS, FLAT_RATE_SINCE } from '../server/src/lib/creditPolicy.js';
 
@@ -37,7 +38,7 @@ function check(name, actual, expected) {
   else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
 }
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
 console.log('\n1. the exemption rule is about the ACCOUNT, and nothing else');
