@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 9;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 10;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 8;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 9;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1695,6 +1695,13 @@ export const MUTATIONS = [
     why: 'Reads heapUsed instead of rss, so the memory log reports the V8 heap, not resident memory — the OOM-kill signal the log exists to capture is lost.',
     find: 'process.memoryUsage().rss',
     replace: 'process.memoryUsage().heapUsed',
+  },
+  {
+    guard: 'verify-portable-bundle.mjs',
+    file: 'server/src/lib/platformCli.js',
+    why: 'Renames the macOS label, so the README table no longer matches the platform step — the installer docs disagree with the launcher that ships.',
+    find: "label: 'macOS',",
+    replace: "label: 'Mac OS X',",
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4574,4 +4581,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 9;
+export const UNPROVEN_BASELINE = 8;
