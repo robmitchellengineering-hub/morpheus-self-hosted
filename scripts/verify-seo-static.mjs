@@ -34,6 +34,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { renderUserManual } from '../server/src/lib/appUserManual.js';
 import { getCompileTarget } from '../server/src/lib/compile-targets/index.js';
+import { MUTATIONS, UNPROVEN_BASELINE } from './guard-mutations.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -221,7 +222,11 @@ if (generated) {
   if (verification) {
     check('…with the LIVE guard count, not a typed number', verification.includes(String(liveGuardCount)));
     check('…with the LIVE hazard count, not a typed number', verification.includes(String(liveHazardCount)));
-    check('…and no unreplaced template token left in it', !verification.includes('__GUARD_COUNT__') && !verification.includes('__HAZARD_COUNT__'));
+    check('…with the LIVE mutation-test count, not a typed number', verification.includes(String(MUTATIONS.length)));
+    check('…with the LIVE unproven baseline, not a typed number', verification.includes(String(UNPROVEN_BASELINE)));
+    check('…and no unreplaced template token left in it',
+      !verification.includes('__GUARD_COUNT__') && !verification.includes('__HAZARD_COUNT__')
+      && !verification.includes('__MUTATION_COUNT__') && !verification.includes('__UNPROVEN_BASELINE__'));
     check('…visible, with no hiding style anywhere in it', !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(verification));
     check('…with a title and headline a reader and a crawler both see',
       /<title>[^<]*verification/i.test(verification) && verification.includes('unlocks code verification'));

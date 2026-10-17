@@ -96,7 +96,9 @@
 
   <h2>The results, measured</h2>
   <div class="finding"><b><span class="stat">__GUARD_COUNT__ automated guards</span></b> — each asserts a real
-  failure mode the build must satisfy, and each must be proven to fail on a seeded fault before it counts.</div>
+  failure mode, and each is proven to fail: <span class="stat">__MUTATION_COUNT__ recorded mutation tests</span>
+  inject a seeded fault and confirm the guard goes red. The unproven backlog has been ratcheted from 44 to
+  <span class="stat">__UNPROVEN_BASELINE__</span>.</div>
   <div class="finding"><b><span class="stat">__HAZARD_COUNT__ documented breakages</span></b> — every self-inflicted
   failure is filed with a detection rule and fed back to the reviewer on every turn, so the same mistake
   cannot repeat unnoticed.</div>
