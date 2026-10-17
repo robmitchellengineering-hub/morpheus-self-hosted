@@ -372,8 +372,8 @@ jobs:
         run: |
           git config core.autocrlf false
           git config core.eol lf
-          git rm -r --cached . >/dev/null 2>&1 || true
-          git reset --hard >/dev/null 2>&1 || true
+          git rm -r -q --cached .
+          git reset -q --hard
 
       - uses: actions/setup-node@v4
         with:
