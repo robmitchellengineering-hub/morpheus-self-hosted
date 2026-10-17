@@ -1,3 +1,5 @@
+* text=auto eol=lf
+
 # The demo rig is CAPTURED AUDIO AND MODEL DATA, and its bytes are the measurement.
 #
 # ⚠️ `-text` FOR EVERY FILE IN IT, INCLUDING THE `.nam`s THAT HAPPEN TO BE JSON. The captures were made from a
