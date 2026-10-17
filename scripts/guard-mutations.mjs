@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 7;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 8;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 6;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 7;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1709,6 +1709,13 @@ export const MUTATIONS = [
     why: 'Renames UsageEvent to UsageEvent2, so every prisma.usageEvent reference becomes an unknown delegate — the scanner now finds the very thing it exists to catch.',
     find: 'model UsageEvent {',
     replace: 'model UsageEvent2 {',
+  },
+  {
+    guard: 'verify-dump-classify.mjs',
+    file: 'server/src/lib/deckDumpClassify.js',
+    why: 'Disables the coverage fallback, so a model that dropped part of the dump files only the fragments — the lost words the fallback exists to recover are gone.',
+    find: 'if (covered < text.length * MIN_COVERAGE || droppedClause) {',
+    replace: 'if (false) {',
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4588,4 +4595,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 7;
+export const UNPROVEN_BASELINE = 6;
