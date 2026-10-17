@@ -382,6 +382,11 @@ export default function Landing() {
           <a href="/manual" className="inline-flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider border border-primary/20 hover:border-primary/50 px-4 py-2 transition-colors">
             <BookOpen size={12} /> READ THE MANUAL
           </a>
+          {/* A plain <a>, same reason as /manual: /verification is a static page (public/verification.html),
+              not an SPA route, so a client-side <Link> would 404. */}
+          <a href="/verification" className="inline-flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider border border-primary/20 hover:border-primary/50 px-4 py-2 transition-colors">
+            <ShieldCheck size={12} /> VERIFICATION
+          </a>
           {isAdmin && <>
             <Link to="/rebuild-blueprint" className="inline-flex items-center gap-1.5 text-xs text-primary/50 hover:text-primary font-mono tracking-wider border border-primary/20 hover:border-primary/50 px-4 py-2 transition-colors">
               <FileText size={12} /> REBUILD BLUEPRINT
