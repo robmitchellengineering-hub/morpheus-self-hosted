@@ -38,6 +38,7 @@ import { renderUserManual } from '../server/src/lib/appUserManual.js';
 import { getCompileTarget, listCompileTargets } from '../server/src/lib/compile-targets/index.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MUTATIONS, UNPROVEN_BASELINE } from './guard-mutations.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // SEO_DIST lets a guard run this whole generator against a temp directory, which is how
@@ -506,7 +507,9 @@ ${caps.downloads.items.map((it) => `  <article>
 // drift from the repo. The spec itself (public/verification-spec.md) is count-free prose.
 const verificationHtml = readFileSync(join(ROOT, 'public', 'verification.html'), 'utf8')
   .replace(/__GUARD_COUNT__/g, String(guardCount))
-  .replace(/__HAZARD_COUNT__/g, String(hazardCount));
+  .replace(/__HAZARD_COUNT__/g, String(hazardCount))
+  .replace(/__MUTATION_COUNT__/g, String(MUTATIONS.length))
+  .replace(/__UNPROVEN_BASELINE__/g, String(UNPROVEN_BASELINE));
 writeFileSync(join(DIST, 'verification.html'), verificationHtml);
 writeFileSync(join(DIST, 'manual.html'), manualHtml);
 writeFileSync(join(DIST, 'downloads.html'), downloadsHtml);
