@@ -330,8 +330,16 @@ jobs:
         run: node scripts/smoke-generated-app.mjs --render
 
   guards:
-    name: guards (no install)
-    runs-on: [self-hosted, macOS, X64, studio, mac-studio]
+    name: guards (no install) ${{ matrix.shard }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 0
+            runner: [self-hosted, macOS, X64, studio, mac-studio]
+          - shard: 1
+            runner: [self-hosted, macOS, X64, studio, mac-studio-2]
     steps:
       - uses: actions/checkout@v4
 
@@ -735,7 +743,7 @@ jobs:
       # that SURVIVES (a check that cannot fail), a STALE mutation (one that no longer matches, reported
       # rather than skipped), or a guard that was already red before the sabotage.
       - name: Every registered guard fails when its subject breaks
-        run: node scripts/mutate-guards.mjs
+        run: node scripts/mutate-guards.mjs --shard=${{ matrix.shard }}/2
 
       # There are TWO copies of the infrastructure registry and nothing kept them in step. That already
       # cost the posture feature its entire UI once, because BackendPanel.jsx imports the copy the work
