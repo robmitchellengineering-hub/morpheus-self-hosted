@@ -1455,8 +1455,8 @@ export const MUTATIONS = [
     // this very entry's own string. The ambiguity rule caught that on the first attempt, which is the rule
     // earning its place: `String.replace` takes the first match, so an ambiguous `find` can mutate the wrong
     // site, go red for the wrong reason, and be recorded as proof.
-    find: '\nexport const UNPROVEN_BASELINE = 17;\n',
-    replace: '\nexport const UNPROVEN_BASELINE = 18;\n',
+    find: '\nexport const UNPROVEN_BASELINE = 16;\n',
+    replace: '\nexport const UNPROVEN_BASELINE = 17;\n',
   },
   {
     guard: 'verify-billing-ledger-math.mjs',
@@ -1639,6 +1639,13 @@ export const MUTATIONS = [
     why: 'Reads p.fullName instead of p.name, so the name field no longer binds the field the editor saves — edits silently do nothing.',
     find: 'value={p.name}',
     replace: 'value={p.fullName}',
+  },
+  {
+    guard: 'verify-deck-draft.mjs',
+    file: 'server/src/functions/suggestDeckReply.js',
+    why: 'Rewords the empty-draft error, so the guard that asserts it names the failure no longer matches — an empty reply would ship as { reply: "" } again.',
+    find: "throw new Error('Jarvis returned an empty draft",
+    replace: "throw new Error('Jarvis returned an empty note",
   },
   {
     guard: 'verify-php-syntax.mjs',
@@ -4518,4 +4525,4 @@ export const NOT_YET_PROVEN = [
  * subject's comment — it grepped for `useEffect` in a component whose doc-comment says "no useEffect,
  * deliberately" — which is H19 in miniature, and it is now asserted on the import instead.
  */
-export const UNPROVEN_BASELINE = 17;
+export const UNPROVEN_BASELINE = 16;
