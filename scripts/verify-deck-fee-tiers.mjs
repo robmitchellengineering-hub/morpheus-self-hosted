@@ -67,7 +67,7 @@ check('deckConstants re-exports the one definition',
   /export \{[\s\S]*commissionFor[\s\S]*\} from '\.\/feeTiers';/.test(deckConstants), true);
 const definers = [...sourceFiles('src'), ...sourceFiles('server/src')]
   .filter((p) => /function\s+commissionFor\s*\(/.test(read(p)))
-  .map((p) => relative(REPO, join(REPO, p)));
+  .map((p) => relative(REPO, join(REPO, p)).replace(/\\/g, '/'));
 check('no other file defines a fee derivation', definers, ['src/pages/CommandDeck/feeTiers.js']);
 
 console.log('\n2. the default is still 30% to $2000, 20% above');

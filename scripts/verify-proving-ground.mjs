@@ -92,7 +92,7 @@ function walk(dir) {
     const full = path.join(dir, entry);
     if (statSync(full).isDirectory()) { walk(full); continue; }
     if (!/\.(js|jsx|mjs|json|html|php|txt|md)$/.test(entry)) continue;
-    const rel = path.relative(REPO, full);
+    const rel = path.relative(REPO, full).replace(/\\/g, '/');
     if (isAllowed(rel)) continue;
     const text = readFileSync(full, 'utf8');
     if (text.includes(ROUTE) || /ProvingGround/.test(text)) offenders.push(rel);
