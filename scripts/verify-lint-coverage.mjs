@@ -75,7 +75,7 @@ function walk(dir, out = []) {
     if (entry === 'node_modules' || entry.startsWith('.')) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) walk(full, out);
-    else if (/\.(js|mjs|cjs|jsx)$/.test(entry)) out.push(relative(root, full));
+    else if (/\.(js|mjs|cjs|jsx)$/.test(entry)) out.push(relative(root, full).replace(/\\/g, '/'));
   }
   return out;
 }

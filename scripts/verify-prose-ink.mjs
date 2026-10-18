@@ -58,7 +58,7 @@ function walk(dir, out = []) {
     if (e === 'node_modules' || e.startsWith('.')) continue;
     const p = join(dir, e);
     if (statSync(p).isDirectory()) walk(p, out);
-    else if (/\.(jsx|js)$/.test(e)) out.push(relative(REPO, p));
+    else if (/\.(jsx|js)$/.test(e)) out.push(relative(REPO, p).replace(/\\/g, '/'));
   }
   return out;
 }
